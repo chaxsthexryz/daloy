@@ -1,0 +1,18 @@
+{
+  "run": {
+    "pending": ["running", "cancelled"],
+    "running": ["waiting", "succeeded", "failed", "cancelled"],
+    "waiting": ["running", "cancelled"],
+    "succeeded": [],
+    "failed": [],
+    "cancelled": []
+  },
+  "step": {
+    "pending": ["running", "skipped"],
+    "running": ["waiting", "succeeded", "failed"],
+    "waiting": ["succeeded", "failed"],
+    "succeeded": [],
+    "failed": [],
+    "skipped": []
+  }
+}

@@ -116,7 +116,7 @@ SSRF, webhook spoofing, secrets leaking into logs, expression injection, approva
 ## Phases
 
 - [x] 0. Scaffold: monorepo, CI, docker compose with Postgres and Mailpit, llm-ts, README skeleton, docs/how-it-works.md, docs/threat-model.md.
-- [ ] 1. Engine package with tests only: definition schema, state machine, retry policy, expression evaluator.
+- [x] 1. Engine package with tests only: definition schema, state machine, retry policy, expression evaluator.
 - [ ] 2. Database schema, migrations and the worker.
 - [ ] 3. API, console auth and triggers.
 - [ ] 4. Steps: HTTP (with SSRF protection), email, condition, delay.

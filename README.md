@@ -2,7 +2,7 @@
 
 Daloy is a workflow automation engine with AI steps. You build an automation from one trigger and a series of steps, Daloy runs it, keeps a history of every run, and can expose published workflows as MCP tools.
 
-Status: phase 0 (scaffold). See the checklist in [PROJECT.md](PROJECT.md).
+Status: phase 1 done (engine package with tests). See the checklist in [PROJECT.md](PROJECT.md).
 
 ## Problem
 
