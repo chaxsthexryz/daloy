@@ -1,0 +1,11 @@
+{
+  "name": "@daloy/llm-ts",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Minimal LLM client. Ollama chat API, base URL from LLM_BASE_URL.",
+  "main": "src/index.ts",
+  "dependencies": {
+    "zod": "^4.6.7"
+  }
+}

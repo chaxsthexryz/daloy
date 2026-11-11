@@ -1,0 +1,11 @@
+{
+  "name": "@daloy/engine",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Pure TypeScript workflow engine: definition schema, state machine, retries, expressions. No I/O.",
+  "main": "src/index.ts",
+  "dependencies": {
+    "zod": "^4.6.7"
+  }
+}

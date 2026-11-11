@@ -1,0 +1,6 @@
+{
+  "name": "@daloy/web",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Vite, React and React Flow console. Built in phase 5."
+}

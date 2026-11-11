@@ -1,0 +1,6 @@
+{
+  "name": "@daloy/api",
+  "version": "0.0.0",
+  "private": true,
+  "description": "NestJS API. Built in phase 3."
+}
