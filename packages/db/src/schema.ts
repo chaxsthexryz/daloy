@@ -1,0 +1,132 @@
+import { RUN_STATES, STEP_STATES } from "@daloy/engine";
+import { boolean, integer, jsonb, pgEnum, pgTable, text, timestamp, unique, uuid } from "drizzle-orm/pg-core";
+
+const id = () => uuid("id").primaryKey().defaultRandom();
+const createdAt = () => timestamp("created_at", { withTimezone: true }).notNull().defaultNow();
+const ts = (name: string) => timestamp(name, { withTimezone: true });
+
+export const runState = pgEnum("run_state", RUN_STATES);
+export const stepState = pgEnum("step_state", STEP_STATES);
+
+export const users = pgTable("users", {
+  id: id(),
+  email: text("email").notNull().unique(),
+  passwordHash: text("password_hash").notNull(),
+  createdAt: createdAt(),
+});
+
+export const sessions = pgTable("sessions", {
+  // SHA-256 of the cookie value, so a database leak does not leak live sessions.
+  idHash: text("id_hash").primaryKey(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  expiresAt: ts("expires_at").notNull(),
+  createdAt: createdAt(),
+});
+
+export const workflows = pgTable(
+  "workflows",
+  {
+    id: id(),
+    userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    slug: text("slug").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [unique().on(t.userId, t.slug)],
+);
+
+/** Immutable: a change to a workflow is a new row with the next version number. */
+export const workflowVersions = pgTable(
+  "workflow_versions",
+  {
+    id: id(),
+    workflowId: uuid("workflow_id").notNull().references(() => workflows.id, { onDelete: "cascade" }),
+    version: integer("version").notNull(),
+    definition: jsonb("definition").notNull(),
+    published: boolean("published").notNull().default(false),
+    createdAt: createdAt(),
+  },
+  (t) => [unique().on(t.workflowId, t.version)],
+);
+
+export const triggers = pgTable("triggers", {
+  id: id(),
+  workflowId: uuid("workflow_id").notNull().references(() => workflows.id, { onDelete: "cascade" }),
+  type: text("type").notNull(),
+  config: jsonb("config").notNull().default({}),
+  // Random 32-byte path for webhook triggers, null for the others.
+  webhookPath: text("webhook_path").unique(),
+  createdAt: createdAt(),
+});
+
+export const runs = pgTable("runs", {
+  id: id(),
+  workflowVersionId: uuid("workflow_version_id").notNull().references(() => workflowVersions.id),
+  state: runState("state").notNull().default("pending"),
+  triggerPayload: jsonb("trigger_payload").notNull().default({}),
+  error: text("error"),
+  // Lease: the worker that holds it renews it with a heartbeat. An expired lease means the run can be resumed.
+  leaseOwner: text("lease_owner"),
+  leaseExpiresAt: ts("lease_expires_at"),
+  // Set while a retry waits for its backoff delay, so a resumed run does not retry early.
+  nextAttemptAt: ts("next_attempt_at"),
+  createdAt: createdAt(),
+  finishedAt: ts("finished_at"),
+});
+
+/** One row per step attempt. The unique key is the idempotency key, so an attempt can never be recorded twice. */
+export const stepRuns = pgTable(
+  "step_runs",
+  {
+    id: id(),
+    runId: uuid("run_id").notNull().references(() => runs.id, { onDelete: "cascade" }),
+    stepId: text("step_id").notNull(),
+    attempt: integer("attempt").notNull(),
+    state: stepState("state").notNull().default("pending"),
+    output: jsonb("output"),
+    branch: text("branch"),
+    error: text("error"),
+    // True when a retryable error used up every attempt. The API lists these as the dead-letter list.
+    deadLetter: boolean("dead_letter").notNull().default(false),
+    inputTokens: integer("input_tokens"),
+    outputTokens: integer("output_tokens"),
+    createdAt: createdAt(),
+    finishedAt: ts("finished_at"),
+  },
+  (t) => [unique().on(t.runId, t.stepId, t.attempt)],
+);
+
+export const approvals = pgTable("approvals", {
+  id: id(),
+  stepRunId: uuid("step_run_id").notNull().references(() => stepRuns.id, { onDelete: "cascade" }),
+  tokenHash: text("token_hash").notNull().unique(),
+  expiresAt: ts("expires_at").notNull(),
+  usedAt: ts("used_at"),
+  decision: text("decision"),
+  createdAt: createdAt(),
+});
+
+/** AES-256-GCM. The key comes from an env var and never touches the database. Base64 fields. */
+export const secrets = pgTable(
+  "secrets",
+  {
+    id: id(),
+    userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    ciphertext: text("ciphertext").notNull(),
+    iv: text("iv").notNull(),
+    authTag: text("auth_tag").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [unique().on(t.userId, t.name)],
+);
+
+export const apiTokens = pgTable("api_tokens", {
+  id: id(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  tokenHash: text("token_hash").notNull().unique(),
+  lastUsedAt: ts("last_used_at"),
+  revokedAt: ts("revoked_at"),
+  createdAt: createdAt(),
+});

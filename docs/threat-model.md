@@ -29,3 +29,5 @@ Kept current with each phase. A mitigation marked "planned" does not exist in co
 | Prompt injection through trigger data | Trigger data goes in a delimited user message, never the system prompt. Output is validated against a JSON schema. | Planned, phase 7 |
 | MCP tool abuse | Bearer token per user, only published form-trigger workflows exposed, approval steps still apply, rate limits | Planned, phase 8 |
 | Oversized payloads | Body size limits on every route, 1 MB HTTP response limit, at most 100 steps per definition, expression output limit | Partly phase 1, rest planned |
+| Two workers running the same step at once | Run lease claimed with a conditional UPDATE, guarded state updates, unique `(run_id, step_id, attempt)` | Done, phase 2 |
+| Stolen database credentials | Least-privilege role for the API and worker | Planned, phase 3 |

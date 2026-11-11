@@ -6,7 +6,9 @@ This file explains each core module in plain language: what it does, why it is b
 
 - `packages/engine`: the rules of a workflow run (definition schema, state machine, retries, expressions). Pure TypeScript with no database or network access, so every rule can be tested in milliseconds.
 - `packages/llm-ts`: a small client for language models.
-- `apps/worker`, `apps/api`, `apps/web`: built in later phases.
+- `packages/db`: Drizzle schema and SQL migrations, shared by the worker and the API.
+- `apps/worker`: takes run jobs from pg-boss and executes steps.
+- `apps/api`, `apps/web`: built in later phases.
 - Postgres stores application data and the job queues (pg-boss). See [decision 0001](decisions/0001-no-redis.md).
 
 ## LLM client (packages/llm-ts)
@@ -66,3 +68,29 @@ Why this way: placeholders are property lookups only, so a template cannot run c
 Edge cases: paths that try to reach `constructor`, `__proto__` or `prototype`, or anything other than trigger data or a step output, throw `ExpressionError`. Inherited properties such as `toString` resolve to nothing. Unclosed braces stay as text. Templates over 10,000 characters, more than 50 placeholders, paths deeper than 32 segments and output over 100,000 characters are rejected. Numeric strings from forms compare as numbers, so `"5"` equals `5`.
 
 Tests: `packages/engine/src/expressions.test.ts`.
+
+## Database (packages/db)
+
+What it does: `schema.ts` defines the ten tables from PROJECT.md with Drizzle. `pnpm --filter @daloy/db generate` turns schema changes into SQL files in `packages/db/migrations`, and `migrate()` applies them. The `run_state` and `step_state` enums are built from the engine's transition table, so the database cannot hold a state the state machine does not know.
+
+Why this way: one schema package means the worker and the API (phase 3) can never disagree about a column. Generated SQL migrations are plain files a reviewer can read.
+
+Edge cases: `step_runs` has a unique key on `(run_id, step_id, attempt)`, which is the idempotency key, so the same attempt can never be recorded twice. Session ids and API tokens are stored as hashes. Secrets are stored encrypted with the key outside the database.
+
+## Worker (apps/worker)
+
+What it does: the worker takes `advance-run` jobs from pg-boss. One job does one piece of work for one run: run the next step attempt, or mark the run finished. Then it queues the run again. `advance.ts` holds this logic and `worker.ts` wires it to pg-boss.
+
+Leases: before it touches a run, the worker writes its name and an expiry time (30 seconds ahead) on the run row. The UPDATE only succeeds when no other worker holds a live lease, so two workers can never advance the same run at once. A heartbeat pushes the expiry forward every 10 seconds while a step runs. The lease is cleared when the job ends.
+
+Crash recovery: every 15 seconds a sweep looks for unfinished runs with no live lease and queues them. The queue keeps at most one waiting job per run, so a run that already has a job queued is not queued twice. If a worker dies in the middle of a step, its lease expires, the sweep queues the run, and the next worker finds the step attempt still marked running. It runs that same attempt again with the same idempotency key, so an external service can tell it is a repeat.
+
+Retries: when a step throws, the engine's `decideRetry` picks one of three outcomes. A retryable error with attempts left marks the attempt failed, stores the time of the next attempt on the run (`next_attempt_at`) and queues a delayed job. A retryable error on the last attempt marks the attempt failed with `dead_letter = true` and fails the run. The dead-letter list is a query on that column. Any other error fails the run at once.
+
+State changes: every change goes through `assertTransition` and then a guarded UPDATE (`WHERE state = <expected>`), so an illegal or concurrent change throws instead of overwriting. A failed step and its failed run are written in one transaction.
+
+Shutdown: on SIGTERM the worker stops taking jobs, waits up to 30 seconds for jobs in progress, and closes the database pool.
+
+Tests: `apps/worker/src/worker.test.ts` runs the real worker against Postgres. It covers a run that succeeds and passes outputs along, a condition branch, a retry that then succeeds, a step that runs out of attempts (dead letter), an error that is not retryable, a run left behind by a crashed worker (resumed with the same idempotency key, no duplicate row), and a run held by another worker's live lease (left alone).
+
+Limits: step types arrive in phase 4. Until then the worker started by `main.ts` fails every step. The `waiting` state is unused until the delay and approval steps exist.

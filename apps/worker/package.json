@@ -2,5 +2,19 @@
   "name": "@daloy/worker",
   "version": "0.0.0",
   "private": true,
-  "description": "Node worker that runs workflow jobs from pg-boss. Built in phase 2."
+  "type": "module",
+  "description": "Node worker that takes run jobs from pg-boss and executes workflow steps.",
+  "dependencies": {
+    "@daloy/db": "workspace:*",
+    "@daloy/engine": "workspace:*",
+    "drizzle-orm": "^0.45.4",
+    "pg-boss": "^12.38.2",
+    "tsx": "^4.23.15"
+  },
+  "scripts": {
+    "start": "tsx src/main.ts"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.23.1"
+  }
 }

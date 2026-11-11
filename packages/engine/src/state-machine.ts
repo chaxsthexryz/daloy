@@ -4,6 +4,10 @@ export type Kind = keyof typeof transitions;
 export type RunState = keyof typeof transitions.run;
 export type StepState = keyof typeof transitions.step;
 
+// The database enums are built from these, so the transition table stays the single source of states.
+export const RUN_STATES = Object.keys(transitions.run) as [RunState, ...RunState[]];
+export const STEP_STATES = Object.keys(transitions.step) as [StepState, ...StepState[]];
+
 export class IllegalTransitionError extends Error {
   override name = "IllegalTransitionError";
   constructor(

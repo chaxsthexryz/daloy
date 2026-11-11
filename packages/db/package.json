@@ -1,0 +1,21 @@
+{
+  "name": "@daloy/db",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Drizzle schema, SQL migrations and the migrate script shared by the API and the worker.",
+  "main": "src/index.ts",
+  "dependencies": {
+    "@daloy/engine": "workspace:*",
+    "drizzle-orm": "^0.45.4",
+    "pg": "^8.23.1"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.23.1",
+    "drizzle-kit": "^0.31.11"
+  },
+  "scripts": {
+    "generate": "drizzle-kit generate",
+    "migrate": "tsx -e \"import('./src/index.ts').then(async m=>{const {db,pool}=m.createDb(process.env.DATABASE_URL);await m.migrate(db);await pool.end()})\""
+  }
+}

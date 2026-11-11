@@ -48,7 +48,7 @@ Added with the seed script in phase 9.
 ## Running tests
 
 ```bash
-pnpm test        # vitest, all packages
+pnpm test        # vitest, all packages. Uses DATABASE_URL if set, otherwise starts an embedded Postgres
 pnpm typecheck
 pnpm lint
 ```
@@ -59,7 +59,7 @@ CI also runs Semgrep, gitleaks and `pnpm audit` on every push.
 
 - Version 1 supports linear flows with branches only: no loops, no parallel branches, no sub-workflows.
 - One workspace per user.
-- The API, worker and web console do not exist yet.
+- The API and web console do not exist yet. The worker runs, but real step types arrive in phase 4.
 
 ## Dependencies
 
@@ -70,6 +70,12 @@ CI also runs Semgrep, gitleaks and `pnpm audit` on every push.
 | vitest | Test runner | MIT |
 | eslint, @eslint/js, typescript-eslint | Linting | MIT |
 | @types/node | Node type definitions | MIT |
+| drizzle-orm | Typed queries for the application tables | Apache-2.0 |
+| drizzle-kit | Generates SQL migrations from the schema | MIT |
+| pg, @types/pg | Postgres driver | MIT |
+| pg-boss | Job queue on Postgres | MIT |
+| tsx | Runs the TypeScript worker without a build step | MIT |
+| embedded-postgres | Real Postgres for local tests without Docker | MIT |
 
 TypeScript is pinned to 6.0.x because typescript-eslint 8 does not support TypeScript 7 yet.
 
