@@ -2,5 +2,33 @@
   "name": "@daloy/api",
   "version": "0.0.0",
   "private": true,
-  "description": "NestJS API. Built in phase 3."
+  "type": "module",
+  "description": "NestJS API: console auth, workflows, secrets, API tokens and triggers.",
+  "scripts": {
+    "start": "tsx src/main.ts"
+  },
+  "dependencies": {
+    "@daloy/db": "workspace:*",
+    "@daloy/engine": "workspace:*",
+    "@nestjs/common": "^12.4.2",
+    "@nestjs/core": "^12.4.2",
+    "@nestjs/platform-express": "^12.4.2",
+    "@node-rs/argon2": "^2.2.2",
+    "cookie-parser": "^1.4.7",
+    "drizzle-orm": "^0.45.4",
+    "helmet": "^8.3.0",
+    "pg": "^8.23.1",
+    "pg-boss": "^12.38.2",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2",
+    "tsx": "^4.23.15",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/cookie-parser": "^1.4.10",
+    "@types/express": "^5.0.6",
+    "@types/pg": "^8.23.1",
+    "@types/supertest": "^7.2.1",
+    "supertest": "^7.3.2"
+  }
 }

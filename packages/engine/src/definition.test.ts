@@ -3,7 +3,7 @@ import { definitionSchema } from "./definition";
 
 const step = (id: string, type = "http", config: Record<string, unknown> = {}) => ({ id, type, config });
 const triage = () => ({
-  trigger: { type: "form", config: {} },
+  trigger: { type: "form", config: { fields: [{ name: "message", label: "Message", type: "textarea", required: true }] } },
   steps: [
     step("classify", "ai"),
     step("is_billing", "condition", { condition: { left: "{{steps.classify.output.label}}", op: "eq", right: "billing" } }),
@@ -25,6 +25,35 @@ function issues(input: unknown): string[] {
 describe("definitionSchema", () => {
   it("accepts a linear flow with a branch", () => {
     expect(issues(triage())).toEqual([]);
+  });
+
+  describe("trigger config", () => {
+    const withTrigger = (trigger: unknown) => ({ ...triage(), trigger });
+
+    it("needs at least one form field", () => {
+      expect(issues(withTrigger({ type: "form", config: { fields: [] } }))).not.toEqual([]);
+      expect(issues(withTrigger({ type: "form", config: {} }))).not.toEqual([]);
+    });
+
+    it("rejects form field names that are not safe identifiers", () => {
+      const field = { name: "First Name", label: "First name", type: "text" };
+      expect(issues(withTrigger({ type: "form", config: { fields: [field] } }))).not.toEqual([]);
+    });
+
+    it("rejects duplicate form field names", () => {
+      const field = { name: "email", label: "Email", type: "email" };
+      expect(issues(withTrigger({ type: "form", config: { fields: [field, field] } }))).toContain('duplicate form field "email"');
+    });
+
+    it("needs a cron expression for a schedule", () => {
+      expect(issues(withTrigger({ type: "schedule", config: {} }))).not.toEqual([]);
+      expect(issues(withTrigger({ type: "schedule", config: { cron: "0 9 * * 1" } }))).toEqual([]);
+    });
+
+    it("accepts a webhook with or without an HMAC secret name", () => {
+      expect(issues(withTrigger({ type: "webhook" }))).toEqual([]);
+      expect(issues(withTrigger({ type: "webhook", config: { hmacSecret: "stripe_signing" } }))).toEqual([]);
+    });
   });
 
   it("accepts a single step with no edges", () => {

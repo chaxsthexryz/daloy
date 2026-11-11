@@ -1,0 +1,141 @@
+import { createHmac, timingSafeEqual } from "node:crypto";
+import { createRun, publishedVersion, triggers, workflows, type Db } from "@daloy/db";
+import type { FormField } from "@daloy/engine";
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  Header,
+  Headers,
+  HttpCode,
+  Inject,
+  NotFoundException,
+  Param,
+  Post,
+  Req,
+  UnauthorizedException,
+  UseGuards,
+  type RawBodyRequest,
+} from "@nestjs/common";
+import { and, eq } from "drizzle-orm";
+import type { Request } from "express";
+import type { PgBoss } from "pg-boss";
+import * as z from "zod";
+import { BOSS, CONFIG, DB, enqueueRun, RateLimit, ZodPipe, type ApiConfig } from "./http";
+import { readSecret } from "./secrets";
+
+const HONEYPOT = "website";
+
+/** Public, unauthenticated routes that start runs. Each one is rate limited per IP. */
+@Controller("hooks")
+@UseGuards(RateLimit(60))
+export class HooksController {
+  constructor(
+    @Inject(DB) private readonly db: Db,
+    @Inject(BOSS) private readonly boss: PgBoss,
+    @Inject(CONFIG) private readonly config: ApiConfig,
+  ) {}
+
+  @Post(":path")
+  @HttpCode(202)
+  async receive(
+    @Param("path", new ZodPipe(z.string().regex(/^[A-Za-z0-9_-]{43}$/))) path: string,
+    @Req() req: RawBodyRequest<Request>,
+    @Headers("x-daloy-signature") signature: string | undefined,
+  ) {
+    const [row] = await this.db
+      .select({ trigger: triggers, userId: workflows.userId })
+      .from(triggers)
+      .innerJoin(workflows, eq(workflows.id, triggers.workflowId))
+      .where(eq(triggers.webhookPath, path));
+    const version = row && (await publishedVersion(this.db, row.trigger.workflowId));
+    if (!row || !version) throw new NotFoundException();
+
+    const secretName = (row.trigger.config as { hmacSecret?: string }).hmacSecret;
+    if (secretName) {
+      // Fails closed: a missing secret rejects every call instead of accepting unsigned ones.
+      const key = await readSecret(this.db, this.config.secretsKey, row.userId, secretName);
+      if (!key || !validSignature(req.rawBody ?? Buffer.alloc(0), signature, key)) throw new UnauthorizedException("bad signature");
+    }
+
+    const runId = await createRun(this.db, version.id, req.body ?? {});
+    await enqueueRun(this.boss, runId);
+    return { runId };
+  }
+}
+
+/** X-Daloy-Signature: sha256=<hex HMAC of the raw body>, compared in constant time. */
+export function validSignature(body: Buffer, header: string | undefined, key: string): boolean {
+  if (!header) return false;
+  const expected = Buffer.from(`sha256=${createHmac("sha256", key).update(body).digest("hex")}`);
+  const given = Buffer.from(header);
+  return given.length === expected.length && timingSafeEqual(given, expected);
+}
+
+@Controller("forms")
+export class FormsController {
+  constructor(
+    @Inject(DB) private readonly db: Db,
+    @Inject(BOSS) private readonly boss: PgBoss,
+  ) {}
+
+  @Get(":id")
+  @Header("Content-Type", "text/html; charset=utf-8")
+  async page(@Param("id", new ZodPipe(z.uuid())) id: string) {
+    const { fields } = await this.form(id);
+    return renderForm(fields);
+  }
+
+  @Post(":id")
+  @HttpCode(200)
+  @UseGuards(RateLimit(10))
+  @Header("Content-Type", "text/html; charset=utf-8")
+  async submit(@Param("id", new ZodPipe(z.uuid())) id: string, @Body() body: Record<string, unknown> | undefined) {
+    const { fields, versionId } = await this.form(id);
+    // Bots fill every field. Answer as if it worked so they learn nothing.
+    if (body?.[HONEYPOT]) return page("Thanks, we received your message.");
+    const parsed = fieldsSchema(fields).safeParse(body ?? {});
+    if (!parsed.success) throw new BadRequestException(parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`));
+    const runId = await createRun(this.db, versionId, parsed.data);
+    await enqueueRun(this.boss, runId);
+    return page("Thanks, we received your message.");
+  }
+
+  private async form(id: string) {
+    const [trigger] = await this.db.select().from(triggers).where(and(eq(triggers.id, id), eq(triggers.type, "form")));
+    const version = trigger && (await publishedVersion(this.db, trigger.workflowId));
+    if (!trigger || !version) throw new NotFoundException();
+    return { fields: (trigger.config as { fields: FormField[] }).fields, versionId: version.id };
+  }
+}
+
+/** Builds the zod schema for a submission. Unknown keys (the honeypot included) are dropped. */
+export function fieldsSchema(fields: FormField[]) {
+  const shape: Record<string, z.ZodType> = {};
+  for (const f of fields) {
+    const base = f.type === "email" ? z.email().max(254) : f.type === "number" ? z.coerce.number() : z.string().trim().min(1).max(f.type === "textarea" ? 5000 : 500);
+    // An empty input means "not given", so optional fields accept it and required ones reject it.
+    shape[f.name] = z.preprocess((v) => (v === "" ? undefined : v), f.required ? base : base.optional());
+  }
+  return z.object(shape);
+}
+
+const ENTITIES: Record<string, string> = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
+const escapeHtml = (s: string) => s.replace(/[&<>"']/g, (c) => ENTITIES[c]!);
+
+const page = (body: string) =>
+  `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Form</title></head><body><main>${body}</main></body></html>`;
+
+function renderForm(fields: FormField[]) {
+  const inputs = fields
+    .map((f) => {
+      const attrs = `id="${f.name}" name="${f.name}"${f.required ? " required" : ""}`;
+      const control = f.type === "textarea" ? `<textarea ${attrs} maxlength="5000"></textarea>` : `<input ${attrs} type="${f.type}">`;
+      return `<p><label for="${f.name}">${escapeHtml(f.label)}</label><br>${control}</p>`;
+    })
+    .join("");
+  // Hidden from people (off screen, skipped by tab and screen readers) but visible to bots that fill every input.
+  const honeypot = `<div aria-hidden="true" style="position:absolute;left:-9999px"><label for="${HONEYPOT}">Website</label><input id="${HONEYPOT}" name="${HONEYPOT}" tabindex="-1" autocomplete="off"></div>`;
+  return page(`<form method="post">${inputs}${honeypot}<button type="submit">Send</button></form>`);
+}

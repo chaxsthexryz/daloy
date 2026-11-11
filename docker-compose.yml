@@ -25,7 +25,8 @@ services:
   worker:
     build:
       context: .
-      dockerfile: apps/worker/Dockerfile
+      args:
+        APP: worker
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER:-daloy}:${POSTGRES_PASSWORD:-daloy}@postgres:5432/${POSTGRES_DB:-daloy}
     depends_on:
@@ -33,6 +34,20 @@ services:
         condition: service_healthy
     # Longer than the worker's 30 second graceful shutdown.
     stop_grace_period: 40s
+
+  api:
+    build:
+      context: .
+      args:
+        APP: api
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-daloy}:${POSTGRES_PASSWORD:-daloy}@postgres:5432/${POSTGRES_DB:-daloy}
+      SECRETS_KEY: ${SECRETS_KEY:?set SECRETS_KEY in .env (openssl rand -base64 32)}
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
 
 volumes:
   pgdata:

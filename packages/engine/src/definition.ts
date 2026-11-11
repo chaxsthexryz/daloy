@@ -27,14 +27,41 @@ export const BRANCHES: Partial<Record<Step["type"], readonly string[]>> = {
 
 const edgeSchema = z.object({ from: stepId, to: stepId, on: z.string().max(32).optional() });
 
+// Field names become keys of the trigger payload ({{trigger.<name>}}), so they use the same charset as step ids.
+export const formFieldSchema = z.object({
+  name: stepId,
+  label: z.string().min(1).max(200),
+  type: z.enum(["text", "email", "textarea", "number"]),
+  required: z.boolean().default(false),
+});
+export type FormField = z.infer<typeof formFieldSchema>;
+
+const triggerSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("manual"), config: z.object({}).default({}) }),
+  // hmacSecret names a stored secret; the API checks X-Daloy-Signature against it.
+  z.object({ type: z.literal("webhook"), config: z.object({ hmacSecret: z.string().max(100).optional() }).default({}) }),
+  // pg-boss validates the expression fully when the schedule is saved.
+  z.object({ type: z.literal("schedule"), config: z.object({ cron: z.string().regex(/^\S+( \S+){4,5}$/, "cron needs 5 or 6 fields") }) }),
+  z.object({ type: z.literal("form"), config: z.object({ fields: z.array(formFieldSchema).min(1).max(30) }) }),
+]);
+export type Trigger = z.infer<typeof triggerSchema>;
+
 export const definitionSchema = z
   .object({
-    trigger: z.object({ type: z.enum(["webhook", "schedule", "form", "manual"]), config }),
+    trigger: triggerSchema,
     steps: z.array(stepSchema).min(1).max(100),
     edges: z.array(edgeSchema).max(200).default([]),
   })
   .superRefine((def, ctx) => {
     const fail = (message: string) => ctx.addIssue({ code: "custom", message });
+
+    if (def.trigger.type === "form") {
+      const names = new Set<string>();
+      for (const f of def.trigger.config.fields) {
+        if (names.has(f.name)) fail(`duplicate form field "${f.name}"`);
+        names.add(f.name);
+      }
+    }
 
     const byId = new Map<string, Step>();
     for (const s of def.steps) {

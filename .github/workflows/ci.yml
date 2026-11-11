@@ -57,4 +57,4 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: docker compose build worker
+      - run: SECRETS_KEY=ci-placeholder docker compose build worker api

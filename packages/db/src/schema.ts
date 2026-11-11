@@ -61,7 +61,7 @@ export const triggers = pgTable("triggers", {
 
 export const runs = pgTable("runs", {
   id: id(),
-  workflowVersionId: uuid("workflow_version_id").notNull().references(() => workflowVersions.id),
+  workflowVersionId: uuid("workflow_version_id").notNull().references(() => workflowVersions.id, { onDelete: "cascade" }),
   state: runState("state").notNull().default("pending"),
   triggerPayload: jsonb("trigger_payload").notNull().default({}),
   error: text("error"),

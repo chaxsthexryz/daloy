@@ -33,7 +33,7 @@ flowchart LR
 Needs Node 24, pnpm 10 and Docker.
 
 ```bash
-cp .env.example .env
+cp .env.example .env   # then set SECRETS_KEY: openssl rand -base64 32
 docker compose up -d
 pnpm install
 pnpm test
@@ -59,7 +59,8 @@ CI also runs Semgrep, gitleaks and `pnpm audit` on every push.
 
 - Version 1 supports linear flows with branches only: no loops, no parallel branches, no sub-workflows.
 - One workspace per user.
-- The API and web console do not exist yet. The worker runs, but real step types arrive in phase 4.
+- The web console does not exist yet (phase 5). The API and worker run, but real step types arrive in phase 4.
+- Rate limits are counted per API process.
 
 ## Dependencies
 
@@ -76,6 +77,12 @@ CI also runs Semgrep, gitleaks and `pnpm audit` on every push.
 | pg-boss | Job queue on Postgres | MIT |
 | tsx | Runs the TypeScript worker without a build step | MIT |
 | embedded-postgres | Real Postgres for local tests without Docker | MIT |
+| @nestjs/core, @nestjs/common, @nestjs/platform-express | API framework | MIT |
+| reflect-metadata, rxjs | Required by NestJS | Apache-2.0, Apache-2.0 |
+| @node-rs/argon2 | Password hashing (argon2id) | MIT |
+| helmet | Security headers | MIT |
+| cookie-parser | Reads the session cookie | MIT |
+| supertest | API route tests | MIT |
 
 TypeScript is pinned to 6.0.x because typescript-eslint 8 does not support TypeScript 7 yet.
 

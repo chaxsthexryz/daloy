@@ -8,7 +8,8 @@ This file explains each core module in plain language: what it does, why it is b
 - `packages/llm-ts`: a small client for language models.
 - `packages/db`: Drizzle schema and SQL migrations, shared by the worker and the API.
 - `apps/worker`: takes run jobs from pg-boss and executes steps.
-- `apps/api`, `apps/web`: built in later phases.
+- `apps/api`: NestJS API for the console, plus the public webhook and form routes.
+- `apps/web`: built in phase 5.
 - Postgres stores application data and the job queues (pg-boss). See [decision 0001](decisions/0001-no-redis.md).
 
 ## LLM client (packages/llm-ts)
@@ -94,3 +95,32 @@ Shutdown: on SIGTERM the worker stops taking jobs, waits up to 30 seconds for jo
 Tests: `apps/worker/src/worker.test.ts` runs the real worker against Postgres. It covers a run that succeeds and passes outputs along, a condition branch, a retry that then succeeds, a step that runs out of attempts (dead letter), an error that is not retryable, a run left behind by a crashed worker (resumed with the same idempotency key, no duplicate row), and a run held by another worker's live lease (left alone).
 
 Limits: step types arrive in phase 4. Until then the worker started by `main.ts` fails every step. The `waiting` state is unused until the delay and approval steps exist.
+
+## API (apps/api)
+
+What it does: the console API covers sign up, login, workflows and their versions, secrets, API tokens and run history. `app.ts` builds the Nest app and `main.ts` starts it. Each file in `src` holds one area: `auth.ts`, `workflows.ts`, `secrets.ts`, `tokens.ts`, `runs.ts`, and `public.ts` for the unauthenticated trigger routes.
+
+Validation: every body, path parameter and query value goes through `ZodPipe` with a zod schema before a handler sees it. Workflow definitions are checked with the engine's `definitionSchema`, so the API and the worker apply the same rules.
+
+Sessions: logging in creates 32 random bytes, sent as an httpOnly, SameSite=Lax cookie (Secure in production). Only the SHA-256 of the cookie is stored, so a database leak does not hand out live sessions. Passwords are hashed with argon2id. A login with an unknown email still runs a hash check, so response time does not reveal which emails exist.
+
+Ownership: every console query filters on the signed-in user, and another user's workflow returns 404, the same as one that does not exist.
+
+Versions: saving a definition adds the next immutable version. Publishing also makes it live (the newest published version is the live one) and syncs the workflow's single trigger row and pg-boss schedule.
+
+Secrets: values are encrypted with AES-256-GCM using `SECRETS_KEY`, with a fresh IV per write. The owner id and secret name are bound in as associated data, so a ciphertext copied to another row will not decrypt. The API never returns a value, only names.
+
+API tokens: shown once at creation, stored as SHA-256, and revocable. MCP clients use them in phase 8.
+
+Rate limits: every route allows 120 requests per minute per IP, login and form submissions 10, webhooks 60. Request bodies are capped at 256 kb for JSON and 64 kb for forms.
+
+Tests: `api.test.ts` drives the real app with supertest against Postgres. `secrets.test.ts` covers encryption and signature checks. `e2e.test.ts` runs the API and the worker together, from a webhook call to a finished run.
+
+Limits: rate limit counters live in process memory, so each API instance counts on its own. Approval routes arrive in phase 7, and the full run history view in phase 6.
+
+## Triggers
+
+- Manual: `POST /workflows/:id/runs` from the console runs the live version with a JSON payload, whatever its trigger type.
+- Webhook: `POST /hooks/:path`, where the path is 32 random bytes made at the first publish and kept across later publishes. If the trigger names a secret (`hmacSecret`), the request must carry `X-Daloy-Signature: sha256=<hex HMAC of the raw body>`, compared in constant time. A named secret that no longer exists rejects every call.
+- Form: `GET /forms/:triggerId` renders an HTML form from the field list in the definition, with labels escaped. `POST` validates the fields and starts a run. A hidden honeypot field catches bots: if it is filled, the API answers as if it worked and starts nothing.
+- Schedule: publishing registers a pg-boss cron schedule keyed by workflow id. pg-boss sends a job to `schedule-trigger` at each tick, and the worker starts a run of the live version. Publishing a version with another trigger type removes the schedule.

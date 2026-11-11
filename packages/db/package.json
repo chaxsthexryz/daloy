@@ -12,10 +12,11 @@
   },
   "devDependencies": {
     "@types/pg": "^8.23.1",
-    "drizzle-kit": "^0.31.11"
+    "drizzle-kit": "^0.31.11",
+    "tsx": "^4.23.15"
   },
   "scripts": {
     "generate": "drizzle-kit generate",
-    "migrate": "tsx -e \"import('./src/index.ts').then(async m=>{const {db,pool}=m.createDb(process.env.DATABASE_URL);await m.migrate(db);await pool.end()})\""
+    "migrate": "tsx -e \"import('./src/index.ts').then(async m=>{const {pool}=m.createDb(process.env.DATABASE_URL);await m.migrate(pool);await pool.end()})\""
   }
 }

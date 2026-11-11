@@ -6,8 +6,7 @@ const url = process.env.DATABASE_URL;
 if (!url) throw new Error("DATABASE_URL is not set");
 
 const { db, pool } = createDb(url);
-// shortcut: the worker applies migrations on boot; move this to a one-off job once the API also starts against the same database.
-await migrate(db);
+await migrate(pool);
 
 const worker = await startWorker({
   connectionString: url,

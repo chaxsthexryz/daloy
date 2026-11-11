@@ -1,17 +1,13 @@
-import { mkdtempSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { createDb, migrate, runs, stepRuns, users, workflows, workflowVersions, type Db } from "@daloy/db";
+import { runs, stepRuns, users, workflows, workflowVersions, type Db } from "@daloy/db";
 import { evaluateCondition, StepError } from "@daloy/engine";
 import { asc, eq } from "drizzle-orm";
-import EmbeddedPostgres from "embedded-postgres";
 import type { Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { freshDatabase } from "../../../test/db";
 import type { StepExecutor } from "./advance";
 import { startWorker, type Worker } from "./worker";
 
-// Integration tests against a real Postgres: DATABASE_URL in CI, an embedded one locally.
-let pg: EmbeddedPostgres | undefined;
+// Integration tests against a real Postgres (see test/global-setup.ts).
 let db: Db;
 let pool: Pool;
 let worker: Worker;
@@ -31,15 +27,8 @@ const executor: StepExecutor = {
 };
 
 beforeAll(async () => {
-  let url = process.env.DATABASE_URL;
-  if (!url) {
-    pg = new EmbeddedPostgres({ databaseDir: mkdtempSync(join(tmpdir(), "daloy-pg-")), port: 54329, user: "daloy", password: "daloy", persistent: false, onLog: () => {} });
-    await pg.initialise();
-    await pg.start();
-    url = "postgres://daloy:daloy@localhost:54329/postgres";
-  }
-  ({ db, pool } = createDb(url));
-  await migrate(db);
+  let url: string;
+  ({ url, db, pool } = await freshDatabase());
   worker = await startWorker({
     connectionString: url,
     db,
@@ -54,7 +43,6 @@ beforeAll(async () => {
 afterAll(async () => {
   await worker?.stop();
   await pool?.end();
-  await pg?.stop();
 });
 
 let seq = 0;

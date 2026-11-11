@@ -1,12 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { hostname } from "node:os";
-import { runs, type Db } from "@daloy/db";
+import { createRun, publishedVersion, RUN_QUEUE, RUN_QUEUE_OPTIONS, runs, SCHEDULE_QUEUE, type Db } from "@daloy/db";
 import type { RetryPolicy } from "@daloy/engine";
 import { and, inArray, isNull, lt, lte, or, sql } from "drizzle-orm";
 import { PgBoss } from "pg-boss";
 import { advance, type AdvanceDeps, type StepExecutor } from "./advance";
-
-export const RUN_QUEUE = "advance-run";
 
 export type WorkerOptions = {
   connectionString: string;
@@ -24,9 +22,8 @@ export async function startWorker(opts: WorkerOptions) {
   const boss = new PgBoss(opts.connectionString);
   boss.on("error", (err) => console.error("pg-boss", err));
   await boss.start();
-  // "short" keeps at most one queued job per run (singletonKey), so the sweep can re-send without piling up duplicates.
-  // No pg-boss retries: a failed job leaves the run with no lease, and the sweep picks it up again.
-  await boss.createQueue(RUN_QUEUE, { policy: "short", retryLimit: 0 });
+  await boss.createQueue(RUN_QUEUE, RUN_QUEUE_OPTIONS);
+  await boss.createQueue(SCHEDULE_QUEUE);
 
   const deps: AdvanceDeps = {
     db,
@@ -41,6 +38,14 @@ export async function startWorker(opts: WorkerOptions) {
 
   await boss.work<{ runId: string }>(RUN_QUEUE, { pollingIntervalSeconds: opts.pollingIntervalSeconds ?? 2 }, async (jobs) => {
     for (const job of jobs) await advance(deps, job.data.runId);
+  });
+
+  // A schedule trigger fired: start a run of the workflow's live version, with the fire time as the payload.
+  await boss.work<{ workflowId: string }>(SCHEDULE_QUEUE, { pollingIntervalSeconds: opts.pollingIntervalSeconds ?? 2 }, async (jobs) => {
+    for (const job of jobs) {
+      const version = await publishedVersion(db, job.data.workflowId);
+      if (version) await deps.enqueue(await createRun(db, version.id, { firedAt: new Date().toISOString() }));
+    }
   });
 
   // Resumes runs nobody is working on: lost jobs, crashed workers (expired lease), retries whose delay is over.
