@@ -7,6 +7,7 @@ import {
   entryStep,
   idempotencyKey,
   nextStep,
+  StepError,
   type ExpressionContext,
   type RetryPolicy,
   type RunState,
@@ -16,7 +17,8 @@ import {
 import { and, asc, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
 
 /** waitUntil parks the step and the run in "waiting" until that time (delay now, approval in phase 7). */
-export type StepResult = { output?: unknown; branch?: string; inputTokens?: number; outputTokens?: number; waitUntil?: Date };
+/** input is the resolved config the attempt ran with, already redacted. On failure it travels on StepError.input. */
+export type StepResult = { input?: unknown; output?: unknown; branch?: string; inputTokens?: number; outputTokens?: number; waitUntil?: Date };
 
 /** Runs one step attempt. userId is the workflow owner, whose secrets the step may use. mock is set for builder test runs without live calls. */
 export interface StepExecutor {
@@ -140,7 +142,8 @@ async function runNext(deps: AdvanceDeps, run: Run): Promise<void> {
     const message = err instanceof Error ? err.message : String(err);
     const retryAt = decision.kind === "retry" ? new Date(Date.now() + decision.delayMs) : undefined;
     await db.transaction(async (tx) => {
-      await moveStep(tx, stepRunId, "running", "failed", { error: message, deadLetter: decision.kind === "dead_letter", finishedAt: new Date() });
+      const input = err instanceof StepError ? err.input : null;
+      await moveStep(tx, stepRunId, "running", "failed", { input, error: message, deadLetter: decision.kind === "dead_letter", finishedAt: new Date() });
       if (retryAt) await tx.update(runs).set({ nextAttemptAt: retryAt }).where(eq(runs.id, run.id));
       else await moveRun(tx, run.id, "running", "failed", { error: `step ${step.id}: ${message}`, finishedAt: new Date() });
     });
@@ -151,7 +154,7 @@ async function runNext(deps: AdvanceDeps, run: Run): Promise<void> {
   if (result.waitUntil) {
     const wakeAt = result.waitUntil;
     await db.transaction(async (tx) => {
-      await moveStep(tx, stepRunId, "running", "waiting", { output: result.output ?? null });
+      await moveStep(tx, stepRunId, "running", "waiting", { input: result.input ?? null, output: result.output ?? null });
       await moveRun(tx, run.id, "running", "waiting", { nextAttemptAt: wakeAt });
     });
     // A scheduled job, so nothing sleeps in the worker. The sweep picks the run up too if this job is lost.
@@ -159,6 +162,7 @@ async function runNext(deps: AdvanceDeps, run: Run): Promise<void> {
   }
 
   await moveStep(db, stepRunId, "running", "succeeded", {
+    input: result.input ?? null,
     output: result.output ?? null,
     branch: result.branch ?? null,
     inputTokens: result.inputTokens ?? null,

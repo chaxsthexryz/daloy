@@ -66,6 +66,7 @@ describe("step executor", () => {
     const stored = JSON.stringify(out.output);
     expect(stored).not.toContain(SECRET);
     expect(stored).toContain("Bearer [secret]");
+    expect(out.input).toEqual({ method: "GET", url: `http://api.test:${port}/x?q=hi`, headers: { Authorization: "Bearer [secret]" } });
   });
 
   it("redacts secrets from error messages", async () => {
@@ -74,6 +75,7 @@ describe("step executor", () => {
     expect(err.message).not.toContain(SECRET);
     expect(err.message).toContain("[secret]");
     expect(err.retryable).toBe(false);
+    expect((err as unknown as { input: unknown }).input).toEqual({ to: "[secret]", subject: "s", text: "t" });
   });
 
   it("does not resolve a secret reference that arrives in trigger data", async () => {
@@ -89,6 +91,7 @@ describe("step executor", () => {
   it("takes a condition branch and schedules a delay", async () => {
     const cond = await run({ id: "c", type: "condition", config: { condition: { left: "{{trigger.n}}", op: "gt", right: 3 } } }, { n: "5" });
     expect(cond.branch).toBe("true");
+    expect(cond.input).toEqual({ left: "5", op: "gt", right: 3 });
     const before = Date.now();
     const delay = await run({ id: "d", type: "delay", config: { seconds: 60 } });
     expect(delay.waitUntil!.getTime() - before).toBeGreaterThanOrEqual(60_000);

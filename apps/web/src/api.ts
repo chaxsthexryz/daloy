@@ -24,8 +24,32 @@ export async function api<T>(method: "GET" | "POST" | "PATCH" | "DELETE", path: 
 }
 
 export type Workflow = { id: string; name: string; slug: string; createdAt: string };
-export type Version = { id: string; version: number; published: boolean; definition: unknown };
-export type StepRun = { id: string; stepId: string; attempt: number; state: string; output: unknown; error: string | null; branch: string | null };
-export type Run = { id: string; state: string; test: boolean; live: boolean; error: string | null; steps: StepRun[] };
+export type VersionSummary = { id: string; version: number; published: boolean; createdAt: string };
+export type Version = VersionSummary & { definition: unknown };
+export type StepRun = {
+  id: string;
+  stepId: string;
+  attempt: number;
+  state: string;
+  input: unknown;
+  output: unknown;
+  error: string | null;
+  branch: string | null;
+  createdAt: string;
+  finishedAt: string | null;
+};
+export type RunSummary = {
+  id: string;
+  workflowId: string;
+  version: number;
+  state: string;
+  test: boolean;
+  live: boolean;
+  error: string | null;
+  triggerPayload: unknown;
+  createdAt: string;
+  finishedAt: string | null;
+};
+export type Run = RunSummary & { steps: StepRun[] };
 
 export const FINISHED = new Set(["succeeded", "failed", "cancelled"]);

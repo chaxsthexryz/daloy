@@ -23,7 +23,37 @@ function redact(value: unknown, values: string[]): unknown {
   return value;
 }
 
-async function runStep(deps: ExecutorDeps & { guard: SsrfGuard }, step: Step, ctx: ExpressionContext, idempotencyKey: string, mock: boolean): Promise<StepResult> {
+type HttpInput = { method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE"; url: string; headers: Record<string, string>; body?: string };
+type EmailInput = { to: string; subject: string; text: string };
+
+/**
+ * The config a step runs with, its templates resolved. The executor stores it (redacted) on the step run,
+ * so run history shows what was actually sent and not the template.
+ */
+function resolveInput(step: Step, ctx: ExpressionContext): Record<string, unknown> | null {
+  switch (step.type) {
+    case "condition": {
+      const { left, op, right } = step.config.condition;
+      return { left: resolveTemplate(left, ctx), op, right: typeof right === "string" ? resolveTemplate(right, ctx) : right };
+    }
+    case "delay":
+      return { seconds: step.config.seconds };
+    case "http": {
+      const { method, url, headers, body } = step.config;
+      const input: HttpInput = { method, url: text(url, ctx), headers: Object.fromEntries(Object.entries(headers).map(([k, v]) => [k, text(v, ctx)])) };
+      if (body !== undefined) input.body = text(body, ctx);
+      return input;
+    }
+    case "email": {
+      const { to, subject, text: body } = step.config;
+      return { to: text(to, ctx), subject: text(subject, ctx), text: text(body, ctx) } satisfies EmailInput;
+    }
+    default:
+      return null;
+  }
+}
+
+async function runStep(deps: ExecutorDeps & { guard: SsrfGuard }, step: Step, input: unknown, ctx: ExpressionContext, idempotencyKey: string, mock: boolean): Promise<StepResult> {
   switch (step.type) {
     case "condition":
       return { branch: String(evaluateCondition(step.config.condition, ctx)) };
@@ -34,21 +64,15 @@ async function runStep(deps: ExecutorDeps & { guard: SsrfGuard }, step: Step, ct
       return { output: { resumeAt: waitUntil.toISOString() }, waitUntil };
     }
     case "http": {
-      const { method, url, headers, body } = step.config;
-      const cfg = {
-        method,
-        url: text(url, ctx),
-        headers: Object.fromEntries(Object.entries(headers).map(([k, v]) => [k, text(v, ctx)])),
-        body: body === undefined ? undefined : text(body, ctx),
-      };
+      const cfg = input as HttpInput;
       // Same shape as a real response, so later steps that read {{steps.x.output.body}} still resolve.
       if (mock) return { output: { mocked: true, status: 200, headers: {}, body: null, request: { method: cfg.method, url: cfg.url } } };
       return { output: await httpRequest(cfg, idempotencyKey, { guard: deps.guard }) };
     }
     case "email": {
-      const { to, subject, text: body } = step.config;
-      if (mock) return { output: { mocked: true, to: text(to, ctx), subject: text(subject, ctx) } };
-      const sent = await sendEmail(deps.mailer, { to: text(to, ctx), subject: text(subject, ctx), text: text(body, ctx) }, idempotencyKey);
+      const mail = input as EmailInput;
+      if (mock) return { output: { mocked: true, to: mail.to, subject: mail.subject } };
+      const sent = await sendEmail(deps.mailer, mail, idempotencyKey);
       return { output: { messageId: sent.messageId, to: sent.to } };
     }
     default:
@@ -68,12 +92,15 @@ export function createExecutor(deps: ExecutorDeps): StepExecutor {
       const values = Object.values(secrets)
         .filter((v) => v.length > 0)
         .sort((a, b) => b.length - a.length);
+      const withSecrets = { ...ctx, secrets };
+      let input: unknown = null;
       try {
-        const result = await runStep(full, step, { ...ctx, secrets }, idempotencyKey, mock);
-        return { ...result, output: redact(result.output, values) };
+        input = resolveInput(step, withSecrets);
+        const result = await runStep(full, step, input, withSecrets, idempotencyKey, mock);
+        return { ...result, input: redact(input, values), output: redact(result.output, values) };
       } catch (err) {
         const message = redact(err instanceof Error ? err.message : String(err), values) as string;
-        throw new StepError(message, isRetryable(err));
+        throw new StepError(message, isRetryable(err), { input: redact(input, values) });
       }
     },
   };

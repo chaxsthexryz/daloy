@@ -1,5 +1,5 @@
 import { createHmac, randomBytes } from "node:crypto";
-import { apiTokens, runs, secrets, SCHEDULE_QUEUE, users, type Db } from "@daloy/db";
+import { apiTokens, runs, secrets, SCHEDULE_QUEUE, stepRuns, users, type Db } from "@daloy/db";
 import type { INestApplication } from "@nestjs/common";
 import { eq } from "drizzle-orm";
 import type { Pool } from "pg";
@@ -127,6 +127,49 @@ describe("workflows", () => {
     const list = (await agent.get("/runs").expect(200)).body;
     expect(list.map((r: { id: string }) => r.id)).toContain(run.body.id);
     expect((await agent.get(`/runs/${run.body.id}`).expect(200)).body.steps).toEqual([]);
+  });
+
+  it("returns one version with its definition, and rolls back by publishing it again", async () => {
+    const { agent } = await signedIn();
+    const wf = await publishedWorkflow(agent, { type: "manual" });
+    const v2def = { ...twoSteps({ type: "manual" }), steps: [twoSteps({}).steps[0], { id: "b", type: "delay", config: { seconds: 9 } }] };
+    await agent.post(`/workflows/${wf.id}/versions`).send({ definition: v2def, publish: true }).expect(201);
+
+    const v1 = (await agent.get(`/workflows/${wf.id}/versions/1`).expect(200)).body;
+    expect(v1).toMatchObject({ version: 1, published: true });
+    expect(v1.definition.steps[1].config.seconds).toBe(1);
+    await agent.get(`/workflows/${wf.id}/versions/99`).expect(404);
+    await agent.get(`/workflows/${wf.id}/versions/zero`).expect(400);
+    await (await signedIn()).agent.get(`/workflows/${wf.id}/versions/1`).expect(404);
+
+    // A rollback is a new published version with the old definition. History is never rewritten.
+    const v3 = await agent.post(`/workflows/${wf.id}/versions`).send({ definition: v1.definition, publish: true }).expect(201);
+    expect(v3.body).toMatchObject({ version: 3, published: true });
+    const opened = (await agent.get(`/workflows/${wf.id}`).expect(200)).body;
+    expect(opened.live).toMatchObject({ version: 3 });
+    expect(opened.live.definition.steps[1].config.seconds).toBe(1);
+  });
+
+  it("filters runs by the test flag and masks secret-looking fields", async () => {
+    const { agent } = await signedIn();
+    const wf = await publishedWorkflow(agent, { type: "manual" });
+    const live = await agent.post(`/workflows/${wf.id}/runs`).send({ payload: { customer: "Ana", password: "pw" } }).expect(202);
+    const test = await agent.post(`/workflows/${wf.id}/test-runs`).send({ definition: twoSteps({ type: "manual" }) }).expect(202);
+    const ids = async (q: string) => (await agent.get(`/runs?workflowId=${wf.id}${q}`).expect(200)).body.map((r: { id: string }) => r.id);
+    expect(await ids("&test=true")).toEqual([test.body.id]);
+    expect(await ids("&test=false")).toEqual([live.body.id]);
+    expect((await ids("")).sort()).toEqual([live.body.id, test.body.id].sort());
+    await agent.get("/runs?test=maybe").expect(400);
+
+    await db.insert(stepRuns).values({ runId: live.body.id, stepId: "zz", attempt: 1, state: "succeeded", input: { url: "https://x.test", headers: { Authorization: "Bearer raw" } }, output: { ok: 1, token: "t" } });
+    const run = (await agent.get(`/runs/${live.body.id}`).expect(200)).body;
+    expect(run.triggerPayload).toEqual({ customer: "Ana", password: "[secret]" });
+    expect(run.steps.find((s: { stepId: string }) => s.stepId === "zz")).toMatchObject({
+      input: { url: "https://x.test", headers: { Authorization: "[secret]" } },
+      output: { ok: 1, token: "[secret]" },
+    });
+    const listed = (await agent.get(`/runs?workflowId=${wf.id}&test=false`).expect(200)).body;
+    expect(listed[0].triggerPayload.password).toBe("[secret]");
   });
 
   it("refuses a manual run before anything is published", async () => {

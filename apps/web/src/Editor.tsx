@@ -1,7 +1,8 @@
 import type { FormField, Step, Trigger } from "@daloy/engine";
 import { Background, Controls, Handle, Position, ReactFlow, type Node, type NodeChange, type NodeProps } from "@xyflow/react";
 import { useEffect, useId, useMemo, useState } from "react";
-import { api, FINISHED, type Run, type Version, type Workflow } from "./api";
+import { api, type Version, type Workflow } from "./api";
+import { RunResult, useRun } from "./Runs";
 import { ADDABLE, addStep, blankDraft, removeStep, toFlow, type AddableType, type Draft, type StepNodeData } from "./lib/graph";
 import { SchemaForm, type JsonSchema } from "./SchemaForm";
 
@@ -55,29 +56,6 @@ function StepNode({ data }: NodeProps<Node<StepNodeData, "step">>) {
 }
 
 const nodeTypes = { trigger: TriggerNode, step: StepNode };
-
-/** Polls a run until it finishes, so the panel shows each step as the worker records it. */
-function useRun(runId: string | null) {
-  const [run, setRun] = useState<Run | null>(null);
-  useEffect(() => {
-    setRun(null);
-    if (!runId) return;
-    let timer: ReturnType<typeof setTimeout>;
-    let stopped = false;
-    const tick = async () => {
-      const r = await api<Run>("GET", `/runs/${runId}`).catch(() => null);
-      if (stopped) return;
-      if (r) setRun(r);
-      if (!r || !FINISHED.has(r.state)) timer = setTimeout(tick, 1000);
-    };
-    void tick();
-    return () => {
-      stopped = true;
-      clearTimeout(timer);
-    };
-  }, [runId]);
-  return run;
-}
 
 function samplePayload(trigger: Trigger): string {
   if (trigger.type !== "form") return "{}";
@@ -182,6 +160,8 @@ export function Editor({ id }: { id: string }) {
       <header className="toolbar">
         <a href="#/">Workflows</a>
         <h1>{wf.name}</h1>
+        <a href={`#/w/${id}/runs`}>Runs</a>
+        <a href={`#/w/${id}/versions`}>Versions</a>
         <span className="muted status" aria-live="polite">
           {status}
           {wf.live && !wf.latest?.published && ` · version ${wf.live.version} is live`}
@@ -291,7 +271,14 @@ export function Editor({ id }: { id: string }) {
                 Run live version
               </button>
             </div>
-            {run && <RunResult run={run} />}
+            {run && (
+              <>
+                <RunResult run={run} />
+                <p>
+                  <a href={`#/runs/${run.id}`}>Open this run in the run history</a>
+                </p>
+              </>
+            )}
           </section>
         </aside>
       </main>
@@ -412,27 +399,5 @@ function TriggerPanel({ trigger, wf, onChange }: { trigger: Trigger; wf: Loaded;
         </p>
       )}
     </section>
-  );
-}
-
-function RunResult({ run }: { run: Run }) {
-  return (
-    <div className="run" aria-live="polite">
-      <p>
-        <span className={`badge ${run.state}`}>{run.state}</span> {run.test ? (run.live ? "test run, live calls" : "test run, mocked calls") : "live run"}
-      </p>
-      {run.error && <p className="message error">{run.error}</p>}
-      <ol className="steps">
-        {run.steps.map((s) => (
-          <li key={s.id}>
-            <span className={`badge ${s.state}`}>{s.state}</span> {s.stepId}
-            {s.attempt > 1 && <span className="muted"> attempt {s.attempt}</span>}
-            {s.branch && <span className="muted"> → {s.branch}</span>}
-            {s.error && <p className="message error">{s.error}</p>}
-            {s.output !== null && <pre>{JSON.stringify(s.output, null, 2)}</pre>}
-          </li>
-        ))}
-      </ol>
-    </div>
   );
 }

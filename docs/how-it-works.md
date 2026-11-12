@@ -139,7 +139,7 @@ Rate limits: every route allows 120 requests per minute per IP, login and form s
 
 Tests: `api.test.ts` drives the real app with supertest against Postgres. `secrets.test.ts` covers encryption and signature checks. `e2e.test.ts` runs the API and the worker together, from a webhook call to a finished run.
 
-Limits: rate limit counters live in process memory, so each API instance counts on its own. Approval routes arrive in phase 7, and the full run history view in phase 6.
+Limits: rate limit counters live in process memory, so each API instance counts on its own. Approval routes arrive in phase 7.
 
 ## Triggers
 
@@ -166,4 +166,20 @@ Accessibility: every action has a button, and the side panel lists the trigger a
 
 Tests: `src/lib/graph.test.ts` covers adding, inserting, branching, deleting and the layout. `packages/engine/src/step-schemas.test.ts` checks the JSON Schema shapes the form relies on, and `templates.test.ts` checks that the three starter templates are valid. `api.test.ts` ("builder") covers the schema and template routes, test runs, version reuse and ownership. `apps/worker/src/steps/index.test.ts` ("mock mode") proves mocked steps make no request. `e2e/main-flow.spec.ts` (Playwright) signs up, builds a condition and an HTTP step, test-runs, publishes and runs a live version, and checks the step outline from the keyboard.
 
-Limits: the console shows only the latest run (run history is phase 6). Starter templates are offered when creating a workflow; phase 9 seeds them for the demo user.
+Limits: starter templates are offered when creating a workflow; phase 9 seeds them for the demo user.
+
+## Run history and versions
+
+What it does: `#/w/<id>/runs` lists a workflow's latest 50 runs with their state, kind (live run or test run), version and duration, filtered to all, live or test runs. `#/runs/<id>` shows one run: its trigger data, and for every step attempt its state, branch, attempt number, duration, input and output. `#/w/<id>/versions` lists the versions, shows what each one changed against the version before it, and rolls back.
+
+Step input: the worker resolves a step's templates once, runs the step with the result, and stores that result as `step_runs.input` after replacing secret values with `[secret]`. The page shows the address an email went to, not `{{trigger.email}}`. A failed attempt keeps its input too. See [decision 0008](decisions/0008-step-input.md).
+
+Masking: secrets are hidden twice. The worker replaces every value of the owner's secrets before it writes input, output or error text. The API then runs `maskSecrets()` (`apps/api/src/mask.ts`) over trigger data, input and output in `GET /runs` and `GET /runs/:id`: the value under any key that looks like a secret (`password`, `token`, `authorization`, `api_key`, `cookie` and similar) becomes `[secret]`. The second pass covers trigger data, which comes from outside and is never redacted by value.
+
+Versions: every save or test run adds an immutable version, and publishing marks it published. The newest published version is the live one. The versions page hides draft-only versions until "Show drafts" is ticked. The diff (`jsonDiff()` in `apps/web/src/lib/diff.ts`) lists changed paths such as `steps[send].config.to`. It matches steps by id, so adding a step in the middle shows one added step and not a change to every step after it. Other arrays, such as edges, are compared by position. `GET /workflows/:id/versions/:version` returns one version's definition.
+
+Rollback: "Roll back to v1" posts v1's definition to `POST /workflows/:id/versions` with `publish: true`. The result is a new published version, such as v3, so history is never rewritten and the run history still points at the versions that actually ran.
+
+Edge cases: `test` accepts only `true` or `false`. A version number that is not a positive integer gets 400, and another user's workflow gets 404. A null value under a secret key stays null, so an empty field still reads as empty.
+
+Tests: `apps/api/src/mask.test.ts` and `apps/web/src/lib/diff.test.ts` (unit). `apps/worker/src/steps/index.test.ts` checks that the stored input is resolved and redacted, on success and on failure, and `worker.test.ts` checks that the worker saves it. `api.test.ts` covers the `test` filter, masked fields, the version route with its 400 and 404 cases, and a rollback that creates a published v3. `e2e/history.spec.ts` (Playwright) runs a workflow, opens the run with a masked trigger field and its step input, changes the flow, reads the diff and rolls back.

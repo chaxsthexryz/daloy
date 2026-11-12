@@ -86,6 +86,8 @@ export const stepRuns = pgTable(
     stepId: text("step_id").notNull(),
     attempt: integer("attempt").notNull(),
     state: stepState("state").notNull().default("pending"),
+    // The resolved config the attempt ran with, secrets redacted by the worker. Run history shows it.
+    input: jsonb("input"),
     output: jsonb("output"),
     branch: text("branch"),
     error: text("error"),

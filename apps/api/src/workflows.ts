@@ -31,6 +31,7 @@ const versionInput = z.object({ definition: z.unknown(), publish: z.boolean().de
 const runInput = z.object({ payload: z.record(z.string(), z.unknown()).default({}) });
 const testRunInput = runInput.extend({ definition: z.unknown(), live: z.boolean().default(false) });
 const workflowId = new ZodPipe(z.uuid());
+const versionNumber = new ZodPipe(z.coerce.number().int().min(1).max(1_000_000));
 
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
@@ -90,7 +91,22 @@ export class WorkflowsController {
     return this.db.select({ id: workflowVersions.id, version, published, createdAt }).from(workflowVersions).where(eq(workflowVersions.workflowId, id)).orderBy(desc(version));
   }
 
-  /** Versions are immutable. Saving adds the next version; publishing also makes it live and syncs its trigger. */
+  /** One version with its definition, for the version diff and rollback. */
+  @Get(":id/versions/:version")
+  async version(@CurrentUser() user: SessionUser, @Param("id", workflowId) id: string, @Param("version", versionNumber) version: number) {
+    await this.owned(user.id, id);
+    const [row] = await this.db
+      .select()
+      .from(workflowVersions)
+      .where(and(eq(workflowVersions.workflowId, id), eq(workflowVersions.version, version)));
+    if (!row) throw new NotFoundException();
+    return row;
+  }
+
+  /**
+   * Versions are immutable. Saving adds the next version; publishing also makes it live and syncs its trigger.
+   * A rollback in the console posts an old definition here with publish: true, so it becomes a new version.
+   */
   @Post(":id/versions")
   async addVersion(@CurrentUser() user: SessionUser, @Param("id", workflowId) id: string, @Body(new ZodPipe(versionInput)) body: z.output<typeof versionInput>) {
     await this.owned(user.id, id);

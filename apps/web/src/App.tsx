@@ -2,10 +2,15 @@ import { TEMPLATES } from "@daloy/engine";
 import { useEffect, useState, type FormEvent } from "react";
 import { api, ApiError, type Workflow } from "./api";
 import { Editor } from "./Editor";
+import { RunPage, RunsPage } from "./Runs";
+import { VersionsPage } from "./Versions";
 
 type User = { id: string; email: string };
 
-/** Hash routes (#/ and #/w/<id>), so no path of the console can clash with an API route on the same origin. */
+/**
+ * Hash routes (#/, #/w/<id>, #/w/<id>/runs, #/w/<id>/versions, #/runs/<id>),
+ * so no path of the console can clash with an API route on the same origin.
+ */
 function useHash() {
   const [hash, setHash] = useState(location.hash);
   useEffect(() => {
@@ -25,8 +30,12 @@ export function App() {
 
   if (user === undefined) return <main className="page" />;
   if (!user) return <SignIn onDone={setUser} />;
-  const editing = /^#\/w\/([0-9a-f-]{36})$/.exec(hash);
-  if (editing) return <Editor key={editing[1]} id={editing[1]!} />;
+  const page = /^#\/w\/([0-9a-f-]{36})(?:\/(runs|versions))?$/.exec(hash);
+  if (page?.[2] === "runs") return <RunsPage key={page[1]} workflowId={page[1]!} />;
+  if (page?.[2] === "versions") return <VersionsPage key={page[1]} workflowId={page[1]!} />;
+  if (page) return <Editor key={page[1]} id={page[1]!} />;
+  const run = /^#\/runs\/([0-9a-f-]{36})$/.exec(hash);
+  if (run) return <RunPage key={run[1]} runId={run[1]!} />;
   return <Workflows user={user} onSignOut={() => api("POST", "/auth/logout").then(() => setUser(null))} />;
 }
 

@@ -64,7 +64,9 @@ CI also runs Semgrep, gitleaks and `pnpm audit` on every push.
 
 - Version 1 supports linear flows with branches only: no loops, no parallel branches, no sub-workflows.
 - One workspace per user.
-- The ai and approval step types arrive in phase 7. Run history and version diffs arrive in phase 6; the console shows only the latest run.
+- The ai and approval step types arrive in phase 7.
+- Run history masks fields by key name. A field called `max_tokens` shows as `[secret]`, and a secret sent in trigger data under an ordinary key name stays visible to the workflow owner.
+- Run history lists the latest 50 runs per workflow, with no paging.
 - The builder lays out steps automatically and nodes cannot be dragged. Steps are added from the side panel, not by drawing edges.
 - The console bundle is about 520 kB (160 kB gzipped), mostly React Flow, React and zod.
 - Secret redaction is plain text replacement, so a very short secret value also hides unrelated text that matches it.

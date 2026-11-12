@@ -20,9 +20,9 @@ const executor: StepExecutor = {
     if (step.type === "condition") return { branch: String(evaluateCondition(step.config.condition, ctx)) };
     if (step.id === "flaky" && attempt < 2) throw new StepError("flaky", true);
     if (step.id === "down") throw new StepError("service down", true);
-    if (step.id === "fatal") throw new StepError("bad config", false);
+    if (step.id === "fatal") throw new StepError("bad config", false, { input: { sent: "bad" } });
     if (step.id === "pause") return { waitUntil: new Date(Date.now() + 500) };
-    return { output: { from: step.id } };
+    return { input: { to: step.id }, output: { from: step.id } };
   },
 };
 
@@ -83,6 +83,7 @@ describe("worker", () => {
       ["b", 1, "succeeded"],
     ]);
     expect(rows[0]!.output).toEqual({ from: "a" });
+    expect(rows[0]!.input).toEqual({ to: "a" });
   });
 
   it("follows the branch a condition takes", async () => {
@@ -132,7 +133,7 @@ describe("worker", () => {
     const runId = await createRun(flow({ id: "fatal" }));
     await worker.enqueue(runId);
     expect((await waitForEnd(runId)).state).toBe("failed");
-    expect((await attemptsOf(runId)).map((r) => [r.attempt, r.deadLetter])).toEqual([[1, false]]);
+    expect((await attemptsOf(runId)).map((r) => [r.attempt, r.deadLetter, r.input])).toEqual([[1, false, { sent: "bad" }]]);
   });
 
   it("parks a run in waiting until the step's wake-up time, then carries on", async () => {

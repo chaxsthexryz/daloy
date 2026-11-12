@@ -5,12 +5,15 @@ export const DEFAULT_RETRY_POLICY: RetryPolicy = { maxAttempts: 3, baseDelayMs: 
 /** Thrown by steps. Only errors with retryable: true are retried. */
 export class StepError extends Error {
   override name = "StepError";
+  /** The resolved config the failed attempt ran with, already redacted, so run history can show it. */
+  readonly input: unknown;
   constructor(
     message: string,
     readonly retryable: boolean,
-    options?: { cause?: unknown },
+    options?: { cause?: unknown; input?: unknown },
   ) {
     super(message, options);
+    this.input = options?.input ?? null;
   }
 }
 
