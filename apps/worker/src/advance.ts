@@ -1,4 +1,4 @@
-import { runs, stepRuns, workflows, workflowVersions, type Db } from "@daloy/db";
+import { claimTimeout, runs, stepRuns, workflows, workflowVersions, type Db } from "@daloy/db";
 import {
   assertTransition,
   decideRetry,
@@ -16,13 +16,13 @@ import {
 } from "@daloy/engine";
 import { and, asc, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
 
-/** waitUntil parks the step and the run in "waiting" until that time (delay now, approval in phase 7). */
+/** waitUntil parks the step and the run in "waiting" until that time (delay, and the approval timeout). */
 /** input is the resolved config the attempt ran with, already redacted. On failure it travels on StepError.input. */
 export type StepResult = { input?: unknown; output?: unknown; branch?: string; inputTokens?: number; outputTokens?: number; waitUntil?: Date };
 
 /** Runs one step attempt. userId is the workflow owner, whose secrets the step may use. mock is set for builder test runs without live calls. */
 export interface StepExecutor {
-  execute(input: { runId: string; userId: string; step: Step; attempt: number; idempotencyKey: string; ctx: ExpressionContext; mock?: boolean }): Promise<StepResult>;
+  execute(input: { runId: string; stepRunId: string; userId: string; step: Step; attempt: number; idempotencyKey: string; ctx: ExpressionContext; mock?: boolean }): Promise<StepResult>;
 }
 
 export type AdvanceDeps = {
@@ -97,10 +97,18 @@ async function runNext(deps: AdvanceDeps, run: Run): Promise<void> {
   const last = history.at(-1);
 
   if (run.state === "waiting") {
-    // The wake-up time has passed (checked above), so the waiting step is done and the run carries on.
+    // The wake-up time has passed (checked above), or an approver answered, so the waiting step is done and the run carries on.
+    const waiting = def.steps.find((s) => s.id === last!.stepId)!;
     await db.transaction(async (tx) => {
-      await moveStep(tx, last!.id, "waiting", "succeeded", { finishedAt: new Date() });
+      const extra: Partial<typeof stepRuns.$inferSelect> = { finishedAt: new Date() };
+      if (waiting.type === "approval") {
+        // The recorded decision, or "timeout" if nobody answered in time (decision 0009).
+        extra.branch = await claimTimeout(tx, last!.id);
+        extra.output = { ...(last!.output as object), decision: extra.branch };
+      }
+      await moveStep(tx, last!.id, "waiting", "succeeded", extra);
       await moveRun(tx, run.id, "waiting", "running", { nextAttemptAt: null });
+      Object.assign(last!, extra);
     });
     last!.state = "succeeded";
   }
@@ -136,14 +144,15 @@ async function runNext(deps: AdvanceDeps, run: Run): Promise<void> {
 
   let result: StepResult;
   try {
-    result = await deps.executor.execute({ runId: run.id, userId: version!.userId, step, attempt, idempotencyKey: idempotencyKey(run.id, step.id, attempt), ctx, mock: run.test && !run.live });
+    result = await deps.executor.execute({ runId: run.id, stepRunId, userId: version!.userId, step, attempt, idempotencyKey: idempotencyKey(run.id, step.id, attempt), ctx, mock: run.test && !run.live });
   } catch (err) {
     const decision = decideRetry(err, attempt, deps.retryPolicy ?? DEFAULT_RETRY_POLICY);
     const message = err instanceof Error ? err.message : String(err);
     const retryAt = decision.kind === "retry" ? new Date(Date.now() + decision.delayMs) : undefined;
     await db.transaction(async (tx) => {
       const input = err instanceof StepError ? err.input : null;
-      await moveStep(tx, stepRunId, "running", "failed", { input, error: message, deadLetter: decision.kind === "dead_letter", finishedAt: new Date() });
+      const usage = err instanceof StepError ? err.usage : undefined;
+      await moveStep(tx, stepRunId, "running", "failed", { input, inputTokens: usage?.inputTokens ?? null, outputTokens: usage?.outputTokens ?? null, error: message, deadLetter: decision.kind === "dead_letter", finishedAt: new Date() });
       if (retryAt) await tx.update(runs).set({ nextAttemptAt: retryAt }).where(eq(runs.id, run.id));
       else await moveRun(tx, run.id, "running", "failed", { error: `step ${step.id}: ${message}`, finishedAt: new Date() });
     });
@@ -157,6 +166,9 @@ async function runNext(deps: AdvanceDeps, run: Run): Promise<void> {
       await moveStep(tx, stepRunId, "running", "waiting", { input: result.input ?? null, output: result.output ?? null });
       await moveRun(tx, run.id, "running", "waiting", { nextAttemptAt: wakeAt });
     });
+    // An approval can be answered early, and the queue keeps one queued job per run, so a job scheduled for the
+    // timeout would swallow the early wake-up. The sweep picks up the timeout instead (decision 0009).
+    if (step.type === "approval") return;
     // A scheduled job, so nothing sleeps in the worker. The sweep picks the run up too if this job is lost.
     return deps.enqueue(run.id, wakeAt);
   }

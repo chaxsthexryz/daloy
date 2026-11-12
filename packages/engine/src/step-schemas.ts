@@ -1,5 +1,6 @@
 import * as z from "zod";
-import { conditionSchema, delayConfigSchema, emailConfigSchema, httpConfigSchema, type Step } from "./definition";
+import { aiConfigSchema } from "./ai";
+import { approvalConfigSchema, conditionSchema, delayConfigSchema, emailConfigSchema, httpConfigSchema, type Step } from "./definition";
 
 /**
  * JSON Schema for each step type's config, which the builder turns into a form.
@@ -8,13 +9,12 @@ import { conditionSchema, delayConfigSchema, emailConfigSchema, httpConfigSchema
  */
 export function stepJsonSchemas(): Record<Step["type"], unknown> {
   const json = (s: z.ZodType) => z.toJSONSchema(s, { io: "input", unrepresentable: "any" });
-  const open = { type: "object", additionalProperties: true };
   return {
     condition: json(z.object({ condition: conditionSchema })),
     http: json(httpConfigSchema),
     email: json(emailConfigSchema),
     delay: json(delayConfigSchema),
-    ai: open,
-    approval: open,
+    ai: json(aiConfigSchema),
+    approval: json(approvalConfigSchema),
   };
 }

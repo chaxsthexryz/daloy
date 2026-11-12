@@ -23,6 +23,16 @@ describe("stepJsonSchemas", () => {
     expect(delay.properties.seconds).toMatchObject({ type: "integer", minimum: 1, maximum: 2_592_000 });
   });
 
+  it("gives ai a task enum and string maps, and approval a bounded timeout, in shapes SchemaForm renders", () => {
+    const ai = schemas.ai as { type: string; required: string[]; properties: Record<string, { type?: string; enum?: string[]; additionalProperties?: { type: string } }> };
+    expect(ai.type).toBe("object");
+    expect(ai.properties.task!.enum).toEqual(["classify", "extract", "summarize", "draft"]);
+    expect(ai.properties.labels).toMatchObject({ type: "object", additionalProperties: { type: "string" } });
+    expect(ai.required).toEqual(["task", "input"]);
+    const approval = schemas.approval as { properties: { timeoutSeconds: object } };
+    expect(approval.properties.timeoutSeconds).toMatchObject({ type: "integer", minimum: 60, maximum: 2_592_000 });
+  });
+
   it("nests the condition operator enum", () => {
     const cond = schemas.condition as { properties: { condition: { properties: { op: { enum: string[] } } } } };
     expect(cond.properties.condition.properties.op.enum).toContain("contains");

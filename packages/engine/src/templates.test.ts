@@ -11,4 +11,10 @@ describe("starter templates", () => {
     const result = definitionSchema.safeParse(t.definition);
     expect(result.success ? [] : result.error.issues).toEqual([]);
   });
+
+  it("inquiry triage routes on the label an AI classify step returns", () => {
+    const def = definitionSchema.parse(TEMPLATES[0]!.definition);
+    expect(def.steps.find((s) => s.id === "classify")).toMatchObject({ type: "ai", config: { task: "classify" } });
+    expect(def.steps.find((s) => s.id === "is_billing")!.config).toEqual({ condition: { left: "{{steps.classify.output.label}}", op: "eq", right: "billing" } });
+  });
 });

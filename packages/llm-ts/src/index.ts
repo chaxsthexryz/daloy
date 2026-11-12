@@ -18,15 +18,24 @@ export type GenerateResult<T> = {
   usage: { inputTokens: number; outputTokens: number };
 };
 
-/** `retryable` tells the engine's retry policy whether another attempt can help. */
+type Usage = GenerateResult<unknown>["usage"];
+
+/**
+ * `retryable` tells the engine's retry policy whether another attempt can help. `invalidOutput` marks a reply that
+ * arrived but is not valid JSON or does not match the schema; `usage` then holds the tokens that reply cost.
+ */
 export class LlmError extends Error {
   override name = "LlmError";
+  readonly invalidOutput: boolean;
+  readonly usage?: Usage;
   constructor(
     message: string,
     readonly retryable: boolean,
-    options?: { cause?: unknown },
+    options?: { cause?: unknown; invalidOutput?: boolean; usage?: Usage },
   ) {
     super(message, options);
+    this.invalidOutput = options?.invalidOutput ?? false;
+    this.usage = options?.usage;
   }
 }
 
@@ -72,11 +81,11 @@ export async function generate<T = unknown>(input: GenerateInput<T>): Promise<Ge
   try {
     json = JSON.parse(text);
   } catch (err) {
-    throw new LlmError("LLM output is not valid JSON", false, { cause: err });
+    throw new LlmError("LLM output is not valid JSON", false, { cause: err, invalidOutput: true, usage });
   }
   const parsed = input.schema.safeParse(json);
   if (!parsed.success) {
-    throw new LlmError("LLM output does not match the schema", false, { cause: parsed.error });
+    throw new LlmError("LLM output does not match the schema", false, { cause: parsed.error, invalidOutput: true, usage });
   }
   return { text, data: parsed.data, usage };
 }

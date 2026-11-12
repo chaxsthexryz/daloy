@@ -122,7 +122,7 @@ SSRF, webhook spoofing, secrets leaking into logs, expression injection, approva
 - [x] 4. Steps: HTTP (with SSRF protection), email, condition, delay.
 - [x] 5. Builder UI.
 - [x] 6. Run history, versions and rollback.
-- [ ] 7. AI task step and human approval.
+- [x] 7. AI task step and human approval.
 - [ ] 8. MCP exposure.
 - [ ] 9. Load and chaos tests, starter templates, seeded demo, README with screenshots and an architecture diagram.
 

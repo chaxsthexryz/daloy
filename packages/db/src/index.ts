@@ -4,6 +4,7 @@ import { migrate as runMigrations } from "drizzle-orm/node-postgres/migrator";
 import { Pool } from "pg";
 import * as schema from "./schema";
 
+export * from "./approvals";
 export * from "./crypto";
 export * from "./runs";
 export * from "./schema";

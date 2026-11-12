@@ -1,11 +1,15 @@
-import { readSecrets, type Db } from "@daloy/db";
-import { evaluateCondition, isRetryable, resolveTemplate, StepError, type ExpressionContext, type Step } from "@daloy/engine";
+import { randomUUID } from "node:crypto";
+import { createApproval, readSecrets, type Db } from "@daloy/db";
+import { evaluateCondition, isRetryable, mockAiOutput, resolveTemplate, StepError, type ExpressionContext, type Step } from "@daloy/engine";
 import type { StepExecutor, StepResult } from "../advance";
+import { runAi } from "./ai";
 import { sendEmail, type Mailer } from "./email";
 import { httpRequest } from "./http";
 import { defaultGuard, type SsrfGuard } from "./ssrf";
 
-export type ExecutorDeps = { db: Db; secretsKey: Buffer; mailer: Mailer; guard?: SsrfGuard };
+/** llmModel comes from LLM_MODEL; publicUrl (PUBLIC_URL) is where the API is reachable, for approval links. */
+export type ExecutorDeps = { db: Db; secretsKey: Buffer; mailer: Mailer; guard?: SsrfGuard; llmModel?: string; publicUrl?: string };
+type FullDeps = ExecutorDeps & { guard: SsrfGuard; llmModel: string; publicUrl: string };
 
 // Config fields are templates that must end up as text, even when a placeholder resolves to a number or object.
 function text(template: string, ctx: ExpressionContext): string {
@@ -25,6 +29,8 @@ function redact(value: unknown, values: string[]): unknown {
 
 type HttpInput = { method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE"; url: string; headers: Record<string, string>; body?: string };
 type EmailInput = { to: string; subject: string; text: string };
+type AiInput = { input: string };
+type ApprovalInput = { to: string; subject: string; message: string; timeoutSeconds: number };
 
 /**
  * The config a step runs with, its templates resolved. The executor stores it (redacted) on the step run,
@@ -48,12 +54,20 @@ function resolveInput(step: Step, ctx: ExpressionContext): Record<string, unknow
       const { to, subject, text: body } = step.config;
       return { to: text(to, ctx), subject: text(subject, ctx), text: text(body, ctx) } satisfies EmailInput;
     }
-    default:
-      return null;
+    case "ai":
+      // Only input is a template; labels, fields and instructions are literals (decision 0010).
+      return { ...step.config, input: text(step.config.input, ctx) };
+    case "approval": {
+      const { to, subject, message, timeoutSeconds } = step.config;
+      // The link is not part of the input, so the token never reaches the database or run history.
+      return { to: text(to, ctx), subject: text(subject, ctx), message: text(message, ctx), timeoutSeconds } satisfies ApprovalInput;
+    }
   }
 }
 
-async function runStep(deps: ExecutorDeps & { guard: SsrfGuard }, step: Step, input: unknown, ctx: ExpressionContext, idempotencyKey: string, mock: boolean): Promise<StepResult> {
+type Attempt = { idempotencyKey: string; attempt: number; stepRunId: string; mock: boolean };
+
+async function runStep(deps: FullDeps, step: Step, input: unknown, ctx: ExpressionContext, { idempotencyKey, attempt, stepRunId, mock }: Attempt): Promise<StepResult> {
   switch (step.type) {
     case "condition":
       return { branch: String(evaluateCondition(step.config.condition, ctx)) };
@@ -75,8 +89,24 @@ async function runStep(deps: ExecutorDeps & { guard: SsrfGuard }, step: Step, in
       const sent = await sendEmail(deps.mailer, mail, idempotencyKey);
       return { output: { messageId: sent.messageId, to: sent.to } };
     }
-    default:
-      throw new StepError(`step type "${step.type}" arrives in phase 7`, false);
+    case "ai": {
+      if (mock) return { output: mockAiOutput(step.config) };
+      return runAi(step.config, (input as AiInput).input, { model: deps.llmModel, attempt });
+    }
+    case "approval": {
+      // A mocked test run approves straight away, so the builder shows the approved path without an email.
+      if (mock) return { output: { mocked: true, decision: "approved" }, branch: "approved" };
+      const cfg = input as ApprovalInput;
+      const expiresAt = new Date(Date.now() + cfg.timeoutSeconds * 1000);
+      const token = await createApproval(deps.db, stepRunId, expiresAt);
+      const link = `${deps.publicUrl}/approvals/${token}`;
+      const body = `${cfg.message}\n\nApprove or reject here:\n${link}\n\nThe link works once and expires at ${expiresAt.toISOString()}.`;
+      // A re-run of this attempt after a crash sends a new link (the old one is deleted), so it needs its own Message-ID,
+      // or a mail server could drop it as a duplicate of the dead one.
+      await sendEmail(deps.mailer, { to: cfg.to, subject: cfg.subject, text: body }, `${idempotencyKey}:${randomUUID().slice(0, 8)}`);
+      // The run waits until the timeout; recording a decision wakes it earlier (decision 0009).
+      return { output: { expiresAt: expiresAt.toISOString() }, waitUntil: expiresAt };
+    }
   }
 }
 
@@ -85,9 +115,14 @@ async function runStep(deps: ExecutorDeps & { guard: SsrfGuard }, step: Step, in
  * replaced with [secret] in the output and error text before anything is written to the database.
  */
 export function createExecutor(deps: ExecutorDeps): StepExecutor {
-  const full = { ...deps, guard: deps.guard ?? defaultGuard() };
+  const full: FullDeps = {
+    ...deps,
+    guard: deps.guard ?? defaultGuard(),
+    llmModel: deps.llmModel ?? "llama3.2",
+    publicUrl: (deps.publicUrl ?? "http://localhost:3000").replace(/\/+$/, ""),
+  };
   return {
-    async execute({ step, userId, idempotencyKey, ctx, mock = false }) {
+    async execute({ step, userId, idempotencyKey, attempt, stepRunId, ctx, mock = false }) {
       const secrets = await readSecrets(deps.db, deps.secretsKey, userId);
       const values = Object.values(secrets)
         .filter((v) => v.length > 0)
@@ -96,11 +131,11 @@ export function createExecutor(deps: ExecutorDeps): StepExecutor {
       let input: unknown = null;
       try {
         input = resolveInput(step, withSecrets);
-        const result = await runStep(full, step, input, withSecrets, idempotencyKey, mock);
+        const result = await runStep(full, step, input, withSecrets, { idempotencyKey, attempt, stepRunId, mock });
         return { ...result, input: redact(input, values), output: redact(result.output, values) };
       } catch (err) {
         const message = redact(err instanceof Error ? err.message : String(err), values) as string;
-        throw new StepError(message, isRetryable(err), { input: redact(input, values) });
+        throw new StepError(message, isRetryable(err), { input: redact(input, values), usage: err instanceof StepError ? err.usage : undefined });
       }
     },
   };

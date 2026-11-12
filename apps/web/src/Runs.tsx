@@ -49,6 +49,7 @@ export function RunResult({ run }: { run: Run }) {
             {s.attempt > 1 && <span className="muted"> attempt {s.attempt}</span>}
             {s.branch && <span className="muted"> → {s.branch}</span>}
             <span className="muted"> · {duration(s.createdAt, s.finishedAt)}</span>
+            {s.inputTokens !== null && <span className="muted"> · {s.inputTokens} in, {s.outputTokens ?? 0} out tokens</span>}
             {s.error && <p className="message error">{s.error}</p>}
             {s.input !== null && (
               <details>

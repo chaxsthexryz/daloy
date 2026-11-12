@@ -1,15 +1,18 @@
 import { execSync, spawn, type ChildProcess } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import EmbeddedPostgres from "embedded-postgres";
+import { startSmtpSink } from "./smtp-sink";
 
 /**
- * Starts the whole stack without Docker: embedded Postgres, the API serving the built console, and the worker.
+ * Starts the whole stack without Docker: embedded Postgres, the API serving the built console, the worker, and an
+ * SMTP sink whose messages tests read from E2E_MAIL_FILE.
  * DATABASE_URL (CI) replaces the embedded server. Returns the teardown.
  */
 export const E2E_PORT = 3100;
+const SMTP_PORT = 2526;
 const root = resolve(import.meta.dirname, "..");
 const win = process.platform === "win32";
 
@@ -53,7 +56,21 @@ export default async function setup() {
     url = "postgres://daloy:daloy@localhost:54330/postgres";
   }
 
-  const env = { DATABASE_URL: url, SECRETS_KEY: randomBytes(32).toString("base64"), PORT: String(E2E_PORT), WEB_DIST: join(root, "apps/web/dist") };
+  // Test workers inherit env vars set here.
+  const mailFile = join(mkdtempSync(join(tmpdir(), "daloy-mail-")), "messages.jsonl");
+  writeFileSync(mailFile, "");
+  process.env.E2E_MAIL_FILE = mailFile;
+  const smtp = await startSmtpSink(SMTP_PORT, mailFile);
+
+  const env = {
+    DATABASE_URL: url,
+    SECRETS_KEY: randomBytes(32).toString("base64"),
+    PORT: String(E2E_PORT),
+    WEB_DIST: join(root, "apps/web/dist"),
+    SMTP_HOST: "127.0.0.1",
+    SMTP_PORT: String(SMTP_PORT),
+    PUBLIC_URL: `http://localhost:${E2E_PORT}`,
+  };
   const api = start("api", env);
   await waitFor(`http://localhost:${E2E_PORT}/auth/me`, 60_000);
   // The worker starts after the API has run the migrations.
@@ -62,6 +79,7 @@ export default async function setup() {
   return async () => {
     stop(worker);
     stop(api);
+    smtp.close();
     await pg?.stop();
   };
 }

@@ -35,6 +35,8 @@ export type StepRun = {
   output: unknown;
   error: string | null;
   branch: string | null;
+  inputTokens: number | null;
+  outputTokens: number | null;
   createdAt: string;
   finishedAt: string | null;
 };

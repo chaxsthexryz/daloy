@@ -1,4 +1,4 @@
-import { runs, stepRuns, users, workflows, workflowVersions, type Db } from "@daloy/db";
+import { createApproval, recordDecision, runs, stepRuns, users, workflows, workflowVersions, type Db } from "@daloy/db";
 import { evaluateCondition, StepError } from "@daloy/engine";
 import { asc, eq } from "drizzle-orm";
 import type { Pool } from "pg";
@@ -12,11 +12,20 @@ let db: Db;
 let pool: Pool;
 let worker: Worker;
 const calls: string[] = [];
+const approvalTokens = new Map<string, string>();
 
 // Test steps behave according to their id, so each test builds the failure it needs.
 const executor: StepExecutor = {
-  async execute({ step, attempt, idempotencyKey, ctx }) {
+  async execute({ runId, stepRunId, step, attempt, idempotencyKey, ctx }) {
     calls.push(idempotencyKey);
+    if (step.type === "approval") {
+      // Like the real step, minus the email. "quick" times out after half a second.
+      const waitUntil = new Date(Date.now() + (step.id === "quick" ? 500 : 60_000));
+      approvalTokens.set(runId, await createApproval(db, stepRunId, waitUntil));
+      return { output: { expiresAt: waitUntil.toISOString() }, waitUntil };
+    }
+    if (step.id === "costly") throw new StepError("bad reply", false, { usage: { inputTokens: 90, outputTokens: 7 } });
+    if (step.id === "model") return { output: { label: "billing" }, inputTokens: 50, outputTokens: 3 };
     if (step.type === "condition") return { branch: String(evaluateCondition(step.config.condition, ctx)) };
     if (step.id === "flaky" && attempt < 2) throw new StepError("flaky", true);
     if (step.id === "down") throw new StepError("service down", true);
@@ -179,5 +188,65 @@ describe("worker", () => {
     const [run] = await db.select().from(runs).where(eq(runs.id, runId));
     expect(run!.state).toBe("pending");
     expect(await attemptsOf(runId)).toEqual([]);
+  });
+
+  describe("approval steps", () => {
+    const approvalFlow = (id: string) => ({
+      trigger: { type: "manual", config: {} },
+      steps: [
+        { id, type: "approval", config: { to: "boss@example.com", subject: "s", message: "m", timeoutSeconds: 60 } },
+        { id: "yes", type: "delay", config: { seconds: 1 } },
+        { id: "no", type: "delay", config: { seconds: 1 } },
+        { id: "late", type: "delay", config: { seconds: 1 } },
+      ],
+      edges: [
+        { from: id, to: "yes", on: "approved" },
+        { from: id, to: "no", on: "rejected" },
+        { from: id, to: "late", on: "timeout" },
+      ],
+    });
+
+    async function waitForState(runId: string, state: string) {
+      for (let i = 0; i < 100; i++) {
+        const [run] = await db.select().from(runs).where(eq(runs.id, runId));
+        if (run!.state === state) return;
+        await new Promise((r) => setTimeout(r, 100));
+      }
+      throw new Error(`run ${runId} never reached ${state}`);
+    }
+
+    it("waits for the approver, then takes the branch they chose", async () => {
+      const runId = await createRun(approvalFlow("ask"));
+      await worker.enqueue(runId);
+      await waitForState(runId, "waiting");
+
+      expect(await recordDecision(db, approvalTokens.get(runId)!, "rejected")).toBe(runId);
+      expect((await waitForEnd(runId)).state).toBe("succeeded");
+      const rows = await attemptsOf(runId);
+      expect(rows.map((r) => r.stepId)).toEqual(["ask", "no"]);
+      expect(rows[0]).toMatchObject({ branch: "rejected", output: { decision: "rejected" } });
+    });
+
+    it("takes the timeout branch when nobody answers, and the link stops working", async () => {
+      const runId = await createRun(approvalFlow("quick"));
+      await worker.enqueue(runId);
+      expect((await waitForEnd(runId)).state).toBe("succeeded");
+      const rows = await attemptsOf(runId);
+      expect(rows.map((r) => r.stepId)).toEqual(["quick", "late"]);
+      expect(rows[0]!.branch).toBe("timeout");
+      expect(await recordDecision(db, approvalTokens.get(runId)!, "approved")).toBeNull();
+    });
+  });
+
+  it("stores token counts for AI attempts, failed ones included", async () => {
+    const ok = await createRun(flow({ id: "model" }));
+    await worker.enqueue(ok);
+    await waitForEnd(ok);
+    expect((await attemptsOf(ok))[0]).toMatchObject({ inputTokens: 50, outputTokens: 3 });
+
+    const bad = await createRun(flow({ id: "costly" }));
+    await worker.enqueue(bad);
+    expect((await waitForEnd(bad)).state).toBe("failed");
+    expect((await attemptsOf(bad))[0]).toMatchObject({ state: "failed", inputTokens: 90, outputTokens: 7 });
   });
 });

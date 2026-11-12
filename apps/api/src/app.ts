@@ -6,6 +6,7 @@ import type { NestExpressApplication } from "@nestjs/platform-express";
 import cookieParser from "cookie-parser";
 import helmet from "helmet";
 import type { PgBoss } from "pg-boss";
+import { ApprovalsController } from "./approvals";
 import { AuthController, SessionGuard } from "./auth";
 import { BOSS, CONFIG, DB, RateLimit, type ApiConfig } from "./http";
 import { FormsController, HooksController } from "./public";
@@ -23,12 +24,12 @@ export async function createApp({ db, boss, ...config }: AppOptions) {
   await boss.createQueue(SCHEDULE_QUEUE);
 
   @Module({
-    controllers: [AuthController, WorkflowsController, CatalogController, SecretsController, TokensController, RunsController, HooksController, FormsController],
+    controllers: [AuthController, WorkflowsController, CatalogController, SecretsController, TokensController, RunsController, HooksController, FormsController, ApprovalsController],
     providers: [
       { provide: DB, useValue: db },
       { provide: BOSS, useValue: boss },
       { provide: CONFIG, useValue: config },
-      // Default limit for every route; login, forms and webhooks add stricter ones.
+      // Default limit for every route; login, forms, webhooks and approvals add stricter ones.
       { provide: APP_GUARD, useClass: RateLimit(120) },
       SessionGuard,
     ],

@@ -13,7 +13,7 @@ Kept current with each phase. A mitigation marked "planned" does not exist in co
 
 - Console API (session cookie)
 - Webhook URLs and hosted forms (public)
-- Approval links (public, signed)
+- Approval links (public, random single-use token)
 - MCP endpoint (bearer token)
 - Outbound: HTTP request step, email step, LLM calls
 
@@ -25,8 +25,8 @@ Kept current with each phase. A mitigation marked "planned" does not exist in co
 | Webhook spoofing | Random 32-byte URL path, optional HMAC-SHA256 signature checked in constant time, 256 kb body limit, 60 requests a minute per IP | Done, phase 3 |
 | Secrets leaking into logs | Secrets are inserted by reference (`{{secrets.name}}`) only while a step runs. Their values are replaced with `[secret]` in step input, output and error text before anything is stored. The run history API masks again by key name (`password`, `token`, `authorization`, `api_key`, `cookie` and similar) in trigger data, step input and step output. See [decision 0008](decisions/0008-step-input.md). | Done, phases 4 and 6 |
 | Expression injection | Expressions are path lookups only (no eval or Function), with limits on template size, path depth and output size. Resolution is a single pass, so trigger data containing `{{secrets.x}}` stays literal text. See [decision 0002](decisions/0002-expression-resolver.md). | Done, phase 4 |
-| Approval link theft and replay | Signed, expiring, single-use links | Planned, phase 7 |
-| Prompt injection through trigger data | Trigger data goes in a delimited user message, never the system prompt. Output is validated against a JSON schema. | Planned, phase 7 |
+| Approval link theft and replay | 32 random bytes per link, only the SHA-256 stored, so a database leak gives no working links. The link expires with the step's timeout and works once (guarded UPDATE on `used_at`). GET only shows the request, so link scanners cannot decide; POST records it. Unknown, used and expired links get the same response. `Referrer-Policy: no-referrer` and `Cache-Control: no-store`. 30 views and 10 decisions a minute per IP. Remaining risk: whoever holds an unused link can decide, because the email is the only authentication. See [decision 0009](decisions/0009-approval-links.md). | Done, phase 7 |
+| Prompt injection through trigger data | Trigger data only reaches the model inside `<data>` tags in the user message; a closing tag in the data is escaped. The system prompt holds only fixed text and the owner's literal text (the schema rejects `{{` there). Replies are validated against a fixed per-task JSON schema, so classify can only return a configured label. Remaining risk: a model can still be steered within that schema, such as a wrong label or unwanted text in a draft. See [decision 0010](decisions/0010-ai-step.md). | Done, phase 7 |
 | MCP tool abuse | Bearer token per user, only published form-trigger workflows exposed, approval steps still apply, rate limits | Planned, phase 8 |
 | Oversized payloads | Body size limits on every route, 1 MB HTTP response limit, at most 100 steps per definition, expression output limit, at most 10 email recipients | Done, phases 1 to 4 |
 | Two workers running the same step at once | Run lease claimed with a conditional UPDATE, guarded state updates, unique `(run_id, step_id, attempt)` | Done, phase 2 |

@@ -18,7 +18,7 @@ export type JsonSchema = {
 };
 type Obj = Record<string, unknown>;
 
-const LABELS: Record<string, string> = { op: "Operator", url: "URL", to: "To (comma-separated)", text: "Message", left: "Value", right: "Compare with" };
+const LABELS: Record<string, string> = { op: "Operator", url: "URL", to: "To (comma-separated)", text: "Message", left: "Value", right: "Compare with", timeoutSeconds: "Timeout (seconds)" };
 const label = (key: string) => LABELS[key] ?? key.charAt(0).toUpperCase() + key.slice(1);
 
 export function SchemaForm({ schema, value, onChange }: { schema: JsonSchema; value: Obj; onChange: (v: Obj) => void }) {
@@ -115,7 +115,8 @@ function MapField({ name, value, onChange }: { name: string; value: Record<strin
           </button>
         </div>
       ))}
-      <button type="button" className="quiet" onClick={() => set([...rows, [`X-Header-${rows.length + 1}`, ""]])}>
+      {/* New names must already pass the schema: headers allow capitals and dashes, ai labels and fields only a-z, 0-9 and _. */}
+      <button type="button" className="quiet" onClick={() => set([...rows, [name === "headers" ? `X-Header-${rows.length + 1}` : `${name.replace(/s$/, "")}_${rows.length + 1}`, ""]])}>
         Add {name === "headers" ? "header" : "entry"}
       </button>
     </fieldset>

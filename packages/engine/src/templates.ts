@@ -1,12 +1,12 @@
 /**
  * Starter workflows offered by "New from template" in the builder. Phase 9 seeds them for the demo user.
- * They use only steps that run today; phase 7 can swap the keyword check in inquiry triage for an AI classify step.
+ * Inquiry triage uses an AI classify step; a test run without live calls gets the first label ("billing") from the mock.
  */
 export const TEMPLATES = [
   {
     slug: "inquiry-triage",
     name: "Inquiry triage",
-    description: "Thank the sender, then route billing questions and everything else to different inboxes.",
+    description: "Thank the sender, let the model classify the message, then route billing questions and everything else to different inboxes.",
     definition: {
       trigger: {
         type: "form",
@@ -24,7 +24,20 @@ export const TEMPLATES = [
           type: "email",
           config: { to: "{{trigger.email}}", subject: "We got your message", text: "Hi {{trigger.name}}, thanks for writing. We reply within one working day." },
         },
-        { id: "is_billing", type: "condition", config: { condition: { left: "{{trigger.message}}", op: "contains", right: "invoice" } } },
+        {
+          id: "classify",
+          type: "ai",
+          config: {
+            task: "classify",
+            input: "{{trigger.message}}",
+            labels: {
+              billing: "Invoices, payments, refunds and prices",
+              support: "Problems with the product or questions about using it",
+              other: "Anything else",
+            },
+          },
+        },
+        { id: "is_billing", type: "condition", config: { condition: { left: "{{steps.classify.output.label}}", op: "eq", right: "billing" } } },
         {
           id: "to_billing",
           type: "email",
@@ -37,7 +50,8 @@ export const TEMPLATES = [
         },
       ],
       edges: [
-        { from: "acknowledge", to: "is_billing" },
+        { from: "acknowledge", to: "classify" },
+        { from: "classify", to: "is_billing" },
         { from: "is_billing", to: "to_billing", on: "true" },
         { from: "is_billing", to: "to_support", on: "false" },
       ],

@@ -64,7 +64,10 @@ CI also runs Semgrep, gitleaks and `pnpm audit` on every push.
 
 - Version 1 supports linear flows with branches only: no loops, no parallel branches, no sub-workflows.
 - One workspace per user.
-- The ai and approval step types arrive in phase 7.
+- AI prompts are tested against a fake model server only. Their accuracy with a real model has not been measured. Delimiting and schema checks limit prompt injection but do not stop a model from choosing a wrong label.
+- Anyone who has an unused approval link can approve or reject. The email is the only check on who clicks.
+- An approval timeout is picked up by the worker's 15-second sweep, so it can fire up to 15 seconds late.
+- Every AI step uses the model in `LLM_MODEL`.
 - Run history masks fields by key name. A field called `max_tokens` shows as `[secret]`, and a secret sent in trigger data under an ordinary key name stays visible to the workflow owner.
 - Run history lists the latest 50 runs per workflow, with no paging.
 - The builder lays out steps automatically and nodes cannot be dragged. Steps are added from the side panel, not by drawing edges.

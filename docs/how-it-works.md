@@ -18,7 +18,7 @@ What it does: `generate({ system, messages, schema?, model, temperature, maxToke
 
 Why this way: the base URL comes from `LLM_BASE_URL` on every call, so a gateway can sit in front of Ollama with a config change only. The schema is sent to Ollama as JSON schema (its `format` field) and checked again with zod on the way back, because a model can still return the wrong shape.
 
-Edge cases: every failure throws `LlmError` with a `retryable` flag. Timeouts, network errors, HTTP 429 and 5xx are retryable. Other HTTP errors, non-JSON output and output that fails the schema are not retryable.
+Edge cases: every failure throws `LlmError` with a `retryable` flag. Timeouts, network errors, HTTP 429 and 5xx are retryable. Other HTTP errors, non-JSON output and output that fails the schema are not retryable. For the last two, `invalidOutput` is set and `usage` holds the tokens the reply cost, so the AI step can retry once and still record the tokens.
 
 Tests: `packages/llm-ts/src/index.test.ts` (fetch is mocked, no model needed).
 
@@ -92,9 +92,9 @@ State changes: every change goes through `assertTransition` and then a guarded U
 
 Shutdown: on SIGTERM the worker stops taking jobs, waits up to 30 seconds for jobs in progress, and closes the database pool.
 
-Waiting: a step can return a wake-up time instead of finishing (the delay step does). The worker then moves the step and the run to `waiting` in one transaction, stores the time in `next_attempt_at` and queues a job that starts at that time. Nothing sleeps in the worker. When the job runs, or the sweep finds the run after the time has passed, the step moves to `succeeded`, the run moves back to `running`, and the flow carries on. The wait is one attempt, so the step does not run again on wake-up.
+Waiting: a step can return a wake-up time instead of finishing (delay and approval do). The worker then moves the step and the run to `waiting` in one transaction, stores the time in `next_attempt_at` and queues a job that starts at that time. Nothing sleeps in the worker. When the job runs, or the sweep finds the run after the time has passed, the step moves to `succeeded`, the run moves back to `running`, and the flow carries on. The wait is one attempt, so the step does not run again on wake-up. An approval step schedules no job, because an early answer has to be able to wake the run and the queue holds one job per run; its timeout is picked up by the sweep (see Approval step below).
 
-Tests: `apps/worker/src/worker.test.ts` runs the real worker against Postgres. It covers a run that succeeds and passes outputs along, a condition branch, a retry that then succeeds, a step that runs out of attempts (dead letter), an error that is not retryable, a run that waits and then carries on, a run left behind by a crashed worker (resumed with the same idempotency key, no duplicate row), and a run held by another worker's live lease (left alone).
+Tests: `apps/worker/src/worker.test.ts` runs the real worker against Postgres. It covers a run that succeeds and passes outputs along, a condition branch, a retry that then succeeds, a step that runs out of attempts (dead letter), an error that is not retryable, a run that waits and then carries on, an approval answered by the approver and one that times out, token counts on AI attempts (failed ones too), a run left behind by a crashed worker (resumed with the same idempotency key, no duplicate row), and a run held by another worker's live lease (left alone).
 
 ## Steps (apps/worker/src/steps)
 
@@ -104,10 +104,32 @@ What it does: `createExecutor` in `index.ts` runs one step attempt. It decrypts 
 - Email (`email.ts`): plain text over SMTP (nodemailer), configured with `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS` and `SMTP_FROM`. The `to` template is resolved first, then split on commas, and each address is checked. At most 10 recipients. The `Message-ID` comes from the idempotency key. SMTP 5xx replies are final, and anything else is retried.
 - Condition: evaluates the step's condition and returns the `true` or `false` branch.
 - Delay: returns a wake-up time 1 second to 30 days ahead (see Waiting above).
+- AI task (`ai.ts`): see AI step below.
+- Approval: see Approval step below.
 
-Edge cases: a secret that appears in a response body, a response header or an error message is redacted. Redaction is plain text replacement, so a very short secret (such as `1`) also hides unrelated text that matches it. The ai and approval step types fail with a clear error until phase 7.
+Edge cases: a secret that appears in a response body, a response header or an error message is redacted. Redaction is plain text replacement, so a very short secret (such as `1`) also hides unrelated text that matches it.
 
-Tests: `steps/index.test.ts` (secrets reach the request but not the stored output or errors, trigger data cannot pull in a secret, templates, condition and delay) and `steps/email.test.ts` (recipient cap and validation, message id, SMTP error mapping).
+Tests: `steps/index.test.ts` (secrets reach the request but not the stored output or errors, trigger data cannot pull in a secret, templates, condition, delay, mocked ai and approval, the approval email and its stored hash) and `steps/email.test.ts` (recipient cap and validation, message id, SMTP error mapping).
+
+## AI step (packages/engine/src/ai.ts, apps/worker/src/steps/ai.ts)
+
+What it does: runs one task on text. `classify` picks one of the configured labels, `extract` pulls named fields out of the text, `summarize` writes a short summary and `draft` writes a reply. Later steps read the result, for example `{{steps.classify.output.label}}` in a condition. The model is `LLM_MODEL` (default `llama3.2`) at `LLM_BASE_URL`, through `packages/llm-ts`.
+
+Why this way: the text usually comes from a form or webhook, so it is untrusted. Only the `input` field is a template. It resolves to the text, which goes in the user message between `<data>` and `</data>`. The instructions and the label and field descriptions go in the system prompt, so the schema rejects `{{` in them and they are never resolved. Each task has a fixed output schema (`aiOutputSchema`): classify can only return one of its labels, extract returns every field as text or null. The reply is checked against it, so a later step never sees a shape it did not expect. See [decision 0010](decisions/0010-ai-step.md).
+
+Edge cases: a closing `</data` tag inside the text is escaped, so the text cannot end its own block. Text over 20,000 characters is cut. A reply that is not JSON or fails the schema is retried once, then the step fails. Timeouts and server errors follow the normal retry policy. Input and output token counts are stored on `step_runs` for every attempt, including failed ones. In a test run without live calls the model is not called and the step returns a fixed reply that matches the schema.
+
+Tests: `packages/engine/src/ai.test.ts` (config rules, output schemas, prompt placement and the escaped closing tag, mock replies match the schema) and `apps/worker/src/steps/ai.test.ts` (a fake Ollama server: the data is only in the user message, the schema is sent as `format`, tokens are returned, a bad reply is retried once, a 503 stays retryable).
+
+## Approval step (packages/db/src/approvals.ts, apps/api/src/approvals.ts)
+
+What it does: emails a person a link, waits, and continues on the `approved`, `rejected` or `timeout` branch. The config has `to`, `subject`, `message` (all templates) and `timeoutSeconds` (one minute to 30 days).
+
+How it works: the worker creates a 32-byte random token and stores only its SHA-256 in `approvals` with the expiry. The email holds the link `PUBLIC_URL/approvals/<token>`. The token is not part of the stored step input, so it never shows in run history. The step and the run go to `waiting`. Opening the link (GET) shows the message and two buttons and changes nothing. Pressing one (POST) records the decision with one guarded UPDATE that only matches a link that is unused and not expired, sets the run's wake-up time to now and queues it. When the step wakes, the worker calls `claimTimeout` in the same transaction that finishes the step: if nobody answered, it marks the link used with the decision `timeout`. Either way the step takes the branch that is stored. See [decision 0009](decisions/0009-approval-links.md).
+
+Edge cases: a second click, an expired link and an unknown token all get the same 404 page. If the click and the timeout happen at the same moment, the row lock lets only one of them win. If a worker crashes after creating the link, the attempt runs again, deletes the old link and sends a new one. The public routes allow 30 page views and 10 decisions a minute per IP, and answer with `Cache-Control: no-store` and `Referrer-Policy: no-referrer`. In a test run without live calls no email is sent and the step takes the `approved` branch at once.
+
+Tests: `packages/db/src/approvals.test.ts` (stored hash, single use, expiry, replacing a link, the click and timeout race), `apps/api/src/approvals.test.ts` (escaped page, GET changes nothing, POST once then 404, same page for unknown and expired links, bad decisions rejected, rate limit), `apps/worker/src/worker.test.ts` (approve and timeout branches) and `e2e/approval.spec.ts` (a live run waits, the email arrives at a test SMTP server, the link approves once, the run finishes on the approved branch).
 
 ## SSRF protection (apps/worker/src/steps/ssrf.ts)
 
@@ -135,11 +157,11 @@ Secrets: values are encrypted with AES-256-GCM using `SECRETS_KEY`, with a fresh
 
 API tokens: shown once at creation, stored as SHA-256, and revocable. MCP clients use them in phase 8.
 
-Rate limits: every route allows 120 requests per minute per IP, login and form submissions 10, webhooks 60. Request bodies are capped at 256 kb for JSON and 64 kb for forms.
+Rate limits: every route allows 120 requests per minute per IP, login, form submissions and approval decisions 10, approval pages 30, webhooks 60. Request bodies are capped at 256 kb for JSON and 64 kb for forms.
 
 Tests: `api.test.ts` drives the real app with supertest against Postgres. `secrets.test.ts` covers encryption and signature checks. `e2e.test.ts` runs the API and the worker together, from a webhook call to a finished run.
 
-Limits: rate limit counters live in process memory, so each API instance counts on its own. Approval routes arrive in phase 7.
+Limits: rate limit counters live in process memory, so each API instance counts on its own.
 
 ## Triggers
 
@@ -158,7 +180,7 @@ How the editor works: the workflow definition is the editor's only state. Every 
 - Deleting a step with one parent and one child connects the two, keeping the parent's branch label.
 - A new step gets an id such as `http_1`, the lowest free number for its type.
 
-Step forms: the engine exports `stepJsonSchemas()`, which turns each step's zod config schema into JSON Schema with `z.toJSONSchema()`. `GET /step-schemas` serves them with the branch labels. `src/SchemaForm.tsx` renders a form from that schema: enums become selects, integers become number inputs, long text fields become text areas, and the header map becomes a list of name and value rows. Adding a field to a step's zod schema adds it to the form with no UI change. See [decision 0007](decisions/0007-builder-ui.md).
+Step forms: the engine exports `stepJsonSchemas()`, which turns each step's zod config schema into JSON Schema with `z.toJSONSchema()`. `GET /step-schemas` serves them with the branch labels. `src/SchemaForm.tsx` renders a form from that schema: enums become selects, integers become number inputs, long text fields become text areas, and string maps (HTTP headers, AI labels and fields) become lists of name and value rows. Adding a field to a step's zod schema adds it to the form with no UI change. See [decision 0007](decisions/0007-builder-ui.md).
 
 Test runs: `POST /workflows/:id/test-runs { definition, payload, live }` saves the draft as an unpublished version (or reuses the newest version if the draft is identical, compared with sorted keys because Postgres jsonb reorders them) and starts a run with `runs.test = true`. Unless `live` is set, the worker mocks the steps that reach outside: the HTTP step returns `{ mocked: true, status: 200, body: null, request }` without a request, the email step returns the resolved recipient and subject without sending, and a delay waits at most one second. Templates and secret redaction still run, so the output shows what a real run would send. The console polls `GET /runs/:id` once a second and shows each step's state, branch and output.
 

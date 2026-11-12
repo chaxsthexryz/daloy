@@ -8,8 +8,8 @@ import type { Edge as FlowEdge, Node as FlowNode } from "@xyflow/react";
 export type Draft = WorkflowDefinition;
 export type Edge = Draft["edges"][number];
 
-/** Step types the builder can add today. ai and approval arrive in phase 7. */
-export const ADDABLE = ["condition", "http", "email", "delay"] as const;
+/** Step types the builder can add. */
+export const ADDABLE = ["condition", "http", "email", "delay", "ai", "approval"] as const;
 export type AddableType = (typeof ADDABLE)[number];
 
 export const blankDraft = (): Draft => ({ trigger: { type: "manual", config: {} }, steps: [], edges: [] });
@@ -24,6 +24,10 @@ export function defaultConfig(type: AddableType): Step["config"] {
       return { to: "{{trigger.email}}", subject: "Hello", text: "Hi, thanks for getting in touch." };
     case "delay":
       return { seconds: 60 };
+    case "ai":
+      return { task: "classify", input: "{{trigger.message}}", labels: { billing: "Invoices and payments", support: "Everything else" } };
+    case "approval":
+      return { to: "manager@example.com", subject: "Approval needed", message: "Please approve: {{trigger}}", timeoutSeconds: 86_400 };
   }
 }
 

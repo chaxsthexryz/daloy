@@ -7,13 +7,16 @@ export class StepError extends Error {
   override name = "StepError";
   /** The resolved config the failed attempt ran with, already redacted, so run history can show it. */
   readonly input: unknown;
+  /** Tokens a failed AI attempt still spent, so the step run records them. */
+  readonly usage?: { inputTokens: number; outputTokens: number };
   constructor(
     message: string,
     readonly retryable: boolean,
-    options?: { cause?: unknown; input?: unknown },
+    options?: { cause?: unknown; input?: unknown; usage?: { inputTokens: number; outputTokens: number } },
   ) {
     super(message, options);
     this.input = options?.input ?? null;
+    this.usage = options?.usage;
   }
 }
 

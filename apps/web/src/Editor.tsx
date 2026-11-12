@@ -21,8 +21,10 @@ function summary(step: Step): string {
       return `to ${step.config.to}`;
     case "delay":
       return `${step.config.seconds} s`;
-    default:
-      return "";
+    case "ai":
+      return step.config.task === "classify" ? `classify: ${Object.keys(step.config.labels ?? {}).join(", ")}` : step.config.task;
+    case "approval":
+      return `ask ${step.config.to}`;
   }
 }
 

@@ -41,6 +41,19 @@ describe("addStep", () => {
     expect(valid(d)).toEqual([]);
   });
 
+  it("gives an approval its approved, rejected and timeout branches, and valid default configs to ai and approval", () => {
+    let d = addStep(blankDraft(), "approval").draft;
+    d = addStep(d, "ai", { id: "approval_1" }).draft;
+    d = addStep(d, "email", { id: "approval_1" }).draft;
+    d = addStep(d, "delay", { id: "approval_1" }).draft;
+    expect(d.edges).toEqual([
+      { from: "approval_1", to: "ai_1", on: "approved" },
+      { from: "approval_1", to: "email_1", on: "rejected" },
+      { from: "approval_1", to: "delay_1", on: "timeout" },
+    ]);
+    expect(valid(d)).toEqual([]);
+  });
+
   it("gives an inserted condition the true branch to the old successor", () => {
     let d = addStep(blankDraft(), "http").draft;
     d = addStep(d, "email", { id: "http_1" }).draft;

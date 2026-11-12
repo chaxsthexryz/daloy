@@ -1,4 +1,5 @@
 import * as z from "zod";
+import { aiConfigSchema } from "./ai";
 
 // Ids end up inside expression paths ({{steps.<id>.output}}), so keep them to a safe charset.
 const stepId = z.string().regex(/^[a-z][a-z0-9_]{0,63}$/, "step ids use a-z, 0-9 and _, starting with a letter");
@@ -34,15 +35,22 @@ export const delayConfigSchema = z.object({ seconds: z.int().min(1).max(2_592_00
 export type HttpConfig = z.infer<typeof httpConfigSchema>;
 export type EmailConfig = z.infer<typeof emailConfigSchema>;
 
-// shortcut: ai and approval keep an open record until phase 7 gives them their own schemas.
-const openConfig = z.record(z.string(), z.unknown()).default({});
+// The approver gets an email with a single-use link. timeoutSeconds later, an unanswered approval takes the timeout branch.
+export const approvalConfigSchema = z.object({
+  to: template(2000).min(1),
+  subject: template(500).min(1),
+  message: template(10_000).min(1),
+  timeoutSeconds: z.int().min(60).max(2_592_000),
+});
+export type ApprovalConfig = z.infer<typeof approvalConfigSchema>;
 
 const stepSchema = z.discriminatedUnion("type", [
   z.object({ id: stepId, type: z.literal("condition"), config: z.object({ condition: conditionSchema }) }),
   z.object({ id: stepId, type: z.literal("http"), config: httpConfigSchema }),
   z.object({ id: stepId, type: z.literal("email"), config: emailConfigSchema }),
   z.object({ id: stepId, type: z.literal("delay"), config: delayConfigSchema }),
-  z.object({ id: stepId, type: z.enum(["ai", "approval"]), config: openConfig }),
+  z.object({ id: stepId, type: z.literal("ai"), config: aiConfigSchema }),
+  z.object({ id: stepId, type: z.literal("approval"), config: approvalConfigSchema }),
 ]);
 export type Step = z.infer<typeof stepSchema>;
 

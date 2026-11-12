@@ -1,9 +1,10 @@
 import { randomBytes } from "node:crypto";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { encryptSecret, secrets, users, type Db } from "@daloy/db";
+import { approvals, encryptSecret, hashToken, runs, secrets, stepRuns, users, workflows, workflowVersions, type Db } from "@daloy/db";
 import type { Step } from "@daloy/engine";
-import nodemailer from "nodemailer";
+import { eq } from "drizzle-orm";
+import nodemailer, { type SendMailOptions, type Transporter } from "nodemailer";
 import type { Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { freshDatabase } from "../../../../test/db";
@@ -18,6 +19,8 @@ let server: Server;
 let port: number;
 let userId: string;
 const received: string[] = [];
+const sent: string[] = [];
+const NO_STEP_RUN = "00000000-0000-0000-0000-000000000000";
 
 beforeAll(async () => {
   ({ db, pool } = await freshDatabase());
@@ -45,7 +48,18 @@ const executor = () =>
   createExecutor({
     db,
     secretsKey: key,
-    mailer: { transport: nodemailer.createTransport({ jsonTransport: true }), from: "d@example.com" },
+    mailer: {
+      // jsonTransport builds the message without sending it; keep it so tests can read the approval link.
+      transport: {
+        sendMail: async (msg: SendMailOptions) => {
+          const info = await nodemailer.createTransport({ jsonTransport: true }).sendMail(msg);
+          sent.push(String(info.message));
+          return info;
+        },
+      } as unknown as Transporter,
+      from: "d@example.com",
+    },
+    publicUrl: "https://daloy.example.com/",
     guard: {
       blockList: blockListOf(BLOCKED_RANGES.filter(([net]) => net !== "127.0.0.0")),
       ports: ["", String(port)],
@@ -53,7 +67,7 @@ const executor = () =>
     },
   });
 const run = (step: Step, trigger: unknown = {}) =>
-  executor().execute({ runId: "r", userId, step, attempt: 1, idempotencyKey: "r:s:1", ctx: { trigger, steps: {} } });
+  executor().execute({ runId: "r", stepRunId: NO_STEP_RUN, userId, step, attempt: 1, idempotencyKey: "r:s:1", ctx: { trigger, steps: {} } });
 
 describe("step executor", () => {
   it("fills secrets into the request but never into the stored output", async () => {
@@ -100,7 +114,7 @@ describe("step executor", () => {
 
   describe("mock mode (builder test runs)", () => {
     const mocked = (step: Step, trigger: unknown = {}) =>
-      executor().execute({ runId: "r", userId, step, attempt: 1, idempotencyKey: "r:s:1", ctx: { trigger, steps: {} }, mock: true });
+      executor().execute({ runId: "r", stepRunId: NO_STEP_RUN, userId, step, attempt: 1, idempotencyKey: "r:s:1", ctx: { trigger, steps: {} }, mock: true });
 
     it("answers http without a request and still redacts secrets", async () => {
       const calls = received.length;
@@ -114,10 +128,47 @@ describe("step executor", () => {
       expect(out.output).toEqual({ mocked: true, to: "ana@example.com", subject: "Hi Ana" });
     });
 
+    it("answers an ai step with the fixed output and no model call", async () => {
+      const step: Step = { id: "c", type: "ai", config: { task: "classify", input: "{{trigger.m}}", labels: { billing: "b", support: "s" } } };
+      const out = await mocked(step, { m: "where is my invoice" });
+      expect(out.output).toEqual({ label: "billing" });
+      expect(out.input).toEqual({ task: "classify", input: "where is my invoice", labels: { billing: "b", support: "s" } });
+      expect(out.inputTokens).toBeUndefined();
+    });
+
+    it("approves an approval step without sending an email", async () => {
+      const before = sent.length;
+      const out = await mocked({ id: "ok", type: "approval", config: { to: "boss@example.com", subject: "s", message: "m", timeoutSeconds: 60 } });
+      expect(out).toMatchObject({ branch: "approved", output: { mocked: true, decision: "approved" } });
+      expect(out.waitUntil).toBeUndefined();
+      expect(sent.length).toBe(before);
+    });
+
     it("caps a delay at one second", async () => {
       const before = Date.now();
       const delay = await mocked({ id: "d", type: "delay", config: { seconds: 3600 } });
       expect(delay.waitUntil!.getTime() - before).toBeLessThan(2_000);
     });
+  });
+
+  it("emails a single-use approval link, stores only its hash, and waits until the timeout", async () => {
+    const [wf] = await db.insert(workflows).values({ userId, name: "Refunds", slug: "refunds" }).returning();
+    const [v] = await db.insert(workflowVersions).values({ workflowId: wf!.id, version: 1, definition: {} }).returning();
+    const [r] = await db.insert(runs).values({ workflowVersionId: v!.id, state: "running" }).returning();
+    const [sr] = await db.insert(stepRuns).values({ runId: r!.id, stepId: "ask", attempt: 1, state: "running" }).returning();
+    const step: Step = { id: "ask", type: "approval", config: { to: "{{trigger.manager}}", subject: "Refund {{trigger.amount}}?", message: "Refund {{trigger.amount}} EUR to Ana?", timeoutSeconds: 3600 } };
+
+    const before = Date.now();
+    const out = await executor().execute({ runId: r!.id, stepRunId: sr!.id, userId, step, attempt: 1, idempotencyKey: `${r!.id}:ask:1`, ctx: { trigger: { manager: "boss@example.com", amount: 40 }, steps: {} } });
+
+    expect(out.waitUntil!.getTime() - before).toBeGreaterThanOrEqual(3_600_000);
+    expect(out.input).toEqual({ to: "boss@example.com", subject: "Refund 40?", message: "Refund 40 EUR to Ana?", timeoutSeconds: 3600 });
+    const mail = JSON.parse(sent.at(-1)!) as { subject: string; text: string };
+    expect(mail.subject).toBe("Refund 40?");
+    const token = /https:\/\/daloy\.example\.com\/approvals\/([A-Za-z0-9_-]{43})/.exec(mail.text)?.[1];
+    expect(token).toBeDefined();
+    const [row] = await db.select().from(approvals).where(eq(approvals.stepRunId, sr!.id));
+    expect(row!.tokenHash).toBe(hashToken(token!));
+    expect(JSON.stringify(out)).not.toContain(token);
   });
 });

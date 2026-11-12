@@ -5,6 +5,8 @@ const VALID_CONFIG: Record<string, Record<string, unknown>> = {
   http: { method: "GET", url: "https://example.com/{{trigger.id}}" },
   email: { to: "ops@example.com", subject: "New inquiry", text: "{{trigger.message}}" },
   delay: { seconds: 60 },
+  ai: { task: "classify", input: "{{trigger.message}}", labels: { billing: "Invoices", support: "Everything else" } },
+  approval: { to: "boss@example.com", subject: "Approve?", message: "{{trigger.amount}}", timeoutSeconds: 3600 },
 };
 const step = (id: string, type = "http", config: Record<string, unknown> = VALID_CONFIG[type] ?? {}) => ({ id, type, config });
 const triage = () => ({

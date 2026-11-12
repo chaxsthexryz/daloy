@@ -60,7 +60,12 @@ describe("generate", () => {
     mockFetch(ok('{"label":"spam"}'));
     const schema = z.object({ label: z.enum(["billing", "support"]) });
 
-    await expect(generate({ ...base, schema })).rejects.toMatchObject({ name: "LlmError", retryable: false });
+    await expect(generate({ ...base, schema })).rejects.toMatchObject({
+      name: "LlmError",
+      retryable: false,
+      invalidOutput: true,
+      usage: { inputTokens: 12, outputTokens: 5 },
+    });
   });
 
   it("rejects output that is not JSON when a schema is given", async () => {

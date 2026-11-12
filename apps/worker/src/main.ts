@@ -14,7 +14,7 @@ await migrate(pool);
 const worker = await startWorker({
   connectionString: url,
   db,
-  executor: createExecutor({ db, secretsKey, mailer: smtpMailer() }),
+  executor: createExecutor({ db, secretsKey, mailer: smtpMailer(), llmModel: process.env.LLM_MODEL, publicUrl: process.env.PUBLIC_URL }),
 });
 console.log("worker started");
 
