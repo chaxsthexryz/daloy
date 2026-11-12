@@ -145,6 +145,48 @@ describe("workflows", () => {
   });
 });
 
+describe("builder", () => {
+  it("serves a JSON schema per step type, the branch labels and the templates", async () => {
+    const { agent } = await signedIn();
+    const res = (await agent.get("/step-schemas").expect(200)).body;
+    expect(res.schemas.http.properties.method.enum).toContain("POST");
+    expect(res.branches.condition).toEqual(["true", "false"]);
+    const templates = (await agent.get("/templates").expect(200)).body;
+    expect(templates).toHaveLength(3);
+    await request(server).get("/step-schemas").expect(401);
+  });
+
+  it("test-runs a draft as a mocked test run without publishing it", async () => {
+    const { agent } = await signedIn();
+    const wf = await agent.post("/workflows").send({ name: "Draft", slug: `wf-${++seq}` }).expect(201);
+    const body = { definition: twoSteps({ type: "manual" }), payload: { n: 1 } };
+    const first = await agent.post(`/workflows/${wf.body.id}/test-runs`).send(body).expect(202);
+    const [row] = await db.select().from(runs).where(eq(runs.id, first.body.id));
+    expect(row).toMatchObject({ test: true, live: false, triggerPayload: { n: 1 } });
+    expect((await agent.get(`/runs/${first.body.id}`).expect(200)).body).toMatchObject({ test: true, live: false });
+
+    // The same draft again reuses its version; a changed draft adds one. Nothing is published.
+    const again = await agent.post(`/workflows/${wf.body.id}/test-runs`).send({ ...body, live: true }).expect(202);
+    expect(again.body.versionId).toBe(first.body.versionId);
+    const changed = { ...body, definition: { ...body.definition, steps: [body.definition.steps[0], { id: "b", type: "delay", config: { seconds: 2 } }] } };
+    const third = await agent.post(`/workflows/${wf.body.id}/test-runs`).send(changed).expect(202);
+    expect(third.body.versionId).not.toBe(first.body.versionId);
+    const versions = (await agent.get(`/workflows/${wf.body.id}/versions`).expect(200)).body;
+    expect(versions.map((v: { published: boolean }) => v.published)).toEqual([false, false]);
+    const opened = (await agent.get(`/workflows/${wf.body.id}`).expect(200)).body;
+    expect(opened).toMatchObject({ live: null, latest: { id: third.body.versionId, published: false } });
+    expect(opened.latest.definition.steps[1].config.seconds).toBe(2);
+  });
+
+  it("rejects an invalid draft and another user's workflow", async () => {
+    const { agent } = await signedIn();
+    const wf = await agent.post("/workflows").send({ name: "Draft", slug: `wf-${++seq}` }).expect(201);
+    await agent.post(`/workflows/${wf.body.id}/test-runs`).send({ definition: { trigger: { type: "manual" }, steps: [] } }).expect(400);
+    const other = await signedIn();
+    await other.agent.post(`/workflows/${wf.body.id}/test-runs`).send({ definition: twoSteps({ type: "manual" }) }).expect(404);
+  });
+});
+
 describe("secrets and API tokens", () => {
   it("stores secrets encrypted and never returns their values", async () => {
     const { agent } = await signedIn();

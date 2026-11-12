@@ -4,6 +4,7 @@
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "strict": true,
+    "jsx": "react-jsx",
     "experimentalDecorators": true,
     "noUncheckedIndexedAccess": true,
     "resolveJsonModule": true,
@@ -12,5 +13,5 @@
     "noEmit": true,
     "types": ["node"]
   },
-  "include": ["packages/*/src", "apps/*/src", "test", "vitest.config.ts"]
+  "include": ["packages/*/src", "apps/*/src", "test", "e2e", "vitest.config.ts", "playwright.config.ts"]
 }

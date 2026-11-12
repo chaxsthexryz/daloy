@@ -94,4 +94,27 @@ describe("step executor", () => {
     expect(delay.waitUntil!.getTime() - before).toBeGreaterThanOrEqual(60_000);
     expect(delay.waitUntil!.getTime() - before).toBeLessThan(61_000);
   });
+
+  describe("mock mode (builder test runs)", () => {
+    const mocked = (step: Step, trigger: unknown = {}) =>
+      executor().execute({ runId: "r", userId, step, attempt: 1, idempotencyKey: "r:s:1", ctx: { trigger, steps: {} }, mock: true });
+
+    it("answers http without a request and still redacts secrets", async () => {
+      const calls = received.length;
+      const out = await mocked({ id: "call", type: "http", config: { method: "POST", url: `http://api.test:${port}/{{secrets.api_token}}`, headers: {} } });
+      expect(received.length).toBe(calls);
+      expect(out.output).toMatchObject({ mocked: true, status: 200, body: null, request: { method: "POST", url: `http://api.test:${port}/[secret]` } });
+    });
+
+    it("resolves email templates without sending", async () => {
+      const out = await mocked({ id: "mail", type: "email", config: { to: "{{trigger.email}}", subject: "Hi {{trigger.name}}", text: "t" } }, { email: "ana@example.com", name: "Ana" });
+      expect(out.output).toEqual({ mocked: true, to: "ana@example.com", subject: "Hi Ana" });
+    });
+
+    it("caps a delay at one second", async () => {
+      const before = Date.now();
+      const delay = await mocked({ id: "d", type: "delay", config: { seconds: 3600 } });
+      expect(delay.waitUntil!.getTime() - before).toBeLessThan(2_000);
+    });
+  });
 });

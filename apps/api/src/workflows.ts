@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { createRun, publishedVersion, SCHEDULE_QUEUE, triggers, workflows, workflowVersions, type Db } from "@daloy/db";
-import { definitionSchema, type Trigger } from "@daloy/engine";
+import { BRANCHES, definitionSchema, stepJsonSchemas, TEMPLATES, type Trigger, type WorkflowDefinition } from "@daloy/engine";
 import {
   BadRequestException,
   Body,
@@ -29,6 +29,7 @@ const workflowInput = z.object({
 const renameInput = workflowInput.pick({ name: true });
 const versionInput = z.object({ definition: z.unknown(), publish: z.boolean().default(false) });
 const runInput = z.object({ payload: z.record(z.string(), z.unknown()).default({}) });
+const testRunInput = runInput.extend({ definition: z.unknown(), live: z.boolean().default(false) });
 const workflowId = new ZodPipe(z.uuid());
 
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
@@ -61,7 +62,9 @@ export class WorkflowsController {
   async get(@CurrentUser() user: SessionUser, @Param("id", workflowId) id: string) {
     const wf = await this.owned(user.id, id);
     const [trigger] = await this.db.select().from(triggers).where(eq(triggers.workflowId, id));
-    return { ...wf, trigger: trigger ?? null, live: (await publishedVersion(this.db, id)) ?? null };
+    // latest is what the builder opens: the newest version, published or draft.
+    const [latest] = await this.db.select().from(workflowVersions).where(eq(workflowVersions.workflowId, id)).orderBy(desc(workflowVersions.version)).limit(1);
+    return { ...wf, trigger: trigger ?? null, live: (await publishedVersion(this.db, id)) ?? null, latest: latest ?? null };
   }
 
   @Patch(":id")
@@ -91,21 +94,38 @@ export class WorkflowsController {
   @Post(":id/versions")
   async addVersion(@CurrentUser() user: SessionUser, @Param("id", workflowId) id: string, @Body(new ZodPipe(versionInput)) body: z.output<typeof versionInput>) {
     await this.owned(user.id, id);
-    const parsed = definitionSchema.safeParse(body.definition);
-    if (!parsed.success) throw new BadRequestException(parsed.error.issues.map((i) => `${i.path.join(".") || "definition"}: ${i.message}`));
-    const definition = parsed.data;
+    const definition = parseDefinition(body.definition);
 
     // Scheduled first: pg-boss rejects a bad cron here, before anything is saved.
     if (body.publish) await this.syncSchedule(id, definition.trigger);
+    return this.saveVersion(id, definition, body.publish);
+  }
 
+  /**
+   * The builder's "Test run": saves the draft as an unpublished version (unless it matches the newest one)
+   * and runs it as a test. http and email steps are mocked unless live is true.
+   */
+  @Post(":id/test-runs")
+  @HttpCode(202)
+  async testRun(@CurrentUser() user: SessionUser, @Param("id", workflowId) id: string, @Body(new ZodPipe(testRunInput)) body: z.output<typeof testRunInput>) {
+    await this.owned(user.id, id);
+    const definition = parseDefinition(body.definition);
+    const [latest] = await this.db.select().from(workflowVersions).where(eq(workflowVersions.workflowId, id)).orderBy(desc(workflowVersions.version)).limit(1);
+    const versionId = latest && canonical(latest.definition) === canonical(definition) ? latest.id : (await this.saveVersion(id, definition, false))!.id;
+    const runId = await createRun(this.db, versionId, body.payload, { test: true, live: body.live });
+    await enqueueRun(this.boss, runId);
+    return { id: runId, versionId };
+  }
+
+  private async saveVersion(id: string, definition: WorkflowDefinition, publish: boolean) {
     try {
       return await this.db.transaction(async (tx) => {
         const [{ latest }] = (await tx.select({ latest: max(workflowVersions.version) }).from(workflowVersions).where(eq(workflowVersions.workflowId, id))) as [{ latest: number | null }];
         const [row] = await tx
           .insert(workflowVersions)
-          .values({ workflowId: id, version: (latest ?? 0) + 1, definition, published: body.publish })
+          .values({ workflowId: id, version: (latest ?? 0) + 1, definition, published: publish })
           .returning({ id: workflowVersions.id, version: workflowVersions.version, published: workflowVersions.published });
-        if (body.publish) await syncTrigger(tx, id, definition.trigger);
+        if (publish) await syncTrigger(tx, id, definition.trigger);
         return row;
       });
     } catch (err) {
@@ -140,6 +160,34 @@ export class WorkflowsController {
     } catch (err) {
       throw new BadRequestException(`trigger.config.cron: ${err instanceof Error ? err.message : "invalid"}`);
     }
+  }
+}
+
+function parseDefinition(input: unknown): WorkflowDefinition {
+  const parsed = definitionSchema.safeParse(input);
+  if (!parsed.success) throw new BadRequestException(parsed.error.issues.map((i) => `${i.path.join(".") || "definition"}: ${i.message}`));
+  return parsed.data;
+}
+
+/** JSON with sorted keys. Postgres jsonb reorders object keys, so plain JSON.stringify cannot compare a stored definition. */
+export function canonical(value: unknown): string {
+  return JSON.stringify(value, (_k, v: unknown) =>
+    v !== null && typeof v === "object" && !Array.isArray(v) ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) : v,
+  );
+}
+
+/** Read-only data the builder needs: a form schema per step type, branch labels, and the starter templates. */
+@Controller()
+@UseGuards(SessionGuard)
+export class CatalogController {
+  @Get("step-schemas")
+  stepSchemas() {
+    return { schemas: stepJsonSchemas(), branches: BRANCHES };
+  }
+
+  @Get("templates")
+  templates() {
+    return TEMPLATES;
   }
 }
 

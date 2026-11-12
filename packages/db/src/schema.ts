@@ -64,6 +64,9 @@ export const runs = pgTable("runs", {
   workflowVersionId: uuid("workflow_version_id").notNull().references(() => workflowVersions.id, { onDelete: "cascade" }),
   state: runState("state").notNull().default("pending"),
   triggerPayload: jsonb("trigger_payload").notNull().default({}),
+  // Test runs come from the builder. Unless live is set, the worker mocks steps that reach outside (http, email).
+  test: boolean("test").notNull().default(false),
+  live: boolean("live").notNull().default(false),
   error: text("error"),
   // Lease: the worker that holds it renews it with a heartbeat. An expired lease means the run can be resumed.
   leaseOwner: text("lease_owner"),

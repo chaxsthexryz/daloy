@@ -35,3 +35,5 @@ Kept current with each phase. A mitigation marked "planned" does not exist in co
 | Cross-site request forgery on console routes | SameSite=Lax session cookie, so other sites cannot send it with a POST | Done, phase 3 |
 | Session theft from a database leak | Only SHA-256 of session cookies and API tokens is stored | Done, phase 3 |
 | Form spam | Honeypot field, 10 submissions a minute per IP, field validation | Done, phase 3 |
+| Test runs used to reach internal hosts or send mail | Test runs mock HTTP and email unless "live calls" is ticked; live test runs use the same SSRF guard and recipient cap as real runs | Done, phase 5 |
+| Script injection in the console | React escapes all rendered values, including step outputs and trigger data; no `dangerouslySetInnerHTML`; helmet's CSP blocks inline scripts on the served console | Done, phase 5 |

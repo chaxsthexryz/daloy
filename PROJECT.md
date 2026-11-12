@@ -120,7 +120,7 @@ SSRF, webhook spoofing, secrets leaking into logs, expression injection, approva
 - [x] 2. Database schema, migrations and the worker.
 - [x] 3. API, console auth and triggers.
 - [x] 4. Steps: HTTP (with SSRF protection), email, condition, delay.
-- [ ] 5. Builder UI.
+- [x] 5. Builder UI.
 - [ ] 6. Run history, versions and rollback.
 - [ ] 7. AI task step and human approval.
 - [ ] 8. MCP exposure.

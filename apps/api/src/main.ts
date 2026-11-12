@@ -15,6 +15,8 @@ await boss.start();
 
 const app = await createApp({ db, boss, secretsKey: Buffer.from(key, "base64"), secureCookies: process.env.NODE_ENV === "production" });
 app.enableShutdownHooks();
+// The built console (apps/web/dist). Served from the API's origin so the session cookie needs no CORS. It uses hash routes, so index.html at / is enough.
+if (process.env.WEB_DIST) app.useStaticAssets(process.env.WEB_DIST);
 const port = Number(process.env.PORT ?? 3000);
 await app.listen(port);
 console.log(`api listening on ${port}`);

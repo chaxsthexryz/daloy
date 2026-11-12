@@ -18,9 +18,9 @@ import { and, asc, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
 /** waitUntil parks the step and the run in "waiting" until that time (delay now, approval in phase 7). */
 export type StepResult = { output?: unknown; branch?: string; inputTokens?: number; outputTokens?: number; waitUntil?: Date };
 
-/** Runs one step attempt. userId is the workflow owner, whose secrets the step may use. */
+/** Runs one step attempt. userId is the workflow owner, whose secrets the step may use. mock is set for builder test runs without live calls. */
 export interface StepExecutor {
-  execute(input: { runId: string; userId: string; step: Step; attempt: number; idempotencyKey: string; ctx: ExpressionContext }): Promise<StepResult>;
+  execute(input: { runId: string; userId: string; step: Step; attempt: number; idempotencyKey: string; ctx: ExpressionContext; mock?: boolean }): Promise<StepResult>;
 }
 
 export type AdvanceDeps = {
@@ -134,7 +134,7 @@ async function runNext(deps: AdvanceDeps, run: Run): Promise<void> {
 
   let result: StepResult;
   try {
-    result = await deps.executor.execute({ runId: run.id, userId: version!.userId, step, attempt, idempotencyKey: idempotencyKey(run.id, step.id, attempt), ctx });
+    result = await deps.executor.execute({ runId: run.id, userId: version!.userId, step, attempt, idempotencyKey: idempotencyKey(run.id, step.id, attempt), ctx, mock: run.test && !run.live });
   } catch (err) {
     const decision = decideRetry(err, attempt, deps.retryPolicy ?? DEFAULT_RETRY_POLICY);
     const message = err instanceof Error ? err.message : String(err);

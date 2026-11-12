@@ -2,7 +2,7 @@
 
 Daloy is a workflow automation engine with AI steps. You build an automation from one trigger and a series of steps, Daloy runs it, keeps a history of every run, and can expose published workflows as MCP tools.
 
-Status: phase 1 done (engine package with tests). See the checklist in [PROJECT.md](PROJECT.md).
+Status: phases 0 to 5 done (engine, worker, API, steps and the builder UI). See the checklist in [PROJECT.md](PROJECT.md).
 
 ## Problem
 
@@ -39,7 +39,9 @@ pnpm install
 pnpm test
 ```
 
-Mailpit's inbox is at http://localhost:8025.
+The console is at http://localhost:3000 (the API serves it). Mailpit's inbox is at http://localhost:8025.
+
+To work on the console with hot reload, run the API and worker (`pnpm --filter @daloy/api start`, `pnpm --filter @daloy/worker start`) and then `pnpm --filter @daloy/web dev`. Vite serves it on http://localhost:5173 and forwards API routes to port 3000.
 
 ## Demo login
 
@@ -51,7 +53,10 @@ Added with the seed script in phase 9.
 pnpm test        # vitest, all packages. Uses DATABASE_URL if set, otherwise starts an embedded Postgres
 pnpm typecheck
 pnpm lint
+pnpm e2e         # Playwright: builds the console, starts Postgres, the API and the worker, then runs the main flow in Chromium
 ```
+
+The first `pnpm e2e` needs a browser: `pnpm exec playwright install chromium`.
 
 CI also runs Semgrep, gitleaks and `pnpm audit` on every push.
 
@@ -59,7 +64,9 @@ CI also runs Semgrep, gitleaks and `pnpm audit` on every push.
 
 - Version 1 supports linear flows with branches only: no loops, no parallel branches, no sub-workflows.
 - One workspace per user.
-- The web console does not exist yet (phase 5). The ai and approval step types arrive in phase 7.
+- The ai and approval step types arrive in phase 7. Run history and version diffs arrive in phase 6; the console shows only the latest run.
+- The builder lays out steps automatically and nodes cannot be dragged. Steps are added from the side panel, not by drawing edges.
+- The console bundle is about 520 kB (160 kB gzipped), mostly React Flow, React and zod.
 - Secret redaction is plain text replacement, so a very short secret value also hides unrelated text that matches it.
 - The HTTP step ignores proxy environment variables and only calls ports 80 and 443.
 - Rate limits are counted per API process.
@@ -86,6 +93,10 @@ CI also runs Semgrep, gitleaks and `pnpm audit` on every push.
 | cookie-parser | Reads the session cookie | MIT |
 | supertest | API route tests | MIT |
 | nodemailer, @types/nodemailer | SMTP client for the email step | MIT-0, MIT |
+| react, react-dom, @types/react, @types/react-dom | Console UI | MIT |
+| @xyflow/react | Workflow canvas (React Flow) | MIT |
+| vite, @vitejs/plugin-react | Console dev server and build | MIT |
+| @playwright/test | End-to-end tests | Apache-2.0 |
 
 TypeScript is pinned to 6.0.x because typescript-eslint 8 does not support TypeScript 7 yet.
 

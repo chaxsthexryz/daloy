@@ -23,12 +23,14 @@ function redact(value: unknown, values: string[]): unknown {
   return value;
 }
 
-async function runStep(deps: ExecutorDeps & { guard: SsrfGuard }, step: Step, ctx: ExpressionContext, idempotencyKey: string): Promise<StepResult> {
+async function runStep(deps: ExecutorDeps & { guard: SsrfGuard }, step: Step, ctx: ExpressionContext, idempotencyKey: string, mock: boolean): Promise<StepResult> {
   switch (step.type) {
     case "condition":
       return { branch: String(evaluateCondition(step.config.condition, ctx)) };
     case "delay": {
-      const waitUntil = new Date(Date.now() + step.config.seconds * 1000);
+      // A mocked test run waits at most one second, so the builder shows the result straight away.
+      const seconds = mock ? Math.min(step.config.seconds, 1) : step.config.seconds;
+      const waitUntil = new Date(Date.now() + seconds * 1000);
       return { output: { resumeAt: waitUntil.toISOString() }, waitUntil };
     }
     case "http": {
@@ -39,10 +41,13 @@ async function runStep(deps: ExecutorDeps & { guard: SsrfGuard }, step: Step, ct
         headers: Object.fromEntries(Object.entries(headers).map(([k, v]) => [k, text(v, ctx)])),
         body: body === undefined ? undefined : text(body, ctx),
       };
+      // Same shape as a real response, so later steps that read {{steps.x.output.body}} still resolve.
+      if (mock) return { output: { mocked: true, status: 200, headers: {}, body: null, request: { method: cfg.method, url: cfg.url } } };
       return { output: await httpRequest(cfg, idempotencyKey, { guard: deps.guard }) };
     }
     case "email": {
       const { to, subject, text: body } = step.config;
+      if (mock) return { output: { mocked: true, to: text(to, ctx), subject: text(subject, ctx) } };
       const sent = await sendEmail(deps.mailer, { to: text(to, ctx), subject: text(subject, ctx), text: text(body, ctx) }, idempotencyKey);
       return { output: { messageId: sent.messageId, to: sent.to } };
     }
@@ -58,13 +63,13 @@ async function runStep(deps: ExecutorDeps & { guard: SsrfGuard }, step: Step, ct
 export function createExecutor(deps: ExecutorDeps): StepExecutor {
   const full = { ...deps, guard: deps.guard ?? defaultGuard() };
   return {
-    async execute({ step, userId, idempotencyKey, ctx }) {
+    async execute({ step, userId, idempotencyKey, ctx, mock = false }) {
       const secrets = await readSecrets(deps.db, deps.secretsKey, userId);
       const values = Object.values(secrets)
         .filter((v) => v.length > 0)
         .sort((a, b) => b.length - a.length);
       try {
-        const result = await runStep(full, step, { ...ctx, secrets }, idempotencyKey);
+        const result = await runStep(full, step, { ...ctx, secrets }, idempotencyKey, mock);
         return { ...result, output: redact(result.output, values) };
       } catch (err) {
         const message = redact(err instanceof Error ? err.message : String(err), values) as string;

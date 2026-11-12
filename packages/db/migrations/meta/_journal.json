@@ -15,6 +15,13 @@
       "when": 1794397753470,
       "tag": "0001_run_version_cascade",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1794496679829,
+      "tag": "0002_run_test_flags",
+      "breakpoints": true
     }
   ]
 }

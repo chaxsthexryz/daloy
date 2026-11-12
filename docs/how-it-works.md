@@ -9,7 +9,7 @@ This file explains each core module in plain language: what it does, why it is b
 - `packages/db`: Drizzle schema and SQL migrations, shared by the worker and the API.
 - `apps/worker`: takes run jobs from pg-boss and executes steps.
 - `apps/api`: NestJS API for the console, plus the public webhook and form routes.
-- `apps/web`: built in phase 5.
+- `apps/web`: the console. Vite, React and React Flow. In compose the API serves its build.
 - Postgres stores application data and the job queues (pg-boss). See [decision 0001](decisions/0001-no-redis.md).
 
 ## LLM client (packages/llm-ts)
@@ -147,3 +147,23 @@ Limits: rate limit counters live in process memory, so each API instance counts 
 - Webhook: `POST /hooks/:path`, where the path is 32 random bytes made at the first publish and kept across later publishes. If the trigger names a secret (`hmacSecret`), the request must carry `X-Daloy-Signature: sha256=<hex HMAC of the raw body>`, compared in constant time. A named secret that no longer exists rejects every call.
 - Form: `GET /forms/:triggerId` renders an HTML form from the field list in the definition, with labels escaped. `POST` validates the fields and starts a run. A hidden honeypot field catches bots: if it is filled, the API answers as if it worked and starts nothing.
 - Schedule: publishing registers a pg-boss cron schedule keyed by workflow id. pg-boss sends a job to `schedule-trigger` at each tick, and the worker starts a run of the live version. Publishing a version with another trigger type removes the schedule.
+
+## Builder (apps/web)
+
+What it does: the console where a user signs in, creates a workflow (blank or from a starter template), builds it, test-runs it with sample data, publishes it and runs it.
+
+How the editor works: the workflow definition is the editor's only state. Every edit (add a step, delete a step, change a field) is a pure function in `src/lib/graph.ts` that turns one draft into the next. React Flow only draws the result: `toFlow()` turns the draft into nodes and edges, and `layout()` places each step one row below its deepest parent, with each row centred. Nodes cannot be dragged and edges cannot be drawn by hand, so the picture always matches the definition. The API validates the definition on save, so the editor shows the same error messages as any other client.
+
+- Adding a step after a step that already leads somewhere inserts the new step in between. After a condition, it fills the first free branch (`true`, then `false`), or the branch the user picks.
+- Deleting a step with one parent and one child connects the two, keeping the parent's branch label.
+- A new step gets an id such as `http_1`, the lowest free number for its type.
+
+Step forms: the engine exports `stepJsonSchemas()`, which turns each step's zod config schema into JSON Schema with `z.toJSONSchema()`. `GET /step-schemas` serves them with the branch labels. `src/SchemaForm.tsx` renders a form from that schema: enums become selects, integers become number inputs, long text fields become text areas, and the header map becomes a list of name and value rows. Adding a field to a step's zod schema adds it to the form with no UI change. See [decision 0007](decisions/0007-builder-ui.md).
+
+Test runs: `POST /workflows/:id/test-runs { definition, payload, live }` saves the draft as an unpublished version (or reuses the newest version if the draft is identical, compared with sorted keys because Postgres jsonb reorders them) and starts a run with `runs.test = true`. Unless `live` is set, the worker mocks the steps that reach outside: the HTTP step returns `{ mocked: true, status: 200, body: null, request }` without a request, the email step returns the resolved recipient and subject without sending, and a delay waits at most one second. Templates and secret redaction still run, so the output shows what a real run would send. The console polls `GET /runs/:id` once a second and shows each step's state, branch and output.
+
+Accessibility: every action has a button, and the side panel lists the trigger and every step as buttons, so the whole editor works from the keyboard. Canvas nodes are also focusable (Enter selects, Delete removes) and have names that say where each branch leads. Colours are CSS variables for light and dark mode. The main text pairs (body, muted, links, buttons, node text, the success badge) were measured in the browser at 5:1 contrast or better in both modes. The side panel has a fixed width, so the canvas does not move when the panel content changes.
+
+Tests: `src/lib/graph.test.ts` covers adding, inserting, branching, deleting and the layout. `packages/engine/src/step-schemas.test.ts` checks the JSON Schema shapes the form relies on, and `templates.test.ts` checks that the three starter templates are valid. `api.test.ts` ("builder") covers the schema and template routes, test runs, version reuse and ownership. `apps/worker/src/steps/index.test.ts` ("mock mode") proves mocked steps make no request. `e2e/main-flow.spec.ts` (Playwright) signs up, builds a condition and an HTTP step, test-runs, publishes and runs a live version, and checks the step outline from the keyboard.
+
+Limits: the console shows only the latest run (run history is phase 6). Starter templates are offered when creating a workflow; phase 9 seeds them for the demo user.

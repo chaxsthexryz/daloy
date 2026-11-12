@@ -24,7 +24,7 @@ export async function publishedVersion(db: AnyDb, workflowId: string) {
 }
 
 /** Inserts a pending run. The caller queues it; if that fails, the worker's sweep picks it up. */
-export async function createRun(db: AnyDb, workflowVersionId: string, triggerPayload: unknown): Promise<string> {
-  const [run] = await db.insert(runs).values({ workflowVersionId, triggerPayload }).returning({ id: runs.id });
+export async function createRun(db: AnyDb, workflowVersionId: string, triggerPayload: unknown, opts: { test?: boolean; live?: boolean } = {}): Promise<string> {
+  const [run] = await db.insert(runs).values({ workflowVersionId, triggerPayload, ...opts }).returning({ id: runs.id });
   return run!.id;
 }
