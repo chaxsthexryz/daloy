@@ -42,8 +42,8 @@ async function signedIn() {
 const twoSteps = (trigger: object) => ({
   trigger,
   steps: [
-    { id: "a", type: "http", config: {} },
-    { id: "b", type: "email", config: {} },
+    { id: "a", type: "delay", config: { seconds: 1 } },
+    { id: "b", type: "delay", config: { seconds: 1 } },
   ],
   edges: [{ from: "a", to: "b" }],
 });

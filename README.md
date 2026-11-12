@@ -59,7 +59,9 @@ CI also runs Semgrep, gitleaks and `pnpm audit` on every push.
 
 - Version 1 supports linear flows with branches only: no loops, no parallel branches, no sub-workflows.
 - One workspace per user.
-- The web console does not exist yet (phase 5). The API and worker run, but real step types arrive in phase 4.
+- The web console does not exist yet (phase 5). The ai and approval step types arrive in phase 7.
+- Secret redaction is plain text replacement, so a very short secret value also hides unrelated text that matches it.
+- The HTTP step ignores proxy environment variables and only calls ports 80 and 443.
 - Rate limits are counted per API process.
 
 ## Dependencies
@@ -83,6 +85,7 @@ CI also runs Semgrep, gitleaks and `pnpm audit` on every push.
 | helmet | Security headers | MIT |
 | cookie-parser | Reads the session cookie | MIT |
 | supertest | API route tests | MIT |
+| nodemailer, @types/nodemailer | SMTP client for the email step | MIT-0, MIT |
 
 TypeScript is pinned to 6.0.x because typescript-eslint 8 does not support TypeScript 7 yet.
 

@@ -29,6 +29,10 @@ services:
         APP: worker
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER:-daloy}:${POSTGRES_PASSWORD:-daloy}@postgres:5432/${POSTGRES_DB:-daloy}
+      SECRETS_KEY: ${SECRETS_KEY:?set SECRETS_KEY in .env (openssl rand -base64 32)}
+      SMTP_HOST: mailpit
+      SMTP_PORT: 1025
+      SMTP_FROM: ${SMTP_FROM:-Daloy <daloy@localhost>}
     depends_on:
       postgres:
         condition: service_healthy

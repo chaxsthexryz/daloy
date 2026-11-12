@@ -5,10 +5,10 @@ import { entryStep, nextStep } from "./graph";
 const def = definitionSchema.parse({
   trigger: { type: "manual", config: {} },
   steps: [
-    { id: "fetch", type: "http", config: {} },
+    { id: "fetch", type: "delay", config: { seconds: 1 } },
     { id: "check", type: "condition", config: { condition: { left: "{{trigger.ok}}", op: "eq", right: true } } },
-    { id: "yes", type: "email", config: {} },
-    { id: "no", type: "email", config: {} },
+    { id: "yes", type: "delay", config: { seconds: 1 } },
+    { id: "no", type: "delay", config: { seconds: 1 } },
   ],
   edges: [
     { from: "check", to: "yes", on: "true" },

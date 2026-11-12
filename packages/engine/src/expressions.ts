@@ -1,6 +1,7 @@
 import type { Condition } from "./definition";
 
-export type ExpressionContext = { trigger: unknown; steps: Record<string, { output: unknown }> };
+/** secrets holds decrypted values by name. Only the worker fills it, right before a step runs. */
+export type ExpressionContext = { trigger: unknown; steps: Record<string, { output: unknown }>; secrets?: Record<string, string> };
 
 export const EXPRESSION_LIMITS = { maxTemplateLength: 10_000, maxPlaceholders: 50, maxPathDepth: 32, maxOutputLength: 100_000 };
 export type ExpressionLimits = typeof EXPRESSION_LIMITS;
@@ -20,7 +21,7 @@ function parsePath(raw: string, limits: ExpressionLimits): string[] {
   if (segs.length > limits.maxPathDepth) throw new ExpressionError(`Expression path is too deep: ${expr.slice(0, 80)}`);
   const valid =
     segs.every((s) => SEGMENT.test(s) && !FORBIDDEN.has(s)) &&
-    (segs[0] === "trigger" || (segs[0] === "steps" && segs.length >= 3 && segs[2] === "output"));
+    (segs[0] === "trigger" || (segs[0] === "steps" && segs.length >= 3 && segs[2] === "output") || (segs[0] === "secrets" && segs.length === 2));
   if (!valid) throw new ExpressionError(`Invalid expression: ${expr.slice(0, 80)}`);
   return segs;
 }
@@ -39,8 +40,9 @@ const stringify = (v: unknown): string =>
   v === undefined || v === null ? "" : typeof v === "string" ? v : typeof v === "object" ? JSON.stringify(v) : String(v);
 
 /**
- * Resolves {{trigger.<path>}} and {{steps.<id>.output.<path>}}. A template that is exactly one
- * placeholder returns the raw value (number, object, ...); otherwise values are interpolated into text.
+ * Resolves {{trigger.<path>}}, {{steps.<id>.output.<path>}} and {{secrets.<name>}} in one pass, so a value
+ * that itself contains "{{...}}" (for example from trigger data) is inserted as text and never resolved.
+ * A template that is exactly one placeholder returns the raw value (number, object, ...); otherwise values are interpolated into text.
  */
 export function resolveTemplate(template: string, ctx: ExpressionContext, limits: ExpressionLimits = EXPRESSION_LIMITS): unknown {
   if (template.length > limits.maxTemplateLength) throw new ExpressionError("Template is too long");

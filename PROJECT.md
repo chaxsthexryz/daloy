@@ -119,7 +119,7 @@ SSRF, webhook spoofing, secrets leaking into logs, expression injection, approva
 - [x] 1. Engine package with tests only: definition schema, state machine, retry policy, expression evaluator.
 - [x] 2. Database schema, migrations and the worker.
 - [x] 3. API, console auth and triggers.
-- [ ] 4. Steps: HTTP (with SSRF protection), email, condition, delay.
+- [x] 4. Steps: HTTP (with SSRF protection), email, condition, delay.
 - [ ] 5. Builder UI.
 - [ ] 6. Run history, versions and rollback.
 - [ ] 7. AI task step and human approval.

@@ -48,7 +48,7 @@ export async function startWorker(opts: WorkerOptions) {
     }
   });
 
-  // Resumes runs nobody is working on: lost jobs, crashed workers (expired lease), retries whose delay is over.
+  // Resumes runs nobody is working on: lost jobs, crashed workers (expired lease), retries and waits whose time is up.
   // shortcut: re-sends every idle unfinished run each sweep and relies on singletonKey to drop duplicates; page through ids if runs reach the tens of thousands.
   const sweep = async () => {
     const idle = await db
@@ -56,7 +56,7 @@ export async function startWorker(opts: WorkerOptions) {
       .from(runs)
       .where(
         and(
-          inArray(runs.state, ["pending", "running"]),
+          inArray(runs.state, ["pending", "running", "waiting"]),
           or(isNull(runs.leaseExpiresAt), lt(runs.leaseExpiresAt, sql`now()`)),
           or(isNull(runs.nextAttemptAt), lte(runs.nextAttemptAt, sql`now()`)),
         ),

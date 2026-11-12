@@ -56,17 +56,17 @@ Tests: `packages/engine/src/retry.test.ts`.
 
 ## Idempotency
 
-What it does: every step attempt gets the key `runId:stepId:attempt` (`idempotencyKey` in `retry.ts`). The HTTP step will send it as an `Idempotency-Key` header (phase 4).
+What it does: every step attempt gets the key `runId:stepId:attempt` (`idempotencyKey` in `retry.ts`). The HTTP step sends it as an `Idempotency-Key` header, and the email step turns it into the `Message-ID`.
 
 Why this way: the worker runs steps at least once. If it crashes after calling an external service but before saving the result, the same attempt runs again after restart with the same key, so the receiving service can see that it already handled it. A deliberate retry is a new attempt and gets a new key.
 
 ## Expressions (packages/engine/src/expressions.ts)
 
-What it does: `resolveTemplate` fills `{{trigger.<path>}}` and `{{steps.<id>.output.<path>}}` placeholders. A template that is exactly one placeholder returns the raw value (a number stays a number); otherwise values are written into the text, with objects as JSON and missing values as empty text. `evaluateCondition` runs a branch condition such as `{ left: "{{trigger.amount}}", op: "gt", right: 100 }`.
+What it does: `resolveTemplate` fills `{{trigger.<path>}}`, `{{steps.<id>.output.<path>}}` and `{{secrets.<name>}}` placeholders. Secrets are only available while the worker runs a step. A template that is exactly one placeholder returns the raw value (a number stays a number); otherwise values are written into the text, with objects as JSON and missing values as empty text. `evaluateCondition` runs a branch condition such as `{ left: "{{trigger.amount}}", op: "gt", right: 100 }`.
 
 Why this way: placeholders are property lookups only, so a template cannot run code. See [decision 0002](decisions/0002-expression-resolver.md).
 
-Edge cases: paths that try to reach `constructor`, `__proto__` or `prototype`, or anything other than trigger data or a step output, throw `ExpressionError`. Inherited properties such as `toString` resolve to nothing. Unclosed braces stay as text. Templates over 10,000 characters, more than 50 placeholders, paths deeper than 32 segments and output over 100,000 characters are rejected. Numeric strings from forms compare as numbers, so `"5"` equals `5`.
+Edge cases: paths that try to reach `constructor`, `__proto__` or `prototype`, or anything other than trigger data or a step output, throw `ExpressionError`. Inherited properties such as `toString` resolve to nothing. Unclosed braces stay as text. Resolution is a single pass, so trigger data that contains `{{secrets.x}}` is inserted as that literal text and never resolved. Templates over 10,000 characters, more than 50 placeholders, paths deeper than 32 segments and output over 100,000 characters are rejected. Numeric strings from forms compare as numbers, so `"5"` equals `5`.
 
 Tests: `packages/engine/src/expressions.test.ts`.
 
@@ -92,9 +92,32 @@ State changes: every change goes through `assertTransition` and then a guarded U
 
 Shutdown: on SIGTERM the worker stops taking jobs, waits up to 30 seconds for jobs in progress, and closes the database pool.
 
-Tests: `apps/worker/src/worker.test.ts` runs the real worker against Postgres. It covers a run that succeeds and passes outputs along, a condition branch, a retry that then succeeds, a step that runs out of attempts (dead letter), an error that is not retryable, a run left behind by a crashed worker (resumed with the same idempotency key, no duplicate row), and a run held by another worker's live lease (left alone).
+Waiting: a step can return a wake-up time instead of finishing (the delay step does). The worker then moves the step and the run to `waiting` in one transaction, stores the time in `next_attempt_at` and queues a job that starts at that time. Nothing sleeps in the worker. When the job runs, or the sweep finds the run after the time has passed, the step moves to `succeeded`, the run moves back to `running`, and the flow carries on. The wait is one attempt, so the step does not run again on wake-up.
 
-Limits: step types arrive in phase 4. Until then the worker started by `main.ts` fails every step. The `waiting` state is unused until the delay and approval steps exist.
+Tests: `apps/worker/src/worker.test.ts` runs the real worker against Postgres. It covers a run that succeeds and passes outputs along, a condition branch, a retry that then succeeds, a step that runs out of attempts (dead letter), an error that is not retryable, a run that waits and then carries on, a run left behind by a crashed worker (resumed with the same idempotency key, no duplicate row), and a run held by another worker's live lease (left alone).
+
+## Steps (apps/worker/src/steps)
+
+What it does: `createExecutor` in `index.ts` runs one step attempt. It decrypts the workflow owner's secrets, resolves every template in the step config, runs the step, and then replaces each secret value in the output and in any error text with `[secret]`. Only the redacted result is written to `step_runs`. The secret crypto lives in `packages/db/src/crypto.ts`, shared with the API.
+
+- HTTP (`http.ts`): GET, POST, PUT, PATCH or DELETE with a templated URL, headers (up to 20) and body. It follows up to 3 redirects and runs the SSRF checks again on each one. A 303, or a 301 or 302 after a POST, switches to GET without a body. A redirect to another origin drops the caller's headers, so an `Authorization` header is not sent to a third party. The whole call has a 10 second timeout and the response is cut off at 1 MB. Output is `{ status, headers, body }`, with the body parsed when the content type is JSON. 5xx, 429, timeouts and network errors are retryable. Other 4xx responses, oversized responses and SSRF blocks are not.
+- Email (`email.ts`): plain text over SMTP (nodemailer), configured with `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS` and `SMTP_FROM`. The `to` template is resolved first, then split on commas, and each address is checked. At most 10 recipients. The `Message-ID` comes from the idempotency key. SMTP 5xx replies are final, and anything else is retried.
+- Condition: evaluates the step's condition and returns the `true` or `false` branch.
+- Delay: returns a wake-up time 1 second to 30 days ahead (see Waiting above).
+
+Edge cases: a secret that appears in a response body, a response header or an error message is redacted. Redaction is plain text replacement, so a very short secret (such as `1`) also hides unrelated text that matches it. The ai and approval step types fail with a clear error until phase 7.
+
+Tests: `steps/index.test.ts` (secrets reach the request but not the stored output or errors, trigger data cannot pull in a secret, templates, condition and delay) and `steps/email.test.ts` (recipient cap and validation, message id, SMTP error mapping).
+
+## SSRF protection (apps/worker/src/steps/ssrf.ts)
+
+What it does: stops an HTTP step from reaching the server's own network. Only `http:` and `https:` on ports 80 and 443 are allowed. A `node:net` `BlockList` holds the private, loopback, link-local (including the 169.254.169.254 metadata address), shared, reserved and multicast ranges for IPv4 and IPv6. IPv4-mapped IPv6 addresses such as `::ffff:127.0.0.1` are checked against the IPv4 ranges.
+
+Why this way: the hostname is checked inside the `lookup` function passed to `http.request`. The socket connects to the exact address that lookup returned, so a DNS server cannot answer once with a public address for the check and then with a private one for the connection. See [decision 0006](decisions/0006-ssrf.md).
+
+Edge cases: Node does not call `lookup` for IP literals, so `checkUrl` checks those first. `new URL()` has already normalised spellings such as `http://2130706433` and `http://0x7f.1` to `127.0.0.1`. A hostname is refused if any of its addresses is blocked. Requests use `agent: false`, so a pooled connection never skips the check.
+
+Tests: `steps/ssrf.test.ts` (every range, IPv6 and mapped addresses, scheme and port rules, odd IP spellings, lookup with mixed answers) and `steps/http.test.ts` (redirect to a private address, DNS rebinding with a resolver that changes its answer, the redirect limit, the 1 MB limit, the timeout, header stripping across origins).
 
 ## API (apps/api)
 

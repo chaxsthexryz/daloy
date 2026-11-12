@@ -8,13 +8,16 @@
     "@daloy/db": "workspace:*",
     "@daloy/engine": "workspace:*",
     "drizzle-orm": "^0.45.4",
+    "nodemailer": "^10.5.0",
     "pg-boss": "^12.38.2",
-    "tsx": "^4.23.15"
+    "tsx": "^4.23.15",
+    "zod": "^4.6.7"
   },
   "scripts": {
     "start": "tsx src/main.ts"
   },
   "devDependencies": {
+    "@types/nodemailer": "^8.0.2",
     "@types/pg": "^8.23.1"
   }
 }

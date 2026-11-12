@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { definitionSchema } from "./definition";
 
-const step = (id: string, type = "http", config: Record<string, unknown> = {}) => ({ id, type, config });
+const VALID_CONFIG: Record<string, Record<string, unknown>> = {
+  http: { method: "GET", url: "https://example.com/{{trigger.id}}" },
+  email: { to: "ops@example.com", subject: "New inquiry", text: "{{trigger.message}}" },
+  delay: { seconds: 60 },
+};
+const step = (id: string, type = "http", config: Record<string, unknown> = VALID_CONFIG[type] ?? {}) => ({ id, type, config });
 const triage = () => ({
   trigger: { type: "form", config: { fields: [{ name: "message", label: "Message", type: "textarea", required: true }] } },
   steps: [
@@ -151,5 +156,33 @@ describe("definitionSchema", () => {
     const steps = Array.from({ length: 101 }, (_, i) => step(`s${i}`));
     const edges = steps.slice(1).map((s, i) => ({ from: `s${i}`, to: s.id }));
     expect(issues({ trigger: { type: "manual" }, steps, edges }).length).toBeGreaterThan(0);
+  });
+
+  describe("step config", () => {
+    const one = (type: string, config: Record<string, unknown>) => issues({ trigger: { type: "manual" }, steps: [step("a", type, config)] });
+
+    it("accepts a valid config for every step type", () => {
+      for (const type of ["http", "email", "delay"]) expect(one(type, VALID_CONFIG[type]!), type).toEqual([]);
+      expect(one("http", { method: "POST", url: "https://x.test", headers: { Authorization: "Bearer {{secrets.api_key}}" }, body: "{}" })).toEqual([]);
+    });
+
+    it("rejects http configs with a bad method, a long url or too many headers", () => {
+      expect(one("http", { method: "TRACE", url: "https://x.test" })).not.toEqual([]);
+      expect(one("http", { method: "GET", url: "https://x.test/" + "a".repeat(2000) })).not.toEqual([]);
+      expect(one("http", { method: "GET" })).not.toEqual([]);
+      const headers = Object.fromEntries(Array.from({ length: 21 }, (_, i) => [`x-h${i}`, "v"]));
+      expect(one("http", { method: "GET", url: "https://x.test", headers })).not.toEqual([]);
+    });
+
+    it("rejects email configs without a recipient, subject or text", () => {
+      expect(one("email", { subject: "s", text: "t" })).not.toEqual([]);
+      expect(one("email", { to: "a@b.test", text: "t" })).not.toEqual([]);
+      expect(one("email", { to: "a@b.test", subject: "s" })).not.toEqual([]);
+    });
+
+    it("keeps delays between 1 second and 30 days, in whole seconds", () => {
+      expect(one("delay", { seconds: 2_592_000 })).toEqual([]);
+      for (const seconds of [0, 2_592_001, 1.5, "60"]) expect(one("delay", { seconds }), String(seconds)).not.toEqual([]);
+    });
   });
 });

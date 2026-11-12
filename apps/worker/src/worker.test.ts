@@ -13,15 +13,15 @@ let pool: Pool;
 let worker: Worker;
 const calls: string[] = [];
 
-// Test steps behave according to config.mode, so each test builds the failure it needs.
+// Test steps behave according to their id, so each test builds the failure it needs.
 const executor: StepExecutor = {
   async execute({ step, attempt, idempotencyKey, ctx }) {
     calls.push(idempotencyKey);
     if (step.type === "condition") return { branch: String(evaluateCondition(step.config.condition, ctx)) };
-    const mode = step.config.mode;
-    if (mode === "flaky" && attempt < 2) throw new StepError("flaky", true);
-    if (mode === "down") throw new StepError("service down", true);
-    if (mode === "fatal") throw new StepError("bad config", false);
+    if (step.id === "flaky" && attempt < 2) throw new StepError("flaky", true);
+    if (step.id === "down") throw new StepError("service down", true);
+    if (step.id === "fatal") throw new StepError("bad config", false);
+    if (step.id === "pause") return { waitUntil: new Date(Date.now() + 500) };
     return { output: { from: step.id } };
   },
 };
@@ -68,13 +68,13 @@ const attemptsOf = (runId: string) =>
 
 const flow = (...steps: { id: string; type?: string; config?: object }[]) => ({
   trigger: { type: "manual", config: {} },
-  steps: steps.map((s) => ({ type: "http", config: {}, ...s })),
+  steps: steps.map((s) => ({ type: "delay", config: { seconds: 1 }, ...s })),
   edges: steps.slice(1).map((s, i) => ({ from: steps[i]!.id, to: s.id })),
 });
 
 describe("worker", () => {
   it("runs every step in order and passes outputs along", async () => {
-    const runId = await createRun(flow({ id: "a" }, { id: "b", type: "email" }));
+    const runId = await createRun(flow({ id: "a" }, { id: "b" }));
     await worker.enqueue(runId);
     expect((await waitForEnd(runId)).state).toBe("succeeded");
     const rows = await attemptsOf(runId);
@@ -90,8 +90,8 @@ describe("worker", () => {
       trigger: { type: "manual", config: {} },
       steps: [
         { id: "check", type: "condition", config: { condition: { left: "{{trigger.vip}}", op: "eq", right: true } } },
-        { id: "vip", type: "email", config: {} },
-        { id: "normal", type: "email", config: {} },
+        { id: "vip", type: "delay", config: { seconds: 1 } },
+        { id: "normal", type: "delay", config: { seconds: 1 } },
       ],
       edges: [
         { from: "check", to: "vip", on: "true" },
@@ -105,7 +105,7 @@ describe("worker", () => {
   });
 
   it("retries a retryable error and then succeeds", async () => {
-    const runId = await createRun(flow({ id: "a", config: { mode: "flaky" } }));
+    const runId = await createRun(flow({ id: "flaky" }));
     await worker.enqueue(runId);
     expect((await waitForEnd(runId)).state).toBe("succeeded");
     expect((await attemptsOf(runId)).map((r) => [r.attempt, r.state])).toEqual([
@@ -115,24 +115,43 @@ describe("worker", () => {
   });
 
   it("dead-letters a step that uses up every attempt and fails the run", async () => {
-    const runId = await createRun(flow({ id: "a", config: { mode: "down" } }, { id: "b" }));
+    const runId = await createRun(flow({ id: "down" }, { id: "b" }));
     await worker.enqueue(runId);
     const run = await waitForEnd(runId);
     expect(run.state).toBe("failed");
     expect(run.error).toMatch(/service down/);
     const rows = await attemptsOf(runId);
     expect(rows.map((r) => [r.stepId, r.attempt, r.deadLetter])).toEqual([
-      ["a", 1, false],
-      ["a", 2, false],
-      ["a", 3, true],
+      ["down", 1, false],
+      ["down", 2, false],
+      ["down", 3, true],
     ]);
   });
 
   it("fails at once on an error that is not retryable", async () => {
-    const runId = await createRun(flow({ id: "a", config: { mode: "fatal" } }));
+    const runId = await createRun(flow({ id: "fatal" }));
     await worker.enqueue(runId);
     expect((await waitForEnd(runId)).state).toBe("failed");
     expect((await attemptsOf(runId)).map((r) => [r.attempt, r.deadLetter])).toEqual([[1, false]]);
+  });
+
+  it("parks a run in waiting until the step's wake-up time, then carries on", async () => {
+    const runId = await createRun(flow({ id: "pause" }, { id: "b" }));
+    await worker.enqueue(runId);
+    let sawWaiting = false;
+    for (let i = 0; i < 50 && !sawWaiting; i++) {
+      const [run] = await db.select().from(runs).where(eq(runs.id, runId));
+      sawWaiting = run!.state === "waiting";
+      if (!sawWaiting) await new Promise((r) => setTimeout(r, 20));
+    }
+    expect(sawWaiting).toBe(true);
+    expect((await waitForEnd(runId)).state).toBe("succeeded");
+    expect((await attemptsOf(runId)).map((r) => [r.stepId, r.attempt, r.state])).toEqual([
+      ["pause", 1, "succeeded"],
+      ["b", 1, "succeeded"],
+    ]);
+    // The wait is one attempt: the executor ran once, and resuming did not call it again.
+    expect(calls.filter((c) => c.startsWith(`${runId}:pause:`))).toEqual([`${runId}:pause:1`]);
   });
 
   it("resumes a run whose worker died mid-step, with the same idempotency key", async () => {

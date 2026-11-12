@@ -44,8 +44,8 @@ it("runs a published workflow end to end from a webhook call", async () => {
   const definition = {
     trigger: { type: "webhook" },
     steps: [
-      { id: "a", type: "http", config: {} },
-      { id: "b", type: "email", config: {} },
+      { id: "a", type: "delay", config: { seconds: 1 } },
+      { id: "b", type: "delay", config: { seconds: 1 } },
     ],
     edges: [{ from: "a", to: "b" }],
   };

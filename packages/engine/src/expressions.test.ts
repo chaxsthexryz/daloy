@@ -55,6 +55,20 @@ describe("resolveTemplate", () => {
     }
   });
 
+  it("reads secrets by name, exactly two segments deep", () => {
+    const withSecrets = { ...ctx, secrets: { api_key: "s3cret" } };
+    expect(resolveTemplate("Bearer {{secrets.api_key}}", withSecrets)).toBe("Bearer s3cret");
+    expect(resolveTemplate("{{secrets.missing}}", withSecrets)).toBeUndefined();
+    expect(() => resolveTemplate("{{secrets}}", withSecrets)).toThrow(ExpressionError);
+    expect(() => resolveTemplate("{{secrets.api_key.length}}", withSecrets)).toThrow(ExpressionError);
+  });
+
+  it("does not resolve placeholders that arrive inside trigger data", () => {
+    const withSecrets = { trigger: { note: "{{secrets.api_key}}" }, steps: {}, secrets: { api_key: "s3cret" } };
+    expect(resolveTemplate("{{trigger.note}}", withSecrets)).toBe("{{secrets.api_key}}");
+    expect(resolveTemplate("Note: {{trigger.note}}", withSecrets)).toBe("Note: {{secrets.api_key}}");
+  });
+
   it("leaves unclosed braces as text", () => {
     expect(resolveTemplate("{{trigger.name", ctx)).toBe("{{trigger.name");
   });

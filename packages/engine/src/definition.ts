@@ -10,12 +10,39 @@ export const conditionSchema = z.object({
 });
 export type Condition = z.infer<typeof conditionSchema>;
 
-// shortcut: per-type config is an open record until each step type lands (phases 4 and 7), then each gets its own schema.
-const config = z.record(z.string(), z.unknown()).default({});
+// String fields are templates: {{trigger...}}, {{steps...}} and {{secrets...}} are resolved when the step runs.
+const template = (max: number) => z.string().max(max);
+
+export const httpConfigSchema = z.object({
+  method: z.enum(["GET", "POST", "PUT", "PATCH", "DELETE"]),
+  url: template(2000).min(1),
+  headers: z
+    .record(z.string().regex(/^[A-Za-z0-9-]{1,64}$/, "header names use letters, digits and -"), template(2000))
+    .refine((h) => Object.keys(h).length <= 20, "at most 20 headers")
+    .default({}),
+  body: template(100_000).optional(),
+});
+
+export const emailConfigSchema = z.object({
+  // Comma-separated; the worker checks each address and the recipient cap after resolving the template.
+  to: template(2000).min(1),
+  subject: template(500).min(1),
+  text: template(50_000).min(1),
+});
+
+export const delayConfigSchema = z.object({ seconds: z.int().min(1).max(2_592_000) });
+export type HttpConfig = z.infer<typeof httpConfigSchema>;
+export type EmailConfig = z.infer<typeof emailConfigSchema>;
+
+// shortcut: ai and approval keep an open record until phase 7 gives them their own schemas.
+const openConfig = z.record(z.string(), z.unknown()).default({});
 
 const stepSchema = z.discriminatedUnion("type", [
   z.object({ id: stepId, type: z.literal("condition"), config: z.object({ condition: conditionSchema }) }),
-  z.object({ id: stepId, type: z.enum(["http", "email", "delay", "ai", "approval"]), config }),
+  z.object({ id: stepId, type: z.literal("http"), config: httpConfigSchema }),
+  z.object({ id: stepId, type: z.literal("email"), config: emailConfigSchema }),
+  z.object({ id: stepId, type: z.literal("delay"), config: delayConfigSchema }),
+  z.object({ id: stepId, type: z.enum(["ai", "approval"]), config: openConfig }),
 ]);
 export type Step = z.infer<typeof stepSchema>;
 

@@ -1,9 +1,12 @@
 import { createDb, migrate } from "@daloy/db";
-import { StepError } from "@daloy/engine";
+import { createExecutor } from "./steps";
+import { smtpMailer } from "./steps/email";
 import { startWorker } from "./worker";
 
 const url = process.env.DATABASE_URL;
 if (!url) throw new Error("DATABASE_URL is not set");
+const secretsKey = Buffer.from(process.env.SECRETS_KEY ?? "", "base64");
+if (secretsKey.length !== 32) throw new Error("SECRETS_KEY must be 32 bytes, base64 encoded");
 
 const { db, pool } = createDb(url);
 await migrate(pool);
@@ -11,12 +14,7 @@ await migrate(pool);
 const worker = await startWorker({
   connectionString: url,
   db,
-  // Real step types arrive in phase 4. Until then every step fails without a retry.
-  executor: {
-    async execute({ step }) {
-      throw new StepError(`step type "${step.type}" is not implemented yet`, false);
-    },
-  },
+  executor: createExecutor({ db, secretsKey, mailer: smtpMailer() }),
 });
 console.log("worker started");
 

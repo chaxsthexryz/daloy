@@ -1,5 +1,5 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { createRun, publishedVersion, triggers, workflows, type Db } from "@daloy/db";
+import { createRun, publishedVersion, readSecret, triggers, workflows, type Db } from "@daloy/db";
 import type { FormField } from "@daloy/engine";
 import {
   BadRequestException,
@@ -23,7 +23,6 @@ import type { Request } from "express";
 import type { PgBoss } from "pg-boss";
 import * as z from "zod";
 import { BOSS, CONFIG, DB, enqueueRun, RateLimit, ZodPipe, type ApiConfig } from "./http";
-import { readSecret } from "./secrets";
 
 const HONEYPOT = "website";
 

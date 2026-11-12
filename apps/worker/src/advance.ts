@@ -1,4 +1,4 @@
-import { runs, stepRuns, workflowVersions, type Db } from "@daloy/db";
+import { runs, stepRuns, workflows, workflowVersions, type Db } from "@daloy/db";
 import {
   assertTransition,
   decideRetry,
@@ -15,11 +15,12 @@ import {
 } from "@daloy/engine";
 import { and, asc, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
 
-export type StepResult = { output?: unknown; branch?: string; inputTokens?: number; outputTokens?: number };
+/** waitUntil parks the step and the run in "waiting" until that time (delay now, approval in phase 7). */
+export type StepResult = { output?: unknown; branch?: string; inputTokens?: number; outputTokens?: number; waitUntil?: Date };
 
-/** Runs one step attempt. Real step types arrive in phase 4; the worker only knows this interface. */
+/** Runs one step attempt. userId is the workflow owner, whose secrets the step may use. */
 export interface StepExecutor {
-  execute(input: { runId: string; step: Step; attempt: number; idempotencyKey: string; ctx: ExpressionContext }): Promise<StepResult>;
+  execute(input: { runId: string; userId: string; step: Step; attempt: number; idempotencyKey: string; ctx: ExpressionContext }): Promise<StepResult>;
 }
 
 export type AdvanceDeps = {
@@ -58,7 +59,7 @@ export async function advance(deps: AdvanceDeps, runId: string): Promise<void> {
   const [run] = await db
     .update(runs)
     .set({ leaseOwner: owner, leaseExpiresAt: leaseUntil(leaseMs) })
-    .where(and(eq(runs.id, runId), inArray(runs.state, ["pending", "running"]), or(isNull(runs.leaseExpiresAt), lt(runs.leaseExpiresAt, sql`now()`))))
+    .where(and(eq(runs.id, runId), inArray(runs.state, ["pending", "running", "waiting"]), or(isNull(runs.leaseExpiresAt), lt(runs.leaseExpiresAt, sql`now()`))))
     .returning();
   // Another worker holds the lease, or the run has finished.
   if (!run) return;
@@ -79,15 +80,28 @@ export async function advance(deps: AdvanceDeps, runId: string): Promise<void> {
 
 async function runNext(deps: AdvanceDeps, run: Run): Promise<void> {
   const { db } = deps;
-  // A resumed run must not retry before its backoff delay is over.
+  // Not before the backoff delay or the wake-up time of a waiting step is over.
   if (run.nextAttemptAt && run.nextAttemptAt > new Date()) return deps.enqueue(run.id, run.nextAttemptAt);
 
-  const [version] = await db.select({ definition: workflowVersions.definition }).from(workflowVersions).where(eq(workflowVersions.id, run.workflowVersionId));
+  const [version] = await db
+    .select({ definition: workflowVersions.definition, userId: workflows.userId })
+    .from(workflowVersions)
+    .innerJoin(workflows, eq(workflows.id, workflowVersions.workflowId))
+    .where(eq(workflowVersions.id, run.workflowVersionId));
   const def = definitionSchema.parse(version!.definition);
   if (run.state === "pending") await moveRun(db, run.id, "pending", "running");
 
   const history = await db.select().from(stepRuns).where(eq(stepRuns.runId, run.id)).orderBy(asc(stepRuns.createdAt), asc(stepRuns.attempt));
   const last = history.at(-1);
+
+  if (run.state === "waiting") {
+    // The wake-up time has passed (checked above), so the waiting step is done and the run carries on.
+    await db.transaction(async (tx) => {
+      await moveStep(tx, last!.id, "waiting", "succeeded", { finishedAt: new Date() });
+      await moveRun(tx, run.id, "waiting", "running", { nextAttemptAt: null });
+    });
+    last!.state = "succeeded";
+  }
 
   let step: Step;
   let attempt = 1;
@@ -120,7 +134,7 @@ async function runNext(deps: AdvanceDeps, run: Run): Promise<void> {
 
   let result: StepResult;
   try {
-    result = await deps.executor.execute({ runId: run.id, step, attempt, idempotencyKey: idempotencyKey(run.id, step.id, attempt), ctx });
+    result = await deps.executor.execute({ runId: run.id, userId: version!.userId, step, attempt, idempotencyKey: idempotencyKey(run.id, step.id, attempt), ctx });
   } catch (err) {
     const decision = decideRetry(err, attempt, deps.retryPolicy ?? DEFAULT_RETRY_POLICY);
     const message = err instanceof Error ? err.message : String(err);
@@ -132,6 +146,16 @@ async function runNext(deps: AdvanceDeps, run: Run): Promise<void> {
     });
     if (retryAt) await deps.enqueue(run.id, retryAt);
     return;
+  }
+
+  if (result.waitUntil) {
+    const wakeAt = result.waitUntil;
+    await db.transaction(async (tx) => {
+      await moveStep(tx, stepRunId, "running", "waiting", { output: result.output ?? null });
+      await moveRun(tx, run.id, "running", "waiting", { nextAttemptAt: wakeAt });
+    });
+    // A scheduled job, so nothing sleeps in the worker. The sweep picks the run up too if this job is lost.
+    return deps.enqueue(run.id, wakeAt);
   }
 
   await moveStep(db, stepRunId, "running", "succeeded", {
