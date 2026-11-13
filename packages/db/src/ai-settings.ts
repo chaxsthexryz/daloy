@@ -7,19 +7,25 @@ import { aiSettings } from "./schema";
  * The AI models a user can pick in the console. Hosted ones have a fixed URL, so a user cannot point the server at an
  * internal host. "local" is whatever the operator configured in the env vars (Ollama on the host by default).
  */
-// models are suggestions for the console; any model name the provider knows works. The Gemini ones are on the
-// free tier per Google's pricing page (read 2026-11-13).
+// Suggestions for the console, with a plain note each; any model name the provider knows also works. Gemini
+// free-tier status and descriptions come from Google's pricing and models pages (read 2026-11-13).
+type Suggestion = { id: string; free: boolean; note: string };
+const LOCAL: Suggestion[] = [
+  { id: "llama3.2", free: true, note: "Small (3B) and fast on most computers. Fine for classify steps; often gets Build with AI wrong." },
+  { id: "hermes3", free: true, note: "Larger (8B) and better at following instructions. Needs more memory: run ollama pull hermes3 first." },
+];
+const GEMINI: Suggestion[] = [
+  { id: "gemini-3.8-flash", free: true, note: "Built for agents and complex workflows. The best pick here for Build with AI." },
+  { id: "gemini-3.6-flash", free: true, note: "Balances speed and quality for everyday tasks." },
+  { id: "gemini-3.5-flash-lite", free: true, note: "Fastest and cheapest. Good for simple AI steps such as classify." },
+  { id: "gemini-4-hydrogen", free: true, note: "Newer, tuned for speed in everyday coding and agent work. Not marked stable yet." },
+];
+
 export const PRESETS = {
-  local: { label: "Local model", defaultModel: "llama3.2", needsKey: false, models: ["llama3.2", "hermes3"] },
-  gemini: {
-    label: "Gemini API",
-    defaultModel: "gemini-3.8-flash",
-    needsKey: true,
-    baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai",
-    models: ["gemini-3.8-flash", "gemini-3.6-flash", "gemini-3.5-flash-lite", "gemini-4-hydrogen"],
-  },
-  openai: { label: "OpenAI", defaultModel: "", needsKey: true, baseUrl: "https://api.openai.com/v1", models: [] },
-  openrouter: { label: "OpenRouter", defaultModel: "", needsKey: true, baseUrl: "https://openrouter.ai/api/v1", models: [] },
+  local: { label: "Local model", defaultModel: "llama3.2", needsKey: false, models: LOCAL },
+  gemini: { label: "Gemini API", defaultModel: "gemini-3.8-flash", needsKey: true, baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai", models: GEMINI },
+  openai: { label: "OpenAI", defaultModel: "", needsKey: true, baseUrl: "https://api.openai.com/v1", models: [] as Suggestion[] },
+  openrouter: { label: "OpenRouter", defaultModel: "", needsKey: true, baseUrl: "https://openrouter.ai/api/v1", models: [] as Suggestion[] },
 } as const;
 export type Preset = keyof typeof PRESETS;
 export const PRESET_IDS = Object.keys(PRESETS) as [Preset, ...Preset[]];

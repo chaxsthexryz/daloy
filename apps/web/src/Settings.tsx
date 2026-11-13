@@ -1,8 +1,11 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { api } from "./api";
 
-type Preset = { label: string; defaultModel: string; needsKey: boolean; models: string[] };
+type Suggestion = { id: string; free: boolean; note: string };
+type Preset = { label: string; defaultModel: string; needsKey: boolean; models: Suggestion[] };
 type Current = { preset: string; model: string; hasKey: boolean; saved: boolean };
+const OTHER = "__other";
+
 type TestResult = { ok: boolean; model: string; sample: string; label?: string; ms?: number; inputTokens?: number; outputTokens?: number; error?: string };
 
 // One plain line per choice, so the trade-off is clear before picking.
@@ -43,6 +46,10 @@ export function SettingsPage() {
     setTest(null);
   };
   const keySaved = current?.preset === preset && current.hasKey;
+  const models = presets?.[preset]?.models ?? [];
+  // A model name that is not in the list (or blank, right after picking "Other") gets a text box.
+  const suggestion = models.find((m) => m.id === model);
+  const otherModel = models.length > 0 && !suggestion;
 
   const save = async (e: FormEvent) => {
     e.preventDefault();
@@ -95,13 +102,33 @@ export function SettingsPage() {
           </fieldset>
           <div className="field">
             <label htmlFor="ai-model">Model name</label>
-            <input id="ai-model" list="ai-models" value={model} onChange={(e) => setModel(e.target.value)} required maxLength={200} />
-            <datalist id="ai-models">
-              {presets[preset]?.models.map((m) => (
-                <option key={m} value={m} />
-              ))}
-            </datalist>
-            {(presets[preset]?.models.length ?? 0) > 0 && <span className="muted hint">Pick from the list or type any model name the provider offers: {presets[preset]!.models.join(", ")}.</span>}
+            {models.length > 0 && (
+              <select id="ai-model" value={otherModel ? OTHER : model} onChange={(e) => setModel(e.target.value === OTHER ? "" : e.target.value)}>
+                {models.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.id} ({m.free ? "free" : "paid"})
+                  </option>
+                ))}
+                <option value={OTHER}>Other model…</option>
+              </select>
+            )}
+            {(otherModel || models.length === 0) && (
+              <input
+                id={models.length ? "ai-model-other" : "ai-model"}
+                aria-label={models.length ? "Other model name" : undefined}
+                value={model}
+                onChange={(e) => setModel(e.target.value)}
+                required
+                maxLength={200}
+                placeholder="Any model name the provider offers"
+              />
+            )}
+            {suggestion && (
+              <span className="muted hint">
+                {suggestion.free ? (preset === "local" ? "Free, runs on your computer." : "Free tier.") : "Paid."} {suggestion.note}
+              </span>
+            )}
+            {preset === "gemini" && <span className="muted hint">Free tier means no charge but request limits, and Google may use what you send to improve its products.</span>}
           </div>
           {presets[preset]?.needsKey && (
             <div className="field">
