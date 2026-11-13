@@ -127,7 +127,3 @@ CI also runs Semgrep, gitleaks and `pnpm audit` on every push.
 | @modelcontextprotocol/client | Official MCP client, used by the MCP integration and end-to-end tests | Apache-2.0 |
 
 TypeScript is pinned to 6.0.x because typescript-eslint 8 does not support TypeScript 7 yet.
-
-## How AI was used
-
-Claude Code (Anthropic's coding agent) wrote the code, tests and docs in this repository, one phase at a time from the plan in PROJECT.md, and recorded its choices in docs/decisions. The owner approved each phase plan, reviewed the code, ran the test suites, the end-to-end tests and the reliability tests, and checked the console by hand before shipping. The numbers in docs/reliability.md are the output of those runs.
