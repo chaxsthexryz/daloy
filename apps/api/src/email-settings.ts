@@ -18,14 +18,14 @@ import { BadRequestException, Body, Controller, Delete, Get, HttpCode, Inject, N
 import { eq } from "drizzle-orm";
 import * as z from "zod";
 import { SessionGuard } from "./auth";
-import { CONFIG, CurrentUser, DB, RateLimit, ZodPipe, type ApiConfig, type SessionUser } from "./http";
+import { Allow, CONFIG, CurrentUser, DB, RateLimit, ZodPipe, type ApiConfig, type SessionUser, MANAGE } from "./http";
 
 const verifyInput = z.strictObject({ token: z.string().regex(/^[A-Za-z0-9_-]{43}$/) });
 const addressOf = (from: string | { address: string }) => (typeof from === "string" ? (/<([^>]+)>/.exec(from)?.[1] ?? from) : from.address);
 
 /** The owner's business profile and their own Gmail sender (roadmap phase 2, decision 0020). The app password is write-only. */
 @Controller("settings/email")
-@UseGuards(SessionGuard)
+@UseGuards(SessionGuard, Allow(MANAGE))
 export class EmailSettingsController {
   constructor(
     @Inject(DB) private readonly db: Db,
@@ -35,8 +35,8 @@ export class EmailSettingsController {
   @Get()
   async get(@CurrentUser() user: SessionUser) {
     return {
-      profile: await readProfile(this.db, user.id),
-      sender: await readSender(this.db, user.id),
+      profile: await readProfile(this.db, user.workspaceId),
+      sender: await readSender(this.db, user.workspaceId),
       // Shown when no Gmail is connected, so the owner knows which address their mail comes from.
       installationFrom: addressOf(this.config.mail.installation.from),
       signInEmail: user.email,
@@ -46,14 +46,14 @@ export class EmailSettingsController {
   @Put("profile")
   @HttpCode(204)
   async putProfile(@CurrentUser() user: SessionUser, @Body(new ZodPipe(profileInput)) body: z.output<typeof profileInput>) {
-    await saveProfile(this.db, user.id, body);
+    await saveProfile(this.db, user.workspaceId, body);
   }
 
   /** Connect, Reconnect and Replace password. A new address must be confirmed again before mail goes out. */
   @Put("gmail")
   async putGmail(@CurrentUser() user: SessionUser, @Body(new ZodPipe(gmailInput)) body: z.output<typeof gmailInput>) {
-    await connectGmail(this.db, this.config.secretsKey, user.id, body);
-    return readSender(this.db, user.id);
+    await connectGmail(this.db, this.config.secretsKey, user.workspaceId, body);
+    return readSender(this.db, user.workspaceId);
   }
 
   /**
@@ -65,13 +65,13 @@ export class EmailSettingsController {
   @HttpCode(200)
   @UseGuards(RateLimit(5))
   async test(@CurrentUser() user: SessionUser) {
-    const sender = await readSender(this.db, user.id);
+    const sender = await readSender(this.db, user.workspaceId);
     if (sender?.status === "disconnected") return { ok: false, error: "Gmail is disconnected. Connect it again first." };
     const to = sender?.address ?? user.email;
     const needsConfirmation = !!sender && !sender.verifiedAt;
     const lines = ["This is a test email from Daloy. Mail from your automations will look like this."];
     if (needsConfirmation) {
-      const token = await issueVerifyToken(this.db, user.id);
+      const token = await issueVerifyToken(this.db, user.workspaceId);
       lines.push(
         "",
         "To start sending your automations' email from this address, open this link while you are signed in to Daloy:",
@@ -81,11 +81,11 @@ export class EmailSettingsController {
       );
     }
     try {
-      const sent = await sendAs(this.db, this.config.secretsKey, this.config.mail, user.id, { to, subject: "Daloy test email", text: lines.join("\n") }, `test:${randomUUID()}`, {
+      const sent = await sendAs(this.db, this.config.secretsKey, this.config.mail, user.workspaceId, { to, subject: "Daloy test email", text: lines.join("\n") }, `test:${randomUUID()}`, {
         allowUnconfirmed: true,
       });
-      if (sent.gmail) await markSenderWorking(this.db, user.id);
-      const replyTo = (await readProfile(this.db, user.id))?.replyTo ?? undefined;
+      if (sent.gmail) await markSenderWorking(this.db, user.workspaceId);
+      const replyTo = (await readProfile(this.db, user.workspaceId))?.replyTo ?? undefined;
       return { ok: true, to, from: sent.from, ...(replyTo ? { replyTo } : {}), gmail: sent.gmail, needsConfirmation };
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
@@ -97,7 +97,7 @@ export class EmailSettingsController {
   @HttpCode(204)
   @UseGuards(RateLimit(10))
   async verify(@CurrentUser() user: SessionUser, @Body(new ZodPipe(verifyInput)) body: z.output<typeof verifyInput>) {
-    if (!(await claimVerifyToken(this.db, user.id, body.token))) {
+    if (!(await claimVerifyToken(this.db, user.workspaceId, body.token))) {
       throw new BadRequestException("This link was used already, has expired, or belongs to another account. Send a new test email.");
     }
   }
@@ -106,16 +106,16 @@ export class EmailSettingsController {
   @Post("disconnect")
   @HttpCode(204)
   async disconnect(@CurrentUser() user: SessionUser) {
-    if (!(await readSender(this.db, user.id))) throw new NotFoundException();
-    await disconnectGmail(this.db, user.id);
+    if (!(await readSender(this.db, user.workspaceId))) throw new NotFoundException();
+    await disconnectGmail(this.db, user.workspaceId);
   }
 
   /** "Use the local mail server instead": the owner's explicit choice to send through the installation server again. */
   @Delete("gmail")
   @HttpCode(204)
   async remove(@CurrentUser() user: SessionUser) {
-    const [row] = await this.db.select({ userId: mailSenders.userId }).from(mailSenders).where(eq(mailSenders.userId, user.id));
+    const [row] = await this.db.select({ userId: mailSenders.userId }).from(mailSenders).where(eq(mailSenders.userId, user.workspaceId));
     if (!row) throw new NotFoundException();
-    await removeGmail(this.db, user.id);
+    await removeGmail(this.db, user.workspaceId);
   }
 }

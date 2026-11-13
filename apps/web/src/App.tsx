@@ -9,12 +9,15 @@ import { SettingsPage } from "./Settings";
 import { BusinessSetupPage, VerifySenderPage } from "./BusinessSetup";
 import { TokensPage } from "./Tokens";
 import { VersionsPage } from "./Versions";
+import { AcceptInvitePage, MyRequestsPage, TeamPage, type User } from "./Team";
 
-type User = { id: string; email: string };
+const ANSWER = /^#\/answer\/([A-Za-z0-9_-]{43})$/;
+const INVITE = /^#\/invite\/([A-Za-z0-9_-]{43})$/;
 
 /**
  * Hash routes (#/, #/w/<id>, #/w/<id>/runs, #/w/<id>/versions, #/runs/<id>, #/tokens, #/settings, #/settings/business,
- * #/verify-sender/<token> for the Gmail confirmation link,
+ * #/verify-sender/<token> for the Gmail confirmation link, #/team, #/invite/<token> for an invite link,
+ * #/answer/<token> to sign in before a named approval (decision 0022),
  * #/try/office-request for the preview and #/a/<id> for a guided automation),
  * so no path of the console can clash with an API route on the same origin.
  */
@@ -34,9 +37,19 @@ export function App() {
   useEffect(() => {
     api<User>("GET", "/auth/me").then(setUser, () => setUser(null));
   }, []);
+  // Back to the server-rendered approval page once signed in; it checks again that this user is the approver.
+  const answer = ANSWER.exec(hash)?.[1];
+  useEffect(() => {
+    if (user && answer) location.replace(`/approvals/${answer}`);
+  }, [user, answer]);
+  const signOut = () => api("POST", "/auth/logout").then(() => setUser(null));
 
-  if (user === undefined) return <main className="page" />;
+  if (user === undefined || (user && answer)) return <main className="page" />;
+  const invite = INVITE.exec(hash);
+  if (invite) return <AcceptInvitePage key={invite[1]} token={invite[1]!} onDone={setUser} />;
   if (!user) return <SignIn onDone={setUser} />;
+  // Approvers and requesters have no console beyond their own requests; the API refuses the rest anyway.
+  if (user.role === "approver" || user.role === "requester") return <MyRequestsPage user={user} onSignOut={signOut} />;
   const page = /^#\/w\/([0-9a-f-]{36})(?:\/(runs|versions))?$/.exec(hash);
   if (page?.[2] === "runs") return <RunsPage key={page[1]} workflowId={page[1]!} />;
   if (page?.[2] === "versions") return <VersionsPage key={page[1]} workflowId={page[1]!} />;
@@ -49,9 +62,10 @@ export function App() {
   if (hash === "#/tokens") return <TokensPage />;
   if (hash === "#/settings") return <SettingsPage />;
   if (hash === "#/settings/business") return <BusinessSetupPage />;
+  if (hash === "#/team" && user.role === "owner") return <TeamPage />;
   const verify = /^#\/verify-sender\/([A-Za-z0-9_-]{43})$/.exec(hash);
   if (verify) return <VerifySenderPage key={verify[1]} token={verify[1]!} />;
-  return <Workflows user={user} onSignOut={() => api("POST", "/auth/logout").then(() => setUser(null))} />;
+  return <Workflows user={user} onSignOut={signOut} />;
 }
 
 function SignIn({ onDone }: { onDone: (u: User) => void }) {
@@ -109,6 +123,8 @@ function Workflows({ user, onSignOut }: { user: User; onSignOut: () => void }) {
   const [name, setName] = useState("");
   const [template, setTemplate] = useState("");
   const [error, setError] = useState("");
+  // Operators see and follow the owner's automations; only the owner creates or changes them.
+  const owner = user.role === "owner";
   useEffect(() => {
     api<Workflow[]>("GET", "/workflows").then(setList, (e: Error) => setError(e.message));
   }, []);
@@ -132,56 +148,65 @@ function Workflows({ user, onSignOut }: { user: User; onSignOut: () => void }) {
         <img src="/logo.svg" alt="Daloy" width="28" height="28" />
         <h1>Workflows</h1>
         <span className="muted">{user.email}</span>
-        <a href="#/tokens">API tokens</a>
-        <a href="#/settings/business">Business and email</a>
-        <a href="#/settings">AI model</a>
+        {owner && (
+          <>
+            <a href="#/team">Team</a>
+            <a href="#/tokens">API tokens</a>
+            <a href="#/settings/business">Business and email</a>
+            <a href="#/settings">AI model</a>
+          </>
+        )}
         <button type="button" className="quiet" onClick={onSignOut}>
           Sign out
         </button>
       </header>
-      <section className="create" aria-labelledby="automate">
-        <h2 id="automate">What do you want to automate?</h2>
-        <h3>Track an office request</h3>
-        <p>Staff fill in a form. Each request gets a reference. Your office receives a notification.</p>
-        <div className="actions">
-          <a href="#/try/office-request">Try an example</a>
-          <button type="button" className="primary" onClick={() => startOfficeSetup(user.email).catch((e: Error) => setError(e.message))}>
-            Set up for my office
-          </button>
-        </div>
-        <h3>Reply to a website inquiry</h3>
-        <p>Visitors fill in your inquiry form. They get a reply from your own email address, and your inbox gets the inquiry.</p>
-        <div className="actions">
-          <a href="#/settings/business">Set up inquiry replies</a>
-        </div>
-      </section>
-      <form onSubmit={create} className="create">
-        <h2>New workflow</h2>
-        <div className="row">
-          <div className="field">
-            <label htmlFor="wf-name">Name</label>
-            <input id="wf-name" value={name} onChange={(e) => setName(e.target.value)} required maxLength={200} />
+      {owner && (
+        <>
+        <section className="create" aria-labelledby="automate">
+          <h2 id="automate">What do you want to automate?</h2>
+          <h3>Track an office request</h3>
+          <p>Staff fill in a form. Each request gets a reference. Your office receives a notification.</p>
+          <div className="actions">
+            <a href="#/try/office-request">Try an example</a>
+            <button type="button" className="primary" onClick={() => startOfficeSetup(user.email).catch((e: Error) => setError(e.message))}>
+              Set up for my office
+            </button>
           </div>
-          <div className="field">
-            <label htmlFor="wf-template">Start from</label>
-            <select id="wf-template" value={template} onChange={(e) => setTemplate(e.target.value)}>
-              <option value="">Blank workflow</option>
-              {TEMPLATES.map((t) => (
-                <option key={t.slug} value={t.slug}>
-                  Template: {t.name}
-                </option>
-              ))}
-            </select>
+          <h3>Reply to a website inquiry</h3>
+          <p>Visitors fill in your inquiry form. They get a reply from your own email address, and your inbox gets the inquiry.</p>
+          <div className="actions">
+            <a href="#/settings/business">Set up inquiry replies</a>
           </div>
-          <button className="primary">Create</button>
-        </div>
-        {template && <p className="muted hint">{TEMPLATES.find((t) => t.slug === template)!.description}</p>}
-        <p role="alert" className="message error" hidden={!error}>
-          {error}
-        </p>
-      </form>
-      <BuildWithAi />
-      <h2>Your workflows</h2>
+        </section>
+        <form onSubmit={create} className="create">
+          <h2>New workflow</h2>
+          <div className="row">
+            <div className="field">
+              <label htmlFor="wf-name">Name</label>
+              <input id="wf-name" value={name} onChange={(e) => setName(e.target.value)} required maxLength={200} />
+            </div>
+            <div className="field">
+              <label htmlFor="wf-template">Start from</label>
+              <select id="wf-template" value={template} onChange={(e) => setTemplate(e.target.value)}>
+                <option value="">Blank workflow</option>
+                {TEMPLATES.map((t) => (
+                  <option key={t.slug} value={t.slug}>
+                    Template: {t.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <button className="primary">Create</button>
+          </div>
+          {template && <p className="muted hint">{TEMPLATES.find((t) => t.slug === template)!.description}</p>}
+          <p role="alert" className="message error" hidden={!error}>
+            {error}
+          </p>
+        </form>
+        <BuildWithAi />
+        </>
+      )}
+      <h2>{owner ? "Your workflows" : "Workflows"}</h2>
       {list === null ? (
         <p>Loading…</p>
       ) : list.length === 0 ? (

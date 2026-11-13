@@ -28,7 +28,7 @@ import { BadRequestException, Body, ConflictException, Controller, Delete, Get, 
 import { and, eq } from "drizzle-orm";
 import * as z from "zod";
 import { SessionGuard } from "./auth";
-import { CONFIG, CurrentUser, DB, RateLimit, ZodPipe, type ApiConfig, type SessionUser } from "./http";
+import { Allow, CONFIG, CurrentUser, DB, RateLimit, ZodPipe, type ApiConfig, type SessionUser, MANAGE, OPERATE } from "./http";
 
 const sheetsInput = z.strictObject({ serviceAccount: z.string().min(2).max(10_000), sheet: z.string().trim().min(1).max(500), tab: z.string().trim().min(1).max(100) });
 const destinationInput = sheetsInput.omit({ serviceAccount: true });
@@ -49,7 +49,7 @@ function asBadRequest(err: unknown): never {
  * each with its destination. Credentials are write-only: no response ever includes one.
  */
 @Controller("settings/connections")
-@UseGuards(SessionGuard)
+@UseGuards(SessionGuard, Allow(MANAGE))
 export class ConnectionsController {
   constructor(
     @Inject(DB) private readonly db: Db,
@@ -62,7 +62,7 @@ export class ConnectionsController {
 
   @Get()
   async get(@CurrentUser() user: SessionUser) {
-    return { connections: await readConnections(this.db, user.id) };
+    return { connections: await readConnections(this.db, user.workspaceId) };
   }
 
   /** The sheet and tab, checked with a read before saving. Shared by connect and "change sheet". */
@@ -85,7 +85,7 @@ export class ConnectionsController {
       throw new BadRequestException("That is not a service account key file. In Google Cloud, create a key for the service account as JSON and paste the whole file.");
     }
     const destination = await this.destination(sa, body);
-    await saveConnection(this.db, this.config.secretsKey, user.id, "google_sheets", { account: sa.client_email, credential: JSON.stringify({ client_email: sa.client_email, private_key: sa.private_key }), destination });
+    await saveConnection(this.db, this.config.secretsKey, user.workspaceId, "google_sheets", { account: sa.client_email, credential: JSON.stringify({ client_email: sa.client_email, private_key: sa.private_key }), destination });
     return this.get(user);
   }
 
@@ -94,8 +94,8 @@ export class ConnectionsController {
   @HttpCode(204)
   @UseGuards(RateLimit(10))
   async putSheetDestination(@CurrentUser() user: SessionUser, @Body(new ZodPipe(destinationInput)) body: z.output<typeof destinationInput>) {
-    const conn = await this.connection(user.id, "google_sheets");
-    await setDestination(this.db, user.id, "google_sheets", await this.destination(JSON.parse(conn.credential) as ServiceAccount, body));
+    const conn = await this.connection(user.workspaceId, "google_sheets");
+    await setDestination(this.db, user.workspaceId, "google_sheets", await this.destination(JSON.parse(conn.credential) as ServiceAccount, body));
   }
 
   /** Adds a visible test row, which proves Daloy can write (a shared-as-viewer sheet passes the read check but fails here). */
@@ -103,9 +103,9 @@ export class ConnectionsController {
   @HttpCode(200)
   @UseGuards(RateLimit(5))
   async testSheets(@CurrentUser() user: SessionUser) {
-    const conn = await this.connection(user.id, "google_sheets");
+    const conn = await this.connection(user.workspaceId, "google_sheets");
     const stamp = new Date().toISOString();
-    return this.test(user.id, "google_sheets", () =>
+    return this.test(user.workspaceId, "google_sheets", () =>
       appendRow(this.urls, JSON.parse(conn.credential) as ServiceAccount, conn.destination as SheetDestination, [`TEST-${stamp}`, stamp, "Test row from Daloy. You can delete this row."]),
     );
   }
@@ -115,45 +115,45 @@ export class ConnectionsController {
   @UseGuards(RateLimit(10))
   async putSlack(@CurrentUser() user: SessionUser, @Body(new ZodPipe(slackInput)) body: z.output<typeof slackInput>) {
     const { team } = await slackIdentity(this.urls, body.token).catch(asBadRequest);
-    const old = await connectionCredential(this.db, this.config.secretsKey, user.id, "slack");
-    await saveConnection(this.db, this.config.secretsKey, user.id, "slack", { account: team, credential: body.token, destination: old?.destination ?? null });
+    const old = await connectionCredential(this.db, this.config.secretsKey, user.workspaceId, "slack");
+    await saveConnection(this.db, this.config.secretsKey, user.workspaceId, "slack", { account: team, credential: body.token, destination: old?.destination ?? null });
     return this.get(user);
   }
 
   @Get("slack/channels")
   @UseGuards(RateLimit(20))
   async channels(@CurrentUser() user: SessionUser) {
-    const conn = await this.connection(user.id, "slack");
+    const conn = await this.connection(user.workspaceId, "slack");
     return slackChannels(this.urls, conn.credential).catch(asBadRequest);
   }
 
   @Put("slack/channel")
   @HttpCode(204)
   async putChannel(@CurrentUser() user: SessionUser, @Body(new ZodPipe(channelInput)) body: z.output<typeof channelInput>) {
-    const conn = await this.connection(user.id, "slack");
+    const conn = await this.connection(user.workspaceId, "slack");
     const channel = (await slackChannels(this.urls, conn.credential).catch(asBadRequest)).find((c) => c.id === body.channelId);
     if (!channel) throw new BadRequestException("That channel is not in the list. Refresh the channel list and pick again.");
-    await setDestination(this.db, user.id, "slack", { channelId: channel.id, channelName: channel.name });
+    await setDestination(this.db, user.workspaceId, "slack", { channelId: channel.id, channelName: channel.name });
   }
 
   @Post("slack/test")
   @HttpCode(200)
   @UseGuards(RateLimit(5))
   async testSlack(@CurrentUser() user: SessionUser) {
-    const conn = await this.connection(user.id, "slack");
-    return this.test(user.id, "slack", () => slackPost(this.urls, conn.credential, conn.destination!.channelId!, "Test message from Daloy. Office requests will be posted here."));
+    const conn = await this.connection(user.workspaceId, "slack");
+    return this.test(user.workspaceId, "slack", () => slackPost(this.urls, conn.credential, conn.destination!.channelId!, "Test message from Daloy. Office requests will be posted here."));
   }
 
   @Delete("google-sheets")
   @HttpCode(204)
   async removeSheets(@CurrentUser() user: SessionUser) {
-    if (!(await removeConnection(this.db, user.id, "google_sheets"))) throw new NotFoundException();
+    if (!(await removeConnection(this.db, user.workspaceId, "google_sheets"))) throw new NotFoundException();
   }
 
   @Delete("slack")
   @HttpCode(204)
   async removeSlack(@CurrentUser() user: SessionUser) {
-    if (!(await removeConnection(this.db, user.id, "slack"))) throw new NotFoundException();
+    if (!(await removeConnection(this.db, user.workspaceId, "slack"))) throw new NotFoundException();
   }
 
   private async connection(userId: string, provider: Provider) {
@@ -180,13 +180,13 @@ export class ConnectionsController {
 
 /** Activity for one run, and the operator's Retry, Post again and Mark as posted. */
 @Controller("deliveries")
-@UseGuards(SessionGuard)
+@UseGuards(SessionGuard, Allow(OPERATE))
 export class DeliveriesController {
   constructor(@Inject(DB) private readonly db: Db) {}
 
   @Get()
   async list(@CurrentUser() user: SessionUser, @Query("runId", uuid) runId: string) {
-    return listDeliveries(this.db, user.id, [runId]);
+    return listDeliveries(this.db, user.workspaceId, [runId]);
   }
 
   /** Queues a failed delivery again (the worker sends it within seconds). postAgain repeats a Slack post that may be in the channel already. */
@@ -194,13 +194,13 @@ export class DeliveriesController {
   @HttpCode(204)
   @UseGuards(RateLimit(30))
   async retry(@CurrentUser() user: SessionUser, @Param("id", uuid) id: string, @Body(new ZodPipe(retryInput)) body: z.output<typeof retryInput>) {
-    if (!(await retryDelivery(this.db, user.id, id, body))) await this.conflict(user.id, id);
+    if (!(await retryDelivery(this.db, user.workspaceId, id, body))) await this.conflict(user.workspaceId, id);
   }
 
   @Post(":id/confirm")
   @HttpCode(204)
   async confirm(@CurrentUser() user: SessionUser, @Param("id", uuid) id: string) {
-    if (!(await confirmDelivery(this.db, user.id, id))) await this.conflict(user.id, id);
+    if (!(await confirmDelivery(this.db, user.workspaceId, id))) await this.conflict(user.workspaceId, id);
   }
 
   /** Someone else's delivery and an unknown id look the same. Your own one in another state is a 409 that names the state. */

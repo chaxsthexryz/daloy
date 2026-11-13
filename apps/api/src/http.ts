@@ -1,10 +1,11 @@
 import { createHash } from "node:crypto";
-import { RUN_QUEUE, type MailDeps, type ProviderUrls } from "@daloy/db";
+import { RUN_QUEUE, type MailDeps, type ProviderUrls, type Role } from "@daloy/db";
 import {
   BadRequestException,
   type CanActivate,
   createParamDecorator,
   type ExecutionContext,
+  ForbiddenException,
   HttpException,
   HttpStatus,
   Injectable,
@@ -30,8 +31,32 @@ export class ZodPipe<T extends z.ZodType> implements PipeTransform {
   }
 }
 
-export type SessionUser = { id: string; email: string };
+/**
+ * The signed-in user and their place in a workspace (decision 0022). workspaceId is the owner's user id, which is what
+ * every older `user_id` column holds, so owner-scoped queries filter on workspaceId.
+ */
+export type SessionUser = { id: string; email: string; workspaceId: string; role: Role };
 export const CurrentUser = createParamDecorator((_: unknown, ctx: ExecutionContext) => ctx.switchToHttp().getRequest<{ user: SessionUser }>().user);
+
+/**
+ * What each role may do. Routes name the rows they need with @UseGuards(Allow(...)) after SessionGuard. The approval
+ * page checks its own rule, the named approver, in the database (decision 0022).
+ */
+export const MANAGE: Role[] = ["owner"];
+export const OPERATE: Role[] = ["owner", "operator"];
+export const ANY_MEMBER: Role[] = ["owner", "operator", "approver", "requester"];
+
+export function Allow(roles: Role[]) {
+  @Injectable()
+  class RoleGuard implements CanActivate {
+    canActivate(ctx: ExecutionContext) {
+      const user = ctx.switchToHttp().getRequest<{ user?: SessionUser }>().user;
+      if (!user || !roles.includes(user.role)) throw new ForbiddenException("your role in this workspace does not allow this");
+      return true;
+    }
+  }
+  return RoleGuard;
+}
 
 export const sha256 = (value: string) => createHash("sha256").update(value).digest("hex");
 

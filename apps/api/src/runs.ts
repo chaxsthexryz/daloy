@@ -3,7 +3,7 @@ import { Controller, Get, Inject, NotFoundException, Param, Query, UseGuards } f
 import { and, asc, desc, eq } from "drizzle-orm";
 import * as z from "zod";
 import { SessionGuard } from "./auth";
-import { CurrentUser, DB, ZodPipe, type SessionUser } from "./http";
+import { Allow, CurrentUser, DB, ZodPipe, type SessionUser, OPERATE } from "./http";
 import { maskSecrets } from "./mask";
 
 const testFlag = new ZodPipe(z.enum(["true", "false"]).optional());
@@ -13,7 +13,7 @@ const testFlag = new ZodPipe(z.enum(["true", "false"]).optional());
  * on top of the worker's redaction at write time.
  */
 @Controller("runs")
-@UseGuards(SessionGuard)
+@UseGuards(SessionGuard, Allow(OPERATE))
 export class RunsController {
   constructor(@Inject(DB) private readonly db: Db) {}
 
@@ -25,7 +25,7 @@ export class RunsController {
     @Query("test", testFlag) test?: "true" | "false",
   ) {
     const rows = await this.owned()
-      .where(and(eq(workflows.userId, user.id), workflowId ? eq(workflows.id, workflowId) : undefined, test ? eq(runs.test, test === "true") : undefined))
+      .where(and(eq(workflows.userId, user.workspaceId), workflowId ? eq(workflows.id, workflowId) : undefined, test ? eq(runs.test, test === "true") : undefined))
       .orderBy(desc(runs.createdAt))
       .limit(50);
     return rows.map((r) => ({ ...r, triggerPayload: maskSecrets(r.triggerPayload) }));
@@ -33,7 +33,7 @@ export class RunsController {
 
   @Get(":id")
   async get(@CurrentUser() user: SessionUser, @Param("id", new ZodPipe(z.uuid())) id: string) {
-    const [run] = await this.owned().where(and(eq(workflows.userId, user.id), eq(runs.id, id)));
+    const [run] = await this.owned().where(and(eq(workflows.userId, user.workspaceId), eq(runs.id, id)));
     if (!run) throw new NotFoundException();
     const steps = await this.db.select().from(stepRuns).where(eq(stepRuns.runId, id)).orderBy(asc(stepRuns.createdAt), asc(stepRuns.attempt));
     return {

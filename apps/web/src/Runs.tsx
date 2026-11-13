@@ -34,6 +34,11 @@ export function duration(from: string, to: string | null): string {
 
 const kind = (r: { test: boolean; live: boolean }) => (r.test ? (r.live ? "test run, live calls" : "test run, mocked calls") : "live run");
 const json = (v: unknown) => JSON.stringify(v, null, 2);
+// A named approval's step output holds who answered and when (decision 0022).
+function decided(output: unknown): string | null {
+  const o = output as { decidedBy?: unknown; decidedAt?: unknown } | null;
+  return typeof o?.decidedBy === "string" && typeof o.decidedAt === "string" ? `Decided by ${o.decidedBy} at ${new Date(o.decidedAt).toLocaleString()}` : null;
+}
 
 /** One run's steps: state, branch, attempt, timing, and the input and output the worker stored (secrets masked by the API). */
 export function RunResult({ run }: { run: Run }) {
@@ -52,6 +57,7 @@ export function RunResult({ run }: { run: Run }) {
             <span className="muted"> · {duration(s.createdAt, s.finishedAt)}</span>
             {s.inputTokens !== null && <span className="muted"> · {s.inputTokens} in, {s.outputTokens ?? 0} out tokens</span>}
             {s.error && <p className="message error">{s.error}</p>}
+            {decided(s.output) && <p className="muted">{decided(s.output)}</p>}
             {s.input !== null && (
               <details>
                 <summary>Input</summary>

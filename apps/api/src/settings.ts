@@ -4,7 +4,7 @@ import { generate, listModels, LlmError } from "@daloy/llm-ts";
 import { BadRequestException, Body, Controller, Get, HttpCode, Inject, Post, Put, UseGuards } from "@nestjs/common";
 import * as z from "zod";
 import { SessionGuard } from "./auth";
-import { CONFIG, CurrentUser, DB, RateLimit, ZodPipe, type ApiConfig, type SessionUser } from "./http";
+import { Allow, CONFIG, CurrentUser, DB, RateLimit, ZodPipe, type ApiConfig, type SessionUser, MANAGE } from "./http";
 
 const settingsInput = z.object({
   preset: z.enum(PRESET_IDS),
@@ -34,7 +34,7 @@ export function explain(err: unknown): string {
 
 /** The AI model a user's workflows run with. Keys are write-only, like secrets. */
 @Controller("settings/ai")
-@UseGuards(SessionGuard)
+@UseGuards(SessionGuard, Allow(MANAGE))
 export class SettingsController {
   constructor(
     @Inject(DB) private readonly db: Db,
@@ -43,7 +43,7 @@ export class SettingsController {
 
   @Get()
   async get(@CurrentUser() user: SessionUser) {
-    const saved = await readAiSettings(this.db, user.id);
+    const saved = await readAiSettings(this.db, user.workspaceId);
     const localModel = localConnection().model;
     const current = saved ? { ...saved, saved: true } : { preset: "local", model: localModel, hasKey: false, keys: [], saved: false };
     const presets = Object.fromEntries(
@@ -66,7 +66,7 @@ export class SettingsController {
   @HttpCode(204)
   async put(@CurrentUser() user: SessionUser, @Body(new ZodPipe(settingsInput)) body: z.output<typeof settingsInput>) {
     try {
-      await saveAiSettings(this.db, this.config.secretsKey, user.id, body);
+      await saveAiSettings(this.db, this.config.secretsKey, user.workspaceId, body);
     } catch (err) {
       throw new BadRequestException((err as Error).message);
     }
@@ -77,7 +77,7 @@ export class SettingsController {
   @HttpCode(200)
   @UseGuards(RateLimit(10))
   async test(@CurrentUser() user: SessionUser) {
-    const { model, ...connection } = await aiConnection(this.db, this.config.secretsKey, user.id);
+    const { model, ...connection } = await aiConnection(this.db, this.config.secretsKey, user.workspaceId);
     const started = Date.now();
     try {
       const { data, usage } = await generate({ ...buildPrompt(classify, SAMPLE), schema: aiOutputSchema(classify), model, connection, temperature: 0, maxTokens: 256, timeoutMs: 30_000 });

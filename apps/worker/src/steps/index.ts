@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { aiConnection, createApproval, queueDelivery, readSecrets, sendAs, type Db, type MailDeps } from "@daloy/db";
+import { aiConnection, createApproval, findApprover, queueDelivery, readSecrets, sendAs, type Db, type MailDeps } from "@daloy/db";
 import { evaluateCondition, isRetryable, mockAiOutput, resolveTemplate, StepError, type ExpressionContext, type Step } from "@daloy/engine";
 import type { StepExecutor, StepResult } from "../advance";
 import { runAi } from "./ai";
@@ -32,7 +32,7 @@ function redact(value: unknown, values: string[]): unknown {
 type HttpInput = { method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE"; url: string; headers: Record<string, string>; body?: string };
 type EmailInput = { to: string; subject: string; text: string };
 type AiInput = { input: string };
-type ApprovalInput = { to: string; subject: string; message: string; timeoutSeconds: number };
+type ApprovalInput = { to?: string; approver?: string; subject: string; message: string; timeoutSeconds: number };
 type SheetsInput = { columns: string[] };
 type SlackInput = { text: string };
 
@@ -62,9 +62,10 @@ function resolveInput(step: Step, ctx: ExpressionContext): Record<string, unknow
       // Only input is a template; labels, fields and instructions are literals (decision 0010).
       return { ...step.config, input: text(step.config.input, ctx) };
     case "approval": {
-      const { to, subject, message, timeoutSeconds } = step.config;
+      const { to, approver, subject, message, timeoutSeconds } = step.config;
       // The link is not part of the input, so the token never reaches the database or run history.
-      return { to: text(to, ctx), subject: text(subject, ctx), message: text(message, ctx), timeoutSeconds } satisfies ApprovalInput;
+      const who = approver ? { approver } : { to: text(to!, ctx) };
+      return { ...who, subject: text(subject, ctx), message: text(message, ctx), timeoutSeconds } satisfies ApprovalInput;
     }
     case "sheets":
       return { columns: step.config.columns.map((c) => text(c, ctx)) } satisfies SheetsInput;
@@ -107,13 +108,17 @@ async function runStep(deps: FullDeps, step: Step, input: unknown, ctx: Expressi
       // A mocked test run approves straight away, so the builder shows the approved path without an email.
       if (mock) return { output: { mocked: true, decision: "approved" }, branch: "approved" };
       const cfg = input as ApprovalInput;
+      // A named approver must still be a member who may approve; the API checks again when they answer (decision 0022).
+      const approver = cfg.approver ? await findApprover(deps.db, userId, cfg.approver) : null;
+      if (cfg.approver && !approver) throw new StepError(`The approver ${cfg.approver} is not a member of this workspace who can approve.`, false);
       const expiresAt = new Date(Date.now() + cfg.timeoutSeconds * 1000);
-      const token = await createApproval(deps.db, stepRunId, expiresAt);
+      const token = await createApproval(deps.db, stepRunId, expiresAt, approver?.id);
       const link = `${deps.publicUrl}/approvals/${token}`;
-      const body = `${cfg.message}\n\nApprove or reject here:\n${link}\n\nThe link works once and expires at ${expiresAt.toISOString()}.`;
+      const who = approver ? `To answer, sign in as ${approver.email}. ` : "";
+      const body = `${cfg.message}\n\nApprove or reject here:\n${link}\n\n${who}The link works once and expires at ${expiresAt.toISOString()}.`;
       // A re-run of this attempt after a crash sends a new link (the old one is deleted), so it needs its own Message-ID,
       // or a mail server could drop it as a duplicate of the dead one.
-      await sendAs(deps.db, deps.secretsKey, deps.mail, userId, { to: cfg.to, subject: cfg.subject, text: body }, `${idempotencyKey}:${randomUUID().slice(0, 8)}`);
+      await sendAs(deps.db, deps.secretsKey, deps.mail, userId, { to: approver?.email ?? cfg.to!, subject: cfg.subject, text: body }, `${idempotencyKey}:${randomUUID().slice(0, 8)}`);
       // The run waits until the timeout; recording a decision wakes it earlier (decision 0009).
       return { output: { expiresAt: expiresAt.toISOString() }, waitUntil: expiresAt };
     }

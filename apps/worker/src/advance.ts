@@ -105,8 +105,10 @@ async function runNext(deps: AdvanceDeps, run: Run): Promise<void> {
       const extra: Partial<typeof stepRuns.$inferSelect> = { finishedAt: new Date() };
       if (waiting.type === "approval") {
         // The recorded decision, or "timeout" if nobody answered in time (decision 0009).
-        extra.branch = await claimTimeout(tx, last!.id);
-        extra.output = { ...(last!.output as object), decision: extra.branch };
+        // A named approval also keeps who decided and when (decision 0022), so later steps and the run history can show it.
+        const { branch, decidedBy, decidedAt } = await claimTimeout(tx, last!.id);
+        extra.branch = branch;
+        extra.output = { ...(last!.output as object), decision: branch, ...(decidedBy ? { decidedBy, decidedAt } : {}) };
       }
       await moveStep(tx, last!.id, "waiting", "succeeded", extra);
       await moveRun(tx, run.id, "waiting", "running", { nextAttemptAt: null });

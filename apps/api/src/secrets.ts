@@ -3,14 +3,14 @@ import { Body, Controller, Delete, Get, HttpCode, Inject, NotFoundException, Par
 import { and, asc, eq } from "drizzle-orm";
 import * as z from "zod";
 import { SessionGuard } from "./auth";
-import { CONFIG, CurrentUser, DB, ZodPipe, type ApiConfig, type SessionUser } from "./http";
+import { Allow, CONFIG, CurrentUser, DB, ZodPipe, type ApiConfig, type SessionUser, MANAGE } from "./http";
 
 const secretName = new ZodPipe(z.string().regex(/^[a-z][a-z0-9_]{0,99}$/, "use a-z, 0-9 and _"));
 const secretInput = z.object({ value: z.string().min(1).max(10_000) });
 
 /** Write-only: values go in, only names come back out. */
 @Controller("secrets")
-@UseGuards(SessionGuard)
+@UseGuards(SessionGuard, Allow(MANAGE))
 export class SecretsController {
   constructor(
     @Inject(DB) private readonly db: Db,
@@ -19,23 +19,23 @@ export class SecretsController {
 
   @Get()
   list(@CurrentUser() user: SessionUser) {
-    return this.db.select({ name: secrets.name, createdAt: secrets.createdAt }).from(secrets).where(eq(secrets.userId, user.id)).orderBy(asc(secrets.name));
+    return this.db.select({ name: secrets.name, createdAt: secrets.createdAt }).from(secrets).where(eq(secrets.userId, user.workspaceId)).orderBy(asc(secrets.name));
   }
 
   @Put(":name")
   @HttpCode(204)
   async put(@CurrentUser() user: SessionUser, @Param("name", secretName) name: string, @Body(new ZodPipe(secretInput)) body: z.output<typeof secretInput>) {
-    const encrypted = encryptSecret(this.config.secretsKey, user.id, name, body.value);
+    const encrypted = encryptSecret(this.config.secretsKey, user.workspaceId, name, body.value);
     await this.db
       .insert(secrets)
-      .values({ userId: user.id, name, ...encrypted })
+      .values({ userId: user.workspaceId, name, ...encrypted })
       .onConflictDoUpdate({ target: [secrets.userId, secrets.name], set: encrypted });
   }
 
   @Delete(":name")
   @HttpCode(204)
   async remove(@CurrentUser() user: SessionUser, @Param("name", secretName) name: string) {
-    const deleted = await this.db.delete(secrets).where(and(eq(secrets.userId, user.id), eq(secrets.name, name))).returning({ id: secrets.id });
+    const deleted = await this.db.delete(secrets).where(and(eq(secrets.userId, user.workspaceId), eq(secrets.name, name))).returning({ id: secrets.id });
     if (deleted.length === 0) throw new NotFoundException();
   }
 }

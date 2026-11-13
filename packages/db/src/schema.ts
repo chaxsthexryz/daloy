@@ -16,6 +16,45 @@ export const users = pgTable("users", {
   createdAt: createdAt(),
 });
 
+export const ROLES = ["owner", "operator", "approver", "requester"] as const;
+export type Role = (typeof ROLES)[number];
+
+/**
+ * Who belongs to which office (roadmap phase 4, decision 0022). A workspace is identified by its owner's user id, so
+ * every older `user_id` column already names the workspace. One workspace per account. The owner row is the one where
+ * workspace_id = user_id, and the check keeps it that way: nobody else can be made owner and the owner can't be demoted.
+ */
+export const workspaceMembers = pgTable(
+  "workspace_members",
+  {
+    userId: uuid("user_id").primaryKey().references(() => users.id, { onDelete: "cascade" }),
+    workspaceId: uuid("workspace_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    role: text("role", { enum: ROLES }).notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index("workspace_members_workspace").on(t.workspaceId),
+    check("workspace_members_role", sql`${t.role} in ('owner', 'operator', 'approver', 'requester')`),
+    check("workspace_members_owner", sql`(${t.role} = 'owner') = (${t.workspaceId} = ${t.userId})`),
+  ],
+);
+
+/** A one-time link the owner copies to a new member. Only the SHA-256 of the token is stored, as for approval links. */
+export const invites = pgTable(
+  "invites",
+  {
+    id: id(),
+    workspaceId: uuid("workspace_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    email: text("email").notNull(),
+    role: text("role", { enum: ROLES }).notNull(),
+    tokenHash: text("token_hash").notNull().unique(),
+    expiresAt: ts("expires_at").notNull(),
+    usedAt: ts("used_at"),
+    createdAt: createdAt(),
+  },
+  (t) => [check("invites_role", sql`${t.role} in ('operator', 'approver', 'requester')`)],
+);
+
 export const sessions = pgTable("sessions", {
   // SHA-256 of the cookie value, so a database leak does not leak live sessions.
   idHash: text("id_hash").primaryKey(),
@@ -111,6 +150,13 @@ export const approvals = pgTable("approvals", {
   expiresAt: ts("expires_at").notNull(),
   usedAt: ts("used_at"),
   decision: text("decision"),
+  // Set for a named approval: only this member may decide, signed in (decision 0022). Null is a link-holder approval
+  // (decision 0009), including every link sent before phase 4. Cascade, never set null, so a named approval can't
+  // turn into a link-holder one.
+  approverId: uuid("approver_id").references(() => users.id, { onDelete: "cascade" }),
+  // Who answered, when they were signed in. The email is kept apart so the record survives the account.
+  decidedBy: uuid("decided_by").references(() => users.id, { onDelete: "set null" }),
+  decidedByEmail: text("decided_by_email"),
   createdAt: createdAt(),
 });
 
@@ -175,6 +221,8 @@ export const requests = pgTable(
     reference: text("reference").notNull().unique(),
     submissionKey: uuid("submission_key").notNull(),
     subject: text("subject").notNull(),
+    // The member who sent it while signed in; null for the public form and MCP.
+    requestedBy: uuid("requested_by").references(() => users.id, { onDelete: "set null" }),
     createdAt: createdAt(),
   },
   (t) => [unique().on(t.workflowId, t.submissionKey)],
