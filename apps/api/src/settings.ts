@@ -44,7 +44,7 @@ export class SettingsController {
   async get(@CurrentUser() user: SessionUser) {
     const saved = await readAiSettings(this.db, user.id);
     const current = saved ? { ...saved, saved: true } : { preset: "local", model: process.env.LLM_MODEL || "llama3.2", hasKey: false, saved: false };
-    const presets = Object.fromEntries(Object.entries(PRESETS).map(([id, p]) => [id, { label: p.label, defaultModel: p.defaultModel, needsKey: p.needsKey }]));
+    const presets = Object.fromEntries(Object.entries(PRESETS).map(([id, p]) => [id, { label: p.label, defaultModel: p.defaultModel, needsKey: p.needsKey, models: p.models }]));
     return { current, presets };
   }
 

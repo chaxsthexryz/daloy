@@ -7,11 +7,19 @@ import { aiSettings } from "./schema";
  * The AI models a user can pick in the console. Hosted ones have a fixed URL, so a user cannot point the server at an
  * internal host. "local" is whatever the operator configured in the env vars (Ollama on the host by default).
  */
+// models are suggestions for the console; any model name the provider knows works. The Gemini ones are on the
+// free tier per Google's pricing page (read 2026-11-13).
 export const PRESETS = {
-  local: { label: "Local model", defaultModel: "llama3.2", needsKey: false },
-  gemini: { label: "Gemini API", defaultModel: "gemini-3.8-flash", needsKey: true, baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai" },
-  openai: { label: "OpenAI", defaultModel: "", needsKey: true, baseUrl: "https://api.openai.com/v1" },
-  openrouter: { label: "OpenRouter", defaultModel: "", needsKey: true, baseUrl: "https://openrouter.ai/api/v1" },
+  local: { label: "Local model", defaultModel: "llama3.2", needsKey: false, models: ["llama3.2", "hermes3"] },
+  gemini: {
+    label: "Gemini API",
+    defaultModel: "gemini-3.8-flash",
+    needsKey: true,
+    baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai",
+    models: ["gemini-3.8-flash", "gemini-3.6-flash", "gemini-3.5-flash-lite", "gemini-4-hydrogen"],
+  },
+  openai: { label: "OpenAI", defaultModel: "", needsKey: true, baseUrl: "https://api.openai.com/v1", models: [] },
+  openrouter: { label: "OpenRouter", defaultModel: "", needsKey: true, baseUrl: "https://openrouter.ai/api/v1", models: [] },
 } as const;
 export type Preset = keyof typeof PRESETS;
 export const PRESET_IDS = Object.keys(PRESETS) as [Preset, ...Preset[]];

@@ -65,6 +65,7 @@ it("lists the choices and starts on the local model", async () => {
   const { body } = await (await signedIn()).get("/settings/ai").expect(200);
   expect(body.current).toEqual({ preset: "local", model: "llama3.2", hasKey: false, saved: false });
   expect(body.presets.gemini).toMatchObject({ label: "Gemini API", defaultModel: "gemini-3.8-flash", needsKey: true });
+  expect(body.presets.gemini.models).toContain("gemini-3.5-flash-lite");
   expect(JSON.stringify(body.presets)).not.toContain("http");
 });
 

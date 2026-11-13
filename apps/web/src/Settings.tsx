@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { api } from "./api";
 
-type Preset = { label: string; defaultModel: string; needsKey: boolean };
+type Preset = { label: string; defaultModel: string; needsKey: boolean; models: string[] };
 type Current = { preset: string; model: string; hasKey: boolean; saved: boolean };
 type TestResult = { ok: boolean; model: string; sample: string; label?: string; ms?: number; inputTokens?: number; outputTokens?: number; error?: string };
 
@@ -95,7 +95,13 @@ export function SettingsPage() {
           </fieldset>
           <div className="field">
             <label htmlFor="ai-model">Model name</label>
-            <input id="ai-model" value={model} onChange={(e) => setModel(e.target.value)} required maxLength={200} />
+            <input id="ai-model" list="ai-models" value={model} onChange={(e) => setModel(e.target.value)} required maxLength={200} />
+            <datalist id="ai-models">
+              {presets[preset]?.models.map((m) => (
+                <option key={m} value={m} />
+              ))}
+            </datalist>
+            {(presets[preset]?.models.length ?? 0) > 0 && <span className="muted hint">Pick from the list or type any model name the provider offers: {presets[preset]!.models.join(", ")}.</span>}
           </div>
           {presets[preset]?.needsKey && (
             <div className="field">

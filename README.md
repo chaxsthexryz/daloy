@@ -63,7 +63,7 @@ After the seed: `demo@daloy.local`, password `daloy-demo-2026`. The account has 
 1. Sign in and open **AI model** (top of the workflow list).
 2. Pick a provider:
    - **Local model** (Ollama on this computer): run `ollama pull llama3.2` once and keep Ollama running.
-   - **Gemini API** (free tier): get a key at Google AI Studio, no credit card. The model is prefilled as `gemini-3.8-flash`. Google may use free-tier data to improve its products, so use test data.
+   - **Gemini API** (free tier): get a key at Google AI Studio, no credit card. The model is prefilled as `gemini-3.8-flash`; the model field also suggests `gemini-3.6-flash`, `gemini-3.5-flash-lite` and `gemini-4-hydrogen`, which helps when one is overloaded (HTTP 503). Google may use free-tier data to improve its products, so use test data.
    - **OpenAI** or **OpenRouter**: your own key.
 3. Press **Save**, then **Test the saved model**. It sends a sample inquiry about a double charge through the same classify prompt the Inquiry triage template uses, and shows the label it got (it should be `billing`), the time and the tokens. If it fails, it says why: model not reachable, key rejected, unknown model name or rate limit.
 4. Run the real scenario:
@@ -75,6 +75,16 @@ After the seed: `demo@daloy.local`, password `daloy-demo-2026`. The account has 
    - Mailpit (http://localhost:8025) has the thank-you email and the email forwarded to billing@ or support@.
 
 The choice applies to all AI steps in your workflows and takes effect on the next step, without a restart.
+
+## Send real email
+
+By default every email lands in Mailpit (http://localhost:8025) and nobody receives it. To send from your Gmail:
+
+1. Turn on 2-Step Verification on your Google account, then create an app password (Google Account, Security, App passwords).
+2. In `.env`, set `SMTP_HOST=smtp.gmail.com`, `SMTP_PORT=465`, `SMTP_USER` and `SMTP_FROM` to your Gmail address, and `SMTP_PASS` to the app password. `.env` is never committed.
+3. Restart the worker: `docker compose up -d worker` (or the "Daloy - Restart worker" shortcut).
+
+From then on, published workflows and test runs with "Make live calls" ticked send real mail. Use your own addresses while testing.
 
 ## Build a workflow by describing it
 
