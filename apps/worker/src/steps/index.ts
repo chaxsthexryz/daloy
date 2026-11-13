@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { aiConnection, createApproval, findApprover, queueDelivery, readSecrets, sendAs, type Db, type MailDeps } from "@daloy/db";
+import { aiConnection, checkRecipients, createApproval, findApprover, queueDelivery, readSecrets, sendAs, type Db, type MailDeps, type Provider } from "@daloy/db";
 import { evaluateCondition, isRetryable, mockAiOutput, resolveTemplate, StepError, type ExpressionContext, type Step } from "@daloy/engine";
 import type { StepExecutor, StepResult } from "../advance";
 import { runAi } from "./ai";
@@ -54,7 +54,8 @@ function resolveInput(step: Step, ctx: ExpressionContext): Record<string, unknow
       if (body !== undefined) input.body = text(body, ctx);
       return input;
     }
-    case "email": {
+    case "email":
+    case "outlook": {
       const { to, subject, text: body } = step.config;
       return { to: text(to, ctx), subject: text(subject, ctx), text: text(body, ctx) } satisfies EmailInput;
     }
@@ -70,6 +71,7 @@ function resolveInput(step: Step, ctx: ExpressionContext): Record<string, unknow
     case "sheets":
       return { columns: step.config.columns.map((c) => text(c, ctx)) } satisfies SheetsInput;
     case "slack":
+    case "teams":
       return { text: text(step.config.text, ctx) } satisfies SlackInput;
   }
 }
@@ -123,15 +125,22 @@ async function runStep(deps: FullDeps, step: Step, input: unknown, ctx: Expressi
       return { output: { expiresAt: expiresAt.toISOString() }, waitUntil: expiresAt };
     }
     case "sheets":
-    case "slack": {
+    case "slack":
+    case "outlook":
+    case "teams": {
       // The request reference when the run came from a guided form, else the run id, so every row and message can be traced.
       const ref = (ctx.trigger as { reference?: unknown } | null)?.reference;
       const reference = typeof ref === "string" ? ref : runId;
-      const payload = step.type === "sheets" ? { row: [reference, new Date().toISOString(), ...(input as SheetsInput).columns] } : { text: (input as SlackInput).text };
+      const payload =
+        step.type === "sheets"
+          ? { row: [reference, new Date().toISOString(), ...(input as SheetsInput).columns] }
+          : step.type === "outlook"
+            ? { ...(input as EmailInput), to: checkRecipients((input as EmailInput).to).join(",") }
+            : { text: (input as SlackInput).text };
       if (mock) return { output: { mocked: true, reference, ...payload } };
       // Queued, not sent: the worker delivers it apart from the run, so one provider's trouble never holds up the other
       // (decision 0021). A re-run of this step gets the first delivery back, with its original payload.
-      const provider = step.type === "sheets" ? "google_sheets" : "slack";
+      const provider: Provider = step.type === "sheets" ? "google_sheets" : step.type;
       const d = await queueDelivery(deps.db, { userId, runId, stepId: step.id, provider, reference, payload });
       return { output: { deliveryId: d.id, reference, state: d.state } };
     }
@@ -158,9 +167,9 @@ export function createExecutor(deps: ExecutorDeps): StepExecutor {
       let input: unknown = null;
       try {
         input = resolveInput(step, withSecrets);
-        // A Sheets row or Slack message is stored and then sent as is, so secrets are redacted before it is queued:
+        // A Sheets row, Slack or Teams note, or Outlook email is stored and then sent as is, so secrets are redacted before it is queued:
         // a secret never reaches a spreadsheet or a channel.
-        if (step.type === "sheets" || step.type === "slack") input = redact(input, values);
+        if (step.type === "sheets" || step.type === "slack" || step.type === "outlook" || step.type === "teams") input = redact(input, values);
         const result = await runStep(full, step, input, withSecrets, { runId, idempotencyKey, attempt, stepRunId, userId, mock });
         return { ...result, input: redact(input, values), output: redact(result.output, values) };
       } catch (err) {

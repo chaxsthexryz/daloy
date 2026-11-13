@@ -60,6 +60,10 @@ services:
       LLM_PROVIDER: ${LLM_PROVIDER:-ollama}
       LLM_API_KEY: ${LLM_API_KEY:-}
       PUBLIC_URL: ${PUBLIC_URL:-http://localhost:3000}
+      # Optional: the installation's Microsoft Entra app, for Connect Outlook (decision 0023). Empty means Outlook is not offered.
+      MICROSOFT_CLIENT_ID: ${MICROSOFT_CLIENT_ID:-}
+      MICROSOFT_CLIENT_SECRET: ${MICROSOFT_CLIENT_SECRET:-}
+      MICROSOFT_TENANT: ${MICROSOFT_TENANT:-organizations}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
@@ -85,6 +89,10 @@ services:
       SMTP_PASS: ${SMTP_PASS:-}
       SMTP_FROM: ${SMTP_FROM:-Daloy <daloy@localhost>}
       PUBLIC_URL: ${PUBLIC_URL:-http://localhost:3000}
+      # Optional: the installation's Microsoft Entra app, for Connect Outlook (decision 0023). Empty means Outlook is not offered.
+      MICROSOFT_CLIENT_ID: ${MICROSOFT_CLIENT_ID:-}
+      MICROSOFT_CLIENT_SECRET: ${MICROSOFT_CLIENT_SECRET:-}
+      MICROSOFT_TENANT: ${MICROSOFT_TENANT:-organizations}
       # For the "Test" button on the AI model page. Same defaults as the worker.
       LLM_BASE_URL: ${LLM_BASE_URL:-http://host.docker.internal:11434}
       LLM_MODEL: ${LLM_MODEL:-llama3.2}

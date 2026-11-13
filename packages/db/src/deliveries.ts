@@ -1,16 +1,17 @@
 import { backoffDelayMs, type RetryPolicy } from "@daloy/engine";
 import { and, eq, inArray, sql } from "drizzle-orm";
-import { connectionCredential, markConnectionFailed, PROVIDER_NAMES } from "./connections";
+import { connectionCredential, markConnectionFailed, PROVIDER_NAMES, updateCredential } from "./connections";
 import type { Db } from "./index";
-import { appendRow, findReference, ProviderError, serviceAccountSchema, slackPost, type ProviderUrls, type SheetDestination } from "./providers";
+import { appendRow, findReference, outlookSend, ProviderError, serviceAccountSchema, slackPost, teamsPost, type OutlookMessage, type ProviderUrls, type SheetDestination } from "./providers";
 import { deliveries, type Provider } from "./schema";
 
 /**
- * Sheets rows and Slack messages, delivered by the worker apart from the run that asked for them (decision 0021).
+ * Sheets rows, Slack and Teams notes and Outlook emails, delivered by the worker apart from the run that asked for them
+ * (decisions 0021 and 0023).
  *
  *   queued -> sending -> delivered
  *                     -> queued        (quota, provider down, or Sheets ambiguous: try later, look first)
- *                     -> needs_review  (Slack ambiguous: an operator checks the channel)
+ *                     -> needs_review  (Slack, Teams or Outlook ambiguous: an operator checks the channel or Sent Items)
  *                     -> failed        (auth, permission, bad request, or the last attempt)
  *   failed -> queued (Retry); needs_review -> queued (Post again) or delivered (Mark as posted)
  */
@@ -21,7 +22,7 @@ export const DELIVERY_POLICY: RetryPolicy = { maxAttempts: 5, baseDelayMs: 2000,
 /** A delivery still "sending" after this long belongs to a worker that died mid-call. Well above a call's timeouts. */
 const STALE_SENDING = "2 minutes";
 
-/** Called by the sheets and slack steps. One row per run and step: a step that runs again gets the first row back. */
+/** Called by the sheets, slack, outlook and teams steps. One row per run and step: a step that runs again gets the first row back. */
 export async function queueDelivery(db: Db, d: { userId: string; runId: string; stepId: string; provider: Provider; reference: string; payload: DeliveryPayload }): Promise<Delivery> {
   await db.insert(deliveries).values(d).onConflictDoNothing({ target: [deliveries.runId, deliveries.stepId] });
   const [row] = await db.select().from(deliveries).where(and(eq(deliveries.runId, d.runId), eq(deliveries.stepId, d.stepId)));
@@ -58,7 +59,7 @@ async function attempt(db: Db, key: Buffer, urls: ProviderUrls, d: Delivery): Pr
   const conn = await connectionCredential(db, key, d.userId, d.provider);
   if (!conn) return { state: "failed", error: `${name} is not connected. Connect it in Settings, Business and email, then retry.` };
   if (conn.status === "failed") return { state: "failed", error: `${name} needs to be connected again (${conn.account}). Reconnect it in Settings, Business and email, then retry.` };
-  if (!conn.destination) return { state: "failed", error: `No ${d.provider === "slack" ? "channel" : "sheet"} is chosen for ${name}. Pick one in Settings, Business and email, then retry.` };
+  if (!conn.destination) return { state: "failed", error: `No ${d.provider === "google_sheets" ? "sheet" : "channel"} is chosen for ${name}. Pick one in Settings, Business and email, then retry.` };
   try {
     if (d.provider === "google_sheets") {
       const sa = serviceAccountSchema.parse(JSON.parse(conn.credential));
@@ -69,12 +70,15 @@ async function attempt(db: Db, key: Buffer, urls: ProviderUrls, d: Delivery): Pr
       }
       return { state: "delivered", result: await appendRow(urls, sa, dest, (d.payload as { row: string[] }).row) };
     }
-    const channel = conn.destination.channelId!;
-    if (d.checkFirst) {
-      // Without a history scope Daloy cannot look in the channel, so a person decides.
-      return { state: "needs_review", error: `Slack may have posted this message before the connection dropped. Check #${conn.destination.channelName ?? channel}, then choose Mark as posted or Post again.` };
+    // Slack, Teams and Outlook have no read access to check with, so after a call that may have arrived a person decides.
+    if (d.checkFirst) return { state: "needs_review", error: `${name} may have ${d.provider === "outlook" ? "sent" : "posted"} this before the connection dropped. ${reviewHint(d.provider, conn.destination)}` };
+    if (d.provider === "outlook") {
+      const save = (t: string) => updateCredential(db, key, d.userId, "outlook", t);
+      return { state: "delivered", result: await outlookSend(urls, conn.credential, save, d.payload as OutlookMessage) };
     }
-    return { state: "delivered", result: await slackPost(urls, conn.credential, channel, (d.payload as { text: string }).text) };
+    const text = (d.payload as { text: string }).text;
+    if (d.provider === "teams") return { state: "delivered", result: await teamsPost(urls, conn.credential, text) };
+    return { state: "delivered", result: await slackPost(urls, conn.credential, conn.destination.channelId!, text) };
   } catch (err) {
     const e = err instanceof ProviderError ? err : new ProviderError(err instanceof Error ? err.message : String(err), "unavailable");
     switch (e.kind) {
@@ -85,13 +89,18 @@ async function attempt(db: Db, key: Buffer, urls: ProviderUrls, d: Delivery): Pr
       case "invalid":
         return { state: "failed", error: e.message };
       case "ambiguous":
-        if (d.provider === "slack") return { state: "needs_review", error: `${e.message} Slack may have posted it. Check the channel, then choose Mark as posted or Post again.` };
+        if (d.provider !== "google_sheets") return { state: "needs_review", error: `${e.message} ${name} may have ${d.provider === "outlook" ? "sent" : "posted"} it. ${reviewHint(d.provider, conn.destination)}` };
         return { state: "queued", error: e.message, checkFirst: true };
       case "quota":
       case "unavailable":
         return { state: "queued", error: e.message, retryAfterMs: e.retryAfterMs };
     }
   }
+}
+
+function reviewHint(provider: Provider, dest: Record<string, string>) {
+  if (provider === "outlook") return `Look in Sent Items of ${dest.mailbox ?? "the mailbox"}, then choose Mark as sent or Send again.`;
+  return `Check ${provider === "slack" ? `#${dest.channelName ?? dest.channelId}` : `the Teams channel ${dest.channelName ?? ""}`.trim()}, then choose Mark as posted or Post again.`;
 }
 
 /** Writes the outcome, guarded by the claim (state and attempt number) so a stale worker cannot overwrite a newer one. */

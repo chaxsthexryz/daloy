@@ -258,13 +258,14 @@ export const mailSenders = pgTable("mail_senders", {
   updatedAt: ts("updated_at").notNull().defaultNow(),
 }, (t) => [check("mail_senders_status", sql`${t.status} in ('unverified', 'active', 'failed', 'disconnected')`)]);
 
-export const PROVIDERS = ["google_sheets", "slack"] as const;
+export const PROVIDERS = ["google_sheets", "slack", "outlook", "teams"] as const;
 export type Provider = (typeof PROVIDERS)[number];
 
 /**
- * An owner's Google Sheets or Slack connection (roadmap phase 3, decision 0021). One per owner and provider. The
+ * An owner's Google Sheets, Slack, Outlook or Teams connection (roadmap phases 3 and 5, decisions 0021 and 0023). One per owner and provider. The
  * credential (service account key or bot token) is encrypted like secrets, with the owner and provider bound in.
- * destination is where deliveries go: { spreadsheetId, tab, title } or { channelId, channelName }. Deleting the row
+ * destination is where deliveries go: { spreadsheetId, tab, title }, { channelId, channelName }, { mailbox } (Outlook)
+ * or { channelName } (Teams, where the channel is fixed by the workflow URL). Deleting the row
  * disconnects; queued deliveries then fail with "not connected" and wait for Retry.
  */
 export const connections = pgTable(
@@ -284,7 +285,7 @@ export const connections = pgTable(
   },
   (t) => [
     primaryKey({ columns: [t.userId, t.provider] }),
-    check("connections_provider", sql`${t.provider} in ('google_sheets', 'slack')`),
+    check("connections_provider", sql`${t.provider} in ('google_sheets', 'slack', 'outlook', 'teams')`),
     check("connections_status", sql`${t.status} in ('active', 'failed')`),
   ],
 );
@@ -306,7 +307,7 @@ export const deliveries = pgTable(
     stepId: text("step_id").notNull(),
     provider: text("provider", { enum: PROVIDERS }).notNull(),
     reference: text("reference").notNull(),
-    payload: jsonb("payload").$type<{ row: string[] } | { text: string }>().notNull(),
+    payload: jsonb("payload").$type<{ row: string[] } | { text: string } | { to: string; subject: string; text: string }>().notNull(),
     state: text("state", { enum: DELIVERY_STATES }).notNull().default("queued"),
     checkFirst: boolean("check_first").notNull().default(false),
     attempts: integer("attempts").notNull().default(0),
@@ -321,6 +322,6 @@ export const deliveries = pgTable(
     // The worker polls for due deliveries every couple of seconds.
     index("deliveries_due").on(t.nextAttemptAt).where(sql`${t.state} in ('queued', 'sending')`),
     check("deliveries_state", sql`${t.state} in ('queued', 'sending', 'delivered', 'needs_review', 'failed')`),
-    check("deliveries_provider", sql`${t.provider} in ('google_sheets', 'slack')`),
+    check("deliveries_provider", sql`${t.provider} in ('google_sheets', 'slack', 'outlook', 'teams')`),
   ],
 );

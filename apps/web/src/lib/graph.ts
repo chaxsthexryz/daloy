@@ -9,7 +9,7 @@ export type Draft = WorkflowDefinition;
 export type Edge = Draft["edges"][number];
 
 /** Step types the builder can add. */
-export const ADDABLE = ["condition", "http", "email", "delay", "ai", "approval", "sheets", "slack"] as const;
+export const ADDABLE = ["condition", "http", "email", "delay", "ai", "approval", "sheets", "slack", "outlook", "teams"] as const;
 export type AddableType = (typeof ADDABLE)[number];
 
 export const blankDraft = (): Draft => ({ trigger: { type: "manual", config: {} }, steps: [], edges: [] });
@@ -21,6 +21,7 @@ export function defaultConfig(type: AddableType): Step["config"] {
     case "http":
       return { method: "POST", url: "https://example.com/hook", headers: {}, body: "{{trigger}}" };
     case "email":
+    case "outlook":
       return { to: "{{trigger.email}}", subject: "Hello", text: "Hi, thanks for getting in touch." };
     case "delay":
       return { seconds: 60 };
@@ -31,6 +32,7 @@ export function defaultConfig(type: AddableType): Step["config"] {
     case "sheets":
       return { columns: ["{{trigger.name}}", "{{trigger.summary}}"] };
     case "slack":
+    case "teams":
       return { text: "New request {{trigger.reference}}: {{trigger.summary}}" };
   }
 }

@@ -68,7 +68,7 @@ export default async function setup() {
   process.env.E2E_MAIL_FILE = mailFile;
   const smtp = await startSmtpSink(SMTP_PORT, mailFile);
   const llm = startLlmFake(LLM_PORT);
-  // Fake Google Sheets and Slack. Tests read the key file and token from these env vars and the fake's /__control.
+  // Fake Google Sheets, Slack and Microsoft. Tests read the key file and token from these env vars and the fake's /__control.
   const providers = await startFakeProviders(PROVIDERS_PORT);
   const saEmail = "daloy-e2e@office-demo.iam.gserviceaccount.com";
   const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
@@ -78,6 +78,8 @@ export default async function setup() {
   process.env.E2E_SHEETS_KEY = JSON.stringify({ type: "service_account", client_email: saEmail, private_key: privateKey.export({ type: "pkcs8", format: "pem" }).toString() });
   process.env.E2E_SLACK_TOKEN = providers.slack.token;
   process.env.E2E_PROVIDERS_URL = providers.urls.slack;
+  // Fake Microsoft sign-in, Graph and Teams Workflows (roadmap phase 5). The flow URL is what Teams would show.
+  process.env.E2E_TEAMS_URL = providers.teamsUrl("flow-purchasing");
 
   const env = {
     DATABASE_URL: url,
@@ -93,6 +95,11 @@ export default async function setup() {
     GOOGLE_TOKEN_URL: providers.urls.googleToken,
     GOOGLE_SHEETS_URL: providers.urls.sheets,
     SLACK_API_URL: providers.urls.slack,
+    MICROSOFT_CLIENT_ID: providers.microsoft.clientId,
+    MICROSOFT_CLIENT_SECRET: providers.microsoft.clientSecret,
+    MICROSOFT_LOGIN_URL: providers.urls.microsoftLogin,
+    MICROSOFT_GRAPH_URL: providers.urls.graph,
+    TEAMS_WEBHOOK_HOSTS: "127.0.0.1",
   };
   const api = start("api", env);
   await waitFor(`http://localhost:${E2E_PORT}/auth/me`, 60_000);

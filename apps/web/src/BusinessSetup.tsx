@@ -18,8 +18,8 @@ const STATUS: Record<Sender["status"], string> = {
 
 const back = <a href="#/">Home</a>;
 
-/** Business profile, the owner's own Gmail sender, Sheets and Slack connections, and the website inquiry form (roadmap phases 2 and 3). */
-export function BusinessSetupPage() {
+/** Business profile, the owner's own Gmail sender, Sheets, Slack, Outlook and Teams connections, and the website inquiry form (roadmap phases 2, 3 and 5). */
+export function BusinessSetupPage({ outlookOutcome }: { outlookOutcome?: string }) {
   const [data, setData] = useState<Settings | null>(null);
   const [error, setError] = useState("");
   const load = () => api<Settings>("GET", "/settings/email").then(setData, (e: Error) => setError(e.message));
@@ -40,7 +40,7 @@ export function BusinessSetupPage() {
         <>
           <ProfileForm profile={data.profile} onSaved={load} />
           <SenderSection data={data} onChange={load} />
-          <ConnectionsSection />
+          <ConnectionsSection outlookOutcome={outlookOutcome} />
           <InquiryForm data={data} />
         </>
       )}

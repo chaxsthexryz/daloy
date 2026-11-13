@@ -1,13 +1,22 @@
 import {
   defaultAnswers,
+  defaultPurchaseAnswers,
   officeRequestDefinition,
   previewOfficeRequest,
+  previewPurchaseRequest,
+  PURCHASE_REQUEST,
+  PURCHASE_SETUP_STEPS,
+  purchaseRequestDefinition,
+  SAMPLE_PURCHASE,
   SAMPLE_REQUEST,
   SETUP_STEPS,
   type OfficeRequestAnswers,
+  type PurchaseRequestAnswers,
+  type PurchaseSetup,
   type Setup,
+  type WorkflowDefinition,
 } from "@daloy/engine";
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { api, ApiError, type Workflow } from "./api";
 import { DeliveryList, type Delivery } from "./Connections";
 
@@ -16,19 +25,22 @@ type Detail = Omit<Workflow, "live"> & { trigger: { id: string } | null; live: u
 type RequestRow = { id: string; reference: string; subject: string; createdAt: string; runId: string; runState: string; runError: string | null; deliveries: Delivery[] };
 
 /** "Set up for my office": a new workflow with guided setup progress, named "Office requests" (or -2, -3 when taken). */
-export async function startOfficeSetup(email: string) {
-  const answers = defaultAnswers(email);
+export const startOfficeSetup = (email: string) => startGuided("office-requests", { step: "name", answers: defaultAnswers(email) });
+/** The purchase request template (roadmap phase 5): the owner is the first suggested approver and purchasing address. */
+export const startPurchaseSetup = (email: string) => startGuided("purchase-requests", { template: PURCHASE_REQUEST, step: "name", answers: defaultPurchaseAnswers(email) });
+
+async function startGuided(slug: string, setup: { template?: string; step: string; answers: { name: string } }) {
   for (let n = 1; n <= 20; n++) {
     try {
-      const wf = await api<Workflow>("POST", "/workflows", { name: answers.name, slug: n === 1 ? "office-requests" : `office-requests-${n}` });
-      await api("PATCH", `/workflows/${wf.id}/setup`, { step: "name", answers });
+      const wf = await api<Workflow>("POST", "/workflows", { name: setup.answers.name, slug: n === 1 ? slug : `${slug}-${n}` });
+      await api("PATCH", `/workflows/${wf.id}/setup`, setup);
       location.hash = `#/a/${wf.id}`;
       return;
     } catch (err) {
       if (!(err instanceof ApiError && err.status === 409)) throw err;
     }
   }
-  throw new Error("Rename one of your office request automations and try again.");
+  throw new Error("Rename one of your automations of this kind and try again.");
 }
 
 const back = <a href="#/">Home</a>;
@@ -125,23 +137,25 @@ export function OfficeRequestPage({ id }: { id: string }) {
   useEffect(() => void load(), [id]);
   if (error) return <main className="page">{back}<p role="alert" className="message error">{error}</p></main>;
   if (!wf) return <main className="page" />;
-  const setup = wf.setup as Setup | null;
+  const setup = wf.setup as Setup | PurchaseSetup | null;
   if (!setup) return <main className="page">{back}<p>This workflow has no guided setup. <a href={`#/w/${id}`}>Open advanced editor</a></p></main>;
-  return wf.live && wf.trigger ? <LivePage wf={wf} formId={wf.trigger.id} /> : <SetupWizard wf={wf} setup={setup} onLive={load} />;
+  if (wf.live && wf.trigger) return <LivePage wf={wf} formId={wf.trigger.id} />;
+  return setup.template === PURCHASE_REQUEST ? <PurchaseWizard wf={wf} setup={setup} onLive={load} /> : <SetupWizard wf={wf} setup={setup as Setup} onLive={load} />;
 }
 
-const STEP_TITLES: Record<Step, string> = { name: "Name", fields: "Fields staff fill in", destinations: "Where requests and alerts go", review: "Review" };
-
-function SetupWizard({ wf, setup, onLive }: { wf: Detail; setup: Setup; onLive: () => Promise<void> }) {
-  const [step, setStep] = useState<Step>(setup.step);
-  const [answers, setAnswers] = useState(setup.answers);
+/**
+ * The parts both guided setups share: answers saved at every step, Save and finish later, and Turn on, which publishes
+ * the definition built from the answers. The API refuses Turn on while a connection or the named approver is missing.
+ */
+function useWizard<S extends string, A extends { name: string }>(wf: Detail, steps: readonly S[], start: S, initial: A, template: string | undefined, definition: (a: A) => WorkflowDefinition, onLive: () => Promise<void>) {
+  const [step, setStep] = useState<S>(start);
+  const [answers, setAnswers] = useState(initial);
   const [error, setError] = useState("");
-  const index = SETUP_STEPS.indexOf(step);
-
-  const save = async (next: Step) => {
+  const index = steps.indexOf(step);
+  const save = async (next: S) => {
     setError("");
     try {
-      await api("PATCH", `/workflows/${wf.id}/setup`, { step: next, answers });
+      await api("PATCH", `/workflows/${wf.id}/setup`, { ...(template ? { template } : {}), step: next, answers });
       if (answers.name !== wf.name) await api("PATCH", `/workflows/${wf.id}`, { name: answers.name });
       return true;
     } catch (err) {
@@ -149,40 +163,69 @@ function SetupWizard({ wf, setup, onLive }: { wf: Detail; setup: Setup; onLive: 
       return false;
     }
   };
-  const next = async (e: FormEvent) => {
+  const onSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    const to = SETUP_STEPS[index + 1]!;
-    if (await save(to)) setStep(to);
-  };
-  const later = async () => {
-    if (await save(step)) location.hash = "#/";
-  };
-  const turnOn = async () => {
-    if (!(await save("review"))) return;
+    if (index < steps.length - 1) {
+      if (await save(steps[index + 1]!)) setStep(steps[index + 1]!);
+      return;
+    }
+    if (!(await save(step))) return;
     try {
-      await api("POST", `/workflows/${wf.id}/versions`, { definition: officeRequestDefinition(answers), publish: true });
+      await api("POST", `/workflows/${wf.id}/versions`, { definition: definition(answers), publish: true });
       await onLive();
     } catch (err) {
       setError((err as Error).message);
     }
   };
-  const extra = (f: "location" | "details", on: boolean) =>
-    setAnswers({ ...answers, extraFields: (["location", "details"] as const).filter((x) => (x === f ? on : answers.extraFields.includes(x))) });
-  const edit = (to: Step) => (
+  const later = async () => {
+    if (await save(step)) location.hash = "#/";
+  };
+  const edit = (to: S) => (
     <button type="button" className="quiet" onClick={() => setStep(to)}>
       Edit
     </button>
   );
-
-  return (
+  const frame = (title: string, stepTitle: string, body: ReactNode) => (
     <main className="page">
       <p>{back}</p>
-      <h1>Set up: Track an office request</h1>
+      <h1>Set up: {title}</h1>
       <p className="muted">
-        Step {index + 1} of {SETUP_STEPS.length}: {STEP_TITLES[step]}. Your answers are saved at each step.
+        Step {index + 1} of {steps.length}: {stepTitle}. Your answers are saved at each step.
       </p>
-      <form className="create" onSubmit={step === "review" ? (e) => (e.preventDefault(), void turnOn()) : next}>
-        <h2>{STEP_TITLES[step]}</h2>
+      <form className="create" onSubmit={(e) => void onSubmit(e)}>
+        <h2>{stepTitle}</h2>
+        {body}
+        <p role="alert" className="message error" hidden={!error}>
+          {error}
+        </p>
+        <div className="actions">
+          {index > 0 && (
+            <button type="button" className="quiet" onClick={() => setStep(steps[index - 1]!)}>
+              Back
+            </button>
+          )}
+          <button className="primary">{index === steps.length - 1 ? "Turn on" : "Next"}</button>
+          <button type="button" className="quiet" onClick={() => void later()}>
+            Save and finish later
+          </button>
+        </div>
+      </form>
+    </main>
+  );
+  return { step, answers, setAnswers, edit, frame };
+}
+
+const STEP_TITLES: Record<Step, string> = { name: "Name", fields: "Fields staff fill in", destinations: "Where requests and alerts go", review: "Review" };
+
+function SetupWizard({ wf, setup, onLive }: { wf: Detail; setup: Setup; onLive: () => Promise<void> }) {
+  const { step, answers, setAnswers, edit, frame } = useWizard(wf, SETUP_STEPS, setup.step, setup.answers, undefined, officeRequestDefinition, onLive);
+  const extra = (f: "location" | "details", on: boolean) =>
+    setAnswers({ ...answers, extraFields: (["location", "details"] as const).filter((x) => (x === f ? on : answers.extraFields.includes(x))) });
+
+  return frame(
+    "Track an office request",
+    STEP_TITLES[step],
+    <>
         {step === "name" && (
           <div className="field">
             <label htmlFor="setup-name">Automation name</label>
@@ -248,27 +291,122 @@ function SetupWizard({ wf, setup, onLive }: { wf: Detail; setup: Setup; onLive: 
             </details>
           </>
         )}
-        <p role="alert" className="message error" hidden={!error}>
-          {error}
-        </p>
-        <div className="actions">
-          {index > 0 && (
-            <button type="button" className="quiet" onClick={() => setStep(SETUP_STEPS[index - 1]!)}>
-              Back
-            </button>
-          )}
-          <button className="primary">{step === "review" ? "Turn on" : "Next"}</button>
-          <button type="button" className="quiet" onClick={() => void later()}>
-            Save and finish later
-          </button>
-        </div>
-      </form>
-    </main>
+    </>,
   );
 }
 
-const outcome = (r: RequestRow) =>
-  r.runState === "succeeded" ? "Notification and receipt sent" : r.runState === "failed" ? "Not sent, open details" : "Sending";
+type Member = { userId: string; email: string; role: string };
+const PURCHASE_TITLES: Record<(typeof PURCHASE_SETUP_STEPS)[number], string> = { name: "Name", approver: "Who decides", destinations: "Where approved requests go", review: "Review" };
+
+/** Purchase request with a named approver (roadmap phase 5): the Microsoft office template, Outlook and Teams optional. */
+function PurchaseWizard({ wf, setup, onLive }: { wf: Detail; setup: PurchaseSetup; onLive: () => Promise<void> }) {
+  const { step, answers, setAnswers, edit, frame } = useWizard<(typeof PURCHASE_SETUP_STEPS)[number], PurchaseRequestAnswers>(
+    wf,
+    PURCHASE_SETUP_STEPS,
+    setup.step,
+    setup.answers,
+    PURCHASE_REQUEST,
+    purchaseRequestDefinition,
+    onLive,
+  );
+  // Only the owner and members with the approver role may decide (decision 0022).
+  const [approvers, setApprovers] = useState<Member[] | null>(null);
+  useEffect(() => void api<Member[]>("GET", "/workspace/members").then((m) => setApprovers(m.filter((x) => x.role === "owner" || x.role === "approver")), () => setApprovers([])), []);
+  const preview = previewPurchaseRequest(answers, SAMPLE_PURCHASE);
+
+  return frame(
+    "Purchase request with a named approver",
+    PURCHASE_TITLES[step],
+    <>
+      {step === "name" && (
+        <div className="field">
+          <label htmlFor="setup-name">Automation name</label>
+          <input id="setup-name" value={answers.name} onChange={(e) => setAnswers({ ...answers, name: e.target.value })} required maxLength={200} />
+        </div>
+      )}
+      {step === "approver" && (
+        <>
+          <div className="field">
+            <label htmlFor="setup-approver">Who approves purchases</label>
+            <select id="setup-approver" value={answers.approver} onChange={(e) => setAnswers({ ...answers, approver: e.target.value })} required>
+              {approvers?.map((m) => (
+                <option key={m.userId} value={m.email}>
+                  {m.email} ({m.role})
+                </option>
+              ))}
+            </select>
+          </div>
+          <p className="muted">
+            Only this person can approve or reject, signed in to Daloy. A forwarded link does not work for anyone else. To add someone, invite them as an approver on the{" "}
+            <a href="#/team">Team</a> page.
+          </p>
+        </>
+      )}
+      {step === "destinations" && (
+        <>
+          <div className="field">
+            <label htmlFor="setup-purchasing">Send approved requests to (purchasing)</label>
+            <input id="setup-purchasing" type="email" value={answers.purchasingEmail} onChange={(e) => setAnswers({ ...answers, purchasingEmail: e.target.value })} required maxLength={254} />
+          </div>
+          <fieldset>
+            <legend>Microsoft 365 (optional)</legend>
+            <label className="check">
+              <input type="checkbox" checked={answers.outlook ?? false} onChange={(e) => setAnswers({ ...answers, outlook: e.target.checked })} /> Send the emails from our Outlook mailbox
+            </label>
+            <label className="check">
+              <input type="checkbox" checked={answers.teams ?? false} onChange={(e) => setAnswers({ ...answers, teams: e.target.checked })} /> Post a note in our Teams channel when a purchase is approved
+              (reference and item only)
+            </label>
+            <p className="muted">
+              Connect them in <a href="#/settings/business">Business and email</a>. Turning on checks that they are connected. Your organization may need an administrator to
+              approve Outlook or the Teams Workflows app; that page says how.
+            </p>
+          </fieldset>
+        </>
+      )}
+      {step === "review" && (
+        <>
+          <p>When someone submits this form:</p>
+          <ul>
+            <li>
+              Save the request to {answers.name} with a reference, and send the employee a receipt. {edit("name")}
+            </li>
+            <li>
+              Ask {answers.approver} to approve or reject it, signed in to Daloy. {edit("approver")}
+            </li>
+            <li>
+              If approved, email purchasing at {answers.purchasingEmail}
+              {answers.teams && " and post a note in your Teams channel"}, then tell the employee. {edit("destinations")}
+            </li>
+            <li>If rejected, or nobody decides within a week, tell the employee.</li>
+          </ul>
+          <p className="muted">
+            {answers.outlook ? "Emails to the employee and to purchasing go out from your connected Outlook mailbox." : "Emails go out through the mail server in this installation's settings."} The
+            approval request carries a sign-in link and goes out through the Business and email sender. A Teams note never approves anything.
+          </p>
+          <details>
+            <summary>Example messages</summary>
+            <p>
+              Sample reference: <strong>{preview.reference}</strong>
+            </p>
+            {preview.messages.map((m) => (
+              <Message key={m.title} title={`${m.title} (${m.via})`} mail={m} />
+            ))}
+            {preview.teamsMessage && (
+              <>
+                <h3>Note in your Teams channel, once approved</h3>
+                <pre>{preview.teamsMessage}</pre>
+              </>
+            )}
+          </details>
+        </>
+      )}
+    </>,
+  );
+}
+
+const outcome = (r: RequestRow, done: string) =>
+  r.runState === "succeeded" ? done : r.runState === "failed" ? "Not sent, open details" : r.runState === "waiting" ? "Waiting for a decision" : "Sending";
 
 function LivePage({ wf, formId }: { wf: Detail; formId: string }) {
   const [rows, setRows] = useState<RequestRow[] | null>(null);
@@ -323,8 +461,8 @@ function LivePage({ wf, formId }: { wf: Detail; formId: string }) {
                 <th scope="col">Subject</th>
                 <th scope="col">Received</th>
                 <th scope="col">Recorded in</th>
-                <th scope="col">Notification</th>
-                <th scope="col">Sheets and Slack</th>
+                <th scope="col">Progress</th>
+                <th scope="col">Deliveries</th>
               </tr>
             </thead>
             <tbody>
@@ -335,7 +473,7 @@ function LivePage({ wf, formId }: { wf: Detail; formId: string }) {
                   <td>{new Date(r.createdAt).toLocaleString()}</td>
                   <td>{wf.name}</td>
                   <td>
-                    {outcome(r)} <a href={`#/runs/${r.runId}`}>Details</a>
+                    {outcome(r, (wf.setup as { template?: string } | null)?.template === PURCHASE_REQUEST ? "Decided, emails sent" : "Notification and receipt sent")} <a href={`#/runs/${r.runId}`}>Details</a>
                   </td>
                   <td>{r.deliveries.length ? <DeliveryList deliveries={r.deliveries} onChange={load} /> : <span className="muted">None</span>}</td>
                 </tr>

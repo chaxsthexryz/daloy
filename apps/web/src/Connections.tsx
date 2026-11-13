@@ -1,19 +1,40 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { api } from "./api";
 
-type Provider = "google_sheets" | "slack";
+type Provider = "google_sheets" | "slack" | "outlook" | "teams";
 type Connection = { provider: Provider; status: "active" | "failed"; account: string; destination: Record<string, string> | null; lastError: string | null; lastTestedAt: string | null };
 type TestResult = { ok: true; range?: string; channel?: string } | { ok: false; error: string };
+type OutlookSetup = { configured: boolean; adminConsentUrl?: string };
 type Channel = { id: string; name: string; isMember: boolean };
 
 const SERVICE_ACCOUNT_HELP = "https://cloud.google.com/iam/docs/service-accounts-create";
 const SLACK_APP_HELP = "https://api.slack.com/quickstart";
+const TEAMS_WORKFLOWS_HELP = "https://support.microsoft.com/en-us/workflows/send-messages-in-teams-using-incoming-webhooks";
+const MICROSOFT_CONSENT_HELP = "https://learn.microsoft.com/en-us/entra/identity/enterprise-apps/configure-user-consent";
 
-/** Business and email, Connections: Google Sheets and Slack for office requests (roadmap phase 3). */
-export function ConnectionsSection() {
+/** What the Outlook consent callback reported, by the code in #/settings/business/outlook-<code>. */
+const OUTLOOK_OUTCOMES: Record<string, { ok: boolean; text: string }> = {
+  connected: { ok: true, text: "Outlook is connected. Send a test email to check it." },
+  admin_approved: { ok: true, text: "An administrator approved Daloy for your organization. Connect Outlook now." },
+  admin_required: { ok: false, text: "Your organization only lets an administrator approve new apps. Send your administrator the approval link below, then connect again." },
+  declined: { ok: false, text: "Microsoft says the permission request was declined, so nothing was connected. Connect again when you are ready." },
+  expired: { ok: false, text: "That sign-in took too long or was started by someone else. Start again with Connect Outlook." },
+  failed: { ok: false, text: "Microsoft did not finish connecting. Start again with Connect Outlook." },
+};
+
+/** Business and email, Connections: Google Sheets and Slack (roadmap phase 3), Outlook and Teams (phase 5). */
+export function ConnectionsSection({ outlookOutcome }: { outlookOutcome?: string }) {
   const [list, setList] = useState<Connection[] | null>(null);
+  const [outlook, setOutlook] = useState<OutlookSetup>({ configured: false });
   const [error, setError] = useState("");
-  const load = () => api<{ connections: Connection[] }>("GET", "/settings/connections").then((r) => setList(r.connections), (e: Error) => setError(e.message));
+  const load = () =>
+    api<{ connections: Connection[]; outlook: OutlookSetup }>("GET", "/settings/connections").then(
+      (r) => {
+        setList(r.connections);
+        setOutlook(r.outlook);
+      },
+      (e: Error) => setError(e.message),
+    );
   useEffect(() => void load(), []);
   const of = (p: Provider) => list?.find((c) => c.provider === p) ?? null;
 
@@ -21,8 +42,8 @@ export function ConnectionsSection() {
     <section aria-labelledby="connections-h">
       <h2 id="connections-h">Connections</h2>
       <p>
-        Office requests can also add a row to a Google Sheet and post a short note to a Slack channel. Both are optional. Each delivery is tracked on its own, so a Slack problem never
-        holds up the sheet, and the local demo works without either.
+        Office requests can also add a row to a Google Sheet and post a short note to a Slack channel. Purchase requests can send email from an Outlook mailbox and post a note to a
+        Teams channel. All of them are optional. Each delivery is tracked on its own, so one problem never holds up the others, and the local demo works without any of them.
       </p>
       <p role="alert" className="message error" hidden={!error}>
         {error}
@@ -31,6 +52,8 @@ export function ConnectionsSection() {
         <>
           <SheetsConnection conn={of("google_sheets")} onChange={load} />
           <SlackConnection conn={of("slack")} onChange={load} />
+          <OutlookConnection conn={of("outlook")} setup={outlook} outcome={outlookOutcome} onChange={load} />
+          <TeamsConnection conn={of("teams")} onChange={load} />
         </>
       )}
     </section>
@@ -283,6 +306,144 @@ function SlackConnection({ conn, onChange }: { conn: Connection | null; onChange
   );
 }
 
+function OutlookConnection({ conn, setup, outcome, onChange }: { conn: Connection | null; setup: OutlookSetup; outcome?: string; onChange: () => Promise<unknown> }) {
+  const { error, busy, act } = useAction(onChange);
+  const [test, setTest] = useState<TestResult | null>(null);
+  const shown = outcome && setup.configured ? OUTLOOK_OUTCOMES[outcome] : undefined;
+  // A full page visit to Microsoft. The callback brings the browser back here with the outcome in the address.
+  const connect = () => act(async () => location.assign((await api<{ url: string }>("POST", "/settings/connections/outlook/start")).url));
+
+  return (
+    <div className="connection" aria-labelledby="outlook-h">
+      <h3 id="outlook-h">Outlook</h3>
+      {shown && (
+        <p role={shown.ok ? "status" : "alert"} className={shown.ok ? "" : "message error"}>
+          {shown.text}
+        </p>
+      )}
+      {!setup.configured ? (
+        <p className="muted">
+          Outlook is not set up on this installation. The person who runs Daloy registers a free Microsoft Entra app and sets MICROSOFT_CLIENT_ID and MICROSOFT_CLIENT_SECRET (see
+          the README). Email keeps going through the mail server in this installation's settings.
+        </p>
+      ) : (
+        <>
+          {conn && <Status conn={conn} label="Mailbox" />}
+          {conn && <p>Purchase request emails go out from this mailbox, with a copy in its Sent Items.</p>}
+          <p>
+            Microsoft will ask you to let Daloy send email as you (Mail.Send), keep that access without asking each time, and read your name and address. Many organizations only
+            let an administrator approve a new app. If Microsoft says you need admin approval, send your administrator{" "}
+            {setup.adminConsentUrl && (
+              <a href={setup.adminConsentUrl} target="_blank" rel="noreferrer">
+                this approval link
+              </a>
+            )}
+            , then connect again.{" "}
+            <a href={MICROSOFT_CONSENT_HELP} target="_blank" rel="noreferrer">
+              How organizations control app consent
+            </a>
+          </p>
+          <div className="actions">
+            <button type="button" className={conn ? "" : "primary"} disabled={busy} onClick={() => void connect()}>
+              {conn ? "Reconnect Outlook" : "Connect Outlook"}
+            </button>
+            {conn && (
+              <>
+                <button type="button" disabled={busy} onClick={() => void act(async () => setTest(await api<TestResult>("POST", "/settings/connections/outlook/test")))}>
+                  Send a test email to {conn.account}
+                </button>
+                <button type="button" className="quiet" disabled={busy} onClick={() => void act(() => api("DELETE", "/settings/connections/outlook"))}>
+                  Disconnect
+                </button>
+              </>
+            )}
+          </div>
+          <Outcome test={test} what="Outlook accepted a test email to the mailbox itself" />
+        </>
+      )}
+      <p role="alert" className="message error" hidden={!error}>
+        {error}
+      </p>
+    </div>
+  );
+}
+
+function TeamsConnection({ conn, onChange }: { conn: Connection | null; onChange: () => Promise<unknown> }) {
+  const { error, busy, act } = useAction(onChange);
+  const [editing, setEditing] = useState(false);
+  const [test, setTest] = useState<TestResult | null>(null);
+  const [form, setForm] = useState({ url: "", channelName: conn?.account ?? "" });
+  const save = (e: FormEvent) => {
+    e.preventDefault();
+    void act(async () => {
+      await api("PUT", "/settings/connections/teams", form);
+      setForm({ ...form, url: "" });
+      setEditing(false);
+      setTest(null);
+    });
+  };
+
+  return (
+    <div className="connection" aria-labelledby="teams-h">
+      <h3 id="teams-h">Microsoft Teams</h3>
+      {conn && <Status conn={conn} label="Channel" />}
+      {conn && <p>Notes carry the reference and the item only. They tell the channel what happened; approvals are answered in Daloy by the named approver.</p>}
+      {conn && (
+        <div className="actions">
+          <button type="button" disabled={busy} onClick={() => void act(async () => setTest(await api<TestResult>("POST", "/settings/connections/teams/test")))}>
+            Send a test message
+          </button>
+          {!editing && (
+            <button type="button" className="quiet" onClick={() => setEditing(true)}>
+              Replace link
+            </button>
+          )}
+          <button type="button" className="quiet" disabled={busy} onClick={() => void act(() => api("DELETE", "/settings/connections/teams"))}>
+            Disconnect
+          </button>
+        </div>
+      )}
+      {test?.ok ? (
+        <p role="status">Teams accepted the test message. Teams posts it a moment later: check that it is in {conn?.account}.</p>
+      ) : (
+        <Outcome test={test} what="" />
+      )}
+      {(!conn || editing) && (
+        <form onSubmit={save}>
+          <p>
+            In Teams, open Workflows and create one from the template <q>Post to a channel when a webhook request is received</q>. Choose the team and channel there, then copy the
+            link it shows. Your organization may have to allow the Workflows app first; if the template is missing or blocked, ask your Teams administrator.{" "}
+            <a href={TEAMS_WORKFLOWS_HELP} target="_blank" rel="noreferrer">
+              How to create the workflow
+            </a>
+          </p>
+          <div className="field">
+            <label htmlFor="tm-url">Workflow link</label>
+            <input id="tm-url" type="password" value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} required autoComplete="off" placeholder="https://…logic.azure.com/…" />
+          </div>
+          <div className="field">
+            <label htmlFor="tm-channel">Teams channel name, to show in Daloy</label>
+            <input id="tm-channel" value={form.channelName} onChange={(e) => setForm({ ...form, channelName: e.target.value })} required maxLength={100} placeholder="Purchasing" />
+          </div>
+          <div className="actions">
+            <button type="submit" className="primary" disabled={busy}>
+              {conn ? "Save link" : "Connect Teams"}
+            </button>
+            {conn && (
+              <button type="button" className="quiet" onClick={() => setEditing(false)}>
+                Cancel
+              </button>
+            )}
+          </div>
+        </form>
+      )}
+      <p role="alert" className="message error" hidden={!error}>
+        {error}
+      </p>
+    </div>
+  );
+}
+
 // ---------------------------------------------------------------- delivery status, for Requests and run details
 
 export type Delivery = {
@@ -296,7 +457,8 @@ export type Delivery = {
   lastError: string | null;
 };
 
-const NAMES: Record<Provider, string> = { google_sheets: "Sheet row", slack: "Slack note" };
+const NAMES: Record<Provider, string> = { google_sheets: "Sheet row", slack: "Slack note", outlook: "Outlook email", teams: "Teams note" };
+const sent = (p: Provider) => (p === "outlook" ? "sent" : "posted");
 
 function describe(d: Delivery): string {
   switch (d.state) {
@@ -305,17 +467,19 @@ function describe(d: Delivery): string {
     case "sending":
       return "sending";
     case "delivered":
-      if (d.result?.confirmedBy === "operator") return "marked as posted";
+      if (d.result?.confirmedBy === "operator") return `marked as ${sent(d.provider)}`;
       if (d.result?.reconciled) return `found in the sheet (${String(d.result.range)}), not written twice`;
-      return d.provider === "google_sheets" ? `added (${String(d.result?.range ?? "")})` : "posted";
+      if (d.provider === "google_sheets") return `added (${String(d.result?.range ?? "")})`;
+      if (d.provider === "outlook") return `sent to ${String(d.result?.to ?? "")}`;
+      return d.provider === "teams" ? "accepted by Teams" : "posted";
     case "needs_review":
-      return d.lastError ?? "may have been posted";
+      return d.lastError ?? `may have been ${sent(d.provider)}`;
     case "failed":
       return d.lastError ?? "failed";
   }
 }
 
-/** Each delivery's state, with Retry for a failed one and Mark as posted or Post again for an uncertain Slack note. */
+/** Each delivery's state, with Retry for a failed one and Mark as posted (sent) or Post (Send) again for an uncertain one. */
 export function DeliveryList({ deliveries, onChange }: { deliveries: Delivery[]; onChange: () => Promise<unknown> }) {
   const { error, busy, act } = useAction(onChange);
   if (deliveries.length === 0) return null;
@@ -332,17 +496,18 @@ export function DeliveryList({ deliveries, onChange }: { deliveries: Delivery[];
           {d.state === "needs_review" && (
             <>
               <button type="button" className="quiet" disabled={busy} onClick={() => void act(() => api("POST", `/deliveries/${d.id}/confirm`))}>
-                Mark as posted
+                Mark as {sent(d.provider)}
               </button>
               <button
                 type="button"
                 className="quiet"
                 disabled={busy}
                 onClick={() => {
-                  if (window.confirm("Post this note again? If it is already in the channel, people will see it twice.")) void act(() => api("POST", `/deliveries/${d.id}/retry`, { postAgain: true }));
+                  const ask = d.provider === "outlook" ? "Send this email again? If it already went out, the recipient gets it twice." : "Post this note again? If it is already in the channel, people will see it twice.";
+                  if (window.confirm(ask)) void act(() => api("POST", `/deliveries/${d.id}/retry`, { postAgain: true }));
                 }}
               >
-                Post again
+                {d.provider === "outlook" ? "Send again" : "Post again"}
               </button>
             </>
           )}

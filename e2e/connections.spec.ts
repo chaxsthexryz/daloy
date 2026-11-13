@@ -30,7 +30,7 @@ test("an owner connects Sheets and Slack, and retries only the Slack note that f
   await page.getByLabel("Bot token").fill(process.env.E2E_SLACK_TOKEN!);
   await page.getByRole("button", { name: "Connect Slack" }).click();
   await page.getByRole("button", { name: "Pick a channel" }).click();
-  await page.getByLabel("Channel").selectOption({ label: "#office-requests" });
+  await page.getByLabel("Channel", { exact: true }).selectOption({ label: "#office-requests" });
   await page.getByRole("button", { name: "Save channel" }).click();
   await expect(page.getByText("Notes go to #office-requests.")).toBeVisible();
   await page.getByRole("button", { name: "Send a test message" }).click();
