@@ -14,7 +14,12 @@ export type GenerateInput<T> = {
   connection?: Connection;
 };
 
-export type Connection = { provider: string; baseUrl: string; apiKey?: string };
+/**
+ * extraBody: fields added to an OpenAI-compatible request, such as a local server's switch to turn off thinking.
+ * reasoningTokens: added to max_tokens for providers whose hidden thinking counts against it, so maxTokens stays the
+ * budget for the answer itself.
+ */
+export type Connection = { provider: string; baseUrl: string; apiKey?: string; extraBody?: Record<string, unknown>; reasoningTokens?: number };
 
 export type GenerateResult<T> = {
   text: string;
@@ -50,7 +55,7 @@ type OllamaChatResponse = {
 };
 
 type OpenAiChatResponse = {
-  choices?: { message?: { content?: string | null } }[];
+  choices?: { message?: { content?: string | null }; finish_reason?: string }[];
   usage?: { prompt_tokens?: number; completion_tokens?: number };
 };
 
@@ -66,7 +71,7 @@ function jsonSchema(schema: z.ZodType): Record<string, unknown> {
  * /chat/completions API, such as Gemini, LM Studio, llama.cpp, vLLM or OpenRouter). LLM_API_KEY, if set, is sent as a
  * bearer token. All three env vars are read on every call, so a gateway can be put in front without code changes.
  */
-function request<T>(input: GenerateInput<T>, provider: string, baseUrl: string) {
+function request<T>(input: GenerateInput<T>, provider: string, baseUrl: string, extraBody?: Record<string, unknown>, reasoningTokens = 0) {
   const messages = [{ role: "system", content: input.system }, ...input.messages];
   if (provider === "ollama") {
     return {
@@ -79,14 +84,16 @@ function request<T>(input: GenerateInput<T>, provider: string, baseUrl: string) 
     return {
       url: `${baseUrl}/chat/completions`,
       body: {
+        ...extraBody,
         model: input.model,
         messages,
         temperature: input.temperature,
-        max_tokens: input.maxTokens,
+        max_tokens: input.maxTokens + reasoningTokens,
         response_format: input.schema && { type: "json_schema", json_schema: { name: "output", schema: jsonSchema(input.schema) } },
       },
       read: (b: OpenAiChatResponse) => ({
         text: b.choices?.[0]?.message?.content ?? "",
+        cutOff: b.choices?.[0]?.finish_reason === "length",
         usage: { inputTokens: b.usage?.prompt_tokens ?? 0, outputTokens: b.usage?.completion_tokens ?? 0 },
       }),
     };
@@ -96,13 +103,13 @@ function request<T>(input: GenerateInput<T>, provider: string, baseUrl: string) 
 
 /** Calls the configured chat API, then checks the reply against input.schema if one is given. */
 export async function generate<T = unknown>(input: GenerateInput<T>): Promise<GenerateResult<T>> {
-  const conn = input.connection ?? {
+  const conn: Connection = input.connection ?? {
     provider: process.env.LLM_PROVIDER || "ollama",
     baseUrl: process.env.LLM_BASE_URL ?? "http://localhost:11434",
     apiKey: process.env.LLM_API_KEY,
   };
   const apiKey = conn.apiKey;
-  const req = request(input, conn.provider, conn.baseUrl.replace(/\/+$/, ""));
+  const req = request(input, conn.provider, conn.baseUrl.replace(/\/+$/, ""), conn.extraBody, conn.reasoningTokens);
 
   let res: Response;
   try {
@@ -122,7 +129,12 @@ export async function generate<T = unknown>(input: GenerateInput<T>): Promise<Ge
     throw new LlmError(`LLM returned HTTP ${res.status}`, res.status === 429 || res.status >= 500);
   }
 
-  const { text, usage } = req.read((await res.json()) as OllamaChatResponse & OpenAiChatResponse);
+  const reply = req.read((await res.json()) as OllamaChatResponse & OpenAiChatResponse);
+  const { text, usage } = reply;
+  // Usually a thinking model that spent the whole budget on hidden reasoning.
+  if ("cutOff" in reply && reply.cutOff && text.trim() === "") {
+    throw new LlmError("the model used up its token limit before answering (thinking counts toward it)", false, { invalidOutput: true, usage });
+  }
   if (!input.schema) return { text, usage };
 
   let json: unknown;
@@ -136,4 +148,22 @@ export async function generate<T = unknown>(input: GenerateInput<T>): Promise<Ge
     throw new LlmError("LLM output does not match the schema", false, { cause: parsed.error, invalidOutput: true, usage });
   }
   return { text, data: parsed.data, usage };
+}
+
+/** The model names a server offers: Ollama's /api/tags, or /models on an OpenAI-compatible server. */
+export async function listModels(conn: Connection, timeoutMs = 5000): Promise<string[]> {
+  const base = conn.baseUrl.replace(/\/+$/, "");
+  let res: Response;
+  try {
+    res = await fetch(conn.provider === "ollama" ? `${base}/api/tags` : `${base}/models`, {
+      headers: conn.apiKey ? { authorization: `Bearer ${conn.apiKey}` } : {},
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+  } catch (err) {
+    throw new LlmError(`LLM request failed: ${(err as Error).name}`, true, { cause: err });
+  }
+  if (!res.ok) throw new LlmError(`LLM returned HTTP ${res.status}`, res.status === 429 || res.status >= 500);
+  const body = (await res.json()) as { models?: { name?: string }[]; data?: { id?: string }[] };
+  const names = conn.provider === "ollama" ? body.models?.map((m) => m.name) : body.data?.map((m) => m.id);
+  return (names ?? []).filter((n): n is string => typeof n === "string");
 }
