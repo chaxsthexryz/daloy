@@ -19,4 +19,4 @@ Outside compose (`pnpm e2e`, local dev, tests) `MIGRATE_ON_BOOT` defaults to tru
 
 ## Consequences
 
-A compromised app can still read and change every row, but it cannot change the schema. The init script only runs on a new volume: an existing volume needs `docker compose down -v` or the SQL run by hand. The owner is the `POSTGRES_USER` superuser of the official image. The compose setup has not been run here because Docker is not installed; the SQL itself is covered by the test.
+A compromised app can still read and change every row, but it cannot change the schema. The init script only runs on a new volume: an existing volume needs `docker compose down -v` or the SQL run by hand. The owner is the `POSTGRES_USER` superuser of the official image. Checked by hand on 2026-11-13 with Docker Desktop: on a new volume the `migrate` service exits with code 0, the api and worker hold only `daloy_app` connections, `CREATE TABLE` as `daloy_app` fails with "permission denied for schema public", and the seed and demo login work.

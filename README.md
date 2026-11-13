@@ -2,7 +2,7 @@
 
 Daloy is a workflow automation engine with AI steps. You build an automation from one trigger and a series of steps, Daloy runs it, keeps a history of every run, and can expose published workflows as MCP tools.
 
-Status: all ten phases in [PROJECT.md](PROJECT.md) are done. Docker Compose and CI are written but have not been run yet (see Known limitations).
+Status: all ten phases in [PROJECT.md](PROJECT.md) are done. `docker compose up` and the seed were checked with Docker Desktop on Windows on 2026-11-13. CI has not run yet because the repository has no remote (see Known limitations).
 
 ## Problem
 
@@ -90,7 +90,7 @@ CI also runs Semgrep, gitleaks and `pnpm audit` on every push.
 - Rate limits are counted per API process, and per IP rather than per token.
 - MCP tool calls return as soon as the run is queued. Clients poll `get_run_status` for the result; there are no progress notifications.
 - An API token can start every published form workflow of its owner. There are no per-workflow scopes.
-- Docker Compose (including the `migrate` service and the database role init script) and the CI workflow have never been run: the development machine has no Docker and the repository has no remote yet. The role SQL and the migrate code are tested against embedded Postgres.
+- The CI workflow has never run, because the repository has no remote yet. Docker Compose was checked by hand once (Docker Desktop on Windows): the `migrate` service exits cleanly, the api and worker connect as `daloy_app`, which cannot create tables, and the seeded demo login works.
 - The database role init script only runs when the Postgres volume is created.
 - The reliability numbers come from one Windows laptop with one worker process. They show behaviour under load, not capacity.
 - The worker advances up to 10 runs at a time. One slow step holds up the rest of its batch until it finishes.

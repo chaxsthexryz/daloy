@@ -228,7 +228,7 @@ What it does: `pnpm seed` (or `SEED_URL=... pnpm seed`) signs up `demo@daloy.loc
 
 Why this way: the seed talks to the running API over HTTP instead of writing rows. Sign-up, validation, publishing and trigger setup go through the same code as the console, and the seed works with the DML-only database role.
 
-Edge cases: running it twice is safe. A second run signs in instead of signing up and skips workflows whose slug exists. The invoice run waits in its one-week delay step, so the run history shows a waiting run too.
+Edge cases: running it twice is safe. A second run signs in instead of signing up and skips workflows whose slug exists. Mocked test runs cap a delay at one second, so the invoice run's one-week wait passes at once and all five runs succeed.
 
 Tests: `apps/api/src/seed.test.ts` seeds twice against the real API and checks one demo user, three published workflows and five test runs. `e2e/demo.spec.ts` seeds the e2e stack, signs in with the demo login in Chromium and waits for the inquiry runs to succeed.
 
