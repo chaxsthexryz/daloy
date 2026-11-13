@@ -31,6 +31,8 @@ function lookup(ctx: ExpressionContext, segs: string[]): unknown {
   let cur: unknown = ctx;
   for (const seg of segs) {
     if (cur === null || typeof cur !== "object" || !Object.hasOwn(cur, seg)) return undefined;
+    // Read only, own keys only, and parsePath rejects __proto__, prototype and constructor.
+    // nosemgrep: javascript.lang.security.audit.prototype-pollution.prototype-pollution-loop.prototype-pollution-loop
     cur = (cur as Record<string, unknown>)[seg];
   }
   return cur;

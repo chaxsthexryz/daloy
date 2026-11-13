@@ -1,6 +1,10 @@
 packages:
   - packages/*
   - apps/*
+# Supply chain: only registry tarballs below the root, no versions younger than seven days, fail when a package loses its publish provenance.
+blockExoticSubdeps: true
+minimumReleaseAge: 10080
+trustPolicy: no-downgrade
 onlyBuiltDependencies:
   - "@embedded-postgres/windows-x64"
   - "@embedded-postgres/linux-x64"

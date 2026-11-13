@@ -14,6 +14,8 @@ const env = { DATABASE_URL: pg.url, SECRETS_KEY: randomBytes(32).toString("base6
 const api = spawnApp("api", "src/main.ts", env);
 const worker = spawnApp("worker", "reliability/worker.ts", env);
 try {
+  // Plain http to the API this script started on loopback.
+  // nosemgrep: typescript.react.security.react-insecure-request.react-insecure-request
   for (let i = 0; !(await fetch(`http://127.0.0.1:${PORT}/auth/me`).then(() => true, () => false)); i++) {
     if (i > 120) throw new Error("api did not start");
     await new Promise((r) => setTimeout(r, 500));

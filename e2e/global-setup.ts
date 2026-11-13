@@ -17,6 +17,8 @@ const root = resolve(import.meta.dirname, "..");
 const win = process.platform === "win32";
 
 function start(app: string, env: Record<string, string>): ChildProcess {
+  // Fixed command; the shell resolves pnpm.cmd on Windows.
+  // nosemgrep: javascript.lang.security.audit.spawn-shell-true.spawn-shell-true
   const child = spawn(`pnpm --filter @daloy/${app} start`, {
     cwd: root,
     env: { ...process.env, ...env },

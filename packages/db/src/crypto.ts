@@ -17,7 +17,7 @@ export function encryptSecret(key: Buffer, userId: string, name: string, plainte
 }
 
 export function decryptSecret(key: Buffer, userId: string, name: string, s: EncryptedSecret): string {
-  const decipher = createDecipheriv("aes-256-gcm", key, Buffer.from(s.iv, "base64")).setAAD(aad(userId, name));
+  const decipher = createDecipheriv("aes-256-gcm", key, Buffer.from(s.iv, "base64"), { authTagLength: 16 }).setAAD(aad(userId, name));
   decipher.setAuthTag(Buffer.from(s.authTag, "base64"));
   return Buffer.concat([decipher.update(Buffer.from(s.ciphertext, "base64")), decipher.final()]).toString("utf8");
 }
