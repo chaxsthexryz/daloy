@@ -18,9 +18,12 @@ export function startLlmFake(port: number) {
     let raw = "";
     req.on("data", (c: Buffer) => (raw += c.toString()));
     req.on("end", () => {
+      res.setHeader("content-type", "application/json");
+      // The AI model page lists the local server's models.
+      if (req.method === "GET" && req.url === "/api/tags") return res.end(JSON.stringify({ models: [{ name: "fake-model" }] }));
+      if (req.method !== "POST") return res.writeHead(404).end("{}");
       const body = JSON.parse(raw) as { messages: { content: string }[] };
       const change = body.messages.some((m) => m.content.startsWith("Change this workflow"));
-      res.setHeader("content-type", "application/json");
       res.end(JSON.stringify({ message: { content: JSON.stringify(change ? changed : built) }, prompt_eval_count: 1, eval_count: 1 }));
     });
   });

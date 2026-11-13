@@ -22,13 +22,25 @@ test("pick Gemini with a key, then come back and see the key is saved", async ({
   await expect(page.getByLabel("Other model name")).toBeHidden();
   await expect(page.getByText("Fastest and cheapest.")).toBeVisible();
   await modelList.selectOption("gemini-3.8-flash");
+  await expect(page.getByRole("link", { name: "Get a free key in Google AI Studio" })).toHaveAttribute("href", "https://aistudio.google.com/apikey");
   await page.getByLabel("API key").fill("AIza-e2e-not-a-real-key");
-  await page.getByRole("button", { name: "Save", exact: true }).click();
+  // "Save without testing", so the test never calls Google with the fake key.
+  await page.getByRole("button", { name: "Save without testing" }).click();
   await expect(page.getByRole("status")).toHaveText("Saved. Your workflows now use Gemini API, model gemini-3.8-flash.");
+  await expect(page.locator(".in-use")).toContainText("In use: Gemini API, model gemini-3.8-flash");
 
   await page.reload();
   await expect(page.getByLabel("Gemini API")).toBeChecked();
-  await expect(page.getByText("key saved; leave empty to keep it")).toBeVisible();
+  await expect(page.getByText("(saved; leave empty to keep it)")).toBeVisible();
   await expect(page.getByLabel("API key")).toHaveValue("");
   await expect(page.locator("body")).not.toContainText("AIza-e2e-not-a-real-key");
+
+  // Switch to the local model and back: the Gemini key is still saved.
+  await page.getByLabel("Local model").check();
+  await page.getByRole("button", { name: "Save without testing" }).click();
+  await expect(page.locator(".in-use")).toContainText("In use: Local model");
+  await page.getByLabel("Gemini API").check();
+  await expect(page.getByText("(saved; leave empty to keep it)")).toBeVisible();
+  await page.getByRole("button", { name: "Save without testing" }).click();
+  await expect(page.locator(".in-use")).toContainText("In use: Gemini API");
 });

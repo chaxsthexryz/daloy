@@ -1,7 +1,7 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { decryptSecret, encryptSecret } from "./crypto";
 import type { Db } from "./index";
-import { aiSettings } from "./schema";
+import { aiKeys, aiSettings } from "./schema";
 
 /**
  * The AI models a user can pick in the console. Hosted ones have a fixed URL, so a user cannot point the server at an
@@ -30,41 +30,65 @@ export const PRESETS = {
 export type Preset = keyof typeof PRESETS;
 export const PRESET_IDS = Object.keys(PRESETS) as [Preset, ...Preset[]];
 
-export type AiConnection = { provider: string; baseUrl: string; apiKey?: string; model: string };
+export type AiConnection = { provider: string; baseUrl: string; apiKey?: string; model: string; extraBody?: Record<string, unknown>; reasoningTokens?: number };
 
-const env = () => ({
-  provider: process.env.LLM_PROVIDER || "ollama",
-  baseUrl: process.env.LLM_BASE_URL ?? "http://localhost:11434",
-  apiKey: process.env.LLM_API_KEY || undefined,
-  model: process.env.LLM_MODEL || "llama3.2",
-});
+/**
+ * Thinking models write hidden reasoning that counts against max_tokens, so a short budget can come back empty.
+ * - A local llama.cpp or vLLM server (Qwen 3.5 and similar): the chat template switch turns thinking off. Only sent
+ *   to this machine, because hosted APIs may reject fields they do not know.
+ * - The Gemini API: Gemini 3 and newer cannot turn thinking off, so ask for "low" (every current model accepts it)
+ *   and allow 2,048 extra tokens for it on top of each caller's answer budget.
+ */
+const LOCAL_HOST = /^(localhost|127\.\d+\.\d+\.\d+|\[::1\]|host\.docker\.internal)$/;
+function thinkingControl(provider: string, baseUrl: string): Pick<AiConnection, "extraBody" | "reasoningTokens"> {
+  let host: string;
+  try {
+    host = new URL(baseUrl).hostname;
+  } catch {
+    return {};
+  }
+  if (provider !== "openai") return {};
+  if (LOCAL_HOST.test(host)) return { extraBody: { chat_template_kwargs: { enable_thinking: false } } };
+  if (host === "generativelanguage.googleapis.com") return { extraBody: { reasoning_effort: "low" }, reasoningTokens: 2048 };
+  return {};
+}
+
+const env = (): AiConnection => {
+  const provider = process.env.LLM_PROVIDER || "ollama";
+  const baseUrl = process.env.LLM_BASE_URL ?? "http://localhost:11434";
+  return { provider, baseUrl, apiKey: process.env.LLM_API_KEY || undefined, model: process.env.LLM_MODEL || "llama3.2", ...thinkingControl(provider, baseUrl) };
+};
 
 // The preset is part of the associated data, so a key saved for one provider never decrypts as another's.
 const keyName = (preset: string) => `ai_api_key:${preset}`;
 
-/** What the console shows. The key itself never leaves the database. */
+/** The local server from the env vars, for listing its models. */
+export const localConnection = env;
+
+const savedKey = async (db: Db, userId: string, preset: string) =>
+  (await db.select().from(aiKeys).where(and(eq(aiKeys.userId, userId), eq(aiKeys.preset, preset))))[0];
+
+/** What the console shows: the choice in use and which providers have a saved key. The keys never leave the database. */
 export async function readAiSettings(db: Db, userId: string) {
   const [row] = await db.select().from(aiSettings).where(eq(aiSettings.userId, userId));
-  return row ? { preset: row.preset as Preset, model: row.model, hasKey: row.keyCiphertext !== null } : null;
+  if (!row) return null;
+  const keys = (await db.select({ preset: aiKeys.preset }).from(aiKeys).where(eq(aiKeys.userId, userId))).map((k) => k.preset as Preset);
+  return { preset: row.preset as Preset, model: row.model, hasKey: keys.includes(row.preset as Preset), keys };
 }
 
-/** Saves the user's choice. Without apiKey, the saved key is kept if it belongs to the same preset. */
+/** Saves the user's choice. A new apiKey replaces that provider's key; without one, the provider's saved key is used. */
 export async function saveAiSettings(db: Db, secretsKey: Buffer, userId: string, input: { preset: Preset; model: string; apiKey?: string }) {
   const preset = PRESETS[input.preset];
-  const [old] = await db.select().from(aiSettings).where(eq(aiSettings.userId, userId));
-  let key: { keyCiphertext: string | null; keyIv: string | null; keyAuthTag: string | null } = { keyCiphertext: null, keyIv: null, keyAuthTag: null };
-  if (preset.needsKey) {
-    if (input.apiKey) {
+  if (preset.needsKey && !input.apiKey && !(await savedKey(db, userId, input.preset))) throw new Error(`${preset.label} needs an API key`);
+  await db.transaction(async (tx) => {
+    if (preset.needsKey && input.apiKey) {
       const e = encryptSecret(secretsKey, userId, keyName(input.preset), input.apiKey);
-      key = { keyCiphertext: e.ciphertext, keyIv: e.iv, keyAuthTag: e.authTag };
-    } else if (old?.preset === input.preset && old.keyCiphertext) {
-      key = { keyCiphertext: old.keyCiphertext, keyIv: old.keyIv, keyAuthTag: old.keyAuthTag };
-    } else {
-      throw new Error(`${preset.label} needs an API key`);
+      const key = { keyCiphertext: e.ciphertext, keyIv: e.iv, keyAuthTag: e.authTag, updatedAt: new Date() };
+      await tx.insert(aiKeys).values({ userId, preset: input.preset, ...key }).onConflictDoUpdate({ target: [aiKeys.userId, aiKeys.preset], set: key });
     }
-  }
-  const values = { preset: input.preset, model: input.model, ...key, updatedAt: new Date() };
-  await db.insert(aiSettings).values({ userId, ...values }).onConflictDoUpdate({ target: aiSettings.userId, set: values });
+    const values = { preset: input.preset, model: input.model, updatedAt: new Date() };
+    await tx.insert(aiSettings).values({ userId, ...values }).onConflictDoUpdate({ target: aiSettings.userId, set: values });
+  });
 }
 
 /** Where the AI step of this user's workflows sends its requests. */
@@ -73,6 +97,8 @@ export async function aiConnection(db: Db, secretsKey: Buffer, userId: string): 
   if (!row) return env();
   if (row.preset === "local") return { ...env(), model: row.model };
   const preset = PRESETS[row.preset as Exclude<Preset, "local">];
-  const apiKey = decryptSecret(secretsKey, userId, keyName(row.preset), { ciphertext: row.keyCiphertext!, iv: row.keyIv!, authTag: row.keyAuthTag! });
-  return { provider: "openai", baseUrl: preset.baseUrl, apiKey, model: row.model };
+  const key = await savedKey(db, userId, row.preset);
+  if (!key) throw new Error(`${preset.label} has no saved API key`);
+  const apiKey = decryptSecret(secretsKey, userId, keyName(row.preset), { ciphertext: key.keyCiphertext, iv: key.keyIv, authTag: key.keyAuthTag });
+  return { provider: "openai", baseUrl: preset.baseUrl, apiKey, model: row.model, ...thinkingControl("openai", preset.baseUrl) };
 }

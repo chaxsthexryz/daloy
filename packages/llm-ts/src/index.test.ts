@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import * as z from "zod";
-import { generate, LlmError } from "./index";
+import { generate, listModels, LlmError } from "./index";
 
 const base = {
   system: "You classify inquiries.",
@@ -196,4 +196,49 @@ it("sends no key with an explicit connection that has none, even if LLM_API_KEY 
   const [url, init] = fetch.mock.calls[0] as unknown as [string, RequestInit];
   expect(url).toBe("http://ollama.local:11434/api/chat");
   expect(new Headers(init.headers).has("authorization")).toBe(false);
+});
+
+it("adds a connection's extra body fields to an OpenAI-compatible request", async () => {
+  const fetch = mockFetch(new Response(JSON.stringify({ choices: [{ message: { content: "hi" } }] })));
+  await generate({ ...base, connection: { provider: "openai", baseUrl: "http://local:8080/v1", extraBody: { chat_template_kwargs: { enable_thinking: false } } } });
+  const body = JSON.parse(String((fetch.mock.calls[0] as unknown as [string, RequestInit])[1].body));
+  expect(body.chat_template_kwargs).toEqual({ enable_thinking: false });
+  expect(body.model).toBe("llama3.2");
+});
+
+it("adds a connection's thinking headroom to max_tokens, so maxTokens stays the answer's budget", async () => {
+  const fetch = mockFetch(new Response(JSON.stringify({ choices: [{ message: { content: "hi" } }] })));
+  await generate({ ...base, connection: { provider: "openai", baseUrl: "https://g.example/v1", reasoningTokens: 2048 } });
+  const body = JSON.parse(String((fetch.mock.calls[0] as unknown as [string, RequestInit])[1].body));
+  expect(body.max_tokens).toBe(200 + 2048);
+});
+
+describe("listModels", () => {
+  it("reads Ollama's /api/tags", async () => {
+    const fetch = mockFetch(new Response(JSON.stringify({ models: [{ name: "llama3.2:latest" }, { name: "hermes3" }] })));
+    expect(await listModels({ provider: "ollama", baseUrl: "http://ollama.local:11434/" })).toEqual(["llama3.2:latest", "hermes3"]);
+    expect((fetch.mock.calls[0] as unknown as [string])[0]).toBe("http://ollama.local:11434/api/tags");
+  });
+
+  it("reads an OpenAI-compatible /models with the key", async () => {
+    const fetch = mockFetch(new Response(JSON.stringify({ data: [{ id: "Qwen3.5-4B-Q4_K_M" }, { id: "other" }] })));
+    expect(await listModels({ provider: "openai", baseUrl: "http://127.0.0.1:18434/v1", apiKey: "k" })).toEqual(["Qwen3.5-4B-Q4_K_M", "other"]);
+    const [url, init] = fetch.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe("http://127.0.0.1:18434/v1/models");
+    expect(new Headers(init.headers).get("authorization")).toBe("Bearer k");
+  });
+
+  it("fails with LlmError when the server is down or answers an error", async () => {
+    mockFetch(new TypeError("fetch failed"));
+    await expect(listModels({ provider: "ollama", baseUrl: "http://x" })).rejects.toBeInstanceOf(LlmError);
+    mockFetch(new Response("no", { status: 401 }));
+    await expect(listModels({ provider: "openai", baseUrl: "http://x" })).rejects.toMatchObject({ message: "LLM returned HTTP 401" });
+  });
+});
+
+it("says the token limit ran out when a reply is empty and cut off, instead of 'not valid JSON'", async () => {
+  mockFetch(new Response(JSON.stringify({ choices: [{ message: { content: "" }, finish_reason: "length" }], usage: { prompt_tokens: 30, completion_tokens: 0 } })));
+  const err = (await generate({ ...base, schema: z.object({}), connection: { provider: "openai", baseUrl: "https://g.example/v1" } }).catch((e: unknown) => e)) as LlmError;
+  expect(err.message).toMatch(/used up its token limit/);
+  expect(err).toMatchObject({ retryable: false, invalidOutput: true, usage: { inputTokens: 30, outputTokens: 0 } });
 });

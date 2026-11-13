@@ -1,6 +1,6 @@
-import { aiConnection, PRESET_IDS, PRESETS, readAiSettings, saveAiSettings, type Db } from "@daloy/db";
+import { aiConnection, localConnection, PRESET_IDS, PRESETS, readAiSettings, saveAiSettings, type Db } from "@daloy/db";
 import { aiConfigSchema, aiOutputSchema, buildPrompt, TEMPLATES } from "@daloy/engine";
-import { generate, LlmError } from "@daloy/llm-ts";
+import { generate, listModels, LlmError } from "@daloy/llm-ts";
 import { BadRequestException, Body, Controller, Get, HttpCode, Inject, Post, Put, UseGuards } from "@nestjs/common";
 import * as z from "zod";
 import { SessionGuard } from "./auth";
@@ -20,10 +20,11 @@ const SAMPLE = "Hi, I was charged twice for my March invoice (INV-2026-0412). Ca
 /** Plain-language reasons for the console. Only the HTTP status is known, never the provider's response body. */
 export function explain(err: unknown): string {
   if (!(err instanceof LlmError)) return "The test failed unexpectedly. Check the worker and API logs.";
+  if (err.message.includes("token limit")) return "The model spent its whole token limit thinking and gave no answer. Pick a smaller or non-thinking model.";
   if (err.invalidOutput) return "The model answered, but not in the expected format. A larger model usually fixes this.";
   if (err.message.endsWith("TimeoutError")) return "The model took too long to answer. A hosted model may be overloaded; try again in a minute.";
   const status = Number(/HTTP (\d+)/.exec(err.message)?.[1]);
-  if (!status) return "Could not connect to the model. For a local model, check that Ollama is running and the model is pulled.";
+  if (!status) return "Could not connect to the model. For a local model, check that the server in .env (Ollama by default) is running.";
   if (status === 401 || status === 403) return "The provider rejected the API key.";
   if (status === 404) return "The provider does not know this model name.";
   if (status === 429) return "The provider's rate limit or free quota was reached. Wait a minute and try again.";
@@ -43,9 +44,22 @@ export class SettingsController {
   @Get()
   async get(@CurrentUser() user: SessionUser) {
     const saved = await readAiSettings(this.db, user.id);
-    const current = saved ? { ...saved, saved: true } : { preset: "local", model: process.env.LLM_MODEL || "llama3.2", hasKey: false, saved: false };
-    const presets = Object.fromEntries(Object.entries(PRESETS).map(([id, p]) => [id, { label: p.label, defaultModel: p.defaultModel, needsKey: p.needsKey, models: p.models }]));
+    const localModel = localConnection().model;
+    const current = saved ? { ...saved, saved: true } : { preset: "local", model: localModel, hasKey: false, keys: [], saved: false };
+    const presets = Object.fromEntries(
+      Object.entries(PRESETS).map(([id, p]) => [id, { label: p.label, defaultModel: id === "local" ? localModel : p.defaultModel, needsKey: p.needsKey, models: p.models }]),
+    );
     return { current, presets };
+  }
+
+  /** The models the local server from .env offers, so the console can list them. Only that URL is ever called. */
+  @Get("local-models")
+  async localModels() {
+    try {
+      return { ok: true, models: await listModels(localConnection()) };
+    } catch (err) {
+      return { ok: false, models: [], error: explain(err) };
+    }
   }
 
   @Put()

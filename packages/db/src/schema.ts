@@ -1,5 +1,5 @@
 import { RUN_STATES, STEP_STATES } from "@daloy/engine";
-import { boolean, integer, jsonb, pgEnum, pgTable, text, timestamp, unique, uuid } from "drizzle-orm/pg-core";
+import { boolean, integer, jsonb, pgEnum, pgTable, primaryKey, text, timestamp, unique, uuid } from "drizzle-orm/pg-core";
 
 const id = () => uuid("id").primaryKey().defaultRandom();
 const createdAt = () => timestamp("created_at", { withTimezone: true }).notNull().defaultNow();
@@ -141,9 +141,19 @@ export const aiSettings = pgTable("ai_settings", {
   userId: uuid("user_id").primaryKey().references(() => users.id, { onDelete: "cascade" }),
   preset: text("preset").notNull(),
   model: text("model").notNull(),
-  // The provider API key, encrypted like secrets. Null for local models.
-  keyCiphertext: text("key_ciphertext"),
-  keyIv: text("key_iv"),
-  keyAuthTag: text("key_auth_tag"),
   updatedAt: ts("updated_at").notNull().defaultNow(),
 });
+
+/** One API key per user and hosted provider, encrypted like secrets, so switching providers never loses a key. */
+export const aiKeys = pgTable(
+  "ai_keys",
+  {
+    userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    preset: text("preset").notNull(),
+    keyCiphertext: text("key_ciphertext").notNull(),
+    keyIv: text("key_iv").notNull(),
+    keyAuthTag: text("key_auth_tag").notNull(),
+    updatedAt: ts("updated_at").notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.preset] })],
+);

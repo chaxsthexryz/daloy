@@ -133,3 +133,12 @@ SSRF, webhook spoofing, secrets leaking into logs, expression injection, approva
 - Every step type has unit tests, and the SSRF tests cover private ranges, redirects and DNS rebinding.
 - CI is green.
 - docs/how-it-works.md explains the state machine, retries and idempotency in plain language.
+
+## Proposed follow-up: client email and website setup
+
+- Let a business owner or the person setting up their workspace enter the business name, website and inbox for new inquiries. Use those details in the inquiry template and replace its example recipients before activation.
+- Let the owner connect Gmail from inside Daloy using their email address and a Google app password. Include a link to create the app password and explain the 2-Step Verification requirement. Keep server settings out of the setup form.
+- Encrypt each workspace's credential, keep it out of workflow definitions and run history, and let the owner replace it or disconnect. If the connection fails, pause the send and ask the owner to reconnect. Never switch to another sender.
+- Offer a test email to the owner's own inbox. Show the sender, reply address and inquiry destination before the owner turns on customer emails. Keep Mailpit available for the local demo.
+- Give the owner a shareable inquiry form link they can put behind their website's contact button. Explain that saving the website address alone does not connect an existing form.
+- Acceptance check: from the setup screen, the owner can test Gmail, activate inquiry replies and submit a sample inquiry as a customer. The reply reaches that customer's address and the notification reaches the business inbox, without opening the workflow editor.

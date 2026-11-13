@@ -3,7 +3,8 @@ import type { Pool } from "pg";
 import { afterAll, afterEach, beforeAll, expect, it, vi } from "vitest";
 import { freshDatabase } from "../../../test/db";
 import { aiConnection, readAiSettings, saveAiSettings } from "./ai-settings";
-import { aiSettings, users } from "./schema";
+import { eq } from "drizzle-orm";
+import { aiKeys, aiSettings, users } from "./schema";
 import type { Db } from "./index";
 
 let db: Db;
@@ -37,13 +38,15 @@ it("uses the fixed Gemini URL and the saved, encrypted key", async () => {
     baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai",
     apiKey: "AIza-test",
     model: "gemini-3.8-flash",
+    extraBody: { reasoning_effort: "low" },
+    reasoningTokens: 2048,
   });
-  const [row] = await db.select().from(aiSettings);
-  expect(JSON.stringify(row)).not.toContain("AIza-test");
-  expect(await readAiSettings(db, userId)).toEqual({ preset: "gemini", model: "gemini-3.8-flash", hasKey: true });
+  const rows = [...(await db.select().from(aiSettings)), ...(await db.select().from(aiKeys))];
+  expect(JSON.stringify(rows)).not.toContain("AIza-test");
+  expect(await readAiSettings(db, userId)).toEqual({ preset: "gemini", model: "gemini-3.8-flash", hasKey: true, keys: ["gemini"] });
 });
 
-it("keeps the saved key when a later save sends none, and drops it for local", async () => {
+it("keeps each provider's key across switches, so going back needs no new key", async () => {
   const userId = await newUser();
   await saveAiSettings(db, key, userId, { preset: "openai", model: "gpt-x", apiKey: "sk-test" });
   await saveAiSettings(db, key, userId, { preset: "openai", model: "gpt-y" });
@@ -52,9 +55,55 @@ it("keeps the saved key when a later save sends none, and drops it for local", a
   vi.stubEnv("LLM_BASE_URL", "http://host.docker.internal:11434");
   await saveAiSettings(db, key, userId, { preset: "local", model: "llama3.2" });
   expect(await aiConnection(db, key, userId)).toEqual({ provider: "ollama", baseUrl: "http://host.docker.internal:11434", apiKey: undefined, model: "llama3.2" });
-  expect(await readAiSettings(db, userId)).toMatchObject({ hasKey: false });
+  expect(await readAiSettings(db, userId)).toMatchObject({ preset: "local", hasKey: false, keys: ["openai"] });
+
+  await saveAiSettings(db, key, userId, { preset: "gemini", model: "gemini-3.8-flash", apiKey: "AIza-test" });
+  await saveAiSettings(db, key, userId, { preset: "openai", model: "gpt-y" });
+  expect((await aiConnection(db, key, userId)).apiKey).toBe("sk-test");
+  await saveAiSettings(db, key, userId, { preset: "gemini", model: "gemini-3.6-flash" });
+  expect(await aiConnection(db, key, userId)).toMatchObject({ apiKey: "AIza-test", model: "gemini-3.6-flash" });
+  expect((await readAiSettings(db, userId))!.keys.sort()).toEqual(["gemini", "openai"]);
+});
+
+it("a key saved for one provider never decrypts for another", async () => {
+  const userId = await newUser();
+  await saveAiSettings(db, key, userId, { preset: "gemini", model: "gemini-3.8-flash", apiKey: "AIza-test" });
+  // Move the stored key to another provider's row by hand: the associated data no longer matches.
+  await db.update(aiKeys).set({ preset: "openrouter" }).where(eq(aiKeys.userId, userId));
+  await db.update(aiSettings).set({ preset: "openrouter" }).where(eq(aiSettings.userId, userId));
+  await expect(aiConnection(db, key, userId)).rejects.toThrow();
 });
 
 it("refuses a hosted preset without a key", async () => {
   await expect(saveAiSettings(db, key, await newUser(), { preset: "gemini", model: "gemini-3.8-flash" })).rejects.toThrow(/API key/);
+});
+
+it("turns off thinking only for a local OpenAI-compatible server", async () => {
+  vi.stubEnv("LLM_PROVIDER", "openai");
+  vi.stubEnv("LLM_BASE_URL", "http://host.docker.internal:18434/v1");
+  const local = await newUser();
+  await saveAiSettings(db, key, local, { preset: "local", model: "Qwen3.5-4B-Q4_K_M" });
+  expect((await aiConnection(db, key, local)).extraBody).toEqual({ chat_template_kwargs: { enable_thinking: false } });
+  // The env fallback too, when it names a server on this machine.
+  expect((await aiConnection(db, key, await newUser())).extraBody).toEqual({ chat_template_kwargs: { enable_thinking: false } });
+
+  const openai = await newUser();
+  await saveAiSettings(db, key, openai, { preset: "openai", model: "gpt-x", apiKey: "sk-test" });
+  expect((await aiConnection(db, key, openai)).extraBody).toBeUndefined();
+  vi.stubEnv("LLM_BASE_URL", "https://api.example.com/v1");
+  expect((await aiConnection(db, key, await newUser())).extraBody).toBeUndefined();
+});
+
+// Gemini 3 and newer cannot turn thinking off, and thinking counts against max_tokens (Google's thinking docs).
+it("asks Gemini for low thinking and leaves room for it, from the preset or the env vars", async () => {
+  const gemini = await newUser();
+  await saveAiSettings(db, key, gemini, { preset: "gemini", model: "gemini-3.8-flash", apiKey: "AIza-test" });
+  expect(await aiConnection(db, key, gemini)).toMatchObject({ extraBody: { reasoning_effort: "low" }, reasoningTokens: 2048 });
+
+  vi.stubEnv("LLM_PROVIDER", "openai");
+  vi.stubEnv("LLM_BASE_URL", "https://generativelanguage.googleapis.com/v1beta/openai");
+  expect(await aiConnection(db, key, await newUser())).toMatchObject({ extraBody: { reasoning_effort: "low" }, reasoningTokens: 2048 });
+
+  vi.stubEnv("LLM_BASE_URL", "http://localhost:18434/v1");
+  expect((await aiConnection(db, key, await newUser())).reasoningTokens).toBeUndefined();
 });
