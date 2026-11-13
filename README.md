@@ -32,7 +32,10 @@ flowchart LR
   migrate[migrate<br/>one-shot, owner role] --> pg
   worker --> engine[engine package<br/>pure TypeScript]
   worker --> llm[llm-ts<br/>Ollama]
-  worker --> smtp[SMTP<br/>Mailpit locally]
+  worker --> smtp[Installation SMTP<br/>Mailpit locally]
+  worker --> gmail[Owner's own Gmail<br/>app password, per account]
+  api -->|test email| smtp
+  api -->|test email| gmail
   worker --> ext[External HTTP APIs<br/>through the SSRF guard]
 ```
 
@@ -56,7 +59,7 @@ To work on the console with hot reload, run the API and worker (`pnpm --filter @
 
 ## Demo login
 
-After the seed: `demo@daloy.local`, password `daloy-demo-2026`. The account has the three starter templates (inquiry triage, invoice follow-up, booking no-show follow-up) as published workflows, and five mocked test runs in their run history. It also has **Office requests** ("Track an office request"), turned on and empty: open its form and send a request to see the receipt in Mailpit. A new account can try the same template from the home screen: **Try an example** shows a preview that sends nothing, and **Set up for my office** walks through four steps and turns the form on. These are demo credentials for a local install; change or delete the account anywhere else.
+After the seed: `demo@daloy.local`, password `daloy-demo-2026`. The account has the three starter templates (inquiry triage, invoice follow-up, booking no-show follow-up) as published workflows, and five mocked test runs in their run history. It also has **Office requests** ("Track an office request"), turned on and empty: open its form and send a request to see the receipt in Mailpit. Under **Business and email** it has a profile for "Daloy Demo Office" and **Website inquiries** turned on, sending through Mailpit: open the inquiry form, send a message, and find the customer's reply and the office's notification in Mailpit. A new account can try the same template from the home screen: **Try an example** shows a preview that sends nothing, and **Set up for my office** walks through four steps and turns the form on. These are demo credentials for a local install; change or delete the account anywhere else.
 
 ## Try the AI
 
@@ -78,13 +81,15 @@ The choice applies to all AI steps in your workflows and takes effect on the nex
 
 ## Send real email
 
-By default every email lands in Mailpit (http://localhost:8025) and nobody receives it. To send from your Gmail:
+By default every email lands in Mailpit (http://localhost:8025) and nobody receives it. Each account can send from its own Gmail address instead:
 
-1. Turn on 2-Step Verification on your Google account, then create an app password (Google Account, Security, App passwords).
-2. In `.env`, set `SMTP_HOST=smtp.gmail.com`, `SMTP_PORT=465`, `SMTP_USER` and `SMTP_FROM` to your Gmail address, and `SMTP_PASS` to the app password. `.env` is never committed.
-3. Restart the worker: `docker compose up -d worker` (or the "Daloy - Restart worker" shortcut).
+1. Turn on 2-Step Verification on the Google account, then create an app password ([Google's instructions](https://support.google.com/accounts/answer/185833)).
+2. In the console, open **Business and email**, select **Connect Gmail** and enter the Gmail address and the app password.
+3. Select **Send a test email to me** and open the link in that email while signed in. Until then nothing is sent from the address.
 
-From then on, published workflows and test runs with "Make live calls" ticked send real mail. Use your own addresses while testing.
+From then on, that account's published workflows, approval emails and test runs with "Make live calls" ticked send real mail from its address. Other accounts are not affected. **Disconnect** stops that account's mail until it reconnects; it never switches to another sender. Use your own addresses while testing. The steps for checking this against a real Gmail account are in [docs/live-gmail-check.md](docs/live-gmail-check.md).
+
+The `SMTP_*` settings in `.env` are the installation's own server, used by every account that connected no Gmail. Leave them on Mailpit unless that server may send for every account.
 
 ## Build a workflow by describing it
 
@@ -116,6 +121,10 @@ CI also runs Semgrep, gitleaks and `pnpm audit` on every push.
 
 - Version 1 supports linear flows with branches only: no loops, no parallel branches, no sub-workflows.
 - One workspace per user.
+- Gmail is connected with an app password. Accounts that cannot create one (some work and school accounts) cannot send from their own address yet; there is no Google sign-in (OAuth) option.
+- The Gmail path is tested against a fake SMTP server only. The live check in [docs/live-gmail-check.md](docs/live-gmail-check.md) has not been run.
+- When an account's Gmail stops working, its runs fail with "Reconnect Gmail". There is no button to retry only the failed email after reconnecting.
+- Saving a website address connects nothing. A client's existing website form keeps working on its own; only Daloy's hosted inquiry form starts the automation.
 - AI prompts are tested against a fake model server only. Their accuracy with a real model has not been measured. Delimiting and schema checks limit prompt injection but do not stop a model from choosing a wrong label.
 - Anyone who has an unused approval link can approve or reject. The email is the only check on who clicks.
 - An approval timeout is picked up by the worker's 15-second sweep, so it can fire up to 15 seconds late.
@@ -128,7 +137,7 @@ CI also runs Semgrep, gitleaks and `pnpm audit` on every push.
 - The console bundle is about 520 kB (160 kB gzipped), mostly React Flow, React and zod.
 - Secret redaction is plain text replacement, so a very short secret value also hides unrelated text that matches it.
 - The HTTP step ignores proxy environment variables and only calls ports 80 and 443.
-- Rate limits are counted per API process, and per IP rather than per token.
+- Rate limits are counted per API process. Signed-in routes count per account and public routes per IP; MCP calls count per IP rather than per token.
 - MCP tool calls return as soon as the run is queued. Clients poll `get_run_status` for the result; there are no progress notifications.
 - An API token can start every published form workflow of its owner. There are no per-workflow scopes.
 - CI only builds the compose images; it does not start the stack. Docker Compose was run by hand once (Docker Desktop on Windows): the `migrate` service exits cleanly, the api and worker connect as `daloy_app`, which cannot create tables, and the seeded demo login works.
@@ -157,7 +166,7 @@ CI also runs Semgrep, gitleaks and `pnpm audit` on every push.
 | helmet | Security headers | MIT |
 | cookie-parser | Reads the session cookie | MIT |
 | supertest | API route tests | MIT |
-| nodemailer, @types/nodemailer | SMTP client for the email step | MIT-0, MIT |
+| nodemailer, @types/nodemailer | SMTP client for email steps, approval mail and the test email (worker and db packages) | MIT-0, MIT |
 | react, react-dom, @types/react, @types/react-dom | Console UI | MIT |
 | @xyflow/react | Workflow canvas (React Flow) | MIT |
 | vite, @vitejs/plugin-react | Console dev server and build | MIT |

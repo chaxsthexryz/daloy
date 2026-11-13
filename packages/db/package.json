@@ -3,17 +3,20 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Drizzle schema, SQL migrations and the migrate script shared by the API and the worker.",
+  "description": "Drizzle schema, SQL migrations, the migrate script and the mailer shared by the API and the worker.",
   "main": "src/index.ts",
   "dependencies": {
     "@daloy/engine": "workspace:*",
     "drizzle-orm": "^0.45.4",
-    "pg": "^8.23.1"
+    "pg": "^8.23.1",
+    "nodemailer": "10.5.0",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@types/pg": "^8.23.1",
     "drizzle-kit": "^0.31.11",
-    "tsx": "^4.23.15"
+    "tsx": "^4.23.15",
+    "@types/nodemailer": "8.0.2"
   },
   "scripts": {
     "generate": "drizzle-kit generate",

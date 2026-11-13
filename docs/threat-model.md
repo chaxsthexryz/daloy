@@ -5,6 +5,7 @@ Kept current with each phase. A mitigation marked "planned" does not exist in co
 ## Assets
 
 - Stored secrets (API keys and SMTP credentials that workflows use)
+- Each owner's Gmail app password, and the right to send as their address
 - Console sessions and API tokens
 - Run data: trigger payloads and step outputs, which can hold customer personal data
 - The ability to send email and make HTTP requests from the server
@@ -14,8 +15,9 @@ Kept current with each phase. A mitigation marked "planned" does not exist in co
 - Console API (session cookie)
 - Webhook URLs and hosted forms (public)
 - Approval links (public, random single-use token)
+- Gmail confirmation links (need the owner's session and a random single-use token)
 - MCP endpoint (bearer token)
-- Outbound: HTTP request step, email step, LLM calls
+- Outbound: HTTP request step, email step (the installation's SMTP server or the owner's Gmail), the API's test email, LLM calls
 
 ## Threats and mitigations
 
@@ -41,6 +43,11 @@ Kept current with each phase. A mitigation marked "planned" does not exist in co
 | Form spam | Honeypot field, 10 submissions a minute per IP, field validation | Done, phase 3 |
 | Duplicate or replayed office requests | Each form load carries a random submission key. `unique (workflow_id, submission_key)` in the database means a double-click, a retry or a replay of the same post returns the first reference and creates no second run or email. A key that is missing or not a UUID is rejected. Remaining risk: someone who copies a page's key only gets that same reference back. See [decision 0019](decisions/0019-office-request-records.md). | Done, roadmap phase 1 |
 | Guessing request references | References are identifiers only. The public thank-you page shows the reference of the request just sent. The request list and run details need the owner's session and are scoped to the owner's workflows. | Done, roadmap phase 1 |
+| Mail sent as the wrong owner, or from another address after a failure | `resolveSender()` is the only place that picks the sender, and every email step, approval email and test email goes through it. It reads the run's workflow owner only. An unconfirmed, failed or disconnected Gmail sender blocks the send before any server is contacted, and nothing falls back to the installation server or another owner. Returning to the installation server is a separate, explicit action. See [decision 0020](decisions/0020-owner-mail-senders.md). | Done, roadmap phase 2 |
+| Gmail app password theft | Encrypted with AES-256-GCM, the owner's id bound in as associated data, so a ciphertext copied to another row does not decrypt. Write-only through the API, never in workflow definitions, run history or AI prompts. Disconnect deletes it. A 535 from Gmail marks the sender failed instead of retrying the login. Remaining risk: an app password can send any mail as that account, so a leaked `SECRETS_KEY` plus a database copy exposes it until the owner revokes it at Google. | Done, roadmap phase 2 |
+| Sending as an address the owner does not control | A new Gmail address must be confirmed through a link mailed to that address: 32 random bytes, only the SHA-256 stored, 30 minute expiry, one use, and only accepted from the session of the owner it was sent to. Gmail itself also refuses a login without that account's app password. | Done, roadmap phase 2 |
+| The test email used to spam | It only goes to the owner's own Gmail address or sign-in email, with fixed text, and is limited to 5 a minute per owner. | Done, roadmap phase 2 |
+| Header or template injection through the business profile | The business name rejects braces and line breaks, so it cannot become a `{{...}}` placeholder or a mail header. From is passed to nodemailer as a name and address pair, so a comma or angle bracket in the name adds no recipient. The website must be http or https and is never fetched. The hosted form escapes the name. | Done, roadmap phase 2 |
 | A preview mistaken for a live send | The Preview only page is computed in the browser with no API call, so it cannot record a request or send an email. | Done, roadmap phase 1 |
 | Test runs used to reach internal hosts or send mail | Test runs mock HTTP and email unless "live calls" is ticked; live test runs use the same SSRF guard and recipient cap as real runs | Done, phase 5 |
 | Script injection in the console | React escapes all rendered values, including step outputs and trigger data; no `dangerouslySetInnerHTML`; helmet's CSP blocks inline scripts on the served console | Done, phase 5 |

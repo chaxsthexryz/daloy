@@ -50,6 +50,13 @@
       "when": 1794553784726,
       "tag": "0006_office_requests",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1794555719975,
+      "tag": "0007_client_profile",
+      "breakpoints": true
     }
   ]
 }

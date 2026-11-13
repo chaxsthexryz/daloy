@@ -1,5 +1,6 @@
+import { sql } from "drizzle-orm";
 import { RUN_STATES, STEP_STATES } from "@daloy/engine";
-import { boolean, integer, jsonb, pgEnum, pgTable, primaryKey, text, timestamp, unique, uuid } from "drizzle-orm/pg-core";
+import { boolean, check, integer, jsonb, pgEnum, pgTable, primaryKey, text, timestamp, unique, uuid } from "drizzle-orm/pg-core";
 
 const id = () => uuid("id").primaryKey().defaultRandom();
 const createdAt = () => timestamp("created_at", { withTimezone: true }).notNull().defaultNow();
@@ -178,3 +179,33 @@ export const requests = pgTable(
   },
   (t) => [unique().on(t.workflowId, t.submissionKey)],
 );
+
+/** What the owner tells Daloy about their business. Used in templates, the hosted form and the From and Reply-To headers. */
+export const businessProfiles = pgTable("business_profiles", {
+  userId: uuid("user_id").primaryKey().references(() => users.id, { onDelete: "cascade" }),
+  businessName: text("business_name"),
+  website: text("website"),
+  inquiryEmail: text("inquiry_email"),
+  replyTo: text("reply_to"),
+  updatedAt: ts("updated_at").notNull().defaultNow(),
+});
+
+/**
+ * The owner's own Gmail sender. No row: mail goes through the installation's SMTP server (SMTP_* env vars).
+ * Any other status than active blocks sending, and nothing ever falls back to another sender (decision 0020).
+ * The app password is encrypted like secrets; disconnecting deletes it. Only the SHA-256 of the verify link is stored.
+ */
+export const mailSenders = pgTable("mail_senders", {
+  userId: uuid("user_id").primaryKey().references(() => users.id, { onDelete: "cascade" }),
+  address: text("address").notNull(),
+  status: text("status", { enum: ["unverified", "active", "failed", "disconnected"] }).notNull(),
+  passwordCiphertext: text("password_ciphertext"),
+  passwordIv: text("password_iv"),
+  passwordAuthTag: text("password_auth_tag"),
+  verifyTokenHash: text("verify_token_hash").unique(),
+  verifyExpiresAt: ts("verify_expires_at"),
+  verifiedAt: ts("verified_at"),
+  lastError: text("last_error"),
+  lastTestedAt: ts("last_tested_at"),
+  updatedAt: ts("updated_at").notNull().defaultNow(),
+}, (t) => [check("mail_senders_status", sql`${t.status} in ('unverified', 'active', 'failed', 'disconnected')`)]);

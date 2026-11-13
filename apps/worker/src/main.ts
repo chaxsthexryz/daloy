@@ -1,6 +1,5 @@
-import { createDb, migrate } from "@daloy/db";
+import { createDb, mailDeps, migrate } from "@daloy/db";
 import { createExecutor } from "./steps";
-import { smtpMailer } from "./steps/email";
 import { startWorker } from "./worker";
 
 const url = process.env.DATABASE_URL;
@@ -17,7 +16,7 @@ const worker = await startWorker({
   connectionString: url,
   db,
   migrate: ownsSchema,
-  executor: createExecutor({ db, secretsKey, mailer: smtpMailer(), publicUrl: process.env.PUBLIC_URL }),
+  executor: createExecutor({ db, secretsKey, mail: mailDeps(), publicUrl: process.env.PUBLIC_URL }),
 });
 console.log("worker started");
 

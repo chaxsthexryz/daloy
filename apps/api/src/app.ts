@@ -1,5 +1,5 @@
 import "reflect-metadata";
-import { RUN_QUEUE, RUN_QUEUE_OPTIONS, SCHEDULE_QUEUE, type Db } from "@daloy/db";
+import { mailDeps, RUN_QUEUE, RUN_QUEUE_OPTIONS, SCHEDULE_QUEUE, type Db } from "@daloy/db";
 import { Module } from "@nestjs/common";
 import { APP_GUARD, NestFactory } from "@nestjs/core";
 import type { NestExpressApplication } from "@nestjs/platform-express";
@@ -9,6 +9,7 @@ import type { PgBoss } from "pg-boss";
 import { AiDraftController } from "./ai-draft";
 import { ApprovalsController } from "./approvals";
 import { AuthController, SessionGuard } from "./auth";
+import { EmailSettingsController } from "./email-settings";
 import { BOSS, CONFIG, DB, RateLimit, type ApiConfig } from "./http";
 import { McpController } from "./mcp";
 import { FormsController, HooksController } from "./public";
@@ -27,11 +28,11 @@ export async function createApp({ db, boss, ...config }: AppOptions) {
   await boss.createQueue(SCHEDULE_QUEUE);
 
   @Module({
-    controllers: [AuthController, WorkflowsController, CatalogController, SecretsController, TokensController, RunsController, HooksController, FormsController, ApprovalsController, McpController, SettingsController, AiDraftController],
+    controllers: [AuthController, WorkflowsController, CatalogController, SecretsController, TokensController, RunsController, HooksController, FormsController, ApprovalsController, McpController, SettingsController, EmailSettingsController, AiDraftController],
     providers: [
       { provide: DB, useValue: db },
       { provide: BOSS, useValue: boss },
-      { provide: CONFIG, useValue: config },
+      { provide: CONFIG, useValue: { ...config, mail: config.mail ?? mailDeps(), publicUrl: (config.publicUrl ?? process.env.PUBLIC_URL ?? "http://localhost:3000").replace(/\/+$/, "") } },
       // Default limit for every route; login, forms, webhooks and approvals add stricter ones.
       { provide: APP_GUARD, useClass: RateLimit(120) },
       SessionGuard,
