@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { hostname } from "node:os";
-import { createRun, publishedVersion, RUN_QUEUE, RUN_QUEUE_OPTIONS, runs, SCHEDULE_QUEUE, type Db } from "@daloy/db";
+import { createRun, publishedVersion, runDueDeliveries, RUN_QUEUE, RUN_QUEUE_OPTIONS, runs, SCHEDULE_QUEUE, type Db, type ProviderUrls } from "@daloy/db";
 import type { RetryPolicy } from "@daloy/engine";
 import { and, inArray, isNull, lt, lte, or, sql } from "drizzle-orm";
 import { PgBoss } from "pg-boss";
@@ -16,6 +16,8 @@ export type WorkerOptions = {
   retryPolicy?: RetryPolicy;
   /** false when connecting as the DML-only role: pg-boss then expects its schema installed already (migrate.ts). */
   migrate?: boolean;
+  /** Delivers queued Sheets rows and Slack messages. Left out, deliveries wait in the table. */
+  deliveries?: { secretsKey: Buffer; urls: ProviderUrls };
 };
 export type Worker = Awaited<ReturnType<typeof startWorker>>;
 
@@ -73,12 +75,28 @@ export async function startWorker(opts: WorkerOptions) {
   const sweepTimer = setInterval(() => sweep().catch((err: unknown) => console.error("sweep failed", err)), sweepMs);
   await sweep();
 
+  // Deliveries are rows, not jobs: each poll claims the due ones with SKIP LOCKED (packages/db/src/deliveries.ts).
+  // One poll at a time per worker; several workers share the work through the claim.
+  let delivering: Promise<unknown> = Promise.resolve();
+  let busy = false;
+  const deliveryTimer = opts.deliveries
+    ? setInterval(() => {
+        if (busy) return;
+        busy = true;
+        delivering = runDueDeliveries(db, opts.deliveries!.secretsKey, opts.deliveries!.urls)
+          .catch((err: unknown) => console.error("deliveries failed", err))
+          .finally(() => (busy = false));
+      }, (opts.pollingIntervalSeconds ?? 2) * 1000)
+    : undefined;
+
   return {
     enqueue: deps.enqueue,
     /** Stops taking jobs and waits for the ones in progress, so their leases are released cleanly. */
     async stop() {
       clearInterval(sweepTimer);
+      clearInterval(deliveryTimer);
       await boss.stop({ graceful: true, timeout: 30_000 });
+      await delivering;
     },
   };
 }

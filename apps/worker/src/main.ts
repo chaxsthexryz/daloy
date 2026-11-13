@@ -1,4 +1,4 @@
-import { createDb, mailDeps, migrate } from "@daloy/db";
+import { createDb, mailDeps, migrate, providerUrls } from "@daloy/db";
 import { createExecutor } from "./steps";
 import { startWorker } from "./worker";
 
@@ -17,6 +17,7 @@ const worker = await startWorker({
   db,
   migrate: ownsSchema,
   executor: createExecutor({ db, secretsKey, mail: mailDeps(), publicUrl: process.env.PUBLIC_URL }),
+  deliveries: { secretsKey, urls: providerUrls() },
 });
 console.log("worker started");
 

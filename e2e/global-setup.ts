@@ -1,9 +1,10 @@
 import { execSync, spawn, type ChildProcess } from "node:child_process";
-import { randomBytes } from "node:crypto";
+import { generateKeyPairSync, randomBytes } from "node:crypto";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import EmbeddedPostgres from "embedded-postgres";
+import { startFakeProviders } from "../test/fake-providers";
 import { startLlmFake } from "./llm-fake";
 import { startSmtpSink } from "./smtp-sink";
 
@@ -15,6 +16,7 @@ import { startSmtpSink } from "./smtp-sink";
 export const E2E_PORT = 3100;
 const SMTP_PORT = 2526;
 const LLM_PORT = 2527;
+const PROVIDERS_PORT = 2528;
 const root = resolve(import.meta.dirname, "..");
 const win = process.platform === "win32";
 
@@ -66,6 +68,16 @@ export default async function setup() {
   process.env.E2E_MAIL_FILE = mailFile;
   const smtp = await startSmtpSink(SMTP_PORT, mailFile);
   const llm = startLlmFake(LLM_PORT);
+  // Fake Google Sheets and Slack. Tests read the key file and token from these env vars and the fake's /__control.
+  const providers = await startFakeProviders(PROVIDERS_PORT);
+  const saEmail = "daloy-e2e@office-demo.iam.gserviceaccount.com";
+  const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
+  providers.addServiceAccount(saEmail, publicKey.export({ type: "spki", format: "pem" }).toString());
+  providers.addSheet("e2e-sheet-0000000001", "Office requests", "Requests", [saEmail]);
+  providers.slack.token = "xoxb-e2e-0000000000-abcdefabcdef";
+  process.env.E2E_SHEETS_KEY = JSON.stringify({ type: "service_account", client_email: saEmail, private_key: privateKey.export({ type: "pkcs8", format: "pem" }).toString() });
+  process.env.E2E_SLACK_TOKEN = providers.slack.token;
+  process.env.E2E_PROVIDERS_URL = providers.urls.slack;
 
   const env = {
     DATABASE_URL: url,
@@ -78,6 +90,9 @@ export default async function setup() {
     // The fake model, so AI drafts work without Ollama. AI steps in e2e test runs are mocked anyway.
     LLM_PROVIDER: "ollama",
     LLM_BASE_URL: `http://127.0.0.1:${LLM_PORT}`,
+    GOOGLE_TOKEN_URL: providers.urls.googleToken,
+    GOOGLE_SHEETS_URL: providers.urls.sheets,
+    SLACK_API_URL: providers.urls.slack,
   };
   const api = start("api", env);
   await waitFor(`http://localhost:${E2E_PORT}/auth/me`, 60_000);
@@ -89,6 +104,7 @@ export default async function setup() {
     stop(api);
     smtp.close();
     llm.close();
+    await providers.close();
     await pg?.stop();
   };
 }

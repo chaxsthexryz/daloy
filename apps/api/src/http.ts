@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { RUN_QUEUE, type MailDeps } from "@daloy/db";
+import { RUN_QUEUE, type MailDeps, type ProviderUrls } from "@daloy/db";
 import {
   BadRequestException,
   type CanActivate,
@@ -18,7 +18,7 @@ export const DB = Symbol("db");
 export const BOSS = Symbol("boss");
 export const CONFIG = Symbol("config");
 /** mail and publicUrl are for the test email and its confirmation link; createApp fills them from the env vars when left out. */
-export type ApiConfig = { secretsKey: Buffer; secureCookies: boolean; mail?: MailDeps; publicUrl?: string };
+export type ApiConfig = { secretsKey: Buffer; secureCookies: boolean; mail?: MailDeps; publicUrl?: string; providers?: ProviderUrls };
 
 /** Validates a body, param or query value with zod at the route boundary. */
 export class ZodPipe<T extends z.ZodType> implements PipeTransform {

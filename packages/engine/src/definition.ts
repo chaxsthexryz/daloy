@@ -44,6 +44,14 @@ export const approvalConfigSchema = z.object({
 });
 export type ApprovalConfig = z.infer<typeof approvalConfigSchema>;
 
+// Sheets and Slack go to the destination the owner picked in Business and email (decision 0021). The worker queues them
+// as deliveries, so the run carries on and each one is retried on its own. The row starts with the request reference
+// and the time, then these columns. Keep private details out of Slack text: everyone in the channel can read it.
+export const sheetsConfigSchema = z.object({ columns: z.array(template(2000)).min(1).max(20) });
+export const slackConfigSchema = z.object({ text: template(3000).min(1) });
+export type SheetsConfig = z.infer<typeof sheetsConfigSchema>;
+export type SlackConfig = z.infer<typeof slackConfigSchema>;
+
 const stepSchema = z.discriminatedUnion("type", [
   z.object({ id: stepId, type: z.literal("condition"), config: z.object({ condition: conditionSchema }) }),
   z.object({ id: stepId, type: z.literal("http"), config: httpConfigSchema }),
@@ -51,6 +59,8 @@ const stepSchema = z.discriminatedUnion("type", [
   z.object({ id: stepId, type: z.literal("delay"), config: delayConfigSchema }),
   z.object({ id: stepId, type: z.literal("ai"), config: aiConfigSchema }),
   z.object({ id: stepId, type: z.literal("approval"), config: approvalConfigSchema }),
+  z.object({ id: stepId, type: z.literal("sheets"), config: sheetsConfigSchema }),
+  z.object({ id: stepId, type: z.literal("slack"), config: slackConfigSchema }),
 ]);
 export type Step = z.infer<typeof stepSchema>;
 

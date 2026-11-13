@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { aiConnection, createApproval, readSecrets, sendAs, type Db, type MailDeps } from "@daloy/db";
+import { aiConnection, createApproval, queueDelivery, readSecrets, sendAs, type Db, type MailDeps } from "@daloy/db";
 import { evaluateCondition, isRetryable, mockAiOutput, resolveTemplate, StepError, type ExpressionContext, type Step } from "@daloy/engine";
 import type { StepExecutor, StepResult } from "../advance";
 import { runAi } from "./ai";
@@ -33,6 +33,8 @@ type HttpInput = { method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE"; url: str
 type EmailInput = { to: string; subject: string; text: string };
 type AiInput = { input: string };
 type ApprovalInput = { to: string; subject: string; message: string; timeoutSeconds: number };
+type SheetsInput = { columns: string[] };
+type SlackInput = { text: string };
 
 /**
  * The config a step runs with, its templates resolved. The executor stores it (redacted) on the step run,
@@ -64,12 +66,16 @@ function resolveInput(step: Step, ctx: ExpressionContext): Record<string, unknow
       // The link is not part of the input, so the token never reaches the database or run history.
       return { to: text(to, ctx), subject: text(subject, ctx), message: text(message, ctx), timeoutSeconds } satisfies ApprovalInput;
     }
+    case "sheets":
+      return { columns: step.config.columns.map((c) => text(c, ctx)) } satisfies SheetsInput;
+    case "slack":
+      return { text: text(step.config.text, ctx) } satisfies SlackInput;
   }
 }
 
-type Attempt = { idempotencyKey: string; attempt: number; stepRunId: string; userId: string; mock: boolean };
+type Attempt = { runId: string; idempotencyKey: string; attempt: number; stepRunId: string; userId: string; mock: boolean };
 
-async function runStep(deps: FullDeps, step: Step, input: unknown, ctx: ExpressionContext, { idempotencyKey, attempt, stepRunId, userId, mock }: Attempt): Promise<StepResult> {
+async function runStep(deps: FullDeps, step: Step, input: unknown, ctx: ExpressionContext, { runId, idempotencyKey, attempt, stepRunId, userId, mock }: Attempt): Promise<StepResult> {
   switch (step.type) {
     case "condition":
       return { branch: String(evaluateCondition(step.config.condition, ctx)) };
@@ -111,6 +117,19 @@ async function runStep(deps: FullDeps, step: Step, input: unknown, ctx: Expressi
       // The run waits until the timeout; recording a decision wakes it earlier (decision 0009).
       return { output: { expiresAt: expiresAt.toISOString() }, waitUntil: expiresAt };
     }
+    case "sheets":
+    case "slack": {
+      // The request reference when the run came from a guided form, else the run id, so every row and message can be traced.
+      const ref = (ctx.trigger as { reference?: unknown } | null)?.reference;
+      const reference = typeof ref === "string" ? ref : runId;
+      const payload = step.type === "sheets" ? { row: [reference, new Date().toISOString(), ...(input as SheetsInput).columns] } : { text: (input as SlackInput).text };
+      if (mock) return { output: { mocked: true, reference, ...payload } };
+      // Queued, not sent: the worker delivers it apart from the run, so one provider's trouble never holds up the other
+      // (decision 0021). A re-run of this step gets the first delivery back, with its original payload.
+      const provider = step.type === "sheets" ? "google_sheets" : "slack";
+      const d = await queueDelivery(deps.db, { userId, runId, stepId: step.id, provider, reference, payload });
+      return { output: { deliveryId: d.id, reference, state: d.state } };
+    }
   }
 }
 
@@ -125,7 +144,7 @@ export function createExecutor(deps: ExecutorDeps): StepExecutor {
     publicUrl: (deps.publicUrl ?? "http://localhost:3000").replace(/\/+$/, ""),
   };
   return {
-    async execute({ step, userId, idempotencyKey, attempt, stepRunId, ctx, mock = false }) {
+    async execute({ runId, step, userId, idempotencyKey, attempt, stepRunId, ctx, mock = false }) {
       const secrets = await readSecrets(deps.db, deps.secretsKey, userId);
       const values = Object.values(secrets)
         .filter((v) => v.length > 0)
@@ -134,7 +153,10 @@ export function createExecutor(deps: ExecutorDeps): StepExecutor {
       let input: unknown = null;
       try {
         input = resolveInput(step, withSecrets);
-        const result = await runStep(full, step, input, withSecrets, { idempotencyKey, attempt, stepRunId, userId, mock });
+        // A Sheets row or Slack message is stored and then sent as is, so secrets are redacted before it is queued:
+        // a secret never reaches a spreadsheet or a channel.
+        if (step.type === "sheets" || step.type === "slack") input = redact(input, values);
+        const result = await runStep(full, step, input, withSecrets, { runId, idempotencyKey, attempt, stepRunId, userId, mock });
         return { ...result, input: redact(input, values), output: redact(result.output, values) };
       } catch (err) {
         const message = redact(err instanceof Error ? err.message : String(err), values) as string;

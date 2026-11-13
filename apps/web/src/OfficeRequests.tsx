@@ -9,10 +9,11 @@ import {
 } from "@daloy/engine";
 import { useEffect, useState, type FormEvent } from "react";
 import { api, ApiError, type Workflow } from "./api";
+import { DeliveryList, type Delivery } from "./Connections";
 
 type Step = (typeof SETUP_STEPS)[number];
 type Detail = Omit<Workflow, "live"> & { trigger: { id: string } | null; live: unknown };
-type RequestRow = { id: string; reference: string; subject: string; createdAt: string; runId: string; runState: string; runError: string | null };
+type RequestRow = { id: string; reference: string; subject: string; createdAt: string; runId: string; runState: string; runError: string | null; deliveries: Delivery[] };
 
 /** "Set up for my office": a new workflow with guided setup progress, named "Office requests" (or -2, -3 when taken). */
 export async function startOfficeSetup(email: string) {
@@ -88,6 +89,18 @@ function PreviewResult({ answers, sample }: { answers: OfficeRequestAnswers; sam
       </p>
       <Message title="Notification to the office" mail={p.notification} />
       <Message title="Receipt to the employee" mail={p.receipt} />
+      {p.sheetRow && (
+        <>
+          <h3>Row added to your Google Sheet</h3>
+          <pre>{p.sheetRow.join(" | ")}</pre>
+        </>
+      )}
+      {p.slackMessage && (
+        <>
+          <h3>Note posted to your Slack channel</h3>
+          <pre>{p.slackMessage}</pre>
+        </>
+      )}
     </section>
   );
 }
@@ -196,6 +209,18 @@ function SetupWizard({ wf, setup, onLive }: { wf: Detail; setup: Setup; onLive: 
               <label htmlFor="setup-notify">Send the office notification to</label>
               <input id="setup-notify" type="email" value={answers.notifyEmail} onChange={(e) => setAnswers({ ...answers, notifyEmail: e.target.value })} required maxLength={254} />
             </div>
+            <fieldset>
+              <legend>Also send each request to (optional)</legend>
+              <label className="check">
+                <input type="checkbox" checked={answers.sheets ?? false} onChange={(e) => setAnswers({ ...answers, sheets: e.target.checked })} /> A row in your Google Sheet
+              </label>
+              <label className="check">
+                <input type="checkbox" checked={answers.slack ?? false} onChange={(e) => setAnswers({ ...answers, slack: e.target.checked })} /> A short note in your Slack channel (reference and subject only)
+              </label>
+              <p className="muted">
+                Connect them and pick the sheet and channel in <a href="#/settings/business">Business and email</a>. Turning on checks that they are connected.
+              </p>
+            </fieldset>
           </>
         )}
         {step === "review" && (
@@ -213,6 +238,8 @@ function SetupWizard({ wf, setup, onLive }: { wf: Detail; setup: Setup; onLive: 
                 Notify the office at {answers.notifyEmail}. {edit("destinations")}
               </li>
               <li>Send the employee a receipt with the request reference.</li>
+              {answers.sheets && <li>Add a row to your Google Sheet, starting with the reference. {edit("destinations")}</li>}
+              {answers.slack && <li>Post the reference and subject to your Slack channel. {edit("destinations")}</li>}
             </ul>
             <p className="muted">Email goes out through the mail server in this installation's settings. A local demo delivers it to Mailpit.</p>
             <details>
@@ -297,6 +324,7 @@ function LivePage({ wf, formId }: { wf: Detail; formId: string }) {
                 <th scope="col">Received</th>
                 <th scope="col">Recorded in</th>
                 <th scope="col">Notification</th>
+                <th scope="col">Sheets and Slack</th>
               </tr>
             </thead>
             <tbody>
@@ -309,6 +337,7 @@ function LivePage({ wf, formId }: { wf: Detail; formId: string }) {
                   <td>
                     {outcome(r)} <a href={`#/runs/${r.runId}`}>Details</a>
                   </td>
+                  <td>{r.deliveries.length ? <DeliveryList deliveries={r.deliveries} onChange={load} /> : <span className="muted">None</span>}</td>
                 </tr>
               ))}
             </tbody>

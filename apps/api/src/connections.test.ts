@@ -1,0 +1,163 @@
+import { generateKeyPairSync, randomBytes, randomUUID } from "node:crypto";
+import { connections, deliveries, queueDelivery, requests, runs, users, workflowVersions, type Db } from "@daloy/db";
+import { defaultAnswers, officeRequestDefinition } from "@daloy/engine";
+import type { INestApplication } from "@nestjs/common";
+import { eq } from "drizzle-orm";
+import type { Pool } from "pg";
+import { PgBoss } from "pg-boss";
+import request from "supertest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { freshDatabase } from "../../../test/db";
+import { startFakeProviders, type FakeProviders } from "../../../test/fake-providers";
+import { createApp } from "./app";
+
+// Business and email, Connections: Google Sheets and Slack (roadmap phase 3, decision 0021). Fake providers only.
+let app: INestApplication;
+let boss: PgBoss;
+let db: Db;
+let pool: Pool;
+let server: Parameters<typeof request>[0];
+let fake: FakeProviders;
+let seq = 0;
+
+beforeAll(async () => {
+  let url: string;
+  ({ url, db, pool } = await freshDatabase());
+  boss = new PgBoss(url);
+  await boss.start();
+  fake = await startFakeProviders();
+  app = await createApp({ db, boss, secretsKey: randomBytes(32), secureCookies: false, providers: { ...fake.urls, timeoutMs: 2000 } });
+  await app.init();
+  server = app.getHttpServer();
+}, 120_000);
+
+afterAll(async () => {
+  await app?.close();
+  await boss?.stop({ graceful: false });
+  await fake?.close();
+  await pool?.end();
+});
+
+async function signedIn() {
+  const email = `owner${++seq}@test.local`;
+  const agent = request.agent(server);
+  await agent.post("/auth/register").send({ email, password: "correct horse battery" }).expect(201);
+  const [user] = await db.select().from(users).where(eq(users.email, email));
+  return { agent, userId: user!.id };
+}
+
+function keyFile(email: string) {
+  const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
+  fake.addServiceAccount(email, publicKey.export({ type: "spki", format: "pem" }).toString());
+  const pem = privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+  return { pem, json: JSON.stringify({ type: "service_account", project_id: "office", private_key_id: "abc", private_key: pem, client_email: email }) };
+}
+
+describe("Google Sheets", () => {
+  it("connects with a key file and a sheet link, and never shows or stores the key in the clear", async () => {
+    const { agent, userId } = await signedIn();
+    const email = `sheets${seq}@office.iam.gserviceaccount.com`;
+    const rows = fake.addSheet(`sheet-${seq}-abcdefghij`, "Office requests", "Requests", [email]).tabs.get("Requests")!;
+    const key = keyFile(email);
+    const res = await agent
+      .put("/settings/connections/google-sheets")
+      .send({ serviceAccount: key.json, sheet: `https://docs.google.com/spreadsheets/d/sheet-${seq}-abcdefghij/edit#gid=0`, tab: "Requests" })
+      .expect(200);
+    expect(res.body.connections).toEqual([expect.objectContaining({ provider: "google_sheets", status: "active", account: email, destination: { spreadsheetId: `sheet-${seq}-abcdefghij`, tab: "Requests", title: "Office requests" } })]);
+    expect(JSON.stringify(res.body)).not.toContain("PRIVATE KEY");
+    const [row] = await db.select().from(connections).where(eq(connections.userId, userId));
+    expect(JSON.stringify(row)).not.toContain("PRIVATE KEY");
+
+    const test = await agent.post("/settings/connections/google-sheets/test").expect(200);
+    expect(test.body).toMatchObject({ ok: true });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]![0]).toMatch(/^TEST-/);
+  });
+
+  it("refuses a key file that is not a service account key, or a sheet nobody shared", async () => {
+    const { agent } = await signedIn();
+    await agent.put("/settings/connections/google-sheets").send({ serviceAccount: "{not json", sheet: "abcdefghijkl", tab: "Sheet1" }).expect(400);
+    const email = `unshared${seq}@office.iam.gserviceaccount.com`;
+    fake.addSheet(`sheet-${seq}-unshared00`, "Private", "Sheet1", []);
+    const res = await agent.put("/settings/connections/google-sheets").send({ serviceAccount: keyFile(email).json, sheet: `sheet-${seq}-unshared00`, tab: "Sheet1" }).expect(400);
+    expect(res.body.message).toContain(email);
+  });
+
+  it("names the tabs when the chosen one does not exist", async () => {
+    const { agent } = await signedIn();
+    const email = `tabs${seq}@office.iam.gserviceaccount.com`;
+    fake.addSheet(`sheet-${seq}-tabs000000`, "Office", "Requests", [email]);
+    const res = await agent.put("/settings/connections/google-sheets").send({ serviceAccount: keyFile(email).json, sheet: `sheet-${seq}-tabs000000`, tab: "Sheet1" }).expect(400);
+    expect(res.body.message).toContain("Requests");
+  });
+});
+
+describe("Slack", () => {
+  it("connects with a bot token, lists channels, saves the chosen one and posts a test message", async () => {
+    const { agent } = await signedIn();
+    fake.slack.token = `xoxb-${seq}-1111111111-abcdefabcdef`;
+    await agent.put("/settings/connections/slack").send({ token: "xoxb-wrong-0000000000-zzzz" }).expect(400);
+    const res = await agent.put("/settings/connections/slack").send({ token: fake.slack.token }).expect(200);
+    expect(res.body.connections[0]).toMatchObject({ provider: "slack", status: "active", account: "Lim Dental", destination: null });
+    expect(JSON.stringify(res.body)).not.toContain(fake.slack.token);
+
+    const channels = await agent.get("/settings/connections/slack/channels").expect(200);
+    expect(channels.body).toEqual([{ id: "C0REQ", name: "office-requests", isMember: true }]);
+    await agent.put("/settings/connections/slack/channel").send({ channelId: "C0NOPE" }).expect(400);
+    await agent.put("/settings/connections/slack/channel").send({ channelId: "C0REQ" }).expect(204);
+
+    const before = fake.slack.messages.length;
+    expect((await agent.post("/settings/connections/slack/test").expect(200)).body).toMatchObject({ ok: true, channel: "C0REQ" });
+    expect(fake.slack.messages.length).toBe(before + 1);
+
+    await agent.delete("/settings/connections/slack").expect(204);
+    expect((await agent.get("/settings/connections").expect(200)).body.connections).toEqual([]);
+    await agent.delete("/settings/connections/slack").expect(404);
+  });
+
+  it("keeps connection settings behind sign-in", async () => {
+    await request(server).get("/settings/connections").expect(401);
+    await request(server).put("/settings/connections/slack").send({ token: "xoxb-1-2-3" }).expect(401);
+  });
+});
+
+describe("turning on and retrying", () => {
+  it("refuses to turn on an office request that posts to Slack while Slack is not connected", async () => {
+    const { agent } = await signedIn();
+    const wf = (await agent.post("/workflows").send({ name: "Office requests", slug: `office-${seq}` }).expect(201)).body as { id: string };
+    const definition = officeRequestDefinition({ ...defaultAnswers("office@example.com"), slack: true });
+    const res = await agent.post(`/workflows/${wf.id}/versions`).send({ definition, publish: true }).expect(400);
+    expect(res.body.message).toMatch(/connect slack/i);
+    // Saving a draft is fine; only turning it on needs the connection.
+    await agent.post(`/workflows/${wf.id}/versions`).send({ definition, publish: false }).expect(201);
+  });
+
+  it("lists each request's deliveries, and lets only the owner retry one", async () => {
+    const { agent, userId } = await signedIn();
+    const other = await signedIn();
+    const wf = (await agent.post("/workflows").send({ name: "Office requests", slug: `office-${seq}` }).expect(201)).body as { id: string };
+    const [v] = await db.insert(workflowVersions).values({ workflowId: wf.id, version: 9, definition: {} }).returning();
+    const [run] = await db.insert(runs).values({ workflowVersionId: v!.id, triggerPayload: {} }).returning();
+    await db.insert(requests).values({ userId, workflowId: wf.id, runId: run!.id, reference: `REQ-T${seq}`, submissionKey: randomUUID(), subject: "Printer jammed" });
+    const d = await queueDelivery(db, { userId, runId: run!.id, stepId: "post_to_slack", provider: "slack", reference: `REQ-T${seq}`, payload: { text: "hi" } });
+    await db.update(deliveries).set({ state: "failed", lastError: "Slack is not connected." }).where(eq(deliveries.id, d.id));
+
+    const list = await agent.get(`/workflows/${wf.id}/requests`).expect(200);
+    expect(list.body[0].deliveries).toEqual([expect.objectContaining({ id: d.id, provider: "slack", state: "failed", lastError: "Slack is not connected." })]);
+    expect(JSON.stringify(list.body)).not.toContain('"payload"');
+
+    await other.agent.post(`/deliveries/${d.id}/retry`).send({}).expect(404);
+    await agent.post(`/deliveries/${d.id}/retry`).send({}).expect(204);
+    await agent.post(`/deliveries/${d.id}/retry`).send({}).expect(409); // already queued
+    await agent.post(`/deliveries/${d.id}/confirm`).expect(409); // only a delivery that needs review can be marked posted
+    expect((await db.select().from(deliveries).where(eq(deliveries.id, d.id)))[0]!.state).toBe("queued");
+    await agent.get(`/deliveries?runId=${run!.id}`).expect(200);
+    await other.agent.get(`/deliveries?runId=${run!.id}`).expect(200).expect([]);
+  });
+
+  it("answers 404 for an unknown delivery and 400 for a malformed id", async () => {
+    const { agent } = await signedIn();
+    await agent.post(`/deliveries/00000000-0000-0000-0000-000000000000/retry`).send({}).expect(404);
+    await agent.post(`/deliveries/not-a-uuid/retry`).send({}).expect(400);
+  });
+});

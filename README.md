@@ -36,10 +36,14 @@ flowchart LR
   worker --> gmail[Owner's own Gmail<br/>app password, per account]
   api -->|test email| smtp
   api -->|test email| gmail
+  worker -->|queued deliveries| sheets[Owner's Google Sheet<br/>service account]
+  worker -->|queued deliveries| slack[Owner's Slack channel<br/>bot token]
+  api -->|connection tests| sheets
+  api -->|connection tests| slack
   worker --> ext[External HTTP APIs<br/>through the SSRF guard]
 ```
 
-The API validates input, stores workflows and starts runs. The worker takes one job per step from pg-boss, runs the step and queues the run again. [docs/how-it-works.md](docs/how-it-works.md) explains each part.
+The API validates input, stores workflows and starts runs. The worker takes one job per step from pg-boss, runs the step and queues the run again. Sheets rows and Slack notes are rows in a `deliveries` table, which the worker polls and delivers apart from the run. [docs/how-it-works.md](docs/how-it-works.md) explains each part.
 
 ## Quickstart
 
@@ -91,6 +95,20 @@ From then on, that account's published workflows, approval emails and test runs 
 
 The `SMTP_*` settings in `.env` are the installation's own server, used by every account that connected no Gmail. Leave them on Mailpit unless that server may send for every account.
 
+## Google Sheets and Slack
+
+Office requests can also add a row to a Google Sheet and post a short note to a Slack channel. Both are optional, and the local demo works without them. Under **Business and email**, **Connections**:
+
+- Google Sheets: create a service account in a Google Cloud project with the Sheets API turned on, download a JSON key, share the sheet with the service account's email as an Editor, then paste the key, the sheet link and the tab name. **Add a test row** writes one row.
+- Slack: create a Slack app with the bot scopes `chat:write` and `channels:read`, install it to your workspace, and paste its bot token (`xoxb-`). Pick a public channel, `/invite` the app there, and **Send a test message**.
+
+Then tick both in the office request's "Where requests and alerts go" step. The worker delivers each row and note on its own, and the Requests list shows each one's state with **Retry**. A Slack note that may already be in the channel asks you to check before posting it again. The steps for checking this against real accounts are in [docs/live-sheets-slack-check.md](docs/live-sheets-slack-check.md).
+
+| Provider | Action | Setup needed | Fixture tests | Live check |
+| --- | --- | --- | --- | --- |
+| Google Sheets | Add one row per request, reference in column A | Service account key, sheet shared as Editor | Pass (`test/fake-providers.ts`) | Not run |
+| Slack | Post reference and subject to one channel | Slack app bot token, app in the channel | Pass (`test/fake-providers.ts`) | Not run |
+
 ## Build a workflow by describing it
 
 1. Pick a model on the **AI model** page and press Test (see above).
@@ -124,6 +142,11 @@ CI also runs Semgrep, gitleaks and `pnpm audit` on every push.
 - Gmail is connected with an app password. Accounts that cannot create one (some work and school accounts) cannot send from their own address yet; there is no Google sign-in (OAuth) option.
 - The Gmail path is tested against a fake SMTP server only. The live check in [docs/live-gmail-check.md](docs/live-gmail-check.md) has not been run.
 - When an account's Gmail stops working, its runs fail with "Reconnect Gmail". There is no button to retry only the failed email after reconnecting.
+- Google Sheets and Slack are tested against a local fake only. The live check in [docs/live-sheets-slack-check.md](docs/live-sheets-slack-check.md) has not been run.
+- Sheets connects with a service account key, not Google sign-in. Some Google Workspace organisations block creating service account keys.
+- One sheet and one Slack channel per account. Only public channels are listed, and only the first 200.
+- An ambiguous Slack post (the call timed out) waits for someone to choose Mark as posted or Post again; Daloy cannot look in the channel.
+- A run with Sheets or Slack steps succeeds once the deliveries are queued. Their outcome shows in the Requests list and `GET /deliveries?runId=`, not in the run's own state.
 - Saving a website address connects nothing. A client's existing website form keeps working on its own; only Daloy's hosted inquiry form starts the automation.
 - AI prompts are tested against a fake model server only. Their accuracy with a real model has not been measured. Delimiting and schema checks limit prompt injection but do not stop a model from choosing a wrong label.
 - Anyone who has an unused approval link can approve or reject. The email is the only check on who clicks.

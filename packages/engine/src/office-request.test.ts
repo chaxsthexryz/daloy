@@ -37,4 +37,26 @@ describe("office request template", () => {
     expect(setupInput.safeParse({ step: "fields", answers }).success).toBe(true);
     expect(setupInput.safeParse({ step: "launch", answers }).success).toBe(false);
   });
+
+  it("adds the Sheets row and Slack note after the receipt, only when chosen", () => {
+    const plain = officeRequestDefinition(defaultAnswers("office@example.com"));
+    expect(plain.steps.map((s) => s.type)).toEqual(["email", "email"]);
+    const def = definitionSchema.parse(officeRequestDefinition({ ...defaultAnswers("office@example.com"), sheets: true, slack: true }));
+    expect(def.steps.map((s) => s.id)).toEqual(["notify_office", "send_receipt", "add_to_sheet", "post_to_slack"]);
+    expect(def.edges).toEqual([
+      { from: "notify_office", to: "send_receipt" },
+      { from: "send_receipt", to: "add_to_sheet" },
+      { from: "add_to_sheet", to: "post_to_slack" },
+    ]);
+    // Everyone in the channel reads the Slack note, so it carries the reference and subject, never the name or email.
+    const slack = def.steps[3]!;
+    expect(slack.type === "slack" && slack.config.text).not.toMatch(/trigger\.(name|email)/);
+  });
+
+  it("previews the sheet row and the Slack note, and reads setups saved before they existed", () => {
+    const preview = previewOfficeRequest({ ...defaultAnswers("office@example.com"), sheets: true, slack: true }, SAMPLE_REQUEST);
+    expect(preview.sheetRow).toEqual(["REQ-SAMPLE", "(time of the request)", "Rosa Diaz", "rosa.diaz@example.com", "The printer on floor 2 is jammed.", "Floor 2, near the pantry"]);
+    expect(preview.slackMessage).toBe("New office request REQ-SAMPLE: The printer on floor 2 is jammed.\nDetails are in Daloy under Requests.");
+    expect(officeRequestAnswers.parse({ name: "Office", notifyEmail: "o@example.com", extraFields: [] })).toMatchObject({ sheets: false, slack: false });
+  });
 });
