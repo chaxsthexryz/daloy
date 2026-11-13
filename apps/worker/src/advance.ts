@@ -82,8 +82,10 @@ export async function advance(deps: AdvanceDeps, runId: string): Promise<void> {
 
 async function runNext(deps: AdvanceDeps, run: Run): Promise<void> {
   const { db } = deps;
-  // Not before the backoff delay or the wake-up time of a waiting step is over.
-  if (run.nextAttemptAt && run.nextAttemptAt > new Date()) return deps.enqueue(run.id, run.nextAttemptAt);
+  // Not before the backoff delay or the wake-up time of a waiting step is over. Nothing is scheduled here: the retry or
+  // delay already has a job for that time, and the sweep covers a lost one. A job scheduled here for an approval's
+  // timeout would block the earlier wake-up an approver's answer needs, since the queue holds one job per run.
+  if (run.nextAttemptAt && run.nextAttemptAt > new Date()) return;
 
   const [version] = await db
     .select({ definition: workflowVersions.definition, userId: workflows.userId })

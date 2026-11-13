@@ -227,6 +227,20 @@ describe("worker", () => {
       expect(rows[0]).toMatchObject({ branch: "rejected", output: { decision: "rejected" } });
     });
 
+    it("is not held up by a second job that arrives while it waits for the approver", async () => {
+      const runId = await createRun(approvalFlow("ask"));
+      await worker.enqueue(runId);
+      await waitForState(runId, "waiting");
+      // The sweep can queue a run again just before the first job takes the lease. That second job finds the run
+      // waiting; if it scheduled the run for the approval timeout (60 s), the queue's one job per run would block the answer.
+      for (let i = 0; i < 50 && (await db.select().from(runs).where(eq(runs.id, runId)))[0]!.leaseOwner; i++) await new Promise((r) => setTimeout(r, 50));
+      await worker.enqueue(runId);
+      await new Promise((r) => setTimeout(r, 1500));
+
+      expect(await recordDecision(db, approvalTokens.get(runId)!, "approved")).toBe(runId);
+      expect((await waitForEnd(runId)).state).toBe("succeeded");
+    }, 15_000);
+
     it("takes the timeout branch when nobody answers, and the link stops working", async () => {
       const runId = await createRun(approvalFlow("quick"));
       await worker.enqueue(runId);
