@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, FINISHED, type Run, type RunSummary, type Workflow } from "./api";
+import { DeliveryList, type Delivery } from "./Connections";
 
 /** Polls a run until it finishes, so the page shows each step as the worker records it. */
 export function useRun(runId: string | null) {
@@ -155,6 +156,21 @@ export function RunPage({ runId }: { runId: string }) {
       <pre aria-label="Trigger data">{json(run.triggerPayload)}</pre>
       <h2>Steps</h2>
       <RunResult run={run} />
+      <RunDeliveries runId={runId} />
     </main>
+  );
+}
+
+/** Sheets rows and Slack notes this run queued. They are delivered apart from the run, so they have their own state. */
+function RunDeliveries({ runId }: { runId: string }) {
+  const [list, setList] = useState<Delivery[]>([]);
+  const load = () => api<Delivery[]>("GET", `/deliveries?runId=${runId}`).then(setList, () => setList([]));
+  useEffect(() => void load(), [runId]);
+  if (list.length === 0) return null;
+  return (
+    <>
+      <h2>Deliveries</h2>
+      <DeliveryList deliveries={list} onChange={load} />
+    </>
   );
 }

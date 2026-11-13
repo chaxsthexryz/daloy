@@ -27,6 +27,7 @@ const SYSTEM = [
       .map(([type, labels]) => `${type} has ${labels!.map((l) => `"${l}"`).join(", ")}`)
       .join("; ") +
     ". Each branch label and each non-branching step has at most one outgoing edge. No cycles. The first step is the one no edge points to.",
+  "A sheets step adds a row to the owner's connected Google Sheet; a slack step posts to their connected Slack channel. Keep names, emails and other private details out of slack text.",
   "Text fields can use {{trigger.<field>}} and {{steps.<id>.output.<path>}}. An ai step with task classify outputs {label}, so a condition reads {{steps.<id>.output.label}}.",
   "Use real-looking placeholders such as you@example.com when the request gives no address. Keep steps to what was asked.",
   "",

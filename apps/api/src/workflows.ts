@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { createRun, publishedVersion, requests, runs, SCHEDULE_QUEUE, triggers, workflows, workflowVersions, type Db } from "@daloy/db";
+import { createRun, listDeliveries, PROVIDER_NAMES, publishedVersion, readConnections, requests, runs, SCHEDULE_QUEUE, triggers, workflows, workflowVersions, type Db } from "@daloy/db";
 import { BRANCHES, definitionSchema, OFFICE_REQUEST, setupInput, stepJsonSchemas, TEMPLATES, type Trigger, type WorkflowDefinition } from "@daloy/engine";
 import {
   BadRequestException,
@@ -93,18 +93,23 @@ export class WorkflowsController {
     return wf;
   }
 
-  /** The office request list: newest first, with the state of the run that sends the notification and the receipt. */
+  /**
+   * The office request list: newest first, with the state of the run that sends the notification and the receipt,
+   * and each Sheets or Slack delivery with its own state, so one can be retried on its own.
+   */
   @Get(":id/requests")
   async listRequests(@CurrentUser() user: SessionUser, @Param("id", workflowId) id: string) {
     await this.owned(user.id, id);
     const { id: requestId, reference, subject, createdAt, runId } = requests;
-    return this.db
+    const rows = await this.db
       .select({ id: requestId, reference, subject, createdAt, runId, runState: runs.state, runError: runs.error })
       .from(requests)
       .innerJoin(runs, eq(runs.id, requests.runId))
       .where(eq(requests.workflowId, id))
       .orderBy(desc(createdAt))
       .limit(200);
+    const all = await listDeliveries(this.db, user.id, rows.map((r) => r.runId));
+    return rows.map((r) => ({ ...r, deliveries: all.filter((d) => d.runId === r.runId) }));
   }
 
   /** Deletes the workflow with its versions, trigger and run history. */
@@ -144,6 +149,7 @@ export class WorkflowsController {
     await this.owned(user.id, id);
     const definition = parseDefinition(body.definition);
 
+    if (body.publish) await this.checkConnections(user.id, definition);
     // Scheduled first: pg-boss rejects a bad cron here, before anything is saved.
     if (body.publish) await this.syncSchedule(id, definition.trigger);
     return this.saveVersion(id, definition, body.publish);
@@ -163,6 +169,20 @@ export class WorkflowsController {
     const runId = await createRun(this.db, versionId, body.payload, { test: true, live: body.live });
     await enqueueRun(this.boss, runId);
     return { id: runId, versionId };
+  }
+
+  /** Turning on a workflow with Sheets or Slack steps needs that connection working and a destination picked. Drafts do not. */
+  private async checkConnections(userId: string, definition: WorkflowDefinition) {
+    const needed = new Set(definition.steps.flatMap((s) => (s.type === "sheets" ? ["google_sheets" as const] : s.type === "slack" ? ["slack" as const] : [])));
+    if (needed.size === 0) return;
+    const conns = await readConnections(this.db, userId);
+    for (const provider of needed) {
+      const c = conns.find((x) => x.provider === provider);
+      const name = PROVIDER_NAMES[provider];
+      const where = provider === "slack" ? "pick a channel" : "pick a sheet";
+      if (!c || !c.destination) throw new BadRequestException(`Connect ${name} and ${where} in Settings, Business and email before turning this on.`);
+      if (c.status !== "active") throw new BadRequestException(`${name} needs to be connected again in Settings, Business and email before turning this on.`);
+    }
   }
 
   private async saveVersion(id: string, definition: WorkflowDefinition, publish: boolean) {

@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import { RUN_STATES, STEP_STATES } from "@daloy/engine";
-import { boolean, check, integer, jsonb, pgEnum, pgTable, primaryKey, text, timestamp, unique, uuid } from "drizzle-orm/pg-core";
+import { boolean, check, index, integer, jsonb, pgEnum, pgTable, primaryKey, text, timestamp, unique, uuid } from "drizzle-orm/pg-core";
 
 const id = () => uuid("id").primaryKey().defaultRandom();
 const createdAt = () => timestamp("created_at", { withTimezone: true }).notNull().defaultNow();
@@ -209,3 +209,70 @@ export const mailSenders = pgTable("mail_senders", {
   lastTestedAt: ts("last_tested_at"),
   updatedAt: ts("updated_at").notNull().defaultNow(),
 }, (t) => [check("mail_senders_status", sql`${t.status} in ('unverified', 'active', 'failed', 'disconnected')`)]);
+
+export const PROVIDERS = ["google_sheets", "slack"] as const;
+export type Provider = (typeof PROVIDERS)[number];
+
+/**
+ * An owner's Google Sheets or Slack connection (roadmap phase 3, decision 0021). One per owner and provider. The
+ * credential (service account key or bot token) is encrypted like secrets, with the owner and provider bound in.
+ * destination is where deliveries go: { spreadsheetId, tab, title } or { channelId, channelName }. Deleting the row
+ * disconnects; queued deliveries then fail with "not connected" and wait for Retry.
+ */
+export const connections = pgTable(
+  "connections",
+  {
+    userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    provider: text("provider", { enum: PROVIDERS }).notNull(),
+    status: text("status", { enum: ["active", "failed"] }).notNull(),
+    account: text("account").notNull(),
+    credentialCiphertext: text("credential_ciphertext").notNull(),
+    credentialIv: text("credential_iv").notNull(),
+    credentialAuthTag: text("credential_auth_tag").notNull(),
+    destination: jsonb("destination").$type<Record<string, string>>(),
+    lastError: text("last_error"),
+    lastTestedAt: ts("last_tested_at"),
+    updatedAt: ts("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.userId, t.provider] }),
+    check("connections_provider", sql`${t.provider} in ('google_sheets', 'slack')`),
+    check("connections_status", sql`${t.status} in ('active', 'failed')`),
+  ],
+);
+
+export const DELIVERY_STATES = ["queued", "sending", "delivered", "needs_review", "failed"] as const;
+export type DeliveryState = (typeof DELIVERY_STATES)[number];
+
+/**
+ * One Sheets row or Slack message a run asked for, delivered by the worker apart from the run (decision 0021).
+ * One per run and step, so a step re-run never queues a second one. payload is what gets sent (secrets already
+ * redacted), fixed at queue time. checkFirst: an earlier call may have reached the provider, so look before sending.
+ */
+export const deliveries = pgTable(
+  "deliveries",
+  {
+    id: id(),
+    userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    runId: uuid("run_id").notNull().references(() => runs.id, { onDelete: "cascade" }),
+    stepId: text("step_id").notNull(),
+    provider: text("provider", { enum: PROVIDERS }).notNull(),
+    reference: text("reference").notNull(),
+    payload: jsonb("payload").$type<{ row: string[] } | { text: string }>().notNull(),
+    state: text("state", { enum: DELIVERY_STATES }).notNull().default("queued"),
+    checkFirst: boolean("check_first").notNull().default(false),
+    attempts: integer("attempts").notNull().default(0),
+    nextAttemptAt: ts("next_attempt_at").notNull().defaultNow(),
+    result: jsonb("result").$type<Record<string, string | boolean>>(),
+    lastError: text("last_error"),
+    createdAt: createdAt(),
+    updatedAt: ts("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    unique().on(t.runId, t.stepId),
+    // The worker polls for due deliveries every couple of seconds.
+    index("deliveries_due").on(t.nextAttemptAt).where(sql`${t.state} in ('queued', 'sending')`),
+    check("deliveries_state", sql`${t.state} in ('queued', 'sending', 'delivered', 'needs_review', 'failed')`),
+    check("deliveries_provider", sql`${t.provider} in ('google_sheets', 'slack')`),
+  ],
+);

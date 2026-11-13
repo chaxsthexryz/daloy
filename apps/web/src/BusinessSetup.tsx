@@ -1,6 +1,7 @@
 import { WEBSITE_INQUIRY_SLUG, websiteInquiryDefinition } from "@daloy/engine";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { api, ApiError, type Workflow } from "./api";
+import { ConnectionsSection } from "./Connections";
 
 type Profile = { businessName: string | null; website: string | null; inquiryEmail: string | null; replyTo: string | null };
 type Sender = { address: string; status: "unverified" | "active" | "failed" | "disconnected"; lastError: string | null; verifiedAt: string | null; lastTestedAt: string | null };
@@ -17,7 +18,7 @@ const STATUS: Record<Sender["status"], string> = {
 
 const back = <a href="#/">Home</a>;
 
-/** Business profile, the owner's own Gmail sender and the website inquiry form (roadmap phase 2). */
+/** Business profile, the owner's own Gmail sender, Sheets and Slack connections, and the website inquiry form (roadmap phases 2 and 3). */
 export function BusinessSetupPage() {
   const [data, setData] = useState<Settings | null>(null);
   const [error, setError] = useState("");
@@ -39,6 +40,7 @@ export function BusinessSetupPage() {
         <>
           <ProfileForm profile={data.profile} onSaved={load} />
           <SenderSection data={data} onChange={load} />
+          <ConnectionsSection />
           <InquiryForm data={data} />
         </>
       )}

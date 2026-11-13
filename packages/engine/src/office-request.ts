@@ -21,14 +21,18 @@ export const officeRequestAnswers = z.strictObject({
   name: z.string().trim().min(1).max(200),
   notifyEmail: z.email().max(254),
   extraFields: z.array(z.enum(["location", "details"])).max(2),
+  // Roadmap phase 3: also add each request to the owner's Google Sheet, and post a short note to their Slack channel.
+  // Optional, and off for setups saved before these existed.
+  sheets: z.boolean().default(false),
+  slack: z.boolean().default(false),
 });
-export type OfficeRequestAnswers = z.infer<typeof officeRequestAnswers>;
+export type OfficeRequestAnswers = z.input<typeof officeRequestAnswers>;
 
 /** Body of PATCH /workflows/:id/setup. */
 export const setupInput = z.strictObject({ step: z.enum(SETUP_STEPS), answers: officeRequestAnswers });
 export type Setup = z.infer<typeof setupInput> & { template: typeof OFFICE_REQUEST };
 
-export const defaultAnswers = (notifyEmail: string): OfficeRequestAnswers => ({ name: "Office requests", notifyEmail, extraFields: ["location"] });
+export const defaultAnswers = (notifyEmail: string): OfficeRequestAnswers => ({ name: "Office requests", notifyEmail, extraFields: ["location"], sheets: false, slack: false });
 
 export const SAMPLE_REQUEST = {
   name: "Rosa Diaz",
@@ -45,6 +49,17 @@ function lines(answers: OfficeRequestAnswers) {
 
 export function officeRequestDefinition(answers: OfficeRequestAnswers): WorkflowDefinition {
   const more = lines(answers);
+  // After the receipt, so the people waiting on email never wait on Sheets or Slack. Both are queued deliveries,
+  // retried on their own (decision 0021). The Slack note has no name or email: everyone in the channel can read it.
+  const extra: WorkflowDefinition["steps"] = [];
+  if (answers.sheets) {
+    const columns = ["{{trigger.name}}", "{{trigger.email}}", "{{trigger.summary}}", ...answers.extraFields.map((f) => `{{trigger.${f}}}`)];
+    extra.push({ id: "add_to_sheet", type: "sheets", config: { columns } });
+  }
+  if (answers.slack) {
+    extra.push({ id: "post_to_slack", type: "slack", config: { text: "New office request {{trigger.reference}}: {{trigger.summary}}\nDetails are in Daloy under Requests." } });
+  }
+  const chain = ["send_receipt", ...extra.map((s) => s.id)];
   return {
     trigger: {
       type: "form",
@@ -76,8 +91,9 @@ export function officeRequestDefinition(answers: OfficeRequestAnswers): Workflow
           text: `Hi {{trigger.name}},\n\nWe received your request: {{trigger.summary}}\nYour reference is {{trigger.reference}}. Quote it if you ask about this request.`,
         },
       },
+      ...extra,
     ],
-    edges: [{ from: "notify_office", to: "send_receipt" }],
+    edges: [{ from: "notify_office", to: "send_receipt" }, ...chain.slice(1).map((to, i) => ({ from: chain[i]!, to }))],
   };
 }
 
@@ -88,9 +104,21 @@ export function officeRequestDefinition(answers: OfficeRequestAnswers): Workflow
 export function previewOfficeRequest(answers: OfficeRequestAnswers, sample: Record<string, string>) {
   const reference = "REQ-SAMPLE";
   const ctx = { trigger: { ...sample, reference }, steps: {} };
-  const [notify, receipt] = officeRequestDefinition(answers).steps.map((s) => {
+  const steps = officeRequestDefinition(answers).steps;
+  const [notify, receipt] = steps.slice(0, 2).map((s) => {
     const c = s.config as { to: string; subject: string; text: string };
     return { to: String(resolveTemplate(c.to, ctx)), subject: String(resolveTemplate(c.subject, ctx)), text: String(resolveTemplate(c.text, ctx)) };
   });
-  return { reference, record: { reference, subject: sample.summary ?? "", list: answers.name }, notification: notify!, receipt: receipt! };
+  const text = (t: string) => String(resolveTemplate(t, ctx) ?? "");
+  const sheet = steps.find((s) => s.type === "sheets");
+  const slack = steps.find((s) => s.type === "slack");
+  return {
+    reference,
+    record: { reference, subject: sample.summary ?? "", list: answers.name },
+    notification: notify!,
+    receipt: receipt!,
+    // The row as the worker would write it: reference, time, then the columns.
+    ...(sheet?.type === "sheets" ? { sheetRow: [reference, "(time of the request)", ...sheet.config.columns.map(text)] } : {}),
+    ...(slack?.type === "slack" ? { slackMessage: text(slack.config.text) } : {}),
+  };
 }

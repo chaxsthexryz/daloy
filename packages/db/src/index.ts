@@ -6,9 +6,12 @@ import * as schema from "./schema";
 
 export * from "./ai-settings";
 export * from "./approvals";
+export * from "./connections";
 export * from "./crypto";
+export * from "./deliveries";
 export * from "./mail";
 export * from "./mail-senders";
+export * from "./providers";
 export * from "./runs";
 export * from "./schema";
 export { schema };

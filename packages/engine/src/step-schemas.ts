@@ -1,6 +1,6 @@
 import * as z from "zod";
 import { aiConfigSchema } from "./ai";
-import { approvalConfigSchema, conditionSchema, delayConfigSchema, emailConfigSchema, httpConfigSchema, type Step } from "./definition";
+import { approvalConfigSchema, conditionSchema, delayConfigSchema, emailConfigSchema, httpConfigSchema, sheetsConfigSchema, slackConfigSchema, type Step } from "./definition";
 
 /**
  * JSON Schema for each step type's config, which the builder turns into a form.
@@ -16,5 +16,7 @@ export function stepJsonSchemas(): Record<Step["type"], unknown> {
     delay: json(delayConfigSchema),
     ai: json(aiConfigSchema),
     approval: json(approvalConfigSchema),
+    sheets: json(sheetsConfigSchema),
+    slack: json(slackConfigSchema),
   };
 }

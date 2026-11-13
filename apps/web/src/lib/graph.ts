@@ -9,7 +9,7 @@ export type Draft = WorkflowDefinition;
 export type Edge = Draft["edges"][number];
 
 /** Step types the builder can add. */
-export const ADDABLE = ["condition", "http", "email", "delay", "ai", "approval"] as const;
+export const ADDABLE = ["condition", "http", "email", "delay", "ai", "approval", "sheets", "slack"] as const;
 export type AddableType = (typeof ADDABLE)[number];
 
 export const blankDraft = (): Draft => ({ trigger: { type: "manual", config: {} }, steps: [], edges: [] });
@@ -28,6 +28,10 @@ export function defaultConfig(type: AddableType): Step["config"] {
       return { task: "classify", input: "{{trigger.message}}", labels: { billing: "Invoices and payments", support: "Everything else" } };
     case "approval":
       return { to: "manager@example.com", subject: "Approval needed", message: "Please approve: {{trigger}}", timeoutSeconds: 86_400 };
+    case "sheets":
+      return { columns: ["{{trigger.name}}", "{{trigger.summary}}"] };
+    case "slack":
+      return { text: "New request {{trigger.reference}}: {{trigger.summary}}" };
   }
 }
 

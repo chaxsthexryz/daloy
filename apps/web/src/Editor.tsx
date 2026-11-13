@@ -10,7 +10,7 @@ import { SchemaForm, type JsonSchema } from "./SchemaForm";
 type Catalog = { schemas: Record<string, JsonSchema>; branches: Record<string, string[]> };
 type Loaded = Workflow & { trigger: { id: string; type: string; webhookPath: string | null } | null; live: Version | null; latest: Version | null };
 
-const TYPE_NAMES: Record<string, string> = { condition: "Condition", http: "HTTP request", email: "Send email", delay: "Delay", ai: "AI task", approval: "Approval" };
+const TYPE_NAMES: Record<string, string> = { condition: "Condition", http: "HTTP request", email: "Send email", delay: "Delay", ai: "AI task", approval: "Approval", sheets: "Add to Google Sheets", slack: "Post to Slack" };
 
 function summary(step: Step): string {
   switch (step.type) {
@@ -26,6 +26,10 @@ function summary(step: Step): string {
       return step.config.task === "classify" ? `classify: ${Object.keys(step.config.labels ?? {}).join(", ")}` : step.config.task;
     case "approval":
       return `ask ${step.config.to}`;
+    case "sheets":
+      return `${step.config.columns.length + 2} columns, reference first`;
+    case "slack":
+      return step.config.text.slice(0, 60);
   }
 }
 
