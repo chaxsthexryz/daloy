@@ -1,6 +1,6 @@
-import { createHmac, timingSafeEqual } from "node:crypto";
-import { createRun, publishedVersion, readSecret, triggers, workflows, type Db } from "@daloy/db";
-import type { FormField } from "@daloy/engine";
+import { createHmac, randomInt, randomUUID, timingSafeEqual } from "node:crypto";
+import { createRun, publishedVersion, readSecret, requests, runs, triggers, workflows, type Db } from "@daloy/db";
+import { OFFICE_REQUEST, type FormField } from "@daloy/engine";
 import {
   BadRequestException,
   Body,
@@ -22,9 +22,10 @@ import { and, eq } from "drizzle-orm";
 import type { Request } from "express";
 import type { PgBoss } from "pg-boss";
 import * as z from "zod";
-import { BOSS, CONFIG, DB, enqueueRun, RateLimit, ZodPipe, type ApiConfig } from "./http";
+import { BOSS, CONFIG, DB, enqueueRun, isUniqueViolation, RateLimit, ZodPipe, type ApiConfig } from "./http";
 
 const HONEYPOT = "website";
+const SUBMISSION_KEY = "submission_key";
 
 /** Public, unauthenticated routes that start runs. Each one is rate limited per IP. */
 @Controller("hooks")
@@ -81,9 +82,11 @@ export class FormsController {
 
   @Get(":id")
   @Header("Content-Type", "text/html; charset=utf-8")
+  // A request form carries a fresh submission key per load. no-store keeps the back button from reusing an old one.
+  @Header("Cache-Control", "no-store")
   async page(@Param("id", new ZodPipe(z.uuid())) id: string) {
-    const { fields } = await this.form(id);
-    return renderForm(fields);
+    const { fields, tracked } = await this.form(id);
+    return renderForm(fields, tracked ? randomUUID() : undefined);
   }
 
   @Post(":id")
@@ -91,21 +94,71 @@ export class FormsController {
   @UseGuards(RateLimit(10))
   @Header("Content-Type", "text/html; charset=utf-8")
   async submit(@Param("id", new ZodPipe(z.uuid())) id: string, @Body() body: Record<string, unknown> | undefined) {
-    const { fields, versionId } = await this.form(id);
+    const { fields, versionId, workflow, tracked } = await this.form(id);
     // Bots fill every field. Answer as if it worked so they learn nothing.
     if (body?.[HONEYPOT]) return page("Thanks, we received your message.");
     const parsed = fieldsSchema(fields).safeParse(body ?? {});
     if (!parsed.success) throw new BadRequestException(parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`));
-    const runId = await createRun(this.db, versionId, parsed.data);
-    await enqueueRun(this.boss, runId);
-    return page("Thanks, we received your message.");
+    if (!tracked) {
+      const runId = await createRun(this.db, versionId, parsed.data);
+      await enqueueRun(this.boss, runId);
+      return page("Thanks, we received your message.");
+    }
+
+    const key = z.uuid().safeParse(body?.[SUBMISSION_KEY]);
+    if (!key.success) throw new BadRequestException(`${SUBMISSION_KEY}: reload the form and send it again`);
+    const { reference, runId } = await recordRequest(this.db, workflow, versionId, key.data, parsed.data);
+    if (runId) await enqueueRun(this.boss, runId);
+    return page(
+      `<h1>Request received</h1><p>Your reference is <strong>${reference}</strong>. Quote it if you ask about this request. A receipt is on its way to your email.</p><p><a href="">Send another request</a></p>`,
+      "Request received",
+    );
   }
 
   private async form(id: string) {
-    const [trigger] = await this.db.select().from(triggers).where(and(eq(triggers.id, id), eq(triggers.type, "form")));
-    const version = trigger && (await publishedVersion(this.db, trigger.workflowId));
-    if (!trigger || !version) throw new NotFoundException();
-    return { fields: (trigger.config as { fields: FormField[] }).fields, versionId: version.id };
+    const [row] = await this.db
+      .select({ trigger: triggers, workflow: { id: workflows.id, userId: workflows.userId, setup: workflows.setup } })
+      .from(triggers)
+      .innerJoin(workflows, eq(workflows.id, triggers.workflowId))
+      .where(and(eq(triggers.id, id), eq(triggers.type, "form")));
+    const version = row && (await publishedVersion(this.db, row.trigger.workflowId));
+    if (!row || !version) throw new NotFoundException();
+    const tracked = (row.workflow.setup as { template?: string } | null)?.template === OFFICE_REQUEST;
+    return { fields: (row.trigger.config as { fields: FormField[] }).fields, versionId: version.id, workflow: row.workflow, tracked };
+  }
+}
+
+// Crockford base32 without I, L, O and U, so a reference read aloud or copied by hand stays unambiguous.
+const REFERENCE_ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
+// ponytail: 32^6 (about 1e9) random references; a collision fails that one submission with a 500. Lengthen when volume grows.
+export const newReference = () => `REQ-${Array.from({ length: 6 }, () => REFERENCE_ALPHABET[randomInt(32)]).join("")}`;
+
+/**
+ * Saves the request and its pending run in one transaction. The unique (workflow, submission key) index makes a
+ * double-click or a retried post return the first request's reference; runId is set only when this call created it.
+ */
+export async function recordRequest(db: Db, workflow: { id: string; userId: string }, versionId: string, submissionKey: string, data: Record<string, unknown>) {
+  const find = () =>
+    db
+      .select({ reference: requests.reference })
+      .from(requests)
+      .where(and(eq(requests.workflowId, workflow.id), eq(requests.submissionKey, submissionKey)));
+  const [existing] = await find();
+  if (existing) return { reference: existing.reference };
+
+  const reference = newReference();
+  try {
+    const runId = await db.transaction(async (tx) => {
+      const [run] = await tx.insert(runs).values({ workflowVersionId: versionId, triggerPayload: { ...data, reference } }).returning({ id: runs.id });
+      await tx.insert(requests).values({ userId: workflow.userId, workflowId: workflow.id, runId: run!.id, reference, submissionKey, subject: String(data.summary ?? "") });
+      return run!.id;
+    });
+    return { reference, runId };
+  } catch (err) {
+    // The same key committed between our lookup and insert: answer with that request.
+    const [dup] = isUniqueViolation(err) ? await find() : [];
+    if (dup) return { reference: dup.reference };
+    throw err;
   }
 }
 
@@ -126,7 +179,7 @@ export const escapeHtml = (s: string) => s.replace(/[&<>"']/g, (c) => ENTITIES[c
 export const page = (body: string, title = "Form") =>
   `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${title}</title></head><body><main>${body}</main></body></html>`;
 
-function renderForm(fields: FormField[]) {
+function renderForm(fields: FormField[], submissionKey?: string) {
   const inputs = fields
     .map((f) => {
       const attrs = `id="${f.name}" name="${f.name}"${f.required ? " required" : ""}`;
@@ -136,5 +189,6 @@ function renderForm(fields: FormField[]) {
     .join("");
   // Hidden from people (off screen, skipped by tab and screen readers) but visible to bots that fill every input.
   const honeypot = `<div aria-hidden="true" style="position:absolute;left:-9999px"><label for="${HONEYPOT}">Website</label><input id="${HONEYPOT}" name="${HONEYPOT}" tabindex="-1" autocomplete="off"></div>`;
-  return page(`<form method="post">${inputs}${honeypot}<button type="submit">Send</button></form>`);
+  const key = submissionKey ? `<input type="hidden" name="${SUBMISSION_KEY}" value="${submissionKey}">` : "";
+  return page(`<form method="post">${inputs}${honeypot}${key}<button type="submit">Send</button></form>`);
 }

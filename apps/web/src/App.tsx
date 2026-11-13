@@ -4,6 +4,7 @@ import { api, ApiError, type Workflow } from "./api";
 import { Editor } from "./Editor";
 import { RunPage, RunsPage } from "./Runs";
 import { BuildWithAi } from "./AiDraft";
+import { OfficeRequestPage, startOfficeSetup, TryOfficeRequest } from "./OfficeRequests";
 import { SettingsPage } from "./Settings";
 import { TokensPage } from "./Tokens";
 import { VersionsPage } from "./Versions";
@@ -11,7 +12,8 @@ import { VersionsPage } from "./Versions";
 type User = { id: string; email: string };
 
 /**
- * Hash routes (#/, #/w/<id>, #/w/<id>/runs, #/w/<id>/versions, #/runs/<id>, #/tokens, #/settings),
+ * Hash routes (#/, #/w/<id>, #/w/<id>/runs, #/w/<id>/versions, #/runs/<id>, #/tokens, #/settings,
+ * #/try/office-request for the preview and #/a/<id> for a guided automation),
  * so no path of the console can clash with an API route on the same origin.
  */
 function useHash() {
@@ -39,6 +41,9 @@ export function App() {
   if (page) return <Editor key={page[1]} id={page[1]!} />;
   const run = /^#\/runs\/([0-9a-f-]{36})$/.exec(hash);
   if (run) return <RunPage key={run[1]} runId={run[1]!} />;
+  const guided = /^#\/a\/([0-9a-f-]{36})$/.exec(hash);
+  if (guided) return <OfficeRequestPage key={guided[1]} id={guided[1]!} />;
+  if (hash === "#/try/office-request") return <TryOfficeRequest email={user.email} />;
   if (hash === "#/tokens") return <TokensPage />;
   if (hash === "#/settings") return <SettingsPage />;
   return <Workflows user={user} onSignOut={() => api("POST", "/auth/logout").then(() => setUser(null))} />;
@@ -128,6 +133,17 @@ function Workflows({ user, onSignOut }: { user: User; onSignOut: () => void }) {
           Sign out
         </button>
       </header>
+      <section className="create" aria-labelledby="automate">
+        <h2 id="automate">What do you want to automate?</h2>
+        <h3>Track an office request</h3>
+        <p>Staff fill in a form. Each request gets a reference. Your office receives a notification.</p>
+        <div className="actions">
+          <a href="#/try/office-request">Try an example</a>
+          <button type="button" className="primary" onClick={() => startOfficeSetup(user.email).catch((e: Error) => setError(e.message))}>
+            Set up for my office
+          </button>
+        </div>
+      </section>
       <form onSubmit={create} className="create">
         <h2>New workflow</h2>
         <div className="row">
@@ -163,7 +179,8 @@ function Workflows({ user, onSignOut }: { user: User; onSignOut: () => void }) {
         <ul className="list">
           {list.map((w) => (
             <li key={w.id}>
-              <a href={`#/w/${w.id}`}>{w.name}</a> <span className="muted">{w.slug}</span>
+              <a href={w.setup ? `#/a/${w.id}` : `#/w/${w.id}`}>{w.name}</a> <span className="muted">{w.slug}</span>
+              {w.setup ? w.live ? <span className="tag ok">Accepting requests</span> : <a className="tag" href={`#/a/${w.id}`}>Draft: continue setup</a> : null}
             </li>
           ))}
         </ul>

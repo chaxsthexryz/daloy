@@ -1,5 +1,5 @@
 import { resolve } from "node:path";
-import { TEMPLATES } from "@daloy/engine";
+import { defaultAnswers, officeRequestDefinition, TEMPLATES } from "@daloy/engine";
 
 export const DEMO_EMAIL = "demo@daloy.local";
 export const DEMO_PASSWORD = "daloy-demo-2026";
@@ -40,6 +40,14 @@ export async function seed(baseUrl: string) {
     const wf = (await call("POST", "/workflows", { name: t.name, slug: t.slug }))!;
     await call("POST", `/workflows/${wf.id}/versions`, { definition: t.definition, publish: true });
     for (const payload of SAMPLES[t.slug]) await call("POST", `/workflows/${wf.id}/test-runs`, { definition: t.definition, payload });
+  }
+
+  // "Track an office request", set up and turned on. No requests are seeded: a form submission sends live email, and .env may point SMTP at a real mailbox.
+  if (!existing.has("office-requests")) {
+    const answers = defaultAnswers(DEMO_EMAIL);
+    const wf = (await call("POST", "/workflows", { name: answers.name, slug: "office-requests" }))!;
+    await call("PATCH", `/workflows/${wf.id}/setup`, { step: "review", answers });
+    await call("POST", `/workflows/${wf.id}/versions`, { definition: officeRequestDefinition(answers), publish: true });
   }
 }
 

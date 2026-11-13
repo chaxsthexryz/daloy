@@ -23,7 +23,8 @@ export async function api<T>(method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE"
   return data as T;
 }
 
-export type Workflow = { id: string; name: string; slug: string; createdAt: string };
+// setup is the guided setup progress (null for workflows built in the editor); live is set by the list route.
+export type Workflow = { id: string; name: string; slug: string; createdAt: string; setup?: unknown; live?: boolean };
 export type VersionSummary = { id: string; version: number; published: boolean; createdAt: string };
 export type Version = VersionSummary & { definition: unknown };
 export type StepRun = {

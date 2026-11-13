@@ -197,7 +197,7 @@ Limits: rate limit counters live in process memory, so each API instance counts 
 
 - Manual: `POST /workflows/:id/runs` from the console runs the live version with a JSON payload, whatever its trigger type.
 - Webhook: `POST /hooks/:path`, where the path is 32 random bytes made at the first publish and kept across later publishes. If the trigger names a secret (`hmacSecret`), the request must carry `X-Daloy-Signature: sha256=<hex HMAC of the raw body>`, compared in constant time. A named secret that no longer exists rejects every call.
-- Form: `GET /forms/:triggerId` renders an HTML form from the field list in the definition, with labels escaped. `POST` validates the fields and starts a run. A hidden honeypot field catches bots: if it is filled, the API answers as if it worked and starts nothing.
+- Form: `GET /forms/:triggerId` renders an HTML form from the field list in the definition, with labels escaped. `POST` validates the fields and starts a run. A hidden honeypot field catches bots: if it is filled, the API answers as if it worked and starts nothing. A form of an office request automation also records a request (see "Track an office request").
 - Schedule: publishing registers a pg-boss cron schedule keyed by workflow id. pg-boss sends a job to `schedule-trigger` at each tick, and the worker starts a run of the live version. Publishing a version with another trigger type removes the schedule.
 
 ## Builder (apps/web)
@@ -250,15 +250,31 @@ Edge cases: a token that is missing, unknown, malformed or revoked gets 401. A r
 
 Tests: `apps/api/src/mcp.test.ts` has unit tests for `toolsFromRows` and `runStatus`, and integration tests that drive the endpoint with the official MCP client: missing, unknown and revoked tokens, a raw 2025-era `initialize`, the tool list and `last_used_at`, input validation and run creation, hidden runs of other users, a waiting approval, and the rate limit. `e2e/mcp.spec.ts` (Playwright) creates a token in the console, lists and calls a tool, polls `get_run_status` until the run succeeds, revokes the token and checks the client is refused.
 
+## Track an office request (packages/engine/src/office-request.ts, apps/api/src/public.ts, apps/web/src/OfficeRequests.tsx)
+
+What it does: the home screen offers "Track an office request". "Try an example" opens a Preview only page with the sample reference, the row that would be recorded, the office notification and the employee receipt. "Set up for my office" creates a workflow named Office requests and walks through four steps: name, fields staff fill in, where alerts go, and review. Each Next or "Save and finish later" saves the step and the answers, so the owner resumes on the same step from "Draft: continue setup" on the home screen. "Turn on" publishes the definition built from the answers: a form trigger and two email steps (notify the office, send the receipt). The page then shows Accepting requests, the form link with Copy form link and Open form, and the request list. Each row has the reference, subject, time received, where it was recorded and whether the emails went out. "Details" opens the run in the existing run history.
+
+Why this way: the preview is worked out in the browser with the same template resolver the worker uses, so it cannot record or send anything. Setup progress is one jsonb column on the workflow, and turning on goes through the normal versions route, so versions, run history and the advanced editor keep working. The template has no AI step, so it works with AI turned off. See [decision 0019](decisions/0019-office-request-records.md).
+
+Edge cases:
+
+- Double-click or retry: the form page carries a fresh submission key. The API looks the key up, then saves the run and the request in one transaction. `unique (workflow_id, submission_key)` stops a second row even when two posts arrive together, and a repeated post gets the first reference back. Reloading the form makes a new key, so a second request with the same wording gets its own reference.
+- A missing or malformed key gets a 400 asking the sender to reload the form.
+- A failed notification leaves the request in the list, marked "Not sent, open details" with a link to the run.
+- On localhost the page says the form link only works on this computer.
+- An MCP tool call to an office request workflow also records a request, and returns its reference with the run id. Each call counts as a new submission.
+
+Tests: `packages/engine/src/office-request.test.ts` (valid definition without AI, preview contents, answer validation), `apps/api/src/office-request.test.ts` (setup saving and owner checks, one request per key, concurrent duplicates, separate references, request list scoped to the owner), `e2e/office-request.spec.ts` (preview, leave and resume the draft, turn on, double-click Send, one row, one receipt, no sample mail).
+
 ## Seed and demo login (apps/api/src/seed.ts)
 
-What it does: `pnpm seed` (or `SEED_URL=... pnpm seed`) signs up `demo@daloy.local` with the password `daloy-demo-2026`, creates the three starter templates as published workflows, and starts five mocked test runs with realistic trigger data (two inquiries, one unpaid invoice, one no-show and one attended booking). The worker runs them like any other test run.
+What it does: `pnpm seed` (or `SEED_URL=... pnpm seed`) signs up `demo@daloy.local` with the password `daloy-demo-2026`, creates the three starter templates as published workflows, and starts five mocked test runs with realistic trigger data (two inquiries, one unpaid invoice, one no-show and one attended booking). The worker runs them like any other test run. It also turns on an Office requests automation with no requests. The seed sends no form submissions, because those send live email and `.env` may point SMTP at a real mailbox.
 
 Why this way: the seed talks to the running API over HTTP instead of writing rows. Sign-up, validation, publishing and trigger setup go through the same code as the console, and the seed works with the DML-only database role.
 
 Edge cases: running it twice is safe. A second run signs in instead of signing up and skips workflows whose slug exists. Mocked test runs cap a delay at one second, so the invoice run's one-week wait passes at once and all five runs succeed.
 
-Tests: `apps/api/src/seed.test.ts` seeds twice against the real API and checks one demo user, three published workflows and five test runs. `e2e/demo.spec.ts` seeds the e2e stack, signs in with the demo login in Chromium and waits for the inquiry runs to succeed.
+Tests: `apps/api/src/seed.test.ts` seeds twice against the real API and checks one demo user, four published workflows, five mocked test runs and no office requests. `e2e/demo.spec.ts` seeds the e2e stack, signs in with the demo login in Chromium and waits for the inquiry runs to succeed.
 
 ## Database roles (docker/app-role.sql, apps/worker/src/migrate.ts)
 

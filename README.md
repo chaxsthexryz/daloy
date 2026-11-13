@@ -56,7 +56,7 @@ To work on the console with hot reload, run the API and worker (`pnpm --filter @
 
 ## Demo login
 
-After the seed: `demo@daloy.local`, password `daloy-demo-2026`. The account has the three starter templates (inquiry triage, invoice follow-up, booking no-show follow-up) as published workflows, and five mocked test runs in their run history. These are demo credentials for a local install; change or delete the account anywhere else.
+After the seed: `demo@daloy.local`, password `daloy-demo-2026`. The account has the three starter templates (inquiry triage, invoice follow-up, booking no-show follow-up) as published workflows, and five mocked test runs in their run history. It also has **Office requests** ("Track an office request"), turned on and empty: open its form and send a request to see the receipt in Mailpit. A new account can try the same template from the home screen: **Try an example** shows a preview that sends nothing, and **Set up for my office** walks through four steps and turns the form on. These are demo credentials for a local install; change or delete the account anywhere else.
 
 ## Try the AI
 

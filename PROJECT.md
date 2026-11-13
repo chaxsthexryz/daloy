@@ -126,6 +126,16 @@ SSRF, webhook spoofing, secrets leaking into logs, expression injection, approva
 - [x] 8. MCP exposure.
 - [x] 9. Load and chaos tests, starter templates, seeded demo, README with screenshots and an architecture diagram.
 
+## Business automation roadmap phases
+
+From [docs/business-automation-roadmap.md](docs/business-automation-roadmap.md). One session per phase. Resume at the first unticked phase.
+
+- [x] 1. Guided local request demo: "Track an office request" with Preview only, saved setup steps, Turn on, form link and a request list. Migration `0006_office_requests` (`workflows.setup`, `requests` with a unique submission key). Passed: lint, typecheck, unit and API tests, all Playwright tests including `e2e/office-request.spec.ts` (preview sends nothing, double-click gives one request and one receipt). See [decision 0019](docs/decisions/0019-office-request-records.md). Not built yet: claim, mark done and reopen, pause, guided editing of a live automation, Activity search.
+- [ ] 2. Client profile, Gmail and website handoff.
+- [ ] 3. Sheets and Slack.
+- [ ] 4. Office teams and named approvals.
+- [ ] 5. Microsoft offices and pilot templates.
+
 ## Done when
 
 - The k6 and chaos tests pass and docs/reliability.md holds their output.

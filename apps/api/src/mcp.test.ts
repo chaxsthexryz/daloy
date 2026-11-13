@@ -1,7 +1,8 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import type { AddressInfo } from "node:net";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
-import { runs, stepRuns, users, workflows, workflowVersions, type Db } from "@daloy/db";
+import { requests, runs, stepRuns, users, workflows, workflowVersions, type Db } from "@daloy/db";
+import { defaultAnswers, officeRequestDefinition } from "@daloy/engine";
 import type { INestApplication } from "@nestjs/common";
 import { eq } from "drizzle-orm";
 import type { Pool } from "pg";
@@ -19,7 +20,7 @@ const FIELDS = [
 
 describe("tool mapping", () => {
   it("names each tool after the workflow slug and validates input with the form fields", () => {
-    const [tool] = toolsFromRows([{ slug: "inquiry", name: "Inquiry triage", versionId: "v1", fields: [...FIELDS] }]);
+    const [tool] = toolsFromRows([{ slug: "inquiry", name: "Inquiry triage", versionId: "v1", fields: [...FIELDS], workflowId: "w1", tracked: false }]);
     expect(tool).toMatchObject({ name: "inquiry", title: "Inquiry triage", versionId: "v1" });
     expect(tool!.inputSchema.safeParse({ email: "ana@example.com" }).success).toBe(true);
     expect(tool!.inputSchema.safeParse({ message: "no email" }).success).toBe(false);
@@ -171,6 +172,24 @@ describe("MCP endpoint", () => {
 
     const status1 = await callTool(client, "get_run_status", { runId });
     expect(status1.structuredContent).toMatchObject({ runId, status: "pending" });
+    await client.close();
+  });
+
+  it("records an office request with a reference when a tool starts an office request workflow", async () => {
+    const { agent, token } = await owner();
+    const answers = defaultAnswers("office@test.local");
+    const wf = await agent.post("/workflows").send({ name: "Office requests", slug: `office-${++seq}` }).expect(201);
+    await agent.patch(`/workflows/${wf.body.id}/setup`).send({ step: "review", answers }).expect(200);
+    await agent.post(`/workflows/${wf.body.id}/versions`).send({ definition: officeRequestDefinition(answers), publish: true }).expect(201);
+    const client = await connect(token);
+
+    const res = await callTool(client, wf.body.slug, { name: "Rosa", email: "rosa@example.com", summary: "Broken chair" });
+    const { runId, reference } = res.structuredContent as { runId: string; reference: string };
+    expect(reference).toMatch(/^REQ-[0-9A-Z]{6}$/);
+    const [row] = await db.select().from(requests).where(eq(requests.runId, runId));
+    expect(row).toMatchObject({ reference, subject: "Broken chair" });
+    const [run] = await db.select().from(runs).where(eq(runs.id, runId));
+    expect(run!.triggerPayload).toMatchObject({ reference });
     await client.close();
   });
 
