@@ -2,7 +2,7 @@
 
 Daloy is a workflow automation engine with AI steps. You build an automation from one trigger and a series of steps, Daloy runs it, keeps a history of every run, and can expose published workflows as MCP tools.
 
-Status: phases 0 to 5 done (engine, worker, API, steps and the builder UI). See the checklist in [PROJECT.md](PROJECT.md).
+Status: all ten phases in [PROJECT.md](PROJECT.md) are done. Docker Compose and CI are written but have not been run yet (see Known limitations).
 
 ## Problem
 
@@ -10,42 +10,53 @@ Small teams do the same multi-step admin work by hand every day: sorting inquiri
 
 ## Screenshots
 
-Added in phase 9.
+The workflow list of the seeded demo, the builder with the inquiry triage template, a workflow's run history and one run. They are taken by `e2e/demo.spec.ts` (`SCREENSHOTS=1 pnpm e2e`).
+
+![Workflow list](docs/screenshots/workflows.png)
+
+![Builder](docs/screenshots/editor.png)
+
+![Run history](docs/screenshots/run-history.png)
+
+![One run](docs/screenshots/run.png)
 
 ## Architecture
 
-Planned shape. Parts that do not exist yet are marked with their phase.
-
 ```mermaid
 flowchart LR
-  web[Web console<br/>Vite, React Flow<br/>phase 5] --> api[API<br/>NestJS<br/>phase 3]
+  web[Web console<br/>Vite, React Flow] --> api[API<br/>NestJS]
   mcp[MCP clients] --> api
   hooks[Webhooks and forms] --> api
-  api --> pg[(Postgres<br/>app tables and pg-boss queues)]
-  worker[Worker<br/>phase 2] --> pg
+  api -->|daloy_app role| pg[(Postgres<br/>app tables and pg-boss queues)]
+  worker[Worker] -->|daloy_app role| pg
+  migrate[migrate<br/>one-shot, owner role] --> pg
   worker --> engine[engine package<br/>pure TypeScript]
   worker --> llm[llm-ts<br/>Ollama]
   worker --> smtp[SMTP<br/>Mailpit locally]
+  worker --> ext[External HTTP APIs<br/>through the SSRF guard]
 ```
+
+The API validates input, stores workflows and starts runs. The worker takes one job per step from pg-boss, runs the step and queues the run again. [docs/how-it-works.md](docs/how-it-works.md) explains each part.
 
 ## Quickstart
 
-Needs Node 24, pnpm 10 and Docker.
+Needs Docker. For development and tests: Node 24 and pnpm 10.
 
 ```bash
 cp .env.example .env   # then set SECRETS_KEY: openssl rand -base64 32
 docker compose up -d
-pnpm install
-pnpm test
+docker compose exec api node_modules/.bin/tsx src/seed.ts
 ```
 
-The console is at http://localhost:3000 (the API serves it). Mailpit's inbox is at http://localhost:8025.
+The console is at http://localhost:3000 (the API serves it). Mailpit's inbox is at http://localhost:8025. Live AI steps need Ollama on the host (`LLM_BASE_URL`); mocked test runs do not.
+
+Without Docker, the e2e stack runs on an embedded Postgres: start it with `node --input-type=module -e "import s from './e2e/global-setup.ts'; await s()"`, seed it with `SEED_URL=http://localhost:3100 pnpm seed`, and open http://localhost:3100.
 
 To work on the console with hot reload, run the API and worker (`pnpm --filter @daloy/api start`, `pnpm --filter @daloy/worker start`) and then `pnpm --filter @daloy/web dev`. Vite serves it on http://localhost:5173 and forwards API routes to port 3000.
 
 ## Demo login
 
-Added with the seed script in phase 9.
+After the seed: `demo@daloy.local`, password `daloy-demo-2026`. The account has the three starter templates (inquiry triage, invoice follow-up, booking no-show follow-up) as published workflows, and five mocked test runs in their run history. These are demo credentials for a local install; change or delete the account anywhere else.
 
 ## Running tests
 
@@ -53,10 +64,12 @@ Added with the seed script in phase 9.
 pnpm test        # vitest, all packages. Uses DATABASE_URL if set, otherwise starts an embedded Postgres
 pnpm typecheck
 pnpm lint
-pnpm e2e         # Playwright: builds the console, starts Postgres, the API and the worker, then runs the main flow in Chromium
+pnpm e2e         # Playwright: builds the console, starts Postgres, the API and the worker, then runs the browser tests in Chromium
+pnpm reliability:chaos   # 200 runs, the worker killed with SIGKILL ten times
+K6=/path/to/k6 pnpm reliability:load   # 1,000 runs started by k6 through the webhook API
 ```
 
-The first `pnpm e2e` needs a browser: `pnpm exec playwright install chromium`.
+The first `pnpm e2e` needs a browser: `pnpm exec playwright install chromium`. The load test needs the [k6](https://github.com/grafana/k6/releases) binary (AGPL-3.0, run as a separate program, not bundled). Results of both reliability tests are in [docs/reliability.md](docs/reliability.md).
 
 CI also runs Semgrep, gitleaks and `pnpm audit` on every push.
 
@@ -77,6 +90,10 @@ CI also runs Semgrep, gitleaks and `pnpm audit` on every push.
 - Rate limits are counted per API process, and per IP rather than per token.
 - MCP tool calls return as soon as the run is queued. Clients poll `get_run_status` for the result; there are no progress notifications.
 - An API token can start every published form workflow of its owner. There are no per-workflow scopes.
+- Docker Compose (including the `migrate` service and the database role init script) and the CI workflow have never been run: the development machine has no Docker and the repository has no remote yet. The role SQL and the migrate code are tested against embedded Postgres.
+- The database role init script only runs when the Postgres volume is created.
+- The reliability numbers come from one Windows laptop with one worker process. They show behaviour under load, not capacity.
+- The worker advances up to 10 runs at a time. One slow step holds up the rest of its batch until it finishes.
 
 ## Dependencies
 
@@ -112,4 +129,4 @@ TypeScript is pinned to 6.0.x because typescript-eslint 8 does not support TypeS
 
 ## How AI was used
 
-Claude Code wrote the code and docs in this repository. The owner reviews each phase, runs the tests and the app, and checks the results before shipping.
+Claude Code (Anthropic's coding agent) wrote the code, tests and docs in this repository, one phase at a time from the plan in PROJECT.md, and recorded its choices in docs/decisions. The owner approved each phase plan, reviewed the code, ran the test suites, the end-to-end tests and the reliability tests, and checked the console by hand before shipping. The numbers in docs/reliability.md are the output of those runs.

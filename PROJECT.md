@@ -124,7 +124,7 @@ SSRF, webhook spoofing, secrets leaking into logs, expression injection, approva
 - [x] 6. Run history, versions and rollback.
 - [x] 7. AI task step and human approval.
 - [x] 8. MCP exposure.
-- [ ] 9. Load and chaos tests, starter templates, seeded demo, README with screenshots and an architecture diagram.
+- [x] 9. Load and chaos tests, starter templates, seeded demo, README with screenshots and an architecture diagram.
 
 ## Done when
 

@@ -7,9 +7,11 @@ const key = process.env.SECRETS_KEY;
 if (!url) throw new Error("DATABASE_URL is not set");
 if (!key) throw new Error("SECRETS_KEY is not set (generate one with: openssl rand -base64 32)");
 
+// false in compose, where the apps connect as the DML-only role and the `migrate` service owns the schema (decision 0013).
+const ownsSchema = process.env.MIGRATE_ON_BOOT !== "false";
 const { db, pool } = createDb(url);
-await migrate(pool);
-const boss = new PgBoss(url);
+if (ownsSchema) await migrate(pool);
+const boss = new PgBoss({ connectionString: url, migrate: ownsSchema });
 boss.on("error", (err) => console.error("pg-boss", err));
 await boss.start();
 

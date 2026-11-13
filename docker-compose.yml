@@ -5,10 +5,14 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-daloy}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-daloy}
       POSTGRES_DB: ${POSTGRES_DB:-daloy}
+      # Read by docker/postgres-init/10-app-role.sh, which creates the DML-only role daloy_app on first start.
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:-daloy_app}
     ports:
       - "127.0.0.1:5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+      - ./docker/postgres-init:/docker-entrypoint-initdb.d:ro
+      - ./docker/app-role.sql:/daloy/app-role.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
@@ -22,13 +26,27 @@ services:
       - "127.0.0.1:1025:1025"
       - "127.0.0.1:8025:8025"
 
+  # One-shot: migrations, pg-boss install and queues, as the owner role. The api and worker wait for it (decision 0013).
+  migrate:
+    build:
+      context: .
+      args:
+        APP: worker
+    command: ["node_modules/.bin/tsx", "src/migrate.ts"]
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-daloy}:${POSTGRES_PASSWORD:-daloy}@postgres:5432/${POSTGRES_DB:-daloy}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   worker:
     build:
       context: .
       args:
         APP: worker
     environment:
-      DATABASE_URL: postgres://${POSTGRES_USER:-daloy}:${POSTGRES_PASSWORD:-daloy}@postgres:5432/${POSTGRES_DB:-daloy}
+      DATABASE_URL: postgres://daloy_app:${APP_DB_PASSWORD:-daloy_app}@postgres:5432/${POSTGRES_DB:-daloy}
+      MIGRATE_ON_BOOT: "false"
       SECRETS_KEY: ${SECRETS_KEY:?set SECRETS_KEY in .env (openssl rand -base64 32)}
       SMTP_HOST: mailpit
       SMTP_PORT: 1025
@@ -40,8 +58,8 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
-      postgres:
-        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     # Longer than the worker's 30 second graceful shutdown.
     stop_grace_period: 40s
 
@@ -51,14 +69,15 @@ services:
       args:
         APP: api
     environment:
-      DATABASE_URL: postgres://${POSTGRES_USER:-daloy}:${POSTGRES_PASSWORD:-daloy}@postgres:5432/${POSTGRES_DB:-daloy}
+      DATABASE_URL: postgres://daloy_app:${APP_DB_PASSWORD:-daloy_app}@postgres:5432/${POSTGRES_DB:-daloy}
+      MIGRATE_ON_BOOT: "false"
       SECRETS_KEY: ${SECRETS_KEY:?set SECRETS_KEY in .env (openssl rand -base64 32)}
       WEB_DIST: /app/apps/web/dist
     ports:
       - "127.0.0.1:3000:3000"
     depends_on:
-      postgres:
-        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
 
 volumes:
   pgdata:

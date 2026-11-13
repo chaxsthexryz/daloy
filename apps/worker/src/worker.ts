@@ -14,12 +14,14 @@ export type WorkerOptions = {
   sweepMs?: number;
   pollingIntervalSeconds?: number;
   retryPolicy?: RetryPolicy;
+  /** false when connecting as the DML-only role: pg-boss then expects its schema installed already (migrate.ts). */
+  migrate?: boolean;
 };
 export type Worker = Awaited<ReturnType<typeof startWorker>>;
 
 export async function startWorker(opts: WorkerOptions) {
   const { db, leaseMs = 30_000, sweepMs = 15_000 } = opts;
-  const boss = new PgBoss(opts.connectionString);
+  const boss = new PgBoss({ connectionString: opts.connectionString, migrate: opts.migrate ?? true, useListenNotify: true });
   boss.on("error", (err) => console.error("pg-boss", err));
   await boss.start();
   await boss.createQueue(RUN_QUEUE, RUN_QUEUE_OPTIONS);
@@ -36,8 +38,13 @@ export async function startWorker(opts: WorkerOptions) {
     },
   };
 
-  await boss.work<{ runId: string }>(RUN_QUEUE, { pollingIntervalSeconds: opts.pollingIntervalSeconds ?? 2 }, async (jobs) => {
-    for (const job of jobs) await advance(deps, job.data.runId);
+  // NOTIFY (RUN_QUEUE_OPTIONS) wakes the worker when a job is sent. A job sent with a later startAfter (retry, delay)
+  // sends no NOTIFY when it becomes due, so the poll keeps its normal interval instead of pg-boss's 30 s notify backstop.
+  const polling = { pollingIntervalSeconds: opts.pollingIntervalSeconds ?? 2, notifyPollingIntervalSeconds: opts.pollingIntervalSeconds ?? 2 };
+  // Batches of 10, fetched back to back while they come back full (pg-boss otherwise waits a poll interval after every fetch).
+  // A batch never holds the same run twice (policy "short": one queued job per run), and each run has its own lease, so they run in parallel.
+  await boss.work<{ runId: string }>(RUN_QUEUE, { ...polling, batchSize: 10, burstWhenBatchFull: true }, async (jobs) => {
+    await Promise.all(jobs.map((job) => advance(deps, job.data.runId)));
   });
 
   // A schedule trigger fired: start a run of the workflow's live version, with the fire time as the payload.

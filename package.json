@@ -10,7 +10,10 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "e2e": "playwright test"
+    "e2e": "playwright test",
+    "seed": "pnpm --filter @daloy/api exec tsx src/seed.ts",
+    "reliability:load": "pnpm --filter @daloy/worker exec tsx reliability/load.ts",
+    "reliability:chaos": "pnpm --filter @daloy/worker exec tsx reliability/chaos.ts"
   },
   "devDependencies": {
     "@daloy/db": "workspace:*",

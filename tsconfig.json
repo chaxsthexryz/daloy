@@ -13,5 +13,5 @@
     "noEmit": true,
     "types": ["node"]
   },
-  "include": ["packages/*/src", "apps/*/src", "test", "e2e", "vitest.config.ts", "playwright.config.ts"]
+  "include": ["packages/*/src", "apps/*/src", "apps/worker/reliability", "test", "e2e", "vitest.config.ts", "playwright.config.ts"]
 }

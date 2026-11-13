@@ -90,6 +90,8 @@ Retries: when a step throws, the engine's `decideRetry` picks one of three outco
 
 State changes: every change goes through `assertTransition` and then a guarded UPDATE (`WHERE state = <expected>`), so an illegal or concurrent change throws instead of overwriting. A failed step and its failed run are written in one transaction.
 
+Fetching: the run queue uses Postgres NOTIFY, so a job that is sent wakes the worker at once instead of at its next 2-second poll. The worker fetches up to 10 jobs at a time and fetches again straight away while batches come back full. The runs in a batch are advanced in parallel: the queue holds one waiting job per run, so a batch never contains the same run twice, and each run is still guarded by its lease. Without this the worker managed about half a job a second, because pg-boss waits a poll interval after every fetch (decision 0014).
+
 Shutdown: on SIGTERM the worker stops taking jobs, waits up to 30 seconds for jobs in progress, and closes the database pool.
 
 Waiting: a step can return a wake-up time instead of finishing (delay and approval do). The worker then moves the step and the run to `waiting` in one transaction, stores the time in `next_attempt_at` and queues a job that starts at that time. Nothing sleeps in the worker. When the job runs, or the sweep finds the run after the time has passed, the step moves to `succeeded`, the run moves back to `running`, and the flow carries on. The wait is one attempt, so the step does not run again on wake-up. An approval step schedules no job, because an early answer has to be able to wake the run and the queue holds one job per run; its timeout is picked up by the sweep (see Approval step below).
@@ -188,7 +190,7 @@ Accessibility: every action has a button, and the side panel lists the trigger a
 
 Tests: `src/lib/graph.test.ts` covers adding, inserting, branching, deleting and the layout. `packages/engine/src/step-schemas.test.ts` checks the JSON Schema shapes the form relies on, and `templates.test.ts` checks that the three starter templates are valid. `api.test.ts` ("builder") covers the schema and template routes, test runs, version reuse and ownership. `apps/worker/src/steps/index.test.ts` ("mock mode") proves mocked steps make no request. `e2e/main-flow.spec.ts` (Playwright) signs up, builds a condition and an HTTP step, test-runs, publishes and runs a live version, and checks the step outline from the keyboard.
 
-Limits: starter templates are offered when creating a workflow; phase 9 seeds them for the demo user.
+Limits: starter templates are offered when creating a workflow, and the seed script (below) publishes them for the demo user.
 
 ## Run history and versions
 
@@ -219,3 +221,31 @@ Tools: `toolsFromRows()` turns each workflow row into a tool. The input schema i
 Edge cases: a token that is missing, unknown, malformed or revoked gets 401. A run id that is not a uuid is rejected by the tool's schema. Another user's run and a run that does not exist both return the tool error "run not found". Draft-only workflows, workflows with other triggers and other users' workflows are not listed. Tool names cannot clash with `get_run_status`, because slugs only use a-z, 0-9 and `-`. The route allows 60 requests a minute per IP.
 
 Tests: `apps/api/src/mcp.test.ts` has unit tests for `toolsFromRows` and `runStatus`, and integration tests that drive the endpoint with the official MCP client: missing, unknown and revoked tokens, a raw 2025-era `initialize`, the tool list and `last_used_at`, input validation and run creation, hidden runs of other users, a waiting approval, and the rate limit. `e2e/mcp.spec.ts` (Playwright) creates a token in the console, lists and calls a tool, polls `get_run_status` until the run succeeds, revokes the token and checks the client is refused.
+
+## Seed and demo login (apps/api/src/seed.ts)
+
+What it does: `pnpm seed` (or `SEED_URL=... pnpm seed`) signs up `demo@daloy.local` with the password `daloy-demo-2026`, creates the three starter templates as published workflows, and starts five mocked test runs with realistic trigger data (two inquiries, one unpaid invoice, one no-show and one attended booking). The worker runs them like any other test run.
+
+Why this way: the seed talks to the running API over HTTP instead of writing rows. Sign-up, validation, publishing and trigger setup go through the same code as the console, and the seed works with the DML-only database role.
+
+Edge cases: running it twice is safe. A second run signs in instead of signing up and skips workflows whose slug exists. The invoice run waits in its one-week delay step, so the run history shows a waiting run too.
+
+Tests: `apps/api/src/seed.test.ts` seeds twice against the real API and checks one demo user, three published workflows and five test runs. `e2e/demo.spec.ts` seeds the e2e stack, signs in with the demo login in Chromium and waits for the inquiry runs to succeed.
+
+## Database roles (docker/app-role.sql, apps/worker/src/migrate.ts)
+
+What it does: in compose, the API and the worker connect as `daloy_app`, which can read and write rows but cannot create, alter, drop or truncate anything. A one-shot `migrate` service runs first as the owner role: Drizzle migrations, the pg-boss install and its queues. The api and worker wait for it and start with `MIGRATE_ON_BOOT=false`.
+
+Why this way: a SQL injection bug or a leaked connection string in the apps then cannot change the schema. Default privileges give `daloy_app` access to tables the owner creates later, so a new migration needs no extra grant (decision 0013).
+
+Edge cases: the Postgres init script only runs when the volume is created, so an older volume needs `docker compose down -v` or the SQL run by hand. Outside compose (tests, `pnpm e2e`, local dev) the apps still migrate on boot.
+
+Tests: `apps/worker/src/app-role.test.ts` applies the SQL to an embedded Postgres and checks, as `daloy_app`, that inserts, updates and deletes work, that CREATE, DROP, ALTER and TRUNCATE are refused (in `public` and `pgboss`), and that a worker with pg-boss runs a workflow to the end.
+
+## Reliability tests (apps/worker/reliability)
+
+What it does: two scripts start an embedded Postgres, a test receiver and real worker processes. The load test (`pnpm reliability:load`) also starts the API and has k6 send 1,000 webhook calls. The chaos test (`pnpm reliability:chaos`) creates 200 runs and kills the worker with SIGKILL ten times while it works, starting a new one after each kill. Both use a five-step workflow: HTTP call, condition, HTTP call, one-second delay, HTTP call. Results are in [reliability.md](reliability.md).
+
+Why this way: the checks look at the database and the receiver, not at log output. Every run must succeed. Every run and step pair must have exactly one succeeded attempt. The set of idempotency keys the receiver executed must equal the set of keys of succeeded HTTP attempts, so a lost step, a doubled step or a side effect from an attempt the engine does not count all fail the test. The receiver honours Idempotency-Key like a real payment API: a repeated key gets the stored reply, and the report counts those redeliveries separately (decision 0012).
+
+Edge cases: the worker scripts use a copy of the production worker whose SSRF guard allows the receiver's loopback port; nothing else differs. k6 sends from 40 loopback addresses so the real webhook rate limit (60 a minute per IP) stays on. The scripts only kill processes they started, by PID.

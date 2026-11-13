@@ -6,7 +6,8 @@ import { runs, workflowVersions } from "./schema";
 export const RUN_QUEUE = "advance-run";
 // "short" keeps at most one queued job per run (singletonKey), so re-sending a run never piles up duplicates.
 // No pg-boss retries: a failed job leaves the run without a lease, and the worker's sweep picks it up again.
-export const RUN_QUEUE_OPTIONS = { policy: "short", retryLimit: 0 } as const;
+// notify wakes a listening worker as soon as a job is sent, instead of at its next poll (2 s): each step is its own job.
+export const RUN_QUEUE_OPTIONS = { policy: "short", retryLimit: 0, notify: true } as const;
 /** pg-boss schedules for schedule triggers send { workflowId } here, keyed by workflow id. */
 export const SCHEDULE_QUEUE = "schedule-trigger";
 
