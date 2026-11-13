@@ -76,6 +76,17 @@ After the seed: `demo@daloy.local`, password `daloy-demo-2026`. The account has 
 
 The choice applies to all AI steps in your workflows and takes effect on the next step, without a restart.
 
+## Build a workflow by describing it
+
+1. Pick a model on the **AI model** page and press Test (see above).
+2. On the workflow list, write what you want under **Build with AI**, for example:
+   "When someone fills my contact form with their name, email and message, thank them by email. If the message is about a payment or invoice, send it to billing@mydomain.com, otherwise to help@mydomain.com."
+3. Press **Build draft**. The editor opens on a new workflow the AI drafted. It is not published.
+4. Change it by chatting in **Ask the AI**, for example "wait one hour before the thank-you email" or "also send me a one-line summary of each message". The canvas updates after each answer.
+5. Check each step, press **Test run draft** (outside calls are mocked), then **Publish**.
+
+The AI only drafts. Nothing runs until you publish, and an invalid draft is refused with the reasons. Small local models get this wrong more often than Gemini or a larger model.
+
 ## Running tests
 
 ```bash

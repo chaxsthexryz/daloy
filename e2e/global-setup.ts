@@ -4,6 +4,7 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import EmbeddedPostgres from "embedded-postgres";
+import { startLlmFake } from "./llm-fake";
 import { startSmtpSink } from "./smtp-sink";
 
 /**
@@ -13,6 +14,7 @@ import { startSmtpSink } from "./smtp-sink";
  */
 export const E2E_PORT = 3100;
 const SMTP_PORT = 2526;
+const LLM_PORT = 2527;
 const root = resolve(import.meta.dirname, "..");
 const win = process.platform === "win32";
 
@@ -63,6 +65,7 @@ export default async function setup() {
   writeFileSync(mailFile, "");
   process.env.E2E_MAIL_FILE = mailFile;
   const smtp = await startSmtpSink(SMTP_PORT, mailFile);
+  const llm = startLlmFake(LLM_PORT);
 
   const env = {
     DATABASE_URL: url,
@@ -72,6 +75,9 @@ export default async function setup() {
     SMTP_HOST: "127.0.0.1",
     SMTP_PORT: String(SMTP_PORT),
     PUBLIC_URL: `http://localhost:${E2E_PORT}`,
+    // The fake model, so AI drafts work without Ollama. AI steps in e2e test runs are mocked anyway.
+    LLM_PROVIDER: "ollama",
+    LLM_BASE_URL: `http://127.0.0.1:${LLM_PORT}`,
   };
   const api = start("api", env);
   await waitFor(`http://localhost:${E2E_PORT}/auth/me`, 60_000);
@@ -82,6 +88,7 @@ export default async function setup() {
     stop(worker);
     stop(api);
     smtp.close();
+    llm.close();
     await pg?.stop();
   };
 }

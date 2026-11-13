@@ -3,6 +3,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { api, ApiError, type Workflow } from "./api";
 import { Editor } from "./Editor";
 import { RunPage, RunsPage } from "./Runs";
+import { BuildWithAi } from "./AiDraft";
 import { SettingsPage } from "./Settings";
 import { TokensPage } from "./Tokens";
 import { VersionsPage } from "./Versions";
@@ -152,6 +153,7 @@ function Workflows({ user, onSignOut }: { user: User; onSignOut: () => void }) {
           {error}
         </p>
       </form>
+      <BuildWithAi />
       <h2>Your workflows</h2>
       {list === null ? (
         <p>Loading…</p>

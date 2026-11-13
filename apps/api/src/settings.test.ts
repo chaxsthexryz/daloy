@@ -5,9 +5,11 @@ import type { INestApplication } from "@nestjs/common";
 import type { Pool } from "pg";
 import { PgBoss } from "pg-boss";
 import request from "supertest";
+import { LlmError } from "@daloy/llm-ts";
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import { freshDatabase } from "../../../test/db";
 import { createApp } from "./app";
+import { explain } from "./settings";
 
 let app: INestApplication;
 let boss: PgBoss;
@@ -98,5 +100,16 @@ it("explains a model it cannot reach", async () => {
   vi.stubEnv("LLM_BASE_URL", "http://127.0.0.1:9");
   const { body } = await (await signedIn()).post("/settings/ai/test").expect(200);
   expect(body.ok).toBe(false);
-  expect(body.error).toMatch(/Could not reach the model/);
+  expect(body.error).toMatch(/Could not connect to the model/);
+});
+
+it.each([
+  [new LlmError("LLM request failed: TimeoutError", true), /took too long/],
+  [new LlmError("LLM request failed: TypeError", true), /Could not connect to the model/],
+  [new LlmError("LLM returned HTTP 503", true), /busy or down/],
+  [new LlmError("LLM returned HTTP 500", true), /busy or down/],
+  [new LlmError("LLM returned HTTP 401", false), /rejected the API key/],
+  [new LlmError("LLM returned HTTP 429", true), /rate limit/],
+])("explains %s in plain words", (err, reason) => {
+  expect(explain(err)).toMatch(reason);
 });

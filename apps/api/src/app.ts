@@ -6,6 +6,7 @@ import type { NestExpressApplication } from "@nestjs/platform-express";
 import cookieParser from "cookie-parser";
 import helmet from "helmet";
 import type { PgBoss } from "pg-boss";
+import { AiDraftController } from "./ai-draft";
 import { ApprovalsController } from "./approvals";
 import { AuthController, SessionGuard } from "./auth";
 import { BOSS, CONFIG, DB, RateLimit, type ApiConfig } from "./http";
@@ -26,7 +27,7 @@ export async function createApp({ db, boss, ...config }: AppOptions) {
   await boss.createQueue(SCHEDULE_QUEUE);
 
   @Module({
-    controllers: [AuthController, WorkflowsController, CatalogController, SecretsController, TokensController, RunsController, HooksController, FormsController, ApprovalsController, McpController, SettingsController],
+    controllers: [AuthController, WorkflowsController, CatalogController, SecretsController, TokensController, RunsController, HooksController, FormsController, ApprovalsController, McpController, SettingsController, AiDraftController],
     providers: [
       { provide: DB, useValue: db },
       { provide: BOSS, useValue: boss },
