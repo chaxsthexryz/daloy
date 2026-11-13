@@ -1,5 +1,6 @@
+import { randomUUID } from "node:crypto";
 import { apiTokens, createRun, runs, stepRuns, triggers, workflows, workflowVersions, type Db } from "@daloy/db";
-import type { FormField } from "@daloy/engine";
+import { OFFICE_REQUEST, type FormField } from "@daloy/engine";
 import { toNodeHandler } from "@modelcontextprotocol/node";
 import { createMcpHandler, McpServer, type AuthInfo, type CallToolResult } from "@modelcontextprotocol/server";
 import { All, type CanActivate, Controller, type ExecutionContext, Inject, Injectable, Req, Res, UnauthorizedException, UseGuards } from "@nestjs/common";
@@ -8,9 +9,10 @@ import type { Request, Response } from "express";
 import type { PgBoss } from "pg-boss";
 import * as z from "zod";
 import { BOSS, DB, enqueueRun, RateLimit, sha256 } from "./http";
-import { fieldsSchema } from "./public";
+import { fieldsSchema, recordRequest } from "./public";
 
-type ToolRow = { slug: string; name: string; versionId: string; fields: FormField[] };
+// tracked: an office request workflow, whose runs also record a request with a reference.
+type ToolRow = { slug: string; name: string; versionId: string; fields: FormField[]; workflowId: string; tracked: boolean };
 
 /** One tool per published form workflow. Slugs use a-z, 0-9 and -, so they never clash with get_run_status. */
 export function toolsFromRows(rows: ToolRow[]) {
@@ -20,6 +22,8 @@ export function toolsFromRows(rows: ToolRow[]) {
     description: `Starts a run of the "${r.name}" workflow with the form fields as input. Returns the run id; check progress with get_run_status.`,
     inputSchema: fieldsSchema(r.fields),
     versionId: r.versionId,
+    workflowId: r.workflowId,
+    tracked: r.tracked,
   }));
 }
 
@@ -91,6 +95,12 @@ export class McpController {
     const server = new McpServer({ name: "daloy", version: "1.0.0" });
     for (const tool of toolsFromRows(await this.formWorkflows(userId))) {
       server.registerTool(tool.name, { title: tool.title, description: tool.description, inputSchema: tool.inputSchema }, async (args) => {
+        if (tool.tracked) {
+          // A tool call has no form attempt to repeat, so each call is its own submission.
+          const { runId, reference } = await recordRequest(this.db, { id: tool.workflowId, userId }, tool.versionId, randomUUID(), args);
+          await enqueueRun(this.boss, runId!);
+          return result({ runId, reference, status: "pending" });
+        }
         const runId = await createRun(this.db, tool.versionId, args);
         await enqueueRun(this.boss, runId);
         return result({ runId, status: "pending" });
@@ -127,12 +137,16 @@ export class McpController {
   /** The owner's workflows with a form trigger and at least one published version, with the latest published one. */
   private async formWorkflows(userId: string): Promise<ToolRow[]> {
     const rows = await this.db
-      .selectDistinctOn([workflows.id], { slug: workflows.slug, name: workflows.name, versionId: workflowVersions.id, config: triggers.config })
+      .selectDistinctOn([workflows.id], { workflowId: workflows.id, slug: workflows.slug, name: workflows.name, setup: workflows.setup, versionId: workflowVersions.id, config: triggers.config })
       .from(workflows)
       .innerJoin(triggers, and(eq(triggers.workflowId, workflows.id), eq(triggers.type, "form")))
       .innerJoin(workflowVersions, and(eq(workflowVersions.workflowId, workflows.id), eq(workflowVersions.published, true)))
       .where(eq(workflows.userId, userId))
       .orderBy(workflows.id, desc(workflowVersions.version));
-    return rows.map(({ config, ...r }) => ({ ...r, fields: (config as { fields: FormField[] }).fields }));
+    return rows.map(({ config, setup, ...r }) => ({
+      ...r,
+      fields: (config as { fields: FormField[] }).fields,
+      tracked: (setup as { template?: string } | null)?.template === OFFICE_REQUEST,
+    }));
   }
 }

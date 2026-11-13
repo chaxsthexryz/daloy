@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
-import { createRun, publishedVersion, SCHEDULE_QUEUE, triggers, workflows, workflowVersions, type Db } from "@daloy/db";
-import { BRANCHES, definitionSchema, stepJsonSchemas, TEMPLATES, type Trigger, type WorkflowDefinition } from "@daloy/engine";
+import { createRun, publishedVersion, requests, runs, SCHEDULE_QUEUE, triggers, workflows, workflowVersions, type Db } from "@daloy/db";
+import { BRANCHES, definitionSchema, OFFICE_REQUEST, setupInput, stepJsonSchemas, TEMPLATES, type Trigger, type WorkflowDefinition } from "@daloy/engine";
 import {
   BadRequestException,
   Body,
@@ -16,7 +16,7 @@ import {
   Post,
   UseGuards,
 } from "@nestjs/common";
-import { and, desc, eq, max } from "drizzle-orm";
+import { and, desc, eq, getTableColumns, max, sql } from "drizzle-orm";
 import type { PgBoss } from "pg-boss";
 import * as z from "zod";
 import { SessionGuard } from "./auth";
@@ -43,9 +43,15 @@ export class WorkflowsController {
     @Inject(BOSS) private readonly boss: PgBoss,
   ) {}
 
+  /** live: the workflow has a published version, which for a guided template means it is accepting requests. */
   @Get()
   list(@CurrentUser() user: SessionUser) {
-    return this.db.select().from(workflows).where(eq(workflows.userId, user.id)).orderBy(desc(workflows.createdAt));
+    const live = sql<boolean>`exists (select 1 from ${workflowVersions} where ${workflowVersions.workflowId} = ${workflows.id} and ${workflowVersions.published})`;
+    return this.db
+      .select({ ...getTableColumns(workflows), live })
+      .from(workflows)
+      .where(eq(workflows.userId, user.id))
+      .orderBy(desc(workflows.createdAt));
   }
 
   @Post()
@@ -73,6 +79,32 @@ export class WorkflowsController {
     await this.owned(user.id, id);
     const [wf] = await this.db.update(workflows).set(body).where(eq(workflows.id, id)).returning();
     return wf;
+  }
+
+  /** Saves guided setup progress, so "Save and finish later" and a closed tab both resume at the same step. */
+  @Patch(":id/setup")
+  async saveSetup(@CurrentUser() user: SessionUser, @Param("id", workflowId) id: string, @Body(new ZodPipe(setupInput)) body: z.output<typeof setupInput>) {
+    await this.owned(user.id, id);
+    const [wf] = await this.db
+      .update(workflows)
+      .set({ setup: { template: OFFICE_REQUEST, ...body } })
+      .where(eq(workflows.id, id))
+      .returning();
+    return wf;
+  }
+
+  /** The office request list: newest first, with the state of the run that sends the notification and the receipt. */
+  @Get(":id/requests")
+  async listRequests(@CurrentUser() user: SessionUser, @Param("id", workflowId) id: string) {
+    await this.owned(user.id, id);
+    const { id: requestId, reference, subject, createdAt, runId } = requests;
+    return this.db
+      .select({ id: requestId, reference, subject, createdAt, runId, runState: runs.state, runError: runs.error })
+      .from(requests)
+      .innerJoin(runs, eq(runs.id, requests.runId))
+      .where(eq(requests.workflowId, id))
+      .orderBy(desc(createdAt))
+      .limit(200);
   }
 
   /** Deletes the workflow with its versions, trigger and run history. */

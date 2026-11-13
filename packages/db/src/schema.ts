@@ -30,6 +30,8 @@ export const workflows = pgTable(
     userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
     slug: text("slug").notNull(),
+    // Guided setup progress ({ template, step, answers }) for workflows made from a guided template. Null for the others.
+    setup: jsonb("setup"),
     createdAt: createdAt(),
   },
   (t) => [unique().on(t.userId, t.slug)],
@@ -156,4 +158,23 @@ export const aiKeys = pgTable(
     updatedAt: ts("updated_at").notNull().defaultNow(),
   },
   (t) => [primaryKey({ columns: [t.userId, t.preset] })],
+);
+
+/**
+ * One row per live submission of a guided office request form. The run carries the reference in its trigger payload.
+ * The unique submission key per form makes a double-click or a phone retry return the first request instead of a new one.
+ */
+export const requests = pgTable(
+  "requests",
+  {
+    id: id(),
+    userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    workflowId: uuid("workflow_id").notNull().references(() => workflows.id, { onDelete: "cascade" }),
+    runId: uuid("run_id").notNull().references(() => runs.id, { onDelete: "cascade" }),
+    reference: text("reference").notNull().unique(),
+    submissionKey: uuid("submission_key").notNull(),
+    subject: text("subject").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [unique().on(t.workflowId, t.submissionKey)],
 );

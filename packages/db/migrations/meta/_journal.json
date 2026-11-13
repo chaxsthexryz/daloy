@@ -43,6 +43,13 @@
       "when": 1794549176140,
       "tag": "0005_ai_keys_per_provider",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1794553784726,
+      "tag": "0006_office_requests",
+      "breakpoints": true
     }
   ]
 }
