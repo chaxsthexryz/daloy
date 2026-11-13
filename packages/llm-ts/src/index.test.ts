@@ -92,3 +92,86 @@ describe("generate", () => {
     await expect(generate(base)).rejects.toMatchObject({ retryable: true });
   });
 });
+
+// LLM_PROVIDER=openai: any OpenAI-compatible chat API (Gemini, LM Studio, llama.cpp, vLLM, OpenRouter).
+describe("generate with LLM_PROVIDER=openai", () => {
+  const okOpenAi = (content: string) =>
+    new Response(JSON.stringify({ choices: [{ message: { role: "assistant", content } }], usage: { prompt_tokens: 30, completion_tokens: 4 } }));
+
+  it("posts to LLM_BASE_URL/chat/completions with the API key as a bearer token", async () => {
+    vi.stubEnv("LLM_PROVIDER", "openai");
+    vi.stubEnv("LLM_BASE_URL", "https://generativelanguage.googleapis.com/v1beta/openai/");
+    vi.stubEnv("LLM_API_KEY", "test-key");
+    const fetch = mockFetch(okOpenAi("hi"));
+
+    const result = await generate(base);
+
+    const [url, init] = fetch.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions");
+    expect(new Headers(init.headers).get("authorization")).toBe("Bearer test-key");
+    const body = JSON.parse(String(init.body));
+    expect(body).toMatchObject({ model: "llama3.2", temperature: 0, max_tokens: 200 });
+    expect(body.messages).toEqual([{ role: "system", content: base.system }, base.messages[0]]);
+    expect(body.response_format).toBeUndefined();
+    expect(body.stream).toBeUndefined();
+    expect(result).toEqual({ text: "hi", usage: { inputTokens: 30, outputTokens: 4 } });
+  });
+
+  it("sends no authorization header without LLM_API_KEY (local servers)", async () => {
+    vi.stubEnv("LLM_PROVIDER", "openai");
+    vi.stubEnv("LLM_API_KEY", "");
+    const fetch = mockFetch(okOpenAi("hi"));
+    await generate(base);
+    const init = (fetch.mock.calls[0] as unknown as [string, RequestInit])[1];
+    expect(new Headers(init.headers).has("authorization")).toBe(false);
+  });
+
+  it("asks for JSON schema output and validates the reply", async () => {
+    vi.stubEnv("LLM_PROVIDER", "openai");
+    const fetch = mockFetch(okOpenAi('{"label":"billing"}'));
+    const schema = z.object({ label: z.enum(["billing", "support"]) });
+
+    const result = await generate({ ...base, schema });
+
+    const body = JSON.parse(String((fetch.mock.calls[0] as unknown as [string, RequestInit])[1].body));
+    expect(body.response_format.type).toBe("json_schema");
+    expect(body.response_format.json_schema.name).toBe("output");
+    expect(body.response_format.json_schema.schema.properties.label.enum).toEqual(["billing", "support"]);
+    expect(body.response_format.json_schema.schema.$schema).toBeUndefined();
+    expect(result.data).toEqual({ label: "billing" });
+  });
+
+  it("rejects a reply that does not match the schema, with its token counts", async () => {
+    vi.stubEnv("LLM_PROVIDER", "openai");
+    mockFetch(okOpenAi('{"label":"spam"}'));
+    await expect(generate({ ...base, schema: z.object({ label: z.enum(["billing"]) }) })).rejects.toMatchObject({
+      retryable: false,
+      invalidOutput: true,
+      usage: { inputTokens: 30, outputTokens: 4 },
+    });
+  });
+
+  it("counts zero tokens when the reply has no usage", async () => {
+    vi.stubEnv("LLM_PROVIDER", "openai");
+    mockFetch(new Response(JSON.stringify({ choices: [{ message: { content: "hi" } }] })));
+    expect((await generate(base)).usage).toEqual({ inputTokens: 0, outputTokens: 0 });
+  });
+
+  it("treats rate limits as retryable and a bad key as final, without echoing the key", async () => {
+    vi.stubEnv("LLM_PROVIDER", "openai");
+    vi.stubEnv("LLM_API_KEY", "test-key");
+    mockFetch(new Response("quota", { status: 429 }));
+    await expect(generate(base)).rejects.toMatchObject({ retryable: true });
+    mockFetch(new Response("bad key test-key", { status: 401 }));
+    const err = (await generate(base).catch((e: unknown) => e)) as LlmError;
+    expect(err.retryable).toBe(false);
+    expect(err.message).not.toContain("test-key");
+  });
+});
+
+it("rejects an unknown LLM_PROVIDER without calling anything", async () => {
+  vi.stubEnv("LLM_PROVIDER", "gemini");
+  const fetch = mockFetch(new Response("{}"));
+  await expect(generate(base)).rejects.toMatchObject({ name: "LlmError", retryable: false, message: expect.stringMatching(/LLM_PROVIDER/) });
+  expect(fetch).not.toHaveBeenCalled();
+});

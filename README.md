@@ -48,7 +48,7 @@ docker compose up -d
 docker compose exec api node_modules/.bin/tsx src/seed.ts
 ```
 
-The console is at http://localhost:3000 (the API serves it). Mailpit's inbox is at http://localhost:8025. Live AI steps need Ollama on the host (`LLM_BASE_URL`); mocked test runs do not.
+The console is at http://localhost:3000 (the API serves it). Mailpit's inbox is at http://localhost:8025. Live AI steps need a model: Ollama on the host by default, or any OpenAI-compatible API such as the Gemini API free tier (`LLM_PROVIDER=openai`, see `.env.example`). Mocked test runs need neither. After changing `.env`, run `docker compose up -d worker`.
 
 Without Docker, the e2e stack runs on an embedded Postgres: start it with `node --input-type=module -e "import s from './e2e/global-setup.ts'; await s()"`, seed it with `SEED_URL=http://localhost:3100 pnpm seed`, and open http://localhost:3100.
 
@@ -80,7 +80,8 @@ CI also runs Semgrep, gitleaks and `pnpm audit` on every push.
 - AI prompts are tested against a fake model server only. Their accuracy with a real model has not been measured. Delimiting and schema checks limit prompt injection but do not stop a model from choosing a wrong label.
 - Anyone who has an unused approval link can approve or reject. The email is the only check on who clicks.
 - An approval timeout is picked up by the worker's 15-second sweep, so it can fire up to 15 seconds late.
-- Every AI step uses the model in `LLM_MODEL`.
+- Every AI step uses the model in `LLM_MODEL`, from one provider for the whole worker.
+- The OpenAI-compatible mode is tested against mocked replies only. It has not been run against the Gemini API or another hosted provider.
 - Run history masks fields by key name. A field called `max_tokens` shows as `[secret]`, and a secret sent in trigger data under an ordinary key name stays visible to the workflow owner.
 - Run history lists the latest 50 runs per workflow, with no paging.
 - The builder lays out steps automatically and nodes cannot be dragged. Steps are added from the side panel, not by drawing edges.

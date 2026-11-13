@@ -45,36 +45,76 @@ type OllamaChatResponse = {
   eval_count?: number;
 };
 
-/** Calls the Ollama chat API. LLM_BASE_URL is read on every call so a gateway can be put in front without code changes. */
+type OpenAiChatResponse = {
+  choices?: { message?: { content?: string | null } }[];
+  usage?: { prompt_tokens?: number; completion_tokens?: number };
+};
+
+// The JSON schema the model must follow. "$schema" is dropped because some OpenAI-compatible servers reject it.
+function jsonSchema(schema: z.ZodType): Record<string, unknown> {
+  const out = z.toJSONSchema(schema) as Record<string, unknown>;
+  delete out.$schema;
+  return out;
+}
+
+/**
+ * Builds the request for LLM_PROVIDER: "ollama" (default, Ollama's /api/chat) or "openai" (any OpenAI-compatible
+ * /chat/completions API, such as Gemini, LM Studio, llama.cpp, vLLM or OpenRouter). LLM_API_KEY, if set, is sent as a
+ * bearer token. All three env vars are read on every call, so a gateway can be put in front without code changes.
+ */
+function request<T>(input: GenerateInput<T>, provider: string, baseUrl: string) {
+  const messages = [{ role: "system", content: input.system }, ...input.messages];
+  if (provider === "ollama") {
+    return {
+      url: `${baseUrl}/api/chat`,
+      body: { model: input.model, stream: false, messages, format: input.schema && jsonSchema(input.schema), options: { temperature: input.temperature, num_predict: input.maxTokens } },
+      read: (b: OllamaChatResponse) => ({ text: b.message?.content ?? "", usage: { inputTokens: b.prompt_eval_count ?? 0, outputTokens: b.eval_count ?? 0 } }),
+    };
+  }
+  if (provider === "openai") {
+    return {
+      url: `${baseUrl}/chat/completions`,
+      body: {
+        model: input.model,
+        messages,
+        temperature: input.temperature,
+        max_tokens: input.maxTokens,
+        response_format: input.schema && { type: "json_schema", json_schema: { name: "output", schema: jsonSchema(input.schema) } },
+      },
+      read: (b: OpenAiChatResponse) => ({
+        text: b.choices?.[0]?.message?.content ?? "",
+        usage: { inputTokens: b.usage?.prompt_tokens ?? 0, outputTokens: b.usage?.completion_tokens ?? 0 },
+      }),
+    };
+  }
+  throw new LlmError(`unknown LLM_PROVIDER "${provider}" (use ollama or openai)`, false);
+}
+
+/** Calls the configured chat API, then checks the reply against input.schema if one is given. */
 export async function generate<T = unknown>(input: GenerateInput<T>): Promise<GenerateResult<T>> {
   const baseUrl = (process.env.LLM_BASE_URL ?? "http://localhost:11434").replace(/\/+$/, "");
+  const apiKey = process.env.LLM_API_KEY;
+  const req = request(input, process.env.LLM_PROVIDER || "ollama", baseUrl);
 
   let res: Response;
   try {
-    res = await fetch(`${baseUrl}/api/chat`, {
+    res = await fetch(req.url, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: { "content-type": "application/json", ...(apiKey ? { authorization: `Bearer ${apiKey}` } : {}) },
       signal: AbortSignal.timeout(input.timeoutMs),
-      body: JSON.stringify({
-        model: input.model,
-        stream: false,
-        messages: [{ role: "system", content: input.system }, ...input.messages],
-        format: input.schema ? z.toJSONSchema(input.schema) : undefined,
-        options: { temperature: input.temperature, num_predict: input.maxTokens },
-      }),
+      body: JSON.stringify(req.body),
     });
   } catch (err) {
     // Timeouts and connection failures are transient.
     throw new LlmError(`LLM request failed: ${(err as Error).name}`, true, { cause: err });
   }
 
+  // Only the status: a provider's error body can echo the request, key included.
   if (!res.ok) {
     throw new LlmError(`LLM returned HTTP ${res.status}`, res.status === 429 || res.status >= 500);
   }
 
-  const body = (await res.json()) as OllamaChatResponse;
-  const text = body.message?.content ?? "";
-  const usage = { inputTokens: body.prompt_eval_count ?? 0, outputTokens: body.eval_count ?? 0 };
+  const { text, usage } = req.read((await res.json()) as OllamaChatResponse & OpenAiChatResponse);
   if (!input.schema) return { text, usage };
 
   let json: unknown;

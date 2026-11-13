@@ -14,11 +14,11 @@ This file explains each core module in plain language: what it does, why it is b
 
 ## LLM client (packages/llm-ts)
 
-What it does: `generate({ system, messages, schema?, model, temperature, maxTokens, timeoutMs })` sends one chat request to Ollama's `/api/chat` endpoint and returns the text, token usage and, when a zod schema is given, the parsed and validated data.
+What it does: `generate({ system, messages, schema?, model, temperature, maxTokens, timeoutMs })` sends one chat request and returns the text, token usage and, when a zod schema is given, the parsed and validated data. `LLM_PROVIDER` picks the API: `ollama` (the default, Ollama's `/api/chat`) or `openai` (any OpenAI-compatible `/chat/completions`, such as the Gemini API, LM Studio, llama.cpp or vLLM). `LLM_API_KEY`, when set, goes in an `Authorization: Bearer` header.
 
-Why this way: the base URL comes from `LLM_BASE_URL` on every call, so a gateway can sit in front of Ollama with a config change only. The schema is sent to Ollama as JSON schema (its `format` field) and checked again with zod on the way back, because a model can still return the wrong shape.
+Why this way: provider, base URL and key are read on every call, so switching between a local model, a hosted free tier and a gateway is a config change only. One OpenAI-compatible mode covers most hosted and local servers, so there is no client per vendor (decision 0015). The schema is sent as JSON schema (Ollama's `format` field, or `response_format` of type `json_schema`) and checked again with zod on the way back, because a model can still return the wrong shape.
 
-Edge cases: every failure throws `LlmError` with a `retryable` flag. Timeouts, network errors, HTTP 429 and 5xx are retryable. Other HTTP errors, non-JSON output and output that fails the schema are not retryable. For the last two, `invalidOutput` is set and `usage` holds the tokens the reply cost, so the AI step can retry once and still record the tokens.
+Edge cases: an unknown `LLM_PROVIDER` fails the step at once without a request. A reply without token counts records 0 tokens. Error messages carry only the HTTP status, never the provider's error body, which can echo the key. Every failure throws `LlmError` with a `retryable` flag. Timeouts, network errors, HTTP 429 and 5xx are retryable. Other HTTP errors, non-JSON output and output that fails the schema are not retryable. For the last two, `invalidOutput` is set and `usage` holds the tokens the reply cost, so the AI step can retry once and still record the tokens.
 
 Tests: `packages/llm-ts/src/index.test.ts` (fetch is mocked, no model needed).
 
