@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { createRun, listDeliveries, PROVIDER_NAMES, publishedVersion, readConnections, requests, runs, SCHEDULE_QUEUE, triggers, workflows, workflowVersions, type Db } from "@daloy/db";
+import { createRun, findApprover, listDeliveries, PROVIDER_NAMES, publishedVersion, readConnections, requests, runs, SCHEDULE_QUEUE, triggers, workflows, workflowVersions, type Db } from "@daloy/db";
 import { BRANCHES, definitionSchema, OFFICE_REQUEST, setupInput, stepJsonSchemas, TEMPLATES, type Trigger, type WorkflowDefinition } from "@daloy/engine";
 import {
   BadRequestException,
@@ -20,7 +20,7 @@ import { and, desc, eq, getTableColumns, max, sql } from "drizzle-orm";
 import type { PgBoss } from "pg-boss";
 import * as z from "zod";
 import { SessionGuard } from "./auth";
-import { BOSS, CurrentUser, DB, enqueueRun, isUniqueViolation, ZodPipe, type SessionUser } from "./http";
+import { Allow, BOSS, CurrentUser, DB, enqueueRun, isUniqueViolation, ZodPipe, type SessionUser, MANAGE, OPERATE } from "./http";
 
 const workflowInput = z.object({
   name: z.string().trim().min(1).max(200),
@@ -36,7 +36,7 @@ const versionNumber = new ZodPipe(z.coerce.number().int().min(1).max(1_000_000))
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
 @Controller("workflows")
-@UseGuards(SessionGuard)
+@UseGuards(SessionGuard, Allow(OPERATE))
 export class WorkflowsController {
   constructor(
     @Inject(DB) private readonly db: Db,
@@ -50,14 +50,15 @@ export class WorkflowsController {
     return this.db
       .select({ ...getTableColumns(workflows), live })
       .from(workflows)
-      .where(eq(workflows.userId, user.id))
+      .where(eq(workflows.userId, user.workspaceId))
       .orderBy(desc(workflows.createdAt));
   }
 
   @Post()
+  @UseGuards(Allow(MANAGE))
   async create(@CurrentUser() user: SessionUser, @Body(new ZodPipe(workflowInput)) body: z.output<typeof workflowInput>) {
     try {
-      const [wf] = await this.db.insert(workflows).values({ userId: user.id, ...body }).returning();
+      const [wf] = await this.db.insert(workflows).values({ userId: user.workspaceId, ...body }).returning();
       return wf;
     } catch (err) {
       if (isUniqueViolation(err)) throw new ConflictException("slug already in use");
@@ -67,7 +68,7 @@ export class WorkflowsController {
 
   @Get(":id")
   async get(@CurrentUser() user: SessionUser, @Param("id", workflowId) id: string) {
-    const wf = await this.owned(user.id, id);
+    const wf = await this.owned(user.workspaceId, id);
     const [trigger] = await this.db.select().from(triggers).where(eq(triggers.workflowId, id));
     // latest is what the builder opens: the newest version, published or draft.
     const [latest] = await this.db.select().from(workflowVersions).where(eq(workflowVersions.workflowId, id)).orderBy(desc(workflowVersions.version)).limit(1);
@@ -75,16 +76,18 @@ export class WorkflowsController {
   }
 
   @Patch(":id")
+  @UseGuards(Allow(MANAGE))
   async rename(@CurrentUser() user: SessionUser, @Param("id", workflowId) id: string, @Body(new ZodPipe(renameInput)) body: z.output<typeof renameInput>) {
-    await this.owned(user.id, id);
+    await this.owned(user.workspaceId, id);
     const [wf] = await this.db.update(workflows).set(body).where(eq(workflows.id, id)).returning();
     return wf;
   }
 
   /** Saves guided setup progress, so "Save and finish later" and a closed tab both resume at the same step. */
   @Patch(":id/setup")
+  @UseGuards(Allow(MANAGE))
   async saveSetup(@CurrentUser() user: SessionUser, @Param("id", workflowId) id: string, @Body(new ZodPipe(setupInput)) body: z.output<typeof setupInput>) {
-    await this.owned(user.id, id);
+    await this.owned(user.workspaceId, id);
     const [wf] = await this.db
       .update(workflows)
       .set({ setup: { template: OFFICE_REQUEST, ...body } })
@@ -99,7 +102,7 @@ export class WorkflowsController {
    */
   @Get(":id/requests")
   async listRequests(@CurrentUser() user: SessionUser, @Param("id", workflowId) id: string) {
-    await this.owned(user.id, id);
+    await this.owned(user.workspaceId, id);
     const { id: requestId, reference, subject, createdAt, runId } = requests;
     const rows = await this.db
       .select({ id: requestId, reference, subject, createdAt, runId, runState: runs.state, runError: runs.error })
@@ -108,22 +111,23 @@ export class WorkflowsController {
       .where(eq(requests.workflowId, id))
       .orderBy(desc(createdAt))
       .limit(200);
-    const all = await listDeliveries(this.db, user.id, rows.map((r) => r.runId));
+    const all = await listDeliveries(this.db, user.workspaceId, rows.map((r) => r.runId));
     return rows.map((r) => ({ ...r, deliveries: all.filter((d) => d.runId === r.runId) }));
   }
 
   /** Deletes the workflow with its versions, trigger and run history. */
   @Delete(":id")
+  @UseGuards(Allow(MANAGE))
   @HttpCode(204)
   async remove(@CurrentUser() user: SessionUser, @Param("id", workflowId) id: string) {
-    await this.owned(user.id, id);
+    await this.owned(user.workspaceId, id);
     await this.boss.unschedule(SCHEDULE_QUEUE, id);
     await this.db.delete(workflows).where(eq(workflows.id, id));
   }
 
   @Get(":id/versions")
   async versions(@CurrentUser() user: SessionUser, @Param("id", workflowId) id: string) {
-    await this.owned(user.id, id);
+    await this.owned(user.workspaceId, id);
     const { version, published, createdAt } = workflowVersions;
     return this.db.select({ id: workflowVersions.id, version, published, createdAt }).from(workflowVersions).where(eq(workflowVersions.workflowId, id)).orderBy(desc(version));
   }
@@ -131,7 +135,7 @@ export class WorkflowsController {
   /** One version with its definition, for the version diff and rollback. */
   @Get(":id/versions/:version")
   async version(@CurrentUser() user: SessionUser, @Param("id", workflowId) id: string, @Param("version", versionNumber) version: number) {
-    await this.owned(user.id, id);
+    await this.owned(user.workspaceId, id);
     const [row] = await this.db
       .select()
       .from(workflowVersions)
@@ -145,11 +149,13 @@ export class WorkflowsController {
    * A rollback in the console posts an old definition here with publish: true, so it becomes a new version.
    */
   @Post(":id/versions")
+  @UseGuards(Allow(MANAGE))
   async addVersion(@CurrentUser() user: SessionUser, @Param("id", workflowId) id: string, @Body(new ZodPipe(versionInput)) body: z.output<typeof versionInput>) {
-    await this.owned(user.id, id);
+    await this.owned(user.workspaceId, id);
     const definition = parseDefinition(body.definition);
 
-    if (body.publish) await this.checkConnections(user.id, definition);
+    if (body.publish) await this.checkConnections(user.workspaceId, definition);
+    if (body.publish) await this.checkApprovers(user.workspaceId, definition);
     // Scheduled first: pg-boss rejects a bad cron here, before anything is saved.
     if (body.publish) await this.syncSchedule(id, definition.trigger);
     return this.saveVersion(id, definition, body.publish);
@@ -160,9 +166,10 @@ export class WorkflowsController {
    * and runs it as a test. http and email steps are mocked unless live is true.
    */
   @Post(":id/test-runs")
+  @UseGuards(Allow(MANAGE))
   @HttpCode(202)
   async testRun(@CurrentUser() user: SessionUser, @Param("id", workflowId) id: string, @Body(new ZodPipe(testRunInput)) body: z.output<typeof testRunInput>) {
-    await this.owned(user.id, id);
+    await this.owned(user.workspaceId, id);
     const definition = parseDefinition(body.definition);
     const [latest] = await this.db.select().from(workflowVersions).where(eq(workflowVersions.workflowId, id)).orderBy(desc(workflowVersions.version)).limit(1);
     const versionId = latest && canonical(latest.definition) === canonical(definition) ? latest.id : (await this.saveVersion(id, definition, false))!.id;
@@ -182,6 +189,16 @@ export class WorkflowsController {
       const where = provider === "slack" ? "pick a channel" : "pick a sheet";
       if (!c || !c.destination) throw new BadRequestException(`Connect ${name} and ${where} in Settings, Business and email before turning this on.`);
       if (c.status !== "active") throw new BadRequestException(`${name} needs to be connected again in Settings, Business and email before turning this on.`);
+    }
+  }
+
+  /** A named approver must be a member who may approve when the workflow is turned on; the worker and the approval page check again later. */
+  private async checkApprovers(workspaceId: string, definition: WorkflowDefinition) {
+    for (const step of definition.steps) {
+      if (step.type !== "approval" || !step.config.approver) continue;
+      if (!(await findApprover(this.db, workspaceId, step.config.approver))) {
+        throw new BadRequestException(`${step.config.approver} can't approve in this workspace. Invite them as an approver on the Team page first.`);
+      }
     }
   }
 
@@ -205,9 +222,10 @@ export class WorkflowsController {
 
   /** The console's "Run" button: runs the live version with the given payload, whatever the trigger type. */
   @Post(":id/runs")
+  @UseGuards(Allow(MANAGE))
   @HttpCode(202)
   async run(@CurrentUser() user: SessionUser, @Param("id", workflowId) id: string, @Body(new ZodPipe(runInput)) body: z.output<typeof runInput>) {
-    await this.owned(user.id, id);
+    await this.owned(user.workspaceId, id);
     const version = await publishedVersion(this.db, id);
     if (!version) throw new ConflictException("publish the workflow first");
     const runId = await createRun(this.db, version.id, body.payload);
@@ -246,7 +264,7 @@ export function canonical(value: unknown): string {
 
 /** Read-only data the builder needs: a form schema per step type, branch labels, and the starter templates. */
 @Controller()
-@UseGuards(SessionGuard)
+@UseGuards(SessionGuard, Allow(OPERATE))
 export class CatalogController {
   @Get("step-schemas")
   stepSchemas() {

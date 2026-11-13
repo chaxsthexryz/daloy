@@ -4,7 +4,7 @@ import { generate, type Message } from "@daloy/llm-ts";
 import { Body, Controller, HttpCode, HttpException, HttpStatus, Inject, Post, UseGuards } from "@nestjs/common";
 import * as z from "zod";
 import { SessionGuard } from "./auth";
-import { CONFIG, CurrentUser, DB, RateLimit, ZodPipe, type ApiConfig, type SessionUser } from "./http";
+import { Allow, CONFIG, CurrentUser, DB, RateLimit, ZodPipe, type ApiConfig, type SessionUser, MANAGE } from "./http";
 import { explain } from "./settings";
 
 const draftInput = z.object({ request: z.string().trim().min(1).max(2000), current: z.unknown().optional() });
@@ -14,7 +14,7 @@ const draftInput = z.object({ request: z.string().trim().min(1).max(2000), curre
  * It only returns a draft: the console shows it in the editor and the user saves or publishes it.
  */
 @Controller("ai")
-@UseGuards(SessionGuard)
+@UseGuards(SessionGuard, Allow(MANAGE))
 export class AiDraftController {
   constructor(
     @Inject(DB) private readonly db: Db,
@@ -25,7 +25,7 @@ export class AiDraftController {
   @HttpCode(200)
   @UseGuards(RateLimit(10))
   async draft(@CurrentUser() user: SessionUser, @Body(new ZodPipe(draftInput)) body: z.output<typeof draftInput>) {
-    const { model, ...connection } = await aiConnection(this.db, this.config.secretsKey, user.id);
+    const { model, ...connection } = await aiConnection(this.db, this.config.secretsKey, user.workspaceId);
     const prompt = draftPrompt(body);
     const messages: Message[] = [...prompt.messages];
     let errors: string[] = [];

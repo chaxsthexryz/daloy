@@ -1,7 +1,7 @@
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { approvals, encryptSecret, hashToken, runs, saveAiSettings, secrets, stepRuns, users, workflows, workflowVersions, type Db } from "@daloy/db";
+import { approvals, encryptSecret, hashToken, joinWorkspace, runs, saveAiSettings, secrets, stepRuns, users, workflows, workflowVersions, type Db } from "@daloy/db";
 import type { Step } from "@daloy/engine";
 import { eq } from "drizzle-orm";
 import nodemailer, { type SendMailOptions, type Transporter } from "nodemailer";
@@ -176,6 +176,42 @@ describe("step executor", () => {
     const [row] = await db.select().from(approvals).where(eq(approvals.stepRunId, sr!.id));
     expect(row!.tokenHash).toBe(hashToken(token!));
     expect(JSON.stringify(out)).not.toContain(token);
+  });
+
+  async function waitingApprovalStep() {
+    const [wf] = await db.insert(workflows).values({ userId, name: "Purchases", slug: `purchases-${randomUUID()}` }).returning();
+    const [v] = await db.insert(workflowVersions).values({ workflowId: wf!.id, version: 1, definition: {} }).returning();
+    const [r] = await db.insert(runs).values({ workflowVersionId: v!.id, state: "running" }).returning();
+    const [sr] = await db.insert(stepRuns).values({ runId: r!.id, stepId: "ask", attempt: 1, state: "running" }).returning();
+    return { runId: r!.id, stepRunId: sr!.id };
+  }
+
+  it("sends a named approval to the approver's sign-in email and stores who may decide (decision 0022)", async () => {
+    const [maria] = await db.insert(users).values({ email: "maria@test.local", passwordHash: "x" }).returning();
+    await joinWorkspace(db, maria!.id, userId, "approver");
+    const { runId, stepRunId } = await waitingApprovalStep();
+    const step: Step = { id: "ask", type: "approval", config: { approver: "maria@test.local", subject: "Buy?", message: "A printer", timeoutSeconds: 3600 } };
+    const out = await executor().execute({ runId, stepRunId, userId, step, attempt: 1, idempotencyKey: `${runId}:ask:1`, ctx: { trigger: {}, steps: {} } });
+    expect(out.input).toMatchObject({ approver: "maria@test.local" });
+    const mail = JSON.parse(sent.at(-1)!) as { to: { address: string }[]; text: string };
+    expect(mail.to.map((t) => t.address)).toEqual(["maria@test.local"]);
+    expect(mail.text).toContain("sign in as maria@test.local");
+    const [row] = await db.select().from(approvals).where(eq(approvals.stepRunId, stepRunId));
+    expect(row!.approverId).toBe(maria!.id);
+  });
+
+  it("fails a named approval, without retrying, when the approver is not a member who may approve", async () => {
+    const [op] = await db.insert(users).values({ email: "operator@test.local", passwordHash: "x" }).returning();
+    await joinWorkspace(db, op!.id, userId, "operator");
+    for (const approver of ["operator@test.local", "nobody@test.local"]) {
+      const { runId, stepRunId } = await waitingApprovalStep();
+      const step: Step = { id: "ask", type: "approval", config: { approver, subject: "Buy?", message: "A printer", timeoutSeconds: 3600 } };
+      const err = await executor()
+        .execute({ runId, stepRunId, userId, step, attempt: 1, idempotencyKey: `${runId}:ask:1`, ctx: { trigger: {}, steps: {} } })
+        .catch((e: unknown) => e);
+      expect(err).toMatchObject({ retryable: false, message: expect.stringContaining("not a member of this workspace who can approve") });
+      expect(await db.select().from(approvals).where(eq(approvals.stepRunId, stepRunId))).toHaveLength(0);
+    }
   });
 });
 

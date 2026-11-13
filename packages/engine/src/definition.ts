@@ -36,12 +36,18 @@ export type HttpConfig = z.infer<typeof httpConfigSchema>;
 export type EmailConfig = z.infer<typeof emailConfigSchema>;
 
 // The approver gets an email with a single-use link. timeoutSeconds later, an unanswered approval takes the timeout branch.
-export const approvalConfigSchema = z.object({
-  to: template(2000).min(1),
-  subject: template(500).min(1),
-  message: template(10_000).min(1),
-  timeoutSeconds: z.int().min(60).max(2_592_000),
-});
+// With `approver` set, only that workspace member can decide, signed in, and the link goes to their sign-in email
+// (decision 0022). Without it, `to` gets a link that whoever holds it can use (decision 0009). The approver is a plain
+// email, not a template, so publishing can check that it names a member who may approve.
+export const approvalConfigSchema = z
+  .object({
+    to: template(2000).min(1).optional(),
+    approver: z.email().max(254).transform((s) => s.toLowerCase()).optional(),
+    subject: template(500).min(1),
+    message: template(10_000).min(1),
+    timeoutSeconds: z.int().min(60).max(2_592_000),
+  })
+  .refine((c) => c.to !== undefined || c.approver !== undefined, { message: "set a recipient (to) or a named approver", path: ["to"] });
 export type ApprovalConfig = z.infer<typeof approvalConfigSchema>;
 
 // Sheets and Slack go to the destination the owner picked in Business and email (decision 0021). The worker queues them

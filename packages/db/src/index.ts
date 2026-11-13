@@ -11,6 +11,7 @@ export * from "./crypto";
 export * from "./deliveries";
 export * from "./mail";
 export * from "./mail-senders";
+export * from "./members";
 export * from "./providers";
 export * from "./runs";
 export * from "./schema";

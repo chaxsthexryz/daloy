@@ -13,6 +13,7 @@ import { ConnectionsController, DeliveriesController } from "./connections";
 import { EmailSettingsController } from "./email-settings";
 import { BOSS, CONFIG, DB, RateLimit, type ApiConfig } from "./http";
 import { McpController } from "./mcp";
+import { MembersController, MyRequestsController } from "./members";
 import { FormsController, HooksController } from "./public";
 import { RunsController } from "./runs";
 import { SecretsController } from "./secrets";
@@ -29,7 +30,7 @@ export async function createApp({ db, boss, ...config }: AppOptions) {
   await boss.createQueue(SCHEDULE_QUEUE);
 
   @Module({
-    controllers: [AuthController, WorkflowsController, CatalogController, SecretsController, TokensController, RunsController, HooksController, FormsController, ApprovalsController, McpController, SettingsController, EmailSettingsController, ConnectionsController, DeliveriesController, AiDraftController],
+    controllers: [AuthController, WorkflowsController, CatalogController, SecretsController, TokensController, RunsController, HooksController, FormsController, ApprovalsController, McpController, SettingsController, EmailSettingsController, ConnectionsController, DeliveriesController, AiDraftController, MembersController, MyRequestsController],
     providers: [
       { provide: DB, useValue: db },
       { provide: BOSS, useValue: boss },

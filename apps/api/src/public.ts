@@ -23,6 +23,7 @@ import type { Request } from "express";
 import type { PgBoss } from "pg-boss";
 import * as z from "zod";
 import { BOSS, CONFIG, DB, enqueueRun, isUniqueViolation, RateLimit, ZodPipe, type ApiConfig } from "./http";
+import { sessionUser } from "./auth";
 
 const HONEYPOT = "website";
 const SUBMISSION_KEY = "submission_key";
@@ -93,7 +94,7 @@ export class FormsController {
   @HttpCode(200)
   @UseGuards(RateLimit(10))
   @Header("Content-Type", "text/html; charset=utf-8")
-  async submit(@Param("id", new ZodPipe(z.uuid())) id: string, @Body() body: Record<string, unknown> | undefined) {
+  async submit(@Param("id", new ZodPipe(z.uuid())) id: string, @Body() body: Record<string, unknown> | undefined, @Req() req: Request) {
     const { fields, versionId, workflow, tracked } = await this.form(id);
     // Bots fill every field. Answer as if it worked so they learn nothing.
     if (body?.[HONEYPOT]) return page("Thanks, we received your message.");
@@ -107,7 +108,11 @@ export class FormsController {
 
     const key = z.uuid().safeParse(body?.[SUBMISSION_KEY]);
     if (!key.success) throw new BadRequestException(`${SUBMISSION_KEY}: reload the form and send it again`);
-    const { reference, runId } = await recordRequest(this.db, workflow, versionId, key.data, parsed.data);
+    // A member of this workspace who is signed in is recorded as the requester, for My requests (decision 0022).
+    // The session cookie is SameSite=Lax, so another site can't post the form as them.
+    const member = await sessionUser(this.db, req);
+    const requestedBy = member?.workspaceId === workflow.userId ? member.id : undefined;
+    const { reference, runId } = await recordRequest(this.db, workflow, versionId, key.data, parsed.data, requestedBy);
     if (runId) await enqueueRun(this.boss, runId);
     return page(
       `<h1>Request received</h1><p>Your reference is <strong>${reference}</strong>. Quote it if you ask about this request. A receipt is on its way to your email.</p><p><a href="">Send another request</a></p>`,
@@ -138,7 +143,7 @@ export const newReference = () => `REQ-${Array.from({ length: 6 }, () => REFEREN
  * Saves the request and its pending run in one transaction. The unique (workflow, submission key) index makes a
  * double-click or a retried post return the first request's reference; runId is set only when this call created it.
  */
-export async function recordRequest(db: Db, workflow: { id: string; userId: string }, versionId: string, submissionKey: string, data: Record<string, unknown>) {
+export async function recordRequest(db: Db, workflow: { id: string; userId: string }, versionId: string, submissionKey: string, data: Record<string, unknown>, requestedBy?: string) {
   const find = () =>
     db
       .select({ reference: requests.reference })
@@ -151,7 +156,7 @@ export async function recordRequest(db: Db, workflow: { id: string; userId: stri
   try {
     const runId = await db.transaction(async (tx) => {
       const [run] = await tx.insert(runs).values({ workflowVersionId: versionId, triggerPayload: { ...data, reference } }).returning({ id: runs.id });
-      await tx.insert(requests).values({ userId: workflow.userId, workflowId: workflow.id, runId: run!.id, reference, submissionKey, subject: String(data.summary ?? "") });
+      await tx.insert(requests).values({ userId: workflow.userId, workflowId: workflow.id, runId: run!.id, reference, submissionKey, subject: String(data.summary ?? ""), requestedBy });
       return run!.id;
     });
     return { reference, runId };

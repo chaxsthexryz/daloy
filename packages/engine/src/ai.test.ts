@@ -92,4 +92,11 @@ describe("approvalConfigSchema", () => {
     expect(approvalConfigSchema.safeParse({ ...ok, timeoutSeconds: 59 }).success).toBe(false);
     expect(approvalConfigSchema.safeParse({ ...ok, timeoutSeconds: 2_592_001 }).success).toBe(false);
   });
+
+  it("takes a named approver instead of a recipient, as a plain email that publishing can check (decision 0022)", () => {
+    const named = { approver: "Maria@Office.example", subject: "Approve?", message: "Buy a printer", timeoutSeconds: 3600 };
+    expect(approvalConfigSchema.parse(named).approver).toBe("maria@office.example");
+    expect(approvalConfigSchema.safeParse({ ...named, approver: "{{trigger.manager}}" }).success).toBe(false);
+    expect(approvalConfigSchema.safeParse({ ...named, approver: undefined }).success).toBe(false);
+  });
 });
