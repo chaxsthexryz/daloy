@@ -12,6 +12,16 @@ test("pick Gemini with a key, then come back and see the key is saved", async ({
   await expect(page.getByLabel("Local model")).toBeChecked();
   await page.getByLabel("Gemini API").check();
   await expect(page.getByLabel("Model name")).toHaveValue("gemini-3.8-flash");
+  // Every suggested model is in the list, and "Other model…" opens a text box.
+  const modelList = page.getByLabel("Model name", { exact: true });
+  await expect(modelList.locator("option")).toHaveText(["gemini-3.8-flash (free)", "gemini-3.6-flash (free)", "gemini-3.5-flash-lite (free)", "gemini-4-hydrogen (free)", "Other model…"]);
+  await expect(page.getByText("Free tier. Built for agents and complex workflows.")).toBeVisible();
+  await modelList.selectOption("Other model…");
+  await page.getByLabel("Other model name").fill("gemini-custom-test");
+  await modelList.selectOption("gemini-3.5-flash-lite");
+  await expect(page.getByLabel("Other model name")).toBeHidden();
+  await expect(page.getByText("Fastest and cheapest.")).toBeVisible();
+  await modelList.selectOption("gemini-3.8-flash");
   await page.getByLabel("API key").fill("AIza-e2e-not-a-real-key");
   await page.getByRole("button", { name: "Save", exact: true }).click();
   await expect(page.getByRole("status")).toHaveText("Saved. Your workflows now use Gemini API, model gemini-3.8-flash.");
