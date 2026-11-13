@@ -55,7 +55,10 @@ function SignIn({ onDone }: { onDone: (u: User) => void }) {
   };
   return (
     <main className="page narrow">
-      <h1>Daloy</h1>
+      <h1 className="brand">
+        <img src="/logo.svg" alt="" width="32" height="32" />
+        Daloy
+      </h1>
       <p className="muted">Build workflows from a trigger and a series of steps.</p>
       <form onSubmit={submit}>
         <h2>{mode === "login" ? "Sign in" : "Create an account"}</h2>
@@ -113,6 +116,7 @@ function Workflows({ user, onSignOut }: { user: User; onSignOut: () => void }) {
   return (
     <main className="page">
       <header className="toolbar plain">
+        <img src="/logo.svg" alt="Daloy" width="28" height="28" />
         <h1>Workflows</h1>
         <span className="muted">{user.email}</span>
         <a href="#/tokens">API tokens</a>
