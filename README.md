@@ -108,6 +108,17 @@ Then tick both in the office request's "Where requests and alerts go" step. The 
 | --- | --- | --- | --- | --- |
 | Google Sheets | Add one row per request, reference in column A | Service account key, sheet shared as Editor | Pass (`test/fake-providers.ts`) | Not run |
 | Slack | Post reference and subject to one channel | Slack app bot token, app in the channel | Pass (`test/fake-providers.ts`) | Not run |
+| Outlook | Send the purchase request emails from the office mailbox | Entra app for the installation, owner's consent (an administrator may have to approve) | Pass (`test/fake-providers.ts`) | Not run, no Microsoft account available |
+| Teams | Post reference and item to one channel when a purchase is approved | A Teams Workflows flow "Post to a channel when a webhook request is received" | Pass (`test/fake-providers.ts`) | Not run, no Microsoft account available |
+
+## Outlook, Teams and purchase requests
+
+**Set up purchase requests** on the home screen: staff ask to buy something, the member you name approves or rejects it in Daloy, and approved requests go to purchasing. It runs on the local mail server out of the box. A Microsoft office can also connect, under **Business and email**, **Connections**:
+
+- Outlook: whoever runs Daloy registers a free Microsoft Entra app (redirect URI `<PUBLIC_URL>/settings/connections/outlook/callback`, delegated Graph permissions `Mail.Send`, `User.Read`, `offline_access`) and sets `MICROSOFT_CLIENT_ID` and `MICROSOFT_CLIENT_SECRET` (see `.env.example`). The owner then selects **Connect Outlook** and consents. If their organization only lets administrators approve apps, the panel gives the link to send them.
+- Teams: in Teams, create a workflow from "Post to a channel when a webhook request is received" for the channel, and paste its link with the channel's name. **Send a test message** posts once.
+
+Tick them in the template's "Where approved requests go" step. Each email and note is a delivery with its own state and **Retry** in the Requests list. The manual check against real accounts is in [docs/live-microsoft-check.md](docs/live-microsoft-check.md).
 
 ## Build a workflow by describing it
 
@@ -145,6 +156,10 @@ CI also runs Semgrep, gitleaks and `pnpm audit` on every push.
 - Google Sheets and Slack are tested against a local fake only. The live check in [docs/live-sheets-slack-check.md](docs/live-sheets-slack-check.md) has not been run.
 - Sheets connects with a service account key, not Google sign-in. Some Google Workspace organisations block creating service account keys.
 - One sheet and one Slack channel per account. Only public channels are listed, and only the first 200.
+- Outlook and Teams are tested against a local fake only. The live check in [docs/live-microsoft-check.md](docs/live-microsoft-check.md) has not been run, because no Microsoft account was available.
+- Outlook needs an Entra app registered for the installation. One mailbox and one Teams channel per account. A Teams note shows "accepted by Teams": Workflows posts it afterwards, and a failure inside the flow only shows in Teams.
+- An ambiguous Outlook send waits for Mark as sent or Send again; Daloy has no permission to read Sent Items.
+- The purchase request's approval email goes through the Business and email sender, not Outlook.
 - An ambiguous Slack post (the call timed out) waits for someone to choose Mark as posted or Post again; Daloy cannot look in the channel.
 - A run with Sheets or Slack steps succeeds once the deliveries are queued. Their outcome shows in the Requests list and `GET /deliveries?runId=`, not in the run's own state.
 - Saving a website address connects nothing. A client's existing website form keeps working on its own; only Daloy's hosted inquiry form starts the automation.

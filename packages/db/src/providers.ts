@@ -2,7 +2,7 @@ import { createHash, createSign } from "node:crypto";
 import * as z from "zod";
 
 /**
- * Google Sheets and Slack, called with fetch. Every failure becomes a ProviderError whose kind says what the caller
+ * Google Sheets, Slack, Outlook (Microsoft Graph) and Teams Workflows, called with fetch. Every failure becomes a ProviderError whose kind says what the caller
  * should do (decision 0021):
  * - auth: the credential no longer works. Stop using the connection until the owner reconnects.
  * - permission: this destination refused (sheet not shared, app not in the channel). Fix it, then retry.
@@ -23,11 +23,30 @@ export class ProviderError extends Error {
 }
 
 /** Where the providers live. The env vars exist so tests and the e2e suite can point at local fakes. */
-export type ProviderUrls = { googleToken: string; sheets: string; slack: string; timeoutMs?: number };
+export type ProviderUrls = {
+  googleToken: string;
+  sheets: string;
+  slack: string;
+  microsoftLogin?: string;
+  graph?: string;
+  /** Host suffixes a Teams Workflows URL may use. 127.0.0.1 (tests only) is the one host allowed over http. */
+  teamsHosts?: string[];
+  /** The installation's own Microsoft Entra app, for Outlook consent. Unset: Outlook is not offered (decision 0023). */
+  microsoft?: { clientId: string; clientSecret: string; tenant: string };
+  timeoutMs?: number;
+};
+const trim = (url: string) => url.replace(/\/+$/, "");
 export const providerUrls = (env: NodeJS.ProcessEnv = process.env): ProviderUrls => ({
   googleToken: env.GOOGLE_TOKEN_URL ?? "https://oauth2.googleapis.com/token",
-  sheets: (env.GOOGLE_SHEETS_URL ?? "https://sheets.googleapis.com").replace(/\/+$/, ""),
-  slack: (env.SLACK_API_URL ?? "https://slack.com").replace(/\/+$/, ""),
+  sheets: trim(env.GOOGLE_SHEETS_URL ?? "https://sheets.googleapis.com"),
+  slack: trim(env.SLACK_API_URL ?? "https://slack.com"),
+  microsoftLogin: trim(env.MICROSOFT_LOGIN_URL ?? "https://login.microsoftonline.com"),
+  graph: trim(env.MICROSOFT_GRAPH_URL ?? "https://graph.microsoft.com"),
+  teamsHosts: (env.TEAMS_WEBHOOK_HOSTS ?? "logic.azure.com,powerplatform.com").split(",").map((h) => h.trim().toLowerCase()).filter(Boolean),
+  microsoft:
+    env.MICROSOFT_CLIENT_ID && env.MICROSOFT_CLIENT_SECRET
+      ? { clientId: env.MICROSOFT_CLIENT_ID, clientSecret: env.MICROSOFT_CLIENT_SECRET, tenant: env.MICROSOFT_TENANT || "organizations" }
+      : undefined,
 });
 
 type Reply = { status: number; headers: Headers; body: Record<string, unknown> };
@@ -199,4 +218,178 @@ export async function slackChannels(urls: ProviderUrls, token: string) {
 export async function slackPost(urls: ProviderUrls, token: string, channel: string, text: string) {
   const body = await slackCall(urls, token, "chat.postMessage", { channel, text, unfurl_links: "false" }, true);
   return { channel: String(body.channel), ts: String(body.ts) };
+}
+
+// ---------------------------------------------------------------- Microsoft: Outlook through Graph, and Teams Workflows
+
+/** Delegated permissions for Outlook: send as the signed-in mailbox, keep access without a sign-in each time, read the address. */
+export const OUTLOOK_SCOPES = "offline_access https://graph.microsoft.com/Mail.Send https://graph.microsoft.com/User.Read";
+
+function microsoftApp(urls: ProviderUrls) {
+  if (!urls.microsoft || !urls.microsoftLogin) throw new ProviderError("Outlook is not set up on this installation. Set MICROSOFT_CLIENT_ID and MICROSOFT_CLIENT_SECRET.", "invalid");
+  return { ...urls.microsoft, base: `${urls.microsoftLogin}/${encodeURIComponent(urls.microsoft.tenant)}` };
+}
+
+/** The Microsoft sign-in and consent page, with PKCE (S256). */
+export function outlookAuthorizeUrl(urls: ProviderUrls, o: { redirectUri: string; state: string; codeChallenge: string }) {
+  const app = microsoftApp(urls);
+  const q = new URLSearchParams({
+    client_id: app.clientId,
+    response_type: "code",
+    redirect_uri: o.redirectUri,
+    response_mode: "query",
+    scope: OUTLOOK_SCOPES,
+    state: o.state,
+    code_challenge: o.codeChallenge,
+    code_challenge_method: "S256",
+    prompt: "select_account",
+  });
+  return `${app.base}/oauth2/v2.0/authorize?${q}`;
+}
+
+/** The page an administrator opens to approve Daloy for the whole organization. */
+export function outlookAdminConsentUrl(urls: ProviderUrls, redirectUri: string) {
+  const app = microsoftApp(urls);
+  const q = new URLSearchParams({ client_id: app.clientId, redirect_uri: redirectUri, scope: "https://graph.microsoft.com/Mail.Send https://graph.microsoft.com/User.Read" });
+  return `${app.base}/v2.0/adminconsent?${q}`;
+}
+
+/**
+ * What a consent error on the way back means. Microsoft answers access_denied both when the person said no and when
+ * tenant policy blocks user consent, so the AADSTS code in the description decides.
+ */
+export function consentOutcome(error: string, description = ""): "admin_required" | "declined" | "failed" {
+  if (/AADSTS(90094|90095|900941|65002)/.test(description) || /admin/i.test(description)) return "admin_required";
+  if (error === "access_denied" || error === "consent_required" || /AADSTS65004/.test(description)) return "declined";
+  return "failed";
+}
+
+type MsTokens = { accessToken: string; refreshToken: string; expiresIn: number };
+
+/** The token endpoint, for the authorization code and for refresh. invalid_grant and friends mean the owner must reconnect. */
+async function microsoftToken(urls: ProviderUrls, params: Record<string, string>): Promise<MsTokens> {
+  const app = microsoftApp(urls);
+  const body = new URLSearchParams({ client_id: app.clientId, client_secret: app.clientSecret, scope: OUTLOOK_SCOPES, ...params });
+  const res = await call(`${app.base}/oauth2/v2.0/token`, { method: "POST", body }, urls.timeoutMs ?? 10_000, false, "Microsoft sign-in");
+  if (res.status === 200 && typeof res.body.access_token === "string" && typeof res.body.refresh_token === "string") {
+    return { accessToken: res.body.access_token, refreshToken: res.body.refresh_token, expiresIn: typeof res.body.expires_in === "number" ? res.body.expires_in : 3600 };
+  }
+  const error = String(res.body.error ?? "");
+  const description = String(res.body.error_description ?? "");
+  if (res.status === 429) throw new ProviderError("Microsoft sign-in is limiting requests right now. Daloy will try again.", "quota", retryAfter(res.headers));
+  if (res.status >= 500) throw new ProviderError(`Microsoft sign-in answered ${res.status}. Daloy will try again.`, "unavailable");
+  if (error === "invalid_client") throw new ProviderError("Microsoft rejected this installation's app settings (MICROSOFT_CLIENT_ID or MICROSOFT_CLIENT_SECRET).", "invalid");
+  if (consentOutcome(error, description) === "admin_required") {
+    throw new ProviderError("Your organization now requires an administrator to approve Daloy. Ask them to approve it, then reconnect Outlook.", "auth");
+  }
+  // invalid_grant (expired or revoked), interaction_required (password changed, policy), consent withdrawn.
+  throw new ProviderError("Microsoft no longer accepts Daloy's access to this mailbox. It may have been revoked or expired. Reconnect Outlook.", "auth");
+}
+
+export const outlookCodeTokens = (urls: ProviderUrls, code: string, codeVerifier: string, redirectUri: string) =>
+  microsoftToken(urls, { grant_type: "authorization_code", code, code_verifier: codeVerifier, redirect_uri: redirectUri });
+
+// Access tokens by refresh token hash, in memory, so a burst of deliveries signs in once. shortcut: per process.
+const msTokenCache = new Map<string, { token: string; expiresAt: number }>();
+const hash = (s: string) => createHash("sha256").update(s).digest("hex");
+
+function graphFailure(res: Reply, write: boolean): ProviderError {
+  const err = (res.body.error ?? {}) as { code?: unknown; message?: unknown };
+  const code = String(err.code ?? "");
+  const said = err.message ? ` Microsoft said: ${String(err.message)}` : "";
+  if (res.status === 401) return new ProviderError("Microsoft did not accept Daloy's access. Reconnect Outlook.", "auth");
+  if (res.status === 403 || code === "MailboxNotEnabledForRESTAPI" || code === "ErrorSendAsDenied") {
+    return new ProviderError(`The mailbox refused to send (${code || res.status}). It may have no Exchange Online licence, or a policy blocks sending.${said}`, "permission");
+  }
+  if (res.status === 429 || code === "ErrorQuotaExceeded") return new ProviderError("Outlook is limiting how much this mailbox sends right now. Daloy will try again.", "quota", retryAfter(res.headers));
+  if (res.status >= 500) return new ProviderError(`Outlook answered ${res.status}.`, write ? "ambiguous" : "unavailable");
+  return new ProviderError(`Outlook rejected the message${said || ` (${res.status})`}.`, "invalid");
+}
+
+/**
+ * A Graph call as the connected mailbox. Signs in with the stored refresh token, saves the new one Microsoft hands
+ * back (saveRefreshToken), and after a 401 (an access token that expired early) signs in once more.
+ */
+async function graph(urls: ProviderUrls, refreshToken: string, saveRefreshToken: (t: string) => Promise<void>, path: string, init: RequestInit, write: boolean): Promise<Reply> {
+  let current = refreshToken;
+  for (let tries = 0; ; tries++) {
+    let cached = msTokenCache.get(hash(current));
+    if (!cached || cached.expiresAt < Date.now() + 60_000) {
+      const t = await microsoftToken(urls, { grant_type: "refresh_token", refresh_token: current });
+      cached = { token: t.accessToken, expiresAt: Date.now() + t.expiresIn * 1000 };
+      if (t.refreshToken !== current) {
+        await saveRefreshToken(t.refreshToken);
+        current = t.refreshToken;
+      }
+      msTokenCache.set(hash(current), cached);
+    }
+    const res = await call(`${urls.graph}${path}`, { ...init, headers: { ...init.headers, authorization: `Bearer ${cached.token}` } }, urls.timeoutMs ?? 10_000, write, "Outlook");
+    if (res.status === 200 || res.status === 202) return res;
+    if (res.status === 401 && tries === 0) {
+      msTokenCache.delete(hash(current));
+      continue;
+    }
+    throw graphFailure(res, write);
+  }
+}
+
+/** The mailbox the owner consented with: its address is what the connection shows and where the test email goes. */
+export async function outlookMailbox(urls: ProviderUrls, accessToken: string) {
+  const res = await call(`${urls.graph}/v1.0/me?$select=mail,userPrincipalName,displayName`, { headers: { authorization: `Bearer ${accessToken}` } }, urls.timeoutMs ?? 10_000, false, "Outlook");
+  if (res.status !== 200) throw graphFailure(res, false);
+  return String(res.body.mail || res.body.userPrincipalName || "");
+}
+
+export type OutlookMessage = { to: string; subject: string; text: string };
+
+/** sendMail answers 202 with no body and no message id, so there is nothing to look up afterwards. A copy goes to Sent Items. */
+export async function outlookSend(urls: ProviderUrls, refreshToken: string, saveRefreshToken: (t: string) => Promise<void>, m: OutlookMessage) {
+  const message = { subject: m.subject, body: { contentType: "Text", content: m.text }, toRecipients: m.to.split(",").map((a) => ({ emailAddress: { address: a.trim() } })) };
+  await graph(urls, refreshToken, saveRefreshToken, "/v1.0/me/sendMail", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ message, saveToSentItems: true }) }, true);
+  return { to: m.to, sent: true };
+}
+
+/**
+ * A Teams Workflows webhook URL, checked before it is stored or called: https on a Microsoft host (127.0.0.1 is allowed
+ * over http only when a test lists it). The URL itself is the credential, so it is stored encrypted and never shown.
+ */
+export function teamsWebhookUrl(urls: ProviderUrls, input: string): string | null {
+  let u: URL;
+  try {
+    u = new URL(input.trim());
+  } catch {
+    return null;
+  }
+  const host = u.hostname.toLowerCase();
+  const allowed = (urls.teamsHosts ?? []).some((h) => host === h || host.endsWith(`.${h}`));
+  const scheme = u.protocol === "https:" || (u.protocol === "http:" && host === "127.0.0.1");
+  return allowed && scheme && !u.username && !u.password ? u.toString() : null;
+}
+
+/**
+ * Posts an Adaptive Card with the text. Workflows answers 202 when it accepts the request and posts to the channel
+ * afterwards, so "accepted" is all Daloy can know; a failure inside the flow shows in the flow's run history in Teams.
+ */
+export async function teamsPost(urls: ProviderUrls, webhookUrl: string, text: string) {
+  const url = teamsWebhookUrl(urls, webhookUrl);
+  if (!url) throw new ProviderError("The Teams workflow link is not a Microsoft Workflows address. Paste the link again.", "auth");
+  const card = {
+    type: "message",
+    attachments: [
+      {
+        contentType: "application/vnd.microsoft.card.adaptive",
+        contentUrl: null,
+        content: { $schema: "http://adaptivecards.io/schemas/adaptive-card.json", type: "AdaptiveCard", version: "1.4", body: text.split("\n").map((line) => ({ type: "TextBlock", text: line, wrap: true })) },
+      },
+    ],
+  };
+  const res = await call(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(card) }, urls.timeoutMs ?? 10_000, true, "Teams");
+  if (res.status === 200 || res.status === 202) return { accepted: true };
+  if (res.status === 404) throw new ProviderError("The Teams workflow was deleted or turned off. Create it again in Teams and paste the new link.", "auth");
+  if (res.status === 401 || res.status === 403) {
+    throw new ProviderError("The Teams workflow only accepts signed-in callers. In the workflow's trigger, set Who can trigger the flow to Anyone, or ask your Teams administrator.", "permission");
+  }
+  if (res.status === 429) throw new ProviderError("Teams is limiting requests right now. Daloy will try again.", "quota", retryAfter(res.headers));
+  if (res.status >= 500) throw new ProviderError(`Teams answered ${res.status}.`, "ambiguous");
+  throw new ProviderError(`Teams rejected the card (${res.status}). Check that the workflow posts the card it receives.`, "invalid");
 }

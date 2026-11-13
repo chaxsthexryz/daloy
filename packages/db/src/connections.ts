@@ -3,7 +3,7 @@ import { decryptSecret, encryptSecret } from "./crypto";
 import type { Db } from "./index";
 import { connections, type Provider } from "./schema";
 
-export const PROVIDER_NAMES: Record<Provider, string> = { google_sheets: "Google Sheets", slack: "Slack" };
+export const PROVIDER_NAMES: Record<Provider, string> = { google_sheets: "Google Sheets", slack: "Slack", outlook: "Outlook", teams: "Microsoft Teams" };
 
 // The owner id is in the associated data (crypto.ts), so a credential copied to another owner's row does not decrypt.
 const secretName = (provider: Provider) => `connection:${provider}`;
@@ -38,6 +38,15 @@ export async function connectionCredential(db: Db, key: Buffer, userId: string, 
   if (!row) return null;
   const credential = decryptSecret(key, userId, secretName(provider), { ciphertext: row.credentialCiphertext, iv: row.credentialIv, authTag: row.credentialAuthTag });
   return { credential, status: row.status, account: row.account, destination: row.destination };
+}
+
+/** Stores a credential the provider replaced, such as Microsoft's rotated refresh token. Status and destination stay. */
+export async function updateCredential(db: Db, key: Buffer, userId: string, provider: Provider, credential: string) {
+  const e = encryptSecret(key, userId, secretName(provider), credential);
+  await db
+    .update(connections)
+    .set({ credentialCiphertext: e.ciphertext, credentialIv: e.iv, credentialAuthTag: e.authTag, updatedAt: new Date() })
+    .where(and(eq(connections.userId, userId), eq(connections.provider, provider)));
 }
 
 export async function setDestination(db: Db, userId: string, provider: Provider, destination: Record<string, string>) {

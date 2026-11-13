@@ -1,10 +1,10 @@
-import { createPublicKey, createVerify, type KeyObject } from "node:crypto";
+import { createHash, createPublicKey, createVerify, type KeyObject } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 
 /**
- * A fake Google (token endpoint and Sheets API) and Slack Web API on one local port, for tests. Nothing here talks to
- * the real services. The Google side checks the service account's JWT signature, so a wrong key fails like it would.
+ * A fake Google (token endpoint and Sheets API), Slack Web API, Microsoft sign-in, Microsoft Graph and Teams Workflows
+ * on one local port, for tests. Nothing here talks to the real services. The Google side checks the service account's JWT signature, so a wrong key fails like it would.
  *
  * once(path, behaviour) makes the next matching call misbehave:
  * - { status, body, headers }: answer with that instead.
@@ -21,6 +21,20 @@ export async function startFakeProviders(port = 0) {
   const tokens = new Map<string, string>(); // access token -> email
   const sheets = new Map<string, { title: string; tabs: Map<string, string[][]>; editors: Set<string> }>();
   const slack = { token: "", team: "Lim Dental", channels: [{ id: "C0REQ", name: "office-requests", is_member: true }], messages: [] as { channel: string; text: string; ts: string }[], revoked: false };
+  // Microsoft: consent decides what the authorize page answers. Every refresh hands out a new refresh token; like the
+  // real service, the old one keeps working until it is revoked (refreshTokens.clear()).
+  const microsoft = {
+    clientId: "fake-client-id",
+    clientSecret: "fake-client-secret",
+    user: { mail: "ana@contoso.example", displayName: "Ana Lim" },
+    consent: "grant" as "grant" | "admin_required" | "declined",
+    mailboxEnabled: true,
+    codes: new Map<string, { challenge: string; redirectUri: string; scope: string }>(),
+    refreshTokens: new Set<string>(),
+    accessTokens: new Set<string>(),
+    sent: [] as { to: string; subject: string; text: string }[],
+  };
+  const teams = { flows: new Set(["flow-purchasing"]), posts: [] as { flow: string; text: string }[] };
   const pending: { path: string; behaviour: Behaviour }[] = [];
   const calls: string[] = [];
   const hanging = new Set<ServerResponse>();
@@ -60,8 +74,93 @@ export async function startFakeProviders(port = 0) {
 
     // For the e2e suite, whose tests run in other processes: read counts, and take the Slack app out of the channel.
     if (path === "/__control") {
-      if (req.method === "POST") slack.channels[0]!.is_member = (JSON.parse(raw) as { slackMember: boolean }).slackMember;
-      return json(res, 200, { sheetRows: [...sheets.values()].flatMap((s) => [...s.tabs.values()].flat()).length, slackMessages: slack.messages.map((m) => m.text) });
+      if (req.method === "POST") {
+        const c = JSON.parse(raw) as { slackMember?: boolean; microsoftConsent?: typeof microsoft.consent };
+        if (c.slackMember !== undefined) slack.channels[0]!.is_member = c.slackMember;
+        if (c.microsoftConsent) microsoft.consent = c.microsoftConsent;
+      }
+      return json(res, 200, {
+        sheetRows: [...sheets.values()].flatMap((s) => [...s.tabs.values()].flat()).length,
+        slackMessages: slack.messages.map((m) => m.text),
+        outlookMessages: microsoft.sent,
+        teamsPosts: teams.posts.map((p) => p.text),
+      });
+    }
+
+    // Microsoft identity platform v2.0, for any tenant: authorize (consents at once, or answers like a blocked
+    // tenant), token (authorization code with PKCE, and refresh), and the admin consent page.
+    const msPath = /^\/ms\/[^/]+\/(v2\.0\/adminconsent|oauth2\/v2\.0\/authorize|oauth2\/v2\.0\/token)$/.exec(path)?.[1];
+    if (msPath === "v2.0/adminconsent") {
+      const back = new URL(url.searchParams.get("redirect_uri") ?? "http://invalid");
+      back.searchParams.set("admin_consent", "True");
+      back.searchParams.set("tenant", "contoso");
+      res.writeHead(302, { location: back.toString() }).end();
+      return;
+    }
+    if (msPath === "oauth2/v2.0/authorize") {
+      const q = url.searchParams;
+      const back = new URL(q.get("redirect_uri") ?? "http://invalid");
+      back.searchParams.set("state", q.get("state") ?? "");
+      if (microsoft.consent === "admin_required") {
+        back.searchParams.set("error", "access_denied");
+        back.searchParams.set("error_description", "AADSTS90094: The grant requires admin permission.");
+      } else if (microsoft.consent === "declined") {
+        back.searchParams.set("error", "access_denied");
+        back.searchParams.set("error_description", "AADSTS65004: User declined to consent to access the app.");
+      } else {
+        const code = `code-${++seq}`;
+        microsoft.codes.set(code, { challenge: q.get("code_challenge") ?? "", redirectUri: q.get("redirect_uri") ?? "", scope: q.get("scope") ?? "" });
+        back.searchParams.set("code", code);
+      }
+      res.writeHead(302, { location: back.toString() }).end();
+      return;
+    }
+    if (msPath === "oauth2/v2.0/token") {
+      const form = new URLSearchParams(raw);
+      const msError = (error: string, description: string) => json(res, 400, { error, error_description: description });
+      if (form.get("client_id") !== microsoft.clientId || form.get("client_secret") !== microsoft.clientSecret) return msError("invalid_client", "AADSTS7000215: Invalid client secret provided.");
+      if (form.get("grant_type") === "authorization_code") {
+        const c = microsoft.codes.get(form.get("code") ?? "");
+        microsoft.codes.delete(form.get("code") ?? "");
+        const verifier = form.get("code_verifier") ?? "";
+        if (!c || c.redirectUri !== form.get("redirect_uri") || createHash("sha256").update(verifier).digest("base64url") !== c.challenge) {
+          return msError("invalid_grant", "AADSTS70008: The provided authorization code or refresh token has expired or is invalid.");
+        }
+      } else if (form.get("grant_type") === "refresh_token") {
+        if (!microsoft.refreshTokens.has(form.get("refresh_token") ?? "")) return msError("invalid_grant", "AADSTS50173: The provided grant has expired due to it being revoked.");
+      } else return msError("unsupported_grant_type", "AADSTS70003");
+      const access = `ms-access-${++seq}`;
+      const refresh = `ms-refresh-${++seq}`;
+      microsoft.accessTokens.add(access);
+      microsoft.refreshTokens.add(refresh);
+      return json(res, 200, { token_type: "Bearer", access_token: access, refresh_token: refresh, expires_in: 3599, scope: "Mail.Send User.Read" });
+    }
+
+    // Microsoft Graph v1.0: /me and /me/sendMail (202 with no body, like the real one).
+    if (path === "/graph/v1.0/me" || path === "/graph/v1.0/me/sendMail") {
+      if (!microsoft.accessTokens.has((req.headers.authorization ?? "").replace(/^Bearer /, ""))) {
+        return json(res, 401, { error: { code: "InvalidAuthenticationToken", message: "Access token has expired or is not yet valid." } });
+      }
+      if (req.method === "GET") return json(res, 200, { displayName: microsoft.user.displayName, mail: microsoft.user.mail, userPrincipalName: microsoft.user.mail });
+      if (!microsoft.mailboxEnabled) return json(res, 403, { error: { code: "ErrorAccessDenied", message: "Access is denied. Check credentials and try again." } });
+      const { message } = JSON.parse(raw) as { message: { subject: string; body: { content: string }; toRecipients: { emailAddress: { address: string } }[] } };
+      microsoft.sent.push({ to: message.toRecipients.map((r) => r.emailAddress.address).join(","), subject: message.subject, text: message.body.content });
+      if (behaviour === "hang-after") return void hanging.add(res);
+      res.writeHead(202).end();
+      return;
+    }
+
+    // Teams Workflows, "When a Teams webhook request is received": 202 for a known flow, 404 once it is deleted.
+    const flow = /^\/teams\/workflows\/([\w-]+)$/.exec(path)?.[1];
+    if (flow) {
+      if (!teams.flows.has(flow)) return json(res, 404, { error: { code: "WorkflowNotFound", message: `The workflow ${flow} could not be found.` } });
+      const card = JSON.parse(raw) as { attachments?: { content?: { body?: { text?: string }[] } }[] };
+      const text = card.attachments?.[0]?.content?.body?.map((b) => b.text ?? "").join("\n");
+      if (!text) return json(res, 400, { error: { code: "InvalidRequestContent", message: "The request content is not valid." } });
+      teams.posts.push({ flow, text });
+      if (behaviour === "hang-after") return void hanging.add(res);
+      res.writeHead(202).end();
+      return;
     }
 
     // Google OAuth token endpoint (JWT bearer grant).
@@ -120,9 +219,12 @@ export async function startFakeProviders(port = 0) {
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 
   return {
-    urls: { googleToken: `${base}/token`, sheets: base, slack: base },
+    urls: { googleToken: `${base}/token`, sheets: base, slack: base, microsoftLogin: `${base}/ms`, graph: `${base}/graph`, teamsHosts: ["127.0.0.1"] },
     calls,
     slack,
+    microsoft,
+    teams,
+    teamsUrl: (flowId: string) => `${base}/teams/workflows/${flowId}`,
     /** Registers a service account key with Google. */
     addServiceAccount: (email: string, publicKeyPem: string) => {
       revoked.delete(email);

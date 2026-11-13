@@ -1,6 +1,6 @@
 import { createHmac, randomInt, randomUUID, timingSafeEqual } from "node:crypto";
 import { businessProfiles, createRun, publishedVersion, readSecret, requests, runs, triggers, workflows, type Db } from "@daloy/db";
-import { OFFICE_REQUEST, type FormField } from "@daloy/engine";
+import { OFFICE_REQUEST, PURCHASE_REQUEST, type FormField } from "@daloy/engine";
 import {
   BadRequestException,
   Body,
@@ -129,7 +129,9 @@ export class FormsController {
       .where(and(eq(triggers.id, id), eq(triggers.type, "form")));
     const version = row && (await publishedVersion(this.db, row.trigger.workflowId));
     if (!row || !version) throw new NotFoundException();
-    const tracked = (row.workflow.setup as { template?: string } | null)?.template === OFFICE_REQUEST;
+    // Both guided templates record a request with a reference; a custom form only starts a run.
+    const template = (row.workflow.setup as { template?: string } | null)?.template;
+    const tracked = template === OFFICE_REQUEST || template === PURCHASE_REQUEST;
     return { fields: (row.trigger.config as { fields: FormField[] }).fields, versionId: version.id, workflow: row.workflow, tracked, businessName: row.businessName };
   }
 }

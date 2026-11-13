@@ -7,6 +7,8 @@ Kept current with each phase. A mitigation marked "planned" does not exist in co
 - Stored secrets (API keys and SMTP credentials that workflows use)
 - Each owner's Gmail app password, and the right to send as their address
 - Each owner's Google service account key and Slack bot token, which can write to their shared sheets and post to their channels
+- Each owner's Microsoft refresh token, which can send email as their mailbox, and their Teams workflow link, which lets anyone holding it post to one channel
+- The installation's Microsoft Entra client secret (`MICROSOFT_CLIENT_SECRET`)
 - Console sessions and API tokens
 - Workspace membership and roles, which decide who can change automations and who can authorize a purchase
 - Run data: trigger payloads and step outputs, which can hold customer personal data
@@ -20,7 +22,8 @@ Kept current with each phase. A mitigation marked "planned" does not exist in co
 - Invite links (public, random single-use token)
 - Gmail confirmation links (need the owner's session and a random single-use token)
 - MCP endpoint (bearer token)
-- Outbound: HTTP request step, email step (the installation's SMTP server or the owner's Gmail), the API's test email, LLM calls, Google Sheets and Slack deliveries and connection tests
+- Outbound: HTTP request step, email step (the installation's SMTP server or the owner's Gmail), the API's test email, LLM calls, Google Sheets, Slack, Outlook and Teams deliveries and connection tests
+- Inbound from Microsoft: the Outlook consent callback, `GET /settings/connections/outlook/callback`
 
 ## Threats and mitigations
 
@@ -59,7 +62,11 @@ Kept current with each phase. A mitigation marked "planned" does not exist in co
 | Duplicate rows or notes after a timeout or crash | One delivery per run and step (`unique (run_id, step_id)`), claimed with `FOR UPDATE SKIP LOCKED` and finished with an UPDATE guarded by state and attempt number. A write that may have arrived is checked in the sheet by reference before writing again; for Slack it waits for the operator. Retry, Post again and Mark as posted are guarded UPDATEs scoped to the owner. | Done, roadmap phase 3 |
 | Formula injection into the owner's sheet | Rows are written with `valueInputOption=RAW`, so form text starting with `=`, `+` or `@` is stored as text and never evaluated by Sheets. Remaining risk: someone who exports the sheet to CSV and opens it in another spreadsheet app may still see a formula there. | Done, roadmap phase 3 |
 | Private request details posted to a shared channel | The office request's Slack note carries the reference and subject only, and its text is fixed by the template. Secrets in any sheets or slack step are replaced with `[secret]` before the delivery is stored. Remaining risk: an owner can write their own Slack step that includes `{{trigger.email}}`; the editor and AI drafting are told to avoid it but do not block it. | Done, roadmap phase 3 |
-| Server-side requests to internal hosts through the connections | No user-entered URLs: Google and Slack hosts come from fixed defaults or the operator's `GOOGLE_TOKEN_URL`, `GOOGLE_SHEETS_URL` and `SLACK_API_URL`. The `token_uri` inside a key file is ignored. Redirects are refused. Connect and test routes need a session and are limited to 5 to 20 calls a minute per owner. | Done, roadmap phase 3 |
+| Outlook refresh token or Teams link theft | Encrypted with AES-256-GCM with the owner and provider bound in, write-only through the API, never in definitions, run history, previews or AI prompts. Only `Mail.Send`, `User.Read` and `offline_access` are requested: Daloy cannot read mail. Disconnect deletes the row. Remaining risk: with `SECRETS_KEY` and a database copy, an attacker can send as the mailbox until the owner removes Daloy in their Microsoft account, or post to the channel until the flow is deleted. See [decision 0023](decisions/0023-outlook-teams.md). | Done, roadmap phase 5 |
+| Consent login CSRF or a code swapped into another owner's account | The state is HMAC-signed with the secrets key, names the member and workspace, and expires after ten minutes. The callback swaps a code only for that signed-in owner, and the PKCE verifier comes from the signed state, so a stolen code is useless without it. The browser comes back to the page with a short outcome code, never Microsoft's text. | Done, roadmap phase 5 |
+| A Teams note taken as an approval, or private details in a channel | The card has no buttons and says that decisions are made in Daloy by the named approver. The template's note carries the reference and item only. Approvals stay with the named, signed-in approver (decision 0022). | Done, roadmap phase 5 |
+| Duplicate Outlook emails after a timeout | One delivery per run and step. `sendMail` gives no id to look up, so a timed-out send waits for the operator's Mark as sent or Send again, with a confirmation. Retry never repeats it. | Done, roadmap phase 5 |
+| Server-side requests to internal hosts through the connections | Google, Slack and Microsoft hosts come from fixed defaults or the operator's `GOOGLE_TOKEN_URL`, `GOOGLE_SHEETS_URL`, `SLACK_API_URL`, `MICROSOFT_LOGIN_URL` and `MICROSOFT_GRAPH_URL`. The one user-entered URL, the Teams workflow link, must be https on a host ending in `logic.azure.com` or `powerplatform.com` (`TEAMS_WEBHOOK_HOSTS`), with no user info. The `token_uri` inside a key file is ignored. Redirects are refused. Connect and test routes need a session and are limited to 5 to 20 calls a minute per owner. | Done, roadmap phase 3 |
 | A preview mistaken for a live send | The Preview only page is computed in the browser with no API call, so it cannot record a request or send an email. | Done, roadmap phase 1 |
 | Test runs used to reach internal hosts or send mail | Test runs mock HTTP and email unless "live calls" is ticked; live test runs use the same SSRF guard and recipient cap as real runs | Done, phase 5 |
 | Script injection in the console | React escapes all rendered values, including step outputs and trigger data; no `dangerouslySetInnerHTML`; helmet's CSP blocks inline scripts on the served console | Done, phase 5 |

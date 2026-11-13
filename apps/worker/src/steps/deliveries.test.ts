@@ -8,7 +8,7 @@ import { startFakeProviders, type FakeProviders } from "../../../../test/fake-pr
 import { startWorker, type Worker } from "../worker";
 import { createExecutor } from "./index";
 
-// The sheets and slack steps queue deliveries, and the worker delivers each one apart from the run (decision 0021).
+// The sheets, slack, outlook and teams steps queue deliveries, and the worker delivers each one apart from the run (decision 0021).
 const key = randomBytes(32);
 let db: Db;
 let pool: Pool;
@@ -26,9 +26,18 @@ const definition = {
   edges: [{ from: "add_to_sheet", to: "post_to_slack" }],
 };
 
-async function startRun(payload: object, extra: Partial<typeof runs.$inferInsert> = {}) {
+const microsoftDefinition = {
+  trigger: definition.trigger,
+  steps: [
+    { id: "tell_purchasing", type: "outlook", config: { to: "{{trigger.email}}", subject: "Approved {{trigger.reference}}", text: "Buy {{trigger.summary}}. Door code {{secrets.door_code}}." } },
+    { id: "post_to_teams", type: "teams", config: { text: "Purchase {{trigger.reference}} approved: {{trigger.summary}}" } },
+  ],
+  edges: [{ from: "tell_purchasing", to: "post_to_teams" }],
+};
+
+async function startRun(payload: object, extra: Partial<typeof runs.$inferInsert> = {}, def: object = definition) {
   const [wf] = await db.insert(workflows).values({ userId: owner, name: "Office requests", slug: `w${randomBytes(4).toString("hex")}` }).returning();
-  const [v] = await db.insert(workflowVersions).values({ workflowId: wf!.id, version: 1, definition, published: true }).returning();
+  const [v] = await db.insert(workflowVersions).values({ workflowId: wf!.id, version: 1, definition: def, published: true }).returning();
   const [run] = await db.insert(runs).values({ workflowVersionId: v!.id, triggerPayload: payload, ...extra }).returning();
   await worker.enqueue(run!.id);
   return run!.id;
@@ -61,12 +70,15 @@ beforeAll(async () => {
     destination: { spreadsheetId: "sheet-office", tab: "Requests", title: "Office requests" },
   });
   await saveConnection(db, key, owner, "slack", { account: "Office", credential: "xoxb-office", destination: { channelId: "C0REQ", channelName: "office-requests" } });
+  fake.microsoft.refreshTokens.add("ms-refresh-worker");
+  await saveConnection(db, key, owner, "outlook", { account: "office@contoso.example", credential: "ms-refresh-worker", destination: { mailbox: "office@contoso.example" } });
+  await saveConnection(db, key, owner, "teams", { account: "Purchasing", credential: fake.teamsUrl("flow-purchasing"), destination: { channelName: "Purchasing" } });
   await db.insert(secrets).values({ userId: owner, name: "door_code", ...encryptSecret(key, owner, "door_code", "4417") });
   worker = await startWorker({
     connectionString: url,
     db,
     executor: createExecutor({ db, secretsKey: key, mail: { installation: smtpMailer({}), gmail: () => smtpMailer({}).transport } }),
-    deliveries: { secretsKey: key, urls: { ...fake.urls, timeoutMs: 2000 } },
+    deliveries: { secretsKey: key, urls: { ...fake.urls, timeoutMs: 2000, microsoft: { clientId: fake.microsoft.clientId, clientSecret: fake.microsoft.clientSecret, tenant: "organizations" } } },
     pollingIntervalSeconds: 0.5,
     sweepMs: 500,
   });
@@ -100,5 +112,20 @@ it("finishes the run, writes the sheet row, and retries only the Slack post that
 it("queues nothing for a builder test run, and shows the row and message instead", async () => {
   const runId = await startRun({ summary: "Light flickers", reference: "REQ-SAMPLE" }, { test: true });
   expect(await until(() => runState(runId), (s) => s === "succeeded" || s === "failed")).toBe("succeeded");
+  expect(await deliveriesOf(runId)).toEqual([]);
+});
+
+it("sends Outlook mail and a Teams note as deliveries, with secrets hidden", async () => {
+  const runId = await startRun({ summary: "a desk lamp", email: "buy@contoso.example", reference: "PUR-2001" }, {}, microsoftDefinition);
+  expect(await until(() => runState(runId), (s) => s === "succeeded" || s === "failed")).toBe("succeeded");
+  const all = await until(() => deliveriesOf(runId), (d) => d.length === 2 && d.every((x) => x.state === "delivered"));
+  expect(all.map((d) => d.provider).sort()).toEqual(["outlook", "teams"]);
+  expect(fake.microsoft.sent).toEqual([{ to: "buy@contoso.example", subject: "Approved PUR-2001", text: "Buy a desk lamp. Door code [secret]." }]);
+  expect(fake.teams.posts.map((p) => p.text)).toEqual(["Purchase PUR-2001 approved: a desk lamp"]);
+});
+
+it("fails the step and queues nothing when the Outlook recipient is not an address", async () => {
+  const runId = await startRun({ summary: "a desk lamp", email: "not-an-address", reference: "PUR-2002" }, {}, microsoftDefinition);
+  expect(await until(() => runState(runId), (s) => s === "succeeded" || s === "failed")).toBe("failed");
   expect(await deliveriesOf(runId)).toEqual([]);
 });

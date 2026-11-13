@@ -68,9 +68,9 @@ export async function sendAs(db: Db, key: Buffer, deps: MailDeps, userId: string
   }
 }
 
-/** Sends one plain-text email. Recipients come from a resolved template, so they are checked here, after resolution. */
-export async function sendEmail(mailer: Mailer, cfg: EmailConfig, idempotencyKey: string) {
-  const to = cfg.to
+/** Splits a resolved comma-separated "to" and checks each address and the cap. Also used for Outlook deliveries. */
+export function checkRecipients(list: string): string[] {
+  const to = list
     .split(",")
     .map((a) => a.trim())
     .filter(Boolean);
@@ -78,6 +78,12 @@ export async function sendEmail(mailer: Mailer, cfg: EmailConfig, idempotencyKey
   if (to.length > MAX_RECIPIENTS) throw new StepError(`email has ${to.length} recipients, the limit is ${MAX_RECIPIENTS}`, false);
   const bad = to.find((a) => !address.safeParse(a).success);
   if (bad !== undefined) throw new StepError(`"${bad.slice(0, 100)}" is not a valid email address`, false);
+  return to;
+}
+
+/** Sends one plain-text email. Recipients come from a resolved template, so they are checked here, after resolution. */
+export async function sendEmail(mailer: Mailer, cfg: EmailConfig, idempotencyKey: string) {
+  const to = checkRecipients(cfg.to);
 
   // A retried attempt gets a new key, but a re-delivered one keeps it, so receivers can drop the duplicate.
   const messageId = `<${idempotencyKey.replaceAll(":", ".")}@daloy>`;

@@ -4,7 +4,7 @@ import { api, ApiError, type Workflow } from "./api";
 import { Editor } from "./Editor";
 import { RunPage, RunsPage } from "./Runs";
 import { BuildWithAi } from "./AiDraft";
-import { OfficeRequestPage, startOfficeSetup, TryOfficeRequest } from "./OfficeRequests";
+import { OfficeRequestPage, startOfficeSetup, startPurchaseSetup, TryOfficeRequest } from "./OfficeRequests";
 import { SettingsPage } from "./Settings";
 import { BusinessSetupPage, VerifySenderPage } from "./BusinessSetup";
 import { TokensPage } from "./Tokens";
@@ -61,7 +61,9 @@ export function App() {
   if (hash === "#/try/office-request") return <TryOfficeRequest email={user.email} />;
   if (hash === "#/tokens") return <TokensPage />;
   if (hash === "#/settings") return <SettingsPage />;
-  if (hash === "#/settings/business") return <BusinessSetupPage />;
+  // #/settings/business/outlook-<outcome> is where the Outlook consent callback lands (decision 0023).
+  const business = /^#\/settings\/business(?:\/outlook-([a-z_]+))?$/.exec(hash);
+  if (business) return <BusinessSetupPage outlookOutcome={business[1]} />;
   if (hash === "#/team" && user.role === "owner") return <TeamPage />;
   const verify = /^#\/verify-sender\/([A-Za-z0-9_-]{43})$/.exec(hash);
   if (verify) return <VerifySenderPage key={verify[1]} token={verify[1]!} />;
@@ -170,6 +172,13 @@ function Workflows({ user, onSignOut }: { user: User; onSignOut: () => void }) {
             <a href="#/try/office-request">Try an example</a>
             <button type="button" className="primary" onClick={() => startOfficeSetup(user.email).catch((e: Error) => setError(e.message))}>
               Set up for my office
+            </button>
+          </div>
+          <h3>Purchase request with a named approver</h3>
+          <p>Staff ask to buy something and get a reference. The person you name approves or rejects it in Daloy. Approved requests go to purchasing, from Outlook and with a Teams note if you connect them.</p>
+          <div className="actions">
+            <button type="button" className="primary" onClick={() => startPurchaseSetup(user.email).catch((e: Error) => setError(e.message))}>
+              Set up purchase requests
             </button>
           </div>
           <h3>Reply to a website inquiry</h3>

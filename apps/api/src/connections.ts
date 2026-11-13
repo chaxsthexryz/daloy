@@ -1,11 +1,19 @@
+import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import {
   appendRow,
+  consentOutcome,
   confirmDelivery,
   connectionCredential,
   deliveries,
   listDeliveries,
   markConnectionFailed,
   markConnectionWorking,
+  outlookAdminConsentUrl,
+  outlookAuthorizeUrl,
+  outlookCodeTokens,
+  outlookMailbox,
+  outlookSend,
+  PROVIDER_NAMES,
   ProviderError,
   readConnections,
   removeConnection,
@@ -18,16 +26,20 @@ import {
   slackIdentity,
   slackPost,
   spreadsheetIdFrom,
+  teamsPost,
+  teamsWebhookUrl,
+  updateCredential,
   type Db,
   type Provider,
   type ProviderUrls,
   type ServiceAccount,
   type SheetDestination,
 } from "@daloy/db";
-import { BadRequestException, Body, ConflictException, Controller, Delete, Get, HttpCode, Inject, NotFoundException, Param, Post, Put, Query, UseGuards } from "@nestjs/common";
+import { BadRequestException, Body, ConflictException, Controller, Delete, Get, HttpCode, Inject, NotFoundException, Param, Post, Put, Query, Req, Res, UseGuards } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
 import * as z from "zod";
-import { SessionGuard } from "./auth";
+import type { Request, Response } from "express";
+import { SessionGuard, sessionUser } from "./auth";
 import { Allow, CONFIG, CurrentUser, DB, RateLimit, ZodPipe, type ApiConfig, type SessionUser, MANAGE, OPERATE } from "./http";
 
 const sheetsInput = z.strictObject({ serviceAccount: z.string().min(2).max(10_000), sheet: z.string().trim().min(1).max(500), tab: z.string().trim().min(1).max(100) });
@@ -36,6 +48,9 @@ const destinationInput = sheetsInput.omit({ serviceAccount: true });
 const slackInput = z.strictObject({ token: z.string().trim().regex(/^xoxb-[A-Za-z0-9-]{10,200}$/, "Paste the Bot User OAuth Token, which starts with xoxb-") });
 const channelInput = z.strictObject({ channelId: z.string().regex(/^[CG][A-Z0-9]{2,20}$/) });
 const retryInput = z.strictObject({ postAgain: z.boolean().default(false) });
+const teamsInput = z.strictObject({ url: z.string().trim().min(10).max(2000), channelName: z.string().trim().min(1).max(100) });
+const SLUGS: Record<string, Provider> = { "google-sheets": "google_sheets", slack: "slack", outlook: "outlook", teams: "teams" };
+const providerSlug = new ZodPipe(z.enum(Object.keys(SLUGS) as [string, ...string[]]).transform((s) => SLUGS[s]!));
 const uuid = new ZodPipe(z.uuid());
 
 /** A provider's answer as a 400 the console can show. Anything else is a real error. */
@@ -62,7 +77,8 @@ export class ConnectionsController {
 
   @Get()
   async get(@CurrentUser() user: SessionUser) {
-    return { connections: await readConnections(this.db, user.workspaceId) };
+    const outlook = this.urls.microsoft ? { configured: true, adminConsentUrl: outlookAdminConsentUrl(this.urls, outlookRedirectUri(this.config)) } : { configured: false };
+    return { connections: await readConnections(this.db, user.workspaceId), outlook };
   }
 
   /** The sheet and tab, checked with a read before saving. Shared by connect and "change sheet". */
@@ -144,28 +160,67 @@ export class ConnectionsController {
     return this.test(user.workspaceId, "slack", () => slackPost(this.urls, conn.credential, conn.destination!.channelId!, "Test message from Daloy. Office requests will be posted here."));
   }
 
-  @Delete("google-sheets")
-  @HttpCode(204)
-  async removeSheets(@CurrentUser() user: SessionUser) {
-    if (!(await removeConnection(this.db, user.workspaceId, "google_sheets"))) throw new NotFoundException();
+  /**
+   * Connect or Reconnect Outlook: the page sends the browser to this URL, Microsoft asks the owner (or tells them an
+   * administrator must approve), and comes back to the callback below. The state is signed, so nothing is stored here.
+   */
+  @Post("outlook/start")
+  @HttpCode(200)
+  @UseGuards(RateLimit(10))
+  startOutlook(@CurrentUser() user: SessionUser) {
+    if (!this.urls.microsoft) throw new BadRequestException("Outlook is not set up on this installation. Set MICROSOFT_CLIENT_ID and MICROSOFT_CLIENT_SECRET.");
+    const state = signState(this.config.secretsKey, { w: user.workspaceId, m: user.id, e: Date.now() + STATE_TTL_MS, n: randomBytes(12).toString("base64url") });
+    const codeChallenge = createHash("sha256").update(pkceVerifier(this.config.secretsKey, state)).digest("base64url");
+    return { url: outlookAuthorizeUrl(this.urls, { redirectUri: outlookRedirectUri(this.config), state, codeChallenge }) };
   }
 
-  @Delete("slack")
+  /** Sends a test email from the connected mailbox to itself, so nobody else receives it. */
+  @Post("outlook/test")
+  @HttpCode(200)
+  @UseGuards(RateLimit(5))
+  async testOutlook(@CurrentUser() user: SessionUser) {
+    const conn = await this.connection(user.workspaceId, "outlook");
+    const save = (t: string) => updateCredential(this.db, this.config.secretsKey, user.workspaceId, "outlook", t);
+    return this.test(user.workspaceId, "outlook", () =>
+      outlookSend(this.urls, conn.credential, save, { to: conn.account, subject: "Test email from Daloy", text: "Daloy can send from this mailbox. Approved purchase requests will go out from here." }),
+    );
+  }
+
+  /** Connect, Reconnect or Replace link for Teams: the URL of a Teams workflow that posts to one channel. */
+  @Put("teams")
+  @UseGuards(RateLimit(10))
+  async putTeams(@CurrentUser() user: SessionUser, @Body(new ZodPipe(teamsInput)) body: z.output<typeof teamsInput>) {
+    const url = teamsWebhookUrl(this.urls, body.url);
+    if (!url) throw new BadRequestException("Paste the link Teams shows after you create the workflow. It starts with https:// and ends in logic.azure.com or powerplatform.com.");
+    await saveConnection(this.db, this.config.secretsKey, user.workspaceId, "teams", { account: body.channelName, credential: url, destination: { channelName: body.channelName } });
+    return this.get(user);
+  }
+
+  @Post("teams/test")
+  @HttpCode(200)
+  @UseGuards(RateLimit(5))
+  async testTeams(@CurrentUser() user: SessionUser) {
+    const conn = await this.connection(user.workspaceId, "teams");
+    return this.test(user.workspaceId, "teams", () => teamsPost(this.urls, conn.credential, "Test message from Daloy. Approved purchase requests will be noted in this channel."));
+  }
+
+  /** Disconnect: deletes the stored credential. Queued deliveries fail with "not connected" and keep their payload for Retry. */
+  @Delete(":provider")
   @HttpCode(204)
-  async removeSlack(@CurrentUser() user: SessionUser) {
-    if (!(await removeConnection(this.db, user.workspaceId, "slack"))) throw new NotFoundException();
+  async remove(@CurrentUser() user: SessionUser, @Param("provider", providerSlug) provider: Provider) {
+    if (!(await removeConnection(this.db, user.workspaceId, provider))) throw new NotFoundException();
   }
 
   private async connection(userId: string, provider: Provider) {
     const conn = await connectionCredential(this.db, this.config.secretsKey, userId, provider);
-    if (!conn) throw new NotFoundException(`${provider === "slack" ? "Slack" : "Google Sheets"} is not connected.`);
+    if (!conn) throw new NotFoundException(`${PROVIDER_NAMES[provider]} is not connected.`);
     return conn;
   }
 
   /** ok: true means the provider accepted the write. A rejected credential marks the connection failed, as a delivery would. */
-  private async test(userId: string, provider: Provider, send: () => Promise<Record<string, string>>) {
+  private async test(userId: string, provider: Provider, send: () => Promise<Record<string, string | boolean>>) {
     const conn = await this.connection(userId, provider);
-    if (!conn.destination) return { ok: false, error: provider === "slack" ? "Pick a channel first." : "Pick a sheet first." };
+    if (!conn.destination) return { ok: false, error: provider === "google_sheets" ? "Pick a sheet first." : "Pick a channel first." };
     try {
       const result = await send();
       await markConnectionWorking(this.db, userId, provider);
@@ -174,6 +229,61 @@ export class ConnectionsController {
       if (!(err instanceof ProviderError)) throw err;
       if (err.kind === "auth") await markConnectionFailed(this.db, userId, provider, err.message);
       return { ok: false, error: err.message };
+    }
+  }
+}
+
+const STATE_TTL_MS = 10 * 60_000;
+type ConsentState = { w: string; m: string; e: number; n: string };
+const mac = (key: Buffer, label: string, data: string) => createHmac("sha256", key).update(`${label}:${data}`).digest("base64url");
+export const outlookRedirectUri = (config: Required<ApiConfig>) => `${config.publicUrl}/settings/connections/outlook/callback`;
+
+/** The consent state: who started it and until when, signed with the secrets key so the callback can trust it. */
+export function signState(key: Buffer, s: ConsentState) {
+  const payload = Buffer.from(JSON.stringify(s)).toString("base64url");
+  return `${payload}.${mac(key, "outlook-state", payload)}`;
+}
+export function readState(key: Buffer, state: string): ConsentState | null {
+  const [payload, sig] = state.split(".");
+  if (!payload || !sig) return null;
+  const want = Buffer.from(mac(key, "outlook-state", payload));
+  const got = Buffer.from(sig);
+  if (want.length !== got.length || !timingSafeEqual(want, got)) return null;
+  const s = JSON.parse(Buffer.from(payload, "base64url").toString()) as ConsentState;
+  return s.e > Date.now() ? s : null;
+}
+/** The PKCE verifier, derived from the signed state, so it needs no storage and only this installation can make it. */
+const pkceVerifier = (key: Buffer, state: string) => mac(key, "outlook-pkce", state);
+
+/**
+ * Where Microsoft sends the browser back. Not behind SessionGuard, because an administrator who approves Daloy for the
+ * organization usually has no Daloy session. Swapping a code for tokens still needs the signed-in owner who started it.
+ * The page learns the outcome from a short code in the address, never from Microsoft's text.
+ */
+@Controller("settings/connections/outlook")
+export class OutlookCallbackController {
+  constructor(
+    @Inject(DB) private readonly db: Db,
+    @Inject(CONFIG) private readonly config: Required<ApiConfig>,
+  ) {}
+
+  @Get("callback")
+  async callback(@Req() req: Request, @Res() res: Response, @Query() q: Record<string, unknown>) {
+    const done = (outcome: string) => res.redirect(302, `/#/settings/business/outlook-${outcome}`);
+    const str = (k: string) => (typeof q[k] === "string" ? (q[k] as string) : "");
+    if (str("admin_consent")) return done(str("admin_consent").toLowerCase() === "true" ? "admin_approved" : "admin_required");
+    if (str("error")) return done(consentOutcome(str("error"), str("error_description")));
+    const state = readState(this.config.secretsKey, str("state"));
+    const user = await sessionUser(this.db, req);
+    if (!state || !user || user.id !== state.m || user.workspaceId !== state.w || !MANAGE.includes(user.role)) return done("expired");
+    try {
+      const tokens = await outlookCodeTokens(this.config.providers, str("code"), pkceVerifier(this.config.secretsKey, str("state")), outlookRedirectUri(this.config));
+      const mailbox = await outlookMailbox(this.config.providers, tokens.accessToken);
+      await saveConnection(this.db, this.config.secretsKey, state.w, "outlook", { account: mailbox, credential: tokens.refreshToken, destination: { mailbox } });
+      return done("connected");
+    } catch (err) {
+      if (!(err instanceof ProviderError)) throw err;
+      return done("failed");
     }
   }
 }
