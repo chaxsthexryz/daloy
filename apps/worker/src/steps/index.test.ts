@@ -1,12 +1,12 @@
 import { randomBytes } from "node:crypto";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { approvals, encryptSecret, hashToken, runs, secrets, stepRuns, users, workflows, workflowVersions, type Db } from "@daloy/db";
+import { approvals, encryptSecret, hashToken, runs, saveAiSettings, secrets, stepRuns, users, workflows, workflowVersions, type Db } from "@daloy/db";
 import type { Step } from "@daloy/engine";
 import { eq } from "drizzle-orm";
 import nodemailer, { type SendMailOptions, type Transporter } from "nodemailer";
 import type { Pool } from "pg";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { freshDatabase } from "../../../../test/db";
 import { createExecutor } from "./index";
 import { BLOCKED_RANGES, blockListOf } from "./ssrf";
@@ -171,4 +171,27 @@ describe("step executor", () => {
     expect(row!.tokenHash).toBe(hashToken(token!));
     expect(JSON.stringify(out)).not.toContain(token);
   });
+});
+
+it("runs an AI step with the model its owner picked in the console", async () => {
+  const models: string[] = [];
+  const llm = createServer((req, res) => {
+    let raw = "";
+    req.on("data", (c: Buffer) => (raw += c.toString()));
+    req.on("end", () => {
+      models.push((JSON.parse(raw) as { model: string }).model);
+      res.end(JSON.stringify({ message: { content: '{"label":"billing"}' }, prompt_eval_count: 9, eval_count: 2 }));
+    });
+  });
+  await new Promise<void>((r) => llm.listen(0, "127.0.0.1", r));
+  vi.stubEnv("LLM_BASE_URL", `http://127.0.0.1:${(llm.address() as AddressInfo).port}`);
+  try {
+    await saveAiSettings(db, key, userId, { preset: "local", model: "owner-model" });
+    const result = await run({ id: "c", type: "ai", config: { task: "classify", input: "{{trigger.m}}", labels: { billing: "Invoices", other: "Else" } } } as Step, { m: "refund please" });
+    expect(models).toEqual(["owner-model"]);
+    expect(result.output).toEqual({ label: "billing" });
+  } finally {
+    vi.unstubAllEnvs();
+    llm.close();
+  }
 });

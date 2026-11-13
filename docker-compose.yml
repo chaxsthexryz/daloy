@@ -75,6 +75,13 @@ services:
       MIGRATE_ON_BOOT: "false"
       SECRETS_KEY: ${SECRETS_KEY:?set SECRETS_KEY in .env (openssl rand -base64 32)}
       WEB_DIST: /app/apps/web/dist
+      # For the "Test" button on the AI model page. Same defaults as the worker.
+      LLM_BASE_URL: ${LLM_BASE_URL:-http://host.docker.internal:11434}
+      LLM_MODEL: ${LLM_MODEL:-llama3.2}
+      LLM_PROVIDER: ${LLM_PROVIDER:-ollama}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "127.0.0.1:3000:3000"
     depends_on:

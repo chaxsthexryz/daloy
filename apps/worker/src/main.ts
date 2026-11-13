@@ -17,7 +17,7 @@ const worker = await startWorker({
   connectionString: url,
   db,
   migrate: ownsSchema,
-  executor: createExecutor({ db, secretsKey, mailer: smtpMailer(), llmModel: process.env.LLM_MODEL, publicUrl: process.env.PUBLIC_URL }),
+  executor: createExecutor({ db, secretsKey, mailer: smtpMailer(), publicUrl: process.env.PUBLIC_URL }),
 });
 console.log("worker started");
 

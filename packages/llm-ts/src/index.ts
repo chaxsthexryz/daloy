@@ -10,7 +10,11 @@ export type GenerateInput<T> = {
   temperature: number;
   maxTokens: number;
   timeoutMs: number;
+  /** Where to send the request. Without it, LLM_PROVIDER, LLM_BASE_URL and LLM_API_KEY are used. */
+  connection?: Connection;
 };
+
+export type Connection = { provider: string; baseUrl: string; apiKey?: string };
 
 export type GenerateResult<T> = {
   text: string;
@@ -92,9 +96,13 @@ function request<T>(input: GenerateInput<T>, provider: string, baseUrl: string) 
 
 /** Calls the configured chat API, then checks the reply against input.schema if one is given. */
 export async function generate<T = unknown>(input: GenerateInput<T>): Promise<GenerateResult<T>> {
-  const baseUrl = (process.env.LLM_BASE_URL ?? "http://localhost:11434").replace(/\/+$/, "");
-  const apiKey = process.env.LLM_API_KEY;
-  const req = request(input, process.env.LLM_PROVIDER || "ollama", baseUrl);
+  const conn = input.connection ?? {
+    provider: process.env.LLM_PROVIDER || "ollama",
+    baseUrl: process.env.LLM_BASE_URL ?? "http://localhost:11434",
+    apiKey: process.env.LLM_API_KEY,
+  };
+  const apiKey = conn.apiKey;
+  const req = request(input, conn.provider, conn.baseUrl.replace(/\/+$/, ""));
 
   let res: Response;
   try {

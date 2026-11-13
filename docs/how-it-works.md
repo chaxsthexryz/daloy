@@ -113,6 +113,16 @@ Edge cases: a secret that appears in a response body, a response header or an er
 
 Tests: `steps/index.test.ts` (secrets reach the request but not the stored output or errors, trigger data cannot pull in a secret, templates, condition, delay, mocked ai and approval, the approval email and its stored hash) and `steps/email.test.ts` (recipient cap and validation, message id, SMTP error mapping).
 
+## AI model settings (packages/db/src/ai-settings.ts, apps/api/src/settings.ts, apps/web/src/Settings.tsx)
+
+What it does: each user picks the model their AI steps run with on the console's AI model page: a local model, the Gemini API, OpenAI or OpenRouter, plus a model name and, for the hosted ones, an API key. `aiConnection()` turns that choice into the provider, URL, key and model that `generate()` uses. The worker calls it for the workflow owner on every AI step, so a change applies to the next step without a restart. "Test the saved model" makes one real call with a sample inquiry through the Inquiry triage classify prompt and reports the label, the time and the tokens, or a plain reason for the failure.
+
+Why this way: switching models used to mean editing `.env` and restarting the worker. Hosted providers have fixed URLs in code and the local choice uses the operator's `LLM_BASE_URL`, so a user can never make the server call an address of their choosing (decision 0016).
+
+Edge cases: no saved choice means the env vars decide, as before. A hosted choice without a key is refused. Saving again without a key keeps the saved key only if the provider is the same; the provider is part of the key's associated data, so a key saved for one provider never decrypts as another's. The key is encrypted like secrets and the API never returns it, only `hasKey`. The test is limited to 10 a minute per IP because it costs tokens. Failure messages come from the HTTP status only, never the provider's response body.
+
+Tests: `packages/db/src/ai-settings.test.ts` (env fallback, encrypted key, key kept or dropped, key required), `apps/api/src/settings.test.ts` (session needed, key never returned, validation, live test against a fake Ollama, unreachable model), `apps/worker/src/steps/index.test.ts` (an AI step uses its owner's model), `e2e/settings.spec.ts` (save Gemini with a key, key shown as saved but never displayed).
+
 ## AI step (packages/engine/src/ai.ts, apps/worker/src/steps/ai.ts)
 
 What it does: runs one task on text. `classify` picks one of the configured labels, `extract` pulls named fields out of the text, `summarize` writes a short summary and `draft` writes a reply. Later steps read the result, for example `{{steps.classify.output.label}}` in a condition. The model is `LLM_MODEL` (default `llama3.2`) at `LLM_BASE_URL`, through `packages/llm-ts`.

@@ -13,6 +13,7 @@ import { McpController } from "./mcp";
 import { FormsController, HooksController } from "./public";
 import { RunsController } from "./runs";
 import { SecretsController } from "./secrets";
+import { SettingsController } from "./settings";
 import { TokensController } from "./tokens";
 import { CatalogController, WorkflowsController } from "./workflows";
 
@@ -25,7 +26,7 @@ export async function createApp({ db, boss, ...config }: AppOptions) {
   await boss.createQueue(SCHEDULE_QUEUE);
 
   @Module({
-    controllers: [AuthController, WorkflowsController, CatalogController, SecretsController, TokensController, RunsController, HooksController, FormsController, ApprovalsController, McpController],
+    controllers: [AuthController, WorkflowsController, CatalogController, SecretsController, TokensController, RunsController, HooksController, FormsController, ApprovalsController, McpController, SettingsController],
     providers: [
       { provide: DB, useValue: db },
       { provide: BOSS, useValue: boss },
