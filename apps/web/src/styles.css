@@ -37,6 +37,9 @@
 body { margin: 0; background: var(--bg); color: var(--text); }
 h1 { font-size: 1.35rem; margin: 0; }
 .brand { display: flex; align-items: center; gap: 0.5rem; }
+.choice { display: flex; gap: 0.6rem; align-items: flex-start; padding: 0.35rem 0; }
+.choice input { margin-top: 0.3rem; }
+.choice label { display: flex; flex-direction: column; gap: 0.1rem; }
 h2 { font-size: 1.05rem; margin: 1.25rem 0 0.5rem; }
 a { color: var(--accent); }
 code, pre { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-size: 0.85rem; }

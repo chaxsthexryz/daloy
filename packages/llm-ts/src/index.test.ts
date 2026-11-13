@@ -175,3 +175,25 @@ it("rejects an unknown LLM_PROVIDER without calling anything", async () => {
   await expect(generate(base)).rejects.toMatchObject({ name: "LlmError", retryable: false, message: expect.stringMatching(/LLM_PROVIDER/) });
   expect(fetch).not.toHaveBeenCalled();
 });
+
+it("uses an explicit connection instead of the env vars", async () => {
+  vi.stubEnv("LLM_PROVIDER", "ollama");
+  vi.stubEnv("LLM_BASE_URL", "http://env.local:11434");
+  vi.stubEnv("LLM_API_KEY", "env-key");
+  const fetch = mockFetch(new Response(JSON.stringify({ choices: [{ message: { content: "hi" } }] })));
+
+  await generate({ ...base, connection: { provider: "openai", baseUrl: "https://api.example.com/v1/", apiKey: "user-key" } });
+
+  const [url, init] = fetch.mock.calls[0] as unknown as [string, RequestInit];
+  expect(url).toBe("https://api.example.com/v1/chat/completions");
+  expect(new Headers(init.headers).get("authorization")).toBe("Bearer user-key");
+});
+
+it("sends no key with an explicit connection that has none, even if LLM_API_KEY is set", async () => {
+  vi.stubEnv("LLM_API_KEY", "env-key");
+  const fetch = mockFetch(ok("hi"));
+  await generate({ ...base, connection: { provider: "ollama", baseUrl: "http://ollama.local:11434" } });
+  const [url, init] = fetch.mock.calls[0] as unknown as [string, RequestInit];
+  expect(url).toBe("http://ollama.local:11434/api/chat");
+  expect(new Headers(init.headers).has("authorization")).toBe(false);
+});

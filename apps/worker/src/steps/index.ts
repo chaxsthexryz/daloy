@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { createApproval, readSecrets, type Db } from "@daloy/db";
+import { aiConnection, createApproval, readSecrets, type Db } from "@daloy/db";
 import { evaluateCondition, isRetryable, mockAiOutput, resolveTemplate, StepError, type ExpressionContext, type Step } from "@daloy/engine";
 import type { StepExecutor, StepResult } from "../advance";
 import { runAi } from "./ai";
@@ -7,9 +7,9 @@ import { sendEmail, type Mailer } from "./email";
 import { httpRequest } from "./http";
 import { defaultGuard, type SsrfGuard } from "./ssrf";
 
-/** llmModel comes from LLM_MODEL; publicUrl (PUBLIC_URL) is where the API is reachable, for approval links. */
-export type ExecutorDeps = { db: Db; secretsKey: Buffer; mailer: Mailer; guard?: SsrfGuard; llmModel?: string; publicUrl?: string };
-type FullDeps = ExecutorDeps & { guard: SsrfGuard; llmModel: string; publicUrl: string };
+/** publicUrl (PUBLIC_URL) is where the API is reachable, for approval links. The AI model comes from the owner's settings or the LLM_* env vars. */
+export type ExecutorDeps = { db: Db; secretsKey: Buffer; mailer: Mailer; guard?: SsrfGuard; publicUrl?: string };
+type FullDeps = ExecutorDeps & { guard: SsrfGuard; publicUrl: string };
 
 // Config fields are templates that must end up as text, even when a placeholder resolves to a number or object.
 function text(template: string, ctx: ExpressionContext): string {
@@ -65,9 +65,9 @@ function resolveInput(step: Step, ctx: ExpressionContext): Record<string, unknow
   }
 }
 
-type Attempt = { idempotencyKey: string; attempt: number; stepRunId: string; mock: boolean };
+type Attempt = { idempotencyKey: string; attempt: number; stepRunId: string; userId: string; mock: boolean };
 
-async function runStep(deps: FullDeps, step: Step, input: unknown, ctx: ExpressionContext, { idempotencyKey, attempt, stepRunId, mock }: Attempt): Promise<StepResult> {
+async function runStep(deps: FullDeps, step: Step, input: unknown, ctx: ExpressionContext, { idempotencyKey, attempt, stepRunId, userId, mock }: Attempt): Promise<StepResult> {
   switch (step.type) {
     case "condition":
       return { branch: String(evaluateCondition(step.config.condition, ctx)) };
@@ -91,7 +91,9 @@ async function runStep(deps: FullDeps, step: Step, input: unknown, ctx: Expressi
     }
     case "ai": {
       if (mock) return { output: mockAiOutput(step.config) };
-      return runAi(step.config, (input as AiInput).input, { model: deps.llmModel, attempt });
+      // The model the workflow owner picked in the console, or the env vars if they picked none.
+      const { model, ...connection } = await aiConnection(deps.db, deps.secretsKey, userId);
+      return runAi(step.config, (input as AiInput).input, { connection, model, attempt });
     }
     case "approval": {
       // A mocked test run approves straight away, so the builder shows the approved path without an email.
@@ -118,7 +120,6 @@ export function createExecutor(deps: ExecutorDeps): StepExecutor {
   const full: FullDeps = {
     ...deps,
     guard: deps.guard ?? defaultGuard(),
-    llmModel: deps.llmModel ?? "llama3.2",
     publicUrl: (deps.publicUrl ?? "http://localhost:3000").replace(/\/+$/, ""),
   };
   return {
@@ -131,7 +132,7 @@ export function createExecutor(deps: ExecutorDeps): StepExecutor {
       let input: unknown = null;
       try {
         input = resolveInput(step, withSecrets);
-        const result = await runStep(full, step, input, withSecrets, { idempotencyKey, attempt, stepRunId, mock });
+        const result = await runStep(full, step, input, withSecrets, { idempotencyKey, attempt, stepRunId, userId, mock });
         return { ...result, input: redact(input, values), output: redact(result.output, values) };
       } catch (err) {
         const message = redact(err instanceof Error ? err.message : String(err), values) as string;

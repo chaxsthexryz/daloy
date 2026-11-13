@@ -135,3 +135,15 @@ export const apiTokens = pgTable("api_tokens", {
   revokedAt: ts("revoked_at"),
   createdAt: createdAt(),
 });
+
+/** The AI model a user picked in the console. No row: the env vars decide (LLM_PROVIDER, LLM_BASE_URL, LLM_MODEL). */
+export const aiSettings = pgTable("ai_settings", {
+  userId: uuid("user_id").primaryKey().references(() => users.id, { onDelete: "cascade" }),
+  preset: text("preset").notNull(),
+  model: text("model").notNull(),
+  // The provider API key, encrypted like secrets. Null for local models.
+  keyCiphertext: text("key_ciphertext"),
+  keyIv: text("key_iv"),
+  keyAuthTag: text("key_auth_tag"),
+  updatedAt: ts("updated_at").notNull().defaultNow(),
+});

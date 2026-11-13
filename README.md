@@ -58,6 +58,24 @@ To work on the console with hot reload, run the API and worker (`pnpm --filter @
 
 After the seed: `demo@daloy.local`, password `daloy-demo-2026`. The account has the three starter templates (inquiry triage, invoice follow-up, booking no-show follow-up) as published workflows, and five mocked test runs in their run history. These are demo credentials for a local install; change or delete the account anywhere else.
 
+## Try the AI
+
+1. Sign in and open **AI model** (top of the workflow list).
+2. Pick a provider:
+   - **Local model** (Ollama on this computer): run `ollama pull llama3.2` once and keep Ollama running.
+   - **Gemini API** (free tier): get a key at Google AI Studio, no credit card. The model is prefilled as `gemini-3.8-flash`. Google may use free-tier data to improve its products, so use test data.
+   - **OpenAI** or **OpenRouter**: your own key.
+3. Press **Save**, then **Test the saved model**. It sends a sample inquiry about a double charge through the same classify prompt the Inquiry triage template uses, and shows the label it got (it should be `billing`), the time and the tokens. If it fails, it says why: model not reachable, key rejected, unknown model name or rate limit.
+4. Run the real scenario:
+   - Open **Inquiry triage** and follow its **Public form** link.
+   - Send a billing question, for example "I was charged twice for my March invoice, please refund one".
+   - Then send a product question, for example "The app crashes when I upload a photo".
+5. Check the result:
+   - Under **Runs**, each run shows the label the model picked and which branch ran.
+   - Mailpit (http://localhost:8025) has the thank-you email and the email forwarded to billing@ or support@.
+
+The choice applies to all AI steps in your workflows and takes effect on the next step, without a restart.
+
 ## Running tests
 
 ```bash
@@ -80,8 +98,9 @@ CI also runs Semgrep, gitleaks and `pnpm audit` on every push.
 - AI prompts are tested against a fake model server only. Their accuracy with a real model has not been measured. Delimiting and schema checks limit prompt injection but do not stop a model from choosing a wrong label.
 - Anyone who has an unused approval link can approve or reject. The email is the only check on who clicks.
 - An approval timeout is picked up by the worker's 15-second sweep, so it can fire up to 15 seconds late.
-- Every AI step uses the model in `LLM_MODEL`, from one provider for the whole worker.
-- The OpenAI-compatible mode is tested against mocked replies only. It has not been run against the Gemini API or another hosted provider.
+- Every AI step of a user's workflows uses the one model picked on the AI model page; there is no per-step model.
+- The hosted providers (Gemini, OpenAI, OpenRouter) are tested against mocked replies only. The first live call is the owner's own Test with their key.
+- The local choice uses whatever the operator set in `LLM_PROVIDER` and `LLM_BASE_URL`; users cannot enter their own server address.
 - Run history masks fields by key name. A field called `max_tokens` shows as `[secret]`, and a secret sent in trigger data under an ordinary key name stays visible to the workflow owner.
 - Run history lists the latest 50 runs per workflow, with no paging.
 - The builder lays out steps automatically and nodes cannot be dragged. Steps are added from the side panel, not by drawing edges.
