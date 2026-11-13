@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { RUN_QUEUE } from "@daloy/db";
+import { RUN_QUEUE, type MailDeps } from "@daloy/db";
 import {
   BadRequestException,
   type CanActivate,
@@ -17,7 +17,8 @@ import type * as z from "zod";
 export const DB = Symbol("db");
 export const BOSS = Symbol("boss");
 export const CONFIG = Symbol("config");
-export type ApiConfig = { secretsKey: Buffer; secureCookies: boolean };
+/** mail and publicUrl are for the test email and its confirmation link; createApp fills them from the env vars when left out. */
+export type ApiConfig = { secretsKey: Buffer; secureCookies: boolean; mail?: MailDeps; publicUrl?: string };
 
 /** Validates a body, param or query value with zod at the route boundary. */
 export class ZodPipe<T extends z.ZodType> implements PipeTransform {
@@ -41,7 +42,8 @@ export function isUniqueViolation(err: unknown): boolean {
 }
 
 /**
- * Fixed-window rate limit per client IP and route. A global one covers every route; stricter ones are added with @UseGuards.
+ * Fixed-window rate limit per route and per signed-in owner, or per client IP before sign-in. A global one covers every
+ * route (it runs before sign-in is checked, so it is always per IP); stricter ones are added with @UseGuards.
  * shortcut: counters live in process memory, so each API instance limits on its own; move them to Postgres before running several instances.
  */
 export function RateLimit(limit: number, windowMs = 60_000) {
@@ -49,8 +51,8 @@ export function RateLimit(limit: number, windowMs = 60_000) {
   @Injectable()
   class RateLimitGuard implements CanActivate {
     canActivate(ctx: ExecutionContext) {
-      const req = ctx.switchToHttp().getRequest<{ ip?: string }>();
-      const key = `${req.ip}:${ctx.getClass().name}.${ctx.getHandler().name}`;
+      const req = ctx.switchToHttp().getRequest<{ ip?: string; user?: { id: string } }>();
+      const key = `${req.user ? `user:${req.user.id}` : req.ip}:${ctx.getClass().name}.${ctx.getHandler().name}`;
       const now = Date.now();
       if (hits.size > 10_000) for (const [k, e] of hits) if (e.resetAt <= now) hits.delete(k);
       let entry = hits.get(key);

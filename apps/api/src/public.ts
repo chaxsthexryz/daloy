@@ -1,5 +1,5 @@
 import { createHmac, randomInt, randomUUID, timingSafeEqual } from "node:crypto";
-import { createRun, publishedVersion, readSecret, requests, runs, triggers, workflows, type Db } from "@daloy/db";
+import { businessProfiles, createRun, publishedVersion, readSecret, requests, runs, triggers, workflows, type Db } from "@daloy/db";
 import { OFFICE_REQUEST, type FormField } from "@daloy/engine";
 import {
   BadRequestException,
@@ -85,8 +85,8 @@ export class FormsController {
   // A request form carries a fresh submission key per load. no-store keeps the back button from reusing an old one.
   @Header("Cache-Control", "no-store")
   async page(@Param("id", new ZodPipe(z.uuid())) id: string) {
-    const { fields, tracked } = await this.form(id);
-    return renderForm(fields, tracked ? randomUUID() : undefined);
+    const { fields, tracked, businessName } = await this.form(id);
+    return renderForm(fields, tracked ? randomUUID() : undefined, businessName ?? undefined);
   }
 
   @Post(":id")
@@ -117,14 +117,15 @@ export class FormsController {
 
   private async form(id: string) {
     const [row] = await this.db
-      .select({ trigger: triggers, workflow: { id: workflows.id, userId: workflows.userId, setup: workflows.setup } })
+      .select({ trigger: triggers, workflow: { id: workflows.id, userId: workflows.userId, setup: workflows.setup }, businessName: businessProfiles.businessName })
       .from(triggers)
       .innerJoin(workflows, eq(workflows.id, triggers.workflowId))
+      .leftJoin(businessProfiles, eq(businessProfiles.userId, workflows.userId))
       .where(and(eq(triggers.id, id), eq(triggers.type, "form")));
     const version = row && (await publishedVersion(this.db, row.trigger.workflowId));
     if (!row || !version) throw new NotFoundException();
     const tracked = (row.workflow.setup as { template?: string } | null)?.template === OFFICE_REQUEST;
-    return { fields: (row.trigger.config as { fields: FormField[] }).fields, versionId: version.id, workflow: row.workflow, tracked };
+    return { fields: (row.trigger.config as { fields: FormField[] }).fields, versionId: version.id, workflow: row.workflow, tracked, businessName: row.businessName };
   }
 }
 
@@ -179,7 +180,8 @@ export const escapeHtml = (s: string) => s.replace(/[&<>"']/g, (c) => ENTITIES[c
 export const page = (body: string, title = "Form") =>
   `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${title}</title></head><body><main>${body}</main></body></html>`;
 
-function renderForm(fields: FormField[], submissionKey?: string) {
+/** businessName comes from the owner's profile, so a form behind a website's contact button says whose form it is. */
+function renderForm(fields: FormField[], submissionKey?: string, businessName?: string) {
   const inputs = fields
     .map((f) => {
       const attrs = `id="${f.name}" name="${f.name}"${f.required ? " required" : ""}`;
@@ -190,5 +192,6 @@ function renderForm(fields: FormField[], submissionKey?: string) {
   // Hidden from people (off screen, skipped by tab and screen readers) but visible to bots that fill every input.
   const honeypot = `<div aria-hidden="true" style="position:absolute;left:-9999px"><label for="${HONEYPOT}">Website</label><input id="${HONEYPOT}" name="${HONEYPOT}" tabindex="-1" autocomplete="off"></div>`;
   const key = submissionKey ? `<input type="hidden" name="${SUBMISSION_KEY}" value="${submissionKey}">` : "";
-  return page(`<form method="post">${inputs}${honeypot}${key}<button type="submit">Send</button></form>`);
+  const heading = businessName ? `<h1>${escapeHtml(businessName)}</h1>` : "";
+  return page(`${heading}<form method="post">${inputs}${honeypot}${key}<button type="submit">Send</button></form>`, businessName ? escapeHtml(businessName) : undefined);
 }

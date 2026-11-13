@@ -107,7 +107,7 @@ Tests: `apps/worker/src/worker.test.ts` runs the real worker against Postgres. I
 What it does: `createExecutor` in `index.ts` runs one step attempt. It decrypts the workflow owner's secrets, resolves every template in the step config, runs the step, and then replaces each secret value in the output and in any error text with `[secret]`. Only the redacted result is written to `step_runs`. The secret crypto lives in `packages/db/src/crypto.ts`, shared with the API.
 
 - HTTP (`http.ts`): GET, POST, PUT, PATCH or DELETE with a templated URL, headers (up to 20) and body. It follows up to 3 redirects and runs the SSRF checks again on each one. A 303, or a 301 or 302 after a POST, switches to GET without a body. A redirect to another origin drops the caller's headers, so an `Authorization` header is not sent to a third party. The whole call has a 10 second timeout and the response is cut off at 1 MB. Output is `{ status, headers, body }`, with the body parsed when the content type is JSON. 5xx, 429, timeouts and network errors are retryable. Other 4xx responses, oversized responses and SSRF blocks are not.
-- Email (`email.ts`): plain text over SMTP (nodemailer), configured with `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS` and `SMTP_FROM`. The `to` template is resolved first, then split on commas, and each address is checked. At most 10 recipients. The `Message-ID` comes from the idempotency key. SMTP 5xx replies are final, and anything else is retried.
+- Email (`packages/db/src/mail.ts`): plain text over SMTP (nodemailer), sent as the workflow owner. `sendAs()` asks `resolveSender()` who that is: the owner's own Gmail account, or the installation's server (`SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM`) when they connected none. See Business profile and Gmail sender below. The `to` template is resolved first, then split on commas, and each address is checked. At most 10 recipients. The `Message-ID` comes from the idempotency key. SMTP 5xx replies are final, and anything else is retried. The step output records the sending address.
 - Condition: evaluates the step's condition and returns the `true` or `false` branch.
 - Delay: returns a wake-up time 1 second to 30 days ahead (see Waiting above).
 - AI task (`ai.ts`): see AI step below.
@@ -115,7 +115,7 @@ What it does: `createExecutor` in `index.ts` runs one step attempt. It decrypts 
 
 Edge cases: a secret that appears in a response body, a response header or an error message is redacted. Redaction is plain text replacement, so a very short secret (such as `1`) also hides unrelated text that matches it.
 
-Tests: `steps/index.test.ts` (secrets reach the request but not the stored output or errors, trigger data cannot pull in a secret, templates, condition, delay, mocked ai and approval, the approval email and its stored hash) and `steps/email.test.ts` (recipient cap and validation, message id, SMTP error mapping).
+Tests: `steps/index.test.ts` (secrets reach the request but not the stored output or errors, trigger data cannot pull in a secret, templates, condition, delay, mocked ai and approval, the approval email and its stored hash), `packages/db/src/mail.test.ts` (recipient cap and validation, message id, SMTP error mapping, sending as the owner) and `steps/senders.test.ts` (two owners, approval mail, disconnecting one owner).
 
 ## AI model settings (packages/db/src/ai-settings.ts, apps/api/src/settings.ts, apps/web/src/Settings.tsx)
 
@@ -266,15 +266,44 @@ Edge cases:
 
 Tests: `packages/engine/src/office-request.test.ts` (valid definition without AI, preview contents, answer validation), `apps/api/src/office-request.test.ts` (setup saving and owner checks, one request per key, concurrent duplicates, separate references, request list scoped to the owner), `e2e/office-request.spec.ts` (preview, leave and resume the draft, turn on, double-click Send, one row, one receipt, no sample mail).
 
+## Business profile and Gmail sender (packages/db/src/mail-senders.ts, apps/api/src/email-settings.ts, apps/web/src/BusinessSetup.tsx)
+
+What it does: Business and email in the console header holds the owner's business details (name, website, inbox for new inquiries, reply address) and their email sender. With no sender connected, mail goes through the installation's server, which is Mailpit on a local install. Connect Gmail asks for the Gmail address and a Google app password, links to Google's instructions and says that 2-Step Verification is required. Send a test email to me sends one message to the owner and shows the sender and reply address, and says that "accepted" is not "delivered". The first test to a new Gmail address carries a one-time link. The owner opens it while signed in, and only then do their automations send from that address. Replace password, Disconnect and "Use the local mail server instead" cover the rest.
+
+Every send for an owner goes through `resolveSender()`: email steps, approval mail and the test email. It returns the installation server (no sender row), the owner's Gmail login (a confirmed, working sender) or a block with the reason. A blocked send fails the step without a retry and without contacting any server. The From name is the business name and Reply-To is the reply address, for either sender.
+
+Why this way: one function decides the sender, so no path can send as another owner or fall back to a different address. App passwords need no Google Cloud project or OAuth review, which suits a client connecting their own mailbox. See [decision 0020](decisions/0020-owner-mail-senders.md).
+
+Edge cases:
+
+- The app password is encrypted with the owner's id bound in, never returned by the API, and deleted on Disconnect. Google's spaces are stripped, and a 16-letter check catches someone typing their Gmail password.
+- Gmail rejecting the login (535) marks the sender failed. Runs fail with "Gmail rejected the app password. Reconnect Gmail" until a new password is saved or a test goes through.
+- Disconnecting blocks that owner's mail, including runs already waiting to send. Other owners are not affected.
+- The confirmation link is single use, expires after 30 minutes, is stored as a hash, and only works for the signed-in owner it was sent to. A newer test replaces it. Test emails are limited to 5 a minute per owner.
+- A changed Gmail address needs a new confirmation. A new password for the same confirmed address does not.
+- Business names with braces or line breaks are refused, so a name cannot become a template placeholder or a mail header.
+
+Tests: `packages/db/src/mail-senders.test.ts` (sender states, encryption bound to the owner, two owners, disconnect, the link's single use, owner check and expiry), `packages/db/src/mail.test.ts` (Gmail login as the owner, no server contacted for a blocked sender, a 535 marks the sender failed), `apps/worker/src/steps/senders.test.ts` (two owners each send as themselves, approval mail, disconnecting one), `apps/api/src/email-settings.test.ts` (routes, validation, the link across owners, rate limit). These use a fake SMTP server (`test/fake-smtp.ts`) and never contact Google. The live check is a manual list in [live Gmail check](live-gmail-check.md), not run yet.
+
+## Reply to a website inquiry (packages/engine/src/website-inquiry.ts, apps/web/src/BusinessSetup.tsx, apps/api/src/public.ts)
+
+What it does: once a business name and inquiry inbox are saved, the same page shows who replies are sent from, where answers go and where inquiries go, then offers Turn on inquiry replies. That publishes a "Website inquiries" workflow: a form (name, email, message), a thank-you reply to the customer and a notification to the inquiry inbox. No AI step. After that the page shows Copy inquiry form link, Open form and View activity, and explains how to point a website's Contact button at the link. The hosted form page shows the business name as its heading.
+
+Why this way: the definition is built from the profile and published through the normal versions route, as the office request is, so the advanced editor and run history work unchanged. Turning it on again after editing the profile publishes a new version.
+
+Edge cases: saving a website address connects nothing, and the page says so. An existing form on the client's website keeps working on its own; forwarding its entries needs a developer. While a connected Gmail sender is not confirmed or working, the page warns that customer replies will not be sent. On localhost the page says the link only works on this computer.
+
+Tests: `packages/engine/src/website-inquiry.test.ts` (definition without AI, profile and Gmail input validation), `apps/api/src/email-settings.test.ts` (the form page names the business, escaped), `e2e/business-setup.spec.ts` (save details, connect and disconnect Gmail without sending, test email to the local server, turn on, submit as a customer, the reply and the notification arrive).
+
 ## Seed and demo login (apps/api/src/seed.ts)
 
-What it does: `pnpm seed` (or `SEED_URL=... pnpm seed`) signs up `demo@daloy.local` with the password `daloy-demo-2026`, creates the three starter templates as published workflows, and starts five mocked test runs with realistic trigger data (two inquiries, one unpaid invoice, one no-show and one attended booking). The worker runs them like any other test run. It also turns on an Office requests automation with no requests. The seed sends no form submissions, because those send live email and `.env` may point SMTP at a real mailbox.
+What it does: `pnpm seed` (or `SEED_URL=... pnpm seed`) signs up `demo@daloy.local` with the password `daloy-demo-2026`, creates the three starter templates as published workflows, and starts five mocked test runs with realistic trigger data (two inquiries, one unpaid invoice, one no-show and one attended booking). The worker runs them like any other test run. It also turns on an Office requests automation with no requests, saves a business profile for "Daloy Demo Office" and turns on Website inquiries. The demo owner connects no Gmail account, so their mail goes through the installation server (Mailpit locally). The seed sends no form submissions, because those send live email.
 
 Why this way: the seed talks to the running API over HTTP instead of writing rows. Sign-up, validation, publishing and trigger setup go through the same code as the console, and the seed works with the DML-only database role.
 
 Edge cases: running it twice is safe. A second run signs in instead of signing up and skips workflows whose slug exists. Mocked test runs cap a delay at one second, so the invoice run's one-week wait passes at once and all five runs succeed.
 
-Tests: `apps/api/src/seed.test.ts` seeds twice against the real API and checks one demo user, four published workflows, five mocked test runs and no office requests. `e2e/demo.spec.ts` seeds the e2e stack, signs in with the demo login in Chromium and waits for the inquiry runs to succeed.
+Tests: `apps/api/src/seed.test.ts` seeds twice against the real API and checks one demo user, five published workflows, five mocked test runs, no office requests, the business profile and that the demo owner's sender is the installation server. `e2e/demo.spec.ts` seeds the e2e stack, signs in with the demo login in Chromium and waits for the inquiry runs to succeed.
 
 ## Database roles (docker/app-role.sql, apps/worker/src/migrate.ts)
 

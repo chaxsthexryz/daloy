@@ -78,6 +78,13 @@ services:
       MIGRATE_ON_BOOT: "false"
       SECRETS_KEY: ${SECRETS_KEY:?set SECRETS_KEY in .env (openssl rand -base64 32)}
       WEB_DIST: /app/apps/web/dist
+      # For "Send a test email to me" on the Business and email page. Same defaults as the worker.
+      SMTP_HOST: ${SMTP_HOST:-mailpit}
+      SMTP_PORT: ${SMTP_PORT:-1025}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM: ${SMTP_FROM:-Daloy <daloy@localhost>}
+      PUBLIC_URL: ${PUBLIC_URL:-http://localhost:3000}
       # For the "Test" button on the AI model page. Same defaults as the worker.
       LLM_BASE_URL: ${LLM_BASE_URL:-http://host.docker.internal:11434}
       LLM_MODEL: ${LLM_MODEL:-llama3.2}

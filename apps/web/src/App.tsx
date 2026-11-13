@@ -6,13 +6,15 @@ import { RunPage, RunsPage } from "./Runs";
 import { BuildWithAi } from "./AiDraft";
 import { OfficeRequestPage, startOfficeSetup, TryOfficeRequest } from "./OfficeRequests";
 import { SettingsPage } from "./Settings";
+import { BusinessSetupPage, VerifySenderPage } from "./BusinessSetup";
 import { TokensPage } from "./Tokens";
 import { VersionsPage } from "./Versions";
 
 type User = { id: string; email: string };
 
 /**
- * Hash routes (#/, #/w/<id>, #/w/<id>/runs, #/w/<id>/versions, #/runs/<id>, #/tokens, #/settings,
+ * Hash routes (#/, #/w/<id>, #/w/<id>/runs, #/w/<id>/versions, #/runs/<id>, #/tokens, #/settings, #/settings/business,
+ * #/verify-sender/<token> for the Gmail confirmation link,
  * #/try/office-request for the preview and #/a/<id> for a guided automation),
  * so no path of the console can clash with an API route on the same origin.
  */
@@ -46,6 +48,9 @@ export function App() {
   if (hash === "#/try/office-request") return <TryOfficeRequest email={user.email} />;
   if (hash === "#/tokens") return <TokensPage />;
   if (hash === "#/settings") return <SettingsPage />;
+  if (hash === "#/settings/business") return <BusinessSetupPage />;
+  const verify = /^#\/verify-sender\/([A-Za-z0-9_-]{43})$/.exec(hash);
+  if (verify) return <VerifySenderPage key={verify[1]} token={verify[1]!} />;
   return <Workflows user={user} onSignOut={() => api("POST", "/auth/logout").then(() => setUser(null))} />;
 }
 
@@ -128,6 +133,7 @@ function Workflows({ user, onSignOut }: { user: User; onSignOut: () => void }) {
         <h1>Workflows</h1>
         <span className="muted">{user.email}</span>
         <a href="#/tokens">API tokens</a>
+        <a href="#/settings/business">Business and email</a>
         <a href="#/settings">AI model</a>
         <button type="button" className="quiet" onClick={onSignOut}>
           Sign out
@@ -142,6 +148,11 @@ function Workflows({ user, onSignOut }: { user: User; onSignOut: () => void }) {
           <button type="button" className="primary" onClick={() => startOfficeSetup(user.email).catch((e: Error) => setError(e.message))}>
             Set up for my office
           </button>
+        </div>
+        <h3>Reply to a website inquiry</h3>
+        <p>Visitors fill in your inquiry form. They get a reply from your own email address, and your inbox gets the inquiry.</p>
+        <div className="actions">
+          <a href="#/settings/business">Set up inquiry replies</a>
         </div>
       </section>
       <form onSubmit={create} className="create">

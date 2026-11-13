@@ -1,5 +1,5 @@
 import { resolve } from "node:path";
-import { defaultAnswers, officeRequestDefinition, TEMPLATES } from "@daloy/engine";
+import { defaultAnswers, officeRequestDefinition, TEMPLATES, WEBSITE_INQUIRY_SLUG, websiteInquiryDefinition } from "@daloy/engine";
 
 export const DEMO_EMAIL = "demo@daloy.local";
 export const DEMO_PASSWORD = "daloy-demo-2026";
@@ -29,7 +29,7 @@ export async function seed(baseUrl: string) {
     const res = await fetch(new URL(path, baseUrl), { method, headers: { "content-type": "application/json", cookie }, body: body === undefined ? undefined : JSON.stringify(body) });
     cookie = res.headers.getSetCookie().map((c) => c.split(";")[0]).join("; ") || cookie;
     if (!res.ok && res.status !== 409) throw new Error(`${method} ${path}: ${res.status} ${await res.text()}`);
-    return res.status === 409 ? null : (res.json() as Promise<Record<string, unknown>>);
+    return res.status === 409 || res.status === 204 ? null : (res.json() as Promise<Record<string, unknown>>);
   };
 
   // 409: the demo user exists already, so sign in instead.
@@ -48,6 +48,14 @@ export async function seed(baseUrl: string) {
     const wf = (await call("POST", "/workflows", { name: answers.name, slug: "office-requests" }))!;
     await call("PATCH", `/workflows/${wf.id}/setup`, { step: "review", answers });
     await call("POST", `/workflows/${wf.id}/versions`, { definition: officeRequestDefinition(answers), publish: true });
+  }
+
+  // "Reply to a website inquiry": a business profile and its live form. No Gmail is connected, so replies go to Mailpit.
+  const profile = { businessName: "Daloy Demo Office", website: "https://demo.daloy.local", inquiryEmail: DEMO_EMAIL, replyTo: DEMO_EMAIL };
+  await call("PUT", "/settings/email/profile", profile);
+  if (!existing.has(WEBSITE_INQUIRY_SLUG)) {
+    const wf = (await call("POST", "/workflows", { name: "Website inquiries", slug: WEBSITE_INQUIRY_SLUG }))!;
+    await call("POST", `/workflows/${wf.id}/versions`, { definition: websiteInquiryDefinition(profile), publish: true });
   }
 }
 

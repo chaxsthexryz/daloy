@@ -1,14 +1,16 @@
 import { randomUUID } from "node:crypto";
-import { aiConnection, createApproval, readSecrets, type Db } from "@daloy/db";
+import { aiConnection, createApproval, readSecrets, sendAs, type Db, type MailDeps } from "@daloy/db";
 import { evaluateCondition, isRetryable, mockAiOutput, resolveTemplate, StepError, type ExpressionContext, type Step } from "@daloy/engine";
 import type { StepExecutor, StepResult } from "../advance";
 import { runAi } from "./ai";
-import { sendEmail, type Mailer } from "./email";
 import { httpRequest } from "./http";
 import { defaultGuard, type SsrfGuard } from "./ssrf";
 
-/** publicUrl (PUBLIC_URL) is where the API is reachable, for approval links. The AI model comes from the owner's settings or the LLM_* env vars. */
-export type ExecutorDeps = { db: Db; secretsKey: Buffer; mailer: Mailer; guard?: SsrfGuard; publicUrl?: string };
+/**
+ * publicUrl (PUBLIC_URL) is where the API is reachable, for approval links. The AI model comes from the owner's settings
+ * or the LLM_* env vars. Mail goes out as the owner: their Gmail, or the installation server when they connected none.
+ */
+export type ExecutorDeps = { db: Db; secretsKey: Buffer; mail: MailDeps; guard?: SsrfGuard; publicUrl?: string };
 type FullDeps = ExecutorDeps & { guard: SsrfGuard; publicUrl: string };
 
 // Config fields are templates that must end up as text, even when a placeholder resolves to a number or object.
@@ -86,8 +88,8 @@ async function runStep(deps: FullDeps, step: Step, input: unknown, ctx: Expressi
     case "email": {
       const mail = input as EmailInput;
       if (mock) return { output: { mocked: true, to: mail.to, subject: mail.subject } };
-      const sent = await sendEmail(deps.mailer, mail, idempotencyKey);
-      return { output: { messageId: sent.messageId, to: sent.to } };
+      const sent = await sendAs(deps.db, deps.secretsKey, deps.mail, userId, mail, idempotencyKey);
+      return { output: { messageId: sent.messageId, to: sent.to, from: sent.from } };
     }
     case "ai": {
       if (mock) return { output: mockAiOutput(step.config) };
@@ -105,7 +107,7 @@ async function runStep(deps: FullDeps, step: Step, input: unknown, ctx: Expressi
       const body = `${cfg.message}\n\nApprove or reject here:\n${link}\n\nThe link works once and expires at ${expiresAt.toISOString()}.`;
       // A re-run of this attempt after a crash sends a new link (the old one is deleted), so it needs its own Message-ID,
       // or a mail server could drop it as a duplicate of the dead one.
-      await sendEmail(deps.mailer, { to: cfg.to, subject: cfg.subject, text: body }, `${idempotencyKey}:${randomUUID().slice(0, 8)}`);
+      await sendAs(deps.db, deps.secretsKey, deps.mail, userId, { to: cfg.to, subject: cfg.subject, text: body }, `${idempotencyKey}:${randomUUID().slice(0, 8)}`);
       // The run waits until the timeout; recording a decision wakes it earlier (decision 0009).
       return { output: { expiresAt: expiresAt.toISOString() }, waitUntil: expiresAt };
     }

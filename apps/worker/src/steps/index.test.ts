@@ -48,16 +48,22 @@ const executor = () =>
   createExecutor({
     db,
     secretsKey: key,
-    mailer: {
-      // jsonTransport builds the message without sending it; keep it so tests can read the approval link.
-      transport: {
-        sendMail: async (msg: SendMailOptions) => {
-          const info = await nodemailer.createTransport({ jsonTransport: true }).sendMail(msg);
-          sent.push(String(info.message));
-          return info;
-        },
-      } as unknown as Transporter,
-      from: "d@example.com",
+    mail: {
+      installation: {
+        // jsonTransport builds the message without sending it; keep it so tests can read the approval link.
+        transport: {
+          sendMail: async (msg: SendMailOptions) => {
+            const info = await nodemailer.createTransport({ jsonTransport: true }).sendMail(msg);
+            sent.push(String(info.message));
+            return info;
+          },
+        } as unknown as Transporter,
+        from: "d@example.com",
+      },
+      // This owner connected no Gmail account (senders.test.ts covers that path).
+      gmail: () => {
+        throw new Error("no Gmail in this test");
+      },
     },
     publicUrl: "https://daloy.example.com/",
     guard: {
@@ -99,7 +105,7 @@ describe("step executor", () => {
 
   it("sends email with resolved templates", async () => {
     const out = await run({ id: "mail", type: "email", config: { to: "{{trigger.email}}", subject: "Hi {{trigger.name}}", text: "t" } }, { email: "ana@example.com", name: "Ana" });
-    expect(out.output).toEqual({ messageId: "<r.s.1@daloy>", to: ["ana@example.com"] });
+    expect(out.output).toEqual({ messageId: "<r.s.1@daloy>", to: ["ana@example.com"], from: "d@example.com" });
   });
 
   it("takes a condition branch and schedules a delay", async () => {

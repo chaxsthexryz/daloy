@@ -1,6 +1,5 @@
-import { createDb } from "@daloy/db";
+import { createDb, mailDeps } from "@daloy/db";
 import { createExecutor } from "../src/steps";
-import { smtpMailer } from "../src/steps/email";
 import { BLOCKED_RANGES, blockListOf, defaultGuard } from "../src/steps/ssrf";
 import { startWorker } from "../src/worker";
 import { RECEIVER_PORT } from "./stack";
@@ -10,5 +9,5 @@ import { RECEIVER_PORT } from "./stack";
 const url = process.env.DATABASE_URL!;
 const { db } = createDb(url);
 const guard = { ...defaultGuard(), blockList: blockListOf(BLOCKED_RANGES.filter(([net]) => net !== "127.0.0.0")), ports: ["", "80", "443", String(RECEIVER_PORT)] };
-await startWorker({ connectionString: url, db, executor: createExecutor({ db, secretsKey: Buffer.alloc(32), mailer: smtpMailer(), guard }) });
+await startWorker({ connectionString: url, db, executor: createExecutor({ db, secretsKey: Buffer.alloc(32), mail: mailDeps(), guard }) });
 console.log(`worker ${process.pid} started`);
