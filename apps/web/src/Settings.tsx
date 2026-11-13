@@ -10,7 +10,7 @@ type TestResult = { ok: boolean; model: string; sample: string; label?: string; 
 
 // One plain line per choice, so the trade-off is clear before picking.
 const NOTES: Record<string, string> = {
-  local: "Runs on this computer with Ollama. Private and free. Ollama must be running with the model pulled (ollama pull llama3.2).",
+  local: "Runs on this computer: Ollama by default, or the local server set in .env (such as the Hermes app's). Private and free. The server must be running.",
   gemini: "Free tier with a key from Google AI Studio, no credit card. Google may use what you send to improve its products, so use test data.",
   openai: "Your own OpenAI key. Billed by OpenAI.",
   openrouter: "Your own OpenRouter key. One key for many hosted models.",
