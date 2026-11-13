@@ -18,14 +18,16 @@ const classify = aiConfigSchema.parse(triage.config);
 const SAMPLE = "Hi, I was charged twice for my March invoice (INV-2026-0412). Can you refund one of the payments?";
 
 /** Plain-language reasons for the console. Only the HTTP status is known, never the provider's response body. */
-function explain(err: unknown): string {
+export function explain(err: unknown): string {
   if (!(err instanceof LlmError)) return "The test failed unexpectedly. Check the worker and API logs.";
   if (err.invalidOutput) return "The model answered, but not in the expected format. A larger model usually fixes this.";
+  if (err.message.endsWith("TimeoutError")) return "The model took too long to answer. A hosted model may be overloaded; try again in a minute.";
   const status = Number(/HTTP (\d+)/.exec(err.message)?.[1]);
-  if (!status) return "Could not reach the model. For a local model, check that Ollama is running and the model is pulled.";
+  if (!status) return "Could not connect to the model. For a local model, check that Ollama is running and the model is pulled.";
   if (status === 401 || status === 403) return "The provider rejected the API key.";
   if (status === 404) return "The provider does not know this model name.";
   if (status === 429) return "The provider's rate limit or free quota was reached. Wait a minute and try again.";
+  if (status >= 500) return `The provider is busy or down right now (HTTP ${status}). Try again in a minute.`;
   return `The provider answered with HTTP ${status}.`;
 }
 

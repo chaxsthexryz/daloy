@@ -123,6 +123,16 @@ Edge cases: no saved choice means the env vars decide, as before. A hosted choic
 
 Tests: `packages/db/src/ai-settings.test.ts` (env fallback, encrypted key, key kept or dropped, key required), `apps/api/src/settings.test.ts` (session needed, key never returned, validation, live test against a fake Ollama, unreachable model), `apps/worker/src/steps/index.test.ts` (an AI step uses its owner's model), `e2e/settings.spec.ts` (save Gemini with a key, key shown as saved but never displayed).
 
+## Building workflows by describing them (packages/engine/src/ai-draft.ts, apps/api/src/ai-draft.ts, apps/web/src/AiDraft.tsx)
+
+What it does: on the workflow list, "Build with AI" takes a description in plain words and opens the editor on a new, unpublished workflow the model drafted. In the editor, "Ask the AI" is a short chat: each message asks for a change, and the model rewrites the current draft, which the canvas shows straight away as unsaved. Both use `POST /ai/draft` with the model picked on the AI model page.
+
+Why this way: the model writes the whole definition as JSON, and `parseDraftReply()` checks it with the same `definitionSchema` as a hand-built workflow, so a draft can never hold a step type, edge or branch the engine would refuse. The prompt lists each step type's JSON schema (from `stepJsonSchemas()`), the branch labels, the expression syntax and the Inquiry triage template as an example; it stays under about 3,000 tokens so a local model's default context fits it. No JSON schema is sent to the provider: the definition union is too complex for some providers' schema support, so the reply text is parsed instead (decision 0017).
+
+Edge cases: a reply with text or a code fence around the JSON still parses. An invalid draft gets one more try with its problems listed; if that also fails, the API answers 422 with the reasons and nothing is saved. A model that cannot be reached, or rejects the key, gives the same plain reasons as the AI model test. The description and the current draft go in the user message, never the system prompt. Drafts are never saved or published by the AI: the user reviews, test runs and publishes them, and live HTTP calls still pass the SSRF guard. A taken slug gets `-2`, `-3` and so on. Small local models often write invalid drafts; Gemini or a larger model does much better.
+
+Tests: `packages/engine/src/ai-draft.test.ts` (prompt content and size, fenced replies, readable errors, graph errors), `apps/api/src/ai-draft.test.ts` (session needed, draft from a request, one repair with the errors, 422 after two failures, change request carries the current draft, input limits), `e2e/ai-draft.spec.ts` (describe, review the draft, change it in the chat; `e2e/llm-fake.ts` stands in for the model).
+
 ## AI step (packages/engine/src/ai.ts, apps/worker/src/steps/ai.ts)
 
 What it does: runs one task on text. `classify` picks one of the configured labels, `extract` pulls named fields out of the text, `summarize` writes a short summary and `draft` writes a reply. Later steps read the result, for example `{{steps.classify.output.label}}` in a condition. The model is `LLM_MODEL` (default `llama3.2`) at `LLM_BASE_URL`, through `packages/llm-ts`.

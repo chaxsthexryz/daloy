@@ -1,6 +1,7 @@
 import type { FormField, Step, Trigger } from "@daloy/engine";
 import { Background, Controls, Handle, Position, ReactFlow, type Node, type NodeChange, type NodeProps } from "@xyflow/react";
 import { useEffect, useId, useMemo, useState } from "react";
+import { AskAi } from "./AiDraft";
 import { api, type Version, type Workflow } from "./api";
 import { RunResult, useRun } from "./Runs";
 import { ADDABLE, addStep, blankDraft, removeStep, toFlow, type AddableType, type Draft, type StepNodeData } from "./lib/graph";
@@ -202,6 +203,15 @@ export function Editor({ id }: { id: string }) {
               {message.text}
             </p>
           )}
+          <AskAi
+            workflowId={id}
+            draft={draft}
+            onApply={(d) => {
+              update(d);
+              setSelected(null);
+              setPayload(samplePayload(d.trigger));
+            }}
+          />
           <nav aria-label="Steps">
             <h2>Steps</h2>
             <ol className="outline">
