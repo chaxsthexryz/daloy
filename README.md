@@ -74,7 +74,9 @@ CI also runs Semgrep, gitleaks and `pnpm audit` on every push.
 - The console bundle is about 520 kB (160 kB gzipped), mostly React Flow, React and zod.
 - Secret redaction is plain text replacement, so a very short secret value also hides unrelated text that matches it.
 - The HTTP step ignores proxy environment variables and only calls ports 80 and 443.
-- Rate limits are counted per API process.
+- Rate limits are counted per API process, and per IP rather than per token.
+- MCP tool calls return as soon as the run is queued. Clients poll `get_run_status` for the result; there are no progress notifications.
+- An API token can start every published form workflow of its owner. There are no per-workflow scopes.
 
 ## Dependencies
 
@@ -102,6 +104,9 @@ CI also runs Semgrep, gitleaks and `pnpm audit` on every push.
 | @xyflow/react | Workflow canvas (React Flow) | MIT |
 | vite, @vitejs/plugin-react | Console dev server and build | MIT |
 | @playwright/test | End-to-end tests | Apache-2.0 |
+| @modelcontextprotocol/server | Official MCP server SDK (v2) | Apache-2.0 |
+| @modelcontextprotocol/node | Official adapter from the MCP handler to Node and Express; pulls in hono and @hono/node-server (MIT) | Apache-2.0 |
+| @modelcontextprotocol/client | Official MCP client, used by the MCP integration and end-to-end tests | Apache-2.0 |
 
 TypeScript is pinned to 6.0.x because typescript-eslint 8 does not support TypeScript 7 yet.
 

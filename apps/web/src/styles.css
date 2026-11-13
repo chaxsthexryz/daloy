@@ -41,6 +41,7 @@ a { color: var(--accent); }
 code, pre { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-size: 0.85rem; }
 pre { background: var(--surface); border: 1px solid var(--border); padding: 0.5rem; overflow: auto; max-height: 12rem; margin: 0.25rem 0 0; }
 .muted { color: var(--muted); }
+.token { overflow-wrap: anywhere; white-space: pre-wrap; background: var(--surface); border: 1px solid var(--border); border-radius: 4px; padding: 0.4rem 0.6rem; }
 .hint { font-size: 0.875rem; margin: 0.25rem 0 0.75rem; }
 
 :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }

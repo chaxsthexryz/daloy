@@ -3,12 +3,13 @@ import { useEffect, useState, type FormEvent } from "react";
 import { api, ApiError, type Workflow } from "./api";
 import { Editor } from "./Editor";
 import { RunPage, RunsPage } from "./Runs";
+import { TokensPage } from "./Tokens";
 import { VersionsPage } from "./Versions";
 
 type User = { id: string; email: string };
 
 /**
- * Hash routes (#/, #/w/<id>, #/w/<id>/runs, #/w/<id>/versions, #/runs/<id>),
+ * Hash routes (#/, #/w/<id>, #/w/<id>/runs, #/w/<id>/versions, #/runs/<id>, #/tokens),
  * so no path of the console can clash with an API route on the same origin.
  */
 function useHash() {
@@ -36,6 +37,7 @@ export function App() {
   if (page) return <Editor key={page[1]} id={page[1]!} />;
   const run = /^#\/runs\/([0-9a-f-]{36})$/.exec(hash);
   if (run) return <RunPage key={run[1]} runId={run[1]!} />;
+  if (hash === "#/tokens") return <TokensPage />;
   return <Workflows user={user} onSignOut={() => api("POST", "/auth/logout").then(() => setUser(null))} />;
 }
 
@@ -113,6 +115,7 @@ function Workflows({ user, onSignOut }: { user: User; onSignOut: () => void }) {
       <header className="toolbar plain">
         <h1>Workflows</h1>
         <span className="muted">{user.email}</span>
+        <a href="#/tokens">API tokens</a>
         <button type="button" className="quiet" onClick={onSignOut}>
           Sign out
         </button>

@@ -155,7 +155,7 @@ Versions: saving a definition adds the next immutable version. Publishing also m
 
 Secrets: values are encrypted with AES-256-GCM using `SECRETS_KEY`, with a fresh IV per write. The owner id and secret name are bound in as associated data, so a ciphertext copied to another row will not decrypt. The API never returns a value, only names.
 
-API tokens: shown once at creation, stored as SHA-256, and revocable. MCP clients use them in phase 8.
+API tokens: shown once at creation, stored as SHA-256, and revocable. MCP clients send them as bearer tokens (see MCP below). The console page `#/tokens` creates, lists and revokes them.
 
 Rate limits: every route allows 120 requests per minute per IP, login, form submissions and approval decisions 10, approval pages 30, webhooks 60. Request bodies are capped at 256 kb for JSON and 64 kb for forms.
 
@@ -205,3 +205,17 @@ Rollback: "Roll back to v1" posts v1's definition to `POST /workflows/:id/versio
 Edge cases: `test` accepts only `true` or `false`. A version number that is not a positive integer gets 400, and another user's workflow gets 404. A null value under a secret key stays null, so an empty field still reads as empty.
 
 Tests: `apps/api/src/mask.test.ts` and `apps/web/src/lib/diff.test.ts` (unit). `apps/worker/src/steps/index.test.ts` checks that the stored input is resolved and redacted, on success and on failure, and `worker.test.ts` checks that the worker saves it. `api.test.ts` covers the `test` filter, masked fields, the version route with its 400 and 404 cases, and a rollback that creates a published v3. `e2e/history.spec.ts` (Playwright) runs a workflow, opens the run with a masked trigger field and its step input, changes the flow, reads the diff and rolls back.
+
+## MCP (apps/api/src/mcp.ts)
+
+What it does: `/mcp` is a Streamable HTTP MCP endpoint. An MCP client (Claude Desktop, an agent, a script) connects with `Authorization: Bearer <token>`, using a token from the console's API tokens page. Each of the token owner's published workflows with a form trigger is a tool named after the workflow slug. Its input schema is the form's fields. Calling it starts a run and returns `{ runId, status: "pending" }` right away. `get_run_status { runId }` returns `{ runId, status, error, finishedAt }`, where status is the run state, or `waiting_approval` while the run waits on an approval step.
+
+Why it's built this way: it uses the official MCP SDK v2 (`@modelcontextprotocol/server`), which is the stable line and supports both the 2026-07-28 protocol and older clients. The endpoint is stateless: every request builds a fresh MCP server with that user's tools, so nothing is stored between requests, a newly published workflow appears on the next request, and a revoked token stops working at once. See [decision 0011](decisions/0011-mcp-sdk-v2.md).
+
+Auth: `McpTokenGuard` hashes the bearer token with SHA-256 and runs one UPDATE that matches the hash, skips revoked tokens and sets `last_used_at`. No match gives 401 with `WWW-Authenticate: Bearer`. The owner's id is passed to the tool handlers, and every query filters on it, so a token only sees its owner's workflows and runs.
+
+Tools: `toolsFromRows()` turns each workflow row into a tool. The input schema is `fieldsSchema()`, the zod schema the hosted form uses, so a tool call and a form submission accept the same input: required fields, email format, length limits and number coercion. Only the latest published version runs, as with the form. `runStatus()` reports `waiting_approval` when the run is waiting and its last step run is a waiting step whose definition type is `approval`. A waiting delay step reports plain `waiting`.
+
+Edge cases: a token that is missing, unknown, malformed or revoked gets 401. A run id that is not a uuid is rejected by the tool's schema. Another user's run and a run that does not exist both return the tool error "run not found". Draft-only workflows, workflows with other triggers and other users' workflows are not listed. Tool names cannot clash with `get_run_status`, because slugs only use a-z, 0-9 and `-`. The route allows 60 requests a minute per IP.
+
+Tests: `apps/api/src/mcp.test.ts` has unit tests for `toolsFromRows` and `runStatus`, and integration tests that drive the endpoint with the official MCP client: missing, unknown and revoked tokens, a raw 2025-era `initialize`, the tool list and `last_used_at`, input validation and run creation, hidden runs of other users, a waiting approval, and the rate limit. `e2e/mcp.spec.ts` (Playwright) creates a token in the console, lists and calls a tool, polls `get_run_status` until the run succeeds, revokes the token and checks the client is refused.

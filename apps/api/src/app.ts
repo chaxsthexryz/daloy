@@ -9,6 +9,7 @@ import type { PgBoss } from "pg-boss";
 import { ApprovalsController } from "./approvals";
 import { AuthController, SessionGuard } from "./auth";
 import { BOSS, CONFIG, DB, RateLimit, type ApiConfig } from "./http";
+import { McpController } from "./mcp";
 import { FormsController, HooksController } from "./public";
 import { RunsController } from "./runs";
 import { SecretsController } from "./secrets";
@@ -24,7 +25,7 @@ export async function createApp({ db, boss, ...config }: AppOptions) {
   await boss.createQueue(SCHEDULE_QUEUE);
 
   @Module({
-    controllers: [AuthController, WorkflowsController, CatalogController, SecretsController, TokensController, RunsController, HooksController, FormsController, ApprovalsController],
+    controllers: [AuthController, WorkflowsController, CatalogController, SecretsController, TokensController, RunsController, HooksController, FormsController, ApprovalsController, McpController],
     providers: [
       { provide: DB, useValue: db },
       { provide: BOSS, useValue: boss },
