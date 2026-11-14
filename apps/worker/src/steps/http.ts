@@ -47,11 +47,15 @@ export async function httpRequest(cfg: HttpConfig, idempotencyKey: string, opts:
         res.resume();
         if (hop === MAX_REDIRECTS) throw new StepError(`more than ${MAX_REDIRECTS} redirects`, false);
         const next = checkUrl(new URL(res.headers.location, url), opts.guard);
-        // Like fetch: credentials in the caller's headers must not follow a redirect to someone else's server.
-        if (next.origin !== url.origin) headers = {};
         if (status === 303 || ((status === 301 || status === 302) && method === "POST")) {
           method = "GET";
           body = undefined;
+        }
+        if (next.origin !== url.origin) {
+          // A 307 or 308 keeps the body, which may hold private data: never resend it to someone else's server.
+          if (body !== undefined) throw new StepError(`refusing to resend the request body to ${next.origin} after a ${status} redirect`, false);
+          // Like fetch: credentials in the caller's headers must not follow a redirect to someone else's server.
+          headers = {};
         }
         url = next;
         continue;

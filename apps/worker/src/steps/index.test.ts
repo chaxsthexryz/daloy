@@ -1,7 +1,7 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { approvals, encryptSecret, hashToken, joinWorkspace, runs, saveAiSettings, secrets, stepRuns, users, workflows, workflowVersions, type Db } from "@daloy/db";
+import { approvals, encryptSecret, hashToken, joinWorkspace, recordDecision, runs, saveAiSettings, secrets, stepRuns, users, workflows, workflowVersions, type Db } from "@daloy/db";
 import type { Step } from "@daloy/engine";
 import { eq } from "drizzle-orm";
 import nodemailer, { type SendMailOptions, type Transporter } from "nodemailer";
@@ -19,6 +19,7 @@ let server: Server;
 let port: number;
 let userId: string;
 const received: string[] = [];
+const bodies: string[] = [];
 const sent: string[] = [];
 const NO_STEP_RUN = "00000000-0000-0000-0000-000000000000";
 
@@ -31,8 +32,13 @@ beforeAll(async () => {
   // Echoes the Authorization header back in the body and in a response header, as a careless API might.
   server = createServer((req, res) => {
     received.push(req.headers.authorization ?? "");
-    res.writeHead(200, { "content-type": "application/json", "x-echo": req.headers.authorization ?? "" });
-    res.end(JSON.stringify({ youSent: req.headers.authorization, [SECRET]: "as a key too" }));
+    let body = "";
+    req.on("data", (c: Buffer) => (body += c.toString()));
+    req.on("end", () => {
+      bodies.push(body);
+      res.writeHead(200, { "content-type": "application/json", "x-echo": req.headers.authorization ?? "" });
+      res.end(JSON.stringify({ youSent: req.headers.authorization, [SECRET]: "as a key too" }));
+    });
   });
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
   port = (server.address() as AddressInfo).port;
@@ -87,6 +93,16 @@ describe("step executor", () => {
     expect(stored).not.toContain(SECRET);
     expect(stored).toContain("Bearer [secret]");
     expect(out.input).toEqual({ method: "GET", url: `http://api.test:${port}/x?q=hi`, headers: { Authorization: "Bearer [secret]" } });
+  });
+
+  it("builds a JSON body value by value, so quotes, newlines and injected keys stay inside one string", async () => {
+    const message = 'He said "hi"\nC:\\files", "username": "admin';
+    const body = '{"content": "Lead: {{trigger.message}}", "amount": "{{trigger.amount}}", "tags": ["{{trigger.missing}}"]}';
+    await run({ id: "call", type: "http", config: { method: "POST", url: `http://api.test:${port}/hook`, headers: { "content-type": "application/json" }, body } }, { message, amount: 40 });
+    expect(JSON.parse(bodies.at(-1)!)).toEqual({ content: `Lead: ${message}`, amount: 40, tags: [""] });
+    // Not JSON as written (an unquoted placeholder): plain text, as before.
+    await run({ id: "call", type: "http", config: { method: "POST", url: `http://api.test:${port}/hook`, headers: {}, body: "n={{trigger.amount}}" } }, { amount: 40 });
+    expect(bodies.at(-1)).toBe("n=40");
   });
 
   it("redacts secrets from error messages", async () => {
@@ -212,6 +228,24 @@ describe("step executor", () => {
       expect(err).toMatchObject({ retryable: false, message: expect.stringContaining("not a member of this workspace who can approve") });
       expect(await db.select().from(approvals).where(eq(approvals.stepRunId, stepRunId))).toHaveLength(0);
     }
+  });
+
+  it("keeps a decision made before a crash: the re-run attempt takes its branch and sends no new link", async () => {
+    const { runId, stepRunId } = await waitingApprovalStep();
+    const step: Step = { id: "ask", type: "approval", config: { to: "boss@example.com", subject: "Refund?", message: "m", timeoutSeconds: 3600 } };
+    const attempt = () => executor().execute({ runId, stepRunId, userId, step, attempt: 1, idempotencyKey: `${runId}:ask:1`, ctx: { trigger: {}, steps: {} } });
+    await attempt();
+    const token = /approvals\/([A-Za-z0-9_-]{43})/.exec((JSON.parse(sent.at(-1)!) as { text: string }).text)![1]!;
+    // The worker died before parking the run, and the approver answered meanwhile.
+    expect(await recordDecision(db, token, "rejected")).toBe(runId);
+
+    const before = sent.length;
+    const out = await attempt();
+    expect(out).toMatchObject({ branch: "rejected", output: { decision: "rejected" } });
+    expect(out.waitUntil).toBeUndefined();
+    expect(sent.length).toBe(before);
+    const rows = await db.select().from(approvals).where(eq(approvals.stepRunId, stepRunId));
+    expect(rows.map((r) => r.decision)).toEqual(["rejected"]);
   });
 });
 

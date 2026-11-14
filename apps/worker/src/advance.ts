@@ -1,4 +1,4 @@
-import { claimTimeout, runs, stepRuns, workflows, workflowVersions, type Db } from "@daloy/db";
+import { approvals, claimTimeout, runs, stepRuns, workflows, workflowVersions, type Db } from "@daloy/db";
 import {
   assertTransition,
   decideRetry,
@@ -165,14 +165,20 @@ async function runNext(deps: AdvanceDeps, run: Run): Promise<void> {
   }
 
   if (result.waitUntil) {
-    const wakeAt = result.waitUntil;
+    let wakeAt = result.waitUntil;
     await db.transaction(async (tx) => {
+      // An approver can answer while the email is on its way, before the run is waiting, so recordDecision's wake-up
+      // missed it. FOR UPDATE waits for a decision still being written. Answered already: wake now, not at the timeout.
+      if (step.type === "approval") {
+        const [link] = await tx.select({ usedAt: approvals.usedAt }).from(approvals).where(eq(approvals.stepRunId, stepRunId)).for("update");
+        if (link?.usedAt) wakeAt = new Date();
+      }
       await moveStep(tx, stepRunId, "running", "waiting", { input: result.input ?? null, output: result.output ?? null });
       await moveRun(tx, run.id, "running", "waiting", { nextAttemptAt: wakeAt });
     });
     // An approval can be answered early, and the queue keeps one queued job per run, so a job scheduled for the
     // timeout would swallow the early wake-up. The sweep picks up the timeout instead (decision 0009).
-    if (step.type === "approval") return;
+    if (step.type === "approval" && wakeAt === result.waitUntil) return;
     // A scheduled job, so nothing sleeps in the worker. The sweep picks the run up too if this job is lost.
     return deps.enqueue(run.id, wakeAt);
   }

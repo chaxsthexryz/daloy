@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { apiTokens, createRun, runs, stepRuns, triggers, workflows, workflowVersions, type Db } from "@daloy/db";
-import { OFFICE_REQUEST, type FormField } from "@daloy/engine";
+import type { FormField } from "@daloy/engine";
 import { toNodeHandler } from "@modelcontextprotocol/node";
 import { createMcpHandler, McpServer, type AuthInfo, type CallToolResult } from "@modelcontextprotocol/server";
 import { All, type CanActivate, Controller, type ExecutionContext, Inject, Injectable, Req, Res, UnauthorizedException, UseGuards } from "@nestjs/common";
@@ -9,9 +9,9 @@ import type { Request, Response } from "express";
 import type { PgBoss } from "pg-boss";
 import * as z from "zod";
 import { BOSS, DB, enqueueRun, RateLimit, sha256 } from "./http";
-import { fieldsSchema, recordRequest } from "./public";
+import { fieldsSchema, isTracked, recordRequest } from "./public";
 
-// tracked: an office request workflow, whose runs also record a request with a reference.
+// tracked: a guided office or purchase request workflow, whose runs also record a request with a reference.
 type ToolRow = { slug: string; name: string; versionId: string; fields: FormField[]; workflowId: string; tracked: boolean };
 
 /** One tool per published form workflow. Slugs use a-z, 0-9 and -, so they never clash with get_run_status. */
@@ -146,7 +146,7 @@ export class McpController {
     return rows.map(({ config, setup, ...r }) => ({
       ...r,
       fields: (config as { fields: FormField[] }).fields,
-      tracked: (setup as { template?: string } | null)?.template === OFFICE_REQUEST,
+      tracked: isTracked(setup),
     }));
   }
 }

@@ -191,7 +191,7 @@ export async function startFakeProviders(port = 0) {
         tab.push(...values);
         return answer(200, { updates: { updatedRange: `'${tabName}'!A${tab.length}:${String.fromCharCode(64 + values[0]!.length)}${tab.length}`, updatedRows: 1 } });
       }
-      return answer(200, { values: tab.map((r) => [r[0]]) });
+      return answer(200, { values: tab });
     }
 
     // Slack Web API: always HTTP 200 with ok false and an error code, except rate limits.

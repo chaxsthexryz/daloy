@@ -170,11 +170,15 @@ export async function appendRow(urls: ProviderUrls, sa: ServiceAccount, dest: Sh
   return { range: String((body.updates as { updatedRange?: unknown } | undefined)?.updatedRange ?? "") };
 }
 
-/** Looks for a row whose first cell is the reference. Used before writing again after an ambiguous result. */
-export async function findReference(urls: ProviderUrls, sa: ServiceAccount, dest: SheetDestination, reference: string): Promise<string | null> {
-  const body = await sheets(urls, sa, `/v4/spreadsheets/${encodeURIComponent(dest.spreadsheetId)}/values/${range(dest.tab, "A:A")}`, {}, false);
+/**
+ * Looks for this exact row: reference, queue-time timestamp and every column. Used before writing again after an
+ * ambiguous result. Matching the reference alone would take another step's row in the same run for this one.
+ * Google leaves out trailing empty cells, so a missing cell counts as "".
+ */
+export async function findRow(urls: ProviderUrls, sa: ServiceAccount, dest: SheetDestination, row: string[]): Promise<string | null> {
+  const body = await sheets(urls, sa, `/v4/spreadsheets/${encodeURIComponent(dest.spreadsheetId)}/values/${range(dest.tab, "A:ZZ")}`, {}, false);
   const rows = (body.values as unknown[][] | undefined) ?? [];
-  const i = rows.findIndex((r) => r[0] === reference);
+  const i = rows.findIndex((r) => r.length <= row.length && row.every((cell, j) => (r[j] ?? "") === cell));
   return i < 0 ? null : `'${dest.tab.replaceAll("'", "''")}'!A${i + 1}`;
 }
 

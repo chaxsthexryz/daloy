@@ -21,7 +21,9 @@ const executor: StepExecutor = {
     if (step.type === "approval") {
       // Like the real step, minus the email. "quick" times out after half a second.
       const waitUntil = new Date(Date.now() + (step.id === "quick" ? 500 : 60_000));
-      approvalTokens.set(runId, await createApproval(db, stepRunId, waitUntil));
+      approvalTokens.set(runId, (await createApproval(db, stepRunId, waitUntil))!);
+      // "early": the approver answers while the email is still on its way, before the run is parked.
+      if (step.id === "early") await recordDecision(db, approvalTokens.get(runId)!, "rejected");
       return { output: { expiresAt: waitUntil.toISOString() }, waitUntil };
     }
     if (step.id === "costly") throw new StepError("bad reply", false, { usage: { inputTokens: 90, outputTokens: 7 } });
@@ -240,6 +242,15 @@ describe("worker", () => {
       expect(await recordDecision(db, approvalTokens.get(runId)!, "approved")).toBe(runId);
       expect((await waitForEnd(runId)).state).toBe("succeeded");
     }, 15_000);
+
+    it("wakes at once for a decision made before the run was parked, not at the timeout", async () => {
+      const runId = await createRun(approvalFlow("early"));
+      await worker.enqueue(runId);
+      expect((await waitForEnd(runId)).state).toBe("succeeded");
+      const rows = await attemptsOf(runId);
+      expect(rows.map((r) => r.stepId)).toEqual(["early", "no"]);
+      expect(rows[0]!.branch).toBe("rejected");
+    });
 
     it("takes the timeout branch when nobody answers, and the link stops working", async () => {
       const runId = await createRun(approvalFlow("quick"));

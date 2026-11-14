@@ -51,7 +51,7 @@ test("a beginner previews, sets up, turns on and receives one office request", a
   await expect(async () => {
     await page.getByRole("button", { name: "Refresh" }).click();
     await expect(rows).toHaveCount(1);
-    await expect(rows.first()).toContainText("Notification and receipt sent", { timeout: 1000 });
+    await expect(rows.first()).toContainText("Processed", { timeout: 1000 });
   }).toPass({ timeout: 30_000 });
   await expect(rows.first()).toContainText(reference);
 
