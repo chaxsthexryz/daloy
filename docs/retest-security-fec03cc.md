@@ -57,3 +57,17 @@ Regression tests: `apps/api/src/secrets-history.test.ts` ("rotations and a delet
 | Sheets late duplicate after the marker sweep | No behaviour change. Docs and code comments no longer claim exactly-once; decision 0021 states the limit (duplicate refusal for 24 hours) and proposes keeping markers for any delivery that had an uncertain attempt. | Optional: confirm a late request after the sweep still appends (expected with the current design). | Documented limitation. The proposal waits for approval. |
 
 Regression test: `apps/api/src/secrets-history.test.ts`, "hides a value rotated or deleted while a history read is in progress". It wraps the pool so the change happens right after the read's secrets query, which is deterministic. It failed on 6e603de (the rotated value appeared in the run detail) and passes now.
+
+## Follow-up after the 6e13e32 retest: markers of uncertain Sheets deliveries
+
+| Scenario | Probe | Expected |
+|---|---|---|
+| Lost acknowledgment, then a late request after the sweep | Hold the first `batchUpdate` past the client timeout (`{ late: 1500 }`), let the retry deliver, age the delivery 25 hours, run `clearSheetWriteKeys`, then let the held request land. | The marker is still there, the late request is refused, and there is one row. `sheet_marker_uncertain` is true. |
+| Worker died mid-call before recording anything | Claim the delivery, send its request held by the fake, abandon the claim, age the claim to stale, deliver from another worker, age 25 hours, sweep, let the held request land. | Same as above. The flag is set by the claim takeover. |
+| Overlapping retries | Hold a request, take the claim over while it is held (as in the earlier "two workers" test), then sweep after aging. | One row; the marker is kept. |
+| Manual Retry after uncertain attempts | Let every attempt hang until the delivery fails, Retry, deliver, age, sweep. | The marker is kept. The flag survives Retry. |
+| Definite answers only | One 429, then success; age; sweep. | The marker is deleted and stamped cleared. A 429 is not uncertain. |
+| Concurrent sweeps | Two `clearSheetWriteKeys` at once on an aged certain delivery. | No error; the marker is deleted once and stamped. |
+| Existing rows | Migration 0013 on a database with live markers. | Every marker not yet cleared is flagged uncertain and kept. |
+
+Regression tests: the "markers of uncertain Sheets deliveries" block in `packages/db/src/deliveries.test.ts`. Three of its four tests failed on 6e13e32 (the marker was deleted and the late request added a second row); the concurrent-sweep test passed before and after. Promise and limits are in decision 0021: at most once while the marker exists, not unconditional exactly-once. Real Google behaviour is still unverified.

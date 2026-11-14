@@ -54,16 +54,22 @@ The fec03cc regression report showed that matching a row by its contents breaks 
 - Every delivery records the connection's account and destination when it is queued (`pinned_account`, `pinned_destination`). A different account or destination at send time sends it to review with both named. Rows queued before this change have no pin and go to review too. Post again re-pins to the current connection and gives a Sheets row a fresh marker.
 - Remaining limits: checked against the local fake only until the live Sheets check is run; a Teams link replaced under the same channel name is not seen as a change.
 
-## Limitation found in the 6e603de retest, and a proposed fix (not built)
+## Update after the 6e603de retest: markers of uncertain deliveries are kept
 
-Astra showed that a request already sent by an earlier attempt and processed by Google after the marker was deleted adds a second row. The marker refuses duplicates only while it exists, and Daloy cannot bound how long Google may hold a request it has stopped waiting for. So the design guarantees duplicate refusal for 24 hours after delivery, not exactly-once delivery. A late duplicate after that cannot be detected, so there is no way to send it to review afterwards. It has to be prevented.
+Astra showed that a request already sent by an earlier attempt, and processed by Google after the marker was deleted, adds a second row. A marker refuses duplicates only while it exists, and Daloy cannot bound how long Google may hold a request it has stopped waiting for. A late duplicate cannot be detected afterwards, so it cannot be sent to review; it has to be prevented.
 
-Proposed design, waiting for approval:
+- `deliveries.sheet_marker_uncertain` (migration 0013) is set, and never cleared, when a request of the delivery may still be in flight:
+  - An attempt ends with an ambiguous answer: a timeout or broken connection on the write, or a 5xx on the write. This is set in the same guarded UPDATE that records the outcome.
+  - A claim is taken back from a worker that died mid-call. This is set in the same UPDATE that takes the claim, so a worker that crashes before recording anything still leaves the delivery uncertain as soon as anyone picks it up again. Until then it stays `sending`, which the sweep never touches.
+- The sweep deletes markers only of delivered rows whose flag is false. Every attempt of those got a definite answer (a 200, or a refusal such as 4xx or 429, which Google did not apply), so no request of theirs can still be in flight. Markers of uncertain deliveries are kept indefinitely. Retry, Post again and Mark as posted do not clear the flag.
+- Concurrent sweeps are safe: a delete names id, key and value, deleting a missing marker succeeds, and stamping twice changes nothing.
+- Existing markers from before migration 0013 have an unknown history, so the migration marks them uncertain and keeps them.
 
-- Add `deliveries.sheet_marker_keep boolean not null default false` in an additive migration.
-- Set it, and never clear it, whenever an attempt of the delivery ends without a definite answer: an ambiguous outcome (timeout or broken connection on the write, 5xx on the write), or a claim taken back from a worker that died mid-call. That is exactly when a request may still be in flight.
-- The sweep deletes markers only for deliveries where the flag is false. Every attempt of those got a definite answer, so no request of theirs can still be in flight, and deleting is safe at any age. Markers of flagged deliveries are kept indefinitely. Retry, Post again and Mark as posted do not clear the flag.
-- Capacity: only flagged deliveries keep markers, which should be rare. If a sheet reaches Google's metadata limit, Google refuses the batch and the delivery fails visibly. It never writes silently, and the owner reviews it.
-- Tests first: a late request after the sweep for a flagged delivery (expect: the marker is still there, the request is refused, one row); for an unflagged delivery (expect: the marker is deleted, and no request was outstanding); a stale-claim takeover sets the flag; a plain Retry after an ambiguous attempt keeps it.
+What this does and does not promise:
 
-Interim, until this is approved: behaviour is unchanged (24-hour retention). The alternative is to stop deleting markers altogether, which removes the risk at the cost of the capacity limit for every delivery. Real Google behaviour (metadata id uniqueness, atomic batches, the limit) is still unverified until docs/live-sheets-slack-check.md is run.
+- While a delivery's marker exists, Google refuses every further write of that delivery, so the delivery is added at most once. This holds for retries, overlapping attempts, delayed acknowledgments and crashed workers. It assumes that Google enforces metadata id uniqueness and all-or-nothing batches as documented, which is checked only against the local fake until docs/live-sheets-slack-check.md is run.
+- It is not unconditional exactly-once delivery:
+  - A row can still be missing: the owner deletes it, or the delivery fails after its last attempt and nobody retries it.
+  - Post again gives a new marker on purpose. A late request carrying the old marker can then add a second row; the operator accepted that risk by choosing Post again after a review.
+  - The old marker of a Post again delivery is not deleted.
+- Capacity: kept markers use about 15 characters each of Google's roughly 30,000 per sheet. Only uncertain deliveries keep them, so this should take a long time to fill. If it fills, Google refuses the batch, and the delivery fails visibly. It never adds a row silently.

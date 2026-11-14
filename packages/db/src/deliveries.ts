@@ -58,7 +58,15 @@ export async function claimDueDeliveries(db: Db, limit = 10): Promise<Delivery[]
     .for("update", { skipLocked: true });
   return db
     .update(deliveries)
-    .set({ state: "sending", attempts: sql`${deliveries.attempts} + 1`, checkFirst: sql`${deliveries.checkFirst} or ${deliveries.state} = 'sending'`, updatedAt: sql`now()` })
+    // Taking back a "sending" claim means its worker may have sent the request and died: that request may still land,
+    // so the delivery is uncertain from here on. Recorded in the same UPDATE as the claim, so no crash can skip it.
+    .set({
+      state: "sending",
+      attempts: sql`${deliveries.attempts} + 1`,
+      checkFirst: sql`${deliveries.checkFirst} or ${deliveries.state} = 'sending'`,
+      sheetMarkerUncertain: sql`${deliveries.sheetMarkerUncertain} or ${deliveries.state} = 'sending'`,
+      updatedAt: sql`now()`,
+    })
     .where(inArray(deliveries.id, due))
     .returning();
 }
@@ -151,13 +159,15 @@ async function finish(db: Db, d: Delivery, o: Outcome) {
     return;
   }
   const checkFirst = d.checkFirst || (o.state === "queued" && o.checkFirst === true);
+  // An ambiguous answer: the request may still be applied later. Sticky (OR), so no outcome can clear it.
+  const sheetMarkerUncertain = sql`${deliveries.sheetMarkerUncertain} or ${o.state === "queued" && o.checkFirst === true}`;
   if (o.state === "queued" && d.attempts < DELIVERY_POLICY.maxAttempts) {
     const delay = Math.max(backoffDelayMs(d.attempts, DELIVERY_POLICY), o.retryAfterMs ?? 0);
-    await db.update(deliveries).set({ state: "queued", lastError: o.error, checkFirst, nextAttemptAt: new Date(Date.now() + delay), updatedAt: sql`now()` }).where(claim);
+    await db.update(deliveries).set({ state: "queued", lastError: o.error, checkFirst, sheetMarkerUncertain, nextAttemptAt: new Date(Date.now() + delay), updatedAt: sql`now()` }).where(claim);
     return;
   }
   // The last attempt keeps checkFirst, so a manual Retry of an uncertain Sheets row still looks before writing.
-  await db.update(deliveries).set({ state: o.state === "queued" ? "failed" : o.state, lastError: o.error, checkFirst, updatedAt: sql`now()` }).where(claim);
+  await db.update(deliveries).set({ state: o.state === "queued" ? "failed" : o.state, lastError: o.error, checkFirst, sheetMarkerUncertain, updatedAt: sql`now()` }).where(claim);
 }
 
 /** The worker's poll: claims what is due and delivers each one independently. */
@@ -235,7 +245,9 @@ export async function listDeliveries(db: Db, userId: string, runIds: string[]) {
 export const SHEET_MARKER_RETENTION_MS = 24 * 60 * 60 * 1000;
 
 /**
- * Deletes the markers of Sheets deliveries done for longer than the retention time, a few at a time. A marker whose
+ * Deletes the markers of Sheets deliveries done for longer than the retention time, a few at a time, but only of
+ * deliveries whose every attempt got a definite answer: then no request of theirs can still be in flight, and the marker
+ * is no longer needed. Markers of uncertain deliveries stay, so a request Google applies late is still refused. A marker whose
  * sheet is no longer reachable through the owner's connection is stamped cleared, since nobody can delete it now.
  * Google trouble leaves it for the next sweep. Returns how many were cleared.
  */
@@ -249,6 +261,7 @@ export async function clearSheetWriteKeys(db: Db, key: Buffer, urls: ProviderUrl
         eq(deliveries.state, "delivered"),
         isNotNull(deliveries.sheetMetaId),
         isNull(deliveries.sheetMetaClearedAt),
+        eq(deliveries.sheetMarkerUncertain, false),
         sql`${deliveries.updatedAt} < now() - make_interval(secs => ${retentionMs / 1000})`,
       ),
     )

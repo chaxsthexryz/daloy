@@ -4,10 +4,10 @@ import type { Pool } from "pg";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { freshDatabase } from "../../../test/db";
 import { startFakeProviders, type FakeProviders } from "../../../test/fake-providers";
-import { readConnections, removeConnection, saveConnection } from "./connections";
+import { connectionCredential, readConnections, removeConnection, saveConnection } from "./connections";
 import { claimDueDeliveries, clearSheetWriteKeys, confirmDelivery, DELIVERY_POLICY, queueDelivery, retryDelivery, runDueDeliveries } from "./deliveries";
 import type { Db } from "./index";
-import type { ProviderUrls } from "./providers";
+import { appendRowOnce, serviceAccountSchema, type ProviderUrls, type SheetDestination } from "./providers";
 import { connections, deliveries, runs, users, workflows, workflowVersions } from "./schema";
 
 // Roadmap phase 3 acceptance: each delivery is handled on its own, and a call that may have reached the provider is
@@ -394,5 +394,84 @@ describe("exactly-once Sheets writes and pinned destinations (QA regression, fec
     await deliverDue();
     expect(await state(d.id)).toMatchObject({ state: "needs_review", lastError: expect.stringContaining("before Daloy recorded") });
     expect(sheetRows).toHaveLength(0);
+  });
+});
+
+describe("markers of uncertain Sheets deliveries (retest of 6e13e32)", () => {
+  // A request held by Google lands only when the test says so: { late } applies it after that many milliseconds.
+  const LATE = 1500;
+  const age = (id: string) => db.update(deliveries).set({ updatedAt: sql`now() - interval '25 hours'` }).where(eq(deliveries.id, id));
+
+  it("keeps the marker of a delivery whose first answer was lost, so a request landing after the sweep adds nothing", async () => {
+    const d = await sheet(ana, await newRun(ana), "REQ-3001");
+    fake.once(":batchUpdate", { late: LATE });
+    const started = Date.now();
+    await deliverDue(); // times out after 300 ms: uncertain
+    expect(await state(d.id)).toMatchObject({ state: "queued" });
+    await makeDue(d.id);
+    await deliverDue(); // the retry writes the row and the marker
+    expect(await state(d.id)).toMatchObject({ state: "delivered" });
+    await age(d.id);
+    await clearSheetWriteKeys(db, key, urls);
+    expect(sheetState.metadata.has((await state(d.id)).sheetMetaId!)).toBe(true);
+    await sleep(LATE + 200 - (Date.now() - started)); // the held request lands now
+    expect(sheetRows).toHaveLength(1);
+  });
+
+  it("keeps the marker when the worker died mid-call before recording anything", async () => {
+    const d = await sheet(ana, await newRun(ana), "REQ-3002");
+    // The crashed worker: it claimed the delivery and sent the request, which Google holds, then died.
+    const [claimed] = await claimDueDeliveries(db);
+    const conn = (await connectionCredential(db, key, ana, "google_sheets"))!;
+    fake.once(":batchUpdate", { late: LATE });
+    const started = Date.now();
+    void appendRowOnce(urls, serviceAccountSchema.parse(JSON.parse(conn.credential)), conn.destination as SheetDestination, (claimed!.payload as { row: string[] }).row, {
+      id: claimed!.sheetMetaId!,
+      value: claimed!.sheetMetaValue!,
+    }).catch(() => undefined);
+    // Its claim goes stale, another worker takes over and delivers.
+    await sleep(50);
+    await db.update(deliveries).set({ updatedAt: sql`now() - interval '10 minutes'` }).where(eq(deliveries.id, d.id));
+    await deliverDue();
+    expect(await state(d.id)).toMatchObject({ state: "delivered" });
+    await age(d.id);
+    await clearSheetWriteKeys(db, key, urls);
+    expect(sheetState.metadata.has(claimed!.sheetMetaId!)).toBe(true);
+    await sleep(LATE + 200 - (Date.now() - started));
+    expect(sheetRows).toHaveLength(1);
+  });
+
+  it("keeps it after a manual Retry too, and still deletes markers of deliveries with only definite answers", async () => {
+    const uncertain = await sheet(ana, await newRun(ana), "REQ-3003");
+    for (let i = 0; i < DELIVERY_POLICY.maxAttempts; i++) {
+      fake.once(":batchUpdate", "hang");
+      await makeDue(uncertain.id);
+      await deliverDue();
+    }
+    expect((await state(uncertain.id)).state).toBe("failed");
+    await retryDelivery(db, ana, uncertain.id);
+    await deliverDue();
+    // A definite refusal (rate limit) is not uncertain: Google did not take that request.
+    const definite = await sheet(ana, await newRun(ana), "REQ-3004");
+    fake.once(":batchUpdate", { status: 429, body: { error: { code: 429, message: "quota" } } });
+    await deliverDue();
+    await makeDue(definite.id);
+    await deliverDue();
+    expect([(await state(uncertain.id)).state, (await state(definite.id)).state]).toEqual(["delivered", "delivered"]);
+    await age(uncertain.id);
+    await age(definite.id);
+    await clearSheetWriteKeys(db, key, urls);
+    expect(sheetState.metadata.has((await state(uncertain.id)).sheetMetaId!)).toBe(true);
+    expect(sheetState.metadata.has((await state(definite.id)).sheetMetaId!)).toBe(false);
+  });
+
+  it("lets two sweeps run at once without errors, deleting each certain marker once", async () => {
+    const d = await sheet(ana, await newRun(ana), "REQ-3005");
+    await deliverDue();
+    await age(d.id);
+    const cleared = await Promise.all([clearSheetWriteKeys(db, key, urls), clearSheetWriteKeys(db, key, urls)]);
+    expect(cleared.reduce((a, b) => a + b, 0)).toBeGreaterThanOrEqual(1);
+    expect(sheetState.metadata.has((await state(d.id)).sheetMetaId!)).toBe(false);
+    expect((await state(d.id)).sheetMetaClearedAt).not.toBeNull();
   });
 });

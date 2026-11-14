@@ -356,6 +356,9 @@ export const deliveries = pgTable(
     sheetMetaId: integer("sheet_meta_id"),
     sheetMetaValue: text("sheet_meta_value"),
     sheetMetaClearedAt: ts("sheet_meta_cleared_at"),
+    // Set, and never cleared, once any attempt may still have a request in flight: an ambiguous answer, or a claim taken
+    // back from a worker that died mid-call. Such a marker is never deleted (decision 0021).
+    sheetMarkerUncertain: boolean("sheet_marker_uncertain").notNull().default(false),
     createdAt: createdAt(),
     updatedAt: ts("updated_at").notNull().defaultNow(),
   },
