@@ -219,9 +219,13 @@ export async function appendRowOnce(urls: ProviderUrls, sa: ServiceAccount, dest
   }
 }
 
-/** Removes a marker once it is no longer needed (decision 0021: kept 24 hours after delivery). Deleting a missing one is fine. */
-export async function deleteSheetMarker(urls: ProviderUrls, sa: ServiceAccount, spreadsheetId: string, id: number) {
-  const requests = [{ deleteDeveloperMetadata: { dataFilter: { developerMetadataLookup: { metadataId: id } } } }];
+/**
+ * Removes our marker once it is no longer needed (decision 0021: kept 24 hours after delivery). The filter names the id,
+ * our key and our value, and Google deletes only metadata matching all three, so metadata another tool keeps under the
+ * same id (a marker collision) is never touched. Deleting a missing one is fine.
+ */
+export async function deleteSheetMarker(urls: ProviderUrls, sa: ServiceAccount, spreadsheetId: string, key: SheetWriteKey) {
+  const requests = [{ deleteDeveloperMetadata: { dataFilter: { developerMetadataLookup: { metadataId: key.id, metadataKey: MARKER_KEY, metadataValue: key.value } } } }];
   await sheets(urls, sa, `/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}:batchUpdate`, { method: "POST", headers: json, body: JSON.stringify({ requests }) }, false);
 }
 

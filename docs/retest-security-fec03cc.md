@@ -37,3 +37,14 @@ For an independent retest of the findings in `Daloy_Security_Regression_fec03cc.
 - **Secrets deleted before `retired_secrets` existed** are unknown to read-time redaction.
 - **A webhook URL typed into a definition** instead of a secret is visible to operators by design. One development workflow does this.
 - **Concurrent revocation of a shared-mail approval** against an in-flight send.
+
+## Follow-up after the ecb5ade retest
+
+Astra found two P1 issues on ecb5ade; both are fixed in the next commit.
+
+| Finding | Change | Probe | Expected |
+|---|---|---|---|
+| Concurrent rotations and a deletion of one secret could lose a replaced value, so run history showed it | `retireSecret` takes `pg_advisory_xact_lock` on (workspace, secret name) before reading the current value, in the same transaction as the replace or delete. | Store value 1, then send PUT value 2, PUT value 3, DELETE and PUT value 4 for the same name at once, several rounds, with a run whose data contains all four values. Read `GET /runs/:id`. | None of the four values appears, in any round. `retired_secrets` holds every value that was replaced or deleted. |
+| The Sheets marker sweep could delete another tool's metadata after a collision and Mark as posted | `deleteSheetMarker` filters on metadata id, key `daloy` and our value together. | Put foreign metadata (other key and value) under a queued delivery's `sheet_meta_id`, deliver (it goes to review), choose Mark as posted, age the delivery past 24 hours, run the sweep. | The foreign metadata is unchanged, and the delivery is stamped `sheet_meta_cleared_at`. |
+
+Regression tests: `apps/api/src/secrets-history.test.ts` ("rotations and a deletion of one secret race") and `packages/db/src/deliveries.test.ts` ("never deletes another tool's metadata"). Both failed on ecb5ade before the fix. Not covered: real Google's matching of all three lookup fields on delete, which is checked only against the fake; step 11 of `docs/live-sheets-slack-check.md` covers it.
