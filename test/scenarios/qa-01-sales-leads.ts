@@ -42,7 +42,6 @@ export const qa01: Scenario = {
       payload: { ...lead, budget: 200, details: "Odd request" },
       options: { choices: { classify: { label: "manual_review" } } },
       want: ["summarize", "gate", "classify", "route", "review"],
-      gap: { phase: "P3", today: toStandard, why: "test runs ignore chosen labels and always take the first label" },
     },
     {
       name: "a negative budget is refused at the boundary",

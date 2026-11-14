@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { aiConnection, checkRecipients, claimTimeout, createApproval, findApprover, queueDelivery, readSecrets, redactSecrets, secretForms, sendAs, type Db, type MailDeps, type Provider } from "@daloy/db";
-import { conditionBranch, declaresJson, isRetryable, mockAiOutput, parseJsonTemplate, resolveJsonTemplate, resolveTemplate, StepError, usesSecrets, type ExpressionContext, type Step } from "@daloy/engine";
+import { conditionBranch, type TestChoice, declaresJson, isRetryable, mockAiOutput, parseJsonTemplate, resolveJsonTemplate, resolveTemplate, StepError, usesSecrets, type ExpressionContext, type Step } from "@daloy/engine";
 import type { StepExecutor, StepResult } from "../advance";
 import { runAi } from "./ai";
 import { httpRequest } from "./http";
@@ -85,9 +85,11 @@ function resolveInput(step: Step, ctx: ExpressionContext): Record<string, unknow
   }
 }
 
-type Attempt = { runId: string; idempotencyKey: string; attempt: number; stepRunId: string; userId: string; mock: boolean };
+type Attempt = { runId: string; idempotencyKey: string; attempt: number; stepRunId: string; userId: string; mock: boolean; aiLive?: boolean; choice?: TestChoice };
 
-async function runStep(deps: FullDeps, step: Step, input: unknown, ctx: ExpressionContext, { runId, idempotencyKey, attempt, stepRunId, userId, mock }: Attempt): Promise<StepResult> {
+async function runStep(deps: FullDeps, step: Step, input: unknown, ctx: ExpressionContext, { runId, idempotencyKey, attempt, stepRunId, userId, mock, aiLive, choice }: Attempt): Promise<StepResult> {
+  // The API only accepts a fail choice on a step a faked run fakes (choiceProblems).
+  if (mock && choice && "fail" in choice) throw new StepError(`Test run: this step was set to fail (${choice.fail}).`, choice.fail === "retryable");
   switch (step.type) {
     case "condition":
       return { branch: conditionBranch(step.config.condition, ctx) };
@@ -110,14 +112,18 @@ async function runStep(deps: FullDeps, step: Step, input: unknown, ctx: Expressi
       return { output: { messageId: sent.messageId, to: sent.to, from: sent.from } };
     }
     case "ai": {
-      if (mock) return { output: mockAiOutput(step.config) };
+      if (mock && choice && "label" in choice) return { output: { label: choice.label } };
+      if (mock && !aiLive) return { output: mockAiOutput(step.config) };
       // The model the workflow owner picked in the console, or the env vars if they picked none.
       const { model, ...connection } = await aiConnection(deps.db, deps.secretsKey, userId);
       return runAi(step.config, (input as AiInput).input, { connection, model, attempt });
     }
     case "approval": {
-      // A mocked test run approves straight away, so the builder shows the approved path without an email.
-      if (mock) return { output: { mocked: true, decision: "approved" }, branch: "approved" };
+      // A mocked test run decides straight away (approved unless the tester chose otherwise), without an email.
+      if (mock) {
+        const decision = choice && "decision" in choice ? choice.decision : "approved";
+        return { output: { mocked: true, decision }, branch: decision };
+      }
       const cfg = input as ApprovalInput;
       // A named approver must still be a member who may approve; the API checks again when they answer (decision 0022).
       const approver = cfg.approver ? await findApprover(deps.db, userId, cfg.approver) : null;
@@ -176,7 +182,7 @@ export function createExecutor(deps: ExecutorDeps): StepExecutor {
     publicUrl: (deps.publicUrl ?? "http://localhost:3000").replace(/\/+$/, ""),
   };
   return {
-    async execute({ runId, step, userId, idempotencyKey, attempt, stepRunId, ctx, mock = false }) {
+    async execute({ runId, step, userId, idempotencyKey, attempt, stepRunId, ctx, mock = false, aiLive, choice }) {
       const secrets = await readSecrets(deps.db, deps.secretsKey, userId);
       const forms = secretForms(Object.values(secrets));
       // Only an HTTP step sees secrets. Every other step resolves without them, so an email, AI prompt or condition can't carry one.
@@ -193,7 +199,7 @@ export function createExecutor(deps: ExecutorDeps): StepExecutor {
             throw new StepError("A request that uses a secret must go to a fixed address: trigger or step data changed its host. Move that data into the path or query.", false);
           }
         }
-        const result = await runStep(full, step, input, real, { runId, idempotencyKey, attempt, stepRunId, userId, mock });
+        const result = await runStep(full, step, input, real, { runId, idempotencyKey, attempt, stepRunId, userId, mock, aiLive, choice });
         return { ...result, input: preview, output: redactSecrets(result.output, forms) };
       } catch (err) {
         const message = redactSecrets(err instanceof Error ? err.message : String(err), forms) as string;

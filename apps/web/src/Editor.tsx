@@ -82,7 +82,9 @@ export function Editor({ id }: { id: string }) {
   const [message, setMessage] = useState<{ kind: "error" | "ok"; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [payload, setPayload] = useState("{}");
-  const [live, setLive] = useState(false);
+  const [mode, setMode] = useState<"mock" | "ai" | "live">("mock");
+  // stepId -> a test choice as JSON text ("" = the default outcome), so a <select> can hold it.
+  const [choices, setChoices] = useState<Record<string, string>>({});
   const [runId, setRunId] = useState<string | null>(null);
   const run = useRun(runId);
 
@@ -148,7 +150,12 @@ export function Editor({ id }: { id: string }) {
   };
   const testRun = () =>
     act("Test run", async () => {
-      const r = await api<{ id: string }>("POST", `/workflows/${id}/test-runs`, { definition: draft, payload: parsedPayload(), live });
+      const r = await api<{ id: string }>("POST", `/workflows/${id}/test-runs`, {
+        definition: draft,
+        payload: parsedPayload(),
+        mode,
+        choices: mode === "live" ? {} : Object.fromEntries(draft.steps.flatMap((s) => (choices[s.id] ? [[s.id, JSON.parse(choices[s.id]!) as unknown]] : []))),
+      });
       setDirty(false);
       setRunId(r.id);
       await reload();
@@ -278,9 +285,15 @@ export function Editor({ id }: { id: string }) {
               <label htmlFor="payload">Sample trigger data (JSON)</label>
               <textarea id="payload" rows={5} value={payload} onChange={(e) => setPayload(e.target.value)} spellCheck={false} />
             </div>
-            <label className="check">
-              <input type="checkbox" checked={live} onChange={(e) => setLive(e.target.checked)} /> Make live calls (HTTP, email, AI, approval emails and connected apps). Off: they are mocked.
-            </label>
+            <div className="field">
+              <label htmlFor="test-mode">Test calls</label>
+              <select id="test-mode" value={mode} onChange={(e) => setMode(e.target.value as typeof mode)}>
+                <option value="mock">Mocked: nothing is sent and no model is called</option>
+                <option value="ai">Real AI only: the model is called, everything else is mocked</option>
+                <option value="live">Live: real HTTP, email, AI, approval emails and connected apps</option>
+              </select>
+            </div>
+            {mode !== "live" && <TestChoices steps={draft.steps} choices={choices} onChange={setChoices} />}
             <div className="actions">
               <button type="button" onClick={testRun} disabled={busy || draft.steps.length === 0}>
                 Test run draft
@@ -427,5 +440,36 @@ function TriggerPanel({ trigger, wf, onChange }: { trigger: Trigger; wf: Loaded;
         </p>
       )}
     </section>
+  );
+}
+
+const OUTSIDE = new Set(["http", "email", "approval", "sheets", "slack", "outlook", "teams"]);
+
+/** Per-step outcomes for a mocked or AI-only test run: a classify label, an approval decision, or a failure. */
+function TestChoices({ steps, choices, onChange }: { steps: Step[]; choices: Record<string, string>; onChange: (c: Record<string, string>) => void }) {
+  const options = (s: Step): [string, string][] => [
+    ...(s.type === "ai" && s.config.task === "classify" ? Object.keys(s.config.labels ?? {}).map((l): [string, string] => [JSON.stringify({ label: l }), `label ${l}`]) : []),
+    ...(s.type === "approval" ? ["approved", "rejected", "timeout"].map((d): [string, string] => [JSON.stringify({ decision: d }), d]) : []),
+    ...(OUTSIDE.has(s.type) ? (["retryable", "permanent"] as const).map((f): [string, string] => [JSON.stringify({ fail: f }), `fail (${f})`]) : []),
+  ];
+  const choosable = steps.filter((s) => options(s).length > 0);
+  if (choosable.length === 0) return null;
+  return (
+    <fieldset>
+      <legend>Test outcomes</legend>
+      {choosable.map((s) => (
+        <div className="row" key={s.id}>
+          <label htmlFor={`choice-${s.id}`}>{s.id}</label>
+          <select id={`choice-${s.id}`} value={choices[s.id] ?? ""} onChange={(e) => onChange({ ...choices, [s.id]: e.target.value })}>
+            <option value="">{s.type === "approval" ? "approved (default)" : s.type === "ai" ? "model or mock (default)" : "succeeds (default)"}</option>
+            {options(s).map(([v, label]) => (
+              <option key={v} value={v}>
+                {label}
+              </option>
+            ))}
+          </select>
+        </div>
+      ))}
+    </fieldset>
   );
 }

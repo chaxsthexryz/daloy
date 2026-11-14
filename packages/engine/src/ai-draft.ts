@@ -32,6 +32,7 @@ const SYSTEM = [
   "A sheets step adds a row to the owner's connected Google Sheet; a slack step posts to their connected Slack channel. An outlook step sends an email (to, subject, text) from their connected Outlook mailbox; a teams step posts text to their connected Teams channel. Keep names, emails and other private details out of slack and teams text.",
   "Text fields can use {{trigger.<field>}} and {{steps.<id>.output.<path>}}. An ai step with task classify outputs {label}, so a condition reads {{steps.<id>.output.label}}.",
   "Use real-looking placeholders such as you@example.com when the request gives no address. Keep steps to what was asked.",
+  "Test runs in Daloy already fake every email, HTTP call, approval and connected app, and the tester can pick AI labels and approval outcomes, so never add dry-run flags, test fields or branches for testing.",
   "",
   `Example, for "${example.description}":`,
   JSON.stringify({ name: example.name, summary: example.description, definition: example.definition }),

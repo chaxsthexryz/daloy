@@ -11,6 +11,7 @@ import {
   type ExpressionContext,
   type RetryPolicy,
   type RunState,
+  type TestChoice,
   type Step,
   type StepState,
 } from "@daloy/engine";
@@ -22,7 +23,7 @@ export type StepResult = { input?: unknown; output?: unknown; branch?: string; i
 
 /** Runs one step attempt. userId is the workflow owner, whose secrets the step may use. mock is set for builder test runs without live calls. */
 export interface StepExecutor {
-  execute(input: { runId: string; stepRunId: string; userId: string; step: Step; attempt: number; idempotencyKey: string; ctx: ExpressionContext; mock?: boolean }): Promise<StepResult>;
+  execute(input: { runId: string; stepRunId: string; userId: string; step: Step; attempt: number; idempotencyKey: string; ctx: ExpressionContext; mock?: boolean; aiLive?: boolean; choice?: TestChoice }): Promise<StepResult>;
 }
 
 export type AdvanceDeps = {
@@ -156,7 +157,7 @@ async function runNext(deps: AdvanceDeps, run: Run): Promise<void> {
 
   let result: StepResult;
   try {
-    result = await deps.executor.execute({ runId: run.id, stepRunId, userId: version!.userId, step, attempt, idempotencyKey: idempotencyKey(run.id, step.id, attempt), ctx, mock: run.test && !run.live });
+    result = await deps.executor.execute({ runId: run.id, stepRunId, userId: version!.userId, step, attempt, idempotencyKey: idempotencyKey(run.id, step.id, attempt), ctx, mock: run.test && !run.live, aiLive: run.aiLive, choice: (run.testChoices as Record<string, TestChoice> | null)?.[step.id] });
     // A comparison on a missing or non-number value has nowhere to go without an "invalid" edge, so it fails here
     // and run history says why, instead of quietly taking "false" (decision 0027). Retrying would see the same data.
     if (step.type === "condition" && result.branch === "invalid" && !def.edges.some((e) => e.from === step.id && e.on === "invalid")) {
@@ -166,7 +167,8 @@ async function runNext(deps: AdvanceDeps, run: Run): Promise<void> {
   } catch (err) {
     const decision = decideRetry(err, attempt, deps.retryPolicy ?? DEFAULT_RETRY_POLICY);
     const message = err instanceof Error ? err.message : String(err);
-    const retryAt = decision.kind === "retry" ? new Date(Date.now() + decision.delayMs) : undefined;
+    // A faked test run retries within a second, like its delays, so the builder shows the outcome straight away.
+    const retryAt = decision.kind === "retry" ? new Date(Date.now() + (run.test && !run.live ? Math.min(decision.delayMs, 1000) : decision.delayMs)) : undefined;
     await db.transaction(async (tx) => {
       const input = err instanceof StepError ? err.input : null;
       const usage = err instanceof StepError ? err.usage : undefined;

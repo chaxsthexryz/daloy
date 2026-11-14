@@ -60,6 +60,8 @@ type Mode = "ok" | "bad_request" | "unavailable" | "reset";
 let mode: Mode = "ok";
 const received: { key: string | undefined; body: string }[] = [];
 let receiver: Server;
+// The same local server stands in for the model (Ollama's /api/chat) in AI-only test runs.
+const llmCalls: { system: string; user: string }[] = [];
 let port = 0;
 let closedPort = 0;
 const guard = (): SsrfGuard => ({
@@ -100,12 +102,21 @@ beforeAll(async () => {
 
   receiver = createServer(async (req, res) => {
     const body = await readBody(req);
+    if (req.url === "/api/chat") {
+      const { messages } = JSON.parse(body) as { messages: { role: string; content: string }[] };
+      const system = messages.find((m) => m.role === "system")?.content ?? "";
+      llmCalls.push({ system, user: messages.find((m) => m.role === "user")?.content ?? "" });
+      const reply = system.includes("Classify") ? { label: /^- (\w+)/m.exec(system)![1] } : { summary: "A real-model summary." };
+      return res.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify({ message: { content: JSON.stringify(reply) }, prompt_eval_count: 10, eval_count: 5 }));
+    }
     received.push({ key: req.headers["idempotency-key"] as string | undefined, body });
     if (mode === "reset") return req.socket.destroy();
     res.writeHead(mode === "ok" ? 200 : mode === "bad_request" ? 400 : 503, { "Content-Type": "application/json" }).end("{}");
   });
   await new Promise<void>((r) => receiver.listen(0, "127.0.0.1", r));
   port = (receiver.address() as AddressInfo).port;
+  process.env.LLM_PROVIDER = "ollama";
+  process.env.LLM_BASE_URL = `http://127.0.0.1:${port}`;
   // A port nothing listens on, for a connection that is refused before any request is written.
   const probe = createServer();
   await new Promise<void>((r) => probe.listen(0, "127.0.0.1", r));
@@ -222,15 +233,35 @@ describe("QA-01 sales lead prioritization", () => {
     expect(formErrors(qa01, { ...lead, budget: "-5000" })).toEqual(["budget: must be at least 0"]);
     expect(formErrors(qa01, { ...lead, budget: "0" })).toEqual([]);
   });
-  it("an AI-only test run asks the model and nothing else [gap P3: mode is ignored, the summary is the fixed mock]", async () => {
+  it("an AI-only test run asks the model and nothing else", async () => {
     const id = await workflow(qa01.definition);
-    const { runId } = await testRun(id, qa01.definition, { payload: { ...lead, budget: 45_000 }, options: { mode: "ai" } });
+    const [calls, mails, posts] = [llmCalls.length, mailSent.length, received.length];
+    const { outcome, runId } = await testRun(id, qa01.definition, { payload: { ...lead, budget: 200, details: "Fix a typo" }, options: { mode: "ai" } });
+    expect(outcome).toEqual(["summarize", "gate", "classify", "route", "standard"]);
     const [summary] = await db.select().from(stepRuns).where(and(eq(stepRuns.runId, runId!), eq(stepRuns.stepId, "summarize")));
-    expect((summary!.output as { summary: string }).summary).toMatch(/^Mock summary/);
+    expect(summary!.output).toEqual({ summary: "A real-model summary." });
+    expect(llmCalls.length - calls).toBe(2);
+    expect([mailSent.length - mails, received.length - posts]).toEqual([0, 0]);
+    expect(await db.select().from(deliveries).where(eq(deliveries.runId, runId!))).toHaveLength(0);
   });
-  it("drafts are linted for dry-run branches and unrouted outcomes [gap P7: the engine has no lintDefinition and the draft prompt has no dry-run rule]", () => {
+  it("a chosen label wins over the model in an AI-only run", async () => {
+    const id = await workflow(qa01.definition);
+    const calls = llmCalls.length;
+    const { outcome } = await testRun(id, qa01.definition, { payload: { ...lead, budget: 200, details: "Odd" }, options: { mode: "ai", choices: { classify: { label: "manual_review" } } } });
+    expect(outcome).toEqual(["summarize", "gate", "classify", "route", "review"]);
+    expect(llmCalls.length - calls).toBe(1);
+  });
+  it("choices that do not fit the workflow are refused and named", async () => {
+    const id = await workflow(qa01.definition);
+    const payload = { ...lead, budget: 200, details: "x" };
+    expect((await testRun(id, qa01.definition, { payload, options: { choices: { classify: { label: "urgent" } } } })).errors).toEqual(['choices.classify: "urgent" is not a label of this classify step']);
+    expect((await testRun(id, qa01.definition, { payload, options: { mode: "live", choices: { classify: { label: "standard" } } } })).errors).toEqual(["choices: a live test run makes real calls, so its outcomes cannot be chosen"]);
+  });
+  it("Build with AI is told that test runs mock outside calls, so it adds no dry-run branches", () => {
+    expect(engine.draftPrompt({ request: "x" }).system).toMatch(/never add dry-run/i);
+  });
+  it("drafts are linted for dry-run branches and unrouted outcomes [gap P7: the engine has no lintDefinition]", () => {
     expect("lintDefinition" in engine).toBe(false);
-    expect(engine.draftPrompt({ request: "x" }).system).not.toMatch(/dry.?run/i);
   });
 });
 
@@ -424,10 +455,17 @@ describe("QA-07 multi-tenant security", () => {
     expect(errors).toMatch(/secret/i);
     expect(errors).not.toContain("sk-scenario-not-for-ai");
   });
-  it("an AI-only test run sends the adversarial text to the model [gap P3: mode is ignored, the summary is the fixed mock]", async () => {
-    const { runId: rid } = await testRun(id, qa07.definition, { payload: { request: ADVERSARIAL }, options: { mode: "ai" } });
-    const [summary] = await db.select().from(stepRuns).where(and(eq(stepRuns.runId, rid!), eq(stepRuns.stepId, "summarize")));
-    expect((summary!.output as { summary: string }).summary).toMatch(/^Mock summary/);
+  it("an AI-only test run sends the adversarial text to the model as data, and approves nothing for real", async () => {
+    const [calls, mails] = [llmCalls.length, mailSent.length];
+    const { outcome, runId: rid } = await testRun(id, qa07.definition, { payload: { request: ADVERSARIAL }, options: { mode: "ai" } });
+    expect(outcome).toEqual(["summarize", "ask", "review"]);
+    expect(llmCalls.length - calls).toBe(1);
+    const call = llmCalls.at(-1)!;
+    expect(call.user).toBe(`<data>\n${ADVERSARIAL}\n</data>`);
+    expect(call.system).not.toContain("administrator");
+    expect(mailSent.length).toBe(mails);
+    const links = await db.select().from(approvals).innerJoin(stepRuns, eq(stepRuns.id, approvals.stepRunId)).where(eq(stepRuns.runId, rid!));
+    expect(links).toHaveLength(0);
   });
 });
 
@@ -444,6 +482,23 @@ describe("QA-08 failure recovery", () => {
     return { outcome, runId: runId!, attempts: rows.filter((r) => r.stepId === "post").length, mails: mailSent.length - mailBefore, run: await runRow(runId!) };
   };
 
+  it("a mocked run through approval, HTTP, Sheets and email sends nothing and stores no approval or delivery", async () => {
+    const id = await workflow(qa08.definition);
+    const [mails, posts] = [mailSent.length, received.length];
+    const { outcome, runId } = await testRun(id, qa08.definition, { payload: { item: "Printer", amount: 8_000 } });
+    expect(outcome).toEqual(["check", "ask", "post", "log", "notify"]);
+    expect([mailSent.length - mails, received.length - posts]).toEqual([0, 0]);
+    expect(await db.select().from(deliveries).where(eq(deliveries.runId, runId!))).toHaveLength(0);
+    expect(await db.select().from(approvals).innerJoin(stepRuns, eq(stepRuns.id, approvals.stepRunId)).where(eq(stepRuns.runId, runId!))).toHaveLength(0);
+  });
+  it("a mocked step set to fail retryably is retried, then the run dead-letters", async () => {
+    const id = await workflow(qa08.definition);
+    const { outcome, runId } = await testRun(id, qa08.definition, { payload: { item: "Printer", amount: 8_000 }, options: { choices: { post: { fail: "retryable" } } } });
+    expect(outcome).toEqual(["check", "ask", "post:failed"]);
+    const posts = await db.select().from(stepRuns).where(and(eq(stepRuns.runId, runId!), eq(stepRuns.stepId, "post")));
+    expect(posts.map((r) => r.attempt).sort()).toEqual([1, 2, 3]);
+    expect(posts.find((r) => r.attempt === 3)!.deadLetter).toBe(true);
+  });
   it("a live POST that succeeds is sent once and the notification goes", async () => {
     const r = await live("ok");
     expect(r.outcome).toEqual(["post", "notify"]);

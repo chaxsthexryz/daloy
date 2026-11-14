@@ -57,9 +57,9 @@ export class RunsController {
 
   /** Runs joined to their workflow, so every query can filter on the owner. Lease columns stay internal. */
   private owned() {
-    const { id, state, triggerPayload, test, live, error, nextAttemptAt, createdAt, finishedAt } = runs;
+    const { id, state, triggerPayload, test, live, aiLive, testChoices, error, nextAttemptAt, createdAt, finishedAt } = runs;
     return this.db
-      .select({ id, state, triggerPayload, test, live, error, nextAttemptAt, createdAt, finishedAt, workflowId: workflows.id, version: workflowVersions.version })
+      .select({ id, state, triggerPayload, test, live, aiLive, testChoices, error, nextAttemptAt, createdAt, finishedAt, workflowId: workflows.id, version: workflowVersions.version })
       .from(runs)
       .innerJoin(workflowVersions, eq(workflowVersions.id, runs.workflowVersionId))
       .innerJoin(workflows, eq(workflows.id, workflowVersions.workflowId))

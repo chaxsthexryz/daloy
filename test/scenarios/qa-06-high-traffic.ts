@@ -38,7 +38,6 @@ export const qa06: Scenario = {
       payload: { event_id: "evt_1", type: "order.created", amount: 900 },
       options: { choices: { classify: { label: "notify_team" } } },
       want: ["classify", "route", "notify"],
-      gap: { phase: "P3", today: [...toRefund, "small_refund"], why: "test runs ignore chosen labels; the mock takes the first stored label, refund" },
     },
     { name: "a 15,000 refund reaches approval and the POST", payload: { event_id: "evt_2", type: "refund.requested", amount: 15_000 }, options: { choices: { classify: { label: "refund" } } }, want: [...toRefund, "ask", "post"] },
     { name: "a 500 refund is handled as small", payload: { event_id: "evt_3", type: "refund.requested", amount: 500 }, options: { choices: { classify: { label: "refund" } } }, want: [...toRefund, "small_refund"] },

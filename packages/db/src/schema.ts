@@ -125,6 +125,9 @@ export const runs = pgTable("runs", {
   // Test runs come from the builder. Unless live is set, the worker mocks steps that reach outside (http, email).
   test: boolean("test").notNull().default(false),
   live: boolean("live").notNull().default(false),
+  // An "AI only" test run calls the model and fakes the rest. Choices fix a step's outcome in a faked test run (decision 0028).
+  aiLive: boolean("ai_live").notNull().default(false),
+  testChoices: jsonb("test_choices"),
   error: text("error"),
   // Lease: the worker that holds it renews it with a heartbeat. An expired lease means the run can be resumed.
   leaseOwner: text("lease_owner"),
