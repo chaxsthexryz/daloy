@@ -11,6 +11,7 @@ import {
   removeGmail,
   saveProfile,
   sendAs,
+  sharedMailAllowed,
   type Db,
 } from "@daloy/db";
 import { gmailInput, profileInput } from "@daloy/engine";
@@ -39,6 +40,8 @@ export class EmailSettingsController {
       sender: await readSender(this.db, user.workspaceId),
       // Shown when no Gmail is connected, so the owner knows which address their mail comes from.
       installationFrom: addressOf(this.config.mail.installation.from),
+      // False when the shared server only sends for approved owners and this one is not approved (decision 0024).
+      installationAllowed: await sharedMailAllowed(this.db, this.config.mail, user.workspaceId),
       signInEmail: user.email,
     };
   }

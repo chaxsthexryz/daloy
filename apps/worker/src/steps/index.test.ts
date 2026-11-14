@@ -70,6 +70,7 @@ const executor = () =>
       gmail: () => {
         throw new Error("no Gmail in this test");
       },
+      sharedMail: "open",
     },
     publicUrl: "https://daloy.example.com/",
     guard: {

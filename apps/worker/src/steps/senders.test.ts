@@ -1,11 +1,13 @@
 import { randomBytes } from "node:crypto";
-import { claimVerifyToken, connectGmail, disconnectGmail, issueVerifyToken, runs, stepRuns, users, workflows, workflowVersions, type Db, type MailDeps } from "@daloy/db";
+import { approveSharedMail, claimVerifyToken, connectGmail, disconnectGmail, issueVerifyToken, runs, stepRuns, users, workflows, workflowVersions, type Db, type MailDeps } from "@daloy/db";
 import type { Step } from "@daloy/engine";
 import nodemailer from "nodemailer";
 import type { Pool } from "pg";
-import { afterAll, beforeAll, expect, it } from "vitest";
+import { eq } from "drizzle-orm";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { startFakeSmtp } from "../../../../test/fake-smtp";
 import { freshDatabase } from "../../../../test/db";
+import { advance } from "../advance";
 import { createExecutor } from "./index";
 
 // Roadmap phase 2 acceptance: two owners send through their own accounts, and disconnecting one cannot affect the other.
@@ -18,11 +20,12 @@ let ana: string;
 let ben: string;
 let demo: string;
 
-const mail = (): MailDeps => ({
+const mail = (sharedMail: MailDeps["sharedMail"] = "open"): MailDeps => ({
   installation: { transport: nodemailer.createTransport({ host: "127.0.0.1", port: installation.port, secure: false, ignoreTLS: true }), from: "Daloy <daloy@localhost>" },
   gmail: (auth) => nodemailer.createTransport({ host: "127.0.0.1", port: gmail.port, secure: false, ignoreTLS: true, auth }),
+  sharedMail,
 });
-const executor = () => createExecutor({ db, secretsKey: key, mail: mail(), publicUrl: "https://daloy.example.com" });
+const executor = (sharedMail?: MailDeps["sharedMail"]) => createExecutor({ db, secretsKey: key, mail: mail(sharedMail), publicUrl: "https://daloy.example.com" });
 
 const owner = async (email: string) => (await db.insert(users).values({ email, passwordHash: "x" }).returning())[0]!.id;
 const connect = async (userId: string, address: string) => {
@@ -93,4 +96,45 @@ it("a mocked test run sends nothing, even for a blocked sender", async () => {
   const counts = [gmail.messages.length, installation.messages.length];
   expect((await run(ana, receipt, { mock: true })).output).toMatchObject({ mocked: true });
   expect([gmail.messages.length, installation.messages.length]).toEqual(counts);
+});
+
+describe("when the shared mail server only sends for approved owners", () => {
+  // A fresh sign-up that connected no Gmail: its live test runs, published runs and approval emails must not reach the server.
+  async function runOnce(userId: string, steps: Step[], opts: { published: boolean; test: boolean; live: boolean }) {
+    const definition = { trigger: { type: "manual", config: {} }, steps, edges: [] };
+    const [wf] = await db.insert(workflows).values({ userId, name: "w", slug: `w-${Math.random().toString(36).slice(2)}` }).returning();
+    const [v] = await db.insert(workflowVersions).values({ workflowId: wf!.id, version: 1, definition, published: opts.published }).returning();
+    const [r] = await db.insert(runs).values({ workflowVersionId: v!.id, triggerPayload: { email: "customer@example.com" }, test: opts.test, live: opts.live }).returning();
+    // One advance runs one step; the next one finishes the run.
+    for (let i = 0; i < 3; i++) {
+      await advance({ db, executor: executor("approved"), owner: "test", leaseMs: 5000, enqueue: async () => {} }, r!.id);
+      const [after] = await db.select().from(runs).where(eq(runs.id, r!.id));
+      if (after!.state !== "running" && after!.state !== "pending") return after!;
+    }
+    throw new Error("run did not finish");
+  }
+  const approval: Step = { id: "ask", type: "approval", config: { to: "anyone@example.com", subject: "Approve?", message: "m", timeoutSeconds: 3600 } };
+
+  it("sends nothing for an unapproved sign-up, from a live test run, a published run or an approval", async () => {
+    const stranger = await owner("stranger@test.local");
+    const before = installation.messages.length;
+    for (const [steps, opts] of [
+      [[receipt], { published: false, test: true, live: true }],
+      [[receipt], { published: true, test: false, live: false }],
+      [[approval], { published: true, test: false, live: false }],
+    ] as const) {
+      const r = await runOnce(stranger, [...steps], opts);
+      expect(r.state).toBe("failed");
+      expect(r.error).toMatch(/Connect Gmail/);
+    }
+    expect(installation.messages).toHaveLength(before);
+  });
+
+  it("sends for an owner the operator approved", async () => {
+    const approved = await owner("approved@test.local");
+    await approveSharedMail(db, approved, 10);
+    const r = await runOnce(approved, [receipt], { published: true, test: false, live: false });
+    expect(r.state).toBe("succeeded");
+    expect(installation.messages.at(-1)).toMatchObject({ user: undefined, to: ["customer@example.com"] });
+  });
 });
