@@ -317,8 +317,8 @@ describe("QA-02 spa appointments", () => {
     const [wait] = await db.select().from(stepRuns).where(eq(stepRuns.runId, runId!));
     expect(wait).toMatchObject({ branch: "late", output: { late: true, skipped: "The wake-up time had passed, so the steps after this delay did not run." } });
   });
-  it("a booking step can be saved [gap P6b: there is no booking step type]", async () => {
-    expect((await saveErrors(desired.bookingStep)).join("\n")).toMatch(/^steps\.0\.type: /m);
+  it("a booking step can be saved", async () => {
+    await workflow(desired.bookingStep);
   });
   it("a mocked delay reports the real wake-up time", async () => {
     const id = await workflow(hourDelay);
@@ -328,14 +328,16 @@ describe("QA-02 spa appointments", () => {
     expect(new Date((wait!.output as { resumeAt: string }).resumeAt).getTime() - started).toBeGreaterThanOrEqual(3_600_000);
     expect(wait!.output).toMatchObject({ mocked: true });
   });
-  it("a second booking for the same therapist and time is refused [gap P6b: both bookings are confirmed]", async () => {
+  it("a second booking for the same therapist and time is refused", async () => {
     const id = await workflow(qa02.definition);
     const booking = { payload: { name: "Mia", email: "mia@example.com", service: "Massage", therapist: ANA, appointment_at: appointment("15:00") } };
-    expect((await testRun(id, qa02.definition, booking)).outcome).toEqual(["notify", "confirm"]);
-    expect((await testRun(id, qa02.definition, booking)).outcome).toEqual(["notify", "confirm"]);
+    expect((await testRun(id, qa02.definition, booking)).outcome).toEqual(["book", "notify", "confirm"]);
+    expect((await testRun(id, qa02.definition, booking)).outcome).toEqual(["book", "sorry"]);
   });
-  it("staff can list, cancel and reschedule bookings [gap P6b: there is no bookings API]", async () => {
-    await owner.get("/bookings").expect(404);
+  it("staff can list bookings, and builder test bookings stay out of the list", async () => {
+    // Every QA-02 booking above came from a builder test run, so staff see none of them (apps/api/src/bookings.test.ts
+    // covers live bookings, cancel and reschedule).
+    expect((await owner.get("/bookings").expect(200)).body).toEqual([]);
   });
 });
 

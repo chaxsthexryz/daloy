@@ -6,6 +6,7 @@ import * as schema from "./schema";
 
 export * from "./ai-settings";
 export * from "./approvals";
+export * from "./bookings";
 export * from "./connections";
 export * from "./crypto";
 export * from "./deliveries";

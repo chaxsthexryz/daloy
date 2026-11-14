@@ -32,6 +32,8 @@ export function duration(from: string, to: string | null): string {
   return ms < 1000 ? `${ms} ms` : ms < 120_000 ? `${(ms / 1000).toFixed(1)} s` : `${Math.round(ms / 60_000)} min`;
 }
 
+const SUPERSEDED = "Superseded: its booking was rescheduled or cancelled. It stops at its next step and sends nothing more.";
+
 const kind = (r: { test: boolean; live: boolean; aiLive?: boolean }) => (r.test ? (r.live ? "test run, live calls" : r.aiLive ? "test run, real AI, other calls mocked" : "test run, mocked calls") : "live run");
 const json = (v: unknown) => JSON.stringify(v, null, 2);
 // A named approval's step output holds who answered and when (decision 0022).
@@ -53,6 +55,7 @@ export function RunResult({ run }: { run: Run }) {
       <p>
         <span className={`badge ${run.state}`}>{run.state}</span> {kind(run)}
       </p>
+      {run.superseded && <p className="message">{SUPERSEDED}</p>}
       {run.error && <p className="message error">{run.error}</p>}
       <ol className="steps">
         {run.steps.map((s) => (
@@ -146,6 +149,12 @@ export function RunsPage({ workflowId }: { workflowId: string }) {
                   <td>
                     <span className={`badge ${r.state}`}>{r.state.replace("_", " ")}</span>
                     {r.needsReview && r.state !== "needs_review" && <span className="badge needs_review"> delivery needs review</span>}
+                    {r.superseded && (
+                      <span className="badge" title={SUPERSEDED}>
+                        {" "}
+                        superseded
+                      </span>
+                    )}
                   </td>
                   <td>{kind(r)}</td>
                   <td>v{r.version}</td>

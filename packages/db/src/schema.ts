@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import { RUN_STATES, STEP_STATES } from "@daloy/engine";
-import { boolean, check, index, integer, jsonb, pgEnum, pgSequence, pgTable, primaryKey, text, timestamp, unique, uuid } from "drizzle-orm/pg-core";
+import { boolean, check, customType, index, integer, jsonb, pgEnum, pgSequence, pgTable, primaryKey, text, timestamp, unique, uuid, type AnyPgColumn } from "drizzle-orm/pg-core";
 
 const id = () => uuid("id").primaryKey().defaultRandom();
 const createdAt = () => timestamp("created_at", { withTimezone: true }).notNull().defaultNow();
@@ -134,6 +134,9 @@ export const runs = pgTable("runs", {
   leaseExpiresAt: ts("lease_expires_at"),
   // Set while a retry waits for its backoff delay, so a resumed run does not retry early.
   nextAttemptAt: ts("next_attempt_at"),
+  // The booking version this run belongs to. Once the booking moves on, the run stops at its next step (decision 0032).
+  bookingId: uuid("booking_id").references((): AnyPgColumn => bookings.id, { onDelete: "set null" }),
+  bookingVersion: integer("booking_version"),
   createdAt: createdAt(),
   finishedAt: ts("finished_at"),
 });
@@ -304,6 +307,76 @@ export const resources = pgTable(
     createdAt: createdAt(),
   },
   (t) => [unique().on(t.userId, t.name)],
+);
+
+/** A Postgres tstzrange in its text form. Read it with lower() and upper(). */
+const tstzrange = customType<{ data: string }>({ dataType: () => "tstzrange" });
+
+/**
+ * A booked time for a resource (decision 0032). Migration 0019 adds the exclusion constraint drizzle cannot express:
+ * no two active bookings of one workspace, test scope and resource overlap. That constraint is the only availability
+ * check. Every change raises version, and runs linked to an older version stop at their next step.
+ */
+export const bookings = pgTable(
+  "bookings",
+  {
+    id: id(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    test: boolean("test").notNull(),
+    reference: text("reference").notNull(),
+    resourceId: uuid("resource_id")
+      .notNull()
+      .references(() => resources.id),
+    during: tstzrange("during").notNull(),
+    timezone: text("timezone").notNull(),
+    status: text("status", { enum: ["active", "cancelled"] }).notNull().default("active"),
+    version: integer("version").notNull().default(1),
+    workflowId: uuid("workflow_id").references(() => workflows.id, { onDelete: "set null" }),
+    // The run linked to the current version: the one that made the booking or its last change.
+    runId: uuid("run_id").references((): AnyPgColumn => runs.id, { onDelete: "set null" }),
+    createdAt: createdAt(),
+    updatedAt: ts("updated_at").notNull().defaultNow(),
+  },
+  (t) => [unique().on(t.userId, t.reference), check("bookings_status", sql`${t.status} in ('active', 'cancelled')`)],
+);
+
+/** What a booking step did, written with the change itself, so a retried or taken-over attempt never books twice. */
+export const bookingResults = pgTable(
+  "booking_results",
+  {
+    runId: uuid("run_id")
+      .notNull()
+      .references(() => runs.id, { onDelete: "cascade" }),
+    stepId: text("step_id").notNull(),
+    bookingId: uuid("booking_id").references(() => bookings.id, { onDelete: "cascade" }),
+    branch: text("branch").notNull(),
+    output: jsonb("output").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [primaryKey({ columns: [t.runId, t.stepId] })],
+);
+
+/**
+ * Every change to a booking, one per version it moved from. The primary key lets a version change once, so a staff or
+ * MCP request repeated after a lost answer finds its own change and gets the same result (decision 0032).
+ */
+export const bookingChanges = pgTable(
+  "booking_changes",
+  {
+    bookingId: uuid("booking_id")
+      .notNull()
+      .references(() => bookings.id, { onDelete: "cascade" }),
+    fromVersion: integer("from_version").notNull(),
+    action: text("action").notNull(),
+    start: ts("start"),
+    runId: uuid("run_id").references(() => runs.id, { onDelete: "set null" }),
+    actor: text("actor").notNull(),
+    result: jsonb("result").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [primaryKey({ columns: [t.bookingId, t.fromVersion] })],
 );
 
 /** What the owner tells Daloy about their business. Used in templates, the hosted form and the From and Reply-To headers. */

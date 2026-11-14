@@ -1,15 +1,16 @@
 import { createHash, randomUUID } from "node:crypto";
-import { apiTokens, createKeyedRun, resolveRun, runs, stepRuns, triggers, users, workflows, workflowVersions, type Db } from "@daloy/db";
+import { apiTokens, createKeyedRun, listBookings, resolveRun, runs, stepRuns, triggers, users, workflows, workflowVersions, type Db } from "@daloy/db";
 import { payloadSchema, type FormField, type Resource } from "@daloy/engine";
 import { toNodeHandler } from "@modelcontextprotocol/node";
 import { createMcpHandler, McpServer, type AuthInfo, type CallToolResult } from "@modelcontextprotocol/server";
-import { All, type CanActivate, Controller, type ExecutionContext, Inject, Injectable, Req, Res, UnauthorizedException, UseGuards } from "@nestjs/common";
+import { All, type CanActivate, Controller, type ExecutionContext, HttpException, Inject, Injectable, Req, Res, UnauthorizedException, UseGuards } from "@nestjs/common";
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import type { Request, Response } from "express";
 import type { PgBoss } from "pg-boss";
 import * as z from "zod";
 import { BOSS, DB, enqueueRun, RateLimit, sha256 } from "./http";
 import { isTracked, recordRequest } from "./public";
+import { bookingIdOf, cancelBooking, cancelInput, rescheduleBooking, rescheduleInput } from "./bookings";
 import { resourcesFor } from "./resources";
 
 // tracked: a guided office or purchase request workflow, whose runs also record a request with a reference.
@@ -151,6 +152,37 @@ export class McpController {
         if (action !== "stop") await enqueueRun(this.boss, runId);
         return result({ runId, action, status: action === "stop" ? "cancelled" : "running" });
       },
+    );
+    // Live bookings only; builder test bookings never show here (decision 0032). Errors keep the API's wording.
+    const asTool = async (work: () => Promise<Record<string, unknown>>) => {
+      try {
+        return result(await work());
+      } catch (err) {
+        if (err instanceof HttpException) {
+          const m = (err.getResponse() as { message?: string | string[] }).message ?? err.message;
+          return failure(Array.isArray(m) ? m.join("; ") : m);
+        }
+        throw err;
+      }
+    };
+    server.registerTool(
+      "list_bookings",
+      { title: "List bookings", description: "Lists the workspace's bookings with reference, resource, start and end in the booking's timezone, status and version. Pass the version to cancel_booking or reschedule_booking.", inputSchema: z.object({}) },
+      async () => asTool(async () => ({ bookings: (await listBookings(this.db, userId)).map(({ reference, resource, start, end, timezone, status, version, attention }) => ({ reference, resource, start, end, timezone, status, version, attention })) })),
+    );
+    server.registerTool(
+      "cancel_booking",
+      { title: "Cancel a booking", description: "Cancels a booking. version is the version you last saw; a repeat of the same call gets the same answer.", inputSchema: z.object({ reference: z.string().min(1).max(30), version: cancelInput.shape.version }) },
+      async ({ reference, version }) => asTool(async () => cancelBooking(this.db, userId, await bookingIdOf(this.db, userId, reference), version, "mcp")),
+    );
+    server.registerTool(
+      "reschedule_booking",
+      {
+        title: "Reschedule a booking",
+        description: "Moves a booking to a new start time, checked like the booking form's time field (written like 2027-01-20T14:00 in the booking's timezone, or with an offset). Starts one new run for the new time; the old reminders stop. version is the version you last saw.",
+        inputSchema: z.object({ reference: z.string().min(1).max(30), version: rescheduleInput.shape.version, start: rescheduleInput.shape.start }),
+      },
+      async ({ reference, version, start }) => asTool(async () => rescheduleBooking(this.db, this.boss, userId, await bookingIdOf(this.db, userId, reference), version, start, "mcp")),
     );
     return server;
   }

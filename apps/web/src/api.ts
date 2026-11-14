@@ -56,6 +56,8 @@ export type RunSummary = {
   triggerPayload: unknown;
   // The run, or one of its Sheets or Slack deliveries, waits for a person.
   needsReview: boolean;
+  /** Its booking was changed since; it stops at its next step (decision 0032). */
+  superseded?: boolean;
   createdAt: string;
   finishedAt: string | null;
 };

@@ -144,7 +144,7 @@ describe("MCP endpoint", () => {
 
     const client = await connect(a.token);
     const { tools } = await client.listTools();
-    expect(tools.map((t) => t.name).sort()).toEqual(["get_run_status", mine.slug, "resolve_run"].sort());
+    expect(tools.map((t) => t.name).sort()).toEqual(["cancel_booking", "get_run_status", "list_bookings", mine.slug, "reschedule_booking", "resolve_run"].sort());
     const tool = tools.find((t) => t.name === mine.slug)!;
     expect(tool.inputSchema).toMatchObject({ type: "object", required: ["email"] });
     await client.close();

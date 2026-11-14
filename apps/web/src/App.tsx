@@ -5,6 +5,7 @@ import { Editor } from "./Editor";
 import { RunPage, RunsPage } from "./Runs";
 import { BuildWithAi } from "./AiDraft";
 import { OfficeRequestPage, startOfficeSetup, startPurchaseSetup, TryOfficeRequest } from "./OfficeRequests";
+import { BookingsPage } from "./Bookings";
 import { ResourcesPage } from "./Resources";
 import { SettingsPage } from "./Settings";
 import { BusinessSetupPage, VerifySenderPage } from "./BusinessSetup";
@@ -16,7 +17,7 @@ const ANSWER = /^#\/answer\/([A-Za-z0-9_-]{43})$/;
 const INVITE = /^#\/invite\/([A-Za-z0-9_-]{43})$/;
 
 /**
- * Hash routes (#/, #/w/<id>, #/w/<id>/runs, #/w/<id>/versions, #/runs/<id>, #/tokens, #/settings, #/settings/business, #/resources,
+ * Hash routes (#/, #/w/<id>, #/w/<id>/runs, #/w/<id>/versions, #/runs/<id>, #/tokens, #/settings, #/settings/business, #/resources, #/bookings,
  * #/verify-sender/<token> for the Gmail confirmation link, #/team, #/invite/<token> for an invite link,
  * #/answer/<token> to sign in before a named approval (decision 0022),
  * #/try/office-request for the preview and #/a/<id> for a guided automation),
@@ -67,6 +68,7 @@ export function App() {
   if (business) return <BusinessSetupPage outlookOutcome={business[1]} />;
   if (hash === "#/team" && user.role === "owner") return <TeamPage />;
   if (hash === "#/resources" && user.role === "owner") return <ResourcesPage />;
+  if (hash === "#/bookings" && (user.role === "owner" || user.role === "operator")) return <BookingsPage />;
   const verify = /^#\/verify-sender\/([A-Za-z0-9_-]{43})$/.exec(hash);
   if (verify) return <VerifySenderPage key={verify[1]} token={verify[1]!} />;
   return <Workflows user={user} onSignOut={signOut} />;
@@ -152,6 +154,7 @@ function Workflows({ user, onSignOut }: { user: User; onSignOut: () => void }) {
         <img src="/logo.svg" alt="Daloy" width="28" height="28" />
         <h1>Workflows</h1>
         <span className="muted">{user.email}</span>
+        {(owner || user.role === "operator") && <a href="#/bookings">Bookings</a>}
         {owner && (
           <>
             <a href="#/team">Team</a>

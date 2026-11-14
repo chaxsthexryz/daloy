@@ -1,4 +1,4 @@
-import { deliveries, redactSecrets, resolveRun, runs, secretForms, secretValuesToHide, stepRuns, workflows, workflowVersions, type Db, type RunAction } from "@daloy/db";
+import { deliveries, redactSecrets, resolveRun, runs, secretForms, supersededSql, secretValuesToHide, stepRuns, workflows, workflowVersions, type Db, type RunAction } from "@daloy/db";
 import { Body, ConflictException, Controller, Get, HttpCode, Inject, NotFoundException, Param, Post, Query, UseGuards } from "@nestjs/common";
 import { and, asc, desc, eq, or, sql } from "drizzle-orm";
 import type { PgBoss } from "pg-boss";
@@ -100,7 +100,24 @@ export class RunsController {
   private owned() {
     const { id, state, triggerPayload, test, live, aiLive, testChoices, error, nextAttemptAt, createdAt, finishedAt } = runs;
     return this.db
-      .select({ id, state, triggerPayload, test, live, aiLive, testChoices, error, nextAttemptAt, createdAt, finishedAt, needsReview: sql<boolean>`(${runs.state} = 'needs_review' or ${deliveryInReview})`, workflowId: workflows.id, version: workflowVersions.version })
+      .select({
+        id,
+        state,
+        triggerPayload,
+        test,
+        live,
+        aiLive,
+        testChoices,
+        error,
+        nextAttemptAt,
+        createdAt,
+        finishedAt,
+        needsReview: sql<boolean>`(${runs.state} = 'needs_review' or ${deliveryInReview})`,
+        // Not finished, but its booking was changed since: it stops at its next step and sends nothing more (decision 0032).
+        superseded: sql<boolean>`(${runs.state} in ('pending', 'running', 'waiting', 'needs_review') and ${supersededSql})`,
+        workflowId: workflows.id,
+        version: workflowVersions.version,
+      })
       .from(runs)
       .innerJoin(workflowVersions, eq(workflowVersions.id, runs.workflowVersionId))
       .innerJoin(workflows, eq(workflows.id, workflowVersions.workflowId))

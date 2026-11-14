@@ -1,7 +1,7 @@
 import { edge, email, REJECTED, type Scenario } from "./types";
 
-// QA-02 Spa Appointment Automation. Since P6a the time is a zoned datetime field and the therapist a workspace resource;
-// every booking still reaches the same notifications until P6b. `desired` holds the shapes a later phase adds.
+// QA-02 Spa Appointment Automation. The time is a zoned datetime field and the therapist a workspace resource (P6a).
+// Since P6b the booking step books the therapist first: a free slot reaches both emails, a taken one gets an apology.
 const customer = { name: "Mia", email: "mia@example.com", service: "Massage" };
 
 /** The harness adds this resource, named Ana, to the owner's workspace before the cases run. */
@@ -25,11 +25,16 @@ export const qa02: Scenario = {
         ],
       },
     },
-    steps: [email("notify", "frontdesk@example.com", "New booking"), email("confirm", "{{trigger.email}}", "Your booking")],
-    edges: [edge("notify", "confirm")],
+    steps: [
+      { id: "book", type: "booking", config: { action: "create", resource: "{{trigger.therapist}}", start: "{{trigger.appointment_at}}", minutes: 60 } },
+      email("notify", "frontdesk@example.com", "New booking"),
+      email("confirm", "{{trigger.email}}", "Your booking"),
+      email("sorry", "{{trigger.email}}", "That time is taken"),
+    ],
+    edges: [edge("book", "notify", "done"), edge("notify", "confirm"), edge("book", "sorry", "taken")],
   },
   cases: [
-    { name: "a future booking reaches the front desk and the customer", payload: { ...customer, therapist: ANA, appointment_at: appointment("14:00") }, want: ["notify", "confirm"] },
+    { name: "a future booking reaches the front desk and the customer", payload: { ...customer, therapist: ANA, appointment_at: appointment("14:00") }, want: ["book", "notify", "confirm"] },
     { name: "a time of 32:00 is refused", payload: { ...customer, therapist: ANA, appointment_at: appointment("32:00") }, want: REJECTED, rejects: ["appointment_at: is not a real date and time"] },
     { name: "a time in the past is refused", payload: { ...customer, therapist: ANA, appointment_at: "2020-01-20T14:00" }, want: REJECTED, rejects: ["appointment_at: must be in the future"] },
     {
@@ -66,7 +71,7 @@ export const desired = {
     edges: [edge("wait", "remind")],
   },
   bookingStep: {
-    trigger: { type: "manual", config: {} },
+    trigger: { type: "form", config: { fields: [fields[0], fields[1], fields[2]] } },
     steps: [
       { id: "book", type: "booking", config: { action: "create", resource: "{{trigger.therapist}}", start: "{{trigger.appointment_at}}", minutes: 60 } },
       email("confirm", "{{trigger.email}}", "Your booking"),

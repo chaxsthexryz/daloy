@@ -112,6 +112,9 @@ export function parseZoned(input: string, field: ZonedField, now = Date.now()): 
   return { ok: true, value: `${wallText(local)}${offsetText(offsetAt(tz, at))}`, at: new Date(at) };
 }
 
+/** An instant as wall time in `timeZone` with that zone's offset, the form a datetime field stores. */
+export const formatZoned = (at: Date, timeZone: string) => `${wallText(wallAt(timeZone, at.getTime()))}${offsetText(offsetAt(timeZone, at.getTime()))}`;
+
 // What a datetime field stores, and what toISOString() gives: the offset is required.
 const INSTANT = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.\d{1,3})?)?(Z|[+-]\d{2}:\d{2})$/;
 

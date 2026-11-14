@@ -19,6 +19,23 @@ const def = definitionSchema.parse({
   ],
 });
 
+describe("booking choices", () => {
+  const booking = definitionSchema.parse({
+    trigger: { type: "form", config: { fields: [{ name: "at", label: "At", type: "datetime", timezone: "UTC" }, { name: "who", label: "Who", type: "resource" }] } },
+    steps: [
+      { id: "book", type: "booking", config: { action: "create", resource: "{{trigger.who}}", start: "{{trigger.at}}", minutes: 30 } },
+      { id: "note", type: "sheets", config: { columns: ["a"] } },
+    ],
+    edges: [{ from: "book", to: "note", on: "done" }],
+  });
+  it("lets a faked run choose taken or not_found on a booking step only", () => {
+    expect(choiceProblems(booking, testChoicesSchema.parse({ book: { booking: "taken" } }), "mock")).toEqual([]);
+    expect(choiceProblems(booking, testChoicesSchema.parse({ book: { booking: "not_found" } }), "ai")).toEqual([]);
+    expect(choiceProblems(booking, testChoicesSchema.parse({ note: { booking: "taken" } }), "mock")).toEqual(["choices.note: only a booking step takes a booking outcome"]);
+    expect(testChoicesSchema.safeParse({ book: { booking: "done" } }).success).toBe(false);
+  });
+});
+
 describe("choiceProblems", () => {
   it("accepts a label, a decision and a mocked failure on the right steps", () => {
     const choices = testChoicesSchema.parse({ classify: { label: "refund" }, ask: { decision: "timeout" }, log: { fail: "retryable" } });

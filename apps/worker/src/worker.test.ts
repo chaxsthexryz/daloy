@@ -1,6 +1,6 @@
-import { createApproval, recordDecision, runs, stepRuns, users, workflows, workflowVersions, type Db } from "@daloy/db";
+import { bookings, createApproval, recordDecision, resources, runs, stepRuns, users, workflows, workflowVersions, type Db } from "@daloy/db";
 import { evaluateCondition, StepError } from "@daloy/engine";
-import { asc, eq } from "drizzle-orm";
+import { asc, eq, sql } from "drizzle-orm";
 import type { Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { freshDatabase } from "../../../test/db";
@@ -12,12 +12,27 @@ let db: Db;
 let pool: Pool;
 let worker: Worker;
 const calls: string[] = [];
+// runId -> its booking, for steps that change the booking as if staff did it while the step runs (decision 0032).
+const bookingOf = new Map<string, string>();
+const changeBooking = (runId: string) => db.update(bookings).set({ version: sql`${bookings.version} + 1` }).where(eq(bookings.id, bookingOf.get(runId)!));
 const approvalTokens = new Map<string, string>();
 
 // Test steps behave according to their id, so each test builds the failure it needs.
 const executor: StepExecutor = {
-  async execute({ runId, stepRunId, step, attempt, idempotencyKey, ctx }) {
+  async execute({ runId, stepRunId, step, attempt, idempotencyKey, ctx, claimSend }) {
     calls.push(idempotencyKey);
+    if (step.id === "staff_changes") await changeBooking(runId);
+    if (step.id === "changes_then_fails") {
+      await changeBooking(runId);
+      throw new StepError("receiver down", true);
+    }
+    if (step.id === "changes_then_sends") {
+      await changeBooking(runId);
+      const release = await claimSend!();
+      release();
+      calls.push(`${idempotencyKey}:sent`);
+      return {};
+    }
     if (step.type === "approval") {
       // Like the real step, minus the email. "quick" times out after half a second.
       const waitUntil = new Date(Date.now() + (step.id === "quick" ? 500 : 60_000));
@@ -68,7 +83,7 @@ async function createRun(definition: object, triggerPayload: object = {}, extra:
 async function waitForEnd(runId: string) {
   for (let i = 0; i < 150; i++) {
     const [run] = await db.select().from(runs).where(eq(runs.id, runId));
-    if (run!.state === "succeeded" || run!.state === "failed") return run!;
+    if (run!.state === "succeeded" || run!.state === "failed" || run!.state === "cancelled") return run!;
     await new Promise((r) => setTimeout(r, 100));
   }
   throw new Error(`run ${runId} did not finish`);
@@ -273,5 +288,61 @@ describe("worker", () => {
     await worker.enqueue(bad);
     expect((await waitForEnd(bad)).state).toBe("failed");
     expect((await attemptsOf(bad))[0]).toMatchObject({ state: "failed", inputTokens: 90, outputTokens: 7 });
+  });
+});
+
+describe("booking versions (decision 0032)", () => {
+  async function linkedRun(definition: object) {
+    const runId = await createRun(definition);
+    const [owner] = await db.select({ userId: workflows.userId }).from(runs).innerJoin(workflowVersions, eq(workflowVersions.id, runs.workflowVersionId)).innerJoin(workflows, eq(workflows.id, workflowVersions.workflowId)).where(eq(runs.id, runId));
+    const [res] = await db.insert(resources).values({ userId: owner!.userId, name: "Ana" }).returning();
+    const [b] = await db
+      .insert(bookings)
+      .values({ userId: owner!.userId, test: false, reference: `BK-${String(++seq).padStart(6, "0")}`, resourceId: res!.id, during: sql`tstzrange(now() + interval '1 day', now() + interval '25 hours')` as unknown as string, timezone: "UTC", runId })
+      .returning();
+    await db.update(runs).set({ bookingId: b!.id, bookingVersion: 1 }).where(eq(runs.id, runId));
+    bookingOf.set(runId, b!.id);
+    return runId;
+  }
+  const stopped = (step: string) => `The booking was rescheduled or cancelled, so this run stopped before step ${step}.`;
+
+  it("stops a run at its next step once its booking changed", async () => {
+    const runId = await linkedRun(flow({ id: "staff_changes" }, { id: "remind" }));
+    await worker.enqueue(runId);
+    expect(await waitForEnd(runId)).toMatchObject({ state: "cancelled", error: stopped("remind") });
+    expect((await attemptsOf(runId)).map((r) => r.stepId)).toEqual(["staff_changes"]);
+  });
+
+  it("stops after a wait when the booking changed while it waited", async () => {
+    const runId = await linkedRun(flow({ id: "pause" }, { id: "remind" }));
+    await worker.enqueue(runId);
+    for (let i = 0; i < 50 && (await db.select().from(runs).where(eq(runs.id, runId)))[0]!.state !== "waiting"; i++) await new Promise((r) => setTimeout(r, 50));
+    await changeBooking(runId);
+    expect(await waitForEnd(runId)).toMatchObject({ state: "cancelled", error: stopped("remind") });
+    expect((await attemptsOf(runId)).map((r) => [r.stepId, r.state])).toEqual([["pause", "succeeded"]]);
+  });
+
+  it("does not retry a step once the booking changed during its failed attempt", async () => {
+    const runId = await linkedRun(flow({ id: "changes_then_fails" }, { id: "remind" }));
+    await worker.enqueue(runId);
+    expect(await waitForEnd(runId)).toMatchObject({ state: "cancelled", error: stopped("changes_then_fails") });
+    expect(await attemptsOf(runId)).toHaveLength(1);
+  });
+
+  it("refuses an unsafe send when the change commits before the send claim", async () => {
+    const runId = await linkedRun(flow({ id: "changes_then_sends", type: "email", config: { to: "mia@example.com", subject: "Reminder", text: "See you" } }));
+    await worker.enqueue(runId);
+    expect(await waitForEnd(runId)).toMatchObject({ state: "cancelled", error: stopped("changes_then_sends") });
+    expect(calls.filter((c) => c.startsWith(runId) && c.endsWith(":sent"))).toEqual([]);
+    expect((await attemptsOf(runId))[0]).toMatchObject({ state: "failed", outcome: "not_sent" });
+  });
+
+  it("lets a run whose own booking step moved the link carry on", async () => {
+    const runId = await linkedRun(flow({ id: "own_change" }, { id: "remind" }));
+    // As the booking step does: the change and the run's link move together.
+    await db.update(runs).set({ bookingVersion: 2 }).where(eq(runs.id, runId));
+    await changeBooking(runId);
+    await worker.enqueue(runId);
+    expect((await waitForEnd(runId)).state).toBe("succeeded");
   });
 });

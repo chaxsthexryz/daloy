@@ -1,6 +1,6 @@
 import * as z from "zod";
 import { aiConfigSchema } from "./ai";
-import { approvalConfigSchema, conditionSchema, delayConfigSchema, emailConfigSchema, httpConfigSchema, outlookConfigSchema, sheetsConfigSchema, slackConfigSchema, teamsConfigSchema, type Step } from "./definition";
+import { approvalConfigSchema, bookingConfigSchema, conditionSchema, delayConfigSchema, emailConfigSchema, httpConfigSchema, outlookConfigSchema, sheetsConfigSchema, slackConfigSchema, teamsConfigSchema, type Step } from "./definition";
 
 /**
  * JSON Schema for each step type's config, which the builder turns into a form.
@@ -20,5 +20,6 @@ export function stepJsonSchemas(): Record<Step["type"], unknown> {
     slack: json(slackConfigSchema),
     outlook: json(outlookConfigSchema),
     teams: json(teamsConfigSchema),
+    booking: json(bookingConfigSchema),
   };
 }

@@ -16,6 +16,7 @@ import { McpController } from "./mcp";
 import { MembersController, MyRequestsController } from "./members";
 import { FormsController, HooksController } from "./public";
 import { RunsController } from "./runs";
+import { BookingsController } from "./bookings";
 import { ResourcesController } from "./resources";
 import { SecretsController } from "./secrets";
 import { SettingsController } from "./settings";
@@ -31,7 +32,7 @@ export async function createApp({ db, boss, ...config }: AppOptions) {
   await boss.createQueue(SCHEDULE_QUEUE);
 
   @Module({
-    controllers: [AuthController, WorkflowsController, CatalogController, SecretsController, ResourcesController, TokensController, RunsController, HooksController, FormsController, ApprovalsController, McpController, SettingsController, EmailSettingsController, ConnectionsController, OutlookCallbackController, DeliveriesController, AiDraftController, MembersController, MyRequestsController],
+    controllers: [AuthController, WorkflowsController, CatalogController, SecretsController, ResourcesController, BookingsController, TokensController, RunsController, HooksController, FormsController, ApprovalsController, McpController, SettingsController, EmailSettingsController, ConnectionsController, OutlookCallbackController, DeliveriesController, AiDraftController, MembersController, MyRequestsController],
     providers: [
       { provide: DB, useValue: db },
       { provide: BOSS, useValue: boss },

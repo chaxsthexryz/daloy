@@ -35,6 +35,8 @@ function summary(step: Step): string {
     case "slack":
     case "teams":
       return step.config.text.slice(0, 60);
+    case "booking":
+      return step.config.action === "create" ? `book ${step.config.resource} at ${step.config.start}, ${step.config.minutes} min` : `${step.config.action} ${step.config.booking}`;
   }
 }
 

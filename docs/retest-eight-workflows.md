@@ -1,6 +1,6 @@
 # Retest handoff: eight-workflow acceptance harness
 
-For Astra. P1 added the harness. P2 added field limits at every entry point and the condition `invalid` branch. P3 added test-run modes and chosen outcomes (migration 0014). P4 added business event keys (migration 0015). P5 added safe retries and review (migration 0017). P6a added zoned times, delays until a time and workspace resources (migration 0018). External beta stays on hold.
+For Astra. P1 added the harness. P2 added field limits at every entry point and the condition `invalid` branch. P3 added test-run modes and chosen outcomes (migration 0014). P4 added business event keys (migration 0015). P5 added safe retries and review (migration 0017). P6a added zoned times, delays until a time and workspace resources (migration 0018). P6b added bookings (migration 0019). External beta stays on hold.
 
 ## Run
 
@@ -58,6 +58,19 @@ Builder replay (second commit):
 - A worker paused before it claims the send: another worker takes over, the run is parked, the operator chooses Stop, and the paused worker then sends nothing. The receiver count stays at the one request the takeover made (`fencing.test.ts`).
 - A worker paused while it holds the send claim: the takeover waits, Stop answers 409 because the run is still running, the paused worker's one POST goes out, then the run is parked; Stop after that sends nothing more.
 - A 503 with a body over 1 MB on a POST: `needs_review / unknown` with "HTTP 503" in the error.
+
+## P6b checks (booking lifecycle)
+
+Run `pnpm vitest run packages/db/src/bookings.test.ts apps/api/src/bookings.test.ts`, `pnpm vitest run apps/worker/src/worker.test.ts -t "booking"`, `pnpm vitest run apps/api/src/scenarios.test.ts -t "QA-02"` and `pnpm e2e e2e/bookings.spec.ts`. For a manual check, publish a webhook workflow like the one in `e2e/bookings.spec.ts` (resource field, datetime field, booking step, a delay until a day before, a reminder email) and start it with the Run button or the webhook.
+
+- Double booking: two requests for Ana at 14:00 give one `done` and one `taken`. Fire 10 at once (overlapping times on one resource): exactly one `done`. 14:00 to 15:00 and 15:00 to 16:00 both fit. Another resource, another workspace, or a builder test run at the same time all succeed.
+- Cancellation: `POST /bookings/:id/cancel {version}` as owner or operator. A repeat with the same version answers `duplicate: true`. The slot is free again. The waiting reminder run shows "superseded" on its run page while still `waiting`; when it wakes it ends `cancelled` with "The booking was rescheduled or cancelled, so this run stopped before step remind." and sends nothing.
+- Rescheduling: `POST /bookings/:id/reschedule {version, start}`. The new time follows the field's rules (16:30 on an hourly grid, a past time, a DST gap are 400 naming `start`). One new run starts after the booking step; its confirmation shows the new time and the same reference; the old reminder stops. Refused with 409: a taken time, a stale version, a published version without the booking step, or a step after the booking that reads a step before it.
+- Concurrency: send the same reschedule 5 times at once: one 200 without `duplicate`, four with it, one new run, version raised once. Send three different reschedules from the same version at once: one 200, two 409. Repeat the first request after restarting the API: still `duplicate` with the same run.
+- Authorization: approvers and requesters get 403 on `/bookings`; another workspace gets an empty list and 404 on the id; no session is 401. A form or schedule workflow with a reschedule or cancel step cannot be saved; a webhook one needs a signing secret. MCP `list_bookings` shows live bookings only; `cancel_booking` on a `TEST-` reference is not found.
+- Reminder safety: change a booking while its run waits, while a step is failing (it is not retried), and right before an email (the send is refused). The Bookings page flags a booking whose run failed after booking as "needs attention" and keeps it active.
+- Known limitation: an idempotent HTTP call or a Sheets, Slack, Outlook or Teams delivery already past the attempt check when the change lands still goes out, and nothing already sent can be recalled.
+- Migration 0019 is additive and creates the `btree_gist` extension (trusted). The development database was not touched.
 
 ## Fixes from the ad0173f review
 

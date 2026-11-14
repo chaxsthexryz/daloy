@@ -229,3 +229,57 @@ describe("delay until and the late edge", () => {
     expect(errs(def({ until: "{{trigger.at}}" }, [{ from: "wait", to: "remind" }, { from: "wait", to: "too_late", on: "early" }]))).toEqual([': step "wait" does not branch, so its edge cannot have a label']);
   });
 });
+
+describe("booking step", () => {
+  const at = { name: "at", label: "At", type: "datetime", required: true, timezone: "Asia/Manila", slotMinutes: 60 };
+  const who = { name: "who", label: "Who", type: "resource", required: true };
+  const ref = { name: "ref", label: "Reference", type: "text", required: true };
+  const book = (config: Record<string, unknown>) => ({ id: "book", type: "booking", config });
+  const create = { action: "create", resource: "{{trigger.who}}", start: "{{trigger.at}}", minutes: 60 };
+  const def = (trigger: object, config: Record<string, unknown>, edges: { from: string; to: string; on?: string }[] = [{ from: "book", to: "ok", on: "done" }]) => ({
+    trigger,
+    steps: [book(config), step("ok", "email"), step("busy", "email")],
+    edges: [...edges, { from: "ok", to: "busy" }].filter((e, i, all) => all.findIndex((x) => x.to === e.to) === i),
+  });
+  const form = { type: "form", config: { fields: [at, who] } };
+  const signed = (fields: object[]) => ({ type: "webhook", config: { hmacSecret: "booking_hook", fields } });
+  const errs = (input: unknown) => {
+    const r = definitionSchema.safeParse(input);
+    return r.success ? [] : r.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`);
+  };
+
+  it("saves a create step on a form with a datetime field, with done, taken and not_found branches", () => {
+    expect(errs(def(form, create, [{ from: "book", to: "ok", on: "done" }, { from: "book", to: "busy", on: "taken" }]))).toEqual([]);
+    expect(errs(def(form, create, [{ from: "book", to: "ok", on: "booked" }]))).toEqual([': "booked" is not a branch of booking step "book"']);
+  });
+
+  it("needs the fields each action uses, and no others", () => {
+    expect(errs(def(form, { action: "create", start: "{{trigger.at}}", minutes: 60 }))).toEqual(["steps.0.config.resource: a create needs resource, start and minutes"]);
+    expect(errs(def(form, { ...create, minutes: 0 }))).not.toEqual([]);
+    expect(errs(def(form, { ...create, minutes: 1441 }))).not.toEqual([]);
+    expect(errs(def(form, { ...create, booking: "{{trigger.ref}}" }))).toEqual(["steps.0.config.booking: a create makes a new booking, so it takes no booking reference"]);
+    expect(errs(def(signed([ref, at]), { action: "cancel", booking: "{{trigger.ref}}", start: "{{trigger.at}}" }))).toEqual(["steps.0.config.start: a cancel takes only the booking reference"]);
+    expect(errs(def(signed([ref, at]), { action: "reschedule", start: "{{trigger.at}}" }))).toEqual(["steps.0.config.booking: a reschedule needs booking and start"]);
+  });
+
+  it("takes the start only from a datetime field of the trigger, so the field's zone and slot rules apply", () => {
+    const start = ': booking step "book" needs start to be {{trigger.<field>}} for a datetime field of the trigger';
+    expect(errs(def(form, { ...create, start: "{{trigger.who}}" }))).toEqual([start]);
+    expect(errs(def(form, { ...create, start: "2030-01-01T10:00:00+08:00" }))).toEqual([start]);
+    expect(errs(def(form, { ...create, start: "{{steps.x.output.at}}" }))).toEqual([start]);
+    expect(errs(def({ type: "manual", config: {} }, create))).toEqual([start]);
+    expect(errs(def(form, { ...create, start: "{{ trigger.at }}" }))).toEqual([]);
+  });
+
+  it("lets only staff and signed webhooks reschedule or cancel", () => {
+    const cancel = { action: "cancel", booking: "{{trigger.ref}}" };
+    const reschedule = { action: "reschedule", booking: "{{trigger.ref}}", start: "{{trigger.at}}" };
+    const who = ': booking step "book" can reschedule or cancel only from a manual trigger or a webhook with a signing secret';
+    expect(errs(def(signed([ref, at]), reschedule))).toEqual([]);
+    expect(errs(def(signed([ref]), cancel))).toEqual([]);
+    expect(errs(def({ type: "manual", config: {} }, cancel))).toEqual([]);
+    expect(errs(def({ type: "form", config: { fields: [ref, at] } }, reschedule))).toEqual([who]);
+    expect(errs(def({ type: "webhook", config: { fields: [ref] } }, cancel))).toEqual([who]);
+    expect(errs(def({ type: "schedule", config: { cron: "0 9 * * 1" } }, cancel))).toEqual([who]);
+  });
+});
