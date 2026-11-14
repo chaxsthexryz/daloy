@@ -13,7 +13,7 @@ It needs no Docker and no network. It starts an embedded Postgres, creates a thr
 
 ## What to check
 
-- 123 tests pass: 9 fixture checks, 1 setup step, 113 acceptance cases.
+- 125 tests pass: 9 fixture checks, 1 setup step, 115 acceptance cases.
 - 10 cases carry `[gap <phase>: <reason>]`: P6a 6, P6b 3, P7 1. Each one asserts the current wrong behaviour.
 - Change one gap's `today` outcome in `test/scenarios/qa-0*.ts` and confirm that test fails. Rename a step id in one edge of a fixture and confirm the fixture check fails rather than a gap passing.
 - Compare the fixtures with the saved QA-01 to QA-08 drafts in the demo workspace. They are hand-written copies of the v2 shape; report anything that changes a branch or a threshold.
@@ -46,6 +46,13 @@ Builder replay (second commit):
 - Pin race: queue a Sheets delivery before any sheet is connected, connect sheet A, pause worker A at its first-pin update after it read sheet A, let another worker take over, pin sheet B and deliver. Expected: A sends nothing; sheet A has no row and the delivery stays delivered to sheet B. Test: "a worker that loses its claim while pinning the first destination sends nothing" (pauses A with a table lock, then a row lock).
 - Late auth refusal: hold the old key's Google sign-in refusal, replace the connection with a new key and sheet, deliver one, then release the refusal. Expected: the connection stays active with no error, the old delivery fails, and the next delivery goes in. Test: "a late authentication refusal for a replaced credential leaves the new connection working".
 - No migration. Connection tests in the console (Add a test row, Send a test message) now also update the status only for the credential they tested.
+
+## Fixes from the b31c4ce review
+
+- A POST answered with 303 to a receipt that answers 429: the receiver gets 1 order POST and the run waits for review (`http.test.ts` and the QA-08 case "receipt lookup is throttled"). The same with a receipt answering 503 or 404.
+- A worker paused before it claims the send: another worker takes over, the run is parked, the operator chooses Stop, and the paused worker then sends nothing. The receiver count stays at the one request the takeover made (`fencing.test.ts`).
+- A worker paused while it holds the send claim: the takeover waits, Stop answers 409 because the run is still running, the paused worker's one POST goes out, then the run is parked; Stop after that sends nothing more.
+- A 503 with a body over 1 MB on a POST: `needs_review / unknown` with "HTTP 503" in the error.
 
 ## P5 checks (safe retries and review)
 

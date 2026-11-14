@@ -10,6 +10,7 @@ import { BLOCKED_RANGES, blockListOf, type SsrfGuard } from "./ssrf";
 let server: Server;
 let port: number;
 let requests = 0;
+let orders = 0;
 // Accepts a TCP connection and closes it at once, before reading anything.
 let dropper: TcpServer;
 let dropPort: number;
@@ -31,7 +32,14 @@ beforeAll(async () => {
       const n = Number(path.slice(7));
       return res.writeHead(302, { location: n > 0 ? `/chain/${n - 1}` : "/json" }).end();
     }
+    if (at("/big503")) return res.writeHead(503).end(Buffer.alloc(2_000_000, 97));
     if (at("/big")) return res.writeHead(200).end(Buffer.alloc(2_000_000, 97));
+    // An order endpoint that takes the POST and sends the client on to a receipt (Astra, b31c4ce).
+    if (at("/order/")) {
+      if (req.method === "POST") orders++;
+      return res.writeHead(303, { location: `/receipt/${path.slice(7)}` }).end();
+    }
+    if (at("/receipt/")) return res.writeHead(Number(path.slice(9)), { "retry-after": "0" }).end();
     if (at("/hang")) return; // never answers
     if (at("/retry-after/")) return res.writeHead(429, { "retry-after": decodeURIComponent(path.slice(13)) }).end();
     // Reads the whole request, then drops the connection without answering.
@@ -216,6 +224,38 @@ describe("httpRequest", () => {
     const err = await stepError(get("/big", { maxBytes: 1_000_000 }));
     expect(err.message).toMatch(/1000000 bytes/);
     expect(err.retryable).toBe(false);
+  });
+
+  it("never retries a POST the receiver already answered with a redirect, whatever the follow-up does", async () => {
+    for (const code of [429, 503, 404]) {
+      const before = orders;
+      const err = await stepError(post(`/order/${code}`));
+      expect([err.outcome, err.retryable], `receipt ${code}`).toEqual(["unknown", false]);
+      expect(orders - before).toBe(1);
+    }
+    const refused = await stepError(post(`/redirect/${encodeURIComponent(`http://private.test:${port}/json`)}`));
+    expect([refused.outcome, refused.retryable]).toEqual(["unknown", false]);
+  });
+
+  it("still retries an idempotent step whose redirect target is throttled", async () => {
+    const err = await stepError(post("/order/429", { idempotent: true }));
+    expect([err.outcome, err.retryable]).toEqual(["throttled", true]);
+  });
+
+  it("keeps a 503 unknown when its body is over the size limit", async () => {
+    const err = await stepError(post("/big503", {}, { maxBytes: 1_000_000 }));
+    expect([err.message, err.outcome, err.retryable]).toEqual([expect.stringMatching(/HTTP 503/), "unknown", false]);
+  });
+
+  it("asks for the send claim once, right before the first request, and refuses to send without it", async () => {
+    const before = requests;
+    const err = await stepError(post("/json", {}, { claim: () => Promise.reject(new StepError("claim lost", false, { outcome: "not_sent" })) }));
+    expect([err.outcome, err.retryable]).toEqual(["not_sent", false]);
+    expect(requests).toBe(before);
+    const events: string[] = [];
+    const out = await post("/chain/1", {}, { claim: async () => (events.push("claimed"), () => events.push("released")) });
+    expect(out.status).toBe(200);
+    expect(events).toEqual(["claimed", "released"]);
   });
 
   it("times out a GET as a retryable unknown outcome", async () => {

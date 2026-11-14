@@ -23,9 +23,13 @@ import { and, asc, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
 /** input is the resolved config the attempt ran with, already redacted. On failure it travels on StepError.input. */
 export type StepResult = { input?: unknown; output?: unknown; branch?: string; inputTokens?: number; outputTokens?: number; waitUntil?: Date };
 
-/** Runs one step attempt. userId is the workflow owner, whose secrets the step may use. mock is set for builder test runs without live calls. */
+/**
+ * Runs one step attempt. userId is the workflow owner, whose secrets the step may use. mock is set for builder test runs
+ * without live calls. claimSend is given for a send that is not safe to repeat: the step calls it right before the
+ * request and calls the function it resolves to once the request is on its way (decision 0030).
+ */
 export interface StepExecutor {
-  execute(input: { runId: string; stepRunId: string; userId: string; step: Step; attempt: number; idempotencyKey: string; ctx: ExpressionContext; mock?: boolean; aiLive?: boolean; choice?: TestChoice }): Promise<StepResult>;
+  execute(input: { runId: string; stepRunId: string; userId: string; step: Step; attempt: number; idempotencyKey: string; ctx: ExpressionContext; mock?: boolean; aiLive?: boolean; choice?: TestChoice; claimSend?: () => Promise<() => void> }): Promise<StepResult>;
 }
 
 export type AdvanceDeps = {
@@ -151,29 +155,57 @@ async function runNext(deps: AdvanceDeps, run: Run): Promise<void> {
     if (last.state === "failed") {
       // The run is still running, so this failure was scheduled for a retry.
       attempt = last.attempt + 1;
-    } else if (last.dispatchedAt) {
-      // A worker stopped during a send that is not safe to repeat. It may have gone through, so a person decides.
-      return db.transaction(async (tx) => {
-        await moveStep(tx, last.id, "running", "failed", { outcome: "unknown", error: "The worker stopped while sending, so this may have gone through. Check with the receiver, then choose.", finishedAt: new Date() });
-        await moveRun(tx, run.id, "running", "needs_review", { error: `step ${step.id}: the worker stopped while sending` });
-      });
     } else {
-      // A worker died mid-attempt before any unsafe send. Run the same attempt again: same row, same key, new claim.
+      // A worker stopped mid-attempt. Take the attempt over (same row, same key) only if it never claimed a send.
       attempt = last.attempt;
       stepRunId = last.id;
     }
   }
 
-  // Each attempt is claimed, so only this worker can finish it. The dispatch mark is written before the step runs,
-  // so a takeover finds it even if this worker dies mid-send (a crash before the send parks too: the safe side).
+  // Each attempt is claimed, so only this worker can finish it.
   const claimId = randomUUID();
-  const dispatchedAt = !mock && unsafeToRepeat(step) ? new Date() : null;
   if (stepRunId) {
-    await db.update(stepRuns).set({ claimId, dispatchedAt }).where(and(eq(stepRuns.id, stepRunId), eq(stepRuns.state, "running")));
+    const takeover = stepRunId;
+    // Guarded on the dispatch mark: a send claimed by the stopped worker may be on its way, and if that worker is still
+    // sending under its lock, this waits for it and then finds the mark.
+    const taken = await db.update(stepRuns).set({ claimId }).where(and(eq(stepRuns.id, takeover), eq(stepRuns.state, "running"), isNull(stepRuns.dispatchedAt))).returning({ id: stepRuns.id });
+    if (taken.length === 0) {
+      // It may have gone through, and it is not safe to repeat, so a person decides.
+      return db.transaction(async (tx) => {
+        await moveStep(tx, takeover, "running", "failed", { outcome: "unknown", error: "The worker stopped while sending, so this may have gone through. Check with the receiver, then choose.", finishedAt: new Date() });
+        await moveRun(tx, run.id, "running", "needs_review", { error: `step ${step.id}: the worker stopped while sending` });
+      });
+    }
   } else {
     // Created straight in "running": the row only exists once a worker has started the attempt.
-    stepRunId = (await db.insert(stepRuns).values({ runId: run.id, stepId: step.id, attempt, state: "running", claimId, dispatchedAt }).returning({ id: stepRuns.id }))[0]!.id;
+    stepRunId = (await db.insert(stepRuns).values({ runId: run.id, stepId: step.id, attempt, state: "running", claimId }).returning({ id: stepRuns.id }))[0]!.id;
   }
+  const attemptId = stepRunId;
+
+  /**
+   * Right before an unsafe send: write the dispatch mark under this worker's claim, then lock the attempt row and check
+   * the claim and state again, holding the lock until the step releases it once the request is on its way. A takeover
+   * then either took the claim first (this send is refused, nothing goes out) or waits for the lock and parks the run,
+   * so an operator's Stop can never come before a send that then still starts (Astra, b31c4ce).
+   */
+  const claimSend = () =>
+    new Promise<() => void>((ready, refuse) => {
+      const lost = () => new StepError("Another worker took this attempt over, so this one sends nothing.", false, { outcome: "not_sent" });
+      const mine = and(eq(stepRuns.id, attemptId), eq(stepRuns.state, "running"), eq(stepRuns.claimId, claimId));
+      db.update(stepRuns)
+        .set({ dispatchedAt: new Date() })
+        .where(mine)
+        .returning({ id: stepRuns.id })
+        .then(async (marked) => {
+          if (marked.length === 0) throw lost();
+          await db.transaction(async (tx) => {
+            const [held] = await tx.select({ id: stepRuns.id }).from(stepRuns).where(mine).for("update");
+            if (!held) throw lost();
+            await new Promise<void>((released) => ready(released));
+          });
+        })
+        .catch(refuse);
+    });
 
   const ctx: ExpressionContext = {
     trigger: run.triggerPayload,
@@ -182,7 +214,7 @@ async function runNext(deps: AdvanceDeps, run: Run): Promise<void> {
 
   let result: StepResult;
   try {
-    result = await deps.executor.execute({ runId: run.id, stepRunId, userId: version!.userId, step, attempt, idempotencyKey: idempotencyKey(run.id, step.id), ctx, mock, aiLive: run.aiLive, choice: (run.testChoices as Record<string, TestChoice> | null)?.[step.id] });
+    result = await deps.executor.execute({ runId: run.id, stepRunId, userId: version!.userId, step, attempt, idempotencyKey: idempotencyKey(run.id, step.id), ctx, mock, aiLive: run.aiLive, choice: (run.testChoices as Record<string, TestChoice> | null)?.[step.id], claimSend: !mock && unsafeToRepeat(step) ? claimSend : undefined });
     // A comparison on a missing or non-number value has nowhere to go without an "invalid" edge, so it fails here
     // and run history says why, instead of quietly taking "false" (decision 0027). Retrying would see the same data.
     if (step.type === "condition" && result.branch === "invalid" && !def.edges.some((e) => e.from === step.id && e.on === "invalid")) {

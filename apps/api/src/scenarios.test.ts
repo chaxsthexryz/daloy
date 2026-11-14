@@ -57,9 +57,10 @@ const mail: MailDeps = {
 
 // The receiver answers each POST as the current test says, after reading the whole body. "throttled" answers 429
 // with Retry-After: 1 once, then switches to "ok". "hang" never answers (the worker times out after 10 s).
-type Mode = "ok" | "bad_request" | "unavailable" | "reset" | "throttled" | "hang";
+// "receipt_throttled" answers the POST with 303 to a receipt that answers 429; "big_503" sends a 503 over the size limit.
+type Mode = "ok" | "bad_request" | "unavailable" | "reset" | "throttled" | "hang" | "receipt_throttled" | "big_503";
 let mode: Mode = "ok";
-const received: { key: string | undefined; body: string; at: number }[] = [];
+const received: { key: string | undefined; body: string; at: number; method: string | undefined }[] = [];
 const hung: import("node:http").ServerResponse[] = [];
 let receiver: Server;
 // The same local server stands in for the model (Ollama's /api/chat) in AI-only test runs.
@@ -111,7 +112,12 @@ beforeAll(async () => {
       const reply = system.includes("Classify") ? { label: /^- (\w+)/m.exec(system)![1] } : { summary: "A real-model summary." };
       return res.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify({ message: { content: JSON.stringify(reply) }, prompt_eval_count: 10, eval_count: 5 }));
     }
-    received.push({ key: req.headers["idempotency-key"] as string | undefined, body, at: Date.now() });
+    received.push({ key: req.headers["idempotency-key"] as string | undefined, body, at: Date.now(), method: req.method });
+    if (mode === "receipt_throttled") {
+      if (req.url === "/receipt") return res.writeHead(429, { "Retry-After": "0" }).end();
+      return res.writeHead(303, { Location: "/receipt" }).end();
+    }
+    if (mode === "big_503") return res.writeHead(503).end(Buffer.alloc(1_500_000, 97));
     if (mode === "reset") return req.socket.destroy();
     if (mode === "hang") return hung.push(res);
     if (mode === "throttled") {
@@ -595,6 +601,17 @@ describe("QA-08 failure recovery", () => {
     expect([r.run.state, r.attempts]).toEqual(["needs_review", 1]);
     expect(received).toHaveLength(1);
   }, 30_000);
+  it("a POST answered with a redirect whose receipt lookup is throttled parks for review after one order", async () => {
+    const r = await live("receipt_throttled");
+    expect([r.run.state, r.outcome]).toEqual(["needs_review", ["post:review"]]);
+    expect(received.filter((x) => x.method === "POST")).toHaveLength(1);
+  });
+  it("a 503 with a body over the size limit on a POST parks for review", async () => {
+    const r = await live("big_503");
+    expect([r.run.state, r.attempts]).toEqual(["needs_review", 1]);
+    const [row] = await db.select().from(stepRuns).where(eq(stepRuns.runId, r.runId));
+    expect([row!.outcome, row!.error]).toEqual(["unknown", expect.stringContaining("HTTP 503")]);
+  });
   it("a 429 waits for Retry-After, then the same key goes again", async () => {
     const r = await live("throttled");
     expect([r.run.state, r.outcome]).toEqual(["succeeded", ["post", "notify"]]);
