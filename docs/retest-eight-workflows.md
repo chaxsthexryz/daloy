@@ -35,6 +35,12 @@ Builder replay (second commit):
 
 - Run a keyed test (Live), change the draft, send the same event as Mock. Expected: `{ id: <first run>, versionId: <first run's version>, mode: "live", duplicate: true }`, and the builder says the event already ran and shows the earlier live test run.
 
+## Fixes from the 8e2c5d8 review
+
+- Pin race: queue a Sheets delivery before any sheet is connected, connect sheet A, pause worker A at its first-pin update after it read sheet A, let another worker take over, pin sheet B and deliver. Expected: A sends nothing; sheet A has no row and the delivery stays delivered to sheet B. Test: "a worker that loses its claim while pinning the first destination sends nothing" (pauses A with a table lock, then a row lock).
+- Late auth refusal: hold the old key's Google sign-in refusal, replace the connection with a new key and sheet, deliver one, then release the refusal. Expected: the connection stays active with no error, the old delivery fails, and the next delivery goes in. Test: "a late authentication refusal for a replaced credential leaves the new connection working".
+- No migration. Connection tests in the console (Add a test row, Send a test message) now also update the status only for the credential they tested.
+
 ## P3 checks (test outcomes, AI-only mode)
 
 - In the builder, "Test calls" offers Mocked, Real AI only and Live. "Test outcomes" lists classify labels, approval decisions (approved, rejected, timeout) and fail options for steps that reach outside.

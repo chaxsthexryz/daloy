@@ -490,6 +490,77 @@ describe("late answers from stale workers (Astra, c05fa81)", () => {
     expect(sheetRows).toHaveLength(1);
   });
 
+  it("a worker that loses its claim while pinning the first destination sends nothing (Astra, 8e2c5d8)", async () => {
+    await removeConnection(db, ana, "google_sheets");
+    const d = await sheet(ana, await newRun(ana), "REQ-3010"); // queued before any sheet was connected: no pin yet
+    expect((await state(d.id)).pinnedAccount).toBe("");
+    await saveConnection(db, key, ana, "google_sheets", {
+      account: "sheets@ana.iam.gserviceaccount.com",
+      credential: JSON.stringify(serviceAccount("sheets@ana.iam.gserviceaccount.com")),
+      destination: { spreadsheetId: "sheet-ana", tab: "Requests", title: "Office requests" },
+    });
+    // Stop worker A at the exact point: after its claim and after it read the connection (sheet A), at its first-pin UPDATE.
+    const waiting = async (locktype: string) => {
+      for (let i = 0; i < 300; i++) {
+        const { rows } = await pool.query("select count(*)::int as n from pg_locks where not granted and locktype = $1", [locktype]);
+        if (rows[0].n > 0) return;
+        await sleep(10);
+      }
+      throw new Error(`worker A never waited on a ${locktype} lock`);
+    };
+    const tables = await pool.connect();
+    const row = await pool.connect();
+    await tables.query("begin");
+    await tables.query("lock table connections in access exclusive mode");
+    const workerA = runDueDeliveries(db, key, slow());
+    await waiting("relation"); // A has claimed and waits to read the connection
+    await row.query("begin");
+    await row.query("select 1 from deliveries where id = $1 for update", [d.id]);
+    await tables.query("commit");
+    tables.release();
+    await waiting("transactionid"); // A read sheet A and waits to pin it
+    // Meanwhile A's claim expired, and worker B took it over, pinned sheet B and delivered there.
+    await moveToSheetB();
+    await row.query("update deliveries set claim_id = gen_random_uuid(), state = 'delivered', pinned_destination = $2, result = '{\"sheet\":\"Requests\"}' where id = $1", [
+      d.id,
+      JSON.stringify({ spreadsheetId: "sheet-b", tab: "Requests", title: "Sheet B" }),
+    ]);
+    await row.query("commit");
+    row.release();
+    await workerA;
+    expect(sheetRows).toHaveLength(0); // nothing in the former sheet
+    expect(await state(d.id)).toMatchObject({ state: "delivered", pinnedDestination: { spreadsheetId: "sheet-b" } });
+  });
+
+  it("a late authentication refusal for a replaced credential leaves the new connection working (Astra, 8e2c5d8)", async () => {
+    const old = await sheet(ana, await newRun(ana), "REQ-3011");
+    const a = gate();
+    fake.once("/token", { heldUntil: a.heldUntil, status: 400, body: { error: "invalid_grant", error_description: "Invalid JWT Signature." } });
+    const tokenCalls = () => fake.calls.filter((c) => c === "POST /token").length;
+    const start = tokenCalls();
+    const workerA = runDueDeliveries(db, key, slow());
+    await until(() => tokenCalls() === start + 1); // the old key's sign-in reached Google; the refusal is held
+
+    // The owner replaces the connection with a new key and sheet; a new delivery goes through.
+    fake.addSheet("sheet-new", "New sheet", "Requests", ["sheets@ana-new.iam.gserviceaccount.com"]);
+    await saveConnection(db, key, ana, "google_sheets", {
+      account: "sheets@ana-new.iam.gserviceaccount.com",
+      credential: JSON.stringify(serviceAccount("sheets@ana-new.iam.gserviceaccount.com")),
+      destination: { spreadsheetId: "sheet-new", tab: "Requests", title: "New sheet" },
+    });
+    const fresh = await sheet(ana, await newRun(ana), "REQ-3012");
+    await deliverDue();
+    expect(await state(fresh.id)).toMatchObject({ state: "delivered" });
+
+    a.release(); // the old credential's 401 arrives late
+    await workerA;
+    expect((await readConnections(db, ana)).find((c) => c.provider === "google_sheets")).toMatchObject({ status: "active", lastError: null });
+    expect(await state(old.id)).toMatchObject({ state: "failed" });
+    const next = await sheet(ana, await newRun(ana), "REQ-3013");
+    await deliverDue();
+    expect(await state(next.id)).toMatchObject({ state: "delivered" });
+  });
+
   it("gives every claim its own id, never reused across take-overs, Retry and Post again", async () => {
     const d = await sheet(ana, await newRun(ana), "REQ-3004");
     const ids: (string | null)[] = [];

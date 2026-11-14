@@ -77,8 +77,11 @@ type Outcome =
   | { state: "failed" | "needs_review"; error: string }
   | { state: "queued"; error: string; retryAfterMs?: number; checkFirst?: boolean };
 
-/** One attempt at a claimed delivery. Never throws for provider trouble: the outcome is written to the row. */
-async function attempt(db: Db, key: Buffer, urls: ProviderUrls, d: Delivery): Promise<Outcome> {
+/**
+ * One attempt at a claimed delivery. Never throws for provider trouble: the outcome is written to the row. null means
+ * the claim was lost before anything was sent, so there is nothing to record.
+ */
+async function attempt(db: Db, key: Buffer, urls: ProviderUrls, d: Delivery): Promise<Outcome | null> {
   const name = PROVIDER_NAMES[d.provider];
   const conn = await connectionCredential(db, key, d.userId, d.provider);
   if (!conn) return { state: "failed", error: `${name} is not connected. Connect it in Settings, Business and email, then retry.` };
@@ -89,7 +92,9 @@ async function attempt(db: Db, key: Buffer, urls: ProviderUrls, d: Delivery): Pr
   }
   if (d.pinnedAccount === "") {
     // Nothing was connected when it was queued: this connection is the first, so pin it now.
-    await db.update(deliveries).set({ pinnedAccount: conn.account, pinnedDestination: conn.destination }).where(heldBy(d));
+    const pinned = await db.update(deliveries).set({ pinnedAccount: conn.account, pinnedDestination: conn.destination }).where(heldBy(d)).returning({ id: deliveries.id });
+    // Another worker took the claim over while this one was pinning: that one pins and sends, this one must not (Astra, 8e2c5d8).
+    if (pinned.length === 0) return null;
   } else if (d.pinnedAccount !== conn.account || !sameDestination(d.pinnedDestination, conn.destination)) {
     return {
       state: "needs_review",
@@ -116,7 +121,7 @@ async function attempt(db: Db, key: Buffer, urls: ProviderUrls, d: Delivery): Pr
     const e = err instanceof ProviderError ? err : new ProviderError(err instanceof Error ? err.message : String(err), "unavailable");
     switch (e.kind) {
       case "auth":
-        await markConnectionFailed(db, d.userId, d.provider, e.message);
+        await markConnectionFailed(db, d.userId, d.provider, e.message, conn.revision);
         return { state: "failed", error: e.message };
       case "permission":
       case "invalid":
@@ -181,7 +186,12 @@ async function finish(db: Db, d: Delivery, o: Outcome) {
 /** The worker's poll: claims what is due and delivers each one independently. */
 export async function runDueDeliveries(db: Db, key: Buffer, urls: ProviderUrls) {
   const claimed = await claimDueDeliveries(db);
-  await Promise.all(claimed.map(async (d) => finish(db, d, await attempt(db, key, urls, d))));
+  await Promise.all(
+    claimed.map(async (d) => {
+      const o = await attempt(db, key, urls, d);
+      if (o) await finish(db, d, o);
+    }),
+  );
   return claimed.length;
 }
 
