@@ -36,3 +36,9 @@ Option 3, with versions on every booking.
 - `btree_gist` must be available where the migration runs. It ships with the embedded test Postgres, `postgres:17-alpine` and the CI database, and it is a trusted extension, so the database owner can create it.
 - Migration 0019 adds `bookings`, `booking_results`, `booking_changes`, two nullable columns on `runs`, the extension and the constraint. Nothing existing changes.
 - Out of scope: moving a booking to another resource, opening hours, lead times and capacity above one.
+
+## Fixes from the 7c73879 review
+
+- A staff reschedule builds its run from the run that created the booking (its `booking_changes` row from version 0) and that run's booking step, never from the run linked to the latest version. After a desk workflow moved a booking, the old code copied the desk run's payload and sent the guest's confirmation and reminder to the desk.
+- `bookFromStep` takes a transaction-scoped advisory lock on (run, step) before it reads `booking_results`. Two overlapping attempts of one step (a takeover while the first worker is still in its transaction) take turns, and the second returns the stored result instead of failing on the primary key or the exclusion constraint. The options were this lock or catching the conflict and reading again; the lock was chosen because the exclusion wait between two inserts can also end in a deadlock error, which a catch would have to know about too.
+- Each `booking_changes.result` now stores the booking as that change left it. A repeated staff or MCP change from the same version, with the same action and the same start instant, is answered from that row before the new time or the published version is checked, so a replay gets its own version, times and run after later changes and after its time has passed. Rows written before this fix have no stored booking, so a replay of one answers without `booking`.

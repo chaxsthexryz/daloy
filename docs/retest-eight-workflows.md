@@ -59,6 +59,15 @@ Builder replay (second commit):
 - A worker paused while it holds the send claim: the takeover waits, Stop answers 409 because the run is still running, the paused worker's one POST goes out, then the run is parked; Stop after that sends nothing more.
 - A 503 with a body over 1 MB on a POST: `needs_review / unknown` with "HTTP 503" in the error.
 
+## Fixes from the 7c73879 review
+
+Run `pnpm vitest run apps/api/src/bookings.test.ts packages/db/src/bookings.test.ts`. The three new cases in `apps/api/src/bookings.test.ts` failed before the fix and pass now.
+
+- Wrong customer: a guest (`mia@example.com`) books, a desk workflow (webhook with a signing secret, booking step `reschedule`, its own `email` field set to `desk@example.com`) moves the booking, then staff move it twice. Every confirmation and reminder of both staff runs goes to the guest; only the desk run's own note goes to the desk. Test: "sends a staff-started run's mail to the guest who booked".
+- Takeover: worker A stops inside its booking transaction (held by a row lock on the run, after it inserted the booking), its lease expires and worker B takes the attempt over and waits on the advisory lock. When A commits, B returns the stored result: one booking, the attempt succeeded under B's claim, A's result is fenced off, and the run confirms once and waits for the reminder. The test waits on `pg_stat_activity` lock waits, not on sleeps. Test: "lets a takeover find the result of a booking attempt that is still committing". Repeat your 8 forced takeovers: expect 8 of 8 confirmed.
+- Replays: move to 16:00 (version 1) and 18:00 (version 2), then replay the first request: 200 with `duplicate: true`, the first `runId` and the 16:00 to 17:00 booking at version 2. Cancel from version 3 and replay it: the cancelled booking at version 4. A different time from version 1 is still 409. With the clock moved past the appointment, both replays still answer 200 with the same bodies. Test: "answers a replayed change with what it did then".
+- Not changed: change rows written before this fix have no stored booking, so a replay of such a change answers without `booking`. Different concurrent changes still give one winner and 409s, identical ones one change and one run.
+
 ## P6b checks (booking lifecycle)
 
 Run `pnpm vitest run packages/db/src/bookings.test.ts apps/api/src/bookings.test.ts`, `pnpm vitest run apps/worker/src/worker.test.ts -t "booking"`, `pnpm vitest run apps/api/src/scenarios.test.ts -t "QA-02"` and `pnpm e2e e2e/bookings.spec.ts`. For a manual check, publish a webhook workflow like the one in `e2e/bookings.spec.ts` (resource field, datetime field, booking step, a delay until a day before, a reminder email) and start it with the Run button or the webhook.
