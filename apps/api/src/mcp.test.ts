@@ -144,7 +144,7 @@ describe("MCP endpoint", () => {
 
     const client = await connect(a.token);
     const { tools } = await client.listTools();
-    expect(tools.map((t) => t.name).sort()).toEqual(["get_run_status", mine.slug]);
+    expect(tools.map((t) => t.name).sort()).toEqual(["get_run_status", mine.slug, "resolve_run"].sort());
     const tool = tools.find((t) => t.name === mine.slug)!;
     expect(tool.inputSchema).toMatchObject({ type: "object", required: ["email"] });
     await client.close();
@@ -258,6 +258,33 @@ describe("MCP endpoint", () => {
       expect(text(res)).toContain("run not found");
     }
     await client.close();
+  });
+
+  it("resolves a run in review once, records who acted, and refuses other users' runs", async () => {
+    const a = await owner();
+    const b = await owner();
+    const [me] = await db.select({ email: users.email }).from(users).where(eq(users.id, a.userId));
+    const [wf] = await db.insert(workflows).values({ userId: a.userId, name: "Orders", slug: `orders-${++seq}` }).returning();
+    const definition = { trigger: { type: "manual", config: {} }, steps: [{ id: "post", type: "http", config: { method: "POST", url: "https://orders.example.com/", headers: {} } }], edges: [] };
+    const [v] = await db.insert(workflowVersions).values({ workflowId: wf!.id, version: 1, definition, published: true }).returning();
+    const [run] = await db.insert(runs).values({ workflowVersionId: v!.id, state: "needs_review", error: "step post: HTTP 503" }).returning();
+    await db.insert(stepRuns).values({ runId: run!.id, stepId: "post", attempt: 1, state: "failed", outcome: "unknown" });
+
+    const theirs = await connect(b.token);
+    const refused = await callTool(theirs, "resolve_run", { runId: run!.id, action: "stop" });
+    expect(refused.isError).toBe(true);
+    await theirs.close();
+
+    const client = await connect(a.token);
+    expect((await callTool(client, "get_run_status", { runId: run!.id })).structuredContent).toMatchObject({ status: "needs_review" });
+    const done = await callTool(client, "resolve_run", { runId: run!.id, action: "delivered" });
+    expect(done.structuredContent).toMatchObject({ runId: run!.id, status: "running" });
+    const twice = await callTool(client, "resolve_run", { runId: run!.id, action: "again" });
+    expect(twice.isError).toBe(true);
+    await client.close();
+    const rows = await db.select().from(stepRuns).where(eq(stepRuns.runId, run!.id));
+    expect(rows.find((r) => r.attempt === 1)!.resolvedBy).toBe(`${me!.email} (MCP)`);
+    expect(rows.find((r) => r.attempt === 2)).toMatchObject({ state: "succeeded", output: { reconciled: "delivered" } });
   });
 
   // Last in the file: it uses up the per-IP budget of the route.

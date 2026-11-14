@@ -1,4 +1,5 @@
-import { StepError, type EmailConfig } from "@daloy/engine";
+import { Readable } from "node:stream";
+import { StepError, type EmailConfig, type Outcome } from "@daloy/engine";
 import { eq, sql } from "drizzle-orm";
 import nodemailer, { type Transporter } from "nodemailer";
 import * as z from "zod";
@@ -138,19 +139,59 @@ export function checkRecipients(list: string): string[] {
   return to;
 }
 
+type SendState = { bodyStarted: boolean };
+const watched = new WeakSet<object>();
+
+/**
+ * nodemailer 10.5 pipes the message into the socket only once the server answered DATA with 354
+ * (SMTPConnection.send), and its errors do not say how far the session got. This wraps the message stream so its
+ * first read marks the moment part of the message may reach the server (decision 0030). Registered once per transport.
+ */
+function watchBody(transport: Mailer["transport"]) {
+  if (watched.has(transport) || typeof transport.use !== "function") return;
+  watched.add(transport);
+  transport.use("stream", (mail, done) => {
+    const state = (mail.data as { daloySend?: SendState }).daloySend;
+    const message = mail.message as unknown as { createReadStream: (...args: unknown[]) => Readable };
+    if (state) {
+      const create = message.createReadStream.bind(message);
+      const mark = () => (state.bodyStarted = true);
+      message.createReadStream = (...args) => {
+        const source = create(...args);
+        async function* body() {
+          mark();
+          yield* source;
+        }
+        return Readable.from(body(), { objectMode: false });
+      };
+    }
+    done();
+  });
+}
+
+/** What an SMTP failure may have done. Without a server reply after the body started, the message may have arrived. */
+function emailOutcome(code: number | undefined, bodyStarted: boolean): Outcome {
+  if (code && code >= 500) return "rejected";
+  if (code && code >= 400) return "throttled";
+  return bodyStarted ? "unknown" : "not_sent";
+}
+
 /** Sends one plain-text email. Recipients come from a resolved template, so they are checked here, after resolution. */
-export async function sendEmail(mailer: Mailer, cfg: EmailConfig, idempotencyKey: string) {
+export async function sendEmail(mailer: Mailer, cfg: EmailConfig, messageKey: string) {
   const to = checkRecipients(cfg.to);
 
-  // A retried attempt gets a new key, but a re-delivered one keeps it, so receivers can drop the duplicate.
-  const messageId = `<${idempotencyKey.replaceAll(":", ".")}@daloy>`;
+  // messageKey is per attempt (run:step:attempt), so each attempt has its own Message-ID, and a re-delivered
+  // attempt keeps it, so receivers can drop the duplicate.
+  const messageId = `<${messageKey.replaceAll(":", ".")}@daloy>`;
+  const daloySend: SendState = { bodyStarted: false };
+  watchBody(mailer.transport);
   try {
-    const info = await mailer.transport.sendMail({ from: mailer.from, replyTo: mailer.replyTo, to, subject: cfg.subject, text: cfg.text, messageId });
+    const info = await mailer.transport.sendMail({ from: mailer.from, replyTo: mailer.replyTo, to, subject: cfg.subject, text: cfg.text, messageId, daloySend } as Parameters<Mailer["transport"]["sendMail"]>[0]);
     // jsonTransport puts the built message in info.message; SMTP leaves it undefined.
     return { messageId, to, raw: typeof info.message === "string" ? info.message : undefined };
   } catch (err) {
-    const code = (err as { responseCode?: number }).responseCode;
-    // 5xx is a permanent SMTP rejection; 4xx and connection errors may pass on a later attempt.
-    throw new StepError(`email failed: ${err instanceof Error ? err.message : String(err)}`, !(code && code >= 500), { cause: err });
+    const outcome = emailOutcome((err as { responseCode?: number }).responseCode, daloySend.bodyStarted);
+    // 5xx is a permanent refusal and unknown must not be resent blindly; 4xx and failures before the body may pass later.
+    throw new StepError(`email failed: ${err instanceof Error ? err.message : String(err)}`, outcome === "not_sent" || outcome === "throttled", { cause: err, outcome });
   }
 }

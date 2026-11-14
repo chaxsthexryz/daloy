@@ -1,6 +1,6 @@
 # Retest handoff: eight-workflow acceptance harness
 
-For Astra. P1 added the harness. P2 added field limits at every entry point and the condition `invalid` branch. P3 added test-run modes and chosen outcomes (migration 0014). P4 added business event keys (migration 0015). External beta stays on hold.
+For Astra. P1 added the harness. P2 added field limits at every entry point and the condition `invalid` branch. P3 added test-run modes and chosen outcomes (migration 0014). P4 added business event keys (migration 0015). P5 added safe retries and review (migration 0017). External beta stays on hold.
 
 ## Run
 
@@ -13,8 +13,8 @@ It needs no Docker and no network. It starts an embedded Postgres, creates a thr
 
 ## What to check
 
-- 113 tests pass: 9 fixture checks, 1 setup step, 103 acceptance cases.
-- 14 test names carry `[gap <phase>: <reason>]`: P5 4, P6a 6, P6b 3, P7 1. Each one asserts the current wrong behaviour, for example two runs for one event ID or three POSTs with three different Idempotency-Keys after a 503.
+- 123 tests pass: 9 fixture checks, 1 setup step, 113 acceptance cases.
+- 10 cases carry `[gap <phase>: <reason>]`: P6a 6, P6b 3, P7 1. Each one asserts the current wrong behaviour.
 - Change one gap's `today` outcome in `test/scenarios/qa-0*.ts` and confirm that test fails. Rename a step id in one edge of a fixture and confirm the fixture check fails rather than a gap passing.
 - Compare the fixtures with the saved QA-01 to QA-08 drafts in the demo workspace. They are hand-written copies of the v2 shape; report anything that changes a branch or a threshold.
 
@@ -47,6 +47,22 @@ Builder replay (second commit):
 - Late auth refusal: hold the old key's Google sign-in refusal, replace the connection with a new key and sheet, deliver one, then release the refusal. Expected: the connection stays active with no error, the old delivery fails, and the next delivery goes in. Test: "a late authentication refusal for a replaced credential leaves the new connection working".
 - No migration. Connection tests in the console (Add a test row, Send a test message) now also update the status only for the credential they tested.
 
+## P5 checks (safe retries and review)
+
+Run `pnpm vitest run apps/api/src/scenarios.test.ts -t "QA-08" --reporter=verbose`, `pnpm vitest run apps/worker/src/fencing.test.ts packages/db/src/mail-uncertain.test.ts apps/worker/src/steps/http.test.ts` and `pnpm e2e e2e/review.spec.ts`.
+
+- A POST to a receiver that reads the body and then resets, or never answers, gets exactly 1 request, and the run is `needs_review` (hanging takes the 10 s timeout).
+- A 503 on a POST parks after 1 request. With `"idempotent": true` on the step it is retried 3 times, every request with the key `<runId>:post`.
+- A refused connection is retried (nothing was sent). A 429 with `Retry-After: 1` is retried no sooner than 1 s later, with the same key.
+- Send again sends exactly 1 more request with the same key. It went through continues to the sheet row and notify without a second approval (the harness shows this on a mocked run). Stop cancels. A second action on the same run is a 409; two concurrent ones give one 204 and one 409.
+- Retry on a failed run (a 400, or a dead-lettered 503) runs one more attempt with the same key.
+- Worker takeover: a POST or email whose worker stopped after `dispatched_at` was written is parked, never resent. A stale worker's late answer is refused after a takeover and after an operator's answer (`fencing.test.ts`, gated by hand, no timing).
+- Email: a drop before DATA retries; a drop right after 354, after the message, or a timeout waiting for the reply is `unknown` and parks; 4xx retries, 5xx fails.
+- In the console: the runs list filter "Needs review" and the badge for a run whose Sheets or Slack delivery is in review; the run page panel shows the error, the redacted request and who answered and when. MCP `resolve_run` does the same actions.
+- Mocked and AI-only runs send nothing; `{fail: "unknown"}` in Test outcomes reaches review on the first attempt only.
+- To try against real services: point a live test run at a receiver you control that returns 503 and check that one request arrives. Real SMTP servers were not tested; the windows above use a scripted local server.
+- Migration 0017 is additive. Check that the development database keeps 2 users, 27 workflows and 47 versions after `docker compose up`.
+
 ## P3 checks (test outcomes, AI-only mode)
 
 - In the builder, "Test calls" offers Mocked, Real AI only and Live. "Test outcomes" lists classify labels, approval decisions (approved, rejected, timeout) and fail options for steps that reach outside.
@@ -71,4 +87,4 @@ Builder replay (second commit):
 - A webhook with `fields` refuses an event without `event_id` (400) and keeps extra keys on a good one.
 - Without an `invalid` edge, a gate on "45,000" fails the run with a message naming the value; with one, it goes to manual review.
 - The 27 workflows in the development database have no `min`, `max` or `integer` keys, so they load unchanged. A saved workflow whose numeric condition gets bad data now fails the run instead of taking `false`.
-- An HTTP POST that gets a 503 or a reset connection after the body was read is sent again, three times in total, with a new Idempotency-Key each time.
+- Before P5, an HTTP POST that got a 503 or a reset connection after the body was read was sent three times with three keys. P5 changed this (see P5 checks).

@@ -7,11 +7,17 @@ const tables: Record<string, Record<string, string[]>> = transitions;
 describe("transition table", () => {
   it("has exactly the states from the spec", () => {
     expect(Object.keys(tables.run!).sort()).toEqual(
-      ["cancelled", "failed", "pending", "running", "succeeded", "waiting"],
+      ["cancelled", "failed", "needs_review", "pending", "running", "succeeded", "waiting"],
     );
     expect(Object.keys(tables.step!).sort()).toEqual(
       ["failed", "pending", "running", "skipped", "succeeded", "waiting"],
     );
+  });
+
+  it("parks a run for review and lets an operator resume, stop or retry it (P5)", () => {
+    expect(tables.run!.running).toContain("needs_review");
+    expect(tables.run!.needs_review!.sort()).toEqual(["cancelled", "running"]);
+    expect(tables.run!.failed).toEqual(["running"]);
   });
 
   it("only points at known states", () => {

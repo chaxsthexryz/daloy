@@ -163,7 +163,7 @@ describe("worker", () => {
       ["b", 1, "succeeded"],
     ]);
     // The wait is one attempt: the executor ran once, and resuming did not call it again.
-    expect(calls.filter((c) => c.startsWith(`${runId}:pause:`))).toEqual([`${runId}:pause:1`]);
+    expect(calls.filter((c) => c === `${runId}:pause`)).toHaveLength(1);
   });
 
   it("resumes a run whose worker died mid-step, with the same idempotency key", async () => {
@@ -176,7 +176,7 @@ describe("worker", () => {
     await db.insert(stepRuns).values({ runId, stepId: "a", attempt: 1, state: "running" });
 
     expect((await waitForEnd(runId)).state).toBe("succeeded");
-    expect(calls).toContain(`${runId}:a:1`);
+    expect(calls).toContain(`${runId}:a`);
     expect((await attemptsOf(runId)).map((r) => [r.stepId, r.attempt, r.state])).toEqual([
       ["a", 1, "succeeded"],
       ["b", 1, "succeeded"],

@@ -88,7 +88,7 @@ const executor = () =>
     },
   });
 const run = (step: Step, trigger: unknown = {}) =>
-  executor().execute({ runId: "r", stepRunId: NO_STEP_RUN, userId, step, attempt: 1, idempotencyKey: "r:s:1", ctx: { trigger, steps: {} } });
+  executor().execute({ runId: "r", stepRunId: NO_STEP_RUN, userId, step, attempt: 1, idempotencyKey: "r:s", ctx: { trigger, steps: {} } });
 
 describe("step executor", () => {
   it("fills secrets into the request but never into the stored output", async () => {
@@ -154,7 +154,7 @@ describe("step executor", () => {
       expect(leaks(live.output)).toEqual([]);
       expect(live.input).toMatchObject({ headers: { Authorization: "Bearer [secret]" }, body: '{"a":"[secret]","nested":{"b":"x [secret] y"},"typed":"[secret]"}' });
 
-      const mocked = await executor().execute({ runId: "r", stepRunId: NO_STEP_RUN, userId, step: tricky(), attempt: 1, idempotencyKey: "r:s:1", ctx: { trigger: {}, steps: {} }, mock: true });
+      const mocked = await executor().execute({ runId: "r", stepRunId: NO_STEP_RUN, userId, step: tricky(), attempt: 1, idempotencyKey: "r:s", ctx: { trigger: {}, steps: {} }, mock: true });
       expect(leaks(mocked.input)).toEqual([]);
       expect(leaks(mocked.output)).toEqual([]);
     });
@@ -203,7 +203,7 @@ describe("step executor", () => {
 
   describe("mock mode (builder test runs)", () => {
     const mocked = (step: Step, trigger: unknown = {}) =>
-      executor().execute({ runId: "r", stepRunId: NO_STEP_RUN, userId, step, attempt: 1, idempotencyKey: "r:s:1", ctx: { trigger, steps: {} }, mock: true });
+      executor().execute({ runId: "r", stepRunId: NO_STEP_RUN, userId, step, attempt: 1, idempotencyKey: "r:s", ctx: { trigger, steps: {} }, mock: true });
 
     it("answers http without a request and still redacts secrets", async () => {
       const calls = received.length;
@@ -233,6 +233,15 @@ describe("step executor", () => {
       expect(sent.length).toBe(before);
     });
 
+    it("fails only the first attempt of a step set to an unknown outcome, sending nothing", async () => {
+      const calls = received.length;
+      const step: Step = { id: "call", type: "http", config: { method: "POST", url: `http://api.test:${port}/orders`, headers: {} } };
+      const attempt = (n: number) => executor().execute({ runId: "r", stepRunId: NO_STEP_RUN, userId, step, attempt: n, idempotencyKey: "r:call", ctx: { trigger: {}, steps: {} }, mock: true, choice: { fail: "unknown" } });
+      await expect(attempt(1)).rejects.toMatchObject({ outcome: "unknown", retryable: false });
+      expect((await attempt(2)).output).toMatchObject({ mocked: true });
+      expect(received.length).toBe(calls);
+    });
+
     it("caps a delay at one second", async () => {
       const before = Date.now();
       const delay = await mocked({ id: "d", type: "delay", config: { seconds: 3600 } });
@@ -248,7 +257,7 @@ describe("step executor", () => {
     const step: Step = { id: "ask", type: "approval", config: { to: "{{trigger.manager}}", subject: "Refund {{trigger.amount}}?", message: "Refund {{trigger.amount}} EUR to Ana?", timeoutSeconds: 3600 } };
 
     const before = Date.now();
-    const out = await executor().execute({ runId: r!.id, stepRunId: sr!.id, userId, step, attempt: 1, idempotencyKey: `${r!.id}:ask:1`, ctx: { trigger: { manager: "boss@example.com", amount: 40 }, steps: {} } });
+    const out = await executor().execute({ runId: r!.id, stepRunId: sr!.id, userId, step, attempt: 1, idempotencyKey: `${r!.id}:ask`, ctx: { trigger: { manager: "boss@example.com", amount: 40 }, steps: {} } });
 
     expect(out.waitUntil!.getTime() - before).toBeGreaterThanOrEqual(3_600_000);
     expect(out.input).toEqual({ to: "boss@example.com", subject: "Refund 40?", message: "Refund 40 EUR to Ana?", timeoutSeconds: 3600 });

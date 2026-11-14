@@ -38,7 +38,7 @@ const originOf = (url: string) => {
   }
 };
 
-type HttpInput = { method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE"; url: string; headers: Record<string, string>; body?: string };
+type HttpInput = { method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE"; url: string; headers: Record<string, string>; body?: string; idempotent?: boolean };
 type EmailInput = { to: string; subject: string; text: string };
 type AiInput = { input: string };
 type ApprovalInput = { to?: string; approver?: string; subject: string; message: string; timeoutSeconds: number };
@@ -61,6 +61,7 @@ function resolveInput(step: Step, ctx: ExpressionContext): Record<string, unknow
       const { method, url, headers } = step.config;
       const input: HttpInput = { method, url: text(url, ctx), headers: Object.fromEntries(Object.entries(headers).map(([k, v]) => [k, text(v, ctx)])) };
       if (step.config.body !== undefined) input.body = body(step.config.body, headers, ctx);
+      if (step.config.idempotent !== undefined) input.idempotent = step.config.idempotent;
       return input;
     }
     case "email":
@@ -89,7 +90,10 @@ type Attempt = { runId: string; idempotencyKey: string; attempt: number; stepRun
 
 async function runStep(deps: FullDeps, step: Step, input: unknown, ctx: ExpressionContext, { runId, idempotencyKey, attempt, stepRunId, userId, mock, aiLive, choice }: Attempt): Promise<StepResult> {
   // The API only accepts a fail choice on a step a faked run fakes (choiceProblems).
-  if (mock && choice && "fail" in choice) throw new StepError(`Test run: this step was set to fail (${choice.fail}).`, choice.fail === "retryable");
+  // "unknown" fails only the first attempt, so Send again in review shows the step going through. Nothing is sent.
+  if (mock && choice && "fail" in choice && (choice.fail !== "unknown" || attempt === 1)) {
+    throw new StepError(`Test run: this step was set to fail (${choice.fail}).`, choice.fail === "retryable", choice.fail === "unknown" ? { outcome: "unknown" } : {});
+  }
   switch (step.type) {
     case "condition":
       return { branch: conditionBranch(step.config.condition, ctx) };
@@ -108,7 +112,8 @@ async function runStep(deps: FullDeps, step: Step, input: unknown, ctx: Expressi
     case "email": {
       const mail = input as EmailInput;
       if (mock) return { output: { mocked: true, to: mail.to, subject: mail.subject } };
-      const sent = await sendAs(deps.db, deps.secretsKey, deps.mail, userId, mail, idempotencyKey);
+      // The Message-ID stays per attempt; the step key is the same on every attempt.
+      const sent = await sendAs(deps.db, deps.secretsKey, deps.mail, userId, mail, `${idempotencyKey}:${attempt}`);
       return { output: { messageId: sent.messageId, to: sent.to, from: sent.from } };
     }
     case "ai": {
@@ -142,7 +147,11 @@ async function runStep(deps: FullDeps, step: Step, input: unknown, ctx: Expressi
       const body = `${cfg.message}\n\nApprove or reject here:\n${link}\n\n${who}The link works once and expires at ${expiresAt.toISOString()}.`;
       // A retry or re-run sends a new link (earlier ones still work), so it needs its own Message-ID, or a mail server
       // could drop it as a duplicate of the earlier message.
-      await sendAs(deps.db, deps.secretsKey, deps.mail, userId, { to: approver?.email ?? cfg.to!, subject: cfg.subject, text: body }, `${idempotencyKey}:${randomUUID().slice(0, 8)}`);
+      await sendAs(deps.db, deps.secretsKey, deps.mail, userId, { to: approver?.email ?? cfg.to!, subject: cfg.subject, text: body }, `${idempotencyKey}:${randomUUID().slice(0, 8)}`).catch((err: unknown) => {
+        // Each attempt sends its own working link and decisions carry across attempts, so a link email that may have
+        // arrived is safe to send again: retry it instead of asking for review.
+        throw err instanceof StepError && err.outcome === "unknown" ? new StepError(err.message, true, { cause: err, outcome: "unknown" }) : err;
+      });
       // The run waits until the timeout; recording a decision wakes it earlier (decision 0009).
       return { output: { expiresAt: expiresAt.toISOString() }, waitUntil: expiresAt };
     }
@@ -203,7 +212,8 @@ export function createExecutor(deps: ExecutorDeps): StepExecutor {
         return { ...result, input: preview, output: redactSecrets(result.output, forms) };
       } catch (err) {
         const message = redactSecrets(err instanceof Error ? err.message : String(err), forms) as string;
-        throw new StepError(message, isRetryable(err), { input: preview, usage: err instanceof StepError ? err.usage : undefined });
+        const e = err instanceof StepError ? err : undefined;
+        throw new StepError(message, isRetryable(err), { input: preview, usage: e?.usage, outcome: e?.outcome, retryAfterMs: e?.retryAfterMs });
       }
     },
   };

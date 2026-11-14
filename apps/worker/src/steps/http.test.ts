@@ -1,5 +1,5 @@
 import { createServer, type Server } from "node:http";
-import type { AddressInfo } from "node:net";
+import { createServer as createTcpServer, type AddressInfo, type Server as TcpServer } from "node:net";
 import { StepError } from "@daloy/engine";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { httpRequest, type HttpOptions } from "./http";
@@ -10,6 +10,11 @@ import { BLOCKED_RANGES, blockListOf, type SsrfGuard } from "./ssrf";
 let server: Server;
 let port: number;
 let requests = 0;
+// Accepts a TCP connection and closes it at once, before reading anything.
+let dropper: TcpServer;
+let dropPort: number;
+// A port nothing listens on.
+let closedPort: number;
 
 beforeAll(async () => {
   server = createServer((req, res) => {
@@ -28,13 +33,24 @@ beforeAll(async () => {
     }
     if (at("/big")) return res.writeHead(200).end(Buffer.alloc(2_000_000, 97));
     if (at("/hang")) return; // never answers
+    if (at("/retry-after/")) return res.writeHead(429, { "retry-after": decodeURIComponent(path.slice(13)) }).end();
+    // Reads the whole request, then drops the connection without answering.
+    if (at("/reset")) return req.on("end", () => req.socket.destroy()).resume();
     res.writeHead(404).end();
   });
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
   port = (server.address() as AddressInfo).port;
+  dropper = createTcpServer((socket) => socket.destroy());
+  await new Promise<void>((r) => dropper.listen(0, "127.0.0.1", r));
+  dropPort = (dropper.address() as AddressInfo).port;
+  const spare = createTcpServer();
+  await new Promise<void>((r) => spare.listen(0, "127.0.0.1", r));
+  closedPort = (spare.address() as AddressInfo).port;
+  await new Promise((r) => spare.close(r));
 });
 
 afterAll(async () => {
+  dropper.close();
   server.closeAllConnections();
   await new Promise((r) => server.close(r));
 });
@@ -42,7 +58,7 @@ afterAll(async () => {
 function guard(resolve?: SsrfGuard["resolve"]): SsrfGuard {
   return {
     blockList: blockListOf(BLOCKED_RANGES.filter(([net]) => net !== "127.0.0.0")),
-    ports: ["", "80", "443", String(port)],
+    ports: ["", "80", "443", String(port), String(dropPort), String(closedPort)],
     resolve:
       resolve ??
       (async (host) => {
@@ -55,7 +71,9 @@ function guard(resolve?: SsrfGuard["resolve"]): SsrfGuard {
 
 const base = () => `http://public.test:${port}`;
 const get = (path: string, opts: Partial<HttpOptions> = {}, headers: Record<string, string> = {}) =>
-  httpRequest({ method: "GET", url: base() + path, headers }, "run:step:1", { guard: guard(), ...opts });
+  httpRequest({ method: "GET", url: base() + path, headers }, "run:step", { guard: guard(), ...opts });
+const post = (path: string, cfg: { idempotent?: boolean } = {}, opts: Partial<HttpOptions> = {}) =>
+  httpRequest({ method: "POST", url: base() + path, headers: {}, body: '{"order":"A-1"}', ...cfg }, "run:step", { guard: guard(), ...opts });
 
 async function stepError(p: Promise<unknown>): Promise<StepError> {
   const err = await p.then(
@@ -70,7 +88,7 @@ describe("httpRequest", () => {
   it("connects to the address the guarded lookup approved and parses JSON", async () => {
     const out = await get("/json");
     expect(out.status).toBe(200);
-    expect(out.body).toEqual({ ok: true, key: "run:step:1" });
+    expect(out.body).toEqual({ ok: true, key: "run:step" });
   });
 
   it("returns text bodies as strings", async () => {
@@ -82,10 +100,69 @@ describe("httpRequest", () => {
     expect(out.body).toEqual({ method: "POST", auth: "Bearer t" });
   });
 
-  it("marks 5xx and 429 as retryable and other 4xx as final", async () => {
-    expect((await stepError(get("/status/503"))).retryable).toBe(true);
-    expect((await stepError(get("/status/429"))).retryable).toBe(true);
-    expect((await stepError(get("/status/404"))).retryable).toBe(false);
+  it("marks 5xx and 408 as unknown, retried only when the step is idempotent, and other 4xx as rejected", async () => {
+    for (const code of [503, 500, 408]) {
+      const onGet = await stepError(get(`/status/${code}`));
+      expect([onGet.outcome, onGet.retryable], `GET ${code}`).toEqual(["unknown", true]);
+      const onPost = await stepError(post(`/status/${code}`));
+      expect([onPost.outcome, onPost.retryable], `POST ${code}`).toEqual(["unknown", false]);
+    }
+    const flagged = await stepError(post("/status/503", { idempotent: true }));
+    expect([flagged.outcome, flagged.retryable]).toEqual(["unknown", true]);
+    const unsafePut = await stepError(httpRequest({ method: "PUT", url: `${base()}/status/503`, headers: {}, idempotent: false }, "k", { guard: guard() }));
+    expect(unsafePut.retryable).toBe(false);
+    for (const code of [400, 404, 422]) {
+      const err = await stepError(post(`/status/${code}`));
+      expect([err.outcome, err.retryable], `POST ${code}`).toEqual(["rejected", false]);
+    }
+  });
+
+  it("marks a 429 as throttled, retried even on a POST, and keeps Retry-After in seconds or as a date", async () => {
+    const seconds = await stepError(post("/retry-after/7"));
+    expect([seconds.outcome, seconds.retryable, seconds.retryAfterMs]).toEqual(["throttled", true, 7000]);
+    const at = new Date(Date.now() + 30_000).toUTCString();
+    const date = await stepError(post(`/retry-after/${encodeURIComponent(at)}`));
+    expect(date.retryAfterMs).toBeGreaterThan(25_000);
+    expect(date.retryAfterMs).toBeLessThanOrEqual(30_000);
+    const none = await stepError(post("/status/429"));
+    expect([none.outcome, none.retryAfterMs]).toEqual(["throttled", undefined]);
+    const junk = await stepError(post("/retry-after/soon"));
+    expect(junk.retryAfterMs).toBeUndefined();
+  });
+
+  it("marks a POST whose connection drops after the receiver read the body as unknown, not retried", async () => {
+    const before = requests;
+    const err = await stepError(post("/reset"));
+    expect([err.outcome, err.retryable]).toEqual(["unknown", false]);
+    expect(requests).toBe(before + 1);
+  });
+
+  it("marks a POST that times out after connecting as unknown, not retried", async () => {
+    const err = await stepError(post("/hang", {}, { timeoutMs: 200 }));
+    expect(err.message).toMatch(/timed out/);
+    expect([err.outcome, err.retryable]).toEqual(["unknown", false]);
+  });
+
+  it("marks a plain HTTP connection the receiver accepted and then closed as unknown, since request bytes may have reached it", async () => {
+    const err = await stepError(httpRequest({ method: "POST", url: `http://public.test:${dropPort}/`, headers: {}, body: "{}" }, "k", { guard: guard() }));
+    expect([err.outcome, err.retryable]).toEqual(["unknown", false]);
+  });
+
+  it("marks an HTTPS connection closed before the TLS handshake finished as not_sent, since no request byte can have been written", async () => {
+    const err = await stepError(httpRequest({ method: "POST", url: `https://public.test:${dropPort}/`, headers: {}, body: "{}" }, "k", { guard: guard() }));
+    expect([err.outcome, err.retryable]).toEqual(["not_sent", true]);
+  });
+
+  it("marks a refused connection and a failed DNS lookup as not_sent and retries them even on a POST", async () => {
+    const refused = await stepError(httpRequest({ method: "POST", url: `http://public.test:${closedPort}/`, headers: {}, body: "{}" }, "k", { guard: guard() }));
+    expect([refused.outcome, refused.retryable]).toEqual(["not_sent", true]);
+    const dns = await stepError(httpRequest({ method: "POST", url: "http://nowhere.test/", headers: {}, body: "{}" }, "k", { guard: guard() }));
+    expect([dns.outcome, dns.retryable]).toEqual(["not_sent", true]);
+  });
+
+  it("marks an SSRF refusal as not_sent but never retries it, since it cannot pass", async () => {
+    const err = await stepError(httpRequest({ method: "POST", url: `http://private.test:${port}/json`, headers: {}, body: "{}" }, "k", { guard: guard() }));
+    expect([err.outcome, err.retryable]).toEqual(["not_sent", false]);
   });
 
   it("follows up to 3 redirects and refuses a 4th", async () => {
@@ -141,14 +218,9 @@ describe("httpRequest", () => {
     expect(err.retryable).toBe(false);
   });
 
-  it("times out as a retryable error", async () => {
+  it("times out a GET as a retryable unknown outcome", async () => {
     const err = await stepError(get("/hang", { timeoutMs: 200 }));
     expect(err.message).toMatch(/timed out/);
-    expect(err.retryable).toBe(true);
-  });
-
-  it("treats DNS and connection failures as retryable", async () => {
-    const err = await stepError(httpRequest({ method: "GET", url: "http://nowhere.test/", headers: {} }, "k", { guard: guard() }));
-    expect(err.retryable).toBe(true);
+    expect([err.outcome, err.retryable]).toEqual(["unknown", true]);
   });
 });

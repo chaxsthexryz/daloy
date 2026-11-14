@@ -24,6 +24,7 @@ describe("choiceProblems", () => {
     const choices = testChoicesSchema.parse({ classify: { label: "refund" }, ask: { decision: "timeout" }, log: { fail: "retryable" } });
     expect(choiceProblems(def, choices, "mock")).toEqual([]);
     expect(choiceProblems(def, choices, "ai")).toEqual([]);
+    expect(choiceProblems(def, testChoicesSchema.parse({ log: { fail: "unknown" } }), "mock")).toEqual([]);
   });
   it("names each choice that does not fit its step", () => {
     const choices = testChoicesSchema.parse({ classify: { label: "nope" }, sum: { label: "x" }, gate: { fail: "permanent" }, log: { decision: "approved" }, missing: { label: "x" } });

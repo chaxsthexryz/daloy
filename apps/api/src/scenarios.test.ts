@@ -55,10 +55,12 @@ const mail: MailDeps = {
   sharedMail: "open",
 };
 
-// The receiver answers each POST as the current test says, after reading the whole body.
-type Mode = "ok" | "bad_request" | "unavailable" | "reset";
+// The receiver answers each POST as the current test says, after reading the whole body. "throttled" answers 429
+// with Retry-After: 1 once, then switches to "ok". "hang" never answers (the worker times out after 10 s).
+type Mode = "ok" | "bad_request" | "unavailable" | "reset" | "throttled" | "hang";
 let mode: Mode = "ok";
-const received: { key: string | undefined; body: string }[] = [];
+const received: { key: string | undefined; body: string; at: number }[] = [];
+const hung: import("node:http").ServerResponse[] = [];
 let receiver: Server;
 // The same local server stands in for the model (Ollama's /api/chat) in AI-only test runs.
 const llmCalls: { system: string; user: string }[] = [];
@@ -109,8 +111,13 @@ beforeAll(async () => {
       const reply = system.includes("Classify") ? { label: /^- (\w+)/m.exec(system)![1] } : { summary: "A real-model summary." };
       return res.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify({ message: { content: JSON.stringify(reply) }, prompt_eval_count: 10, eval_count: 5 }));
     }
-    received.push({ key: req.headers["idempotency-key"] as string | undefined, body });
+    received.push({ key: req.headers["idempotency-key"] as string | undefined, body, at: Date.now() });
     if (mode === "reset") return req.socket.destroy();
+    if (mode === "hang") return hung.push(res);
+    if (mode === "throttled") {
+      mode = "ok";
+      return res.writeHead(429, { "Retry-After": "1", "Content-Type": "application/json" }).end("{}");
+    }
     res.writeHead(mode === "ok" ? 200 : mode === "bad_request" ? 400 : 503, { "Content-Type": "application/json" }).end("{}");
   });
   await new Promise<void>((r) => receiver.listen(0, "127.0.0.1", r));
@@ -125,6 +132,7 @@ beforeAll(async () => {
 }, 120_000);
 
 afterAll(async () => {
+  for (const res of hung) res.end();
   receiver?.close();
   await app?.close();
   await boss?.stop({ graceful: false });
@@ -139,9 +147,10 @@ async function workflow(definition: unknown, { publish = false, agent = owner } 
 }
 
 const runRow = async (id: string) => (await db.select().from(runs).where(eq(runs.id, id)))[0]!;
-const TERMINAL = ["succeeded", "failed", "cancelled"];
+// needs_review is not final, but nothing moves the run on until an operator acts, so the harness stops there too.
+const TERMINAL = ["succeeded", "failed", "cancelled", "needs_review"];
 
-/** Advances a run with the real executor until it finishes, waiting out mocked delays and the tiny retry backoff. */
+/** Advances a run with the real executor until it finishes or waits for review, waiting out delays and the retry backoff. */
 async function finish(runId: string) {
   for (let i = 0; i < 200; i++) {
     const run = await runRow(runId);
@@ -158,6 +167,7 @@ async function pathOf(runId: string): Promise<string[]> {
   const path = rows.filter((r) => r.state === "succeeded").map((r) => r.stepId);
   const last = rows.at(-1);
   if (run.state === "failed" && last?.state === "failed") path.push(`${last.stepId}:failed`);
+  if (run.state === "needs_review" && last?.state === "failed") path.push(`${last.stepId}:review`);
   return path;
 }
 
@@ -515,10 +525,10 @@ describe("QA-07 multi-tenant security", () => {
 
 describe("QA-08 failure recovery", () => {
   runCases(qa08);
-  const live = async (m: Mode, url = `http://public.test:${port}/orders`) => {
+  const live = async (m: Mode, url = `http://public.test:${port}/orders`, idempotent?: boolean) => {
     mode = m;
     received.length = 0;
-    const def = liveOrder(url);
+    const def = liveOrder(url, idempotent);
     const id = await workflow(def);
     const mailBefore = mailSent.length;
     const { outcome, runId } = await testRun(id, def, { payload: { order: "A-1" } }, true);
@@ -560,22 +570,96 @@ describe("QA-08 failure recovery", () => {
     expect(r.attempts).toBe(3);
     expect(received).toHaveLength(0);
   });
-  it("a 503 on a POST is sent once and parks for review [gap P5: it is resent automatically, three times]", async () => {
+  const resolve = (runId: string, action: string) => owner.post(`/runs/${runId}/resolve`).send({ action });
+  const keysOf = (runId: string) => received.map((x) => x.key ?? `missing for ${runId}`);
+
+  it("a 503 on a POST is sent once and parks for review", async () => {
     const r = await live("unavailable");
-    expect(r.run.state).toBe("failed");
-    expect(received).toHaveLength(3);
+    expect([r.run.state, r.outcome]).toEqual(["needs_review", ["post:review"]]);
+    expect(received).toHaveLength(1);
+    const [row] = await db.select().from(stepRuns).where(eq(stepRuns.runId, r.runId));
+    expect([row!.outcome, row!.error]).toEqual(["unknown", expect.stringContaining("HTTP 503")]);
   });
-  it("every attempt of one step carries the same Idempotency-Key [gap P5: each attempt sends a new key]", async () => {
-    await live("unavailable");
-    expect(new Set(received.map((x) => x.key)).size).toBe(3);
+  it("a 503 on an idempotent POST is retried, every attempt with the same Idempotency-Key", async () => {
+    const r = await live("unavailable", undefined, true);
+    expect([r.run.state, r.attempts]).toEqual(["failed", 3]);
+    expect(keysOf(r.runId)).toEqual([`${r.runId}:post`, `${r.runId}:post`, `${r.runId}:post`]);
   });
-  it("a POST whose connection resets after the body was read parks for review [gap P5: it is resent automatically]", async () => {
+  it("a POST whose connection resets after the body was read is sent once and parks for review", async () => {
     const r = await live("reset");
-    expect(r.run.state).toBe("failed");
-    expect(received).toHaveLength(3);
+    expect([r.run.state, r.attempts, r.mails]).toEqual(["needs_review", 1, 0]);
+    expect(received).toHaveLength(1);
   });
-  it("an operator can retry a failed run from the failed step [gap P5: there is no retry endpoint]", async () => {
+  it("a POST whose receiver reads the body and never answers is sent once and parks for review", async () => {
+    const r = await live("hang");
+    expect([r.run.state, r.attempts]).toEqual(["needs_review", 1]);
+    expect(received).toHaveLength(1);
+  }, 30_000);
+  it("a 429 waits for Retry-After, then the same key goes again", async () => {
+    const r = await live("throttled");
+    expect([r.run.state, r.outcome]).toEqual(["succeeded", ["post", "notify"]]);
+    expect(received).toHaveLength(2);
+    expect(received[1]!.at - received[0]!.at).toBeGreaterThanOrEqual(1000);
+    expect(new Set(keysOf(r.runId))).toEqual(new Set([`${r.runId}:post`]));
+  });
+  it("Send again sends exactly one more request with the same key, and the run carries on", async () => {
+    const r = await live("reset");
+    mode = "ok";
+    await resolve(r.runId, "again").expect(204);
+    const run = await finish(r.runId);
+    expect([run.state, await pathOf(r.runId)]).toEqual(["succeeded", ["post", "notify"]]);
+    expect(keysOf(r.runId)).toEqual([`${r.runId}:post`, `${r.runId}:post`]);
+  });
+  it("two concurrent resolve calls act once", async () => {
+    const r = await live("reset");
+    mode = "ok";
+    const statuses = (await Promise.all([resolve(r.runId, "again"), resolve(r.runId, "again")])).map((x) => x.status).sort();
+    expect(statuses).toEqual([204, 409]);
+    await finish(r.runId);
+    expect(received).toHaveLength(2);
+  });
+  it("Stop cancels a run in review and sends nothing more; a second action is refused", async () => {
+    const r = await live("reset");
+    await resolve(r.runId, "stop").expect(204);
+    expect((await runRow(r.runId)).state).toBe("cancelled");
+    await resolve(r.runId, "delivered").expect(409);
+    expect(received).toHaveLength(1);
+  });
+  it("only the workspace's own operators can resolve, and the action must be one of the three", async () => {
+    const r = await live("reset");
+    await other.post(`/runs/${r.runId}/resolve`).send({ action: "stop" }).expect(404);
+    await resolve(r.runId, "maybe").expect(400);
+    expect((await runRow(r.runId)).state).toBe("needs_review");
+  });
+  it("It went through continues to Sheets and notify without asking for approval again", async () => {
+    const id = await workflow(qa08.definition);
+    const { outcome, runId } = await testRun(id, qa08.definition, { payload: { item: "Printer", amount: 8_000 }, options: { choices: { post: { fail: "unknown" } } } });
+    expect(outcome).toEqual(["check", "ask", "post:review"]);
+    const listed = (await owner.get("/runs?review=true").expect(200)).body as { id: string; needsReview: boolean }[];
+    expect(listed.find((x) => x.id === runId)).toMatchObject({ needsReview: true });
+    await resolve(runId!, "delivered").expect(204);
+    await finish(runId!);
+    expect(await pathOf(runId!)).toEqual(["check", "ask", "post", "log", "notify"]);
+    const rows = await db.select().from(stepRuns).where(eq(stepRuns.runId, runId!));
+    expect(rows.filter((x) => x.stepId === "ask")).toHaveLength(1);
+    expect(rows.find((x) => x.stepId === "post" && x.state === "succeeded")!.output).toEqual({ reconciled: "delivered" });
+    const detail = (await owner.get(`/runs/${runId}`).expect(200)).body as { steps: { stepId: string; resolvedBy: string | null }[] };
+    expect(detail.steps.find((x) => x.stepId === "post")!.resolvedBy).toBe("owner@scenarios.local");
+  });
+  it("an operator can retry a failed run from the failed step", async () => {
     const r = await live("bad_request");
-    await owner.post(`/runs/${r.runId}/retry`).send({}).expect(404);
+    mode = "ok";
+    await owner.post(`/runs/${r.runId}/retry`).send({}).expect(204);
+    await owner.post(`/runs/${r.runId}/retry`).send({}).expect(409);
+    const run = await finish(r.runId);
+    expect(run.state).toBe("succeeded");
+    expect(keysOf(r.runId)).toEqual([`${r.runId}:post`, `${r.runId}:post`]);
+  });
+  it("a dead-lettered run recovers with Retry", async () => {
+    const r = await live("unavailable", undefined, true);
+    mode = "ok";
+    await owner.post(`/runs/${r.runId}/retry`).send({}).expect(204);
+    expect((await finish(r.runId)).state).toBe("succeeded");
+    expect(received).toHaveLength(4);
   });
 });

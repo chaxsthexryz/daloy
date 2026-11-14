@@ -42,7 +42,9 @@ export function startReceiver() {
   return { deliveries, executions: () => executions, close: () => server.close() };
 }
 
-const target = (path: string) => ({ method: "POST", url: `http://127.0.0.1:${RECEIVER_PORT}/${path}`, headers: {}, body: '{"run":"{{trigger.n}}"}' });
+// idempotent: the receiver deduplicates by key, so a takeover after a kill may resend instead of parking the run
+// for review (decision 0030). Without the flag every kill mid-POST would wait for an operator.
+const target = (path: string) => ({ method: "POST", url: `http://127.0.0.1:${RECEIVER_PORT}/${path}`, headers: {}, body: '{"run":"{{trigger.n}}"}', idempotent: true });
 
 /** Five steps: http, condition, http, a one second delay, http. Three idempotency keys per run. */
 export const FIVE_STEPS = {
@@ -104,8 +106,9 @@ export async function check(db: Db, receiver: ReturnType<typeof startReceiver>, 
   const missing = ids.flatMap((id) => FIVE_STEPS.steps.filter((s) => !succeeded.has(`${id}:${s.id}`)).map((s) => `${id}:${s.id}`));
   const doubled = [...succeeded].filter(([, n]) => n > 1).length;
 
-  // The keys the receiver executed must be exactly the keys of the succeeded HTTP attempts.
-  const expectedKeys = new Set(steps.filter((s) => s.state === "succeeded" && HTTP_STEPS.includes(s.stepId)).map((s) => `${s.runId}:${s.stepId}:${s.attempt}`));
+  // The keys the receiver executed must be exactly the keys of the succeeded HTTP steps: one per run and step, the
+  // same on every attempt (decision 0030), so a redelivery after a crash repeats a key instead of adding one.
+  const expectedKeys = new Set(steps.filter((s) => s.state === "succeeded" && HTTP_STEPS.includes(s.stepId)).map((s) => `${s.runId}:${s.stepId}`));
   const executed = [...receiver.deliveries.keys()];
   const unexpected = executed.filter((k) => !expectedKeys.has(k)).length;
   const notExecuted = [...expectedKeys].filter((k) => !receiver.deliveries.has(k)).length;

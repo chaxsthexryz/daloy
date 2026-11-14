@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { definitionSchema } from "./definition";
+import { definitionSchema, httpConfigSchema, isIdempotent } from "./definition";
 
 const VALID_CONFIG: Record<string, Record<string, unknown>> = {
   http: { method: "GET", url: "https://example.com/{{trigger.id}}" },
@@ -166,6 +166,14 @@ describe("definitionSchema", () => {
     it("accepts a valid config for every step type", () => {
       for (const type of ["http", "email", "delay"]) expect(one(type, VALID_CONFIG[type]!), type).toEqual([]);
       expect(one("http", { method: "POST", url: "https://x.test", headers: { Authorization: "Bearer {{secrets.api_key}}" }, body: "{}" })).toEqual([]);
+    });
+
+    it("treats GET, PUT and DELETE as safe to repeat and POST and PATCH as not, unless the step says otherwise (P5)", () => {
+      const cfg = (method: string, idempotent?: boolean) => httpConfigSchema.parse({ method, url: "https://x.test", idempotent });
+      expect(["GET", "PUT", "DELETE", "POST", "PATCH"].map((m) => isIdempotent(cfg(m)))).toEqual([true, true, true, false, false]);
+      expect(isIdempotent(cfg("POST", true))).toBe(true);
+      expect(isIdempotent(cfg("PUT", false))).toBe(false);
+      expect(one("http", { method: "POST", url: "https://x.test", idempotent: "yes" })).not.toEqual([]);
     });
 
     it("rejects http configs with a bad method, a long url or too many headers", () => {

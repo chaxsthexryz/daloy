@@ -22,6 +22,8 @@ export const httpConfigSchema = z.object({
     .refine((h) => Object.keys(h).length <= 20, "at most 20 headers")
     .default({}),
   body: template(100_000).optional(),
+  // Safe to send twice. Unset, GET, PUT and DELETE are; POST and PATCH are not (decision 0030).
+  idempotent: z.boolean().optional(),
 });
 
 export const emailConfigSchema = z.object({
@@ -33,6 +35,7 @@ export const emailConfigSchema = z.object({
 
 export const delayConfigSchema = z.object({ seconds: z.int().min(1).max(2_592_000) });
 export type HttpConfig = z.infer<typeof httpConfigSchema>;
+export const isIdempotent = (cfg: Pick<HttpConfig, "method" | "idempotent">) => cfg.idempotent ?? ["GET", "PUT", "DELETE"].includes(cfg.method);
 export type EmailConfig = z.infer<typeof emailConfigSchema>;
 
 // The approver gets an email with a single-use link. timeoutSeconds later, an unanswered approval takes the timeout branch.
