@@ -260,7 +260,7 @@ export async function clearSheetWriteKeys(db: Db, key: Buffer, urls: ProviderUrl
     const spreadsheetId = (d.pinnedDestination as SheetDestination | null)?.spreadsheetId;
     try {
       if (conn && spreadsheetId && (conn.destination as SheetDestination | null)?.spreadsheetId === spreadsheetId) {
-        await deleteSheetMarker(urls, serviceAccountSchema.parse(JSON.parse(conn.credential)), spreadsheetId, d.sheetMetaId!);
+        await deleteSheetMarker(urls, serviceAccountSchema.parse(JSON.parse(conn.credential)), spreadsheetId, { id: d.sheetMetaId!, value: d.sheetMetaValue! });
       }
       await db.update(deliveries).set({ sheetMetaClearedAt: sql`now()` }).where(eq(deliveries.id, d.id));
       cleared++;

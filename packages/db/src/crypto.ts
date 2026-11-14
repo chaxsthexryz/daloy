@@ -1,5 +1,5 @@
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import type { Db } from "./index";
 import { retiredSecrets, secrets } from "./schema";
 
@@ -36,9 +36,13 @@ export async function readSecrets(db: Db, key: Buffer, userId: string): Promise<
 
 /**
  * Keeps the current value of a secret that is about to be replaced or deleted, as it is, for redaction only
- * (decision 0025). Call it in the same transaction as the replace or delete.
+ * (decision 0025). Call it in the same transaction as the replace or delete. It first takes a transaction lock on this
+ * workspace and secret name, so concurrent replaces and deletes run one after another and each retires the value the
+ * previous one wrote; without it two could retire the same old value and lose the one in between. The lock also covers
+ * a name with no row yet, which a row lock could not.
  */
-export async function retireSecret(tx: Pick<Db, "select" | "insert">, userId: string, name: string) {
+export async function retireSecret(tx: Pick<Db, "select" | "insert" | "execute">, userId: string, name: string) {
+  await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`secret:${userId}:${name}`}, 0))`);
   const [row] = await tx.select().from(secrets).where(and(eq(secrets.userId, userId), eq(secrets.name, name)));
   if (row) await tx.insert(retiredSecrets).values({ userId, name, ciphertext: row.ciphertext, iv: row.iv, authTag: row.authTag });
 }

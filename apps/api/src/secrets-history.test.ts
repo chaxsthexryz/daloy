@@ -78,6 +78,27 @@ describe("run history and secrets", () => {
     expect((await agent.get("/secrets").expect(200)).body).toEqual([]);
   });
 
+  it("keeps every replaced value hidden when rotations and a deletion of one secret race (retest of ecb5ade)", async () => {
+    const { agent, userId } = await owner();
+    const [wf] = await db.insert(workflows).values({ userId, name: "Race", slug: `race-${seq}` }).returning();
+    const [v] = await db.insert(workflowVersions).values({ workflowId: wf!.id, version: 1, definition: {} }).returning();
+    for (let round = 0; round < 8; round++) {
+      const values = [1, 2, 3, 4].map((i) => `race-${round}-value-${i}-${randomBytes(4).toString("hex")}`);
+      const name = `race_${round}`;
+      // Each value was in use at some point, so history may hold any of them.
+      const [r] = await db.insert(runs).values({ workflowVersionId: v!.id, state: "succeeded", triggerPayload: { seen: values } }).returning();
+      await agent.put(`/secrets/${name}`).send({ value: values[0] }).expect(204);
+      await Promise.all([
+        agent.put(`/secrets/${name}`).send({ value: values[1] }),
+        agent.put(`/secrets/${name}`).send({ value: values[2] }),
+        agent.delete(`/secrets/${name}`),
+        agent.put(`/secrets/${name}`).send({ value: values[3] }),
+      ]);
+      const text = JSON.stringify((await agent.get(`/runs/${r!.id}`).expect(200)).body);
+      expect(values.filter((x) => text.includes(x)), `round ${round}`).toEqual([]);
+    }
+  });
+
   it("refuses to save JSON bodies that will not parse, secrets outside HTTP steps and secrets sent to data-chosen hosts", async () => {
     const { agent } = await owner();
     const wf = (await agent.post("/workflows").send({ name: "Checks", slug: `checks-${seq}` }).expect(201)).body as { id: string };

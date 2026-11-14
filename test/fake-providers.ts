@@ -199,7 +199,7 @@ export async function startFakeProviders(port = 0) {
       type BatchRequest = {
         createDeveloperMetadata?: { developerMetadata: SheetMeta };
         appendCells?: { sheetId: number; rows: { values: { userEnteredValue: { stringValue: string } }[] }[] };
-        deleteDeveloperMetadata?: { dataFilter: { developerMetadataLookup: { metadataId: number } } };
+        deleteDeveloperMetadata?: { dataFilter: { developerMetadataLookup: { metadataId?: number; metadataKey?: string; metadataValue?: string } } };
       };
       const { requests } = JSON.parse(raw) as { requests: BatchRequest[] };
       const created = new Set<number>();
@@ -213,7 +213,13 @@ export async function startFakeProviders(port = 0) {
       for (const r of requests) {
         if (r.createDeveloperMetadata) sheet.metadata.set(r.createDeveloperMetadata.developerMetadata.metadataId, r.createDeveloperMetadata.developerMetadata);
         if (r.appendCells) sheet.tabs.get(tabOf(r.appendCells.sheetId)!)!.push(...r.appendCells.rows.map((row) => row.values.map((v) => v.userEnteredValue.stringValue)));
-        if (r.deleteDeveloperMetadata) sheet.metadata.delete(r.deleteDeveloperMetadata.dataFilter.developerMetadataLookup.metadataId);
+        if (r.deleteDeveloperMetadata) {
+          // Like Google, a lookup matches only metadata that agrees with every field it names.
+          const q = r.deleteDeveloperMetadata.dataFilter.developerMetadataLookup;
+          for (const [id, m] of sheet.metadata) {
+            if ((q.metadataId === undefined || q.metadataId === id) && (q.metadataKey === undefined || q.metadataKey === m.metadataKey) && (q.metadataValue === undefined || q.metadataValue === m.metadataValue)) sheet.metadata.delete(id);
+          }
+        }
       }
       return answer(200, { replies: requests.map(() => ({})) });
     }

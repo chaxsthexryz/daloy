@@ -345,6 +345,20 @@ describe("exactly-once Sheets writes and pinned destinations (QA regression, fec
     expect(sheetRows).toHaveLength(0);
   });
 
+  it("never deletes another tool's metadata after a marker collision and Mark as posted (retest of ecb5ade)", async () => {
+    const d = await sheet(ana, await newRun(ana), "REQ-2009");
+    const { sheetMetaId } = await state(d.id);
+    const theirs = { metadataId: sheetMetaId!, metadataKey: "another-tool", metadataValue: "keep-me", location: { sheetId: 1 }, visibility: "PROJECT" };
+    sheetState.metadata.set(sheetMetaId!, theirs);
+    await deliverDue();
+    expect((await state(d.id)).state).toBe("needs_review");
+    expect(await confirmDelivery(db, ana, d.id)).toBe(true);
+    await db.update(deliveries).set({ updatedAt: sql`now() - interval '25 hours'` }).where(eq(deliveries.id, d.id));
+    await clearSheetWriteKeys(db, key, urls);
+    expect(sheetState.metadata.get(sheetMetaId!)).toEqual(theirs);
+    expect((await state(d.id)).sheetMetaClearedAt).not.toBeNull();
+  });
+
   it("reconnect before retry: review, nothing written to either sheet; Post again writes once to the new sheet", async () => {
     const d = await sheet(ana, await newRun(ana), "REQ-2006");
     fake.once(":batchUpdate", "hang");
