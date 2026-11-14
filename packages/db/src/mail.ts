@@ -112,13 +112,14 @@ const loginRefused = (err: unknown) => {
  * Sends one email as the workflow owner: their Gmail, or the installation server when they connected none.
  * Every email and approval step goes through here, and so does the API's test email (decision 0020).
  */
-export async function sendAs(db: Db, key: Buffer, deps: MailDeps, userId: string, cfg: EmailConfig, idempotencyKey: string, opts: { allowUnconfirmed?: boolean } = {}) {
+/** onBodyStart runs when the message starts going out, after the server accepted DATA (decision 0030). */
+export async function sendAs(db: Db, key: Buffer, deps: MailDeps, userId: string, cfg: EmailConfig, idempotencyKey: string, opts: { allowUnconfirmed?: boolean; onBodyStart?: () => void } = {}) {
   const sender = await resolveSender(db, key, userId, opts);
   const mailer = mailerFor(sender, deps);
   // The shared server is the one an unapproved sign-up could abuse; Gmail sends as the owner's own confirmed mailbox.
   if (sender.kind === "installation" && deps.sharedMail === "approved") await claimSharedMail(db, userId, checkRecipients(cfg.to).length);
   try {
-    return { ...(await sendEmail(mailer, cfg, idempotencyKey)), from: addressOf(mailer.from), gmail: sender.kind === "gmail" };
+    return { ...(await sendEmail(mailer, cfg, idempotencyKey, opts.onBodyStart)), from: addressOf(mailer.from), gmail: sender.kind === "gmail" };
   } catch (err) {
     if (sender.kind !== "gmail" || !loginRefused(err)) throw err;
     await markSenderFailed(db, userId, "Gmail rejected the app password.");
@@ -139,7 +140,7 @@ export function checkRecipients(list: string): string[] {
   return to;
 }
 
-type SendState = { bodyStarted: boolean };
+type SendState = { bodyStarted: boolean; onBodyStart?: () => void };
 const watched = new WeakSet<object>();
 
 /**
@@ -155,7 +156,10 @@ function watchBody(transport: Mailer["transport"]) {
     const message = mail.message as unknown as { createReadStream: (...args: unknown[]) => Readable };
     if (state) {
       const create = message.createReadStream.bind(message);
-      const mark = () => (state.bodyStarted = true);
+      const mark = () => {
+        state.bodyStarted = true;
+        state.onBodyStart?.();
+      };
       message.createReadStream = (...args) => {
         const source = create(...args);
         async function* body() {
@@ -177,13 +181,13 @@ function emailOutcome(code: number | undefined, bodyStarted: boolean): Outcome {
 }
 
 /** Sends one plain-text email. Recipients come from a resolved template, so they are checked here, after resolution. */
-export async function sendEmail(mailer: Mailer, cfg: EmailConfig, messageKey: string) {
+export async function sendEmail(mailer: Mailer, cfg: EmailConfig, messageKey: string, onBodyStart?: () => void) {
   const to = checkRecipients(cfg.to);
 
   // messageKey is per attempt (run:step:attempt), so each attempt has its own Message-ID, and a re-delivered
   // attempt keeps it, so receivers can drop the duplicate.
   const messageId = `<${messageKey.replaceAll(":", ".")}@daloy>`;
-  const daloySend: SendState = { bodyStarted: false };
+  const daloySend: SendState = { bodyStarted: false, onBodyStart };
   watchBody(mailer.transport);
   try {
     const info = await mailer.transport.sendMail({ from: mailer.from, replyTo: mailer.replyTo, to, subject: cfg.subject, text: cfg.text, messageId, daloySend } as Parameters<Mailer["transport"]["sendMail"]>[0]);
