@@ -59,6 +59,15 @@ Builder replay (second commit):
 - A worker paused while it holds the send claim: the takeover waits, Stop answers 409 because the run is still running, the paused worker's one POST goes out, then the run is parked; Stop after that sends nothing more.
 - A 503 with a body over 1 MB on a POST: `needs_review / unknown` with "HTTP 503" in the error.
 
+## Fixes from the ad0173f review
+
+Run `pnpm vitest run apps/api/src/resources.test.ts` and `pnpm e2e e2e/booking-form.spec.ts`.
+
+- Seven-minute Manila grid on the hosted form: Chromium accepts `00:07` and the run stores `...T00:07:00+08:00`. Grids that divide the day (45, 60, 90 minutes) keep a browser step of that size.
+- A keyed webhook (header `Idempotency-Key`, or an `eventKey` such as `{{trigger.event_id}}`) answered 202; archive its resource, or let its time pass, then replay the same request: 202 with the first `runId` and `duplicate: true`. The Run button does the same with a webhook trigger's `eventKey`. A new key gets the 400.
+- Resources page with the first list answer held back: add a resource, release the held answer, and the resource stays on screen.
+- Not changed: an MCP retry with the same `idempotencyKey` after archiving or after the time passed still gets an error, because the MCP SDK checks arguments first. An `eventKey` template on a datetime, resource or padded text field is matched only after the checks.
+
 ## P6a checks (zoned times and resources)
 
 Run `pnpm vitest run apps/api/src/scenarios.test.ts -t "QA-02" --reporter=verbose`, `pnpm vitest run packages/engine/src/zoned.test.ts apps/api/src/resources.test.ts` and `pnpm e2e e2e/booking-form.spec.ts`.

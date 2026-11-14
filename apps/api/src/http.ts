@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { RUN_QUEUE, type MailDeps, type ProviderUrls, type Role } from "@daloy/db";
+import { keyedRun, RUN_QUEUE, type Db, type MailDeps, type ProviderUrls, type Role } from "@daloy/db";
 import { parsePayload, resolveTemplate, type FormField, type Resource, type Trigger } from "@daloy/engine";
 import {
   BadRequestException,
@@ -119,6 +119,23 @@ export function eventKey(trigger: Trigger, payload: Record<string, unknown>, cal
   if (key.trim() === "") throw new BadRequestException([`eventKey: ${template} is empty for this event`]);
   if (key.length > 200) throw new BadRequestException([`eventKey: ${template} is longer than 200 characters for this event`]);
   return key;
+}
+
+/**
+ * The first run of an event that was already accepted, looked up before the payload is checked again. A replay then
+ * gets duplicate: true even when its payload would now be refused: a resource archived since, a time now past
+ * (decision 0031). A key that cannot be read from the raw body leaves the normal checks to answer.
+ * shortcut: the key is read from the raw body, so an eventKey template on a declared field whose stored form differs
+ * (trimmed text, a datetime or resource) matches only after the checks; read the stored payload if such keys appear.
+ */
+export async function replayedRun(db: Db, workflowId: string, trigger: Trigger, body: unknown, callerKey?: string): Promise<string | undefined> {
+  let key: string | undefined;
+  try {
+    key = eventKey(trigger, validPayload(undefined, body), callerKey);
+  } catch {
+    return undefined;
+  }
+  return key === undefined ? undefined : keyedRun(db, workflowId, key);
 }
 
 export async function enqueueRun(boss: PgBoss, runId: string) {

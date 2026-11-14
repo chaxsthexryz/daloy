@@ -20,7 +20,7 @@ import { and, desc, eq, getTableColumns, max, sql } from "drizzle-orm";
 import type { PgBoss } from "pg-boss";
 import * as z from "zod";
 import { SessionGuard } from "./auth";
-import { Allow, BOSS, CurrentUser, DB, enqueueRun, eventKey, isUniqueViolation, validPayload, ZodPipe, type SessionUser, MANAGE, OPERATE } from "./http";
+import { Allow, BOSS, CurrentUser, DB, enqueueRun, eventKey, isUniqueViolation, replayedRun, validPayload, ZodPipe, type SessionUser, MANAGE, OPERATE } from "./http";
 import { resourcesFor } from "./resources";
 
 const workflowInput = z.object({
@@ -244,6 +244,8 @@ export class WorkflowsController {
     const version = await publishedVersion(this.db, id);
     if (!version) throw new ConflictException("publish the workflow first");
     const { trigger } = definitionSchema.parse(version.definition);
+    const first = await replayedRun(this.db, id, trigger, body.payload);
+    if (first) return { id: first, duplicate: true };
     const fields = triggerFields(trigger);
     const payload = validPayload(fields, body.payload, await resourcesFor(this.db, user.workspaceId, fields));
     const { runId, duplicate } = await createKeyedRun(this.db, id, version.id, payload, eventKey(trigger, payload));
