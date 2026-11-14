@@ -41,14 +41,26 @@ export async function connectionCredential(db: Db, key: Buffer, userId: string, 
   return { credential, status: row.status, account: row.account, destination: row.destination, revision: row.credentialIv };
 }
 
-/** Stores a credential the provider replaced, such as Microsoft's rotated refresh token. Status and destination stay. */
-export async function updateCredential(db: Db, key: Buffer, userId: string, provider: Provider, credential: string) {
+/**
+ * Stores a credential the provider replaced, such as Microsoft's rotated refresh token, but only over the revision it
+ * was rotated from: a late rotation for a mailbox the owner has since reconnected changes nothing (Astra, 283fa1a).
+ * Returns the new revision, or null when the stored credential is no longer that one. Status and destination stay.
+ */
+export async function updateCredential(db: Db, key: Buffer, userId: string, provider: Provider, credential: string, revision: string): Promise<string | null> {
   const e = encryptSecret(key, userId, secretName(provider), credential);
-  await db
+  const saved = await db
     .update(connections)
     .set({ credentialCiphertext: e.ciphertext, credentialIv: e.iv, credentialAuthTag: e.authTag, updatedAt: new Date() })
-    .where(and(eq(connections.userId, userId), eq(connections.provider, provider)));
+    .where(and(eq(connections.userId, userId), eq(connections.provider, provider), eq(connections.credentialIv, revision)))
+    .returning({ revision: connections.credentialIv });
+  return saved[0]?.revision ?? null;
 }
+
+/** A save function for a provider that rotates its credential: it follows conn.revision, so later status writes match. */
+export const rotateInto = (db: Db, key: Buffer, userId: string, provider: Provider, conn: { revision: string }) => async (credential: string) => {
+  const next = await updateCredential(db, key, userId, provider, credential, conn.revision);
+  if (next) conn.revision = next;
+};
 
 export async function setDestination(db: Db, userId: string, provider: Provider, destination: Record<string, string>) {
   await db.update(connections).set({ destination, updatedAt: new Date() }).where(and(eq(connections.userId, userId), eq(connections.provider, provider)));

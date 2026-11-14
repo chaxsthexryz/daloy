@@ -35,6 +35,12 @@ Builder replay (second commit):
 
 - Run a keyed test (Live), change the draft, send the same event as Mock. Expected: `{ id: <first run>, versionId: <first run's version>, mode: "live", duplicate: true }`, and the builder says the event already ran and shows the earlier live test run.
 
+## Fixes from the 283fa1a review
+
+- Outlook reconnect race: hold mailbox A's token refresh during a self-test, Reconnect (mailbox B), then release. Expected: the stored credential is still B's. Test: "a late token refresh for the old mailbox never overwrites the credential saved by Reconnect" in `apps/api/src/microsoft.test.ts`.
+- Outlook self-test: a passing test that rotates the token records "last tested". Same file, the self-test case.
+- Deliveries follow the same rule: an Outlook send that rotates its token records its result against the new revision.
+
 ## Fixes from the 8e2c5d8 review
 
 - Pin race: queue a Sheets delivery before any sheet is connected, connect sheet A, pause worker A at its first-pin update after it read sheet A, let another worker take over, pin sheet B and deliver. Expected: A sends nothing; sheet A has no row and the delivery stays delivered to sheet B. Test: "a worker that loses its claim while pinning the first destination sends nothing" (pauses A with a table lock, then a row lock).

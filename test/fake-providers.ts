@@ -147,7 +147,7 @@ export async function startFakeProviders(port = 0) {
       const refresh = `ms-refresh-${++seq}`;
       microsoft.accessTokens.add(access);
       microsoft.refreshTokens.add(refresh);
-      return json(res, 200, { token_type: "Bearer", access_token: access, refresh_token: refresh, expires_in: 3599, scope: "Mail.Send User.Read" });
+      return answer(200, { token_type: "Bearer", access_token: access, refresh_token: refresh, expires_in: 3599, scope: "Mail.Send User.Read" });
     }
 
     // Microsoft Graph v1.0: /me and /me/sendMail (202 with no body, like the real one).

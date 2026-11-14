@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { backoffDelayMs, type RetryPolicy } from "@daloy/engine";
 import { and, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
-import { connectionCredential, markConnectionFailed, PROVIDER_NAMES, updateCredential } from "./connections";
+import { connectionCredential, markConnectionFailed, PROVIDER_NAMES, rotateInto } from "./connections";
 import type { Db } from "./index";
 import { appendRowOnce, deleteSheetMarker, outlookSend, ProviderError, serviceAccountSchema, slackPost, teamsPost, type OutlookMessage, type ProviderUrls, type SheetDestination } from "./providers";
 import { connections, deliveries, type Provider } from "./schema";
@@ -111,7 +111,7 @@ async function attempt(db: Db, key: Buffer, urls: ProviderUrls, d: Delivery): Pr
     // Slack, Teams and Outlook have no read access to check with, so after a call that may have arrived a person decides.
     if (d.checkFirst) return { state: "needs_review", error: `${name} may have ${d.provider === "outlook" ? "sent" : "posted"} this before the connection dropped. ${reviewHint(d.provider, conn.destination)}` };
     if (d.provider === "outlook") {
-      const save = (t: string) => updateCredential(db, key, d.userId, "outlook", t);
+      const save = rotateInto(db, key, d.userId, "outlook", conn);
       return { state: "delivered", result: await outlookSend(urls, conn.credential, save, d.payload as OutlookMessage) };
     }
     const text = (d.payload as { text: string }).text;

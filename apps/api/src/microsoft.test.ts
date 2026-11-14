@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { connections, users, type Db } from "@daloy/db";
+import { connectionCredential, connections, users, type Db } from "@daloy/db";
 import { defaultPurchaseAnswers, purchaseRequestDefinition } from "@daloy/engine";
 import type { INestApplication } from "@nestjs/common";
 import { eq } from "drizzle-orm";
@@ -115,6 +115,8 @@ describe("Outlook", () => {
     fake.microsoft.sent.length = 0;
     expect((await agent.post("/settings/connections/outlook/test").expect(200)).body).toMatchObject({ ok: true });
     expect(fake.microsoft.sent).toEqual([expect.objectContaining({ to: "ana@contoso.example", subject: "Test email from Daloy" })]);
+    // The test rotated the refresh token; the success is still recorded (Astra, 283fa1a).
+    expect((await agent.get("/settings/connections").expect(200)).body.connections[0].lastTestedAt).not.toBeNull();
 
     fake.microsoft.refreshTokens.clear();
     fake.microsoft.accessTokens.clear();
@@ -126,6 +128,26 @@ describe("Outlook", () => {
     expect((await agent.get("/settings/connections").expect(200)).body.connections[0]).toMatchObject({ status: "active", lastError: null });
     await agent.delete("/settings/connections/outlook").expect(204);
     await agent.delete("/settings/connections/outlook").expect(404);
+  });
+});
+
+describe("Outlook credential revisions (Astra, 283fa1a)", () => {
+  it("a late token refresh for the old mailbox never overwrites the credential saved by Reconnect", async () => {
+    const { agent, userId } = await signedIn();
+    await consent(agent);
+    let release!: () => void;
+    fake.once("/oauth2/v2.0/token", { heldUntil: new Promise<void>((r) => (release = r)) });
+    const tokenCalls = () => fake.calls.filter((c) => c.endsWith("/oauth2/v2.0/token")).length;
+    const before = tokenCalls();
+    const oldTest = agent.post("/settings/connections/outlook/test").then((r) => r); // refreshes with the old token
+    for (let i = 0; i < 300 && tokenCalls() === before; i++) await new Promise((r) => setTimeout(r, 10));
+    expect(tokenCalls()).toBe(before + 1);
+
+    await consent(agent); // Reconnect while the old refresh answer is held
+    const saved = (await connectionCredential(db, secretsKey, userId, "outlook"))!.credential;
+    release();
+    await oldTest;
+    expect((await connectionCredential(db, secretsKey, userId, "outlook"))!.credential).toBe(saved);
   });
 });
 
