@@ -28,7 +28,7 @@ import {
   spreadsheetIdFrom,
   teamsPost,
   teamsWebhookUrl,
-  updateCredential,
+  rotateInto,
   type Db,
   type Provider,
   type ProviderUrls,
@@ -180,7 +180,7 @@ export class ConnectionsController {
   @UseGuards(RateLimit(5))
   async testOutlook(@CurrentUser() user: SessionUser) {
     const conn = await this.connection(user.workspaceId, "outlook");
-    const save = (t: string) => updateCredential(this.db, this.config.secretsKey, user.workspaceId, "outlook", t);
+    const save = rotateInto(this.db, this.config.secretsKey, user.workspaceId, "outlook", conn);
     return this.test(user.workspaceId, "outlook", conn, () =>
       outlookSend(this.urls, conn.credential, save, { to: conn.account, subject: "Test email from Daloy", text: "Daloy can send from this mailbox. Approved purchase requests will go out from here." }),
     );

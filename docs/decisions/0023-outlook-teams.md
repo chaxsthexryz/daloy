@@ -39,6 +39,8 @@ How the template sends its email:
 - The approval request itself stays an approval step and goes through the Business and email sender. It carries the single-use link and has its own retry rules; moving it into a delivery would change how approvals work for every workflow.
 - Guided setup is shared with the office request: `setup.template` is now `office-request` or `purchase-request`, and a saved setup without a template is still an office request.
 
+Credential revisions (after Astra's review of 283fa1a): a rotated refresh token is written only while the connection still holds the credential it was rotated from (`updateCredential` with the revision, the stored ciphertext's IV). A send or console test follows its own rotation (`rotateInto`), so its success or refusal is recorded against the new revision. A refresh answer held across a Reconnect can no longer put the old mailbox's token under the new mailbox.
+
 ## Consequences
 
 - Each installation that wants Outlook registers its own Entra app with the redirect address `<PUBLIC_URL>/settings/connections/outlook/callback`. That is a step for whoever runs Daloy, documented in the README.
