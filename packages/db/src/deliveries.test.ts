@@ -397,6 +397,126 @@ describe("exactly-once Sheets writes and pinned destinations (QA regression, fec
   });
 });
 
+describe("late answers from stale workers (Astra, c05fa81)", () => {
+  // A held answer: the fake applies the request now (or answers `status`) and replies when the test calls release().
+  const gate = () => {
+    let release!: () => void;
+    const heldUntil = new Promise<void>((r) => (release = r));
+    return { heldUntil, release };
+  };
+  const denied = { status: 403, body: { error: { code: 403, status: "PERMISSION_DENIED", message: "The caller does not have permission" } } };
+  const slow = () => ({ ...urls, timeoutMs: 10_000 });
+  const until = async (ok: () => boolean) => {
+    for (let i = 0; i < 300 && !ok(); i++) await sleep(10);
+    expect(ok()).toBe(true);
+  };
+  const expire = (id: string) => db.update(deliveries).set({ updatedAt: sql`now() - interval '10 minutes'` }).where(eq(deliveries.id, id));
+  const moveToSheetB = async () => {
+    const rows = fake.addSheet("sheet-b", "Sheet B", "Requests", ["sheets@ana.iam.gserviceaccount.com"]).tabs.get("Requests")!;
+    await db.update(connections).set({ destination: { spreadsheetId: "sheet-b", tab: "Requests", title: "Sheet B" } }).where(and(eq(connections.userId, ana), eq(connections.provider, "google_sheets")));
+    return rows;
+  };
+
+  it("after Post again to another sheet, the old worker's late success changes nothing and the new refusal shows as failed", async () => {
+    const d = await sheet(ana, await newRun(ana), "REQ-3001");
+    const a = gate();
+    fake.once(":batchUpdate", { heldUntil: a.heldUntil });
+    const workerA = runDueDeliveries(db, key, slow());
+    await until(() => sheetRows.length === 1); // A's row is in sheet A; its answer is held
+
+    await expire(d.id);
+    const rowsB = await moveToSheetB();
+    await deliverDue(); // takes back A's claim and finds the connection moved
+    expect(await state(d.id)).toMatchObject({ state: "needs_review" });
+    expect(await retryDelivery(db, ana, d.id, { postAgain: true })).toBe(true);
+
+    const b = gate();
+    fake.once(":batchUpdate", { heldUntil: b.heldUntil, ...denied });
+    const before = appends();
+    const workerB = runDueDeliveries(db, key, slow());
+    await until(() => appends() === before + 1); // B's request reached Google; its answer is held
+
+    a.release();
+    await workerA;
+    expect(await state(d.id)).toMatchObject({ state: "sending", result: null });
+
+    b.release();
+    await workerB;
+    expect(await state(d.id)).toMatchObject({ state: "failed", lastError: expect.stringContaining("refused access") });
+    expect([sheetRows.length, rowsB.length]).toEqual([1, 0]);
+  });
+
+  it("after a manual Retry, the old worker's late success cannot mark the new attempt delivered", async () => {
+    const d = await sheet(ana, await newRun(ana), "REQ-3002");
+    const a = gate();
+    fake.once(":batchUpdate", { heldUntil: a.heldUntil, ...denied });
+    const start = appends();
+    const workerA = runDueDeliveries(db, key, slow());
+    await until(() => appends() === start + 1); // A's request reached Google; its answer is held
+
+    await expire(d.id);
+    fake.once(":batchUpdate", denied);
+    await deliverDue(); // another worker takes the claim back and is refused
+    expect(await state(d.id)).toMatchObject({ state: "failed" });
+    expect(await retryDelivery(db, ana, d.id)).toBe(true);
+
+    const c = gate();
+    fake.once(":batchUpdate", { heldUntil: c.heldUntil, status: 503, body: { error: { code: 503, message: "Backend Error" } } });
+    const before = appends();
+    const workerC = runDueDeliveries(db, key, slow());
+    await until(() => appends() === before + 1);
+
+    a.release(); // A's late refusal
+    await workerA;
+    expect(await state(d.id)).toMatchObject({ state: "sending" });
+    c.release();
+    await workerC;
+    expect(await state(d.id)).toMatchObject({ state: "queued", lastError: expect.stringContaining("503") });
+  });
+
+  it("a worker whose expired claim was taken over and delivered cannot turn the delivery into a failure", async () => {
+    const d = await sheet(ana, await newRun(ana), "REQ-3003");
+    const a = gate();
+    fake.once(":batchUpdate", { heldUntil: a.heldUntil, ...denied });
+    const start = appends();
+    const workerA = runDueDeliveries(db, key, slow());
+    await until(() => appends() === start + 1); // A's request reached Google; its answer is held
+    await expire(d.id);
+    await deliverDue();
+    expect(await state(d.id)).toMatchObject({ state: "delivered" });
+    a.release();
+    await workerA;
+    expect(await state(d.id)).toMatchObject({ state: "delivered", lastError: null });
+    expect(sheetRows).toHaveLength(1);
+  });
+
+  it("gives every claim its own id, never reused across take-overs, Retry and Post again", async () => {
+    const d = await sheet(ana, await newRun(ana), "REQ-3004");
+    const ids: (string | null)[] = [];
+    ids.push((await claimDueDeliveries(db)).find((x) => x.id === d.id)!.claimId);
+    await expire(d.id);
+    ids.push((await claimDueDeliveries(db)).find((x) => x.id === d.id)!.claimId);
+    await db.update(deliveries).set({ state: "failed" }).where(eq(deliveries.id, d.id));
+    await retryDelivery(db, ana, d.id);
+    ids.push((await claimDueDeliveries(db)).find((x) => x.id === d.id)!.claimId);
+    await db.update(deliveries).set({ state: "needs_review" }).where(eq(deliveries.id, d.id));
+    await retryDelivery(db, ana, d.id, { postAgain: true });
+    ids.push((await claimDueDeliveries(db)).find((x) => x.id === d.id)!.claimId);
+    expect(ids.every((x) => typeof x === "string")).toBe(true);
+    expect(new Set(ids).size).toBe(4);
+  });
+
+  it("concurrent workers each claim a due delivery once, and only the claim holder records the outcome", async () => {
+    const ds = await Promise.all(["REQ-3005", "REQ-3006", "REQ-3007"].map(async (r) => sheet(ana, await newRun(ana), r)));
+    const [x, y] = await Promise.all([claimDueDeliveries(db), claimDueDeliveries(db)]);
+    expect([...x!, ...y!].map((c) => c.id).sort()).toEqual(ds.map((d) => d.id).sort());
+    await db.update(deliveries).set({ state: "queued", nextAttemptAt: sql`now()` });
+    await deliverDue();
+    expect((await Promise.all(ds.map((d) => state(d.id)))).map((s) => s.state)).toEqual(["delivered", "delivered", "delivered"]);
+    expect(sheetRows).toHaveLength(3);
+  });
+});
+
 describe("markers of uncertain Sheets deliveries (retest of 6e13e32)", () => {
   // A request held by Google lands only when the test says so: { late } applies it after that many milliseconds.
   const LATE = 1500;

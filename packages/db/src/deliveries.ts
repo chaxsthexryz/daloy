@@ -62,6 +62,7 @@ export async function claimDueDeliveries(db: Db, limit = 10): Promise<Delivery[]
     // so the delivery is uncertain from here on. Recorded in the same UPDATE as the claim, so no crash can skip it.
     .set({
       state: "sending",
+      claimId: sql`gen_random_uuid()`,
       attempts: sql`${deliveries.attempts} + 1`,
       checkFirst: sql`${deliveries.checkFirst} or ${deliveries.state} = 'sending'`,
       sheetMarkerUncertain: sql`${deliveries.sheetMarkerUncertain} or ${deliveries.state} = 'sending'`,
@@ -88,7 +89,7 @@ async function attempt(db: Db, key: Buffer, urls: ProviderUrls, d: Delivery): Pr
   }
   if (d.pinnedAccount === "") {
     // Nothing was connected when it was queued: this connection is the first, so pin it now.
-    await db.update(deliveries).set({ pinnedAccount: conn.account, pinnedDestination: conn.destination }).where(eq(deliveries.id, d.id));
+    await db.update(deliveries).set({ pinnedAccount: conn.account, pinnedDestination: conn.destination }).where(heldBy(d));
   } else if (d.pinnedAccount !== conn.account || !sameDestination(d.pinnedDestination, conn.destination)) {
     return {
       state: "needs_review",
@@ -151,9 +152,16 @@ function reviewHint(provider: Provider, dest: Record<string, string>) {
   return `Check ${provider === "slack" ? `#${dest.channelName ?? dest.channelId}` : `the Teams channel ${dest.channelName ?? ""}`.trim()}, then choose Mark as posted or Post again.`;
 }
 
-/** Writes the outcome, guarded by the claim (state and attempt number) so a stale worker cannot overwrite a newer one. */
+/**
+ * Still this worker's claim. The claim id is new on every claim and never reused, so a worker whose claim expired, or
+ * whose delivery was retried or posted again since, can no longer write (Astra, c05fa81). Attempt numbers are not
+ * enough: Retry and Post again start them from zero.
+ */
+const heldBy = (d: Delivery) => and(eq(deliveries.id, d.id), eq(deliveries.state, "sending"), eq(deliveries.claimId, d.claimId!));
+
+/** Writes the outcome, guarded by the claim, so a stale worker cannot overwrite a newer attempt. */
 async function finish(db: Db, d: Delivery, o: Outcome) {
-  const claim = and(eq(deliveries.id, d.id), eq(deliveries.state, "sending"), eq(deliveries.attempts, d.attempts));
+  const claim = heldBy(d);
   if (o.state === "delivered") {
     await db.update(deliveries).set({ state: "delivered", result: o.result, lastError: null, checkFirst: false, updatedAt: sql`now()` }).where(claim);
     return;

@@ -35,6 +35,8 @@ How the owner connects:
 - Turning on a workflow with these steps is refused until the connection is active and has a destination. Drafts and test runs are not checked; test runs show the row and message without queueing anything.
 - Provider URLs come from `GOOGLE_TOKEN_URL`, `GOOGLE_SHEETS_URL` and `SLACK_API_URL`, defaulting to the real services, so tests and Playwright point at `test/fake-providers.ts`.
 
+Claim identity (after Astra's review of c05fa81): each claim stores a new random `claim_id`, and outcomes and first-send pinning are written only while the row is `sending` with that id. The attempt number cannot serve, because Retry and Post again reset it, which let a stale worker's late answer be recorded against a newer attempt. Deliveries that were mid-send when migration 0016 ran have no claim id; they are taken back after the stale timeout like any dead worker's claim, with check-first set.
+
 ## Consequences
 
 - A run that queues a delivery succeeds before the row or note exists. The Requests list and `GET /deliveries?runId=` show the delivery's own state. Later steps cannot read the provider's result.
