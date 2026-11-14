@@ -387,7 +387,8 @@ function TriggerPanel({ trigger, wf, onChange }: { trigger: Trigger; wf: Loaded;
               <div className="row" key={i}>
                 <input aria-label={`Field ${i + 1} name`} value={f.name} onChange={(e) => set({ name: e.target.value })} />
                 <input aria-label={`Field ${i + 1} label`} value={f.label} onChange={(e) => set({ label: e.target.value })} />
-                <select aria-label={`Field ${i + 1} type`} value={f.type} onChange={(e) => set({ type: e.target.value as FormField["type"] })}>
+                {/* Number limits only exist on number fields, so changing the type drops them. */}
+                <select aria-label={`Field ${i + 1} type`} value={f.type} onChange={(e) => set({ type: e.target.value as FormField["type"], min: undefined, max: undefined, integer: undefined })}>
                   {["text", "email", "textarea", "number"].map((t) => (
                     <option key={t}>{t}</option>
                   ))}
@@ -395,6 +396,15 @@ function TriggerPanel({ trigger, wf, onChange }: { trigger: Trigger; wf: Loaded;
                 <label className="check">
                   <input type="checkbox" checked={f.required} onChange={(e) => set({ required: e.target.checked })} /> required
                 </label>
+                {f.type === "number" && (
+                  <>
+                    <input aria-label={`Field ${i + 1} minimum`} type="number" step="any" placeholder="min" value={f.min ?? ""} onChange={(e) => set({ min: e.target.value === "" ? undefined : Number(e.target.value) })} />
+                    <input aria-label={`Field ${i + 1} maximum`} type="number" step="any" placeholder="max" value={f.max ?? ""} onChange={(e) => set({ max: e.target.value === "" ? undefined : Number(e.target.value) })} />
+                    <label className="check">
+                      <input type="checkbox" checked={f.integer ?? false} onChange={(e) => set({ integer: e.target.checked || undefined })} /> whole number
+                    </label>
+                  </>
+                )}
                 <button type="button" className="quiet" onClick={() => setFields(fields.filter((_, j) => j !== i))} disabled={fields.length === 1}>
                   Remove
                 </button>

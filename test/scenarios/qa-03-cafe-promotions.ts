@@ -37,11 +37,12 @@ export const qa03: Scenario = {
   },
   cases: [
     { name: "20% reaches approval and the announcement", payload: { title: "Rainy day", discount: 20 }, want: approved },
-    { name: "80% goes to the invalid handler", payload: { title: "Too generous", discount: 80 }, want: ["guard_low", "guard_high", "invalid"] },
-    { name: "-5% goes to the invalid handler", payload: { title: "Negative", discount: -5 }, want: ["guard_low", "invalid"] },
+    // The field limits refuse these before the workflow's own guards see them (P2).
+    { name: "80% is refused at the boundary", payload: { title: "Too generous", discount: 80 }, want: REJECTED, rejects: ["discount: must be at most 50"] },
+    { name: "-5% is refused at the boundary", payload: { title: "Negative", discount: -5 }, want: REJECTED, rejects: ["discount: must be at least 0"] },
     { name: "exactly 50% is allowed (lte boundary)", payload: { title: "Half off", discount: 50 }, want: approved },
     { name: "exactly 0% is allowed (gte boundary)", payload: { title: "No discount", discount: 0 }, want: approved },
-    { name: "50.01% goes to the invalid handler", payload: { title: "Just over", discount: 50.01 }, want: ["guard_low", "guard_high", "invalid"] },
+    { name: "50.01% is refused at the boundary", payload: { title: "Just over", discount: 50.01 }, want: REJECTED, rejects: ["discount: must be at most 50"] },
     {
       name: "the tester picks rejected and the rejection notice goes",
       payload: { title: "Rainy day", discount: 20 },
@@ -60,7 +61,7 @@ export const qa03: Scenario = {
       name: "a missing discount is refused at the boundary",
       payload: { title: "No discount given" },
       want: REJECTED,
-      gap: { phase: "P2", today: ["guard_low", "invalid"], why: "test-run payloads skip required-field checks" },
+      rejects: ["discount: is required"],
     },
   ],
 };

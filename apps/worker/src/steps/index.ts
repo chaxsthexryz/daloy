@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { aiConnection, checkRecipients, claimTimeout, createApproval, findApprover, queueDelivery, readSecrets, redactSecrets, secretForms, sendAs, type Db, type MailDeps, type Provider } from "@daloy/db";
-import { declaresJson, evaluateCondition, isRetryable, mockAiOutput, parseJsonTemplate, resolveJsonTemplate, resolveTemplate, StepError, usesSecrets, type ExpressionContext, type Step } from "@daloy/engine";
+import { conditionBranch, declaresJson, isRetryable, mockAiOutput, parseJsonTemplate, resolveJsonTemplate, resolveTemplate, StepError, usesSecrets, type ExpressionContext, type Step } from "@daloy/engine";
 import type { StepExecutor, StepResult } from "../advance";
 import { runAi } from "./ai";
 import { httpRequest } from "./http";
@@ -90,7 +90,7 @@ type Attempt = { runId: string; idempotencyKey: string; attempt: number; stepRun
 async function runStep(deps: FullDeps, step: Step, input: unknown, ctx: ExpressionContext, { runId, idempotencyKey, attempt, stepRunId, userId, mock }: Attempt): Promise<StepResult> {
   switch (step.type) {
     case "condition":
-      return { branch: String(evaluateCondition(step.config.condition, ctx)) };
+      return { branch: conditionBranch(step.config.condition, ctx) };
     case "delay": {
       // A mocked test run waits at most one second, so the builder shows the result straight away.
       const seconds = mock ? Math.min(step.config.seconds, 1) : step.config.seconds;

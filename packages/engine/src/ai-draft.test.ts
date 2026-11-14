@@ -39,6 +39,29 @@ describe("parseDraftReply", () => {
     expect(r.ok).toBe(true);
   });
 
+  it("tells the model about number limits and the invalid branch, and keeps them in a draft", () => {
+    const { system } = draftPrompt({ request: "x" });
+    expect(system).toContain('"min"');
+    expect(system).toContain('"invalid"');
+    const definition = {
+      trigger: { type: "form", config: { fields: [{ name: "amount", label: "Amount", type: "number", required: true, min: 0.01, max: 100_000 }] } },
+      steps: [
+        { id: "big", type: "condition", config: { condition: { left: "{{trigger.amount}}", op: "gt", right: 5000 } } },
+        { id: "a", type: "delay", config: { seconds: 1 } },
+        { id: "b", type: "delay", config: { seconds: 1 } },
+        { id: "c", type: "delay", config: { seconds: 1 } },
+      ],
+      edges: [
+        { from: "big", to: "a", on: "true" },
+        { from: "big", to: "b", on: "false" },
+        { from: "big", to: "c", on: "invalid" },
+      ],
+    };
+    const r = parseDraftReply(reply({ name: "Purchases", summary: "Routes purchases.", definition }));
+    expect(r.ok && r.definition.trigger).toMatchObject({ config: { fields: [{ min: 0.01, max: 100_000 }] } });
+    expect(r.ok && r.definition.edges.map((e) => e.on)).toEqual(["true", "false", "invalid"]);
+  });
+
   it("explains a reply that is not JSON", () => {
     expect(parseDraftReply("Sure! First you add a form...")).toEqual({ ok: false, errors: ["The reply was not a JSON object."] });
   });

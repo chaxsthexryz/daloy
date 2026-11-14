@@ -157,6 +157,12 @@ async function runNext(deps: AdvanceDeps, run: Run): Promise<void> {
   let result: StepResult;
   try {
     result = await deps.executor.execute({ runId: run.id, stepRunId, userId: version!.userId, step, attempt, idempotencyKey: idempotencyKey(run.id, step.id, attempt), ctx, mock: run.test && !run.live });
+    // A comparison on a missing or non-number value has nowhere to go without an "invalid" edge, so it fails here
+    // and run history says why, instead of quietly taking "false" (decision 0027). Retrying would see the same data.
+    if (step.type === "condition" && result.branch === "invalid" && !def.edges.some((e) => e.from === step.id && e.on === "invalid")) {
+      const { left, op, right } = result.input as { left: unknown; op: string; right: unknown };
+      throw new StepError(`"${step.id}" needs a number on both sides of ${op}, but got ${JSON.stringify(left) ?? "nothing"} and ${JSON.stringify(right) ?? "nothing"}. Add an "invalid" branch or check the field.`, false, { input: result.input });
+    }
   } catch (err) {
     const decision = decideRetry(err, attempt, deps.retryPolicy ?? DEFAULT_RETRY_POLICY);
     const message = err instanceof Error ? err.message : String(err);

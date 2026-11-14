@@ -1,6 +1,6 @@
 import { createHmac, randomInt, randomUUID, timingSafeEqual } from "node:crypto";
 import { businessProfiles, createRun, publishedVersion, readSecret, requests, runs, triggers, workflows, type Db } from "@daloy/db";
-import { OFFICE_REQUEST, PURCHASE_REQUEST, type FormField } from "@daloy/engine";
+import { OFFICE_REQUEST, parsePayload, PURCHASE_REQUEST, type FormField } from "@daloy/engine";
 import {
   BadRequestException,
   Body,
@@ -22,7 +22,7 @@ import { and, eq } from "drizzle-orm";
 import type { Request } from "express";
 import type { PgBoss } from "pg-boss";
 import * as z from "zod";
-import { BOSS, CONFIG, DB, enqueueRun, isUniqueViolation, RateLimit, ZodPipe, type ApiConfig } from "./http";
+import { BOSS, CONFIG, DB, enqueueRun, isUniqueViolation, RateLimit, validPayload, ZodPipe, type ApiConfig } from "./http";
 import { sessionUser } from "./auth";
 
 // Starts with "_", which no field name can (definition.ts), so a real "website" field is never mistaken for it.
@@ -64,7 +64,8 @@ export class HooksController {
       if (!key || !validSignature(req.rawBody ?? Buffer.alloc(0), signature, key)) throw new UnauthorizedException("bad signature");
     }
 
-    const runId = await createRun(this.db, version.id, req.body ?? {});
+    const payload = validPayload((row.trigger.config as { fields?: FormField[] }).fields, req.body ?? {});
+    const runId = await createRun(this.db, version.id, payload);
     await enqueueRun(this.boss, runId);
     return { runId };
   }
@@ -102,8 +103,8 @@ export class FormsController {
     const { fields, versionId, workflow, tracked } = await this.form(id);
     // Bots fill every field. Answer as if it worked so they learn nothing.
     if (body?.[HONEYPOT]) return page("Thanks, we received your message.");
-    const parsed = fieldsSchema(fields).safeParse(body ?? {});
-    if (!parsed.success) throw new BadRequestException(parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`));
+    const parsed = parsePayload(fields, body ?? {});
+    if (!parsed.ok) throw new BadRequestException(parsed.errors);
     if (!tracked) {
       const runId = await createRun(this.db, versionId, parsed.data);
       await enqueueRun(this.boss, runId);
@@ -172,17 +173,6 @@ export async function recordRequest(db: Db, workflow: { id: string; userId: stri
   }
 }
 
-/** Builds the zod schema for a submission. Unknown keys (the honeypot included) are dropped. */
-export function fieldsSchema(fields: FormField[]) {
-  const shape: Record<string, z.ZodType> = {};
-  for (const f of fields) {
-    const base = f.type === "email" ? z.email().max(254) : f.type === "number" ? z.coerce.number() : z.string().trim().min(1).max(f.type === "textarea" ? 5000 : 500);
-    // An empty input means "not given", so optional fields accept it and required ones reject it.
-    shape[f.name] = z.preprocess((v) => (v === "" ? undefined : v), f.required ? base : base.optional());
-  }
-  return z.object(shape);
-}
-
 const ENTITIES: Record<string, string> = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
 export const escapeHtml = (s: string) => s.replace(/[&<>"']/g, (c) => ENTITIES[c]!);
 
@@ -194,7 +184,9 @@ function renderForm(fields: FormField[], submissionKey?: string, businessName?: 
   const inputs = fields
     .map((f) => {
       const attrs = `id="${f.name}" name="${f.name}"${f.required ? " required" : ""}`;
-      const control = f.type === "textarea" ? `<textarea ${attrs} maxlength="5000"></textarea>` : `<input ${attrs} type="${f.type}">`;
+      // The browser's own limits are a convenience; the server checks the same ones (parsePayload).
+      const limits = f.type === "number" ? `${f.min !== undefined ? ` min="${f.min}"` : ""}${f.max !== undefined ? ` max="${f.max}"` : ""} step="${f.integer ? 1 : "any"}"` : "";
+      const control = f.type === "textarea" ? `<textarea ${attrs} maxlength="5000"></textarea>` : `<input ${attrs} type="${f.type}"${limits}>`;
       return `<p><label for="${f.name}">${escapeHtml(f.label)}</label><br>${control}</p>`;
     })
     .join("");

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { apiTokens, createRun, runs, stepRuns, triggers, workflows, workflowVersions, type Db } from "@daloy/db";
-import type { FormField } from "@daloy/engine";
+import { payloadSchema, type FormField } from "@daloy/engine";
 import { toNodeHandler } from "@modelcontextprotocol/node";
 import { createMcpHandler, McpServer, type AuthInfo, type CallToolResult } from "@modelcontextprotocol/server";
 import { All, type CanActivate, Controller, type ExecutionContext, Inject, Injectable, Req, Res, UnauthorizedException, UseGuards } from "@nestjs/common";
@@ -9,7 +9,7 @@ import type { Request, Response } from "express";
 import type { PgBoss } from "pg-boss";
 import * as z from "zod";
 import { BOSS, DB, enqueueRun, RateLimit, sha256 } from "./http";
-import { fieldsSchema, isTracked, recordRequest } from "./public";
+import { isTracked, recordRequest } from "./public";
 
 // tracked: a guided office or purchase request workflow, whose runs also record a request with a reference.
 type ToolRow = { slug: string; name: string; versionId: string; fields: FormField[]; workflowId: string; tracked: boolean };
@@ -20,7 +20,7 @@ export function toolsFromRows(rows: ToolRow[]) {
     name: r.slug,
     title: r.name,
     description: `Starts a run of the "${r.name}" workflow with the form fields as input. Returns the run id; check progress with get_run_status.`,
-    inputSchema: fieldsSchema(r.fields),
+    inputSchema: payloadSchema(r.fields),
     versionId: r.versionId,
     workflowId: r.workflowId,
     tracked: r.tracked,

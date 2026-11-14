@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { RUN_QUEUE, type MailDeps, type ProviderUrls, type Role } from "@daloy/db";
+import { parsePayload, type FormField } from "@daloy/engine";
 import {
   BadRequestException,
   type CanActivate,
@@ -87,6 +88,20 @@ export function RateLimit(limit: number, windowMs = 60_000) {
     }
   }
   return RateLimitGuard;
+}
+
+/**
+ * A run's trigger payload, checked against the trigger's fields when it has any (decision 0027). Declared fields come
+ * back parsed (numbers as numbers, text trimmed); other keys pass through, since webhook events and test payloads
+ * carry more than the fields name. A bad field is a 400 that names it.
+ */
+export function validPayload(fields: FormField[] | undefined, data: unknown): Record<string, unknown> {
+  const body = data !== null && typeof data === "object" && !Array.isArray(data) ? (data as Record<string, unknown>) : undefined;
+  if (!fields) return body ?? {};
+  const r = parsePayload(fields, data);
+  if (!r.ok) throw new BadRequestException(r.errors);
+  const declared = new Set(fields.map((f) => f.name));
+  return { ...Object.fromEntries(Object.entries(body ?? {}).filter(([k]) => !declared.has(k))), ...r.data };
 }
 
 export async function enqueueRun(boss: PgBoss, runId: string) {

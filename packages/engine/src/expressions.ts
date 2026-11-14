@@ -83,7 +83,21 @@ function looseEqual(a: unknown, b: unknown): boolean {
   return !Number.isNaN(x) && x === y;
 }
 
+/** True or false; a comparison on a missing or non-number value counts as false here. */
 export function evaluateCondition(cond: Condition, ctx: ExpressionContext): boolean {
+  return conditionBranch(cond, ctx) === "true";
+}
+
+/**
+ * The branch a condition step takes. gt, gte, lt and lte need a number on both sides; when a side is missing or not a
+ * number the branch is "invalid", so bad data is never quietly sent down "false" (decision 0027).
+ */
+export function conditionBranch(cond: Condition, ctx: ExpressionContext): "true" | "false" | "invalid" {
+  const result = compare(cond, ctx);
+  return result === null ? "invalid" : result ? "true" : "false";
+}
+
+function compare(cond: Condition, ctx: ExpressionContext): boolean | null {
   const left = resolveTemplate(cond.left, ctx);
   const right = typeof cond.right === "string" ? resolveTemplate(cond.right, ctx) : cond.right;
 
@@ -99,7 +113,7 @@ export function evaluateCondition(cond: Condition, ctx: ExpressionContext): bool
       return Array.isArray(left) && left.some((item) => looseEqual(item, right));
     default: {
       const [a, b] = [toNumber(left), toNumber(right)];
-      if (Number.isNaN(a) || Number.isNaN(b)) return false;
+      if (!Number.isFinite(a) || !Number.isFinite(b)) return null;
       return cond.op === "gt" ? a > b : cond.op === "gte" ? a >= b : cond.op === "lt" ? a < b : a <= b;
     }
   }

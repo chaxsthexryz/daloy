@@ -49,19 +49,19 @@ export const qa04: Scenario = {
       name: "an empty order ID alone is refused at the boundary",
       payload: { order_id: "", amount: 500 },
       want: REJECTED,
-      gap: { phase: "P2", today: ["check_id", "invalid"], why: "test-run payloads skip required-field checks; only the workflow's own guard catches it" },
+      rejects: ["order_id: is required"],
     },
     {
       name: "a negative amount alone is refused at the boundary",
       payload: { order_id: "ORD-5", amount: -10 },
       want: REJECTED,
-      gap: { phase: "P2", today: ["check_id", "check_amount", "invalid"], why: "number fields have no minimum and test runs skip validation" },
+      rejects: ["amount: must be at least 0.01"],
     },
     {
       name: "an empty order ID with a negative amount is refused at the boundary",
       payload: { order_id: "", amount: -10 },
       want: REJECTED,
-      gap: { phase: "P2", today: ["check_id", "invalid"], why: "test-run payloads skip field validation" },
+      rejects: ["order_id: is required", "amount: must be at least 0.01"],
     },
     {
       name: "the tester picks rejected and the rejection notice goes",

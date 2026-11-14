@@ -22,6 +22,8 @@ export type RunCase = {
   /** Test-run options that later phases add (P3). Today's API drops unknown keys, so these change nothing yet. */
   options?: { choices?: Record<string, unknown>; mode?: "mock" | "ai" | "live" };
   want: Outcome;
+  /** The exact field errors a refused payload must get, so an unrelated 400 never counts as refused. */
+  rejects?: string[];
   gap?: { phase: Phase; today: Outcome; why: string };
 };
 
