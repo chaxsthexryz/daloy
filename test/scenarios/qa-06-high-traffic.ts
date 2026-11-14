@@ -1,7 +1,7 @@
 import { approval, condition, edge, email, type Scenario } from "./types";
 
 // QA-06 High-Traffic E-commerce Automation, v2 shape: classify the event, high-value refunds need approval and then POST.
-// `fields` and `eventKey` on the webhook are the desired settings; today's schema drops both (P2, P4).
+// The webhook checks its fields (P2) and treats a repeated event_id as the same event (P4).
 const webhook = {
   type: "webhook",
   config: {
@@ -51,8 +51,12 @@ export const qa06: Scenario = {
 };
 
 /** A side-effect-free intake graph for volume and deduplication checks, so live runs need no model or network. */
-export const intake = {
-  trigger: webhook,
+const intakeSteps = {
   steps: [condition("high", "{{trigger.amount}}", "gte", 10_000), condition("big", "{{trigger.amount}}", "gte", 100_000), condition("small", "{{trigger.amount}}", "lt", 100)],
   edges: [edge("high", "big", "true"), edge("high", "small", "false")],
 };
+export const intake = { trigger: webhook, ...intakeSteps };
+/** The same graph without an event key, so only a caller's Idempotency-Key header can mark a repeat. */
+export const intakeNoKey = { trigger: { type: "webhook", config: { fields: webhook.config.fields } }, ...intakeSteps };
+/** An event key with no fields to require it, so a missing event_id reaches the key check. */
+export const intakeKeyOnly = { trigger: { type: "webhook", config: { eventKey: "{{trigger.event_id}}" } }, ...intakeSteps };

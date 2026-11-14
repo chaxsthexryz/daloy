@@ -138,6 +138,22 @@ export const runs = pgTable("runs", {
   finishedAt: ts("finished_at"),
 });
 
+/**
+ * One row per business event a workflow has started a run for (decision 0029). The key comes from the trigger's
+ * eventKey or the caller's Idempotency-Key. Test runs have their own scope, so a test never swallows a real event.
+ */
+export const runKeys = pgTable(
+  "run_keys",
+  {
+    workflowId: uuid("workflow_id").notNull().references(() => workflows.id, { onDelete: "cascade" }),
+    test: boolean("test").notNull(),
+    key: text("key").notNull(),
+    runId: uuid("run_id").notNull().references(() => runs.id, { onDelete: "cascade" }),
+    createdAt: createdAt(),
+  },
+  (t) => [primaryKey({ columns: [t.workflowId, t.test, t.key] })],
+);
+
 /** One row per step attempt. The unique key is the idempotency key, so an attempt can never be recorded twice. */
 export const stepRuns = pgTable(
   "step_runs",

@@ -20,7 +20,7 @@ const SYSTEM = [
   "A definition is {trigger, steps, edges}.",
   'trigger is one of: {"type":"manual","config":{}}, {"type":"webhook","config":{}}, {"type":"schedule","config":{"cron":"0 9 * * 1"}},',
   '{"type":"form","config":{"fields":[{"name":"email","label":"Email","type":"email","required":true}]}} (field types: text, email, number, textarea).',
-  'A number field can set "min", "max" and "integer": true, e.g. {"name":"amount","label":"Amount","type":"number","required":true,"min":0.01}. Put limits on the field instead of adding condition steps that check them; a submission outside the limits is refused before the workflow runs. A webhook trigger can list "fields" the same way to check incoming events.',
+  'A number field can set "min", "max" and "integer": true, e.g. {"name":"amount","label":"Amount","type":"number","required":true,"min":0.01}. Put limits on the field instead of adding condition steps that check them; a submission outside the limits is refused before the workflow runs. A webhook trigger can list "fields" the same way to check incoming events, and set "eventKey" (such as "{{trigger.event_id}}") so a repeated event starts no second run.',
   'A condition comparing with gt, gte, lt or lte takes its "invalid" branch when a side is missing or not a number. Give it an "invalid" edge when bad data needs its own handling (such as manual review); without one, the run fails with a message.',
   'steps is a list of {"id","type","config"}. ids use a-z, 0-9 and _. The config of each step type follows this JSON Schema:',
   JSON.stringify(stepJsonSchemas()),

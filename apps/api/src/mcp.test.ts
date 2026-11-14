@@ -190,6 +190,29 @@ describe("MCP endpoint", () => {
     expect(row).toMatchObject({ reference, subject: "Broken chair" });
     const [run] = await db.select().from(runs).where(eq(runs.id, runId));
     expect(run!.triggerPayload).toMatchObject({ reference });
+
+    // A retried call with the same idempotencyKey gets the same request back and starts nothing.
+    const args = { name: "Rosa", email: "rosa@example.com", summary: "Lamp", idempotencyKey: "agent-call-7" };
+    const first = (await callTool(client, wf.body.slug, args)).structuredContent as { runId: string; reference: string };
+    const again = (await callTool(client, wf.body.slug, args)).structuredContent as { runId: string; reference: string; duplicate?: boolean };
+    expect(again).toMatchObject({ runId: first.runId, reference: first.reference, duplicate: true });
+    expect(await db.select().from(requests).where(eq(requests.reference, first.reference))).toHaveLength(1);
+    await client.close();
+  });
+
+  it("starts one run for repeated calls with the same idempotencyKey, and keeps the key out of the payload", async () => {
+    const { agent, token } = await owner();
+    const wf = await workflow(agent, formTrigger);
+    const client = await connect(token);
+    const args = { email: "ana@example.com", message: "Hi", idempotencyKey: "agent-call-1" };
+    const a = (await callTool(client, wf.slug, args)).structuredContent as { runId: string; duplicate?: boolean };
+    const b = (await callTool(client, wf.slug, args)).structuredContent as { runId: string; duplicate?: boolean };
+    expect(a.duplicate).toBeUndefined();
+    expect(b).toMatchObject({ runId: a.runId, duplicate: true });
+    const [run] = await db.select().from(runs).where(eq(runs.id, a.runId));
+    expect(run!.triggerPayload).toEqual({ email: "ana@example.com", message: "Hi" });
+    const c = (await callTool(client, wf.slug, { email: "ana@example.com", message: "Hi" })).structuredContent as { runId: string };
+    expect(c.runId).not.toBe(a.runId);
     await client.close();
   });
 
