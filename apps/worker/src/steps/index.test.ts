@@ -1,7 +1,7 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { approvals, encryptSecret, hashToken, joinWorkspace, recordDecision, runs, saveAiSettings, secrets, stepRuns, users, workflows, workflowVersions, type Db } from "@daloy/db";
+import { approvals, bookings, encryptSecret, hashToken, joinWorkspace, recordDecision, resources, runs, saveAiSettings, secrets, stepRuns, users, workflows, workflowVersions, type Db } from "@daloy/db";
 import type { Step } from "@daloy/engine";
 import { eq } from "drizzle-orm";
 import nodemailer, { type SendMailOptions, type Transporter } from "nodemailer";
@@ -228,6 +228,59 @@ describe("step executor", () => {
         expect(err.message, at).toBe(`"until" needs a date and time with an offset, like 2030-01-20T14:00:00+08:00, but got ${JSON.stringify(at)}`);
         expect(err.retryable).toBe(false);
       }
+    });
+  });
+
+  describe("booking step", () => {
+    const at = { name: "at", label: "At", type: "datetime" as const, required: true, timezone: "Asia/Manila", slotMinutes: 60 };
+    const trigger = { type: "form" as const, config: { fields: [at, { name: "who", label: "Who", type: "resource" as const, required: true }] } };
+    const book: Step = { id: "book", type: "booking", config: { action: "create", resource: "{{trigger.who}}", start: "{{trigger.at}}", minutes: 60 } };
+    const year = new Date().getUTCFullYear() + 2;
+    async function setup(test = false) {
+      const [wf] = await db.insert(workflows).values({ userId, name: "Spa", slug: `spa-${randomUUID().slice(0, 8)}` }).returning();
+      const [v] = await db.insert(workflowVersions).values({ workflowId: wf!.id, version: 1, definition: {} }).returning();
+      const [r] = await db.insert(runs).values({ workflowVersionId: v!.id, test }).returning();
+      const [res] = await db.insert(resources).values({ userId, name: `Ana ${randomUUID().slice(0, 4)}` }).returning();
+      const exec = (payload: object, extra: { choice?: { booking: "taken" | "not_found" }; mock?: boolean } = {}) =>
+        executor().execute({ runId: r!.id, stepRunId: NO_STEP_RUN, userId, step: book, attempt: 1, idempotencyKey: `${r!.id}:book`, ctx: { trigger: payload, steps: {} }, booking: { test, workflowId: wf!.id, trigger }, ...extra });
+      return { runId: r!.id, resource: { id: res!.id, name: res!.name }, exec };
+    }
+
+    it("books the resource from a resource field and shows its id in the input", async () => {
+      const s = await setup();
+      const out = await s.exec({ who: s.resource, at: `${year}-01-20T14:00:00+08:00` });
+      expect(out).toMatchObject({ branch: "done", output: { resource: s.resource, start: `${year}-01-20T14:00:00+08:00`, version: 1 } });
+      expect(out.input).toEqual({ action: "create", resource: s.resource.id, start: `${year}-01-20T14:00:00+08:00`, minutes: 60 });
+    });
+
+    it("checks the start against the field's slot and future rules again when booking", async () => {
+      const s = await setup();
+      for (const [value, problem] of [
+        [`${year}-01-20T14:30:00+08:00`, "must start on a 60-minute slot, counted from midnight in Asia/Manila"],
+        ["2020-01-20T14:00:00+08:00", "must be in the future"],
+        ["soon", "must be a date and time like 2027-01-20T14:00"],
+      ]) {
+        const err = (await s.exec({ who: s.resource, at: value }).then(() => undefined, (e: unknown) => e)) as Error & { retryable: boolean };
+        expect(err.message, value).toBe(`"start" ${problem}, but got ${JSON.stringify(value)}`);
+        expect(err.retryable).toBe(false);
+      }
+      expect(await db.select().from(bookings).where(eq(bookings.resourceId, s.resource.id))).toEqual([]);
+    });
+
+    it("answers not_found for a resource that is not an id of this workspace", async () => {
+      const s = await setup();
+      expect((await s.exec({ who: "Ana", at: `${year}-01-20T14:00` })).branch).toBe("not_found");
+      expect((await s.exec({ who: { id: randomUUID(), name: "Ana" }, at: `${year}-01-20T15:00` }, {})).branch).toBe("not_found");
+    });
+
+    it("makes a test booking in a mocked run, and a chosen outcome books nothing", async () => {
+      const s = await setup(true);
+      const chosen = await s.exec({ who: s.resource, at: `${year}-01-20T14:00` }, { choice: { booking: "taken" }, mock: true });
+      expect(chosen).toMatchObject({ branch: "taken", output: { mocked: true } });
+      expect(await db.select().from(bookings).where(eq(bookings.resourceId, s.resource.id))).toEqual([]);
+      const made = await s.exec({ who: s.resource, at: `${year}-01-20T14:00` }, { mock: true });
+      expect(String((made.output as { reference: string }).reference)).toMatch(/^TEST-/);
+      expect((await db.select().from(bookings).where(eq(bookings.resourceId, s.resource.id)))[0]).toMatchObject({ test: true });
     });
   });
 

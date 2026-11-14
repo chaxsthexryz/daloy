@@ -13,6 +13,8 @@ export const testChoiceSchema = z.union([
   z.strictObject({ decision: z.enum(["approved", "rejected", "timeout"]) }),
   // "unknown" fails the first attempt as if the answer was lost, so the run waits for review (decision 0030).
   z.strictObject({ fail: z.enum(["retryable", "permanent", "unknown"]) }),
+  // A booking step's other branches, without touching any booking (decision 0032).
+  z.strictObject({ booking: z.enum(["taken", "not_found"]) }),
 ]);
 export type TestChoice = z.infer<typeof testChoiceSchema>;
 export const testChoicesSchema = z.record(z.string().max(64), testChoiceSchema).refine((c) => Object.keys(c).length <= 100, "at most 100 choices");
@@ -32,6 +34,7 @@ export function choiceProblems(def: WorkflowDefinition, choices: Record<string, 
       return c.label in (step.config.labels ?? {}) ? [] : [`${at}: "${c.label}" is not a label of this classify step`];
     }
     if ("decision" in c) return step.type === "approval" ? [] : [`${at}: only an approval step takes a decision`];
+    if ("booking" in c) return step.type === "booking" ? [] : [`${at}: only a booking step takes a booking outcome`];
     return OUTSIDE.has(step.type) ? [] : [`${at}: only a step that reaches outside Daloy can be set to fail`];
   });
 }

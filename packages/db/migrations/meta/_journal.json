@@ -134,6 +134,13 @@
       "when": 1794676159050,
       "tag": "0018_resources",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1794679479441,
+      "tag": "0019_bookings",
+      "breakpoints": true
     }
   ]
 }

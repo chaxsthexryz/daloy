@@ -81,6 +81,31 @@ export const teamsConfigSchema = slackConfigSchema;
 export type SheetsConfig = z.infer<typeof sheetsConfigSchema>;
 export type SlackConfig = z.infer<typeof slackConfigSchema>;
 
+// A booking for a workspace resource (decision 0032). create needs resource, start and minutes; reschedule needs the
+// booking reference and start (minutes optional, else kept); cancel needs the reference. start must be
+// {{trigger.<datetime field>}} so the field's zone and slot rules apply to every booking.
+export const bookingConfigSchema = z
+  .object({
+    action: z.enum(["create", "reschedule", "cancel"]),
+    resource: template(500).min(1).optional().describe("The resource to book: a resource field such as {{trigger.therapist}}, or a resource id."),
+    booking: template(500).min(1).optional().describe("The booking reference to change, such as {{trigger.reference}}."),
+    start: template(500).min(1).optional().describe("A datetime field of the trigger, such as {{trigger.appointment_at}}."),
+    minutes: z.int().min(1).max(1440).optional(),
+  })
+  .superRefine((c, ctx) => {
+    const issue = (path: string, message: string) => ctx.addIssue({ code: "custom", path: [path], message });
+    if (c.action === "create") {
+      if (c.resource === undefined || c.start === undefined || c.minutes === undefined) issue(c.resource === undefined ? "resource" : c.start === undefined ? "start" : "minutes", "a create needs resource, start and minutes");
+      if (c.booking !== undefined) issue("booking", "a create makes a new booking, so it takes no booking reference");
+    } else {
+      if (c.resource !== undefined) issue("resource", "only a create picks the resource; a booking keeps its resource");
+      if (c.action === "reschedule" && (c.booking === undefined || c.start === undefined)) issue(c.booking === undefined ? "booking" : "start", "a reschedule needs booking and start");
+      if (c.action === "cancel" && c.booking === undefined) issue("booking", "a cancel needs the booking reference");
+      if (c.action === "cancel" && (c.start !== undefined || c.minutes !== undefined)) issue(c.start !== undefined ? "start" : "minutes", "a cancel takes only the booking reference");
+    }
+  });
+export type BookingConfig = z.infer<typeof bookingConfigSchema>;
+
 const stepSchema = z.discriminatedUnion("type", [
   z.object({ id: stepId, type: z.literal("condition"), config: z.object({ condition: conditionSchema }) }),
   z.object({ id: stepId, type: z.literal("http"), config: httpConfigSchema }),
@@ -92,6 +117,7 @@ const stepSchema = z.discriminatedUnion("type", [
   z.object({ id: stepId, type: z.literal("slack"), config: slackConfigSchema }),
   z.object({ id: stepId, type: z.literal("outlook"), config: outlookConfigSchema }),
   z.object({ id: stepId, type: z.literal("teams"), config: teamsConfigSchema }),
+  z.object({ id: stepId, type: z.literal("booking"), config: bookingConfigSchema }),
 ]);
 export type Step = z.infer<typeof stepSchema>;
 
@@ -100,6 +126,7 @@ export type Step = z.infer<typeof stepSchema>;
 export const BRANCHES: Partial<Record<Step["type"], readonly string[]>> = {
   condition: ["true", "false", "invalid"],
   approval: ["approved", "rejected", "timeout"],
+  booking: ["done", "taken", "not_found"],
 };
 
 const edgeSchema = z.object({ from: stepId, to: stepId, on: z.string().max(32).optional() });
@@ -144,6 +171,13 @@ const triggerSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("form"), config: z.object({ fields: fieldList }) }),
 ]);
 export type Trigger = z.infer<typeof triggerSchema>;
+
+const TRIGGER_FIELD = /^\{\{\s*trigger\.([a-z][a-z0-9_]*)\s*\}\}$/;
+/** The datetime field a booking step's start reads, or undefined when start is anything else (decision 0032). */
+export function bookingStartField(trigger: Trigger, config: Pick<BookingConfig, "start">): FormField | undefined {
+  const name = config.start === undefined ? undefined : TRIGGER_FIELD.exec(config.start)?.[1];
+  return triggerFields(trigger)?.find((f) => f.name === name && f.type === "datetime");
+}
 
 /** The fields a trigger's payload is checked against: a form's, or a webhook's when it lists any. */
 export const triggerFields = (t: Trigger): FormField[] | undefined => (t.type === "form" || t.type === "webhook" ? t.config.fields : undefined);
@@ -231,6 +265,11 @@ export const definitionSchema = z
     for (const s of def.steps) {
       if (byId.has(s.id)) fail(`duplicate step id "${s.id}"`);
       byId.set(s.id, s);
+      if (s.type !== "booking") continue;
+      if (s.config.start !== undefined && !bookingStartField(def.trigger, s.config)) fail(`booking step "${s.id}" needs start to be {{trigger.<field>}} for a datetime field of the trigger`);
+      // Changing a booking is for staff (the Run button), MCP (its own tools) and signed webhooks, never a public form.
+      const signed = def.trigger.type === "manual" || (def.trigger.type === "webhook" && def.trigger.config.hmacSecret !== undefined);
+      if (s.config.action !== "create" && !signed) fail(`booking step "${s.id}" can reschedule or cancel only from a manual trigger or a webhook with a signing secret`);
     }
 
     for (const e of def.edges) {

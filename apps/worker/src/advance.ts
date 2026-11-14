@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { approvals, claimTimeout, runs, stepRuns, workflows, workflowVersions, type Db } from "@daloy/db";
+import { approvals, bookingSuperseded, claimTimeout, runs, stepRuns, workflows, workflowVersions, type Db } from "@daloy/db";
 import {
   assertTransition,
   decideRetry,
@@ -15,6 +15,7 @@ import {
   type RunState,
   type TestChoice,
   type Step,
+  type Trigger,
   type StepState,
 } from "@daloy/engine";
 import { and, asc, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
@@ -29,7 +30,9 @@ export type StepResult = { input?: unknown; output?: unknown; branch?: string; i
  * request and calls the function it resolves to once the request is on its way (decision 0030).
  */
 export interface StepExecutor {
-  execute(input: { runId: string; stepRunId: string; userId: string; step: Step; attempt: number; idempotencyKey: string; ctx: ExpressionContext; mock?: boolean; aiLive?: boolean; choice?: TestChoice; claimSend?: () => Promise<() => void> }): Promise<StepResult>;
+  // booking: what a booking step needs about its run: the test scope, the workflow and the trigger whose datetime field
+  // sets the rules for start (decision 0032).
+  execute(input: { runId: string; stepRunId: string; userId: string; step: Step; attempt: number; idempotencyKey: string; ctx: ExpressionContext; mock?: boolean; aiLive?: boolean; choice?: TestChoice; claimSend?: () => Promise<() => void>; booking?: { test: boolean; workflowId: string; trigger: Trigger } }): Promise<StepResult>;
 }
 
 export type AdvanceDeps = {
@@ -63,6 +66,9 @@ async function moveStep(w: Writer, id: string, from: StepState, to: StepState, e
     .returning({ id: stepRuns.id });
   if (moved.length !== 1) throw new Error(`step run ${id} was not ${from}${claimId ? " under this worker's claim" : ""}`);
 }
+
+/** Why a run linked to a booking stopped: staff, MCP or another run changed the booking after this run's version. */
+const superseded = (stepId: string) => `The booking was rescheduled or cancelled, so this run stopped before step ${stepId}.`;
 
 /** A send that must not be repeated without a person deciding: an email, or an HTTP call that is not idempotent. */
 const unsafeToRepeat = (step: Step) => step.type === "email" || (step.type === "http" && !isIdempotent(step.config));
@@ -103,7 +109,7 @@ async function runNext(deps: AdvanceDeps, run: Run): Promise<void> {
   if (run.nextAttemptAt && run.nextAttemptAt > new Date()) return;
 
   const [version] = await db
-    .select({ definition: workflowVersions.definition, userId: workflows.userId })
+    .select({ definition: workflowVersions.definition, userId: workflows.userId, workflowId: workflows.id })
     .from(workflowVersions)
     .innerJoin(workflows, eq(workflows.id, workflowVersions.workflowId))
     .where(eq(workflowVersions.id, run.workflowVersionId));
@@ -162,6 +168,15 @@ async function runNext(deps: AdvanceDeps, run: Run): Promise<void> {
     }
   }
 
+  // A run of an older booking version stops before any attempt: a new step, a retry, a resumed wait, or an operator's
+  // Send again or Retry, so nothing goes out for a time that has changed (decision 0032).
+  if (await bookingSuperseded(db, run)) {
+    return db.transaction(async (tx) => {
+      if (stepRunId) await moveStep(tx, stepRunId, "running", "failed", { error: superseded(step.id), outcome: last?.dispatchedAt ? "unknown" : "not_sent", finishedAt: new Date() });
+      await moveRun(tx, run.id, "running", "cancelled", { error: superseded(step.id), finishedAt: new Date() });
+    });
+  }
+
   // Each attempt is claimed, so only this worker can finish it.
   const claimId = randomUUID();
   if (stepRunId) {
@@ -201,6 +216,9 @@ async function runNext(deps: AdvanceDeps, run: Run): Promise<void> {
           await db.transaction(async (tx) => {
             const [held] = await tx.select({ id: stepRuns.id }).from(stepRuns).where(mine).for("update");
             if (!held) throw lost();
+            // Read under a share lock held until the request is on its way: a booking change either committed before
+            // this check (nothing is sent) or waits until the send has started (decision 0032).
+            if (await bookingSuperseded(tx, run, true)) throw new StepError(superseded(step.id), false, { outcome: "not_sent" });
             await new Promise<void>((released) => ready(released));
           });
         })
@@ -214,7 +232,20 @@ async function runNext(deps: AdvanceDeps, run: Run): Promise<void> {
 
   let result: StepResult;
   try {
-    result = await deps.executor.execute({ runId: run.id, stepRunId, userId: version!.userId, step, attempt, idempotencyKey: idempotencyKey(run.id, step.id), ctx, mock, aiLive: run.aiLive, choice: (run.testChoices as Record<string, TestChoice> | null)?.[step.id], claimSend: !mock && unsafeToRepeat(step) ? claimSend : undefined });
+    result = await deps.executor.execute({
+      runId: run.id,
+      stepRunId,
+      userId: version!.userId,
+      step,
+      attempt,
+      idempotencyKey: idempotencyKey(run.id, step.id),
+      ctx,
+      mock,
+      aiLive: run.aiLive,
+      choice: (run.testChoices as Record<string, TestChoice> | null)?.[step.id],
+      claimSend: !mock && unsafeToRepeat(step) ? claimSend : undefined,
+      booking: step.type === "booking" ? { test: run.test, workflowId: version!.workflowId, trigger: def.trigger } : undefined,
+    });
     // A comparison on a missing or non-number value has nowhere to go without an "invalid" edge, so it fails here
     // and run history says why, instead of quietly taking "false" (decision 0027). Retrying would see the same data.
     if (step.type === "condition" && result.branch === "invalid" && !def.edges.some((e) => e.from === step.id && e.on === "invalid")) {
@@ -227,6 +258,14 @@ async function runNext(deps: AdvanceDeps, run: Run): Promise<void> {
       result = { ...result, output: { ...(result.output as object), skipped: "The wake-up time had passed, so the steps after this delay did not run." } };
     }
   } catch (err) {
+    // The booking changed during this attempt: stop instead of retrying or asking for review.
+    if (await bookingSuperseded(db, run)) {
+      const e = err instanceof StepError ? err : undefined;
+      return db.transaction(async (tx) => {
+        await moveStep(tx, stepRunId, "running", "failed", { input: e?.input ?? null, error: err instanceof Error ? err.message : String(err), outcome: e?.outcome ?? null, finishedAt: new Date() }, claimId);
+        await moveRun(tx, run.id, "running", "cancelled", { error: superseded(step.id), finishedAt: new Date() });
+      });
+    }
     const decision = decideRetry(err, attempt, deps.retryPolicy ?? DEFAULT_RETRY_POLICY);
     const message = err instanceof Error ? err.message : String(err);
     // A faked test run retries within a second, like its delays, so the builder shows the outcome straight away.
