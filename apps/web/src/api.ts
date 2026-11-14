@@ -38,6 +38,10 @@ export type StepRun = {
   branch: string | null;
   inputTokens: number | null;
   outputTokens: number | null;
+  // What a failed outside call may have done, and who answered a parked or failed attempt (decision 0030).
+  outcome: string | null;
+  resolvedBy: string | null;
+  resolvedAt: string | null;
   createdAt: string;
   finishedAt: string | null;
 };
@@ -50,6 +54,8 @@ export type RunSummary = {
   live: boolean;
   error: string | null;
   triggerPayload: unknown;
+  // The run, or one of its Sheets or Slack deliveries, waits for a person.
+  needsReview: boolean;
   createdAt: string;
   finishedAt: string | null;
 };

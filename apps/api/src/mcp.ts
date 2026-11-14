@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { apiTokens, createKeyedRun, runs, stepRuns, triggers, workflows, workflowVersions, type Db } from "@daloy/db";
+import { apiTokens, createKeyedRun, resolveRun, runs, stepRuns, triggers, users, workflows, workflowVersions, type Db } from "@daloy/db";
 import { payloadSchema, type FormField } from "@daloy/engine";
 import { toNodeHandler } from "@modelcontextprotocol/node";
 import { createMcpHandler, McpServer, type AuthInfo, type CallToolResult } from "@modelcontextprotocol/server";
@@ -112,7 +112,7 @@ export class McpController {
       "get_run_status",
       {
         title: "Get run status",
-        description: "Returns the state of a run: pending, running, waiting, waiting_approval, succeeded, failed or cancelled.",
+        description: "Returns the state of a run: pending, running, waiting, waiting_approval, needs_review, succeeded, failed or cancelled.",
         inputSchema: z.object({ runId: z.uuid() }),
       },
       async ({ runId }) => {
@@ -131,6 +131,22 @@ export class McpController {
           .orderBy(desc(stepRuns.createdAt), desc(stepRuns.attempt))
           .limit(1);
         return result({ runId, status: runStatus(run.state, last, run.definition), error: run.error, finishedAt: run.finishedAt?.toISOString() ?? null });
+      },
+    );
+    server.registerTool(
+      "resolve_run",
+      {
+        title: "Resolve a run",
+        description:
+          'Answers a run in needs_review, whose last call may or may not have reached the receiver: "delivered" (it went through; the run continues), "again" (send it once more with the same Idempotency-Key; a receiver that does not deduplicate may get it twice) or "stop" (cancel the run). "retry" gives a failed run one more attempt of its failed step.',
+        inputSchema: z.object({ runId: z.uuid(), action: z.enum(["delivered", "again", "stop", "retry"]) }),
+      },
+      async ({ runId, action }) => {
+        const [me] = await this.db.select({ email: users.email }).from(users).where(eq(users.id, userId));
+        // One guarded update: of two callers acting at once only one acts. Someone else's run looks like a missing one.
+        if (!(await resolveRun(this.db, userId, runId, action, `${me?.email ?? userId} (MCP)`))) return failure("run not found, or not in a state this action applies to");
+        if (action !== "stop") await enqueueRun(this.boss, runId);
+        return result({ runId, action, status: action === "stop" ? "cancelled" : "running" });
       },
     );
     return server;

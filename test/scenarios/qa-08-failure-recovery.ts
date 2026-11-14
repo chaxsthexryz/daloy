@@ -62,14 +62,20 @@ export const qa08: Scenario = {
       options: { choices: { ask: { decision: "rejected" } } },
       want: ["check", "ask", "reject_notice"],
     },
+    {
+      name: "the tester sets the POST to an unknown outcome and the run waits for review",
+      payload: { item: "Printer", amount: 8_000 },
+      options: { choices: { post: { fail: "unknown" } } },
+      want: ["check", "ask", "post:review"],
+    },
   ],
 };
 
 /** A live POST to the harness's local receiver, then an email, for retry and recovery checks. */
-export const liveOrder = (url: string) => ({
+export const liveOrder = (url: string, idempotent?: boolean) => ({
   trigger: { type: "manual", config: {} },
   steps: [
-    { id: "post", type: "http", config: { method: "POST", url, headers: { "Content-Type": "application/json" }, body: '{"order": "{{trigger.order}}"}' } },
+    { id: "post", type: "http", config: { method: "POST", url, headers: { "Content-Type": "application/json" }, body: '{"order": "{{trigger.order}}"}', ...(idempotent === undefined ? {} : { idempotent }) } },
     email("notify", "ops@example.com", "Order placed"),
   ],
   edges: [edge("post", "notify")],

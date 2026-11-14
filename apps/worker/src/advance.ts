@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { approvals, claimTimeout, runs, stepRuns, workflows, workflowVersions, type Db } from "@daloy/db";
 import {
   assertTransition,
@@ -6,6 +7,7 @@ import {
   definitionSchema,
   entryStep,
   idempotencyKey,
+  isIdempotent,
   nextStep,
   StepError,
   type ExpressionContext,
@@ -47,11 +49,19 @@ async function moveRun(w: Writer, id: string, from: RunState, to: RunState, extr
   if (moved.length !== 1) throw new Error(`run ${id} was not ${from}`);
 }
 
-async function moveStep(w: Writer, id: string, from: StepState, to: StepState, extra: Partial<typeof stepRuns.$inferSelect> = {}) {
+// claimId fences an attempt's result: a worker that lost the run to another one cannot write over it (decision 0030).
+async function moveStep(w: Writer, id: string, from: StepState, to: StepState, extra: Partial<typeof stepRuns.$inferSelect> = {}, claimId?: string) {
   assertTransition("step", from, to);
-  const moved = await w.update(stepRuns).set({ ...extra, state: to }).where(and(eq(stepRuns.id, id), eq(stepRuns.state, from))).returning({ id: stepRuns.id });
-  if (moved.length !== 1) throw new Error(`step run ${id} was not ${from}`);
+  const moved = await w
+    .update(stepRuns)
+    .set({ ...extra, state: to })
+    .where(and(eq(stepRuns.id, id), eq(stepRuns.state, from), claimId ? eq(stepRuns.claimId, claimId) : undefined))
+    .returning({ id: stepRuns.id });
+  if (moved.length !== 1) throw new Error(`step run ${id} was not ${from}${claimId ? " under this worker's claim" : ""}`);
 }
+
+/** A send that must not be repeated without a person deciding: an email, or an HTTP call that is not idempotent. */
+const unsafeToRepeat = (step: Step) => step.type === "email" || (step.type === "http" && !isIdempotent(step.config));
 
 /**
  * Does the next piece of work for one run (one step attempt, or finishing the run), then enqueues the run again.
@@ -129,6 +139,7 @@ async function runNext(deps: AdvanceDeps, run: Run): Promise<void> {
   let step: Step;
   let attempt = 1;
   let stepRunId: string | undefined;
+  const mock = run.test && !run.live;
   if (!last) {
     step = entryStep(def);
   } else if (last.state === "succeeded") {
@@ -140,15 +151,29 @@ async function runNext(deps: AdvanceDeps, run: Run): Promise<void> {
     if (last.state === "failed") {
       // The run is still running, so this failure was scheduled for a retry.
       attempt = last.attempt + 1;
+    } else if (last.dispatchedAt) {
+      // A worker stopped during a send that is not safe to repeat. It may have gone through, so a person decides.
+      return db.transaction(async (tx) => {
+        await moveStep(tx, last.id, "running", "failed", { outcome: "unknown", error: "The worker stopped while sending, so this may have gone through. Check with the receiver, then choose.", finishedAt: new Date() });
+        await moveRun(tx, run.id, "running", "needs_review", { error: `step ${step.id}: the worker stopped while sending` });
+      });
     } else {
-      // A worker died mid-attempt. Run the same attempt again: same row, same idempotency key.
+      // A worker died mid-attempt before any unsafe send. Run the same attempt again: same row, same key, new claim.
       attempt = last.attempt;
       stepRunId = last.id;
     }
   }
 
-  // Created straight in "running": the row only exists once a worker has started the attempt.
-  stepRunId ??= (await db.insert(stepRuns).values({ runId: run.id, stepId: step.id, attempt, state: "running" }).returning({ id: stepRuns.id }))[0]!.id;
+  // Each attempt is claimed, so only this worker can finish it. The dispatch mark is written before the step runs,
+  // so a takeover finds it even if this worker dies mid-send (a crash before the send parks too: the safe side).
+  const claimId = randomUUID();
+  const dispatchedAt = !mock && unsafeToRepeat(step) ? new Date() : null;
+  if (stepRunId) {
+    await db.update(stepRuns).set({ claimId, dispatchedAt }).where(and(eq(stepRuns.id, stepRunId), eq(stepRuns.state, "running")));
+  } else {
+    // Created straight in "running": the row only exists once a worker has started the attempt.
+    stepRunId = (await db.insert(stepRuns).values({ runId: run.id, stepId: step.id, attempt, state: "running", claimId, dispatchedAt }).returning({ id: stepRuns.id }))[0]!.id;
+  }
 
   const ctx: ExpressionContext = {
     trigger: run.triggerPayload,
@@ -157,7 +182,7 @@ async function runNext(deps: AdvanceDeps, run: Run): Promise<void> {
 
   let result: StepResult;
   try {
-    result = await deps.executor.execute({ runId: run.id, stepRunId, userId: version!.userId, step, attempt, idempotencyKey: idempotencyKey(run.id, step.id, attempt), ctx, mock: run.test && !run.live, aiLive: run.aiLive, choice: (run.testChoices as Record<string, TestChoice> | null)?.[step.id] });
+    result = await deps.executor.execute({ runId: run.id, stepRunId, userId: version!.userId, step, attempt, idempotencyKey: idempotencyKey(run.id, step.id), ctx, mock, aiLive: run.aiLive, choice: (run.testChoices as Record<string, TestChoice> | null)?.[step.id] });
     // A comparison on a missing or non-number value has nowhere to go without an "invalid" edge, so it fails here
     // and run history says why, instead of quietly taking "false" (decision 0027). Retrying would see the same data.
     if (step.type === "condition" && result.branch === "invalid" && !def.edges.some((e) => e.from === step.id && e.on === "invalid")) {
@@ -168,12 +193,14 @@ async function runNext(deps: AdvanceDeps, run: Run): Promise<void> {
     const decision = decideRetry(err, attempt, deps.retryPolicy ?? DEFAULT_RETRY_POLICY);
     const message = err instanceof Error ? err.message : String(err);
     // A faked test run retries within a second, like its delays, so the builder shows the outcome straight away.
-    const retryAt = decision.kind === "retry" ? new Date(Date.now() + (run.test && !run.live ? Math.min(decision.delayMs, 1000) : decision.delayMs)) : undefined;
+    // It sends nothing, so no receiver's Retry-After applies; a live run waits the full delay.
+    const retryAt = decision.kind === "retry" ? new Date(Date.now() + (mock ? Math.min(decision.delayMs, 1000) : decision.delayMs)) : undefined;
     await db.transaction(async (tx) => {
-      const input = err instanceof StepError ? err.input : null;
-      const usage = err instanceof StepError ? err.usage : undefined;
-      await moveStep(tx, stepRunId, "running", "failed", { input, inputTokens: usage?.inputTokens ?? null, outputTokens: usage?.outputTokens ?? null, error: message, deadLetter: decision.kind === "dead_letter", finishedAt: new Date() });
+      const e = err instanceof StepError ? err : undefined;
+      await moveStep(tx, stepRunId, "running", "failed", { input: e?.input ?? null, inputTokens: e?.usage?.inputTokens ?? null, outputTokens: e?.usage?.outputTokens ?? null, error: message, outcome: e?.outcome ?? null, deadLetter: decision.kind === "dead_letter", finishedAt: new Date() }, claimId);
       if (retryAt) await tx.update(runs).set({ nextAttemptAt: retryAt }).where(eq(runs.id, run.id));
+      // It may have gone through and is not safe to repeat: nothing more is sent until a person decides.
+      else if (decision.kind === "review") await moveRun(tx, run.id, "running", "needs_review", { error: `step ${step.id}: ${message}` });
       else await moveRun(tx, run.id, "running", "failed", { error: `step ${step.id}: ${message}`, finishedAt: new Date() });
     });
     if (retryAt) await deps.enqueue(run.id, retryAt);
@@ -191,7 +218,7 @@ async function runNext(deps: AdvanceDeps, run: Run): Promise<void> {
         const [link] = await tx.select({ usedAt: approvals.usedAt }).from(approvals).where(eq(approvals.stepRunId, stepRunId));
         if (link?.usedAt) wakeAt = new Date();
       }
-      await moveStep(tx, stepRunId, "running", "waiting", { input: result.input ?? null, output: result.output ?? null });
+      await moveStep(tx, stepRunId, "running", "waiting", { input: result.input ?? null, output: result.output ?? null }, claimId);
       await moveRun(tx, run.id, "running", "waiting", { nextAttemptAt: wakeAt });
     });
     // An approval can be answered early, and the queue keeps one queued job per run, so a job scheduled for the
@@ -208,6 +235,6 @@ async function runNext(deps: AdvanceDeps, run: Run): Promise<void> {
     inputTokens: result.inputTokens ?? null,
     outputTokens: result.outputTokens ?? null,
     finishedAt: new Date(),
-  });
+  }, claimId);
   await deps.enqueue(run.id);
 }

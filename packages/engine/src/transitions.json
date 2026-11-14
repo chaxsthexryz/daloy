@@ -1,10 +1,11 @@
 {
   "run": {
     "pending": ["running", "cancelled"],
-    "running": ["waiting", "succeeded", "failed", "cancelled"],
+    "running": ["waiting", "needs_review", "succeeded", "failed", "cancelled"],
     "waiting": ["running", "cancelled"],
+    "needs_review": ["running", "cancelled"],
     "succeeded": [],
-    "failed": [],
+    "failed": ["running"],
     "cancelled": []
   },
   "step": {

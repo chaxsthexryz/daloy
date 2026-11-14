@@ -170,12 +170,21 @@ export const stepRuns = pgTable(
     error: text("error"),
     // True when a retryable error used up every attempt. The API lists these as the dead-letter list.
     deadLetter: boolean("dead_letter").notNull().default(false),
+    // What a failed outside call may have done: not_sent, rejected, throttled or unknown (decision 0030).
+    outcome: text("outcome"),
+    // Set by the worker that runs this attempt; it finishes the row only while the claim is still its own.
+    claimId: uuid("claim_id"),
+    // Set before a send that is not safe to repeat. A worker that takes over a row with it set parks the run for review.
+    dispatchedAt: ts("dispatched_at"),
+    // The operator who resolved a parked or failed attempt (It went through, Send again, Stop or Retry), and when.
+    resolvedBy: text("resolved_by"),
+    resolvedAt: ts("resolved_at"),
     inputTokens: integer("input_tokens"),
     outputTokens: integer("output_tokens"),
     createdAt: createdAt(),
     finishedAt: ts("finished_at"),
   },
-  (t) => [unique().on(t.runId, t.stepId, t.attempt)],
+  (t) => [unique().on(t.runId, t.stepId, t.attempt), check("step_runs_outcome", sql`${t.outcome} in ('not_sent', 'rejected', 'throttled', 'unknown')`)],
 );
 
 export const approvals = pgTable("approvals", {

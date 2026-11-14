@@ -1,6 +1,7 @@
-import { and, desc, eq } from "drizzle-orm";
+import { assertTransition } from "@daloy/engine";
+import { and, desc, eq, sql } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
-import { runKeys, runs, workflowVersions } from "./schema";
+import { runKeys, runs, stepRuns, workflows, workflowVersions } from "./schema";
 
 /** pg-boss queue the worker takes runs from. Jobs carry { runId } and use the run id as singletonKey. */
 export const RUN_QUEUE = "advance-run";
@@ -54,4 +55,34 @@ type RunOpts = { test?: boolean; live?: boolean; aiLive?: boolean; testChoices?:
 export async function createRun(db: AnyDb, workflowVersionId: string, triggerPayload: unknown, opts: RunOpts = {}): Promise<string> {
   const [run] = await db.insert(runs).values({ workflowVersionId, triggerPayload, ...opts }).returning({ id: runs.id });
   return run!.id;
+}
+
+/**
+ * An operator's answer to a run in review (decision 0030): "delivered" (It went through), "again" (Send again),
+ * "stop", or "retry" for a failed run. One guarded UPDATE moves the run, so of two people clicking at once only one
+ * acts; the other gets false, like a run of another workspace. The attempt it answers keeps who acted and when.
+ * The caller queues the run unless it stopped.
+ */
+export type RunAction = "delivered" | "again" | "stop" | "retry";
+export async function resolveRun(db: AnyDb, workspaceId: string, runId: string, action: RunAction, actor: string): Promise<boolean> {
+  const from = action === "retry" ? "failed" : "needs_review";
+  const to = action === "stop" ? "cancelled" : "running";
+  assertTransition("run", from, to);
+  const owned = sql`exists (select 1 from ${workflowVersions} join ${workflows} on ${workflows.id} = ${workflowVersions.workflowId} where ${workflowVersions.id} = ${runs.workflowVersionId} and ${workflows.userId} = ${workspaceId})`;
+  return db.transaction(async (tx) => {
+    const moved = await tx
+      .update(runs)
+      .set(to === "cancelled" ? { state: to, finishedAt: new Date() } : { state: to, error: null, finishedAt: null, nextAttemptAt: null })
+      .where(and(eq(runs.id, runId), eq(runs.state, from), owned))
+      .returning({ id: runs.id });
+    if (moved.length === 0) return false;
+    const [last] = await tx.select().from(stepRuns).where(eq(stepRuns.runId, runId)).orderBy(desc(stepRuns.createdAt), desc(stepRuns.attempt)).limit(1);
+    if (!last) return true;
+    await tx.update(stepRuns).set({ resolvedBy: actor, resolvedAt: new Date() }).where(eq(stepRuns.id, last.id));
+    // "again" and "retry" leave the failed attempt as it is: the worker runs the next one, with the same step key.
+    if (action === "delivered") {
+      await tx.insert(stepRuns).values({ runId, stepId: last.stepId, attempt: last.attempt + 1, state: "succeeded", input: last.input, output: { reconciled: "delivered" }, resolvedBy: actor, resolvedAt: new Date(), finishedAt: new Date() });
+    }
+    return true;
+  });
 }

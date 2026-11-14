@@ -31,6 +31,7 @@ const SYSTEM = [
     ". Each branch label and each non-branching step has at most one outgoing edge. No cycles. The first step is the one no edge points to.",
   "A sheets step adds a row to the owner's connected Google Sheet; a slack step posts to their connected Slack channel. An outlook step sends an email (to, subject, text) from their connected Outlook mailbox; a teams step posts text to their connected Teams channel. Keep names, emails and other private details out of slack and teams text.",
   "Text fields can use {{trigger.<field>}} and {{steps.<id>.output.<path>}}. An ai step with task classify outputs {label}, so a condition reads {{steps.<id>.output.label}}.",
+  'An http POST or PATCH is sent once: when its outcome is unknown (a timeout or a 5xx), the run waits for a person instead of resending. Set "idempotent": true only when the request names an API that is safe to call twice with the same request.',
   "Use real-looking placeholders such as you@example.com when the request gives no address. Keep steps to what was asked.",
   "Test runs in Daloy already fake every email, HTTP call, approval and connected app, and the tester can pick AI labels and approval outcomes, so never add dry-run flags, test fields or branches for testing.",
   "",

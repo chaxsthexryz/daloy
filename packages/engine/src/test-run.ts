@@ -11,7 +11,8 @@ export type TestMode = z.infer<typeof testModeSchema>;
 export const testChoiceSchema = z.union([
   z.strictObject({ label: z.string().max(64) }),
   z.strictObject({ decision: z.enum(["approved", "rejected", "timeout"]) }),
-  z.strictObject({ fail: z.enum(["retryable", "permanent"]) }),
+  // "unknown" fails the first attempt as if the answer was lost, so the run waits for review (decision 0030).
+  z.strictObject({ fail: z.enum(["retryable", "permanent", "unknown"]) }),
 ]);
 export type TestChoice = z.infer<typeof testChoiceSchema>;
 export const testChoicesSchema = z.record(z.string().max(64), testChoiceSchema).refine((c) => Object.keys(c).length <= 100, "at most 100 choices");

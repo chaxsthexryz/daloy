@@ -10,6 +10,7 @@ describe("draftPrompt", () => {
     const { system, messages } = draftPrompt({ request: "Thank people who fill my contact form" });
     for (const type of ["http", "email", "condition", "delay", "ai", "approval"]) expect(system).toContain(`"${type}"`);
     expect(system).toContain("{{trigger.");
+    expect(system).toContain('"idempotent": true');
     expect(system).not.toContain("contact form");
     expect(messages).toHaveLength(1);
     expect(messages[0]!.content).toContain("Thank people who fill my contact form");
