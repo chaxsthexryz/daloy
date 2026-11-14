@@ -1,6 +1,6 @@
 import { createHmac, randomInt, randomUUID, timingSafeEqual } from "node:crypto";
-import { businessProfiles, createRun, publishedVersion, readSecret, requests, runs, triggers, workflows, type Db } from "@daloy/db";
-import { OFFICE_REQUEST, parsePayload, PURCHASE_REQUEST, type FormField } from "@daloy/engine";
+import { businessProfiles, createKeyedRun, createRun, publishedVersion, readSecret, requests, runs, triggers, workflows, type Db } from "@daloy/db";
+import { definitionSchema, OFFICE_REQUEST, parsePayload, PURCHASE_REQUEST, type FormField } from "@daloy/engine";
 import {
   BadRequestException,
   Body,
@@ -22,7 +22,7 @@ import { and, eq } from "drizzle-orm";
 import type { Request } from "express";
 import type { PgBoss } from "pg-boss";
 import * as z from "zod";
-import { BOSS, CONFIG, DB, enqueueRun, isUniqueViolation, RateLimit, validPayload, ZodPipe, type ApiConfig } from "./http";
+import { BOSS, CONFIG, DB, enqueueRun, eventKey, isUniqueViolation, RateLimit, validPayload, ZodPipe, type ApiConfig } from "./http";
 import { sessionUser } from "./auth";
 
 // Starts with "_", which no field name can (definition.ts), so a real "website" field is never mistaken for it.
@@ -48,6 +48,7 @@ export class HooksController {
     @Param("path", new ZodPipe(z.string().regex(/^[A-Za-z0-9_-]{43}$/))) path: string,
     @Req() req: RawBodyRequest<Request>,
     @Headers("x-daloy-signature") signature: string | undefined,
+    @Headers("idempotency-key") idempotencyKey: string | undefined,
   ) {
     const [row] = await this.db
       .select({ trigger: triggers, userId: workflows.userId })
@@ -65,9 +66,10 @@ export class HooksController {
     }
 
     const payload = validPayload((row.trigger.config as { fields?: FormField[] }).fields, req.body ?? {});
-    const runId = await createRun(this.db, version.id, payload);
-    await enqueueRun(this.boss, runId);
-    return { runId };
+    // A repeated event gets the first run back and starts nothing (decision 0029).
+    const { runId, duplicate } = await createKeyedRun(this.db, row.trigger.workflowId, version.id, payload, eventKey(definitionSchema.parse(version.definition).trigger, payload, idempotencyKey));
+    if (!duplicate) await enqueueRun(this.boss, runId);
+    return duplicate ? { runId, duplicate } : { runId };
   }
 }
 
@@ -151,11 +153,11 @@ export const newReference = () => `REQ-${Array.from({ length: 6 }, () => REFEREN
 export async function recordRequest(db: Db, workflow: { id: string; userId: string }, versionId: string, submissionKey: string, data: Record<string, unknown>, requestedBy?: string) {
   const find = () =>
     db
-      .select({ reference: requests.reference })
+      .select({ reference: requests.reference, runId: requests.runId })
       .from(requests)
       .where(and(eq(requests.workflowId, workflow.id), eq(requests.submissionKey, submissionKey)));
   const [existing] = await find();
-  if (existing) return { reference: existing.reference };
+  if (existing) return { reference: existing.reference, existingRunId: existing.runId };
 
   const reference = newReference();
   try {
@@ -168,7 +170,7 @@ export async function recordRequest(db: Db, workflow: { id: string; userId: stri
   } catch (err) {
     // The same key committed between our lookup and insert: answer with that request.
     const [dup] = isUniqueViolation(err) ? await find() : [];
-    if (dup) return { reference: dup.reference };
+    if (dup) return { reference: dup.reference, existingRunId: dup.runId };
     throw err;
   }
 }

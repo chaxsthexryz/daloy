@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { createRun, findApprover, listDeliveries, PROVIDER_NAMES, type Provider, publishedVersion, readConnections, requests, runs, SCHEDULE_QUEUE, triggers, workflows, workflowVersions, type Db } from "@daloy/db";
+import { createKeyedRun, findApprover, listDeliveries, PROVIDER_NAMES, type Provider, publishedVersion, readConnections, requests, runs, SCHEDULE_QUEUE, triggers, workflows, workflowVersions, type Db } from "@daloy/db";
 import { BRANCHES, choiceProblems, definitionSchema, testChoicesSchema, testModeSchema, guidedSetupInput, OFFICE_REQUEST, saveProblems, stepJsonSchemas, TEMPLATES, triggerFields, type Trigger, type WorkflowDefinition } from "@daloy/engine";
 import {
   BadRequestException,
@@ -20,7 +20,7 @@ import { and, desc, eq, getTableColumns, max, sql } from "drizzle-orm";
 import type { PgBoss } from "pg-boss";
 import * as z from "zod";
 import { SessionGuard } from "./auth";
-import { Allow, BOSS, CurrentUser, DB, enqueueRun, isUniqueViolation, validPayload, ZodPipe, type SessionUser, MANAGE, OPERATE } from "./http";
+import { Allow, BOSS, CurrentUser, DB, enqueueRun, eventKey, isUniqueViolation, validPayload, ZodPipe, type SessionUser, MANAGE, OPERATE } from "./http";
 
 const workflowInput = z.object({
   name: z.string().trim().min(1).max(200),
@@ -179,9 +179,10 @@ export class WorkflowsController {
     if (problems.length > 0) throw new BadRequestException(problems);
     const [latest] = await this.db.select().from(workflowVersions).where(eq(workflowVersions.workflowId, id)).orderBy(desc(workflowVersions.version)).limit(1);
     const versionId = latest && canonical(latest.definition) === canonical(definition) ? latest.id : (await this.saveVersion(id, definition, false))!.id;
-    const runId = await createRun(this.db, versionId, payload, { test: true, live: mode === "live", aiLive: mode === "ai", testChoices: Object.keys(body.choices).length > 0 ? body.choices : null });
-    await enqueueRun(this.boss, runId);
-    return { id: runId, versionId };
+    const opts = { test: true, live: mode === "live", aiLive: mode === "ai", testChoices: Object.keys(body.choices).length > 0 ? body.choices : null };
+    const { runId, duplicate } = await createKeyedRun(this.db, id, versionId, payload, eventKey(definition.trigger, payload), opts);
+    if (!duplicate) await enqueueRun(this.boss, runId);
+    return duplicate ? { id: runId, versionId, duplicate } : { id: runId, versionId };
   }
 
   /** Turning on a workflow with Sheets, Slack, Outlook or Teams steps needs that connection working with a destination. Drafts do not. */
@@ -235,10 +236,11 @@ export class WorkflowsController {
     await this.owned(user.workspaceId, id);
     const version = await publishedVersion(this.db, id);
     if (!version) throw new ConflictException("publish the workflow first");
-    const payload = validPayload(triggerFields(definitionSchema.parse(version.definition).trigger), body.payload);
-    const runId = await createRun(this.db, version.id, payload);
-    await enqueueRun(this.boss, runId);
-    return { id: runId };
+    const { trigger } = definitionSchema.parse(version.definition);
+    const payload = validPayload(triggerFields(trigger), body.payload);
+    const { runId, duplicate } = await createKeyedRun(this.db, id, version.id, payload, eventKey(trigger, payload));
+    if (!duplicate) await enqueueRun(this.boss, runId);
+    return duplicate ? { id: runId, duplicate } : { id: runId };
   }
 
   private async owned(userId: string, id: string) {

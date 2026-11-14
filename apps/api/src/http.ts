@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { RUN_QUEUE, type MailDeps, type ProviderUrls, type Role } from "@daloy/db";
-import { parsePayload, type FormField } from "@daloy/engine";
+import { parsePayload, resolveTemplate, type FormField, type Trigger } from "@daloy/engine";
 import {
   BadRequestException,
   type CanActivate,
@@ -102,6 +102,23 @@ export function validPayload(fields: FormField[] | undefined, data: unknown): Re
   if (!r.ok) throw new BadRequestException(r.errors);
   const declared = new Set(fields.map((f) => f.name));
   return { ...Object.fromEntries(Object.entries(body ?? {}).filter(([k]) => !declared.has(k))), ...r.data };
+}
+
+/**
+ * The business-event key of a run (decision 0029): the webhook trigger's eventKey resolved against the payload, else
+ * the caller's own key (Idempotency-Key header, MCP idempotencyKey). undefined means every call is a new event.
+ */
+export function eventKey(trigger: Trigger, payload: Record<string, unknown>, callerKey?: string): string | undefined {
+  const template = trigger.type === "webhook" ? trigger.config.eventKey : undefined;
+  if (template === undefined) {
+    if (callerKey !== undefined && (callerKey.length === 0 || callerKey.length > 200)) throw new BadRequestException(["Idempotency-Key: use 1 to 200 characters"]);
+    return callerKey;
+  }
+  const v = resolveTemplate(template, { trigger: payload, steps: {} });
+  const key = v === undefined || v === null ? "" : typeof v === "object" ? JSON.stringify(v) : String(v);
+  if (key.trim() === "") throw new BadRequestException([`eventKey: ${template} is empty for this event`]);
+  if (key.length > 200) throw new BadRequestException([`eventKey: ${template} is longer than 200 characters for this event`]);
+  return key;
 }
 
 export async function enqueueRun(boss: PgBoss, runId: string) {

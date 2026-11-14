@@ -15,7 +15,7 @@ import { desired, hourDelay, qa02 } from "../../../test/scenarios/qa-02-spa-appo
 import { qa03 } from "../../../test/scenarios/qa-03-cafe-promotions";
 import { qa04 } from "../../../test/scenarios/qa-04-refunds";
 import { qa05 } from "../../../test/scenarios/qa-05-purchase-requests";
-import { intake, qa06 } from "../../../test/scenarios/qa-06-high-traffic";
+import { intake, intakeKeyOnly, intakeNoKey, qa06 } from "../../../test/scenarios/qa-06-high-traffic";
 import { ADVERSARIAL, qa07, secretProbe } from "../../../test/scenarios/qa-07-multi-tenant";
 import { liveOrder, qa08 } from "../../../test/scenarios/qa-08-failure-recovery";
 import { REJECTED, type Outcome, type RunCase, type Scenario } from "../../../test/scenarios/types";
@@ -388,17 +388,21 @@ describe("QA-06 high-traffic e-commerce events", () => {
     const id = await workflow(intake, { publish: true });
     hookPath = ((await owner.get(`/workflows/${id}`).expect(200)).body as { trigger: { webhookPath: string } }).trigger.webhookPath;
   });
-  it("the same event delivered twice starts one run [gap P4: it starts two]", async () => {
+  it("the same event delivered twice starts one run", async () => {
     const event = { event_id: "evt_dup", type: "refund.requested", amount: 15_000 };
-    const first = (await post(event).expect(202)).body as { runId: string };
-    const second = (await post(event).expect(202)).body as { runId: string };
-    expect(second.runId).not.toBe(first.runId);
+    const first = (await post(event).expect(202)).body as { runId: string; duplicate?: boolean };
+    const second = (await post(event).expect(202)).body as { runId: string; duplicate?: boolean };
+    expect(first.duplicate).toBeUndefined();
+    expect(second).toEqual({ runId: first.runId, duplicate: true });
   });
-  it("20 concurrent copies of one event start one run [gap P4: they start 20]", async () => {
+  it("20 concurrent copies of one event start one run", async () => {
     const event = { event_id: "evt_burst", type: "order.created", amount: 500 };
     const results = await Promise.all(Array.from({ length: 20 }, () => post(event)));
     expect(results.every((r) => r.status === 202)).toBe(true);
-    expect(new Set(results.map((r) => (r.body as { runId: string }).runId)).size).toBe(20);
+    const bodies = results.map((r) => r.body as { runId: string; duplicate?: boolean });
+    expect(new Set(bodies.map((b) => b.runId)).size).toBe(1);
+    expect(bodies.filter((b) => b.duplicate).length).toBe(19);
+    expect(await db.select().from(runs).where(eq(runs.id, bodies[0]!.runId))).toHaveLength(1);
   });
   it("20 concurrent distinct events each run to completion", async () => {
     const results = await Promise.all(Array.from({ length: 20 }, (_, i) => post({ event_id: `evt_${i}`, type: "order.created", amount: i * 10_000 })));
@@ -407,11 +411,43 @@ describe("QA-06 high-traffic e-commerce events", () => {
     await Promise.all(ids.map((rid) => finish(rid)));
     expect((await runsOf(ids)).every((r) => r.state === "succeeded")).toBe(true);
   });
-  it("an Idempotency-Key header repeated twice starts one run [gap P4: the header is ignored]", async () => {
-    const event = { event_id: "evt_hdr", type: "order.created", amount: 500 };
-    const a = (await post(event, { "Idempotency-Key": "client-key-1" }).expect(202)).body as { runId: string };
-    const b = (await post(event, { "Idempotency-Key": "client-key-1" }).expect(202)).body as { runId: string };
-    expect(b.runId).not.toBe(a.runId);
+  it("without an event key, an Idempotency-Key header marks a repeat and no header means a new run", async () => {
+    const id = await workflow(intakeNoKey, { publish: true });
+    const path = ((await owner.get(`/workflows/${id}`).expect(200)).body as { trigger: { webhookPath: string } }).trigger.webhookPath;
+    const send = (headers: Record<string, string> = {}) => request(app.getHttpServer()).post(`/hooks/${path}`).set(headers).send({ event_id: "evt_hdr", type: "order.created", amount: 500 }).expect(202);
+    const a = (await send({ "Idempotency-Key": "client-key-1" })).body as { runId: string };
+    const b = (await send({ "Idempotency-Key": "client-key-1" })).body as { runId: string; duplicate?: boolean };
+    expect(b).toEqual({ runId: a.runId, duplicate: true });
+    const c = (await send()).body as { runId: string; duplicate?: boolean };
+    const d = (await send()).body as { runId: string; duplicate?: boolean };
+    expect(new Set([a.runId, c.runId, d.runId]).size).toBe(3);
+  });
+  it("the same event id in another workflow is another event", async () => {
+    const id = await workflow(intake, { publish: true });
+    const path = ((await owner.get(`/workflows/${id}`).expect(200)).body as { trigger: { webhookPath: string } }).trigger.webhookPath;
+    const res = await request(app.getHttpServer()).post(`/hooks/${path}`).send({ event_id: "evt_dup", type: "refund.requested", amount: 15_000 }).expect(202);
+    expect((res.body as { duplicate?: boolean }).duplicate).toBeUndefined();
+  });
+  it("test runs have their own key scope: a live event never swallows a test, and a repeated test is a repeat", async () => {
+    const id = await workflow(intake);
+    const payload = { event_id: "evt_dup", type: "refund.requested", amount: 15_000 };
+    const first = (await owner.post(`/workflows/${id}/test-runs`).send({ definition: intake, payload }).expect(202)).body as { id: string; duplicate?: boolean };
+    const again = (await owner.post(`/workflows/${id}/test-runs`).send({ definition: intake, payload }).expect(202)).body as { id: string; duplicate?: boolean };
+    expect(first.duplicate).toBeUndefined();
+    expect(again).toMatchObject({ id: first.id, duplicate: true });
+  });
+  it("the console Run button applies the event key too", async () => {
+    const id = await workflow(intake, { publish: true });
+    const payload = { event_id: "evt_console", type: "order.created", amount: 500 };
+    const a = (await owner.post(`/workflows/${id}/runs`).send({ payload }).expect(202)).body as { id: string };
+    const b = (await owner.post(`/workflows/${id}/runs`).send({ payload }).expect(202)).body as { id: string; duplicate?: boolean };
+    expect(b).toEqual({ id: a.id, duplicate: true });
+  });
+  it("an event whose key comes out empty is refused and says so", async () => {
+    const id = await workflow(intakeKeyOnly, { publish: true });
+    const path = ((await owner.get(`/workflows/${id}`).expect(200)).body as { trigger: { webhookPath: string } }).trigger.webhookPath;
+    const res = await request(app.getHttpServer()).post(`/hooks/${path}`).send({ type: "order.created", amount: 500 }).expect(400);
+    expect((res.body as { message: string[] }).message).toEqual(["eventKey: {{trigger.event_id}} is empty for this event"]);
   });
   it("an event without event_id is refused and says which field", async () => {
     const res = await post({ type: "order.created", amount: 500 }).expect(400);

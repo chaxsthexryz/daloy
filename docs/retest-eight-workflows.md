@@ -1,6 +1,6 @@
 # Retest handoff: eight-workflow acceptance harness
 
-For Astra. P1 added the harness. P2 added field limits and checks at every entry point and the condition `invalid` branch; it needs no migration.
+For Astra. P1 added the harness. P2 added field limits at every entry point and the condition `invalid` branch. P3 added test-run modes and chosen outcomes (migration 0014). P4 added business event keys (migration 0015). External beta stays on hold.
 
 ## Run
 
@@ -13,8 +13,8 @@ It needs no Docker and no network. It starts an embedded Postgres, creates a thr
 
 ## What to check
 
-- 104 tests pass: 9 fixture checks, 1 setup step, 94 acceptance cases.
-- 29 test names carry `[gap <phase>: <reason>]` (none for P2). Each one asserts the current wrong behaviour, for example two runs for one event ID or three POSTs with three different Idempotency-Keys after a 503.
+- 113 tests pass: 9 fixture checks, 1 setup step, 103 acceptance cases.
+- 14 test names carry `[gap <phase>: <reason>]`: P5 4, P6a 6, P6b 3, P7 1. Each one asserts the current wrong behaviour, for example two runs for one event ID or three POSTs with three different Idempotency-Keys after a 503.
 - Change one gap's `today` outcome in `test/scenarios/qa-0*.ts` and confirm that test fails. Rename a step id in one edge of a fixture and confirm the fixture check fails rather than a gap passing.
 - Compare the fixtures with the saved QA-01 to QA-08 drafts in the demo workspace. They are hand-written copies of the v2 shape; report anything that changes a branch or a threshold.
 
@@ -22,6 +22,23 @@ It needs no Docker and no network. It starts an embedded Postgres, creates a thr
 
 - A mocked classify step returns the label with the shortest name, because Postgres `jsonb` reorders keys (QA-06: `refund` before `notify_team`).
 - Fixed in P2: `min` and `max` on a number field were dropped when saved, builder test runs skipped field validation, and a comparison on "45,000" silently took `false`.
+
+## P3 checks (test outcomes, AI-only mode)
+
+- In the builder, "Test calls" offers Mocked, Real AI only and Live. "Test outcomes" lists classify labels, approval decisions (approved, rejected, timeout) and fail options for steps that reach outside.
+- QA-03, QA-04, QA-05 and QA-08 reach their rejection and timeout steps by choice; QA-06 reaches the refund POST; QA-08 stops at the sheet write when it is set to fail.
+- A Real AI only run calls the configured model for each AI step and sends no email, HTTP call, approval link or delivery. With a hosted model the trigger data leaves the machine, as in a live run. A chosen label wins over the model.
+- A choice that does not fit (unknown label, decision on a non-approval step) or any choice on a Live run is a 400 that names it.
+- Mocked runs are labelled "test run, mocked calls"; Real AI only runs "test run, real AI, other calls mocked".
+
+## P4 checks (business event keys)
+
+- A webhook with `eventKey: "{{trigger.event_id}}"` answers a repeated event with `{ runId: <first>, duplicate: true }` and starts nothing. 20 concurrent copies give one run.
+- A webhook without `eventKey` uses the `Idempotency-Key` header; with neither, every call is a new run.
+- The same event id in two workflows starts two runs. Test runs have their own scope.
+- An event with an empty key is a 400: `eventKey: {{trigger.event_id}} is empty for this event`.
+- MCP: a repeated `idempotencyKey` returns the same run (or the same request reference for office and purchase request tools) with `duplicate: true`.
+- Migrations 0014 (two columns on `runs`) and 0015 (`run_keys`) are additive. Check that the development database keeps its users, workflows, versions and runs after `docker compose up`.
 
 ## P2 checks
 

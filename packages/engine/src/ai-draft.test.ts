@@ -43,6 +43,7 @@ describe("parseDraftReply", () => {
     const { system } = draftPrompt({ request: "x" });
     expect(system).toContain('"min"');
     expect(system).toContain('"invalid"');
+    expect(system).toContain('"eventKey"');
     const definition = {
       trigger: { type: "form", config: { fields: [{ name: "amount", label: "Amount", type: "number", required: true, min: 0.01, max: 100_000 }] } },
       steps: [

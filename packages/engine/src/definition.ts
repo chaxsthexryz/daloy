@@ -111,7 +111,8 @@ const fieldList = z.array(formFieldSchema).min(1).max(30);
 const triggerSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("manual"), config: z.object({}).default({}) }),
   // hmacSecret names a stored secret; the API checks X-Daloy-Signature against it. fields, when set, are checked like a form's.
-  z.object({ type: z.literal("webhook"), config: z.object({ hmacSecret: z.string().max(100).optional(), fields: fieldList.optional() }).default({}) }),
+  // eventKey is a template such as {{trigger.event_id}}: a second event with the same key gets the first run (decision 0029).
+  z.object({ type: z.literal("webhook"), config: z.object({ hmacSecret: z.string().max(100).optional(), fields: fieldList.optional(), eventKey: z.string().min(1).max(500).optional() }).default({}) }),
   // pg-boss validates the expression fully when the schedule is saved.
   z.object({ type: z.literal("schedule"), config: z.object({ cron: z.string().regex(/^\S+( \S+){4,5}$/, "cron needs 5 or 6 fields") }) }),
   z.object({ type: z.literal("form"), config: z.object({ fields: fieldList }) }),

@@ -384,12 +384,20 @@ function TriggerPanel({ trigger, wf, onChange }: { trigger: Trigger; wf: Loaded;
         </div>
       )}
       {trigger.type === "webhook" && (
-        <div className="field">
-          <label htmlFor={`${id}-hmac`}>
-            Signing secret name <span className="muted">(optional)</span>
-          </label>
-          <input id={`${id}-hmac`} value={trigger.config.hmacSecret ?? ""} onChange={(e) => onChange({ type: "webhook", config: e.target.value ? { hmacSecret: e.target.value } : {} })} />
-        </div>
+        <>
+          <div className="field">
+            <label htmlFor={`${id}-hmac`}>
+              Signing secret name <span className="muted">(optional)</span>
+            </label>
+            <input id={`${id}-hmac`} value={trigger.config.hmacSecret ?? ""} onChange={(e) => onChange({ type: "webhook", config: { ...trigger.config, hmacSecret: e.target.value || undefined } })} />
+          </div>
+          <div className="field">
+            <label htmlFor={`${id}-event-key`}>
+              Event key <span className="muted">(optional, e.g. {"{{trigger.event_id}}"}: a repeated event starts no second run)</span>
+            </label>
+            <input id={`${id}-event-key`} value={trigger.config.eventKey ?? ""} onChange={(e) => onChange({ type: "webhook", config: { ...trigger.config, eventKey: e.target.value || undefined } })} />
+          </div>
+        </>
       )}
       {trigger.type === "form" && (
         <fieldset>

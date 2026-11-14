@@ -1,5 +1,5 @@
-import { randomUUID } from "node:crypto";
-import { apiTokens, createRun, runs, stepRuns, triggers, workflows, workflowVersions, type Db } from "@daloy/db";
+import { createHash, randomUUID } from "node:crypto";
+import { apiTokens, createKeyedRun, runs, stepRuns, triggers, workflows, workflowVersions, type Db } from "@daloy/db";
 import { payloadSchema, type FormField } from "@daloy/engine";
 import { toNodeHandler } from "@modelcontextprotocol/node";
 import { createMcpHandler, McpServer, type AuthInfo, type CallToolResult } from "@modelcontextprotocol/server";
@@ -20,7 +20,8 @@ export function toolsFromRows(rows: ToolRow[]) {
     name: r.slug,
     title: r.name,
     description: `Starts a run of the "${r.name}" workflow with the form fields as input. Returns the run id; check progress with get_run_status.`,
-    inputSchema: payloadSchema(r.fields),
+    // idempotencyKey cannot clash with a field: field names are lower case.
+    inputSchema: payloadSchema(r.fields).extend({ idempotencyKey: z.string().min(1).max(200).optional().describe("Send the same key when retrying a call, so it starts one run") }),
     versionId: r.versionId,
     workflowId: r.workflowId,
     tracked: r.tracked,
@@ -95,15 +96,16 @@ export class McpController {
     const server = new McpServer({ name: "daloy", version: "1.0.0" });
     for (const tool of toolsFromRows(await this.formWorkflows(userId))) {
       server.registerTool(tool.name, { title: tool.title, description: tool.description, inputSchema: tool.inputSchema }, async (args) => {
+        const { idempotencyKey, ...data } = args as Record<string, unknown> & { idempotencyKey?: string };
         if (tool.tracked) {
-          // A tool call has no form attempt to repeat, so each call is its own submission.
-          const { runId, reference } = await recordRequest(this.db, { id: tool.workflowId, userId }, tool.versionId, randomUUID(), args);
-          await enqueueRun(this.boss, runId!);
-          return result({ runId, reference, status: "pending" });
+          // A retried call with the same key is the same submission; without a key, each call is its own (decision 0029).
+          const { runId, reference, existingRunId } = await recordRequest(this.db, { id: tool.workflowId, userId }, tool.versionId, idempotencyKey ? keyUuid(idempotencyKey) : randomUUID(), data);
+          if (runId) await enqueueRun(this.boss, runId);
+          return result(runId ? { runId, reference, status: "pending" } : { runId: existingRunId, reference, duplicate: true });
         }
-        const runId = await createRun(this.db, tool.versionId, args);
-        await enqueueRun(this.boss, runId);
-        return result({ runId, status: "pending" });
+        const { runId, duplicate } = await createKeyedRun(this.db, tool.workflowId, tool.versionId, data, idempotencyKey);
+        if (!duplicate) await enqueueRun(this.boss, runId);
+        return result(duplicate ? { runId, duplicate } : { runId, status: "pending" });
       });
     }
     server.registerTool(
@@ -150,3 +152,9 @@ export class McpController {
     }));
   }
 }
+
+/** requests.submission_key is a uuid, so a caller's key becomes one: the same key always gives the same uuid. */
+const keyUuid = (key: string) => {
+  const h = createHash("sha256").update(`mcp:${key}`).digest("hex");
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20, 32)}`;
+};
