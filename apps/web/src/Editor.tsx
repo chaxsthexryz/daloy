@@ -150,7 +150,7 @@ export function Editor({ id }: { id: string }) {
   };
   const testRun = () =>
     act("Test run", async () => {
-      const r = await api<{ id: string }>("POST", `/workflows/${id}/test-runs`, {
+      const r = await api<{ id: string; duplicate?: boolean; mode?: string }>("POST", `/workflows/${id}/test-runs`, {
         definition: draft,
         payload: parsedPayload(),
         mode,
@@ -159,6 +159,8 @@ export function Editor({ id }: { id: string }) {
       setDirty(false);
       setRunId(r.id);
       await reload();
+      // act() shows a returned string as the result message.
+      if (r.duplicate) return `This event key already ran, so nothing ran now. Showing the earlier ${{ mock: "mocked", ai: "real AI only", live: "live" }[r.mode ?? "mock"]} test run; change the event id to test again.`;
     });
   const runLive = () =>
     act("Run", async () => {

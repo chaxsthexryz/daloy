@@ -436,6 +436,14 @@ describe("QA-06 high-traffic e-commerce events", () => {
     expect(first.duplicate).toBeUndefined();
     expect(again).toMatchObject({ id: first.id, duplicate: true });
   });
+  it("a repeated test event after a draft change reports the version and mode that actually ran", async () => {
+    const id = await workflow(intake);
+    const payload = { event_id: "evt_replay", type: "order.created", amount: 500 };
+    const first = (await owner.post(`/workflows/${id}/test-runs`).send({ definition: intake, payload, mode: "live" }).expect(202)).body as { id: string; versionId: string };
+    const changed = { ...intake, steps: intake.steps.map((s) => (s.id === "high" ? { ...s, config: { condition: { left: "{{trigger.amount}}", op: "gte", right: 20_000 } } } : s)) };
+    const again = (await owner.post(`/workflows/${id}/test-runs`).send({ definition: changed, payload, mode: "mock" }).expect(202)).body as Record<string, unknown>;
+    expect(again).toEqual({ id: first.id, versionId: first.versionId, mode: "live", duplicate: true });
+  });
   it("the console Run button applies the event key too", async () => {
     const id = await workflow(intake, { publish: true });
     const payload = { event_id: "evt_console", type: "order.created", amount: 500 };

@@ -181,8 +181,13 @@ export class WorkflowsController {
     const versionId = latest && canonical(latest.definition) === canonical(definition) ? latest.id : (await this.saveVersion(id, definition, false))!.id;
     const opts = { test: true, live: mode === "live", aiLive: mode === "ai", testChoices: Object.keys(body.choices).length > 0 ? body.choices : null };
     const { runId, duplicate } = await createKeyedRun(this.db, id, versionId, payload, eventKey(definition.trigger, payload), opts);
-    if (!duplicate) await enqueueRun(this.boss, runId);
-    return duplicate ? { id: runId, versionId, duplicate } : { id: runId, versionId };
+    if (!duplicate) {
+      await enqueueRun(this.boss, runId);
+      return { id: runId, versionId };
+    }
+    // The event already ran: answer with what that run was, not with this request's draft and mode.
+    const [ran] = await this.db.select({ versionId: runs.workflowVersionId, live: runs.live, aiLive: runs.aiLive }).from(runs).where(eq(runs.id, runId));
+    return { id: runId, versionId: ran!.versionId, mode: ran!.live ? "live" : ran!.aiLive ? "ai" : "mock", duplicate };
   }
 
   /** Turning on a workflow with Sheets, Slack, Outlook or Teams steps needs that connection working with a destination. Drafts do not. */

@@ -23,6 +23,18 @@ It needs no Docker and no network. It starts an embedded Postgres, creates a thr
 - A mocked classify step returns the label with the shortest name, because Postgres `jsonb` reorders keys (QA-06: `refund` before `notify_team`).
 - Fixed in P2: `min` and `max` on a number field were dropped when saved, builder test runs skipped field validation, and a comparison on "45,000" silently took `false`.
 
+## Fixes from the c05fa81 review
+
+Sheets stale worker (b4b8eda, migration 0016):
+
+- Repeat the held-worker case: A writes to sheet A and its answer is held, A's claim expires, the connection moves to sheet B, Post again, B's answer is held, release A, then B answers 403. Expected: releasing A changes nothing (still sending), B ends failed with the refusal, sheet A has one row and sheet B none.
+- `packages/db/src/deliveries.test.ts`, "late answers from stale workers", covers this, a late refusal after a manual Retry, a take-over that delivered, a new `claim_id` on every claim, and concurrent workers. The fake provider's `{ heldUntil }` behaviour holds an answer until the test releases it.
+- Unchanged and worth a quick look: Sheets markers, uncertain markers kept, destination pinning, Mark as posted, Post again with a fresh marker. Explicit Post again can still duplicate an earlier write; Sheets stays at most once per marker.
+
+Builder replay (second commit):
+
+- Run a keyed test (Live), change the draft, send the same event as Mock. Expected: `{ id: <first run>, versionId: <first run's version>, mode: "live", duplicate: true }`, and the builder says the event already ran and shows the earlier live test run.
+
 ## P3 checks (test outcomes, AI-only mode)
 
 - In the builder, "Test calls" offers Mocked, Real AI only and Live. "Test outcomes" lists classify labels, approval decisions (approved, rejected, timeout) and fail options for steps that reach outside.
