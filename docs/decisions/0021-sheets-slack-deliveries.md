@@ -45,11 +45,25 @@ How the owner connects:
 - The poll adds one indexed query every two seconds per worker.
 - Live Google and Slack behaviour is checked by hand ([live Sheets and Slack check](../live-sheets-slack-check.md)); the automated tests use a fake server that checks JWT signatures and answers like the real APIs, including timeouts after a write.
 
-## Update, November 2026: exactly-once Sheets writes and pinned destinations
+## Update, November 2026: duplicate-refusing Sheets writes and pinned destinations
 
 The fec03cc regression report showed that matching a row by its contents breaks if someone edits the row before the retry, and that a queued delivery followed whatever the connection pointed at when it was finally sent.
 
 - Each Sheets delivery gets a marker when it is queued: an id from the `sheet_meta_seq` sequence (a positive 32-bit integer, unique per installation) and a short random value. The row and the marker are written in one `spreadsheets.batchUpdate` (`createDeveloperMetadata` with that `metadataId`, project-private, then `appendCells` with string values). Google applies a batch entirely or not at all and refuses a second metadata entry with an id that exists, so a retry, a parallel attempt after a stale claim, or a late copy of the first request cannot add a second row. On a 400 the worker reads that metadata id: our value means delivered (reconciled); anything else means review, never a guess.
-- Markers stay 24 hours after delivery, longer than any request Google could still be holding, then the worker's sweep deletes them (`sheet_meta_cleared_at`). The delete names the id, the `daloy` key and our value, and Google removes only metadata matching all three, so metadata another tool keeps under a colliding id survives even after the operator chose Mark as posted (retest of ecb5ade). Google allows about 30,000 characters of metadata per sheet and a marker uses about 15, so roughly 2,000 rows a day per sheet; past that Google refuses the batch and the delivery fails visibly. The connection test row still uses `values.append`.
+- Markers stay 24 hours after delivery, then the worker's sweep deletes them (`sheet_meta_cleared_at`). The delete names the id, the `daloy` key and our value, and Google removes only metadata matching all three, so metadata another tool keeps under a colliding id survives even after the operator chose Mark as posted (retest of ecb5ade). Google allows about 30,000 characters of metadata per sheet and a marker uses about 15, so roughly 2,000 rows a day per sheet; past that Google refuses the batch and the delivery fails visibly. The connection test row still uses `values.append`.
 - Every delivery records the connection's account and destination when it is queued (`pinned_account`, `pinned_destination`). A different account or destination at send time sends it to review with both named. Rows queued before this change have no pin and go to review too. Post again re-pins to the current connection and gives a Sheets row a fresh marker.
 - Remaining limits: checked against the local fake only until the live Sheets check is run; a Teams link replaced under the same channel name is not seen as a change.
+
+## Limitation found in the 6e603de retest, and a proposed fix (not built)
+
+Astra showed that a request already sent by an earlier attempt and processed by Google after the marker was deleted adds a second row. The marker refuses duplicates only while it exists, and Daloy cannot bound how long Google may hold a request it has stopped waiting for. So the design guarantees duplicate refusal for 24 hours after delivery, not exactly-once delivery. A late duplicate after that cannot be detected, so there is no way to send it to review afterwards. It has to be prevented.
+
+Proposed design, waiting for approval:
+
+- Add `deliveries.sheet_marker_keep boolean not null default false` in an additive migration.
+- Set it, and never clear it, whenever an attempt of the delivery ends without a definite answer: an ambiguous outcome (timeout or broken connection on the write, 5xx on the write), or a claim taken back from a worker that died mid-call. That is exactly when a request may still be in flight.
+- The sweep deletes markers only for deliveries where the flag is false. Every attempt of those got a definite answer, so no request of theirs can still be in flight, and deleting is safe at any age. Markers of flagged deliveries are kept indefinitely. Retry, Post again and Mark as posted do not clear the flag.
+- Capacity: only flagged deliveries keep markers, which should be rare. If a sheet reaches Google's metadata limit, Google refuses the batch and the delivery fails visibly. It never writes silently, and the owner reviews it.
+- Tests first: a late request after the sweep for a flagged delivery (expect: the marker is still there, the request is refused, one row); for an unflagged delivery (expect: the marker is deleted, and no request was outstanding); a stale-claim takeover sets the flag; a plain Retry after an ambiguous attempt keeps it.
+
+Interim, until this is approved: behaviour is unchanged (24-hour retention). The alternative is to stop deleting markers altogether, which removes the risk at the cost of the capacity limit for every delivery. Real Google behaviour (metadata id uniqueness, atomic batches, the limit) is still unverified until docs/live-sheets-slack-check.md is run.

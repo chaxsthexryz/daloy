@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
-import { runs, smtpMailer, stepRuns, users, workflows, workflowVersions, type Db, type MailDeps } from "@daloy/db";
+import { encryptSecret, retireSecret, runs, secrets, smtpMailer, stepRuns, users, workflows, workflowVersions, type Db, type MailDeps } from "@daloy/db";
 import type { INestApplication } from "@nestjs/common";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import type { Pool } from "pg";
 import { PgBoss } from "pg-boss";
 import request from "supertest";
@@ -96,6 +96,50 @@ describe("run history and secrets", () => {
       ]);
       const text = JSON.stringify((await agent.get(`/runs/${r!.id}`).expect(200)).body);
       expect(values.filter((x) => text.includes(x)), `round ${round}`).toEqual([]);
+    }
+  });
+
+  it("hides a value rotated or deleted while a history read is in progress, in the run list and the detail (retest of 6e603de)", async () => {
+    // Pause the history read right after its query of retired values, and change the secret there, as Astra did.
+    // Read in one snapshot, the old value is either still current or already retired: hidden either way.
+    const query = pool.query.bind(pool) as (...args: unknown[]) => Promise<unknown>;
+    let inFlight: (() => Promise<void>) | undefined;
+    Object.assign(pool, {
+      query: async (...args: unknown[]) => {
+        const result = await query(...args);
+        const text = typeof args[0] === "string" ? args[0] : (args[0] as { text?: string }).text;
+        if (inFlight && text?.includes("retired_secrets")) {
+          const change = inFlight;
+          inFlight = undefined;
+          await change();
+        }
+        return result;
+      },
+    });
+    try {
+      for (const change of ["rotate", "delete"] as const) {
+        for (const read of ["detail", "list"] as const) {
+          const { agent, userId } = await owner();
+          const old = `in-flight-${change}-${read}-${randomBytes(4).toString("hex")}`;
+          await agent.put("/secrets/k").send({ value: old }).expect(204);
+          const [wf] = await db.insert(workflows).values({ userId, name: "Read race", slug: `read-race-${seq}` }).returning();
+          const [v] = await db.insert(workflowVersions).values({ workflowId: wf!.id, version: 1, definition: {} }).returning();
+          const [r] = await db.insert(runs).values({ workflowVersionId: v!.id, state: "succeeded", triggerPayload: { seen: old } }).returning();
+          // The same steps as PUT and DELETE /secrets/:name, on a connection of their own.
+          inFlight = () =>
+            db.transaction(async (tx) => {
+              await retireSecret(tx, userId, "k");
+              const mine = and(eq(secrets.userId, userId), eq(secrets.name, "k"));
+              if (change === "delete") await tx.delete(secrets).where(mine);
+              else await tx.update(secrets).set(encryptSecret(key, userId, "k", `new-${old}`)).where(mine);
+            });
+          const body = (await agent.get(read === "detail" ? `/runs/${r!.id}` : "/runs").expect(200)).body as unknown;
+          expect(inFlight, `${change} ${read}: the read was not paused`).toBeUndefined();
+          expect(JSON.stringify(body), `${change} ${read}`).not.toContain(old);
+        }
+      }
+    } finally {
+      Object.assign(pool, { query });
     }
   });
 

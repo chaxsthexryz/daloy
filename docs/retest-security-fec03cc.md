@@ -48,3 +48,12 @@ Astra found two P1 issues on ecb5ade; both are fixed in the next commit.
 | The Sheets marker sweep could delete another tool's metadata after a collision and Mark as posted | `deleteSheetMarker` filters on metadata id, key `daloy` and our value together. | Put foreign metadata (other key and value) under a queued delivery's `sheet_meta_id`, deliver (it goes to review), choose Mark as posted, age the delivery past 24 hours, run the sweep. | The foreign metadata is unchanged, and the delivery is stamped `sheet_meta_cleared_at`. |
 
 Regression tests: `apps/api/src/secrets-history.test.ts` ("rotations and a deletion of one secret race") and `packages/db/src/deliveries.test.ts` ("never deletes another tool's metadata"). Both failed on ecb5ade before the fix. Not covered: real Google's matching of all three lookup fields on delete, which is checked only against the fake; step 11 of `docs/live-sheets-slack-check.md` covers it.
+
+## Follow-up after the 6e603de retest
+
+| Finding | Change | Probe | Expected |
+|---|---|---|---|
+| P1: a history read could miss a value rotated or deleted while it ran (it read retired values, then current values, in two snapshots) | `secretValuesToHide` reads current and retired values in one `UNION ALL` statement, so one MVCC snapshot. A rotation or deletion commits the retired copy and the change together, so each value is either still current or already retired in that snapshot. | Pause an operator's `GET /runs` or `GET /runs/:id` after its secrets query, then rotate or delete the secret, then let it continue. Repeat for both endpoints and both changes. | The old value never appears, in either endpoint, for rotation or deletion. Operators still get 403 on `/secrets`. |
+| Sheets late duplicate after the marker sweep | No behaviour change. Docs and code comments no longer claim exactly-once; decision 0021 states the limit (duplicate refusal for 24 hours) and proposes keeping markers for any delivery that had an uncertain attempt. | Optional: confirm a late request after the sweep still appends (expected with the current design). | Documented limitation. The proposal waits for approval. |
+
+Regression test: `apps/api/src/secrets-history.test.ts`, "hides a value rotated or deleted while a history read is in progress". It wraps the pool so the change happens right after the read's secrets query, which is deterministic. It failed on 6e603de (the rotated value appeared in the run detail) and passes now.
