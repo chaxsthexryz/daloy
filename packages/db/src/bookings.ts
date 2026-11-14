@@ -80,10 +80,12 @@ export type StepBookingResult = { branch: "done" | "taken" | "not_found"; output
 /**
  * One booking step attempt, in one transaction: a stored result for this run and step is returned as it was (a retry
  * or takeover never books twice); otherwise the booking changes, the run is linked to the new version, and the result
- * is stored. A test run only sees and makes test bookings.
+ * is stored. A test run only sees and makes test bookings. Attempts of the same run and step take turns on an
+ * advisory lock, so a takeover that overlaps a still-running attempt reads that attempt's result (Astra, 7c73879).
  */
 export async function bookFromStep(db: Db, at: { workspaceId: string; test: boolean; runId: string; stepId: string; workflowId: string }, a: StepAction): Promise<StepBookingResult> {
   return db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`booking:${at.runId}:${at.stepId}`}, 0))`);
     const [stored] = await tx.select().from(bookingResults).where(and(eq(bookingResults.runId, at.runId), eq(bookingResults.stepId, at.stepId)));
     if (stored) return { branch: stored.branch as StepBookingResult["branch"], output: stored.output as Record<string, unknown> };
     if (a.action !== "cancel" && a.start.getTime() <= Date.now()) throw new Error(`The booking time has passed (${a.start.toISOString()}).`);
@@ -127,14 +129,13 @@ export async function bookFromStep(db: Db, at: { workspaceId: string; test: bool
         const start = a.action === "reschedule" ? a.start : b.start;
         const end = a.action === "reschedule" ? new Date(a.start.getTime() + (a.minutes !== undefined ? a.minutes * 60_000 : b.end.getTime() - b.start.getTime())) : b.end;
         const status = a.action === "cancel" ? ("cancelled" as const) : ("active" as const);
+        const next = view({ row: { ...b.row, status, version }, start, end, resourceName: b.resourceName });
         const free = await unlessTaken(tx, async (sp) => {
           await sp.update(bookings).set({ during: range(start, end) as unknown as string, status, version, updatedAt: new Date() }).where(and(eq(bookings.id, b.row.id), eq(bookings.version, b.row.version)));
-          await sp.insert(bookingChanges).values({ bookingId: b.row.id, fromVersion: b.row.version, action: a.action, start: a.action === "reschedule" ? start : null, runId: at.runId, actor: `run:${at.runId}`, result: { version } });
+          await sp.insert(bookingChanges).values({ bookingId: b.row.id, fromVersion: b.row.version, action: a.action, start: a.action === "reschedule" ? start : null, runId: at.runId, actor: `run:${at.runId}`, result: { version, booking: next } });
           await link(sp, b.row.id, version);
         });
-        result = free
-          ? { branch: "done", output: view({ row: { ...b.row, status, version }, start, end, resourceName: b.resourceName }) }
-          : { branch: "taken", output: { reason: "That time is already booked for this resource." } };
+        result = free ? { branch: "done", output: next } : { branch: "taken", output: { reason: "That time is already booked for this resource." } };
       }
     }
     await tx.insert(bookingResults).values({ runId: at.runId, stepId: at.stepId, bookingId, branch: result.branch, output: result.output });
@@ -147,22 +148,40 @@ export type StaffRequest = { workspaceId: string; bookingId: string; version: nu
   // newRun starts the run for the new version, in the same transaction, and returns its id.
   | { action: "reschedule"; start: Date; newRun: (tx: Tx, booking: BookingView) => Promise<string> }
 );
+export type StaffReplay = { workspaceId: string; bookingId: string; version: number } & ({ action: "cancel" } | { action: "reschedule"; start: Date });
 export type StaffResult = { result: "done" | "duplicate" | "conflict" | "taken" | "not_found"; booking?: BookingView; runId?: string };
+
+/** The stored answer when the logged change is this same one (same action, same start as an instant), else undefined. */
+function replayOf(prior: typeof bookingChanges.$inferSelect | undefined, req: StaffReplay): StaffResult | undefined {
+  if (!prior || prior.action !== req.action || (req.action === "reschedule" && prior.start?.getTime() !== req.start.getTime())) return undefined;
+  const r = prior.result as { runId?: string; booking?: BookingView };
+  return { result: "duplicate", booking: r.booking, runId: r.runId };
+}
+
+/**
+ * The stored answer to a change already made from this version, looked up before the new time is checked, so an
+ * identical replay works after the booking moved on or its time has passed. Live bookings of the workspace only.
+ */
+export async function staffReplay(db: Db, req: StaffReplay): Promise<StaffResult | undefined> {
+  const [prior] = await db
+    .select({ change: bookingChanges })
+    .from(bookingChanges)
+    .innerJoin(bookings, eq(bookings.id, bookingChanges.bookingId))
+    .where(and(eq(bookingChanges.bookingId, req.bookingId), eq(bookingChanges.fromVersion, req.version), eq(bookings.userId, req.workspaceId), eq(bookings.test, false)));
+  return replayOf(prior?.change, req);
+}
 
 /**
  * A change by staff or MCP, from the version they saw. The booking row is locked first, so concurrent requests take
  * turns. A change already logged from that version answers the request: the same action and time (compared as
- * instants) is a duplicate with the first result, anything else a conflict. Live bookings only.
+ * instants) is a duplicate with the stored result of that change, anything else a conflict. Live bookings only.
  */
 export async function staffChange(db: Db, req: StaffRequest, actor: string): Promise<StaffResult> {
   return db.transaction(async (tx) => {
     const b = await lockBooking(tx, and(eq(bookings.id, req.bookingId), eq(bookings.userId, req.workspaceId), eq(bookings.test, false)));
     if (!b) return { result: "not_found" };
     const [prior] = await tx.select().from(bookingChanges).where(and(eq(bookingChanges.bookingId, b.row.id), eq(bookingChanges.fromVersion, req.version)));
-    if (prior) {
-      const same = prior.action === req.action && (req.action === "cancel" || prior.start?.getTime() === req.start.getTime());
-      return same ? { result: "duplicate", booking: view(b), runId: (prior.result as { runId?: string }).runId } : { result: "conflict", booking: view(b) };
-    }
+    if (prior) return replayOf(prior, req) ?? { result: "conflict", booking: view(b) };
     if (b.row.version !== req.version || b.row.status !== "active") return { result: "conflict", booking: view(b) };
 
     const version = b.row.version + 1;
@@ -178,7 +197,7 @@ export async function staffChange(db: Db, req: StaffRequest, actor: string): Pro
         await sp.update(runs).set({ bookingId: b.row.id, bookingVersion: version }).where(eq(runs.id, runId));
         await sp.update(bookings).set({ runId }).where(eq(bookings.id, b.row.id));
       }
-      await sp.insert(bookingChanges).values({ bookingId: b.row.id, fromVersion: b.row.version, action: req.action, start: req.action === "reschedule" ? start : null, runId, actor, result: { version, ...(runId ? { runId } : {}) } });
+      await sp.insert(bookingChanges).values({ bookingId: b.row.id, fromVersion: b.row.version, action: req.action, start: req.action === "reschedule" ? start : null, runId, actor, result: { version, ...(runId ? { runId } : {}), booking: next } });
     });
     if (!free) return { result: "taken", booking: view(b) };
     return { result: "done", booking: next, runId };

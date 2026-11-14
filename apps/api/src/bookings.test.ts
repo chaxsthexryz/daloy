@@ -10,7 +10,7 @@ import { PgBoss } from "pg-boss";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { freshDatabase } from "../../../test/db";
-import { advance } from "../../worker/src/advance";
+import { advance, type StepExecutor } from "../../worker/src/advance";
 import { createExecutor } from "../../worker/src/steps";
 import { createApp } from "./app";
 import { sha256 } from "./http";
@@ -24,13 +24,13 @@ let db: Db;
 let pool: Pool;
 let base: string;
 const key = randomBytes(32);
-const mailSent: { subject: string; text: string }[] = [];
+const mailSent: { to: string; subject: string; text: string }[] = [];
 const mail: MailDeps = {
   installation: {
     from: "Daloy <daloy@localhost>",
     transport: {
-      sendMail: async (msg: { subject?: string; text?: string }) => {
-        mailSent.push({ subject: String(msg.subject), text: String(msg.text) });
+      sendMail: async (msg: { to?: string; subject?: string; text?: string }) => {
+        mailSent.push({ to: String(msg.to), subject: String(msg.subject), text: String(msg.text) });
         return {};
       },
     } as unknown as MailDeps["installation"]["transport"],
@@ -78,6 +78,30 @@ async function wake(runId: string) {
   return drive(runId);
 }
 const pathOf = async (runId: string) => (await db.select().from(stepRuns).where(eq(stepRuns.runId, runId)).orderBy(asc(stepRuns.createdAt))).map((r) => `${r.stepId}:${r.state}`);
+/** Returns once n sessions of this database wait for a lock (pg-boss's own queries aside). */
+async function lockWaiters(n: number) {
+  for (;;) {
+    const { rows } = await pool.query<{ n: number }>("select count(*)::int as n from pg_stat_activity where datname = current_database() and wait_event_type = 'Lock' and query not ilike '%pgboss%'");
+    if (rows[0]!.n >= n) return;
+    await new Promise((r) => setTimeout(r, 10));
+  }
+}
+/** An executor that stops at the start of each attempt until the test lets it go. */
+function gated() {
+  const real = deps().executor;
+  let go!: () => void;
+  let arrived!: () => void;
+  const open = new Promise<void>((r) => (go = r));
+  const here = new Promise<void>((r) => (arrived = r));
+  const executor: StepExecutor = {
+    execute: async (input) => {
+      arrived();
+      await open;
+      return real.execute(input);
+    },
+  };
+  return { go, here, executor };
+}
 
 async function owner() {
   const agent = request.agent(app.getHttpServer());
@@ -158,6 +182,45 @@ describe("booking a therapist", () => {
     expect((await s.book()).run.state).toBe("failed");
     expect((await s.listed())[0]).toMatchObject({ status: "active", attention: true });
   });
+
+  it("lets a takeover find the result of a booking attempt that is still committing: one booking, one confirmation", async () => {
+    const s = await setup();
+    const runId = (await s.agent.post(`/workflows/${s.wf.id}/runs`).send({ payload: { email: "mia@example.com", who: s.ana.id, at: at("14:00") } }).expect(202)).body.id as string;
+    const a = gated();
+    const b = gated();
+    const first = advance({ ...deps(), owner: "worker-a", leaseMs: 600_000, executor: a.executor }, runId).catch((e: unknown) => e);
+    await a.here;
+    // Worker A looks stopped: its lease runs out and worker B takes the same attempt over.
+    await db.update(runs).set({ leaseExpiresAt: new Date(Date.now() - 1000) }).where(eq(runs.id, runId));
+    const second = advance({ ...deps(), owner: "worker-b", leaseMs: 600_000, executor: b.executor }, runId).catch((e: unknown) => e);
+    await b.here;
+    // A lock on the run row holds A after it inserted the booking, before it commits (its change row checks the run).
+    let unlock!: () => void;
+    const unlocked = new Promise<void>((r) => (unlock = r));
+    let locked!: () => void;
+    const isLocked = new Promise<void>((r) => (locked = r));
+    const holder = db.transaction(async (tx) => {
+      await tx.select({ id: runs.id }).from(runs).where(eq(runs.id, runId)).for("update");
+      locked();
+      await unlocked;
+    });
+    await isLocked;
+    a.go();
+    await lockWaiters(1);
+    b.go();
+    await lockWaiters(2);
+    unlock();
+    await holder;
+    const [lost] = await Promise.all([first, second]);
+    // A's result is fenced off by B's claim; B returns the stored result instead of failing.
+    expect(String(lost)).toContain("under this worker's claim");
+    expect(await pathOf(runId)).toEqual(["book:succeeded"]);
+    const sent = mailSent.length;
+    expect((await drive(runId)).state).toBe("waiting");
+    expect(await pathOf(runId)).toEqual(["book:succeeded", "confirm:succeeded", "wait:waiting"]);
+    expect(mailSent.slice(sent).map((m) => m.subject)).toEqual([expect.stringMatching(/^Booked BK-/)]);
+    expect(await s.listed()).toHaveLength(1);
+  });
 });
 
 describe("staff changes", () => {
@@ -212,11 +275,11 @@ describe("staff changes", () => {
     const sent = mailSent.length;
     expect((await drive(runId)).state).toBe("waiting");
     expect(await pathOf(runId)).toEqual(["book:succeeded", "confirm:succeeded", "wait:waiting"]);
-    expect(mailSent.slice(sent)).toEqual([{ subject: `Booked ${b!.reference}`, text: `${at("16:00")}:00+08:00 with Ana` }]);
+    expect(mailSent.slice(sent)).toEqual([{ to: "mia@example.com", subject: `Booked ${b!.reference}`, text: `${at("16:00")}:00+08:00 with Ana` }]);
     expect(await runRow(runId)).toMatchObject({ bookingVersion: 2, test: false });
     expect(await wake(old.runId)).toMatchObject({ state: "cancelled" });
     expect((await wake(runId)).state).toBe("succeeded");
-    expect(mailSent.at(-1)).toEqual({ subject: `Reminder ${b!.reference}`, text: `See you at ${at("16:00")}:00+08:00` });
+    expect(mailSent.at(-1)).toEqual({ to: "mia@example.com", subject: `Reminder ${b!.reference}`, text: `See you at ${at("16:00")}:00+08:00` });
     expect((await db.select().from(runs).where(eq(runs.bookingId, b!.id))).map((r) => r.id).sort()).toEqual([old.runId, runId].sort());
   });
 
@@ -247,6 +310,67 @@ describe("staff changes", () => {
     const mixed = await Promise.all(["17:00", "19:00", "20:00"].map((t) => s.agent.post(`/bookings/${b!.id}/reschedule`).send({ version: 2, start: at(t) })));
     expect(mixed.map((r) => r.status).sort()).toEqual([200, 409, 409]);
     expect((await db.select().from(bookings).where(eq(bookings.id, b!.id)))[0]!.version).toBe(3);
+  });
+
+  it("sends a staff-started run's mail to the guest who booked, after a desk workflow moved the booking", async () => {
+    const s = await setup();
+    await s.book();
+    const [b] = await s.listed();
+    const desk = (await s.agent.post("/workflows").send({ name: "Desk", slug: `desk-${++seq}` }).expect(201)).body as { id: string };
+    const deskFields = [
+      { name: "email", label: "Desk email", type: "email", required: true },
+      { name: "ref", label: "Reference", type: "text", required: true },
+      { name: "when", label: "New time", type: "datetime", required: true, timezone: "Asia/Manila", slotMinutes: 60 },
+    ];
+    const move = { id: "move", type: "booking", config: { action: "reschedule", booking: "{{trigger.ref}}", start: "{{trigger.when}}" } };
+    await s.agent.post(`/workflows/${desk.id}/versions`).send({ definition: { trigger: { type: "webhook", config: { fields: deskFields, hmacSecret: "desk_signing" } }, steps: [move, email("noted", "Moved {{steps.move.output.reference}}", "x")], edges: [{ from: "move", to: "noted", on: "done" }] }, publish: true }).expect(201);
+    const deskRun = (await s.agent.post(`/workflows/${desk.id}/runs`).send({ payload: { email: "desk@example.com", ref: b!.reference, when: at("15:00") } }).expect(202)).body.id as string;
+    const sent = mailSent.length;
+    expect((await drive(deskRun)).state).toBe("succeeded");
+    expect(mailSent.slice(sent).map((m) => m.to)).toEqual(["desk@example.com"]);
+
+    const staff = mailSent.length;
+    let version = 2;
+    for (const time of ["16:00", "18:00"]) {
+      const res = await s.agent.post(`/bookings/${b!.id}/reschedule`).send({ version, start: at(time) }).expect(200);
+      version = res.body.booking.version as number;
+      expect((await drive(res.body.runId)).state).toBe("waiting");
+      expect((await wake(res.body.runId)).state).toBe("succeeded");
+    }
+    expect(mailSent.slice(staff).map((m) => [m.to, m.subject, m.text])).toEqual([
+      ["mia@example.com", `Booked ${b!.reference}`, `${at("16:00")}:00+08:00 with Ana`],
+      ["mia@example.com", `Reminder ${b!.reference}`, `See you at ${at("16:00")}:00+08:00`],
+      ["mia@example.com", `Booked ${b!.reference}`, `${at("18:00")}:00+08:00 with Ana`],
+      ["mia@example.com", `Reminder ${b!.reference}`, `See you at ${at("18:00")}:00+08:00`],
+    ]);
+  });
+
+  it("answers a replayed change with what it did then, after later changes and after its time has passed", async () => {
+    const s = await setup();
+    await s.book();
+    const [b] = await s.listed();
+    const move = (version: number, time: string) => s.agent.post(`/bookings/${b!.id}/reschedule`).send({ version, start: at(time) });
+    const cancel = (version: number) => s.agent.post(`/bookings/${b!.id}/cancel`).send({ version });
+    const first = (await move(1, "16:00").expect(200)).body;
+    await move(2, "18:00").expect(200);
+    const replay = (await move(1, "16:00").expect(200)).body;
+    expect(replay).toEqual({ duplicate: true, runId: first.runId, booking: first.booking });
+    expect(replay.booking).toMatchObject({ version: 2, start: `${at("16:00")}:00+08:00`, end: `${at("17:00")}:00+08:00`, status: "active" });
+    const cancelled = (await cancel(3).expect(200)).body;
+    expect((await cancel(3).expect(200)).body).toEqual({ duplicate: true, booking: cancelled.booking });
+    expect((await move(1, "16:00").expect(200)).body).toEqual(replay);
+    expect((await move(1, "17:00").expect(409)).body.message).toBe("This booking changed since you loaded it. Reload and try again.");
+
+    // Months after the appointment: identical replays still get their stored answers. An operator's session cookie is
+    // sent as a header, since the test client's cookie jar would drop the owner's cookie under the moved clock.
+    const operator = await member(s.agent, "operator");
+    vi.useFakeTimers({ toFake: ["Date"], now: new Date(`${year + 1}-06-01T00:00:00Z`) });
+    try {
+      expect((await operator.post(`/bookings/${b!.id}/reschedule`).send({ version: 1, start: at("16:00") }).expect(200)).body).toEqual(replay);
+      expect((await operator.post(`/bookings/${b!.id}/cancel`).send({ version: 3 }).expect(200)).body).toEqual({ duplicate: true, booking: cancelled.booking });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("refuses to reschedule when the published version lost the booking step, or a later step reads one before it", async () => {

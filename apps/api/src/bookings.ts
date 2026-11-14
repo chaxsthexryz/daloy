@@ -1,4 +1,4 @@
-import { bookingById, bookingByReference, bookingResults, listBookings, publishedVersion, runs, staffChange, stepRuns, type BookingView, type Db, type StaffResult } from "@daloy/db";
+import { bookingById, bookingByReference, bookingChanges, bookingResults, listBookings, publishedVersion, runs, staffChange, staffReplay, stepRuns, type BookingView, type Db, type StaffResult } from "@daloy/db";
 import { bookingStartField, definitionSchema, parseZoned, type WorkflowDefinition } from "@daloy/engine";
 import { BadRequestException, Body, ConflictException, Controller, Get, HttpCode, Inject, NotFoundException, Param, Post, UseGuards } from "@nestjs/common";
 import { and, asc, eq } from "drizzle-orm";
@@ -41,13 +41,23 @@ function after(def: WorkflowDefinition, from: string): Set<string> {
  * no step after it may read a step that ran before it, since the new run starts after the booking step and would send
  * that value blank (decision 0032).
  */
-async function reschedulePlan(db: Db, booking: { id: string; workflowId: string | null; runId: string | null }, start: string) {
-  const [made] = await db.select({ stepId: bookingResults.stepId }).from(bookingResults).where(and(eq(bookingResults.bookingId, booking.id), eq(bookingResults.branch, "done"))).orderBy(asc(bookingResults.createdAt)).limit(1);
+async function reschedulePlan(db: Db, booking: { id: string; workflowId: string | null }, start: string) {
+  // The run that created the booking (its change from version 0) and its booking step. Later runs can belong to a desk
+  // workflow that moved the booking, and their payload holds someone else's details (Astra, 7c73879).
+  const [made] = await db
+    .select({ stepId: bookingResults.stepId, payload: runs.triggerPayload })
+    .from(bookingChanges)
+    .innerJoin(bookingResults, and(eq(bookingResults.runId, bookingChanges.runId), eq(bookingResults.bookingId, bookingChanges.bookingId)))
+    .innerJoin(runs, eq(runs.id, bookingChanges.runId))
+    .where(and(eq(bookingChanges.bookingId, booking.id), eq(bookingChanges.fromVersion, 0)))
+    .orderBy(asc(bookingResults.createdAt))
+    .limit(1);
+  if (!made) throw new ConflictException("The run that made this booking is gone, so it cannot be rescheduled here. Cancel it instead.");
   const version = booking.workflowId ? await publishedVersion(db, booking.workflowId) : undefined;
   const def = version ? definitionSchema.parse(version.definition) : undefined;
-  const step = def?.steps.find((s) => s.id === made?.stepId);
+  const step = def?.steps.find((s) => s.id === made.stepId);
   const field = step?.type === "booking" && step.config.action === "create" ? bookingStartField(def!.trigger, step.config) : undefined;
-  if (!made || !version || !def || !field) throw new ConflictException(`Publish a version with booking step "${made?.stepId ?? "book"}" to reschedule this booking.`);
+  if (!version || !def || !field) throw new ConflictException(`Publish a version with booking step "${made.stepId}" to reschedule this booking.`);
 
   const later = after(def, made.stepId);
   for (const s of def.steps.filter((x) => later.has(x.id))) {
@@ -58,15 +68,17 @@ async function reschedulePlan(db: Db, booking: { id: string; workflowId: string 
 
   const time = parseZoned(start.trim(), { timezone: field.timezone!, slotMinutes: field.slotMinutes });
   if (!time.ok) throw new BadRequestException([`start: ${time.error}`]);
-  const [old] = booking.runId ? await db.select({ payload: runs.triggerPayload }).from(runs).where(eq(runs.id, booking.runId)) : [];
-  if (!old) throw new ConflictException("The run that made this booking is gone, so it cannot be rescheduled here. Cancel it instead.");
-  return { versionId: version.id, stepId: made.stepId, field: field.name, at: time.at, value: time.value, payload: old.payload as Record<string, unknown> };
+  return { versionId: version.id, stepId: made.stepId, field: field.name, at: time.at, value: time.value, payload: made.payload as Record<string, unknown> };
 }
 
 /** Moves a live booking to a new time and starts its one new run, which resumes after the booking step. */
 export async function rescheduleBooking(db: Db, boss: PgBoss, workspaceId: string, bookingId: string, version: number, start: string, actor: string): Promise<Change> {
   const booking = await bookingById(db, workspaceId, bookingId);
   if (!booking) throw new NotFoundException("booking not found");
+  // A replay gets its stored answer before any check of the time, which may have passed since (Astra, 7c73879).
+  const given = parseZoned(start.trim(), { timezone: booking.timezone }, -Infinity);
+  const replay = given.ok ? await staffReplay(db, { workspaceId, bookingId, version, action: "reschedule", start: given.at }) : undefined;
+  if (replay) return answer(replay);
   const plan = await reschedulePlan(db, booking, start);
   const r = await staffChange(
     db,
