@@ -55,14 +55,12 @@ export const qa08: Scenario = {
       payload: { item: "Printer", amount: 8_000 },
       options: { choices: { log: { fail: "permanent" } } },
       want: ["check", "ask", "post", "log:failed"],
-      gap: { phase: "P3", today: full, why: "mocked steps always succeed" },
     },
     {
       name: "the tester picks rejected and nothing is posted",
       payload: { item: "Printer", amount: 8_000 },
       options: { choices: { ask: { decision: "rejected" } } },
       want: ["check", "ask", "reject_notice"],
-      gap: { phase: "P3", today: full, why: "mocked approvals always approve" },
     },
   ],
 };

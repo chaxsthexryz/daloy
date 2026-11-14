@@ -48,14 +48,12 @@ export const qa03: Scenario = {
       payload: { title: "Rainy day", discount: 20 },
       options: { choices: { ask: { decision: "rejected" } } },
       want: ["guard_low", "guard_high", "ask", "rejected_notice"],
-      gap: { phase: "P3", today: approved, why: "mocked approvals always approve" },
     },
     {
       name: "the tester picks timeout and the timeout notice goes",
       payload: { title: "Rainy day", discount: 20 },
       options: { choices: { ask: { decision: "timeout" } } },
       want: ["guard_low", "guard_high", "ask", "timeout_notice"],
-      gap: { phase: "P3", today: approved, why: "mocked approvals always approve" },
     },
     {
       name: "a missing discount is refused at the boundary",

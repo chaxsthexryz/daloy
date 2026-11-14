@@ -32,7 +32,7 @@ export function duration(from: string, to: string | null): string {
   return ms < 1000 ? `${ms} ms` : ms < 120_000 ? `${(ms / 1000).toFixed(1)} s` : `${Math.round(ms / 60_000)} min`;
 }
 
-const kind = (r: { test: boolean; live: boolean }) => (r.test ? (r.live ? "test run, live calls" : "test run, mocked calls") : "live run");
+const kind = (r: { test: boolean; live: boolean; aiLive?: boolean }) => (r.test ? (r.live ? "test run, live calls" : r.aiLive ? "test run, real AI, other calls mocked" : "test run, mocked calls") : "live run");
 const json = (v: unknown) => JSON.stringify(v, null, 2);
 // A named approval's step output holds who answered and when (decision 0022).
 function decided(output: unknown): string | null {

@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { createRun, findApprover, listDeliveries, PROVIDER_NAMES, type Provider, publishedVersion, readConnections, requests, runs, SCHEDULE_QUEUE, triggers, workflows, workflowVersions, type Db } from "@daloy/db";
-import { BRANCHES, definitionSchema, guidedSetupInput, OFFICE_REQUEST, saveProblems, stepJsonSchemas, TEMPLATES, triggerFields, type Trigger, type WorkflowDefinition } from "@daloy/engine";
+import { BRANCHES, choiceProblems, definitionSchema, testChoicesSchema, testModeSchema, guidedSetupInput, OFFICE_REQUEST, saveProblems, stepJsonSchemas, TEMPLATES, triggerFields, type Trigger, type WorkflowDefinition } from "@daloy/engine";
 import {
   BadRequestException,
   Body,
@@ -29,7 +29,8 @@ const workflowInput = z.object({
 const renameInput = workflowInput.pick({ name: true });
 const versionInput = z.object({ definition: z.unknown(), publish: z.boolean().default(false) });
 const runInput = z.object({ payload: z.record(z.string(), z.unknown()).default({}) });
-const testRunInput = runInput.extend({ definition: z.unknown(), live: z.boolean().default(false) });
+// mode replaces live (kept for older clients): mock fakes every outside call, ai calls only the model, live calls everything.
+const testRunInput = runInput.extend({ definition: z.unknown(), live: z.boolean().default(false), mode: testModeSchema.optional(), choices: testChoicesSchema.default({}) });
 const workflowId = new ZodPipe(z.uuid());
 const versionNumber = new ZodPipe(z.coerce.number().int().min(1).max(1_000_000));
 
@@ -173,9 +174,12 @@ export class WorkflowsController {
     const definition = parseDefinition(body.definition);
     // A test run gets the same field checks as the form or webhook it stands in for, before anything is saved.
     const payload = validPayload(triggerFields(definition.trigger), body.payload);
+    const mode = body.mode ?? (body.live ? "live" : "mock");
+    const problems = choiceProblems(definition, body.choices, mode);
+    if (problems.length > 0) throw new BadRequestException(problems);
     const [latest] = await this.db.select().from(workflowVersions).where(eq(workflowVersions.workflowId, id)).orderBy(desc(workflowVersions.version)).limit(1);
     const versionId = latest && canonical(latest.definition) === canonical(definition) ? latest.id : (await this.saveVersion(id, definition, false))!.id;
-    const runId = await createRun(this.db, versionId, payload, { test: true, live: body.live });
+    const runId = await createRun(this.db, versionId, payload, { test: true, live: mode === "live", aiLive: mode === "ai", testChoices: Object.keys(body.choices).length > 0 ? body.choices : null });
     await enqueueRun(this.boss, runId);
     return { id: runId, versionId };
   }

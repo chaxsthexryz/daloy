@@ -68,14 +68,12 @@ export const qa04: Scenario = {
       payload: { order_id: "ORD-6", amount: 2_100 },
       options: { choices: { ask: { decision: "rejected" } } },
       want: [...toApproval, "reject_notice"],
-      gap: { phase: "P3", today: [...toApproval, "approve_notice"], why: "mocked approvals always approve" },
     },
     {
       name: "the tester picks timeout and the timeout notice goes",
       payload: { order_id: "ORD-7", amount: 2_100 },
       options: { choices: { ask: { decision: "timeout" } } },
       want: [...toApproval, "timeout_notice"],
-      gap: { phase: "P3", today: [...toApproval, "approve_notice"], why: "mocked approvals always approve" },
     },
   ],
 };

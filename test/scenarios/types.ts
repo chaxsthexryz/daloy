@@ -19,7 +19,7 @@ export type Phase = "P2" | "P3" | "P4" | "P5" | "P6a" | "P6b" | "P7";
 export type RunCase = {
   name: string;
   payload: Record<string, unknown>;
-  /** Test-run options that later phases add (P3). Today's API drops unknown keys, so these change nothing yet. */
+  /** Test-run options: mode (mock, ai, live) and chosen step outcomes (decision 0028). */
   options?: { choices?: Record<string, unknown>; mode?: "mock" | "ai" | "live" };
   want: Outcome;
   /** The exact field errors a refused payload must get, so an unrelated 400 never counts as refused. */

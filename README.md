@@ -91,7 +91,7 @@ By default every email lands in Mailpit (http://localhost:8025) and nobody recei
 2. In the console, open **Business and email**, select **Connect Gmail** and enter the Gmail address and the app password.
 3. Select **Send a test email to me** and open the link in that email while signed in. Until then nothing is sent from the address.
 
-From then on, that account's published workflows, approval emails and test runs with "Make live calls" ticked send real mail from its address. Other accounts are not affected. **Disconnect** stops that account's mail until it reconnects; it never switches to another sender. Use your own addresses while testing. The steps for checking this against a real Gmail account are in [docs/live-gmail-check.md](docs/live-gmail-check.md).
+From then on, that account's published workflows, approval emails and test runs set to "Live" send real mail from its address. Other accounts are not affected. **Disconnect** stops that account's mail until it reconnects; it never switches to another sender. Use your own addresses while testing. The steps for checking this against a real Gmail account are in [docs/live-gmail-check.md](docs/live-gmail-check.md).
 
 The `SMTP_*` settings in `.env` are the installation's own server, used by accounts that connected no Gmail. With Mailpit every account may use it. With any other server only accounts you approve can, each with a daily recipient limit (decision 0024):
 

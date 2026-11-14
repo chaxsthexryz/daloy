@@ -47,14 +47,12 @@ export const qa05: Scenario = {
       payload: { item: "Laptop", department: "Finance", amount: 7_800 },
       options: { choices: { ask: { decision: "rejected" } } },
       want: ["gate", "ask", "reject_notice"],
-      gap: { phase: "P3", today: approved, why: "mocked approvals always approve" },
     },
     {
       name: "the tester picks timeout and the timeout is logged",
       payload: { item: "Laptop", department: "Finance", amount: 7_800 },
       options: { choices: { ask: { decision: "timeout" } } },
       want: ["gate", "ask", "timeout_log"],
-      gap: { phase: "P3", today: approved, why: "mocked approvals always approve" },
     },
     {
       name: "a missing department alone is refused at the boundary",
