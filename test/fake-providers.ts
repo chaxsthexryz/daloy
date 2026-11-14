@@ -11,11 +11,12 @@ import type { AddressInfo } from "node:net";
  * - "hang": never answer and do nothing (the call was not received).
  * - "hang-after": do the write, then never answer (the provider accepted it, the caller timed out).
  * - { late: ms }: hold the call, do the write after ms (after the caller gave up), and never answer.
+ * - { heldUntil }: do the write now and answer when the promise settles; with status, write nothing and answer that then.
  *
  * Sheets developer metadata follows Google: a spreadsheets.batchUpdate is all or nothing, and creating metadata with an
  * id that already exists in the spreadsheet fails the whole batch with 400.
  */
-type Behaviour = { status: number; body: unknown; headers?: Record<string, string> } | "hang" | "hang-after" | { late: number };
+type Behaviour = { status: number; body: unknown; headers?: Record<string, string> } | "hang" | "hang-after" | { late: number } | { heldUntil: Promise<unknown>; status?: number; body?: unknown };
 type SheetMeta = { metadataId: number; metadataKey: string; metadataValue?: string; location: { sheetId: number }; visibility: string };
 
 export type FakeProviders = Awaited<ReturnType<typeof startFakeProviders>>;
@@ -75,9 +76,15 @@ export async function startFakeProviders(port = 0) {
     const behaviour = i >= 0 ? pending.splice(i, 1)[0]!.behaviour : undefined;
     if (behaviour === "hang") return void hanging.add(res);
     const late = typeof behaviour === "object" && "late" in behaviour;
-    if (behaviour && behaviour !== "hang-after" && !late) return json(res, behaviour.status, behaviour.body, behaviour.headers);
+    const held = typeof behaviour === "object" && "heldUntil" in behaviour ? behaviour : undefined;
+    if (held?.status !== undefined) {
+      await held.heldUntil;
+      return json(res, held.status, held.body);
+    }
+    if (typeof behaviour === "object" && "status" in behaviour && !("heldUntil" in behaviour)) return json(res, behaviour.status, behaviour.body, behaviour.headers);
     if (late) await new Promise((r) => setTimeout(r, behaviour.late));
-    const answer = (status: number, b: unknown, headers?: Record<string, string>) => (behaviour === "hang-after" || late ? void hanging.add(res) : json(res, status, b, headers));
+    const answer = (status: number, b: unknown, headers?: Record<string, string>) =>
+      behaviour === "hang-after" || late ? void hanging.add(res) : held ? void held.heldUntil.then(() => json(res, status, b, headers)) : json(res, status, b, headers);
 
     // For the e2e suite, whose tests run in other processes: read counts, and take the Slack app out of the channel.
     if (path === "/__control") {
