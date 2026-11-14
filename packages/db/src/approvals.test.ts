@@ -4,15 +4,16 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { freshDatabase } from "../../../test/db";
 import { claimTimeout, createApproval, findPendingApproval, hashToken, recordDecision } from "./approvals";
 import { approvals, runs, stepRuns, users, workflows, workflowVersions, workspaceMembers, type Role } from "./schema";
-import type { Db } from "./index";
+import { createDb, type Db } from "./index";
 
 let db: Db;
 let pool: Pool;
+let url: string;
 let versionId: string;
 let ownerId: string;
 
 beforeAll(async () => {
-  ({ db, pool } = await freshDatabase());
+  ({ db, pool, url } = await freshDatabase());
   const [user] = await db.insert(users).values({ email: "approver@test.local", passwordHash: "x" }).returning();
   ownerId = user!.id;
   await db.insert(workspaceMembers).values({ userId: ownerId, workspaceId: ownerId, role: "owner" });
@@ -33,34 +34,114 @@ async function waitingStep(message = "Refund 40 EUR?") {
   return { runId: run!.id, stepRunId: step!.id };
 }
 const inAnHour = () => new Date(Date.now() + 3_600_000);
+// The worker always claims inside a transaction, which holds the run lock for the whole claim.
+const claim = (stepRunId: string) => db.transaction((tx) => claimTimeout(tx, stepRunId));
 
 describe("createApproval", () => {
   it("returns a 32-byte url-safe token and stores only its SHA-256", async () => {
     const { stepRunId } = await waitingStep();
-    const token = (await createApproval(db, stepRunId, inAnHour()))!;
+    const token = (await createApproval(db, stepRunId, inAnHour()))!.token;
     expect(token).toMatch(/^[A-Za-z0-9_-]{43}$/);
     const [row] = await db.select().from(approvals).where(eq(approvals.stepRunId, stepRunId));
     expect(row!.tokenHash).toBe(hashToken(token));
     expect(row!.tokenHash).not.toContain(token);
   });
 
-  it("replaces the link of an earlier try of the same step run", async () => {
+  it("keeps both links of a re-run attempt usable until the first answer", async () => {
     const { stepRunId } = await waitingStep();
-    const first = (await createApproval(db, stepRunId, inAnHour()))!;
-    const second = (await createApproval(db, stepRunId, inAnHour()))!;
-    expect(await findPendingApproval(db, first)).toBeNull();
+    const first = (await createApproval(db, stepRunId, inAnHour()))!.token;
+    const second = (await createApproval(db, stepRunId, inAnHour()))!.token;
+    expect(await findPendingApproval(db, first)).not.toBeNull();
     expect(await findPendingApproval(db, second)).not.toBeNull();
+    expect(await recordDecision(db, second, "approved")).not.toBeNull();
+    expect(await findPendingApproval(db, first)).toBeNull();
+  });
+});
+
+/** Another attempt of the same approval step in the same run, as a retry after a failed send leaves it. */
+async function retryOf(runId: string, attempt = 2) {
+  const [step] = await db.insert(stepRuns).values({ runId, stepId: "ask", attempt, state: "running" }).returning();
+  return step!.id;
+}
+const decisionsOf = async (runId: string) =>
+  (await db.select({ decision: approvals.decision }).from(approvals).innerJoin(stepRuns, eq(stepRuns.id, approvals.stepRunId)).where(eq(stepRuns.runId, runId))).map((r) => r.decision);
+
+describe("one decision per approval step, across attempts (QA regression, fec03cc)", () => {
+  it("keeps link A usable after a retry sends link B, and the first answer decides for both", async () => {
+    for (const decision of ["approved", "rejected"] as const) {
+      const { runId, stepRunId } = await waitingStep();
+      const a = (await createApproval(db, stepRunId, inAnHour()))!;
+      const b = (await createApproval(db, await retryOf(runId), inAnHour()))!;
+      expect(await findPendingApproval(db, a.token)).not.toBeNull();
+      expect(await recordDecision(db, a.token, decision)).toBe(runId);
+      expect(await recordDecision(db, b.token, decision === "approved" ? "rejected" : "approved")).toBeNull();
+      expect(await decisionsOf(runId)).toEqual([decision, decision]);
+    }
+  });
+
+  it("also takes the answer given through the newer link", async () => {
+    const { runId, stepRunId } = await waitingStep();
+    const a = (await createApproval(db, stepRunId, inAnHour()))!;
+    const retry = await retryOf(runId);
+    const b = (await createApproval(db, retry, inAnHour()))!;
+    expect(await recordDecision(db, b.token, "rejected")).toBe(runId);
+    expect(await recordDecision(db, a.token, "approved")).toBeNull();
+    expect(await claim(retry)).toMatchObject({ branch: "rejected" });
+  });
+
+  it("carries a decision made before the retry over to it, without a new link", async () => {
+    const { runId, stepRunId } = await waitingStep();
+    const a = (await createApproval(db, stepRunId, inAnHour()))!;
+    await recordDecision(db, a.token, "rejected");
+    const retry = await retryOf(runId);
+    expect(await createApproval(db, retry, inAnHour())).toBeNull();
+    expect(await claim(retry)).toMatchObject({ branch: "rejected" });
+    expect(await decisionsOf(runId)).toEqual(["rejected"]);
+  });
+
+  it("keeps the first deadline for every later link", async () => {
+    const { runId, stepRunId } = await waitingStep();
+    const first = new Date(Date.now() + 3_600_000);
+    const a = (await createApproval(db, stepRunId, first))!;
+    const b = (await createApproval(db, await retryOf(runId), new Date(Date.now() + 7_200_000)))!;
+    expect(a.expiresAt.getTime()).toBe(first.getTime());
+    expect(b.expiresAt.getTime()).toBe(first.getTime());
+  });
+
+  it("records exactly one of two answers given at once through different links", async () => {
+    const others = [createDb(url), createDb(url)];
+    try {
+      for (let i = 0; i < 10; i++) {
+        const { runId, stepRunId } = await waitingStep();
+        const a = (await createApproval(db, stepRunId, inAnHour()))!;
+        const b = (await createApproval(db, await retryOf(runId), inAnHour()))!;
+        const results = await Promise.all([recordDecision(others[0]!.db, a.token, "approved"), recordDecision(others[1]!.db, b.token, "rejected")]);
+        expect(results.filter(Boolean)).toHaveLength(1);
+        const winner = results[0] ? "approved" : "rejected";
+        expect(await decisionsOf(runId)).toEqual([winner, winner]);
+      }
+    } finally {
+      await Promise.all(others.map((o) => o.pool.end()));
+    }
+  });
+
+  it("does not take a branch when woken before the deadline with no answer", async () => {
+    const { stepRunId } = await waitingStep();
+    const deadline = inAnHour();
+    const a = (await createApproval(db, stepRunId, deadline))!;
+    expect(await claim(stepRunId)).toMatchObject({ branch: null, pendingUntil: deadline });
+    expect(await findPendingApproval(db, a.token)).not.toBeNull();
   });
 });
 
 describe("findPendingApproval", () => {
   it("returns the step input for a live link and null for unknown, used or expired ones", async () => {
     const { stepRunId } = await waitingStep("Pay invoice 17?");
-    const token = (await createApproval(db, stepRunId, inAnHour()))!;
+    const token = (await createApproval(db, stepRunId, inAnHour()))!.token;
     expect((await findPendingApproval(db, token))?.input).toEqual({ message: "Pay invoice 17?" });
     expect(await findPendingApproval(db, "x".repeat(43))).toBeNull();
 
-    const expired = (await createApproval(db, (await waitingStep()).stepRunId, new Date(Date.now() - 1000)))!;
+    const expired = (await createApproval(db, (await waitingStep()).stepRunId, new Date(Date.now() - 1000)))!.token;
     expect(await findPendingApproval(db, expired)).toBeNull();
 
     await recordDecision(db, token, "approved");
@@ -71,7 +152,7 @@ describe("findPendingApproval", () => {
 describe("recordDecision", () => {
   it("records the decision once and wakes the waiting run", async () => {
     const { runId, stepRunId } = await waitingStep();
-    const token = (await createApproval(db, stepRunId, inAnHour()))!;
+    const token = (await createApproval(db, stepRunId, inAnHour()))!.token;
 
     expect(await recordDecision(db, token, "rejected")).toBe(runId);
     const [row] = await db.select().from(approvals).where(eq(approvals.stepRunId, stepRunId));
@@ -88,35 +169,36 @@ describe("recordDecision", () => {
 
   it("refuses expired and unknown links", async () => {
     const { stepRunId } = await waitingStep();
-    const token = (await createApproval(db, stepRunId, new Date(Date.now() - 1000)))!;
+    const token = (await createApproval(db, stepRunId, new Date(Date.now() - 1000)))!.token;
     expect(await recordDecision(db, token, "approved")).toBeNull();
     expect(await recordDecision(db, "y".repeat(43), "approved")).toBeNull();
   });
 });
 
 describe("claimTimeout", () => {
-  it("marks an unanswered approval as timed out, which kills the link", async () => {
+  it("marks an unanswered approval as timed out once its deadline has passed, which kills the link", async () => {
     const { stepRunId } = await waitingStep();
-    const token = (await createApproval(db, stepRunId, inAnHour()))!;
-    expect((await claimTimeout(db, stepRunId)).branch).toBe("timeout");
+    const token = (await createApproval(db, stepRunId, new Date(Date.now() - 1000)))!.token;
+    expect((await claim(stepRunId)).branch).toBe("timeout");
     expect(await recordDecision(db, token, "approved")).toBeNull();
   });
 
   it("returns the recorded decision when the approver answered first", async () => {
     const { stepRunId } = await waitingStep();
-    const token = (await createApproval(db, stepRunId, inAnHour()))!;
+    const token = (await createApproval(db, stepRunId, inAnHour()))!.token;
     await recordDecision(db, token, "approved");
-    expect((await claimTimeout(db, stepRunId)).branch).toBe("approved");
+    expect((await claim(stepRunId)).branch).toBe("approved");
   });
 
-  it("lets exactly one side win when the click and the timeout race", async () => {
+  it("lets at most one side win when the click and the timeout race at the deadline", async () => {
     for (let i = 0; i < 10; i++) {
       const { stepRunId } = await waitingStep();
-      const token = (await createApproval(db, stepRunId, inAnHour()))!;
-      const [recorded, { branch: outcome }] = await Promise.all([recordDecision(db, token, "approved"), claimTimeout(db, stepRunId)]);
-      expect(outcome).toBe(recorded ? "approved" : "timeout");
+      const token = (await createApproval(db, stepRunId, new Date(Date.now() + 50)))!.token;
+      await new Promise((r) => setTimeout(r, 45));
+      const [recorded, claimed] = await Promise.all([recordDecision(db, token, "approved"), claim(stepRunId)]);
       const [row] = await db.select().from(approvals).where(eq(approvals.stepRunId, stepRunId));
-      expect(row!.decision).toBe(outcome);
+      expect(row!.decision === "approved").toBe(recorded !== null);
+      if (claimed.branch !== null) expect(row!.decision).toBe(claimed.branch);
     }
   });
 });
@@ -135,7 +217,7 @@ describe("named approvals (decision 0022)", () => {
     const approver = await member("approver", ownerId);
     const colleague = await member("approver", ownerId);
     const { runId, stepRunId } = await waitingStep();
-    const token = (await createApproval(db, stepRunId, inAnHour(), approver.id))!;
+    const token = (await createApproval(db, stepRunId, inAnHour(), approver.id))!.token;
     expect((await findPendingApproval(db, token))?.approverId).toBe(approver.id);
 
     // A forwarded link: someone signed out, or a colleague signed in, gets nothing.
@@ -153,7 +235,7 @@ describe("named approvals (decision 0022)", () => {
     // A repeated answer changes nothing.
     expect(await recordDecision(db, token, "rejected", approver)).toBeNull();
     expect((await rowOf(stepRunId)).decision).toBe("approved");
-    expect(await claimTimeout(db, stepRunId)).toMatchObject({ branch: "approved", decidedBy: approver.email });
+    expect(await claim(stepRunId)).toMatchObject({ branch: "approved", decidedBy: approver.email });
   });
 
   it("refuses an approver who was removed or demoted after the link went out", async () => {
@@ -161,8 +243,8 @@ describe("named approvals (decision 0022)", () => {
     const demoted = await member("approver", ownerId);
     const a = await waitingStep();
     const b = await waitingStep();
-    const ta = (await createApproval(db, a.stepRunId, inAnHour(), removed.id))!;
-    const tb = (await createApproval(db, b.stepRunId, inAnHour(), demoted.id))!;
+    const ta = (await createApproval(db, a.stepRunId, inAnHour(), removed.id))!.token;
+    const tb = (await createApproval(db, b.stepRunId, inAnHour(), demoted.id))!.token;
     await db.delete(workspaceMembers).where(eq(workspaceMembers.userId, removed.id));
     await db.update(workspaceMembers).set({ role: "requester" }).where(eq(workspaceMembers.userId, demoted.id));
     expect(await recordDecision(db, ta, "approved", removed)).toBeNull();
@@ -172,7 +254,7 @@ describe("named approvals (decision 0022)", () => {
   it("refuses the same person once they belong to another workspace", async () => {
     const moved = await member("approver", ownerId);
     const { stepRunId } = await waitingStep();
-    const token = (await createApproval(db, stepRunId, inAnHour(), moved.id))!;
+    const token = (await createApproval(db, stepRunId, inAnHour(), moved.id))!.token;
     const other = await member("owner");
     await db.update(workspaceMembers).set({ workspaceId: other.id }).where(eq(workspaceMembers.userId, moved.id));
     expect(await recordDecision(db, token, "approved", moved)).toBeNull();
@@ -182,14 +264,14 @@ describe("named approvals (decision 0022)", () => {
     const approver = await member("approver", ownerId);
     const stranger = await member("owner");
     const { stepRunId } = await waitingStep();
-    const token = (await createApproval(db, stepRunId, inAnHour(), approver.id))!;
+    const token = (await createApproval(db, stepRunId, inAnHour(), approver.id))!.token;
     expect(await recordDecision(db, token, "approved", stranger)).toBeNull();
   });
 
   it("refuses an expired named link", async () => {
     const approver = await member("approver", ownerId);
     const { stepRunId } = await waitingStep();
-    const token = (await createApproval(db, stepRunId, new Date(Date.now() - 1000), approver.id))!;
+    const token = (await createApproval(db, stepRunId, new Date(Date.now() - 1000), approver.id))!.token;
     expect(await recordDecision(db, token, "approved", approver)).toBeNull();
   });
 
@@ -197,7 +279,7 @@ describe("named approvals (decision 0022)", () => {
     const approver = await member("approver", ownerId);
     for (let i = 0; i < 10; i++) {
       const { stepRunId } = await waitingStep();
-      const token = (await createApproval(db, stepRunId, inAnHour(), approver.id))!;
+      const token = (await createApproval(db, stepRunId, inAnHour(), approver.id))!.token;
       const results = await Promise.all([recordDecision(db, token, "approved", approver), recordDecision(db, token, "rejected", approver)]);
       expect(results.filter(Boolean)).toHaveLength(1);
       expect((await rowOf(stepRunId)).decision).toBe(results[0] ? "approved" : "rejected");
@@ -206,7 +288,7 @@ describe("named approvals (decision 0022)", () => {
 
   it("keeps a link-holder approval (no approver, like links sent before phase 4) working without sign-in", async () => {
     const { runId, stepRunId } = await waitingStep();
-    const token = (await createApproval(db, stepRunId, inAnHour()))!;
+    const token = (await createApproval(db, stepRunId, inAnHour()))!.token;
     expect((await findPendingApproval(db, token))?.approverId).toBeNull();
     expect(await recordDecision(db, token, "approved")).toBe(runId);
     expect((await rowOf(stepRunId)).decidedBy).toBeNull();
@@ -215,7 +297,7 @@ describe("named approvals (decision 0022)", () => {
   it("lets the owner answer an approval named to them", async () => {
     const owner = (await db.select().from(users).where(eq(users.id, ownerId)))[0]!;
     const { runId, stepRunId } = await waitingStep();
-    const token = (await createApproval(db, stepRunId, inAnHour(), ownerId))!;
+    const token = (await createApproval(db, stepRunId, inAnHour(), ownerId))!.token;
     expect(await recordDecision(db, token, "rejected", { id: owner.id, email: owner.email })).toBe(runId);
   });
 });

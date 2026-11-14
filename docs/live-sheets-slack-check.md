@@ -22,6 +22,10 @@ Status: not run yet. Record the date, the Daloy commit and what you saw at the e
 7. Delete the service account key in Google Cloud. Send a request. Expect "Google rejected the service account key" and the connection marked as needing reconnecting.
 8. Revoke the Slack token (reinstall the app or revoke it in the app settings). Send a request. Expect "Slack no longer accepts the app's token".
 
+9. Exactly-once write (decision 0021): send one request, then in Google Sheets open Extensions > Apps Script or the API explorer and confirm one developer metadata entry with key `daloy` exists on the tab, and that the row appears once. Run the delivery again from the database (set `state = 'queued', check_first = true` for that delivery) and confirm no second row appears and the delivery says "already in the sheet".
+10. Reconnect to a different sheet while a delivery is queued (stop the worker first). Start the worker. Expect review with both sheets named and no row in either. Choose Post again and expect one row in the new sheet.
+11. After 24 hours (or after moving `updated_at` back), confirm the worker removed the metadata entry.
+
 ## Results
 
 None recorded yet.

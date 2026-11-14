@@ -1,11 +1,11 @@
 import { generateKeyPairSync, randomBytes } from "node:crypto";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import type { Pool } from "pg";
-import { afterAll, beforeAll, beforeEach, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { freshDatabase } from "../../../test/db";
 import { startFakeProviders, type FakeProviders } from "../../../test/fake-providers";
 import { readConnections, removeConnection, saveConnection } from "./connections";
-import { claimDueDeliveries, confirmDelivery, DELIVERY_POLICY, queueDelivery, retryDelivery, runDueDeliveries } from "./deliveries";
+import { claimDueDeliveries, clearSheetWriteKeys, confirmDelivery, DELIVERY_POLICY, queueDelivery, retryDelivery, runDueDeliveries } from "./deliveries";
 import type { Db } from "./index";
 import type { ProviderUrls } from "./providers";
 import { connections, deliveries, runs, users, workflows, workflowVersions } from "./schema";
@@ -20,6 +20,7 @@ let urls: ProviderUrls;
 let ana: string;
 let ben: string;
 let sheetRows: string[][];
+let sheetState: ReturnType<FakeProviders["addSheet"]>;
 
 const serviceAccount = (email: string) => {
   const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
@@ -45,7 +46,8 @@ const state = async (id: string) => (await db.select().from(deliveries).where(eq
 const deliverDue = () => runDueDeliveries(db, key, urls);
 /** Makes a scheduled retry due now, as if its backoff had passed. */
 const makeDue = (id: string) => db.update(deliveries).set({ nextAttemptAt: sql`now()` }).where(eq(deliveries.id, id));
-const appends = () => fake.calls.filter((c) => c.endsWith(":append")).length;
+const appends = () => fake.calls.filter((c) => c.endsWith(":batchUpdate")).length;
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 beforeAll(async () => {
   ({ db, pool } = await freshDatabase());
@@ -63,7 +65,8 @@ afterAll(async () => {
 beforeEach(async () => {
   await db.delete(deliveries);
   await db.delete(connections);
-  sheetRows = fake.addSheet("sheet-ana", "Office requests", "Requests", ["sheets@ana.iam.gserviceaccount.com"]).tabs.get("Requests")!;
+  sheetState = fake.addSheet("sheet-ana", "Office requests", "Requests", ["sheets@ana.iam.gserviceaccount.com"]);
+  sheetRows = sheetState.tabs.get("Requests")!;
   fake.slack.token = "xoxb-ana";
   fake.slack.revoked = false;
   fake.slack.messages.length = 0;
@@ -80,7 +83,7 @@ it("appends one row that starts with the request reference, and records where it
   const d = await sheet(ana, await newRun(ana), "REQ-1001");
   await deliverDue();
   expect(sheetRows).toEqual([["REQ-1001", "2026-11-13T09:00:00.000Z", "Printer jammed"]]);
-  expect(await state(d.id)).toMatchObject({ state: "delivered", attempts: 1, result: { range: "'Requests'!A1:C1" } });
+  expect(await state(d.id)).toMatchObject({ state: "delivered", attempts: 1, result: { sheet: "Requests" } });
 });
 
 it("queues one delivery per run and step, however often the step runs", async () => {
@@ -112,17 +115,18 @@ it("retries Slack alone when the sheet row went in and Slack failed", async () =
   expect(sheetRows).toHaveLength(1);
 });
 
-it("checks the sheet before writing again when Google accepted a row but the answer timed out", async () => {
+it("does not write twice when Google accepted a row but the answer timed out", async () => {
   const d = await sheet(ana, await newRun(ana), "REQ-1004");
-  fake.once(":append", "hang-after");
+  fake.once(":batchUpdate", "hang-after");
   const before = appends();
   await deliverDue();
   expect(await state(d.id)).toMatchObject({ state: "queued", checkFirst: true });
   await makeDue(d.id);
   await deliverDue();
-  expect(await state(d.id)).toMatchObject({ state: "delivered", result: { range: "'Requests'!A1", reconciled: true } });
+  expect(await state(d.id)).toMatchObject({ state: "delivered", result: { sheet: "Requests", reconciled: true } });
   expect(sheetRows).toHaveLength(1);
-  expect(appends() - before).toBe(1);
+  // The retry sent the same atomic write, and Google refused it because its marker already existed.
+  expect(appends() - before).toBe(2);
 });
 
 it("does not take another step's row with the same reference for its own", async () => {
@@ -130,17 +134,17 @@ it("does not take another step's row with the same reference for its own", async
   await sheet(ana, runId, "REQ-1010");
   await deliverDue();
   const second = await queueDelivery(db, { userId: ana, runId, stepId: "log_cost", provider: "google_sheets", reference: "REQ-1010", payload: { row: ["REQ-1010", "2026-11-13T09:00:01.000Z", "PHP 7,800"] } });
-  fake.once(":append", "hang");
+  fake.once(":batchUpdate", "hang");
   await deliverDue();
   await makeDue(second.id);
   await deliverDue();
-  expect(await state(second.id)).toMatchObject({ state: "delivered", result: { range: "'Requests'!A2:C2" } });
+  expect(await state(second.id)).toMatchObject({ state: "delivered", result: { sheet: "Requests" } });
   expect(sheetRows.map((r) => r[2])).toEqual(["Printer jammed", "PHP 7,800"]);
 });
 
 it("writes the row after the check when the timed-out call never arrived", async () => {
   const d = await sheet(ana, await newRun(ana), "REQ-1005");
-  fake.once(":append", "hang");
+  fake.once(":batchUpdate", "hang");
   await deliverDue();
   await makeDue(d.id);
   await deliverDue();
@@ -274,8 +278,107 @@ it("hands each due delivery to one worker, and treats one left sending by a cras
   expect([...first, ...second].map((r) => r.id)).toEqual([a.id]);
 
   // The claim above is never finished, like a worker that died mid-call. After the stale time it is claimed again,
-  // and the sheet is checked before writing.
+  // and marked uncertain.
   await db.update(deliveries).set({ updatedAt: sql`now() - interval '10 minutes'` }).where(eq(deliveries.id, a.id));
   const [again] = await claimDueDeliveries(db);
   expect(again).toMatchObject({ id: a.id, checkFirst: true, attempts: 2 });
+});
+
+describe("exactly-once Sheets writes and pinned destinations (QA regression, fec03cc)", () => {
+  it("edit before retry: the row landed, the answer was lost and someone edited the row; the retry adds nothing", async () => {
+    const d = await sheet(ana, await newRun(ana), "REQ-2001");
+    fake.once(":batchUpdate", "hang-after");
+    await deliverDue();
+    expect(await state(d.id)).toMatchObject({ state: "queued" });
+    sheetRows[0]![2] = "Printer jammed (Ana fixed it)";
+    await makeDue(d.id);
+    await deliverDue();
+    expect(await state(d.id)).toMatchObject({ state: "delivered", result: { reconciled: true } });
+    expect(sheetRows).toHaveLength(1);
+  });
+
+  it("two workers at once, one taking over a stale claim while the first call is still in flight, write one row", async () => {
+    const d = await sheet(ana, await newRun(ana), "REQ-2002");
+    // Worker A's write reaches Google only after A has given up (timeout 300 ms, write applied at 450 ms).
+    fake.once(":batchUpdate", { late: 450 });
+    const workerA = deliverDue();
+    await sleep(100);
+    await db.update(deliveries).set({ updatedAt: sql`now() - interval '10 minutes'` }).where(eq(deliveries.id, d.id));
+    await deliverDue(); // worker B
+    await workerA;
+    await sleep(500);
+    expect(sheetRows).toHaveLength(1);
+    expect(await state(d.id)).toMatchObject({ state: "delivered" });
+  });
+
+  it("refuses a late duplicate after the retry succeeded, because the marker is kept", async () => {
+    const d = await sheet(ana, await newRun(ana), "REQ-2003");
+    fake.once(":batchUpdate", { late: 450 });
+    await deliverDue();
+    expect(await state(d.id)).toMatchObject({ state: "queued" });
+    await makeDue(d.id);
+    await deliverDue();
+    expect(await state(d.id)).toMatchObject({ state: "delivered" });
+    await sleep(300);
+    expect(sheetRows).toHaveLength(1);
+  });
+
+  it("keeps the marker for 24 hours after delivery, then deletes it", async () => {
+    const d = await sheet(ana, await newRun(ana), "REQ-2004");
+    await deliverDue();
+    const { sheetMetaId } = await state(d.id);
+    expect(sheetState.metadata.has(sheetMetaId!)).toBe(true);
+    expect(await clearSheetWriteKeys(db, key, urls)).toBe(0);
+    expect(sheetState.metadata.has(sheetMetaId!)).toBe(true);
+    await db.update(deliveries).set({ updatedAt: sql`now() - interval '25 hours'` }).where(eq(deliveries.id, d.id));
+    expect(await clearSheetWriteKeys(db, key, urls)).toBe(1);
+    expect(sheetState.metadata.has(sheetMetaId!)).toBe(false);
+    expect((await state(d.id)).sheetMetaClearedAt).not.toBeNull();
+  });
+
+  it("sends a delivery to review, writing nothing, when its marker id is taken by something else", async () => {
+    const d = await sheet(ana, await newRun(ana), "REQ-2005");
+    const { sheetMetaId } = await state(d.id);
+    sheetState.metadata.set(sheetMetaId!, { metadataId: sheetMetaId!, metadataKey: "another-tool", location: { sheetId: 1 }, visibility: "PROJECT" });
+    await deliverDue();
+    expect(await state(d.id)).toMatchObject({ state: "needs_review", lastError: expect.stringContaining("marker") });
+    expect(sheetRows).toHaveLength(0);
+  });
+
+  it("reconnect before retry: review, nothing written to either sheet; Post again writes once to the new sheet", async () => {
+    const d = await sheet(ana, await newRun(ana), "REQ-2006");
+    fake.once(":batchUpdate", "hang");
+    await deliverDue();
+    const newRows = fake.addSheet("sheet-ana-2", "New requests", "Requests", ["sheets@ana.iam.gserviceaccount.com"]).tabs.get("Requests")!;
+    await db.update(connections).set({ destination: { spreadsheetId: "sheet-ana-2", tab: "Requests", title: "New requests" } }).where(and(eq(connections.userId, ana), eq(connections.provider, "google_sheets")));
+    await makeDue(d.id);
+    await deliverDue();
+    expect(await state(d.id)).toMatchObject({ state: "needs_review", lastError: expect.stringContaining("changed") });
+    expect([sheetRows.length, newRows.length]).toEqual([0, 0]);
+    expect(await retryDelivery(db, ana, d.id, { postAgain: true })).toBe(true);
+    await deliverDue();
+    expect(await state(d.id)).toMatchObject({ state: "delivered" });
+    expect([sheetRows.length, newRows.length]).toEqual([0, 1]);
+  });
+
+  it("reconnect before retry for Slack: review and no message; Post again posts once to the new channel", async () => {
+    fake.slack.channels.push({ id: "C0NEW", name: "front-desk", is_member: true });
+    const d = await slack(ana, await newRun(ana), "REQ-2007");
+    await saveConnection(db, key, ana, "slack", { account: "Lim Dental", credential: "xoxb-ana", destination: { channelId: "C0NEW", channelName: "front-desk" } });
+    await deliverDue();
+    expect(await state(d.id)).toMatchObject({ state: "needs_review", lastError: expect.stringContaining("#office-requests") });
+    expect(fake.slack.messages).toHaveLength(0);
+    await retryDelivery(db, ana, d.id, { postAgain: true });
+    await deliverDue();
+    expect(fake.slack.messages.map((m) => m.channel)).toEqual(["C0NEW"]);
+    fake.slack.channels.pop();
+  });
+
+  it("sends a delivery queued before destinations were recorded to review, writing nothing", async () => {
+    const d = await sheet(ana, await newRun(ana), "REQ-2008");
+    await db.update(deliveries).set({ pinnedAccount: null, pinnedDestination: null }).where(eq(deliveries.id, d.id));
+    await deliverDue();
+    expect(await state(d.id)).toMatchObject({ state: "needs_review", lastError: expect.stringContaining("before Daloy recorded") });
+    expect(sheetRows).toHaveLength(0);
+  });
 });

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { hostname } from "node:os";
-import { createRun, publishedVersion, runDueDeliveries, RUN_QUEUE, RUN_QUEUE_OPTIONS, runs, SCHEDULE_QUEUE, type Db, type ProviderUrls } from "@daloy/db";
+import { clearSheetWriteKeys, createRun, publishedVersion, runDueDeliveries, RUN_QUEUE, RUN_QUEUE_OPTIONS, runs, SCHEDULE_QUEUE, type Db, type ProviderUrls } from "@daloy/db";
 import type { RetryPolicy } from "@daloy/engine";
 import { and, inArray, isNull, lt, lte, or, sql } from "drizzle-orm";
 import { PgBoss } from "pg-boss";
@@ -72,7 +72,12 @@ export async function startWorker(opts: WorkerOptions) {
       );
     for (const { id } of idle) await deps.enqueue(id);
   };
-  const sweepTimer = setInterval(() => sweep().catch((err: unknown) => console.error("sweep failed", err)), sweepMs);
+  // The same timer removes Sheets write markers once their retention has passed (decision 0021).
+  const clearMarkers = () => (opts.deliveries ? clearSheetWriteKeys(db, opts.deliveries.secretsKey, opts.deliveries.urls) : Promise.resolve(0));
+  const sweepTimer = setInterval(() => {
+    sweep().catch((err: unknown) => console.error("sweep failed", err));
+    clearMarkers().catch((err: unknown) => console.error("sheet marker sweep failed", err));
+  }, sweepMs);
   await sweep();
 
   // Deliveries are rows, not jobs: each poll claims the due ones with SKIP LOCKED (packages/db/src/deliveries.ts).

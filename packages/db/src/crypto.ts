@@ -1,7 +1,7 @@
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import type { Db } from "./index";
-import { secrets } from "./schema";
+import { retiredSecrets, secrets } from "./schema";
 
 export type EncryptedSecret = { ciphertext: string; iv: string; authTag: string };
 
@@ -31,4 +31,47 @@ export async function readSecret(db: Db, key: Buffer, userId: string, name: stri
 export async function readSecrets(db: Db, key: Buffer, userId: string): Promise<Record<string, string>> {
   const rows = await db.select().from(secrets).where(eq(secrets.userId, userId));
   return Object.fromEntries(rows.map((r) => [r.name, decryptSecret(key, userId, r.name, r)]));
+}
+
+
+/**
+ * Keeps the current value of a secret that is about to be replaced or deleted, as it is, for redaction only
+ * (decision 0025). Call it in the same transaction as the replace or delete.
+ */
+export async function retireSecret(tx: Pick<Db, "select" | "insert">, userId: string, name: string) {
+  const [row] = await tx.select().from(secrets).where(and(eq(secrets.userId, userId), eq(secrets.name, name)));
+  if (row) await tx.insert(retiredSecrets).values({ userId, name, ciphertext: row.ciphertext, iv: row.iv, authTag: row.authTag });
+}
+
+/** Every value a workspace's run history may contain: current secrets and retired ones. Never given to a workflow. */
+export async function secretValuesToHide(db: Db, key: Buffer, userId: string): Promise<string[]> {
+  const retired = await db.select().from(retiredSecrets).where(eq(retiredSecrets.userId, userId));
+  return [...Object.values(await readSecrets(db, key, userId)), ...retired.map((r) => decryptSecret(key, userId, r.name, r))];
+}
+
+/**
+ * The forms a secret takes once it is written somewhere: as is, inside a JSON string, and URL or form encoded.
+ * Longest first, so a secret that contains another is fully hidden.
+ */
+export function secretForms(values: string[]): string[] {
+  const forms = new Set<string>();
+  for (const v of values) {
+    if (!v) continue;
+    forms.add(v);
+    forms.add(JSON.stringify(v).slice(1, -1));
+    forms.add(encodeURIComponent(v));
+    forms.add(new URLSearchParams({ v }).toString().slice(2));
+  }
+  return [...forms].filter(Boolean).sort((a, b) => b.length - a.length);
+}
+
+/** Replaces every form of every secret value in strings (keys too) with [secret], at any depth. Returns a copy. */
+export function redactSecrets(value: unknown, forms: string[]): unknown {
+  if (forms.length === 0) return value;
+  if (typeof value === "string") return forms.reduce((s, f) => s.replaceAll(f, "[secret]"), value);
+  if (Array.isArray(value)) return value.map((v) => redactSecrets(v, forms));
+  if (value !== null && typeof value === "object") {
+    return Object.fromEntries(Object.entries(value).map(([k, v]) => [redactSecrets(k, forms), redactSecrets(v, forms)]));
+  }
+  return value;
 }

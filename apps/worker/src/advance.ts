@@ -101,19 +101,27 @@ async function runNext(deps: AdvanceDeps, run: Run): Promise<void> {
   if (run.state === "waiting") {
     // The wake-up time has passed (checked above), or an approver answered, so the waiting step is done and the run carries on.
     const waiting = def.steps.find((s) => s.id === last!.stepId)!;
-    await db.transaction(async (tx) => {
+    const resumed = await db.transaction(async (tx) => {
       const extra: Partial<typeof stepRuns.$inferSelect> = { finishedAt: new Date() };
       if (waiting.type === "approval") {
-        // The recorded decision, or "timeout" if nobody answered in time (decision 0009).
+        // The recorded decision, or "timeout" if nobody answered by the deadline (decision 0009).
         // A named approval also keeps who decided and when (decision 0022), so later steps and the run history can show it.
-        const { branch, decidedBy, decidedAt } = await claimTimeout(tx, last!.id);
+        const outcome = await claimTimeout(tx, last!.id);
+        if (outcome.branch === null) {
+          // Woken early with nobody's answer: keep waiting until the deadline. The sweep picks it up then.
+          await tx.update(runs).set({ nextAttemptAt: outcome.pendingUntil }).where(and(eq(runs.id, run.id), eq(runs.state, "waiting")));
+          return false;
+        }
+        const { branch, decidedBy, decidedAt } = outcome;
         extra.branch = branch;
         extra.output = { ...(last!.output as object), decision: branch, ...(decidedBy ? { decidedBy, decidedAt } : {}) };
       }
       await moveStep(tx, last!.id, "waiting", "succeeded", extra);
       await moveRun(tx, run.id, "waiting", "running", { nextAttemptAt: null });
       Object.assign(last!, extra);
+      return true;
     });
+    if (!resumed) return;
     last!.state = "succeeded";
   }
 
@@ -168,9 +176,11 @@ async function runNext(deps: AdvanceDeps, run: Run): Promise<void> {
     let wakeAt = result.waitUntil;
     await db.transaction(async (tx) => {
       // An approver can answer while the email is on its way, before the run is waiting, so recordDecision's wake-up
-      // missed it. FOR UPDATE waits for a decision still being written. Answered already: wake now, not at the timeout.
+      // missed it. The run lock (taken first, like every approval write) waits for a decision still being written.
+      // Answered already, through this link or an earlier attempt's: wake now, not at the deadline.
       if (step.type === "approval") {
-        const [link] = await tx.select({ usedAt: approvals.usedAt }).from(approvals).where(eq(approvals.stepRunId, stepRunId)).for("update");
+        await tx.select({ id: runs.id }).from(runs).where(eq(runs.id, run.id)).for("update");
+        const [link] = await tx.select({ usedAt: approvals.usedAt }).from(approvals).where(eq(approvals.stepRunId, stepRunId));
         if (link?.usedAt) wakeAt = new Date();
       }
       await moveStep(tx, stepRunId, "running", "waiting", { input: result.input ?? null, output: result.output ?? null });

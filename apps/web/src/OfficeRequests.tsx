@@ -406,7 +406,8 @@ function PurchaseWizard({ wf, setup, onLive }: { wf: Detail; setup: PurchaseSetu
 }
 
 const outcome = (r: RequestRow, done: string) =>
-  r.runState === "succeeded" ? done : r.runState === "failed" ? "Not sent, open details" : r.runState === "waiting" ? "Waiting for a decision" : "Sending";
+  // "Stopped", not "Not sent": earlier steps of a failed run may already have sent something (Details shows each step).
+  r.runState === "succeeded" ? done : r.runState === "failed" ? "Stopped, open details" : r.runState === "waiting" ? "Waiting for a decision" : "Sending";
 
 function LivePage({ wf, formId }: { wf: Detail; formId: string }) {
   const [rows, setRows] = useState<RequestRow[] | null>(null);
@@ -473,7 +474,7 @@ function LivePage({ wf, formId }: { wf: Detail; formId: string }) {
                   <td>{new Date(r.createdAt).toLocaleString()}</td>
                   <td>{wf.name}</td>
                   <td>
-                    {outcome(r, (wf.setup as { template?: string } | null)?.template === PURCHASE_REQUEST ? "Decided" : "Processed")} <a href={`#/runs/${r.runId}`}>Details</a>
+                    {outcome(r, (wf.setup as { template?: string } | null)?.template === PURCHASE_REQUEST ? "Finished" : "Processed")} <a href={`#/runs/${r.runId}`}>Details</a>
                   </td>
                   <td>{r.deliveries.length ? <DeliveryList deliveries={r.deliveries} onChange={load} /> : <span className="muted">None</span>}</td>
                 </tr>

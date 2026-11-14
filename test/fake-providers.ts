@@ -10,8 +10,13 @@ import type { AddressInfo } from "node:net";
  * - { status, body, headers }: answer with that instead.
  * - "hang": never answer and do nothing (the call was not received).
  * - "hang-after": do the write, then never answer (the provider accepted it, the caller timed out).
+ * - { late: ms }: hold the call, do the write after ms (after the caller gave up), and never answer.
+ *
+ * Sheets developer metadata follows Google: a spreadsheets.batchUpdate is all or nothing, and creating metadata with an
+ * id that already exists in the spreadsheet fails the whole batch with 400.
  */
-type Behaviour = { status: number; body: unknown; headers?: Record<string, string> } | "hang" | "hang-after";
+type Behaviour = { status: number; body: unknown; headers?: Record<string, string> } | "hang" | "hang-after" | { late: number };
+type SheetMeta = { metadataId: number; metadataKey: string; metadataValue?: string; location: { sheetId: number }; visibility: string };
 
 export type FakeProviders = Awaited<ReturnType<typeof startFakeProviders>>;
 
@@ -19,7 +24,7 @@ export async function startFakeProviders(port = 0) {
   const keys = new Map<string, KeyObject>(); // service account email -> public key
   const revoked = new Set<string>();
   const tokens = new Map<string, string>(); // access token -> email
-  const sheets = new Map<string, { title: string; tabs: Map<string, string[][]>; editors: Set<string> }>();
+  const sheets = new Map<string, { title: string; tabs: Map<string, string[][]>; editors: Set<string>; metadata: Map<number, SheetMeta> }>();
   const slack = { token: "", team: "Lim Dental", channels: [{ id: "C0REQ", name: "office-requests", is_member: true }], messages: [] as { channel: string; text: string; ts: string }[], revoked: false };
   // Microsoft: consent decides what the authorize page answers. Every refresh hands out a new refresh token; like the
   // real service, the old one keeps working until it is revoked (refreshTokens.clear()).
@@ -69,8 +74,10 @@ export async function startFakeProviders(port = 0) {
     const i = pending.findIndex((p) => path.includes(p.path));
     const behaviour = i >= 0 ? pending.splice(i, 1)[0]!.behaviour : undefined;
     if (behaviour === "hang") return void hanging.add(res);
-    if (behaviour && behaviour !== "hang-after") return json(res, behaviour.status, behaviour.body, behaviour.headers);
-    const answer = (status: number, b: unknown, headers?: Record<string, string>) => (behaviour === "hang-after" ? void hanging.add(res) : json(res, status, b, headers));
+    const late = typeof behaviour === "object" && "late" in behaviour;
+    if (behaviour && behaviour !== "hang-after" && !late) return json(res, behaviour.status, behaviour.body, behaviour.headers);
+    if (late) await new Promise((r) => setTimeout(r, behaviour.late));
+    const answer = (status: number, b: unknown, headers?: Record<string, string>) => (behaviour === "hang-after" || late ? void hanging.add(res) : json(res, status, b, headers));
 
     // For the e2e suite, whose tests run in other processes: read counts, and take the Slack app out of the channel.
     if (path === "/__control") {
@@ -173,6 +180,44 @@ export async function startFakeProviders(port = 0) {
       return json(res, 200, { access_token: token, expires_in: 3599, token_type: "Bearer" });
     }
 
+    // Google Sheets API v4: batchUpdate (developer metadata and appendCells) and reading one metadata entry by id.
+    const batchPath = /^\/v4\/spreadsheets\/([^/:]+):batchUpdate$/.exec(path);
+    const metaPath = /^\/v4\/spreadsheets\/([^/]+)\/developerMetadata\/(\d+)$/.exec(path);
+    if (batchPath || metaPath) {
+      const email = tokens.get((req.headers.authorization ?? "").replace(/^Bearer /, ""));
+      if (!email) return googleError(res, 401, "UNAUTHENTICATED", "Request had invalid authentication credentials.");
+      const sheet = sheets.get((batchPath ?? metaPath)![1]!);
+      if (!sheet) return googleError(res, 404, "NOT_FOUND", "Requested entity was not found.");
+      if (!sheet.editors.has(email)) return googleError(res, 403, "PERMISSION_DENIED", "The caller does not have permission");
+      if (metaPath) {
+        const meta = sheet.metadata.get(Number(metaPath[2]));
+        return meta ? answer(200, meta) : googleError(res, 404, "NOT_FOUND", `No developer metadata with ID: ${metaPath[2]}`);
+      }
+      const titles = [...sheet.tabs.keys()];
+      const tabOf = (sheetId: number) => titles[sheetId - 1];
+      // Validate everything first, then apply: one failing request leaves the spreadsheet untouched.
+      type BatchRequest = {
+        createDeveloperMetadata?: { developerMetadata: SheetMeta };
+        appendCells?: { sheetId: number; rows: { values: { userEnteredValue: { stringValue: string } }[] }[] };
+        deleteDeveloperMetadata?: { dataFilter: { developerMetadataLookup: { metadataId: number } } };
+      };
+      const { requests } = JSON.parse(raw) as { requests: BatchRequest[] };
+      const created = new Set<number>();
+      for (const r of requests) {
+        const m = r.createDeveloperMetadata?.developerMetadata;
+        if (m && (sheet.metadata.has(m.metadataId) || created.has(m.metadataId))) return googleError(res, 400, "INVALID_ARGUMENT", `Invalid requests[0].createDeveloperMetadata: Developer metadata with ID ${m.metadataId} already exists.`);
+        if (m && !tabOf(m.location.sheetId)) return googleError(res, 400, "INVALID_ARGUMENT", "No grid with id");
+        if (m) created.add(m.metadataId);
+        if (r.appendCells && !tabOf(r.appendCells.sheetId)) return googleError(res, 400, "INVALID_ARGUMENT", "No grid with id");
+      }
+      for (const r of requests) {
+        if (r.createDeveloperMetadata) sheet.metadata.set(r.createDeveloperMetadata.developerMetadata.metadataId, r.createDeveloperMetadata.developerMetadata);
+        if (r.appendCells) sheet.tabs.get(tabOf(r.appendCells.sheetId)!)!.push(...r.appendCells.rows.map((row) => row.values.map((v) => v.userEnteredValue.stringValue)));
+        if (r.deleteDeveloperMetadata) sheet.metadata.delete(r.deleteDeveloperMetadata.dataFilter.developerMetadataLookup.metadataId);
+      }
+      return answer(200, { replies: requests.map(() => ({})) });
+    }
+
     // Google Sheets API v4.
     const sheetPath = /^\/v4\/spreadsheets\/([^/]+)(?:\/values\/(.+?)(:append)?)?$/.exec(path);
     if (sheetPath) {
@@ -181,7 +226,7 @@ export async function startFakeProviders(port = 0) {
       const sheet = sheets.get(sheetPath[1]!);
       if (!sheet) return googleError(res, 404, "NOT_FOUND", "Requested entity was not found.");
       if (!sheet.editors.has(email)) return googleError(res, 403, "PERMISSION_DENIED", "The caller does not have permission");
-      if (!sheetPath[2]) return answer(200, { properties: { title: sheet.title }, sheets: [...sheet.tabs.keys()].map((title) => ({ properties: { title } })) });
+      if (!sheetPath[2]) return answer(200, { properties: { title: sheet.title }, sheets: [...sheet.tabs.keys()].map((title, i) => ({ properties: { title, sheetId: i + 1 } })) });
       const tabName = /^'?(.*?)'?!/.exec(sheetPath[2])?.[1]?.replaceAll("''", "'") ?? "";
       const tab = sheet.tabs.get(tabName);
       if (!tab) return googleError(res, 400, "INVALID_ARGUMENT", `Unable to parse range: ${sheetPath[2]}`);
@@ -234,7 +279,7 @@ export async function startFakeProviders(port = 0) {
     /** Makes every access token issued so far invalid, like an expired one. */
     expireTokens: () => tokens.clear(),
     addSheet: (id: string, title: string, tab: string, editors: string[]) => {
-      const s = { title, tabs: new Map([[tab, [] as string[][]]]), editors: new Set(editors) };
+      const s = { title, tabs: new Map([[tab, [] as string[][]]]), editors: new Set(editors), metadata: new Map<number, SheetMeta>() };
       sheets.set(id, s);
       return s;
     },

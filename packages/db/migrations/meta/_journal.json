@@ -85,6 +85,13 @@
       "when": 1794619641900,
       "tag": "0011_shared_mail_policy",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1794624223429,
+      "tag": "0012_delivery_pinning_retired_secrets",
+      "breakpoints": true
     }
   ]
 }

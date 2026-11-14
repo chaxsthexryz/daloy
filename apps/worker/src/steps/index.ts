@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { aiConnection, checkRecipients, claimTimeout, createApproval, findApprover, queueDelivery, readSecrets, sendAs, type Db, type MailDeps, type Provider } from "@daloy/db";
-import { evaluateCondition, isRetryable, mockAiOutput, resolveTemplate, StepError, type ExpressionContext, type Step } from "@daloy/engine";
+import { aiConnection, checkRecipients, claimTimeout, createApproval, findApprover, queueDelivery, readSecrets, redactSecrets, secretForms, sendAs, type Db, type MailDeps, type Provider } from "@daloy/db";
+import { declaresJson, evaluateCondition, isRetryable, mockAiOutput, parseJsonTemplate, resolveJsonTemplate, resolveTemplate, StepError, usesSecrets, type ExpressionContext, type Step } from "@daloy/engine";
 import type { StepExecutor, StepResult } from "../advance";
 import { runAi } from "./ai";
 import { httpRequest } from "./http";
@@ -20,36 +20,23 @@ function text(template: string, ctx: ExpressionContext): string {
 }
 
 /**
- * A body that is JSON as written is resolved value by value and serialised once, so quotes, newlines or a crafted
- * value in trigger data can't break it or add keys. Anything else (raw text, unquoted placeholders) is plain text.
+ * A body that parses as a JSON template is filled value by value and serialised once, so form data cannot break it or
+ * add keys (decision 0025). A request that says it sends JSON must have such a body. Anything else stays plain text.
  */
-function body(template: string, ctx: ExpressionContext): string {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(template);
-  } catch {
-    return text(template, ctx);
-  }
-  const walk = (v: unknown): unknown =>
-    typeof v === "string"
-      ? (resolveTemplate(v, ctx) ?? "")
-      : Array.isArray(v)
-        ? v.map(walk)
-        : v !== null && typeof v === "object"
-          ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, walk(x)]))
-          : v;
-  return JSON.stringify(walk(parsed));
+function body(template: string, headers: Record<string, string>, ctx: ExpressionContext): string {
+  const parsed = parseJsonTemplate(template);
+  if (parsed.ok) return resolveJsonTemplate(parsed, ctx);
+  if (declaresJson(headers)) throw new StepError(`The request body is not valid JSON (${parsed.error}). Write placeholders as values, e.g. "{{trigger.amount}}" or {{trigger.amount}}.`, false);
+  return text(template, ctx);
 }
 
-/** Replaces every secret value in strings (keys too) with [secret]. Longest first, so a secret that contains another is fully hidden. */
-function redact(value: unknown, values: string[]): unknown {
-  if (typeof value === "string") return values.reduce((s, v) => s.replaceAll(v, "[secret]"), value);
-  if (Array.isArray(value)) return value.map((v) => redact(v, values));
-  if (value !== null && typeof value === "object") {
-    return Object.fromEntries(Object.entries(value).map(([k, v]) => [redact(k, values), redact(v, values)]));
+const originOf = (url: string) => {
+  try {
+    return new URL(url).origin;
+  } catch {
+    return null;
   }
-  return value;
-}
+};
 
 type HttpInput = { method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE"; url: string; headers: Record<string, string>; body?: string };
 type EmailInput = { to: string; subject: string; text: string };
@@ -73,7 +60,7 @@ function resolveInput(step: Step, ctx: ExpressionContext): Record<string, unknow
     case "http": {
       const { method, url, headers } = step.config;
       const input: HttpInput = { method, url: text(url, ctx), headers: Object.fromEntries(Object.entries(headers).map(([k, v]) => [k, text(v, ctx)])) };
-      if (step.config.body !== undefined) input.body = body(step.config.body, ctx);
+      if (step.config.body !== undefined) input.body = body(step.config.body, headers, ctx);
       return input;
     }
     case "email":
@@ -135,18 +122,20 @@ async function runStep(deps: FullDeps, step: Step, input: unknown, ctx: Expressi
       // A named approver must still be a member who may approve; the API checks again when they answer (decision 0022).
       const approver = cfg.approver ? await findApprover(deps.db, userId, cfg.approver) : null;
       if (cfg.approver && !approver) throw new StepError(`The approver ${cfg.approver} is not a member of this workspace who can approve.`, false);
-      const expiresAt = new Date(Date.now() + cfg.timeoutSeconds * 1000);
-      const token = await createApproval(deps.db, stepRunId, expiresAt, approver?.id);
-      if (!token) {
-        // A re-run after a crash, and the approver already answered the first link: take that answer, ask nobody again.
-        const { branch, decidedBy, decidedAt } = await claimTimeout(deps.db, stepRunId);
+      const created = await createApproval(deps.db, stepRunId, new Date(Date.now() + cfg.timeoutSeconds * 1000), approver?.id);
+      if (!created) {
+        // A retry or re-run, and the approver already answered an earlier link: take that answer, ask nobody again.
+        const { branch, decidedBy, decidedAt } = await deps.db.transaction((tx) => claimTimeout(tx, stepRunId));
+        if (branch === null) throw new StepError("approval has no recorded decision", true);
         return { output: { decision: branch, ...(decidedBy ? { decidedBy, decidedAt } : {}) }, branch };
       }
+      // A retry's link keeps the first link's deadline (decision 0009).
+      const { token, expiresAt } = created;
       const link = `${deps.publicUrl}/approvals/${token}`;
       const who = approver ? `To answer, sign in as ${approver.email}. ` : "";
       const body = `${cfg.message}\n\nApprove or reject here:\n${link}\n\n${who}The link works once and expires at ${expiresAt.toISOString()}.`;
-      // A re-run of this attempt after a crash sends a new link (the old one is deleted), so it needs its own Message-ID,
-      // or a mail server could drop it as a duplicate of the dead one.
+      // A retry or re-run sends a new link (earlier ones still work), so it needs its own Message-ID, or a mail server
+      // could drop it as a duplicate of the earlier message.
       await sendAs(deps.db, deps.secretsKey, deps.mail, userId, { to: approver?.email ?? cfg.to!, subject: cfg.subject, text: body }, `${idempotencyKey}:${randomUUID().slice(0, 8)}`);
       // The run waits until the timeout; recording a decision wakes it earlier (decision 0009).
       return { output: { expiresAt: expiresAt.toISOString() }, waitUntil: expiresAt };
@@ -175,8 +164,10 @@ async function runStep(deps: FullDeps, step: Step, input: unknown, ctx: Expressi
 }
 
 /**
- * Runs real steps. The owner's secrets are decrypted for this attempt only, and their values are
- * replaced with [secret] in the output and error text before anything is written to the database.
+ * Runs real steps. The owner's secrets are decrypted for this attempt only and given to HTTP steps alone (decision 0025).
+ * What is stored is a preview resolved with every secret as the literal [secret], never the request that went out, so
+ * no encoding of a secret can reach run history through the input. Outputs and errors come from outside, so every
+ * form of every secret value is replaced with [secret] in them before anything is written to the database.
  */
 export function createExecutor(deps: ExecutorDeps): StepExecutor {
   const full: FullDeps = {
@@ -187,21 +178,26 @@ export function createExecutor(deps: ExecutorDeps): StepExecutor {
   return {
     async execute({ runId, step, userId, idempotencyKey, attempt, stepRunId, ctx, mock = false }) {
       const secrets = await readSecrets(deps.db, deps.secretsKey, userId);
-      const values = Object.values(secrets)
-        .filter((v) => v.length > 0)
-        .sort((a, b) => b.length - a.length);
-      const withSecrets = { ...ctx, secrets };
-      let input: unknown = null;
+      const forms = secretForms(Object.values(secrets));
+      // Only an HTTP step sees secrets. Every other step resolves without them, so an email, AI prompt or condition can't carry one.
+      const real: ExpressionContext = step.type === "http" ? { ...ctx, secrets } : ctx;
+      const masked: ExpressionContext = step.type === "http" ? { ...ctx, secrets: Object.fromEntries(Object.keys(secrets).map((k) => [k, "[secret]"])) } : ctx;
+      let preview: unknown = null;
       try {
-        input = resolveInput(step, withSecrets);
-        // A Sheets row, Slack or Teams note, or Outlook email is stored and then sent as is, so secrets are redacted before it is queued:
-        // a secret never reaches a spreadsheet or a channel.
-        if (step.type === "sheets" || step.type === "slack" || step.type === "outlook" || step.type === "teams") input = redact(input, values);
-        const result = await runStep(full, step, input, withSecrets, { runId, idempotencyKey, attempt, stepRunId, userId, mock });
-        return { ...result, input: redact(input, values), output: redact(result.output, values) };
+        preview = resolveInput(step, masked);
+        const input = step.type === "http" ? resolveInput(step, real) : preview;
+        if (step.type === "http" && usesSecrets(step.config)) {
+          // Where a secret goes may depend on literal text and secrets only, never on trigger or step data.
+          const fixed = text(step.config.url, { trigger: {}, steps: {}, secrets });
+          if (originOf(fixed) !== originOf((input as HttpInput).url)) {
+            throw new StepError("A request that uses a secret must go to a fixed address: trigger or step data changed its host. Move that data into the path or query.", false);
+          }
+        }
+        const result = await runStep(full, step, input, real, { runId, idempotencyKey, attempt, stepRunId, userId, mock });
+        return { ...result, input: preview, output: redactSecrets(result.output, forms) };
       } catch (err) {
-        const message = redact(err instanceof Error ? err.message : String(err), values) as string;
-        throw new StepError(message, isRetryable(err), { input: redact(input, values), usage: err instanceof StepError ? err.usage : undefined });
+        const message = redactSecrets(err instanceof Error ? err.message : String(err), forms) as string;
+        throw new StepError(message, isRetryable(err), { input: preview, usage: err instanceof StepError ? err.usage : undefined });
       }
     },
   };

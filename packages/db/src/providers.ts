@@ -9,8 +9,9 @@ import * as z from "zod";
  * - quota, unavailable: try again later. retryAfterMs is the provider's own hint.
  * - ambiguous: a write timed out or broke after it was sent, so the provider may have done it.
  * - invalid: the request itself was wrong. Retrying the same thing will not help.
+ * - review: Daloy cannot tell what happened and must not guess; a person decides.
  */
-export type ProviderErrorKind = "auth" | "permission" | "quota" | "unavailable" | "ambiguous" | "invalid";
+export type ProviderErrorKind = "auth" | "permission" | "quota" | "unavailable" | "ambiguous" | "invalid" | "review";
 export class ProviderError extends Error {
   override name = "ProviderError";
   constructor(
@@ -170,16 +171,58 @@ export async function appendRow(urls: ProviderUrls, sa: ServiceAccount, dest: Sh
   return { range: String((body.updates as { updatedRange?: unknown } | undefined)?.updatedRange ?? "") };
 }
 
+/** A Sheets write's marker: a developer metadata id and value, chosen when the delivery is queued (decision 0021). */
+export type SheetWriteKey = { id: number; value: string };
+const MARKER_KEY = "daloy";
+const json = { "content-type": "application/json" };
+
+async function sheetIdOf(urls: ProviderUrls, sa: ServiceAccount, dest: SheetDestination): Promise<number> {
+  const body = await sheets(urls, sa, `/v4/spreadsheets/${encodeURIComponent(dest.spreadsheetId)}?fields=sheets.properties(sheetId,title)`, {}, false);
+  const tab = ((body.sheets as { properties: { sheetId: number; title: string } }[] | undefined) ?? []).find((s) => s.properties.title === dest.tab);
+  if (!tab) throw new ProviderError(`The tab "${dest.tab}" is no longer in the spreadsheet. Pick the tab again in Business and email, then retry.`, "invalid");
+  return tab.properties.sheetId;
+}
+
+/** The value of our marker with this id, "" for someone else's metadata under that id, or null when there is none. */
+async function markerAt(urls: ProviderUrls, sa: ServiceAccount, spreadsheetId: string, id: number): Promise<string | null> {
+  try {
+    const body = await sheets(urls, sa, `/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}/developerMetadata/${id}`, {}, false);
+    return body.metadataKey === MARKER_KEY ? String(body.metadataValue ?? "") : "";
+  } catch (err) {
+    // 404 comes back as "permission" (spreadsheet or entry not found); the spreadsheet was just reachable, so: no entry.
+    if (err instanceof ProviderError && err.kind === "permission") return null;
+    throw err;
+  }
+}
+
 /**
- * Looks for this exact row: reference, queue-time timestamp and every column. Used before writing again after an
- * ambiguous result. Matching the reference alone would take another step's row in the same run for this one.
- * Google leaves out trailing empty cells, so a missing cell counts as "".
+ * Adds the row exactly once. One spreadsheets.batchUpdate creates the marker (project-private developer metadata with
+ * our chosen id) and appends the row. Google applies a batch entirely or not at all and refuses a second marker with
+ * the same id, so a retry, a parallel attempt or a late copy of an earlier request cannot add the row twice. A refused
+ * batch is checked against the marker: ours means the row is already in. Cells are string values, never formulas.
  */
-export async function findRow(urls: ProviderUrls, sa: ServiceAccount, dest: SheetDestination, row: string[]): Promise<string | null> {
-  const body = await sheets(urls, sa, `/v4/spreadsheets/${encodeURIComponent(dest.spreadsheetId)}/values/${range(dest.tab, "A:ZZ")}`, {}, false);
-  const rows = (body.values as unknown[][] | undefined) ?? [];
-  const i = rows.findIndex((r) => r.length <= row.length && row.every((cell, j) => (r[j] ?? "") === cell));
-  return i < 0 ? null : `'${dest.tab.replaceAll("'", "''")}'!A${i + 1}`;
+export async function appendRowOnce(urls: ProviderUrls, sa: ServiceAccount, dest: SheetDestination, row: string[], key: SheetWriteKey): Promise<{ sheet: string; reconciled?: true }> {
+  const sheetId = await sheetIdOf(urls, sa, dest);
+  const requests = [
+    { createDeveloperMetadata: { developerMetadata: { metadataId: key.id, metadataKey: MARKER_KEY, metadataValue: key.value, location: { sheetId }, visibility: "PROJECT" } } },
+    { appendCells: { sheetId, rows: [{ values: row.map((v) => ({ userEnteredValue: { stringValue: v } })) }], fields: "userEnteredValue" } },
+  ];
+  try {
+    await sheets(urls, sa, `/v4/spreadsheets/${encodeURIComponent(dest.spreadsheetId)}:batchUpdate`, { method: "POST", headers: json, body: JSON.stringify({ requests }) }, true);
+    return { sheet: dest.tab };
+  } catch (err) {
+    if (!(err instanceof ProviderError) || err.kind !== "invalid") throw err;
+    const found = await markerAt(urls, sa, dest.spreadsheetId, key.id);
+    if (found === key.value) return { sheet: dest.tab, reconciled: true };
+    if (found !== null) throw new ProviderError(`Something else in this spreadsheet already uses Daloy's marker ${key.id}, so Daloy cannot tell whether this row was added. Check the sheet, then choose Mark as posted or Post again.`, "review");
+    throw err;
+  }
+}
+
+/** Removes a marker once it is no longer needed (decision 0021: kept 24 hours after delivery). Deleting a missing one is fine. */
+export async function deleteSheetMarker(urls: ProviderUrls, sa: ServiceAccount, spreadsheetId: string, id: number) {
+  const requests = [{ deleteDeveloperMetadata: { dataFilter: { developerMetadataLookup: { metadataId: id } } } }];
+  await sheets(urls, sa, `/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}:batchUpdate`, { method: "POST", headers: json, body: JSON.stringify({ requests }) }, false);
 }
 
 // ---------------------------------------------------------------- Slack

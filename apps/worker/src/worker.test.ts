@@ -21,7 +21,7 @@ const executor: StepExecutor = {
     if (step.type === "approval") {
       // Like the real step, minus the email. "quick" times out after half a second.
       const waitUntil = new Date(Date.now() + (step.id === "quick" ? 500 : 60_000));
-      approvalTokens.set(runId, (await createApproval(db, stepRunId, waitUntil))!);
+      approvalTokens.set(runId, (await createApproval(db, stepRunId, waitUntil))!.token);
       // "early": the approver answers while the email is still on its way, before the run is parked.
       if (step.id === "early") await recordDecision(db, approvalTokens.get(runId)!, "rejected");
       return { output: { expiresAt: waitUntil.toISOString() }, waitUntil };

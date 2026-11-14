@@ -38,9 +38,18 @@ How the owner connects:
 ## Consequences
 
 - A run that queues a delivery succeeds before the row or note exists. The Requests list and `GET /deliveries?runId=` show the delivery's own state. Later steps cannot read the provider's result.
-- Secrets are replaced with `[secret]` in rows and notes, so a template cannot send one to a spreadsheet or channel.
+- Secrets never reach rows and notes: only HTTP steps receive them (decision 0025).
 - Retry acts on that delivery only. It does not re-run the workflow or send a second receipt.
 - One sheet and one channel per owner, public channels only, and the first 200 channels in the picker.
 - A Google access token is cached per process for its hour; a 401 drops it and fetches one new token before giving up.
 - The poll adds one indexed query every two seconds per worker.
 - Live Google and Slack behaviour is checked by hand ([live Sheets and Slack check](../live-sheets-slack-check.md)); the automated tests use a fake server that checks JWT signatures and answers like the real APIs, including timeouts after a write.
+
+## Update, November 2026: exactly-once Sheets writes and pinned destinations
+
+The fec03cc regression report showed that matching a row by its contents breaks if someone edits the row before the retry, and that a queued delivery followed whatever the connection pointed at when it was finally sent.
+
+- Each Sheets delivery gets a marker when it is queued: an id from the `sheet_meta_seq` sequence (a positive 32-bit integer, unique per installation) and a short random value. The row and the marker are written in one `spreadsheets.batchUpdate` (`createDeveloperMetadata` with that `metadataId`, project-private, then `appendCells` with string values). Google applies a batch entirely or not at all and refuses a second metadata entry with an id that exists, so a retry, a parallel attempt after a stale claim, or a late copy of the first request cannot add a second row. On a 400 the worker reads that metadata id: our value means delivered (reconciled); anything else means review, never a guess.
+- Markers stay 24 hours after delivery, longer than any request Google could still be holding, then the worker's sweep deletes them (`sheet_meta_cleared_at`). Google allows about 30,000 characters of metadata per sheet and a marker uses about 15, so roughly 2,000 rows a day per sheet; past that Google refuses the batch and the delivery fails visibly. The connection test row still uses `values.append`.
+- Every delivery records the connection's account and destination when it is queued (`pinned_account`, `pinned_destination`). A different account or destination at send time sends it to review with both named. Rows queued before this change have no pin and go to review too. Post again re-pins to the current connection and gives a Sheets row a fresh marker.
+- Remaining limits: checked against the local fake only until the live Sheets check is run; a Teams link replaced under the same channel name is not seen as a change.

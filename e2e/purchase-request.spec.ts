@@ -109,7 +109,7 @@ test("a purchase request goes from the form to the named approver, then to purch
   // Purchasing gets the Outlook email, the Teams channel the note, and the owner sees every delivery on the request.
   await expect(async () => {
     await page.getByRole("button", { name: "Refresh" }).click();
-    await expect(row).toContainText("Decided", { timeout: 1000 });
+    await expect(row).toContainText("Finished", { timeout: 1000 });
     await expect(row).toContainText(`Outlook email: sent to ${purchasing}`, { timeout: 1000 });
     await expect(row).toContainText("Teams note: accepted by Teams", { timeout: 1000 });
   }).toPass({ timeout: 30_000 });

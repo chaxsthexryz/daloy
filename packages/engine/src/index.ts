@@ -3,6 +3,7 @@ export * from "./ai-draft";
 export * from "./definition";
 export * from "./expressions";
 export * from "./graph";
+export * from "./json-template";
 export * from "./retry";
 export * from "./state-machine";
 export * from "./step-schemas";
