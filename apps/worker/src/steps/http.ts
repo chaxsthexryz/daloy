@@ -4,8 +4,9 @@ import { isIdempotent, StepError, type HttpConfig, type Outcome } from "@daloy/e
 import { checkUrl, guardedLookup, type SsrfGuard } from "./ssrf";
 
 /**
- * claim: called right before the first request; resolves to a release function once this worker may send, rejects when
- * it may not (another worker took the attempt over). Released once the request is handed to the socket (decision 0030).
+ * claim: called right before every request, redirects included; resolves to a release function once this worker may
+ * send, rejects when it may not (another worker took the attempt over, or it was stopped). Released once the request
+ * is handed to the socket (decision 0030).
  */
 export type HttpOptions = { guard: SsrfGuard; timeoutMs?: number; maxBytes?: number; claim?: () => Promise<() => void> };
 export type HttpOutput = { status: number; headers: IncomingHttpHeaders; body: unknown };
@@ -75,7 +76,8 @@ export async function httpRequest(cfg: HttpConfig, idempotencyKey: string, opts:
 
   try {
     for (let hop = 0; ; hop++) {
-      if (hop === 0 && opts.claim) {
+      // Every hop: a redirect answered late must not start a new request after the run was taken over or stopped (Astra, 6170f4f).
+      if (opts.claim) {
         const done = await opts.claim();
         let released = false;
         release = () => {

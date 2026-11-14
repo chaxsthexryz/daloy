@@ -113,14 +113,8 @@ async function runStep(deps: FullDeps, step: Step, input: unknown, ctx: Expressi
       const mail = input as EmailInput;
       if (mock) return { output: { mocked: true, to: mail.to, subject: mail.subject } };
       // The Message-ID stays per attempt; the step key is the same on every attempt.
-      // An email may not be sent twice on its own: claim the send first, and let go once the message starts going out.
-      const release = await claimSend?.();
-      let sent: Awaited<ReturnType<typeof sendAs>>;
-      try {
-        sent = await sendAs(deps.db, deps.secretsKey, deps.mail, userId, mail, `${idempotencyKey}:${attempt}`, { onBodyStart: release });
-      } finally {
-        release?.();
-      }
+      // An email may not be sent twice on its own: sendAs claims the send once the sender is known.
+      const sent = await sendAs(deps.db, deps.secretsKey, deps.mail, userId, mail, `${idempotencyKey}:${attempt}`, { claim: claimSend });
       return { output: { messageId: sent.messageId, to: sent.to, from: sent.from } };
     }
     case "ai": {

@@ -47,6 +47,11 @@ Builder replay (second commit):
 - Late auth refusal: hold the old key's Google sign-in refusal, replace the connection with a new key and sheet, deliver one, then release the refusal. Expected: the connection stays active with no error, the old delivery fails, and the next delivery goes in. Test: "a late authentication refusal for a replaced credential leaves the new connection working".
 - No migration. Connection tests in the console (Add a test row, Send a test message) now also update the status only for the credential they tested.
 
+## Fixes from the 6170f4f review
+
+- A POST answered with a 307 only after the takeover parked the run and Stop succeeded: the redirect target gets 0 POSTs (`fencing.test.ts`, "answered with a 307 only after Stop"; `http.test.ts` checks the claim is asked before every hop).
+- As many simultaneous email sends as the pool has connections, held at the moment all locks are taken: all of them send and succeed with no forced release (`fencing.test.ts`, pool of 3). The worker's own pool is now 20 for a batch of 10.
+
 ## Fixes from the b31c4ce review
 
 - A POST answered with 303 to a receipt that answers 429: the receiver gets 1 order POST and the run waits for review (`http.test.ts` and the QA-08 case "receipt lookup is throttled"). The same with a receipt answering 503 or 404.

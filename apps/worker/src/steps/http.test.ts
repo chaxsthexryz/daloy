@@ -247,7 +247,7 @@ describe("httpRequest", () => {
     expect([err.message, err.outcome, err.retryable]).toEqual([expect.stringMatching(/HTTP 503/), "unknown", false]);
   });
 
-  it("asks for the send claim once, right before the first request, and refuses to send without it", async () => {
+  it("asks for the send claim right before every request, redirects included, and sends nothing without it", async () => {
     const before = requests;
     const err = await stepError(post("/json", {}, { claim: () => Promise.reject(new StepError("claim lost", false, { outcome: "not_sent" })) }));
     expect([err.outcome, err.retryable]).toEqual(["not_sent", false]);
@@ -255,7 +255,16 @@ describe("httpRequest", () => {
     const events: string[] = [];
     const out = await post("/chain/1", {}, { claim: async () => (events.push("claimed"), () => events.push("released")) });
     expect(out.status).toBe(200);
-    expect(events).toEqual(["claimed", "released"]);
+    expect(events).toEqual(["claimed", "released", "claimed", "released", "claimed", "released"]);
+    // A claim lost between the first answer and the redirect: the redirect target gets nothing.
+    let calls = 0;
+    const atTarget = requests;
+    const lost = await stepError(post("/redirect307/%2Fjson", {}, { claim: async () => {
+      if (++calls > 1) throw new StepError("claim lost", false, { outcome: "not_sent" });
+      return () => {};
+    } }));
+    expect([lost.outcome, lost.retryable]).toEqual(["unknown", false]);
+    expect(requests - atTarget).toBe(1);
   });
 
   it("times out a GET as a retryable unknown outcome", async () => {

@@ -112,14 +112,23 @@ const loginRefused = (err: unknown) => {
  * Sends one email as the workflow owner: their Gmail, or the installation server when they connected none.
  * Every email and approval step goes through here, and so does the API's test email (decision 0020).
  */
-/** onBodyStart runs when the message starts going out, after the server accepted DATA (decision 0030). */
-export async function sendAs(db: Db, key: Buffer, deps: MailDeps, userId: string, cfg: EmailConfig, idempotencyKey: string, opts: { allowUnconfirmed?: boolean; onBodyStart?: () => void } = {}) {
+/**
+ * claim, for a send that is not safe to repeat, is called once the sender is known and nothing but the network is left,
+ * so its database lock never waits on another query; it is released when the message body starts (decision 0030).
+ */
+export async function sendAs(db: Db, key: Buffer, deps: MailDeps, userId: string, cfg: EmailConfig, idempotencyKey: string, opts: { allowUnconfirmed?: boolean; claim?: () => Promise<() => void> } = {}) {
   const sender = await resolveSender(db, key, userId, opts);
   const mailer = mailerFor(sender, deps);
   // The shared server is the one an unapproved sign-up could abuse; Gmail sends as the owner's own confirmed mailbox.
   if (sender.kind === "installation" && deps.sharedMail === "approved") await claimSharedMail(db, userId, checkRecipients(cfg.to).length);
   try {
-    return { ...(await sendEmail(mailer, cfg, idempotencyKey, opts.onBodyStart)), from: addressOf(mailer.from), gmail: sender.kind === "gmail" };
+    const release = await opts.claim?.();
+    try {
+      return { ...(await sendEmail(mailer, cfg, idempotencyKey, release)), from: addressOf(mailer.from), gmail: sender.kind === "gmail" };
+    } finally {
+      // Before the catch below writes to the database (Astra, 6170f4f: ten held locks waiting on lookups emptied the pool).
+      release?.();
+    }
   } catch (err) {
     if (sender.kind !== "gmail" || !loginRefused(err)) throw err;
     await markSenderFailed(db, userId, "Gmail rejected the app password.");
