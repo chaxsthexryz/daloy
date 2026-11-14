@@ -121,7 +121,7 @@ export class ConnectionsController {
   async testSheets(@CurrentUser() user: SessionUser) {
     const conn = await this.connection(user.workspaceId, "google_sheets");
     const stamp = new Date().toISOString();
-    return this.test(user.workspaceId, "google_sheets", () =>
+    return this.test(user.workspaceId, "google_sheets", conn, () =>
       appendRow(this.urls, JSON.parse(conn.credential) as ServiceAccount, conn.destination as SheetDestination, [`TEST-${stamp}`, stamp, "Test row from Daloy. You can delete this row."]),
     );
   }
@@ -157,7 +157,7 @@ export class ConnectionsController {
   @UseGuards(RateLimit(5))
   async testSlack(@CurrentUser() user: SessionUser) {
     const conn = await this.connection(user.workspaceId, "slack");
-    return this.test(user.workspaceId, "slack", () => slackPost(this.urls, conn.credential, conn.destination!.channelId!, "Test message from Daloy. Office requests will be posted here."));
+    return this.test(user.workspaceId, "slack", conn, () => slackPost(this.urls, conn.credential, conn.destination!.channelId!, "Test message from Daloy. Office requests will be posted here."));
   }
 
   /**
@@ -181,7 +181,7 @@ export class ConnectionsController {
   async testOutlook(@CurrentUser() user: SessionUser) {
     const conn = await this.connection(user.workspaceId, "outlook");
     const save = (t: string) => updateCredential(this.db, this.config.secretsKey, user.workspaceId, "outlook", t);
-    return this.test(user.workspaceId, "outlook", () =>
+    return this.test(user.workspaceId, "outlook", conn, () =>
       outlookSend(this.urls, conn.credential, save, { to: conn.account, subject: "Test email from Daloy", text: "Daloy can send from this mailbox. Approved purchase requests will go out from here." }),
     );
   }
@@ -201,7 +201,7 @@ export class ConnectionsController {
   @UseGuards(RateLimit(5))
   async testTeams(@CurrentUser() user: SessionUser) {
     const conn = await this.connection(user.workspaceId, "teams");
-    return this.test(user.workspaceId, "teams", () => teamsPost(this.urls, conn.credential, "Test message from Daloy. Approved purchase requests will be noted in this channel."));
+    return this.test(user.workspaceId, "teams", conn, () => teamsPost(this.urls, conn.credential, "Test message from Daloy. Approved purchase requests will be noted in this channel."));
   }
 
   /** Disconnect: deletes the stored credential. Queued deliveries fail with "not connected" and keep their payload for Retry. */
@@ -218,16 +218,16 @@ export class ConnectionsController {
   }
 
   /** ok: true means the provider accepted the write. A rejected credential marks the connection failed, as a delivery would. */
-  private async test(userId: string, provider: Provider, send: () => Promise<Record<string, string | boolean>>) {
-    const conn = await this.connection(userId, provider);
+  // conn is the connection the test sends with, so its result only touches that credential (Astra, 8e2c5d8).
+  private async test(userId: string, provider: Provider, conn: { destination: Record<string, string> | null; revision: string }, send: () => Promise<Record<string, string | boolean>>) {
     if (!conn.destination) return { ok: false, error: provider === "google_sheets" ? "Pick a sheet first." : "Pick a channel first." };
     try {
       const result = await send();
-      await markConnectionWorking(this.db, userId, provider);
+      await markConnectionWorking(this.db, userId, provider, conn.revision);
       return { ok: true, ...result };
     } catch (err) {
       if (!(err instanceof ProviderError)) throw err;
-      if (err.kind === "auth") await markConnectionFailed(this.db, userId, provider, err.message);
+      if (err.kind === "auth") await markConnectionFailed(this.db, userId, provider, err.message, conn.revision);
       return { ok: false, error: err.message };
     }
   }

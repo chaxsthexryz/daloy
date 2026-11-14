@@ -37,7 +37,8 @@ export async function connectionCredential(db: Db, key: Buffer, userId: string, 
   const [row] = await db.select().from(connections).where(and(eq(connections.userId, userId), eq(connections.provider, provider)));
   if (!row) return null;
   const credential = decryptSecret(key, userId, secretName(provider), { ciphertext: row.credentialCiphertext, iv: row.credentialIv, authTag: row.credentialAuthTag });
-  return { credential, status: row.status, account: row.account, destination: row.destination };
+  // revision changes on every save (a new IV), so a late answer about this credential can be told from one about its replacement.
+  return { credential, status: row.status, account: row.account, destination: row.destination, revision: row.credentialIv };
 }
 
 /** Stores a credential the provider replaced, such as Microsoft's rotated refresh token. Status and destination stay. */
@@ -53,20 +54,23 @@ export async function setDestination(db: Db, userId: string, provider: Provider,
   await db.update(connections).set({ destination, updatedAt: new Date() }).where(and(eq(connections.userId, userId), eq(connections.provider, provider)));
 }
 
-/** The provider rejected the credential. Deliveries stop until the owner reconnects or a test goes through. */
-export async function markConnectionFailed(db: Db, userId: string, provider: Provider, error: string) {
+/**
+ * The provider rejected the credential of this revision. Deliveries stop until the owner reconnects or a test goes
+ * through. A refusal that arrives after the owner saved a new credential changes nothing (Astra, 8e2c5d8).
+ */
+export async function markConnectionFailed(db: Db, userId: string, provider: Provider, error: string, revision: string) {
   await db
     .update(connections)
     .set({ status: "failed", lastError: error.slice(0, 500), updatedAt: new Date() })
-    .where(and(eq(connections.userId, userId), eq(connections.provider, provider)));
+    .where(and(eq(connections.userId, userId), eq(connections.provider, provider), eq(connections.credentialIv, revision)));
 }
 
-/** A test went through with the stored credential. */
-export async function markConnectionWorking(db: Db, userId: string, provider: Provider) {
+/** A test went through with the credential of this revision. */
+export async function markConnectionWorking(db: Db, userId: string, provider: Provider, revision: string) {
   await db
     .update(connections)
     .set({ status: "active", lastError: null, lastTestedAt: sql`now()` })
-    .where(and(eq(connections.userId, userId), eq(connections.provider, provider)));
+    .where(and(eq(connections.userId, userId), eq(connections.provider, provider), eq(connections.credentialIv, revision)));
 }
 
 /** Disconnect: deletes the credential. Queued deliveries then fail with "not connected" and keep their payload for Retry. */

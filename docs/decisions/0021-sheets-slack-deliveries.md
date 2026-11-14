@@ -37,6 +37,8 @@ How the owner connects:
 
 Claim identity (after Astra's review of c05fa81): each claim stores a new random `claim_id`, and outcomes and first-send pinning are written only while the row is `sending` with that id. The attempt number cannot serve, because Retry and Post again reset it, which let a stale worker's late answer be recorded against a newer attempt. Deliveries that were mid-send when migration 0016 ran have no claim id; they are taken back after the stale timeout like any dead worker's claim, with check-first set.
 
+After Astra's review of 8e2c5d8: the first-send pin is written under the claim, and a worker whose pin matched no row stops before sending, since another worker now holds the delivery. Connection status changes from a delivery or a connection test are scoped to the credential revision (the IV of the stored ciphertext, new on every save), so a late refusal for a replaced credential cannot mark its replacement failed.
+
 ## Consequences
 
 - A run that queues a delivery succeeds before the row or note exists. The Requests list and `GET /deliveries?runId=` show the delivery's own state. Later steps cannot read the provider's result.
