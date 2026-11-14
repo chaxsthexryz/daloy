@@ -10,7 +10,7 @@ import { PgBoss } from "pg-boss";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { freshDatabase } from "../../../test/db";
-import { qa01 } from "../../../test/scenarios/qa-01-sales-leads";
+import { qa01, qa01NoInvalidEdge, qa01Unchecked } from "../../../test/scenarios/qa-01-sales-leads";
 import { desired, hourDelay, qa02 } from "../../../test/scenarios/qa-02-spa-appointments";
 import { qa03 } from "../../../test/scenarios/qa-03-cafe-promotions";
 import { qa04 } from "../../../test/scenarios/qa-04-refunds";
@@ -23,7 +23,6 @@ import { advance } from "../../worker/src/advance";
 import { createExecutor } from "../../worker/src/steps";
 import { BLOCKED_RANGES, blockListOf, type SsrfGuard } from "../../worker/src/steps/ssrf";
 import { createApp } from "./app";
-import { fieldsSchema } from "./public";
 
 // Scenario acceptance harness for QA-01 to QA-08 (see test/scenarios/types.ts). The API takes each test run or event
 // as a client would; the real executor then advances the run on a disposable database. Mocked steps send nothing,
@@ -152,9 +151,9 @@ async function pathOf(runId: string): Promise<string[]> {
 }
 
 /** Starts a builder test run the way the console does and returns its outcome. */
-async function testRun(workflowId: string, definition: unknown, c: Pick<RunCase, "payload" | "options">, live = false): Promise<{ outcome: Outcome; runId?: string }> {
+async function testRun(workflowId: string, definition: unknown, c: Pick<RunCase, "payload" | "options">, live = false): Promise<{ outcome: Outcome; runId?: string; errors?: string[] }> {
   const res = await owner.post(`/workflows/${workflowId}/test-runs`).send({ definition, payload: c.payload, live, ...c.options });
-  if (res.status === 400) return { outcome: REJECTED };
+  if (res.status === 400) return { outcome: REJECTED, errors: (res.body as { message: string[] }).message };
   expect(res.status).toBe(202);
   const runId = (res.body as { id: string }).id;
   const run = await finish(runId);
@@ -173,7 +172,8 @@ function runCases(s: Scenario) {
   });
   for (const c of s.cases) {
     it(`${c.name}${gapLabel(c)}`, async () => {
-      const { outcome } = await testRun(id, s.definition, c);
+      const { outcome, errors } = await testRun(id, s.definition, c);
+      if (c.want === REJECTED && !c.gap) expect(errors).toEqual(c.rejects);
       if (c.gap) {
         expect(c.gap.today).not.toEqual(c.want);
         expect(outcome).toEqual(c.gap.today);
@@ -190,7 +190,11 @@ const formFields = (s: Scenario) => {
   if (def.trigger.type !== "form") throw new Error(`${s.id} has no form trigger`);
   return def.trigger.config.fields;
 };
-const formAccepts = (s: Scenario, data: Record<string, unknown>) => fieldsSchema(formFields(s)).safeParse(data).success;
+/** What the public form says about a submission: [] when it is accepted. */
+const formErrors = (s: Scenario, data: Record<string, unknown>) => {
+  const r = engine.parsePayload(formFields(s), data);
+  return r.ok ? [] : r.errors;
+};
 
 /** Today's save error for a definition that uses a capability a later phase adds. */
 async function saveErrors(definition: unknown): Promise<string[]> {
@@ -205,17 +209,18 @@ describe("QA-01 sales lead prioritization", () => {
   const lead = { name: "Lea", email: "lea@example.com", details: "Clinic website" };
 
   it("the public form refuses a missing budget", () => {
-    expect(formAccepts(qa01, { ...lead })).toBe(false);
+    expect(formErrors(qa01, { ...lead })).toEqual(["budget: is required"]);
   });
   it("the public form refuses '45,000'", () => {
-    expect(formAccepts(qa01, { ...lead, budget: "45,000" })).toBe(false);
+    expect(formErrors(qa01, { ...lead, budget: "45,000" })).toEqual(["budget: must be a number"]);
   });
   it("the public form refuses Infinity", () => {
-    expect(formAccepts(qa01, { ...lead, budget: "Infinity" })).toBe(false);
+    expect(formErrors(qa01, { ...lead, budget: "Infinity" })).toEqual(["budget: must be a number"]);
   });
-  it("the public form refuses a negative budget [gap P2: the saved field loses min: 0, so -5000 passes]", () => {
-    expect(formFields(qa01).find((f) => f.name === "budget")).not.toHaveProperty("min");
-    expect(formAccepts(qa01, { ...lead, budget: "-5000" })).toBe(true);
+  it("the public form refuses a negative budget and accepts exactly 0", () => {
+    expect(formFields(qa01).find((f) => f.name === "budget")).toMatchObject({ min: 0 });
+    expect(formErrors(qa01, { ...lead, budget: "-5000" })).toEqual(["budget: must be at least 0"]);
+    expect(formErrors(qa01, { ...lead, budget: "0" })).toEqual([]);
   });
   it("an AI-only test run asks the model and nothing else [gap P3: mode is ignored, the summary is the fixed mock]", async () => {
     const id = await workflow(qa01.definition);
@@ -226,6 +231,19 @@ describe("QA-01 sales lead prioritization", () => {
   it("drafts are linted for dry-run branches and unrouted outcomes [gap P7: the engine has no lintDefinition and the draft prompt has no dry-run rule]", () => {
     expect("lintDefinition" in engine).toBe(false);
     expect(engine.draftPrompt({ request: "x" }).system).not.toMatch(/dry.?run/i);
+  });
+});
+
+describe("QA-01 sales lead gate without field checks", () => {
+  runCases(qa01Unchecked);
+
+  it("without an invalid edge, '45,000' fails the run at the gate and says why", async () => {
+    const id = await workflow(qa01NoInvalidEdge);
+    const { outcome, runId } = await testRun(id, qa01NoInvalidEdge, { payload: { budget: "45,000" } });
+    expect(outcome).toEqual(["gate:failed"]);
+    const run = await runRow(runId!);
+    expect(run.error).toBe('step gate: "gate" needs a number on both sides of gte, but got "45,000" and 30000. Add an "invalid" branch or check the field.');
+    expect(await db.select().from(stepRuns).where(eq(stepRuns.runId, runId!))).toHaveLength(1);
   });
 });
 
@@ -253,7 +271,7 @@ describe("QA-02 spa appointments", () => {
   });
   it("a second booking for the same therapist and time is refused [gap P6b: both bookings are confirmed]", async () => {
     const id = await workflow(qa02.definition);
-    const booking = { payload: { email: "ana@example.com", therapist: "Ana", appointment_at: "2027-01-20T14:00" } };
+    const booking = { payload: { name: "Mia", email: "mia@example.com", service: "Massage", therapist: "Ana", appointment_at: "2027-01-20T14:00" } };
     expect((await testRun(id, qa02.definition, booking)).outcome).toEqual(["notify", "confirm"]);
     expect((await testRun(id, qa02.definition, booking)).outcome).toEqual(["notify", "confirm"]);
   });
@@ -265,9 +283,10 @@ describe("QA-02 spa appointments", () => {
 describe("QA-03 café promotion approval", () => {
   runCases(qa03);
 
-  it("the public form refuses 80% [gap P2: the saved field loses max: 50]", () => {
-    expect(formFields(qa03).find((f) => f.name === "discount")).not.toHaveProperty("max");
-    expect(formAccepts(qa03, { title: "Too generous", discount: "80" })).toBe(true);
+  it("the public form refuses 80% and -5% and accepts exactly 50%", () => {
+    expect(formErrors(qa03, { title: "Too generous", discount: "80" })).toEqual(["discount: must be at most 50"]);
+    expect(formErrors(qa03, { title: "Negative", discount: "-5" })).toEqual(["discount: must be at least 0"]);
+    expect(formErrors(qa03, { title: "Half off", discount: "50" })).toEqual([]);
   });
   it("a mocked approval writes no approval link and sends no email", async () => {
     const id = await workflow(qa03.definition);
@@ -283,13 +302,18 @@ describe("QA-04 refund management", () => {
   runCases(qa04);
 
   it("the public form refuses an empty order ID on its own", () => {
-    expect(formAccepts(qa04, { order_id: "", amount: "500" })).toBe(false);
+    expect(formErrors(qa04, { order_id: "", amount: "500" })).toEqual(["order_id: is required"]);
   });
   it("the public form refuses a missing amount on its own", () => {
-    expect(formAccepts(qa04, { order_id: "ORD-1" })).toBe(false);
+    expect(formErrors(qa04, { order_id: "ORD-1" })).toEqual(["amount: is required"]);
   });
-  it("the public form refuses -10 [gap P2: the saved field loses min: 0.01]", () => {
-    expect(formAccepts(qa04, { order_id: "ORD-1", amount: "-10" })).toBe(true);
+  it("the public form refuses -10 on its own", () => {
+    expect(formErrors(qa04, { order_id: "ORD-1", amount: "-10" })).toEqual(["amount: must be at least 0.01"]);
+  });
+  it("the console Run button checks the live version's fields too", async () => {
+    const id = await workflow(qa04.definition, { publish: true });
+    const res = await owner.post(`/workflows/${id}/runs`).send({ payload: { order_id: "", amount: -10 } }).expect(400);
+    expect((res.body as { message: string[] }).message).toEqual(["order_id: is required", "amount: must be at least 0.01"]);
   });
 });
 
@@ -297,10 +321,10 @@ describe("QA-05 office purchase requests", () => {
   runCases(qa05);
 
   it("the public form refuses a missing department on its own", () => {
-    expect(formAccepts(qa05, { item: "Pens", amount: "100" })).toBe(false);
+    expect(formErrors(qa05, { item: "Pens", amount: "100" })).toEqual(["department: is required"]);
   });
-  it("the public form refuses -1 [gap P2: the saved field loses min: 0.01]", () => {
-    expect(formAccepts(qa05, { item: "Pens", department: "HR", amount: "-1" })).toBe(true);
+  it("the public form refuses -1", () => {
+    expect(formErrors(qa05, { item: "Pens", department: "HR", amount: "-1" })).toEqual(["amount: must be at least 0.01"]);
   });
   it("two overlapping test runs get their own run ids and branches", async () => {
     const id = await workflow(qa05.definition);
@@ -358,8 +382,13 @@ describe("QA-06 high-traffic e-commerce events", () => {
     const b = (await post(event, { "Idempotency-Key": "client-key-1" }).expect(202)).body as { runId: string };
     expect(b.runId).not.toBe(a.runId);
   });
-  it("an event without event_id is refused [gap P2: webhooks validate no fields]", async () => {
-    await post({ type: "order.created", amount: 500 }).expect(202);
+  it("an event without event_id is refused and says which field", async () => {
+    const res = await post({ type: "order.created", amount: 500 }).expect(400);
+    expect((res.body as { message: string[] }).message).toEqual(["event_id: is required"]);
+  });
+  it("an event keeps its extra keys and gets its numbers read", async () => {
+    const res = await post({ event_id: "evt_extra", type: "order.created", amount: "15000", shop: "north" }).expect(202);
+    expect((await runRow((res.body as { runId: string }).runId)).triggerPayload).toEqual({ event_id: "evt_extra", type: "order.created", amount: 15_000, shop: "north" });
   });
   it("an unsigned call to a signed webhook is refused", async () => {
     const id = await workflow({ ...intake, trigger: { type: "webhook", config: { hmacSecret: "shop_signing_key" } } }, { publish: true });

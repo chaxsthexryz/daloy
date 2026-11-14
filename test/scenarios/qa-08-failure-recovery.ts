@@ -42,13 +42,13 @@ export const qa08: Scenario = {
       name: "-1 is refused at the boundary",
       payload: { item: "Printer", amount: -1 },
       want: REJECTED,
-      gap: { phase: "P2", today: ["check", "invalid"], why: "number fields have no minimum and test runs skip validation" },
+      rejects: ["amount: must be at least 0.01"],
     },
     {
       name: "exactly 0 is refused at the boundary",
       payload: { item: "Printer", amount: 0 },
       want: REJECTED,
-      gap: { phase: "P2", today: ["check", "invalid"], why: "number fields have no minimum and test runs skip validation" },
+      rejects: ["amount: must be at least 0.01"],
     },
     {
       name: "the tester makes the sheet write fail and the run stops there",

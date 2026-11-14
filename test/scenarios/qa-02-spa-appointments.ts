@@ -2,6 +2,8 @@ import { edge, email, REJECTED, type Scenario } from "./types";
 
 // QA-02 Spa Appointment Automation. Today's engine can only express the v2 shape: the time is plain text and every
 // booking reaches the same notifications. `desired` is the booking the business asked for; today's schema rejects it.
+const customer = { name: "Mia", email: "mia@example.com", service: "Massage" };
+
 export const qa02: Scenario = {
   id: "QA-02",
   name: "Spa appointments",
@@ -22,16 +24,16 @@ export const qa02: Scenario = {
     edges: [edge("notify", "confirm")],
   },
   cases: [
-    { name: "a future booking reaches the front desk and the customer", payload: { email: "ana@example.com", therapist: "Ana", appointment_at: "2027-01-20T14:00" }, want: ["notify", "confirm"] },
+    { name: "a future booking reaches the front desk and the customer", payload: { ...customer, therapist: "Ana", appointment_at: "2027-01-20T14:00" }, want: ["notify", "confirm"] },
     {
       name: "a time of 32:00 is refused",
-      payload: { email: "ana@example.com", therapist: "Ana", appointment_at: "2027-01-20T32:00" },
+      payload: { ...customer, therapist: "Ana", appointment_at: "2027-01-20T32:00" },
       want: REJECTED,
       gap: { phase: "P6a", today: ["notify", "confirm"], why: "there is no zoned datetime field, so any text is a time" },
     },
     {
       name: "a time in the past is refused",
-      payload: { email: "ana@example.com", therapist: "Ana", appointment_at: "2020-01-20T14:00" },
+      payload: { ...customer, therapist: "Ana", appointment_at: "2020-01-20T14:00" },
       want: REJECTED,
       gap: { phase: "P6a", today: ["notify", "confirm"], why: "there is no future-only time check" },
     },

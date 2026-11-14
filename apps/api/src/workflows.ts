@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { createRun, findApprover, listDeliveries, PROVIDER_NAMES, type Provider, publishedVersion, readConnections, requests, runs, SCHEDULE_QUEUE, triggers, workflows, workflowVersions, type Db } from "@daloy/db";
-import { BRANCHES, definitionSchema, guidedSetupInput, OFFICE_REQUEST, saveProblems, stepJsonSchemas, TEMPLATES, type Trigger, type WorkflowDefinition } from "@daloy/engine";
+import { BRANCHES, definitionSchema, guidedSetupInput, OFFICE_REQUEST, saveProblems, stepJsonSchemas, TEMPLATES, triggerFields, type Trigger, type WorkflowDefinition } from "@daloy/engine";
 import {
   BadRequestException,
   Body,
@@ -20,7 +20,7 @@ import { and, desc, eq, getTableColumns, max, sql } from "drizzle-orm";
 import type { PgBoss } from "pg-boss";
 import * as z from "zod";
 import { SessionGuard } from "./auth";
-import { Allow, BOSS, CurrentUser, DB, enqueueRun, isUniqueViolation, ZodPipe, type SessionUser, MANAGE, OPERATE } from "./http";
+import { Allow, BOSS, CurrentUser, DB, enqueueRun, isUniqueViolation, validPayload, ZodPipe, type SessionUser, MANAGE, OPERATE } from "./http";
 
 const workflowInput = z.object({
   name: z.string().trim().min(1).max(200),
@@ -171,9 +171,11 @@ export class WorkflowsController {
   async testRun(@CurrentUser() user: SessionUser, @Param("id", workflowId) id: string, @Body(new ZodPipe(testRunInput)) body: z.output<typeof testRunInput>) {
     await this.owned(user.workspaceId, id);
     const definition = parseDefinition(body.definition);
+    // A test run gets the same field checks as the form or webhook it stands in for, before anything is saved.
+    const payload = validPayload(triggerFields(definition.trigger), body.payload);
     const [latest] = await this.db.select().from(workflowVersions).where(eq(workflowVersions.workflowId, id)).orderBy(desc(workflowVersions.version)).limit(1);
     const versionId = latest && canonical(latest.definition) === canonical(definition) ? latest.id : (await this.saveVersion(id, definition, false))!.id;
-    const runId = await createRun(this.db, versionId, body.payload, { test: true, live: body.live });
+    const runId = await createRun(this.db, versionId, payload, { test: true, live: body.live });
     await enqueueRun(this.boss, runId);
     return { id: runId, versionId };
   }
@@ -229,7 +231,8 @@ export class WorkflowsController {
     await this.owned(user.workspaceId, id);
     const version = await publishedVersion(this.db, id);
     if (!version) throw new ConflictException("publish the workflow first");
-    const runId = await createRun(this.db, version.id, body.payload);
+    const payload = validPayload(triggerFields(definitionSchema.parse(version.definition).trigger), body.payload);
+    const runId = await createRun(this.db, version.id, payload);
     await enqueueRun(this.boss, runId);
     return { id: runId };
   }

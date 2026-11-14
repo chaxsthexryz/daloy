@@ -78,31 +78,86 @@ const stepSchema = z.discriminatedUnion("type", [
 export type Step = z.infer<typeof stepSchema>;
 
 /** Outgoing edge labels for steps that branch. Every other step has at most one unlabelled edge. */
+// A condition's "invalid" edge is optional: without one, a comparison on a missing or non-number value fails the step.
 export const BRANCHES: Partial<Record<Step["type"], readonly string[]>> = {
-  condition: ["true", "false"],
+  condition: ["true", "false", "invalid"],
   approval: ["approved", "rejected", "timeout"],
 };
 
 const edgeSchema = z.object({ from: stepId, to: stepId, on: z.string().max(32).optional() });
 
 // Field names become keys of the trigger payload ({{trigger.<name>}}), so they use the same charset as step ids.
-export const formFieldSchema = z.object({
-  name: stepId,
-  label: z.string().min(1).max(200),
-  type: z.enum(["text", "email", "textarea", "number"]),
-  required: z.boolean().default(false),
-});
+// min, max and integer limit a number field; the API checks them wherever a payload comes in (decision 0027).
+export const formFieldSchema = z
+  .object({
+    name: stepId,
+    label: z.string().min(1).max(200),
+    type: z.enum(["text", "email", "textarea", "number"]),
+    required: z.boolean().default(false),
+    min: z.number().optional(),
+    max: z.number().optional(),
+    integer: z.boolean().optional(),
+  })
+  .superRefine((f, ctx) => {
+    if (f.type !== "number" && (f.min !== undefined || f.max !== undefined || f.integer !== undefined)) {
+      ctx.addIssue({ code: "custom", path: ["type"], message: "min, max and integer are for number fields" });
+    }
+    if (f.min !== undefined && f.max !== undefined && f.min > f.max) ctx.addIssue({ code: "custom", path: ["max"], message: "max must not be below min" });
+  });
 export type FormField = z.infer<typeof formFieldSchema>;
+
+const fieldList = z.array(formFieldSchema).min(1).max(30);
 
 const triggerSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("manual"), config: z.object({}).default({}) }),
-  // hmacSecret names a stored secret; the API checks X-Daloy-Signature against it.
-  z.object({ type: z.literal("webhook"), config: z.object({ hmacSecret: z.string().max(100).optional() }).default({}) }),
+  // hmacSecret names a stored secret; the API checks X-Daloy-Signature against it. fields, when set, are checked like a form's.
+  z.object({ type: z.literal("webhook"), config: z.object({ hmacSecret: z.string().max(100).optional(), fields: fieldList.optional() }).default({}) }),
   // pg-boss validates the expression fully when the schedule is saved.
   z.object({ type: z.literal("schedule"), config: z.object({ cron: z.string().regex(/^\S+( \S+){4,5}$/, "cron needs 5 or 6 fields") }) }),
-  z.object({ type: z.literal("form"), config: z.object({ fields: z.array(formFieldSchema).min(1).max(30) }) }),
+  z.object({ type: z.literal("form"), config: z.object({ fields: fieldList }) }),
 ]);
 export type Trigger = z.infer<typeof triggerSchema>;
+
+/** The fields a trigger's payload is checked against: a form's, or a webhook's when it lists any. */
+export const triggerFields = (t: Trigger): FormField[] | undefined => (t.type === "form" || t.type === "webhook" ? t.config.fields : undefined);
+
+// Plain decimal text only, so "45,000", "0x10" and "Infinity" are refused instead of read as some other number.
+const NUMBER_TEXT = /^[+-]?(\d+\.?\d*|\.\d+)(e[+-]?\d+)?$/i;
+const notGiven = (v: unknown) => v === undefined || v === null || (typeof v === "string" && v.trim() === "");
+const required = (fallback: string) => ({ error: (iss: { input: unknown }) => (iss.input === undefined ? "is required" : fallback) });
+
+/**
+ * The schema a submission must pass: from the public form, a test run, the console Run button, MCP, or a webhook with
+ * fields. Empty text and null count as not given. Keys that are not fields are dropped.
+ */
+export function payloadSchema(fields: FormField[]) {
+  const shape: Record<string, z.ZodType> = {};
+  for (const f of fields) {
+    let base: z.ZodType;
+    if (f.type === "number") {
+      let n = z.number(required("must be a number"));
+      if (f.min !== undefined) n = n.min(f.min, `must be at least ${f.min}`);
+      if (f.max !== undefined) n = n.max(f.max, `must be at most ${f.max}`);
+      if (f.integer) n = n.int("must be a whole number");
+      base = n;
+    } else if (f.type === "email") {
+      base = z.email(required("must be an email address")).max(254, "must be at most 254 characters");
+    } else {
+      const max = f.type === "textarea" ? 5000 : 500;
+      base = z.string(required("must be text")).trim().max(max, `must be at most ${max} characters`);
+    }
+    const read = (v: unknown) => (notGiven(v) ? undefined : f.type === "number" && typeof v === "string" && NUMBER_TEXT.test(v.trim()) ? Number(v) : typeof v === "string" && f.type === "email" ? v.trim() : v);
+    shape[f.name] = z.preprocess(read, f.required ? base : base.optional());
+  }
+  return z.object(shape);
+}
+
+/** Checks a payload against its fields. Errors read "<field>: <problem>", one per field, in field order. */
+export function parsePayload(fields: FormField[], data: unknown): { ok: true; data: Record<string, unknown> } | { ok: false; errors: string[] } {
+  const r = payloadSchema(fields).safeParse(data ?? {});
+  if (r.success) return { ok: true, data: r.data };
+  return { ok: false, errors: r.error.issues.map((i) => `${i.path.join(".") || "payload"}: ${i.message}`) };
+}
 
 export const definitionSchema = z
   .object({
@@ -113,9 +168,10 @@ export const definitionSchema = z
   .superRefine((def, ctx) => {
     const fail = (message: string) => ctx.addIssue({ code: "custom", message });
 
-    if (def.trigger.type === "form") {
+    const fields = triggerFields(def.trigger);
+    if (fields) {
       const names = new Set<string>();
-      for (const f of def.trigger.config.fields) {
+      for (const f of fields) {
         if (names.has(f.name)) fail(`duplicate form field "${f.name}"`);
         names.add(f.name);
       }

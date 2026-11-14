@@ -60,7 +60,7 @@ export const qa05: Scenario = {
       name: "a missing department alone is refused at the boundary",
       payload: { item: "Pens", amount: 100 },
       want: REJECTED,
-      gap: { phase: "P2", today: routine, why: "test-run payloads skip required-field checks" },
+      rejects: ["department: is required"],
     },
   ],
 };

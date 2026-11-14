@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { evaluateCondition, ExpressionError, resolveTemplate, type ExpressionContext } from "./expressions";
+import { conditionBranch, evaluateCondition, ExpressionError, resolveTemplate, type ExpressionContext } from "./expressions";
 
 const ctx: ExpressionContext = {
   trigger: { name: "Ana", amount: 120, tags: ["vip", "late"], nested: { deep: { value: true } }, count: "5" },
@@ -114,5 +114,23 @@ describe("evaluateCondition", () => {
 
   it("resolves templates on the right side", () => {
     expect(evaluateCondition({ left: "{{trigger.amount}}", op: "eq", right: "{{trigger.amount}}" }, ctx)).toBe(true);
+  });
+});
+
+describe("conditionBranch", () => {
+  it("takes true or false when both sides of a comparison are numbers", () => {
+    expect(conditionBranch({ left: "{{trigger.amount}}", op: "gt", right: 100 }, ctx)).toBe("true");
+    expect(conditionBranch({ left: "{{trigger.amount}}", op: "lte", right: 100 }, ctx)).toBe("false");
+    expect(conditionBranch({ left: "{{trigger.count}}", op: "gte", right: 5 }, ctx)).toBe("true");
+  });
+  it("takes invalid when a comparison side is missing or not a number", () => {
+    expect(conditionBranch({ left: "{{trigger.name}}", op: "gt", right: 1 }, ctx)).toBe("invalid");
+    expect(conditionBranch({ left: "{{trigger.missing}}", op: "lt", right: 1 }, ctx)).toBe("invalid");
+    expect(conditionBranch({ left: "{{trigger.amount}}", op: "gte", right: "{{trigger.name}}" }, ctx)).toBe("invalid");
+  });
+  it("never takes invalid for eq, neq, contains or exists", () => {
+    expect(conditionBranch({ left: "{{trigger.missing}}", op: "eq", right: 1 }, ctx)).toBe("false");
+    expect(conditionBranch({ left: "{{trigger.missing}}", op: "exists" }, ctx)).toBe("false");
+    expect(conditionBranch({ left: "{{trigger.name}}", op: "contains", right: "An" }, ctx)).toBe("true");
   });
 });
