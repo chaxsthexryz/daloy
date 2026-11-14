@@ -5,6 +5,7 @@ import { Editor } from "./Editor";
 import { RunPage, RunsPage } from "./Runs";
 import { BuildWithAi } from "./AiDraft";
 import { OfficeRequestPage, startOfficeSetup, startPurchaseSetup, TryOfficeRequest } from "./OfficeRequests";
+import { ResourcesPage } from "./Resources";
 import { SettingsPage } from "./Settings";
 import { BusinessSetupPage, VerifySenderPage } from "./BusinessSetup";
 import { TokensPage } from "./Tokens";
@@ -15,7 +16,7 @@ const ANSWER = /^#\/answer\/([A-Za-z0-9_-]{43})$/;
 const INVITE = /^#\/invite\/([A-Za-z0-9_-]{43})$/;
 
 /**
- * Hash routes (#/, #/w/<id>, #/w/<id>/runs, #/w/<id>/versions, #/runs/<id>, #/tokens, #/settings, #/settings/business,
+ * Hash routes (#/, #/w/<id>, #/w/<id>/runs, #/w/<id>/versions, #/runs/<id>, #/tokens, #/settings, #/settings/business, #/resources,
  * #/verify-sender/<token> for the Gmail confirmation link, #/team, #/invite/<token> for an invite link,
  * #/answer/<token> to sign in before a named approval (decision 0022),
  * #/try/office-request for the preview and #/a/<id> for a guided automation),
@@ -65,6 +66,7 @@ export function App() {
   const business = /^#\/settings\/business(?:\/outlook-([a-z_]+))?$/.exec(hash);
   if (business) return <BusinessSetupPage outlookOutcome={business[1]} />;
   if (hash === "#/team" && user.role === "owner") return <TeamPage />;
+  if (hash === "#/resources" && user.role === "owner") return <ResourcesPage />;
   const verify = /^#\/verify-sender\/([A-Za-z0-9_-]{43})$/.exec(hash);
   if (verify) return <VerifySenderPage key={verify[1]} token={verify[1]!} />;
   return <Workflows user={user} onSignOut={signOut} />;
@@ -153,6 +155,7 @@ function Workflows({ user, onSignOut }: { user: User; onSignOut: () => void }) {
         {owner && (
           <>
             <a href="#/team">Team</a>
+            <a href="#/resources">Resources</a>
             <a href="#/tokens">API tokens</a>
             <a href="#/settings/business">Business and email</a>
             <a href="#/settings">AI model</a>

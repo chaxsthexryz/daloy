@@ -21,8 +21,11 @@ function summary(step: Step): string {
     case "email":
     case "outlook":
       return `to ${step.config.to}`;
-    case "delay":
-      return `${step.config.seconds} s`;
+    case "delay": {
+      const { seconds, until, offsetSeconds } = step.config;
+      if (until === undefined) return `${seconds} s`;
+      return offsetSeconds ? `until ${until} ${offsetSeconds < 0 ? "minus" : "plus"} ${Math.abs(offsetSeconds)} s` : `until ${until}`;
+    }
     case "ai":
       return step.config.task === "classify" ? `classify: ${Object.keys(step.config.labels ?? {}).join(", ")}` : step.config.task;
     case "approval":
@@ -66,9 +69,14 @@ function StepNode({ data }: NodeProps<Node<StepNodeData, "step">>) {
 
 const nodeTypes = { trigger: TriggerNode, step: StepNode };
 
-function samplePayload(trigger: Trigger): string {
+// Tomorrow at 10:00 in the field's own zone, which is on any slot grid that divides the hours evenly.
+const tomorrowAtTen = () => `${new Date(Date.now() + 86_400_000).toISOString().slice(0, 10)}T10:00`;
+
+function samplePayload(trigger: Trigger, resourceId = "a resource id from the Resources page"): string {
   if (trigger.type !== "form") return "{}";
-  const sample = Object.fromEntries(trigger.config.fields.map((f) => [f.name, f.type === "number" ? 1 : f.type === "email" ? "ana@example.com" : `Sample ${f.label.toLowerCase()}`]));
+  const sample = Object.fromEntries(
+    trigger.config.fields.map((f) => [f.name, f.type === "number" ? 1 : f.type === "email" ? "ana@example.com" : f.type === "datetime" ? tomorrowAtTen() : f.type === "resource" ? resourceId : `Sample ${f.label.toLowerCase()}`]),
+  );
   return JSON.stringify(sample, null, 2);
 }
 
@@ -78,6 +86,7 @@ export function Editor({ id }: { id: string }) {
   const [draft, setDraft] = useState<Draft>(blankDraft);
   const [dirty, setDirty] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
+  const [firstResource, setFirstResource] = useState<string | undefined>();
   const [measured, setMeasured] = useState<Record<string, { width: number; height: number }>>({});
   const [message, setMessage] = useState<{ kind: "error" | "ok"; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -94,11 +103,12 @@ export function Editor({ id }: { id: string }) {
     return w;
   };
   useEffect(() => {
-    void Promise.all([reload(), api<Catalog>("GET", "/step-schemas")])
-      .then(([w, c]) => {
+    void Promise.all([reload(), api<Catalog>("GET", "/step-schemas"), api<{ id: string; active: boolean }[]>("GET", "/resources").catch(() => [])])
+      .then(([w, c, r]) => {
         const d = (w.latest?.definition as Draft | undefined) ?? blankDraft();
         setDraft(d);
-        setPayload(samplePayload(d.trigger));
+        setFirstResource(r.find((x) => x.active)?.id);
+        setPayload(samplePayload(d.trigger, r.find((x) => x.active)?.id));
         setCatalog(c);
       })
       .catch((e: Error) => setMessage({ kind: "error", text: e.message }));
@@ -224,7 +234,7 @@ export function Editor({ id }: { id: string }) {
             onApply={(d) => {
               update(d);
               setSelected(null);
-              setPayload(samplePayload(d.trigger));
+              setPayload(samplePayload(d.trigger, firstResource));
             }}
           />
           <nav aria-label="Steps">
@@ -410,9 +420,16 @@ function TriggerPanel({ trigger, wf, onChange }: { trigger: Trigger; wf: Loaded;
               <div className="row" key={i}>
                 <input aria-label={`Field ${i + 1} name`} value={f.name} onChange={(e) => set({ name: e.target.value })} />
                 <input aria-label={`Field ${i + 1} label`} value={f.label} onChange={(e) => set({ label: e.target.value })} />
-                {/* Number limits only exist on number fields, so changing the type drops them. */}
-                <select aria-label={`Field ${i + 1} type`} value={f.type} onChange={(e) => set({ type: e.target.value as FormField["type"], min: undefined, max: undefined, integer: undefined })}>
-                  {["text", "email", "textarea", "number"].map((t) => (
+                {/* Number limits and datetime zones only exist on their own types, so changing the type drops them. */}
+                <select
+                  aria-label={`Field ${i + 1} type`}
+                  value={f.type}
+                  onChange={(e) => {
+                    const type = e.target.value as FormField["type"];
+                    set({ type, min: undefined, max: undefined, integer: undefined, slotMinutes: undefined, timezone: type === "datetime" ? Intl.DateTimeFormat().resolvedOptions().timeZone : undefined });
+                  }}
+                >
+                  {["text", "email", "textarea", "number", "datetime", "resource"].map((t) => (
                     <option key={t}>{t}</option>
                   ))}
                 </select>
@@ -428,6 +445,13 @@ function TriggerPanel({ trigger, wf, onChange }: { trigger: Trigger; wf: Loaded;
                     </label>
                   </>
                 )}
+                {f.type === "datetime" && (
+                  <>
+                    <input aria-label={`Field ${i + 1} timezone`} placeholder="Asia/Manila" value={f.timezone ?? ""} onChange={(e) => set({ timezone: e.target.value })} />
+                    <input aria-label={`Field ${i + 1} slot minutes`} type="number" min={1} max={1440} step={1} placeholder="slot minutes" value={f.slotMinutes ?? ""} onChange={(e) => set({ slotMinutes: e.target.value === "" ? undefined : Number(e.target.value) })} />
+                  </>
+                )}
+                {f.type === "resource" && <span className="muted">a resource from the Resources page</span>}
                 <button type="button" className="quiet" onClick={() => setFields(fields.filter((_, j) => j !== i))} disabled={fields.length === 1}>
                   Remove
                 </button>

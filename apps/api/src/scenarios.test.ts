@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { createServer, type IncomingMessage, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { approvals, deliveries, requests, runs, stepRuns, type Db, type MailDeps } from "@daloy/db";
+import { approvals, deliveries, requests, resources, runs, stepRuns, type Db, type MailDeps } from "@daloy/db";
 import * as engine from "@daloy/engine";
 import type { INestApplication } from "@nestjs/common";
 import { and, asc, eq, inArray } from "drizzle-orm";
@@ -11,7 +11,7 @@ import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { freshDatabase } from "../../../test/db";
 import { qa01, qa01NoInvalidEdge, qa01Unchecked } from "../../../test/scenarios/qa-01-sales-leads";
-import { desired, hourDelay, qa02 } from "../../../test/scenarios/qa-02-spa-appointments";
+import { ANA, appointment, dayBeforeReminder, desired, hourDelay, qa02 } from "../../../test/scenarios/qa-02-spa-appointments";
 import { qa03 } from "../../../test/scenarios/qa-03-cafe-promotions";
 import { qa04 } from "../../../test/scenarios/qa-04-refunds";
 import { qa05 } from "../../../test/scenarios/qa-05-purchase-requests";
@@ -102,6 +102,8 @@ beforeAll(async () => {
   other = request.agent(app.getHttpServer());
   await owner.post("/auth/register").send({ email: "owner@scenarios.local", password: "correct horse battery" }).expect(201);
   await other.post("/auth/register").send({ email: "other@scenarios.local", password: "correct horse battery" }).expect(201);
+  // QA-02's therapist field takes a resource of the owner's workspace (decision 0031).
+  await db.insert(resources).values({ id: ANA, userId: (await owner.get("/auth/me").expect(200)).body.workspaceId as string, name: "Ana" });
 
   receiver = createServer(async (req, res) => {
     const body = await readBody(req);
@@ -297,28 +299,38 @@ describe("QA-01 sales lead gate without field checks", () => {
 describe("QA-02 spa appointments", () => {
   runCases(qa02);
 
-  it("a zoned datetime field can be saved [gap P6a: the field type is refused]", async () => {
-    expect((await saveErrors(desired.datetimeField)).join("\n")).toMatch(/^trigger\.config\.fields\.1\.type: /m);
+  it("a zoned datetime field can be saved", async () => {
+    await workflow(desired.datetimeField);
   });
-  it("a resource field can be saved [gap P6a: the field type is refused]", async () => {
-    expect((await saveErrors(desired.resourceField)).join("\n")).toMatch(/^trigger\.config\.fields\.1\.type: /m);
+  it("a resource field can be saved", async () => {
+    await workflow(desired.resourceField);
   });
-  it("a delay relative to the appointment can be saved [gap P6a: a delay needs fixed seconds]", async () => {
-    expect((await saveErrors(desired.relativeDelay)).join("\n")).toMatch(/^steps\.0\.config\.seconds: /m);
+  it("a delay relative to the appointment can be saved", async () => {
+    await workflow(desired.relativeDelay);
+  });
+  it("a reminder whose time has passed is not sent, and run history says why", async () => {
+    const id = await workflow(dayBeforeReminder);
+    // On the hour, three to four hours ahead: in the future and on the slot grid, but less than a day away.
+    const soon = new Date(Math.ceil((Date.now() + 3 * 3_600_000) / 3_600_000) * 3_600_000).toISOString();
+    const { outcome, runId } = await testRun(id, dayBeforeReminder, { payload: { email: "mia@example.com", appointment_at: soon } });
+    expect(outcome).toEqual(["wait"]);
+    const [wait] = await db.select().from(stepRuns).where(eq(stepRuns.runId, runId!));
+    expect(wait).toMatchObject({ branch: "late", output: { late: true, skipped: "The wake-up time had passed, so the steps after this delay did not run." } });
   });
   it("a booking step can be saved [gap P6b: there is no booking step type]", async () => {
     expect((await saveErrors(desired.bookingStep)).join("\n")).toMatch(/^steps\.0\.type: /m);
   });
-  it("a mocked delay reports the real wake-up time [gap P6a: it reports the shortened one-second wait]", async () => {
+  it("a mocked delay reports the real wake-up time", async () => {
     const id = await workflow(hourDelay);
     const started = Date.now();
     const { runId } = await testRun(id, hourDelay, { payload: {} });
     const [wait] = await db.select().from(stepRuns).where(eq(stepRuns.runId, runId!));
-    expect(new Date((wait!.output as { resumeAt: string }).resumeAt).getTime() - started).toBeLessThan(60_000);
+    expect(new Date((wait!.output as { resumeAt: string }).resumeAt).getTime() - started).toBeGreaterThanOrEqual(3_600_000);
+    expect(wait!.output).toMatchObject({ mocked: true });
   });
   it("a second booking for the same therapist and time is refused [gap P6b: both bookings are confirmed]", async () => {
     const id = await workflow(qa02.definition);
-    const booking = { payload: { name: "Mia", email: "mia@example.com", service: "Massage", therapist: "Ana", appointment_at: "2027-01-20T14:00" } };
+    const booking = { payload: { name: "Mia", email: "mia@example.com", service: "Massage", therapist: ANA, appointment_at: appointment("15:00") } };
     expect((await testRun(id, qa02.definition, booking)).outcome).toEqual(["notify", "confirm"]);
     expect((await testRun(id, qa02.definition, booking)).outcome).toEqual(["notify", "confirm"]);
   });

@@ -196,3 +196,36 @@ describe("definitionSchema", () => {
     });
   });
 });
+
+describe("delay until and the late edge", () => {
+  const wait = (config: Record<string, unknown>) => ({ id: "wait", type: "delay", config });
+  const def = (config: Record<string, unknown>, edges: { from: string; to: string; on?: string }[] = [{ from: "wait", to: "remind" }]) => ({
+    trigger: { type: "manual", config: {} },
+    steps: [wait(config), step("remind", "email"), step("too_late", "email")],
+    edges: [...edges, ...(edges.some((e) => e.to === "too_late") ? [] : [{ from: "remind", to: "too_late" }])],
+  });
+  const errs = (input: unknown) => {
+    const r = definitionSchema.safeParse(input);
+    return r.success ? [] : r.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`);
+  };
+
+  it("saves a delay until a time with an offset before or after it", () => {
+    expect(errs(def({ until: "{{trigger.appointment_at}}", offsetSeconds: -3600 }))).toEqual([]);
+    expect(errs(def({ until: "{{trigger.appointment_at}}" }))).toEqual([]);
+  });
+
+  it("needs exactly one of seconds and until, and an offset only with until", () => {
+    expect(errs(def({}))).toEqual(["steps.0.config.seconds: set either seconds or until"]);
+    expect(errs(def({ seconds: 60, until: "{{trigger.at}}" }))).toEqual(["steps.0.config.seconds: set either seconds or until"]);
+    expect(errs(def({ seconds: 60, offsetSeconds: -60 }))).toEqual(["steps.0.config.offsetSeconds: offsetSeconds needs until"]);
+    expect(errs(def({ until: "{{trigger.at}}", offsetSeconds: 2_592_001 }))).not.toEqual([]);
+    expect(errs(def({ until: "" }))).not.toEqual([]);
+  });
+
+  it("allows a late edge next to the usual one, only on a delay with until", () => {
+    const both = [{ from: "wait", to: "remind" }, { from: "wait", to: "too_late", on: "late" }];
+    expect(errs(def({ until: "{{trigger.at}}" }, both))).toEqual([]);
+    expect(errs(def({ seconds: 60 }, both))).toEqual([': only a delay with "until" can have a "late" edge, and "wait" waits a fixed time']);
+    expect(errs(def({ until: "{{trigger.at}}" }, [{ from: "wait", to: "remind" }, { from: "wait", to: "too_late", on: "early" }]))).toEqual([': step "wait" does not branch, so its edge cannot have a label']);
+  });
+});

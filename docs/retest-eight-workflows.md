@@ -1,6 +1,6 @@
 # Retest handoff: eight-workflow acceptance harness
 
-For Astra. P1 added the harness. P2 added field limits at every entry point and the condition `invalid` branch. P3 added test-run modes and chosen outcomes (migration 0014). P4 added business event keys (migration 0015). P5 added safe retries and review (migration 0017). External beta stays on hold.
+For Astra. P1 added the harness. P2 added field limits at every entry point and the condition `invalid` branch. P3 added test-run modes and chosen outcomes (migration 0014). P4 added business event keys (migration 0015). P5 added safe retries and review (migration 0017). P6a added zoned times, delays until a time and workspace resources (migration 0018). External beta stays on hold.
 
 ## Run
 
@@ -58,6 +58,18 @@ Builder replay (second commit):
 - A worker paused before it claims the send: another worker takes over, the run is parked, the operator chooses Stop, and the paused worker then sends nothing. The receiver count stays at the one request the takeover made (`fencing.test.ts`).
 - A worker paused while it holds the send claim: the takeover waits, Stop answers 409 because the run is still running, the paused worker's one POST goes out, then the run is parked; Stop after that sends nothing more.
 - A 503 with a body over 1 MB on a POST: `needs_review / unknown` with "HTTP 503" in the error.
+
+## P6a checks (zoned times and resources)
+
+Run `pnpm vitest run apps/api/src/scenarios.test.ts -t "QA-02" --reporter=verbose`, `pnpm vitest run packages/engine/src/zoned.test.ts apps/api/src/resources.test.ts` and `pnpm e2e e2e/booking-form.spec.ts`.
+
+- QA-02 refuses `...T32:00`, a time in 2020, `14:30` on a 60-minute grid, and a therapist sent as "Ana" instead of a resource id, each with a 400 that names the field. A future booking on the hour still reaches both emails.
+- DST, on a webhook with a datetime field: `America/New_York` `2030-03-10T02:30` is refused as skipped; `2030-11-03T01:30` is refused as happening twice, and `2030-11-03T01:30-04:00` and `-05:00` are both accepted. Try `Australia/Lord_Howe` too (it moves 30 minutes).
+- Offsets: on an `Asia/Manila` 60-minute field, `...T06:00:00Z` is stored as `...T14:00:00+08:00`; `...T14:00+05:45` is refused as off the grid (it is 16:15 in Manila).
+- Resources: as owner, add, rename, archive and restore on the Resources page. An operator, approver or requester can list (`GET /resources`) but gets 403 on changes. Another workspace's id, and an archived id, are refused at the hosted form, a webhook, a test run, the Run button and MCP. Rename a resource after a run: the run keeps the old name.
+- Hosted form: the resource select lists only active resources, names are escaped, the time input says "Times are in <zone>", and a time typed past the browser's checks is still refused by the server.
+- Reminder: a delay with `until: "{{trigger.appointment_at}}"` and `offsetSeconds: -86400` on an appointment a few hours ahead ends at the delay, the reminder is not sent, and the run page shows "Skipped: The wake-up time had passed...". With a `late` edge, that edge runs instead. A mocked one-hour delay shows `resumeAt` an hour ahead.
+- Migration 0018 is additive (one table). The development database is not reset; it had 2 users, 30 workflows and 64 versions when P6a was built, all of which still parse.
 
 ## P5 checks (safe retries and review)
 

@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { apiTokens, createKeyedRun, resolveRun, runs, stepRuns, triggers, users, workflows, workflowVersions, type Db } from "@daloy/db";
-import { payloadSchema, type FormField } from "@daloy/engine";
+import { payloadSchema, type FormField, type Resource } from "@daloy/engine";
 import { toNodeHandler } from "@modelcontextprotocol/node";
 import { createMcpHandler, McpServer, type AuthInfo, type CallToolResult } from "@modelcontextprotocol/server";
 import { All, type CanActivate, Controller, type ExecutionContext, Inject, Injectable, Req, Res, UnauthorizedException, UseGuards } from "@nestjs/common";
@@ -10,18 +10,20 @@ import type { PgBoss } from "pg-boss";
 import * as z from "zod";
 import { BOSS, DB, enqueueRun, RateLimit, sha256 } from "./http";
 import { isTracked, recordRequest } from "./public";
+import { resourcesFor } from "./resources";
 
 // tracked: a guided office or purchase request workflow, whose runs also record a request with a reference.
 type ToolRow = { slug: string; name: string; versionId: string; fields: FormField[]; workflowId: string; tracked: boolean };
 
 /** One tool per published form workflow. Slugs use a-z, 0-9 and -, so they never clash with get_run_status. */
-export function toolsFromRows(rows: ToolRow[]) {
+/** resources: the workspace's active ones, which a resource field accepts and its description lists (decision 0031). */
+export function toolsFromRows(rows: ToolRow[], resources: Resource[] = []) {
   return rows.map((r) => ({
     name: r.slug,
     title: r.name,
     description: `Starts a run of the "${r.name}" workflow with the form fields as input. Returns the run id; check progress with get_run_status.`,
     // idempotencyKey cannot clash with a field: field names are lower case.
-    inputSchema: payloadSchema(r.fields).extend({ idempotencyKey: z.string().min(1).max(200).optional().describe("Send the same key when retrying a call, so it starts one run") }),
+    inputSchema: payloadSchema(r.fields, { resources }).extend({ idempotencyKey: z.string().min(1).max(200).optional().describe("Send the same key when retrying a call, so it starts one run") }),
     versionId: r.versionId,
     workflowId: r.workflowId,
     tracked: r.tracked,
@@ -94,7 +96,8 @@ export class McpController {
 
   private async server(userId: string) {
     const server = new McpServer({ name: "daloy", version: "1.0.0" });
-    for (const tool of toolsFromRows(await this.formWorkflows(userId))) {
+    const rows = await this.formWorkflows(userId);
+    for (const tool of toolsFromRows(rows, await resourcesFor(this.db, userId, rows.flatMap((r) => r.fields)))) {
       server.registerTool(tool.name, { title: tool.title, description: tool.description, inputSchema: tool.inputSchema }, async (args) => {
         const { idempotencyKey, ...data } = args as Record<string, unknown> & { idempotencyKey?: string };
         if (tool.tracked) {

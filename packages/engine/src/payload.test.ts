@@ -87,3 +87,51 @@ describe("triggerFields", () => {
     expect(definitionSchema.safeParse({ trigger: { type: "webhook", config: { fields: [f, f] } }, steps: [{ id: "a", type: "delay", config: { seconds: 1 } }] }).success).toBe(false);
   });
 });
+
+describe("datetime fields", () => {
+  const at = field({ name: "at", type: "datetime", required: true, timezone: "Asia/Manila", slotMinutes: 60 });
+  const now = Date.UTC(2026, 0, 1);
+  const parse = (data: Record<string, unknown>) => parsePayload([at], data, { now });
+
+  it("stores the time with the zone's offset", () => {
+    expect(parse({ at: "2027-01-20T14:00" })).toEqual({ ok: true, data: { at: "2027-01-20T14:00:00+08:00" } });
+    expect(parse({ at: " 2027-01-20T06:00Z " })).toEqual({ ok: true, data: { at: "2027-01-20T14:00:00+08:00" } });
+  });
+
+  it("names the field in each refusal", () => {
+    expect(parse({ at: "2027-01-20T32:00" })).toEqual({ ok: false, errors: ["at: is not a real date and time"] });
+    expect(parse({ at: "2020-01-20T14:00" })).toEqual({ ok: false, errors: ["at: must be in the future"] });
+    expect(parse({ at: "2027-01-20T14:30" })).toEqual({ ok: false, errors: ["at: must start on a 60-minute slot, counted from midnight in Asia/Manila"] });
+    expect(parse({})).toEqual({ ok: false, errors: ["at: is required"] });
+    expect(parse({ at: 1_800_000_000_000 })).toEqual({ ok: false, errors: ["at: must be a date and time like 2027-01-20T14:00"] });
+  });
+
+  it("needs a known IANA timezone, and only datetime fields take timezone or slotMinutes", () => {
+    const bad = (f: Record<string, unknown>) => formFieldSchema.safeParse({ name: "at", label: "At", ...f }).error?.issues.map((i) => `${i.path.join(".")}: ${i.message}`);
+    expect(bad({ type: "datetime" })).toEqual(["timezone: a datetime field needs a timezone such as Asia/Manila"]);
+    expect(bad({ type: "datetime", timezone: "+08:00" })).toEqual(["timezone: use an IANA timezone name such as Asia/Manila"]);
+    expect(bad({ type: "datetime", timezone: "UTC", slotMinutes: 0 })).toHaveLength(1);
+    expect(bad({ type: "datetime", timezone: "UTC", slotMinutes: 1441 })).toHaveLength(1);
+    expect(bad({ type: "text", timezone: "UTC" })).toEqual(["type: timezone and slotMinutes are for datetime fields"]);
+  });
+});
+
+describe("resource fields", () => {
+  const therapist = field({ name: "therapist", type: "resource", required: true });
+  const resources = [
+    { id: "6f1c1b6e-8a5e-4b8f-9d61-0d5f0c0b0a01", name: "Ana" },
+    { id: "6f1c1b6e-8a5e-4b8f-9d61-0d5f0c0b0a02", name: "Ben" },
+  ];
+
+  it("stores the id with the name it had when the run started", () => {
+    expect(parsePayload([therapist], { therapist: resources[1]!.id }, { resources })).toEqual({ ok: true, data: { therapist: resources[1] } });
+  });
+
+  it("refuses an id that is not an active resource of this workspace, and any id when none are given", () => {
+    const refused = { ok: false, errors: ["therapist: must be one of this workspace's resources"] };
+    expect(parsePayload([therapist], { therapist: resources[0]!.id.replace(/01$/, "99") }, { resources })).toEqual(refused);
+    expect(parsePayload([therapist], { therapist: "Ana" }, { resources })).toEqual(refused);
+    expect(parsePayload([therapist], { therapist: { id: resources[0]!.id, name: "Ana" } }, { resources })).toEqual({ ok: false, errors: ["therapist: must be a resource id"] });
+    expect(parsePayload([therapist], { therapist: resources[0]!.id })).toEqual(refused);
+  });
+});

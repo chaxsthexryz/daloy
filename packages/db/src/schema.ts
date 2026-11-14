@@ -288,6 +288,24 @@ export const requests = pgTable(
   (t) => [unique().on(t.workflowId, t.submissionKey)],
 );
 
+/**
+ * Things a booking is for: a therapist, a room, a table (decision 0031). A resource field takes an active one's id.
+ * There is no delete: runs and bookings keep pointing at the id, so a resource is archived (active false) instead.
+ */
+export const resources = pgTable(
+  "resources",
+  {
+    id: id(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    active: boolean("active").notNull().default(true),
+    createdAt: createdAt(),
+  },
+  (t) => [unique().on(t.userId, t.name)],
+);
+
 /** What the owner tells Daloy about their business. Used in templates, the hosted form and the From and Reply-To headers. */
 export const businessProfiles = pgTable("business_profiles", {
   userId: uuid("user_id").primaryKey().references(() => users.id, { onDelete: "cascade" }),
