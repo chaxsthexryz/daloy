@@ -196,10 +196,11 @@ async function markerAt(urls: ProviderUrls, sa: ServiceAccount, spreadsheetId: s
 }
 
 /**
- * Adds the row exactly once. One spreadsheets.batchUpdate creates the marker (project-private developer metadata with
- * our chosen id) and appends the row. Google applies a batch entirely or not at all and refuses a second marker with
- * the same id, so a retry, a parallel attempt or a late copy of an earlier request cannot add the row twice. A refused
- * batch is checked against the marker: ours means the row is already in. Cells are string values, never formulas.
+ * Adds the row unless its marker is already there. One spreadsheets.batchUpdate creates the marker (project-private
+ * developer metadata with our chosen id) and appends the row. Google applies a batch entirely or not at all and refuses
+ * a second marker with the same id, so while the marker exists a retry, a parallel attempt or a late copy of an earlier
+ * request cannot add the row twice. Once the marker is deleted that no longer holds (decision 0021). A refused batch is
+ * checked against the marker: ours means the row is already in. Cells are string values, never formulas.
  */
 export async function appendRowOnce(urls: ProviderUrls, sa: ServiceAccount, dest: SheetDestination, row: string[], key: SheetWriteKey): Promise<{ sheet: string; reconciled?: true }> {
   const sheetId = await sheetIdOf(urls, sa, dest);

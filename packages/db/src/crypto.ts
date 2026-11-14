@@ -47,10 +47,17 @@ export async function retireSecret(tx: Pick<Db, "select" | "insert" | "execute">
   if (row) await tx.insert(retiredSecrets).values({ userId, name, ciphertext: row.ciphertext, iv: row.iv, authTag: row.authTag });
 }
 
-/** Every value a workspace's run history may contain: current secrets and retired ones. Never given to a workflow. */
+/**
+ * Every value a workspace's run history may contain: current secrets and retired ones. Never given to a workflow.
+ * One statement, so one snapshot: a rotation or deletion commits the retired copy and the change together, so a value
+ * is either still current or already retired here, never missing from both (retest of 6e603de).
+ */
 export async function secretValuesToHide(db: Db, key: Buffer, userId: string): Promise<string[]> {
-  const retired = await db.select().from(retiredSecrets).where(eq(retiredSecrets.userId, userId));
-  return [...Object.values(await readSecrets(db, key, userId)), ...retired.map((r) => decryptSecret(key, userId, r.name, r))];
+  const { rows } = await db.execute<EncryptedSecret & { name: string }>(sql`
+    select name, ciphertext, iv, auth_tag as "authTag" from secrets where user_id = ${userId}
+    union all
+    select name, ciphertext, iv, auth_tag as "authTag" from retired_secrets where user_id = ${userId}`);
+  return rows.map((r) => decryptSecret(key, userId, r.name, r));
 }
 
 /**
