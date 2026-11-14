@@ -25,7 +25,11 @@ import * as z from "zod";
 import { BOSS, CONFIG, DB, enqueueRun, isUniqueViolation, RateLimit, ZodPipe, type ApiConfig } from "./http";
 import { sessionUser } from "./auth";
 
-const HONEYPOT = "website";
+// Starts with "_", which no field name can (definition.ts), so a real "website" field is never mistaken for it.
+const HONEYPOT = "_website";
+
+/** Both guided templates record a request with a reference, from the form and from MCP; a custom form only starts a run. */
+export const isTracked = (setup: unknown) => [OFFICE_REQUEST, PURCHASE_REQUEST].includes((setup as { template?: string } | null)?.template ?? "");
 const SUBMISSION_KEY = "submission_key";
 
 /** Public, unauthenticated routes that start runs. Each one is rate limited per IP. */
@@ -129,9 +133,7 @@ export class FormsController {
       .where(and(eq(triggers.id, id), eq(triggers.type, "form")));
     const version = row && (await publishedVersion(this.db, row.trigger.workflowId));
     if (!row || !version) throw new NotFoundException();
-    // Both guided templates record a request with a reference; a custom form only starts a run.
-    const template = (row.workflow.setup as { template?: string } | null)?.template;
-    const tracked = template === OFFICE_REQUEST || template === PURCHASE_REQUEST;
+    const tracked = isTracked(row.workflow.setup);
     return { fields: (row.trigger.config as { fields: FormField[] }).fields, versionId: version.id, workflow: row.workflow, tracked, businessName: row.businessName };
   }
 }

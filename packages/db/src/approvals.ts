@@ -12,16 +12,20 @@ export const hashToken = (token: string) => createHash("sha256").update(token).d
 
 /**
  * Makes the link token for a waiting approval step: 32 random bytes, base64url. Only the SHA-256 is stored,
- * so a database leak gives no working links (decision 0009). An earlier link for the same step run is deleted,
- * so a step attempt that runs again after a crash leaves exactly one live link.
+ * so a database leak gives no working links (decision 0009). An earlier unused link for the same step run is deleted,
+ * so a step attempt that runs again after a crash leaves exactly one live link. If that earlier link was already
+ * answered, it is kept and null is returned: the caller takes the recorded decision instead of asking again.
  */
-export async function createApproval(db: AnyDb, stepRunId: string, expiresAt: Date, approverId?: string): Promise<string> {
+export async function createApproval(db: AnyDb, stepRunId: string, expiresAt: Date, approverId?: string): Promise<string | null> {
   const token = randomBytes(32).toString("base64url");
-  await db.transaction(async (tx) => {
-    await tx.delete(approvals).where(eq(approvals.stepRunId, stepRunId));
+  return db.transaction(async (tx) => {
+    await tx.delete(approvals).where(and(eq(approvals.stepRunId, stepRunId), isNull(approvals.usedAt)));
+    // What is left was answered. The run's lease means only one worker is here for this step run.
+    const [answered] = await tx.select({ id: approvals.id }).from(approvals).where(eq(approvals.stepRunId, stepRunId));
+    if (answered) return null;
     await tx.insert(approvals).values({ stepRunId, tokenHash: hashToken(token), expiresAt, approverId });
+    return token;
   });
-  return token;
 }
 
 const live = (token: string) => and(eq(approvals.tokenHash, hashToken(token)), isNull(approvals.usedAt), gt(approvals.expiresAt, sql`now()`));

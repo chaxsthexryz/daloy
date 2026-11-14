@@ -297,13 +297,13 @@ describe("form trigger", () => {
     const page = await request(server).get(`/forms/${wf.trigger.id}`).expect(200);
     expect(page.headers["content-type"]).toMatch(/text\/html/);
     expect(page.text).toContain("Your &lt;b&gt;name&lt;/b&gt;");
-    expect(page.text).toContain('name="website"');
+    expect(page.text).toContain('name="_website"');
   });
 
   it("starts a run with the submitted fields", async () => {
     const { agent } = await signedIn();
     const wf = await publishedWorkflow(agent, { type: "form", config: { fields } });
-    await request(server).post(`/forms/${wf.trigger.id}`).type("form").send({ name: "Ana", email: "ana@example.com", website: "" }).expect(200);
+    await request(server).post(`/forms/${wf.trigger.id}`).type("form").send({ name: "Ana", email: "ana@example.com", _website: "" }).expect(200);
     const rows = await db.select().from(runs);
     expect(rows.map((r) => r.triggerPayload)).toContainEqual({ name: "Ana", email: "ana@example.com" });
   });
@@ -313,8 +313,15 @@ describe("form trigger", () => {
     const wf = await publishedWorkflow(agent, { type: "form", config: { fields } });
     await request(server).post(`/forms/${wf.trigger.id}`).type("form").send({ name: "Ana", email: "not-an-email" }).expect(400);
     const before = (await db.select().from(runs)).length;
-    await request(server).post(`/forms/${wf.trigger.id}`).type("form").send({ name: "Bot", email: "bot@example.com", website: "http://spam" }).expect(200);
+    await request(server).post(`/forms/${wf.trigger.id}`).type("form").send({ name: "Bot", email: "bot@example.com", _website: "http://spam" }).expect(200);
     expect((await db.select().from(runs)).length).toBe(before);
+  });
+
+  it("keeps a real field named website apart from the honeypot", async () => {
+    const { agent } = await signedIn();
+    const wf = await publishedWorkflow(agent, { type: "form", config: { fields: [...fields, { name: "website", label: "Your website", type: "text", required: true }] } });
+    await request(server).post(`/forms/${wf.trigger.id}`).type("form").send({ name: "Lea", email: "lea@example.com", website: "https://lea.example" }).expect(200);
+    expect((await db.select().from(runs)).map((r) => r.triggerPayload)).toContainEqual({ name: "Lea", email: "lea@example.com", website: "https://lea.example" });
   });
 });
 

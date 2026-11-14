@@ -473,7 +473,7 @@ function LivePage({ wf, formId }: { wf: Detail; formId: string }) {
                   <td>{new Date(r.createdAt).toLocaleString()}</td>
                   <td>{wf.name}</td>
                   <td>
-                    {outcome(r, (wf.setup as { template?: string } | null)?.template === PURCHASE_REQUEST ? "Decided, emails sent" : "Notification and receipt sent")} <a href={`#/runs/${r.runId}`}>Details</a>
+                    {outcome(r, (wf.setup as { template?: string } | null)?.template === PURCHASE_REQUEST ? "Decided" : "Processed")} <a href={`#/runs/${r.runId}`}>Details</a>
                   </td>
                   <td>{r.deliveries.length ? <DeliveryList deliveries={r.deliveries} onChange={load} /> : <span className="muted">None</span>}</td>
                 </tr>

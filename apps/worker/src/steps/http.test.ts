@@ -21,6 +21,7 @@ beforeAll(async () => {
     if (at("/echo")) return res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ method: req.method, auth: req.headers.authorization ?? null }));
     if (at("/status/")) return res.writeHead(Number(path.slice(8))).end();
     if (at("/redirect/")) return res.writeHead(302, { location: decodeURIComponent(path.slice(10)) }).end();
+    if (at("/redirect307/")) return res.writeHead(307, { location: decodeURIComponent(path.slice(13)) }).end();
     if (at("/chain/")) {
       const n = Number(path.slice(7));
       return res.writeHead(302, { location: n > 0 ? `/chain/${n - 1}` : "/json" }).end();
@@ -105,6 +106,16 @@ describe("httpRequest", () => {
     const target = encodeURIComponent(`http://other.test:${port}/echo`);
     const out = await get(`/redirect/${target}`, {}, { Authorization: "Bearer t" });
     expect(out.body).toEqual({ method: "GET", auth: null });
+  });
+
+  it("never resends a body to another origin on a 307 or 308, but follows one on the same origin", async () => {
+    const post = (target: string) =>
+      httpRequest({ method: "POST", url: `${base()}/redirect307/${encodeURIComponent(target)}`, headers: {}, body: '{"private":true}' }, "k", { guard: guard() });
+    const before = requests;
+    const err = await stepError(post(`http://other.test:${port}/echo`));
+    expect(err.retryable).toBe(false);
+    expect(requests).toBe(before + 1);
+    expect((await post(`http://public.test:${port}/echo`)).body).toEqual({ method: "POST", auth: null });
   });
 
   it("checks every resolution, so a DNS answer that changes to a private address is blocked", async () => {

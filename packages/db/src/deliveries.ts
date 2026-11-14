@@ -2,7 +2,7 @@ import { backoffDelayMs, type RetryPolicy } from "@daloy/engine";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { connectionCredential, markConnectionFailed, PROVIDER_NAMES, updateCredential } from "./connections";
 import type { Db } from "./index";
-import { appendRow, findReference, outlookSend, ProviderError, serviceAccountSchema, slackPost, teamsPost, type OutlookMessage, type ProviderUrls, type SheetDestination } from "./providers";
+import { appendRow, findRow, outlookSend, ProviderError, serviceAccountSchema, slackPost, teamsPost, type OutlookMessage, type ProviderUrls, type SheetDestination } from "./providers";
 import { deliveries, type Provider } from "./schema";
 
 /**
@@ -65,7 +65,7 @@ async function attempt(db: Db, key: Buffer, urls: ProviderUrls, d: Delivery): Pr
       const sa = serviceAccountSchema.parse(JSON.parse(conn.credential));
       const dest = conn.destination as SheetDestination;
       if (d.checkFirst) {
-        const found = await findReference(urls, sa, dest, d.reference);
+        const found = await findRow(urls, sa, dest, (d.payload as { row: string[] }).row);
         if (found) return { state: "delivered", result: { range: found, reconciled: true } };
       }
       return { state: "delivered", result: await appendRow(urls, sa, dest, (d.payload as { row: string[] }).row) };

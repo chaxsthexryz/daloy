@@ -125,6 +125,19 @@ it("checks the sheet before writing again when Google accepted a row but the ans
   expect(appends() - before).toBe(1);
 });
 
+it("does not take another step's row with the same reference for its own", async () => {
+  const runId = await newRun(ana);
+  await sheet(ana, runId, "REQ-1010");
+  await deliverDue();
+  const second = await queueDelivery(db, { userId: ana, runId, stepId: "log_cost", provider: "google_sheets", reference: "REQ-1010", payload: { row: ["REQ-1010", "2026-11-13T09:00:01.000Z", "PHP 7,800"] } });
+  fake.once(":append", "hang");
+  await deliverDue();
+  await makeDue(second.id);
+  await deliverDue();
+  expect(await state(second.id)).toMatchObject({ state: "delivered", result: { range: "'Requests'!A2:C2" } });
+  expect(sheetRows.map((r) => r[2])).toEqual(["Printer jammed", "PHP 7,800"]);
+});
+
 it("writes the row after the check when the timed-out call never arrived", async () => {
   const d = await sheet(ana, await newRun(ana), "REQ-1005");
   fake.once(":append", "hang");

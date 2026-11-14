@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { aiConnection, checkRecipients, createApproval, findApprover, queueDelivery, readSecrets, sendAs, type Db, type MailDeps, type Provider } from "@daloy/db";
+import { aiConnection, checkRecipients, claimTimeout, createApproval, findApprover, queueDelivery, readSecrets, sendAs, type Db, type MailDeps, type Provider } from "@daloy/db";
 import { evaluateCondition, isRetryable, mockAiOutput, resolveTemplate, StepError, type ExpressionContext, type Step } from "@daloy/engine";
 import type { StepExecutor, StepResult } from "../advance";
 import { runAi } from "./ai";
@@ -17,6 +17,28 @@ type FullDeps = ExecutorDeps & { guard: SsrfGuard; publicUrl: string };
 function text(template: string, ctx: ExpressionContext): string {
   const v = resolveTemplate(template, ctx);
   return v === undefined || v === null ? "" : typeof v === "string" ? v : typeof v === "object" ? JSON.stringify(v) : String(v);
+}
+
+/**
+ * A body that is JSON as written is resolved value by value and serialised once, so quotes, newlines or a crafted
+ * value in trigger data can't break it or add keys. Anything else (raw text, unquoted placeholders) is plain text.
+ */
+function body(template: string, ctx: ExpressionContext): string {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(template);
+  } catch {
+    return text(template, ctx);
+  }
+  const walk = (v: unknown): unknown =>
+    typeof v === "string"
+      ? (resolveTemplate(v, ctx) ?? "")
+      : Array.isArray(v)
+        ? v.map(walk)
+        : v !== null && typeof v === "object"
+          ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, walk(x)]))
+          : v;
+  return JSON.stringify(walk(parsed));
 }
 
 /** Replaces every secret value in strings (keys too) with [secret]. Longest first, so a secret that contains another is fully hidden. */
@@ -49,9 +71,9 @@ function resolveInput(step: Step, ctx: ExpressionContext): Record<string, unknow
     case "delay":
       return { seconds: step.config.seconds };
     case "http": {
-      const { method, url, headers, body } = step.config;
+      const { method, url, headers } = step.config;
       const input: HttpInput = { method, url: text(url, ctx), headers: Object.fromEntries(Object.entries(headers).map(([k, v]) => [k, text(v, ctx)])) };
-      if (body !== undefined) input.body = text(body, ctx);
+      if (step.config.body !== undefined) input.body = body(step.config.body, ctx);
       return input;
     }
     case "email":
@@ -115,6 +137,11 @@ async function runStep(deps: FullDeps, step: Step, input: unknown, ctx: Expressi
       if (cfg.approver && !approver) throw new StepError(`The approver ${cfg.approver} is not a member of this workspace who can approve.`, false);
       const expiresAt = new Date(Date.now() + cfg.timeoutSeconds * 1000);
       const token = await createApproval(deps.db, stepRunId, expiresAt, approver?.id);
+      if (!token) {
+        // A re-run after a crash, and the approver already answered the first link: take that answer, ask nobody again.
+        const { branch, decidedBy, decidedAt } = await claimTimeout(deps.db, stepRunId);
+        return { output: { decision: branch, ...(decidedBy ? { decidedBy, decidedAt } : {}) }, branch };
+      }
       const link = `${deps.publicUrl}/approvals/${token}`;
       const who = approver ? `To answer, sign in as ${approver.email}. ` : "";
       const body = `${cfg.message}\n\nApprove or reject here:\n${link}\n\n${who}The link works once and expires at ${expiresAt.toISOString()}.`;

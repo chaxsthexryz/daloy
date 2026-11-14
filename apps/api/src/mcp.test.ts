@@ -2,7 +2,7 @@ import { randomBytes, randomUUID } from "node:crypto";
 import type { AddressInfo } from "node:net";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import { requests, runs, stepRuns, users, workflows, workflowVersions, type Db } from "@daloy/db";
-import { defaultAnswers, officeRequestDefinition } from "@daloy/engine";
+import { defaultAnswers, defaultPurchaseAnswers, officeRequestDefinition, PURCHASE_REQUEST, purchaseRequestDefinition } from "@daloy/engine";
 import type { INestApplication } from "@nestjs/common";
 import { eq } from "drizzle-orm";
 import type { Pool } from "pg";
@@ -190,6 +190,23 @@ describe("MCP endpoint", () => {
     expect(row).toMatchObject({ reference, subject: "Broken chair" });
     const [run] = await db.select().from(runs).where(eq(runs.id, runId));
     expect(run!.triggerPayload).toMatchObject({ reference });
+    await client.close();
+  });
+
+  it("records a purchase request with a reference too, like the hosted form", async () => {
+    const { agent, token, userId } = await owner();
+    // The approver must be a member who may approve: the owner is.
+    const [me] = await db.select().from(users).where(eq(users.id, userId));
+    const answers = defaultPurchaseAnswers(me!.email);
+    const wf = await agent.post("/workflows").send({ name: "Purchases", slug: `purchase-${++seq}` }).expect(201);
+    await agent.patch(`/workflows/${wf.body.id}/setup`).send({ template: PURCHASE_REQUEST, step: "review", answers }).expect(200);
+    await agent.post(`/workflows/${wf.body.id}/versions`).send({ definition: purchaseRequestDefinition(answers), publish: true }).expect(201);
+    const client = await connect(token);
+
+    const res = await callTool(client, wf.body.slug, { name: "Rosa", email: "rosa@example.com", summary: "Printer", cost: "7800", reason: "Ours broke" });
+    const { runId, reference } = res.structuredContent as { runId: string; reference: string };
+    expect(reference).toMatch(/^REQ-[0-9A-Z]{6}$/);
+    expect(await db.select().from(requests).where(eq(requests.runId, runId))).toHaveLength(1);
     await client.close();
   });
 

@@ -279,7 +279,7 @@ export function Editor({ id }: { id: string }) {
               <textarea id="payload" rows={5} value={payload} onChange={(e) => setPayload(e.target.value)} spellCheck={false} />
             </div>
             <label className="check">
-              <input type="checkbox" checked={live} onChange={(e) => setLive(e.target.checked)} /> Make live calls (HTTP and email). Off: they are mocked.
+              <input type="checkbox" checked={live} onChange={(e) => setLive(e.target.checked)} /> Make live calls (HTTP, email, AI, approval emails and connected apps). Off: they are mocked.
             </label>
             <div className="actions">
               <button type="button" onClick={testRun} disabled={busy || draft.steps.length === 0}>

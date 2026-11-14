@@ -22,7 +22,8 @@ Link option 2. The token is 32 random bytes (base64url, 43 characters). It canno
 
 - `GET /approvals/:token` only shows the message and two buttons. The decision is recorded on `POST`, so mail scanners and link previews that fetch the URL cannot approve anything.
 - `recordDecision` is one guarded UPDATE (`token_hash = $1 AND used_at IS NULL AND expires_at > now()`), so a replayed or expired link changes nothing. Unknown, used and expired links get the same 404 page.
-- A step attempt that runs again after a worker crash deletes the old row and sends a new link. Only the newest link works.
+- A step attempt that runs again after a worker crash deletes the old row and sends a new link. Only the newest link works. If the old link was already answered, the row stays and the attempt takes that decision without a new email (QA finding, November 2026).
+- An answer can arrive while the email is still on its way, before the run is waiting, so the `POST` wake-up misses it. Parking the run locks the approval row (`FOR UPDATE`) and, when it is already answered, wakes the run at once instead of at the timeout.
 
 Wake-up option 2. pg-boss keeps one queued job per run (`policy: short` with the run id as singleton key). A job scheduled for the timeout would occupy that slot, and the job queued by an early answer would be dropped until the timeout. So the approval step schedules no job: `POST` sets `next_attempt_at = now()` and queues the run, and the sweep (every 15 seconds) handles the timeout.
 
