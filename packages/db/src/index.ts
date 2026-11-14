@@ -17,8 +17,9 @@ export * from "./runs";
 export * from "./schema";
 export { schema };
 
-export function createDb(connectionString: string) {
-  const pool = new Pool({ connectionString });
+/** max is the pool size; pg's default is 10. */
+export function createDb(connectionString: string, max?: number) {
+  const pool = new Pool({ connectionString, max });
   return { db: drizzle(pool, { schema }), pool };
 }
 export type Db = ReturnType<typeof createDb>["db"];

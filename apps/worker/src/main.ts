@@ -9,7 +9,9 @@ if (secretsKey.length !== 32) throw new Error("SECRETS_KEY must be 32 bytes, bas
 
 // false in compose, where the worker connects as the DML-only role and the `migrate` service owns the schema (decision 0013).
 const ownsSchema = process.env.MIGRATE_ON_BOOT !== "false";
-const { db, pool } = createDb(url);
+// Twice the run batch (10): each unsafe send holds one connection while it starts (decision 0030), so heartbeats,
+// completions, deliveries and the sweep always have connections left.
+const { db, pool } = createDb(url, 20);
 if (ownsSchema) await migrate(pool);
 
 const worker = await startWorker({

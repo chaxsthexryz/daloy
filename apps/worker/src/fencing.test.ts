@@ -1,12 +1,14 @@
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { resolveRun, runs, stepRuns, users, workflows, workflowVersions, type Db } from "@daloy/db";
+import nodemailer from "nodemailer";
+import { createDb, resolveRun, runs, stepRuns, users, workflows, workflowVersions, type Db } from "@daloy/db";
 import { StepError } from "@daloy/engine";
 import { asc, eq } from "drizzle-orm";
 import type { Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { freshDatabase } from "../../../test/db";
 import { advance, type AdvanceDeps, type StepExecutor } from "./advance";
+import { createExecutor } from "./steps";
 import { httpRequest } from "./steps/http";
 import { BLOCKED_RANGES, blockListOf } from "./steps/ssrf";
 
@@ -17,15 +19,26 @@ import { BLOCKED_RANGES, blockListOf } from "./steps/ssrf";
  */
 let db: Db;
 let pool: Pool;
+let url: string;
 let receiver: Server;
 let port = 0;
 let received = 0;
+// /slow307 answers only once `hold` resolves, with a 307 to /target (Astra, 6170f4f). Everything else gets a 503.
+let hold: Promise<void> = Promise.resolve();
+let targetHits = 0;
 
 beforeAll(async () => {
-  ({ db, pool } = await freshDatabase());
+  ({ db, pool, url } = await freshDatabase());
   receiver = createServer((req, res) => {
     received++;
-    req.resume().on("end", () => res.writeHead(503).end());
+    req.resume().on("end", async () => {
+      if (req.url === "/slow307") {
+        await hold;
+        return res.writeHead(307, { location: "/target" }).end();
+      }
+      if (req.url === "/target") targetHits++;
+      res.writeHead(503).end();
+    });
   });
   await new Promise<void>((r) => receiver.listen(0, "127.0.0.1", r));
   port = (receiver.address() as AddressInfo).port;
@@ -53,9 +66,9 @@ function executor(calls: Call[], behave: (input: Exec) => Promise<{ output?: unk
   };
 }
 /** What the real HTTP step does: claim the send, then POST to the receiver. pause runs while the claim is held. */
-const realPost = async ({ idempotencyKey, claimSend }: Exec, pause?: Promise<void>) => {
+const realPost = async ({ idempotencyKey, claimSend }: Exec, pause?: Promise<void>, path = "/orders") => {
   const claim = claimSend && pause ? async () => { const release = await claimSend(); await pause; return release; } : claimSend;
-  return { output: await httpRequest({ method: "POST", url: `http://public.test:${port}/orders`, headers: {}, body: "{}" }, idempotencyKey, { guard: guard(), claim }) };
+  return { output: await httpRequest({ method: "POST", url: `http://public.test:${port}${path}`, headers: {}, body: "{}" }, idempotencyKey, { guard: guard(), claim }) };
 };
 
 const deps = (owner: string, exec: StepExecutor): AdvanceDeps => ({ db, executor: exec, owner, leaseMs: 60_000, retryPolicy: { maxAttempts: 3, baseDelayMs: 1, maxDelayMs: 1 }, enqueue: async () => {} });
@@ -156,6 +169,69 @@ describe("send claims and dispatch marks (decision 0030)", () => {
     expect(await resolveRun(db, workspaceId, runId, "stop", "ops@test.local")).toBe(true);
     expect(received - before).toBe(1);
   });
+
+  it("a stale worker whose POST is answered with a 307 only after Stop sends nothing to the redirect target", async () => {
+    const { runId, workspaceId } = await createRun(flow(post("send"), done));
+    const answer = gate();
+    hold = answer.opened;
+    const before = received;
+    const a = advance(deps("A", executor([], (input) => realPost(input, undefined, "/slow307"))), runId);
+    await until(() => received > before);
+    await loseLease(runId);
+
+    const callsB: Call[] = [];
+    await advance(deps("B", executor(callsB, realPost)), runId);
+    expect(callsB).toEqual([]);
+    expect((await runOf(runId)).state).toBe("needs_review");
+    expect(await resolveRun(db, workspaceId, runId, "stop", "ops@test.local")).toBe(true);
+
+    answer.open();
+    await expect(a).rejects.toThrow();
+    expect(targetHits).toBe(0);
+    expect(received - before).toBe(1);
+    expect((await runOf(runId)).state).toBe("cancelled");
+  });
+
+  it("as many email sends as the pool has connections all finish while each holds its send lock", async () => {
+    const n = 3;
+    const small = createDb(url, n);
+    const sent: string[] = [];
+    const transport = nodemailer.createTransport({ jsonTransport: true });
+    const real = createExecutor({
+      db: small.db,
+      secretsKey: Buffer.alloc(32, 7),
+      mail: {
+        installation: { transport: { sendMail: async (m: object) => (sent.push("x"), transport.sendMail(m)) } as unknown as typeof transport, from: "d@example.com" },
+        gmail: () => {
+          throw new Error("no Gmail here");
+        },
+        sharedMail: "open",
+      },
+      guard: guard(),
+    });
+    // Every send waits, holding its lock, until all n hold theirs: the moment the pool is fully taken.
+    let locked = 0;
+    const all = gate();
+    const exec: StepExecutor = {
+      execute: (input) =>
+        real.execute({
+          ...input,
+          claimSend: input.claimSend && (async () => {
+            const release = await input.claimSend!();
+            if (++locked === n) all.open();
+            await all.opened;
+            return release;
+          }),
+        }),
+    };
+    const mail = { id: "mail", type: "email", config: { to: "ana@example.com", subject: "Order", text: "Thanks" } };
+    const ids = await Promise.all(Array.from({ length: n }, () => createRun(flow(mail))));
+    const smallDeps = { ...deps("w", exec), db: small.db };
+    await Promise.all(ids.map(({ runId }) => advance(smallDeps, runId)));
+    expect(sent).toHaveLength(n);
+    for (const { runId } of ids) expect((await rowsOf(runId)).map((r) => r.state)).toEqual(["succeeded"]);
+    await small.pool.end();
+  }, 20_000);
 
   it("parks for review, without sending again, a POST whose worker stopped after sending", async () => {
     const { runId } = await createRun(flow(post("send"), done));
