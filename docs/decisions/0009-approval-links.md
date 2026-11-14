@@ -35,3 +35,13 @@ When the waiting step wakes, the worker calls `claimTimeout` in the same transac
 - Whoever holds the link can decide: there is no check that the person clicking is the addressee. The email is the authentication. Links expire with the step and work once, and `Referrer-Policy: no-referrer` and `Cache-Control: no-store` keep the token out of other sites and caches.
 - With several addresses in `to`, the first answer decides.
 - In a test run without live calls, the approval step does not send an email and takes the `approved` branch at once.
+
+## Update, November 2026: one decision per step across attempts
+
+An independent regression test (fec03cc) lost the SMTP acknowledgment of an approval email: the step failed, its retry sent link B, the approver answered link A, and the run then marked B "timeout" an hour early. Approvals were keyed by step run, and the timeout claim ignored the deadline.
+
+- Every link of the same approval step in the same run, across retries and crash re-runs, stands for one decision. Earlier links keep working; the first answer through any of them is written to all of them in the same transaction, and they all stop working together.
+- A later link keeps the first link's deadline, so a retry never extends the approver's time. There is no renewal.
+- `claimTimeout` writes "timeout" only once the deadline has passed. A wake-up before it with no answer leaves the step waiting until the deadline.
+- Link creation, answers, the timeout claim and the parking check all take the run's row lock first, so they are serialised per run in one order and cannot deadlock.
+- `apps/worker/src/approval-retry.test.ts` reproduces both orderings (answer before and after the retry) for approve and reject with a fake SMTP server that delivers and then drops the connection, and checks one branch step runs once. `packages/db/src/approvals.test.ts` covers concurrent answers on two links and the deadline.

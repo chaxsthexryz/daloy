@@ -1,9 +1,10 @@
+import { randomBytes } from "node:crypto";
 import { backoffDelayMs, type RetryPolicy } from "@daloy/engine";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { connectionCredential, markConnectionFailed, PROVIDER_NAMES, updateCredential } from "./connections";
 import type { Db } from "./index";
-import { appendRow, findRow, outlookSend, ProviderError, serviceAccountSchema, slackPost, teamsPost, type OutlookMessage, type ProviderUrls, type SheetDestination } from "./providers";
-import { deliveries, type Provider } from "./schema";
+import { appendRowOnce, deleteSheetMarker, outlookSend, ProviderError, serviceAccountSchema, slackPost, teamsPost, type OutlookMessage, type ProviderUrls, type SheetDestination } from "./providers";
+import { connections, deliveries, type Provider } from "./schema";
 
 /**
  * Sheets rows, Slack and Teams notes and Outlook emails, delivered by the worker apart from the run that asked for them
@@ -14,6 +15,9 @@ import { deliveries, type Provider } from "./schema";
  *                     -> needs_review  (Slack, Teams or Outlook ambiguous: an operator checks the channel or Sent Items)
  *                     -> failed        (auth, permission, bad request, or the last attempt)
  *   failed -> queued (Retry); needs_review -> queued (Post again) or delivered (Mark as posted)
+ *
+ * A delivery is pinned to the connection's account and destination when it is queued. If the owner reconnects
+ * elsewhere before it is sent, it waits for review instead of following the new connection (decision 0021).
  */
 export type Delivery = typeof deliveries.$inferSelect;
 export type DeliveryPayload = Delivery["payload"];
@@ -22,9 +26,20 @@ export const DELIVERY_POLICY: RetryPolicy = { maxAttempts: 5, baseDelayMs: 2000,
 /** A delivery still "sending" after this long belongs to a worker that died mid-call. Well above a call's timeouts. */
 const STALE_SENDING = "2 minutes";
 
-/** Called by the sheets, slack, outlook and teams steps. One row per run and step: a step that runs again gets the first row back. */
+/** A short random marker value for a Sheets write; with the id it tells our marker from anyone else's. */
+const markerValue = () => randomBytes(6).toString("base64url");
+
+/**
+ * Called by the sheets, slack, outlook and teams steps. One row per run and step: a step that runs again gets the
+ * first row back. Pins the connection as it is now; an empty pin means nothing was connected yet, pinned on first send.
+ */
 export async function queueDelivery(db: Db, d: { userId: string; runId: string; stepId: string; provider: Provider; reference: string; payload: DeliveryPayload }): Promise<Delivery> {
-  await db.insert(deliveries).values(d).onConflictDoNothing({ target: [deliveries.runId, deliveries.stepId] });
+  const [conn] = await db.select({ account: connections.account, destination: connections.destination }).from(connections).where(and(eq(connections.userId, d.userId), eq(connections.provider, d.provider)));
+  const sheet = d.provider === "google_sheets" ? { sheetMetaId: sql<number>`nextval('sheet_meta_seq')`, sheetMetaValue: markerValue() } : {};
+  await db
+    .insert(deliveries)
+    .values({ ...d, pinnedAccount: conn?.account ?? "", pinnedDestination: conn?.destination ?? null, ...sheet })
+    .onConflictDoNothing({ target: [deliveries.runId, deliveries.stepId] });
   const [row] = await db.select().from(deliveries).where(and(eq(deliveries.runId, d.runId), eq(deliveries.stepId, d.stepId)));
   return row!;
 }
@@ -60,15 +75,24 @@ async function attempt(db: Db, key: Buffer, urls: ProviderUrls, d: Delivery): Pr
   if (!conn) return { state: "failed", error: `${name} is not connected. Connect it in Settings, Business and email, then retry.` };
   if (conn.status === "failed") return { state: "failed", error: `${name} needs to be connected again (${conn.account}). Reconnect it in Settings, Business and email, then retry.` };
   if (!conn.destination) return { state: "failed", error: `No ${d.provider === "google_sheets" ? "sheet" : "channel"} is chosen for ${name}. Pick one in Settings, Business and email, then retry.` };
+  if (d.pinnedAccount === null) {
+    return { state: "needs_review", error: `This was queued before Daloy recorded where deliveries go, so it cannot confirm the ${name} destination. Choose Post again to send it to ${describe(d.provider, conn.destination)}, or Mark as posted.` };
+  }
+  if (d.pinnedAccount === "") {
+    // Nothing was connected when it was queued: this connection is the first, so pin it now.
+    await db.update(deliveries).set({ pinnedAccount: conn.account, pinnedDestination: conn.destination }).where(eq(deliveries.id, d.id));
+  } else if (d.pinnedAccount !== conn.account || !sameDestination(d.pinnedDestination, conn.destination)) {
+    return {
+      state: "needs_review",
+      error: `The ${name} connection changed since this was queued (it was for ${describe(d.provider, d.pinnedDestination ?? {})}, now ${describe(d.provider, conn.destination)}). Nothing was sent to the new one. Choose Post again to send it there, or Mark as posted.`,
+    };
+  }
   try {
     if (d.provider === "google_sheets") {
       const sa = serviceAccountSchema.parse(JSON.parse(conn.credential));
-      const dest = conn.destination as SheetDestination;
-      if (d.checkFirst) {
-        const found = await findRow(urls, sa, dest, (d.payload as { row: string[] }).row);
-        if (found) return { state: "delivered", result: { range: found, reconciled: true } };
-      }
-      return { state: "delivered", result: await appendRow(urls, sa, dest, (d.payload as { row: string[] }).row) };
+      // Retrying the same marked write is safe: Google adds the row at most once (decision 0021).
+      const out = await appendRowOnce(urls, sa, conn.destination as SheetDestination, (d.payload as { row: string[] }).row, { id: d.sheetMetaId!, value: d.sheetMetaValue! });
+      return { state: "delivered", result: out.reconciled ? { sheet: out.sheet, reconciled: true } : { sheet: out.sheet } };
     }
     // Slack, Teams and Outlook have no read access to check with, so after a call that may have arrived a person decides.
     if (d.checkFirst) return { state: "needs_review", error: `${name} may have ${d.provider === "outlook" ? "sent" : "posted"} this before the connection dropped. ${reviewHint(d.provider, conn.destination)}` };
@@ -88,6 +112,8 @@ async function attempt(db: Db, key: Buffer, urls: ProviderUrls, d: Delivery): Pr
       case "permission":
       case "invalid":
         return { state: "failed", error: e.message };
+      case "review":
+        return { state: "needs_review", error: e.message };
       case "ambiguous":
         if (d.provider !== "google_sheets") return { state: "needs_review", error: `${e.message} ${name} may have ${d.provider === "outlook" ? "sent" : "posted"} it. ${reviewHint(d.provider, conn.destination)}` };
         return { state: "queued", error: e.message, checkFirst: true };
@@ -96,6 +122,20 @@ async function attempt(db: Db, key: Buffer, urls: ProviderUrls, d: Delivery): Pr
         return { state: "queued", error: e.message, retryAfterMs: e.retryAfterMs };
     }
   }
+}
+
+/** The destination as a person would name it, for review messages. */
+function describe(provider: Provider, dest: Record<string, string>) {
+  if (provider === "google_sheets") return `the sheet "${dest.title ?? dest.spreadsheetId}", tab "${dest.tab}"`;
+  if (provider === "slack") return `#${dest.channelName ?? dest.channelId}`;
+  if (provider === "outlook") return dest.mailbox ?? "the Outlook mailbox";
+  return `the Teams channel ${dest.channelName ?? ""}`.trim();
+}
+
+/** Same place: the fields that pick where a delivery lands. Display names may change without moving anything. */
+function sameDestination(a: Record<string, string> | null, b: Record<string, string>) {
+  const where = (d: Record<string, string> | null) => JSON.stringify([d?.spreadsheetId, d?.tab, d?.channelId, d?.mailbox, d?.channelName]);
+  return where(a) === where(b);
 }
 
 function reviewHint(provider: Provider, dest: Record<string, string>) {
@@ -140,7 +180,17 @@ export async function retryDelivery(db: Db, userId: string, id: string, { postAg
       attempts: 0,
       nextAttemptAt: sql`now()`,
       lastError: null,
-      ...(postAgain ? { checkFirst: false } : {}),
+      // Post again is the operator's explicit choice: it goes to the connection as it is now (pinned on the next
+      // attempt), and a Sheets row gets a fresh marker, as the old one may sit in another sheet or belong to someone else.
+      ...(postAgain
+        ? {
+            checkFirst: false,
+            pinnedAccount: "",
+            pinnedDestination: null,
+            sheetMetaId: sql`case when ${deliveries.provider} = 'google_sheets' then nextval('sheet_meta_seq') end`,
+            sheetMetaValue: sql`case when ${deliveries.provider} = 'google_sheets' then ${markerValue()} end`,
+          }
+        : {}),
       updatedAt: sql`now()`,
     })
     .where(and(eq(deliveries.id, id), eq(deliveries.userId, userId), from))
@@ -179,4 +229,44 @@ export async function listDeliveries(db: Db, userId: string, runIds: string[]) {
     .from(deliveries)
     .where(and(eq(deliveries.userId, userId), inArray(deliveries.runId, runIds)))
     .orderBy(deliveries.createdAt);
+}
+
+/** How long a Sheets marker outlives its delivery: well past any request Google could still be holding (decision 0021). */
+export const SHEET_MARKER_RETENTION_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Deletes the markers of Sheets deliveries done for longer than the retention time, a few at a time. A marker whose
+ * sheet is no longer reachable through the owner's connection is stamped cleared, since nobody can delete it now.
+ * Google trouble leaves it for the next sweep. Returns how many were cleared.
+ */
+export async function clearSheetWriteKeys(db: Db, key: Buffer, urls: ProviderUrls, retentionMs = SHEET_MARKER_RETENTION_MS, limit = 20) {
+  const due = await db
+    .select()
+    .from(deliveries)
+    .where(
+      and(
+        eq(deliveries.provider, "google_sheets"),
+        eq(deliveries.state, "delivered"),
+        isNotNull(deliveries.sheetMetaId),
+        isNull(deliveries.sheetMetaClearedAt),
+        sql`${deliveries.updatedAt} < now() - make_interval(secs => ${retentionMs / 1000})`,
+      ),
+    )
+    .orderBy(deliveries.updatedAt)
+    .limit(limit);
+  let cleared = 0;
+  for (const d of due) {
+    const conn = await connectionCredential(db, key, d.userId, "google_sheets");
+    const spreadsheetId = (d.pinnedDestination as SheetDestination | null)?.spreadsheetId;
+    try {
+      if (conn && spreadsheetId && (conn.destination as SheetDestination | null)?.spreadsheetId === spreadsheetId) {
+        await deleteSheetMarker(urls, serviceAccountSchema.parse(JSON.parse(conn.credential)), spreadsheetId, d.sheetMetaId!);
+      }
+      await db.update(deliveries).set({ sheetMetaClearedAt: sql`now()` }).where(eq(deliveries.id, d.id));
+      cleared++;
+    } catch {
+      // Google unavailable or refusing: try again on the next sweep.
+    }
+  }
+  return cleared;
 }

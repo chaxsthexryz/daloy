@@ -25,3 +25,7 @@ Option 3.
 - Each attempt counts, including a retry of a send that failed, so the limit errs on the safe side. Failed sends are not refunded.
 - Approving an account is an SQL statement for now. An admin page can come later.
 - Limits are per workspace per UTC day. There is no per-minute burst limit beyond the existing route limits.
+
+## Update, November 2026
+
+A localhost SMTP server can itself be a proxy to a real relay. With `NODE_ENV=production` (which hosted deployments set for secure cookies anyway), an unset `SHARED_MAIL` now always means `approved`, whatever the host. Local development keeps Mailpit open.

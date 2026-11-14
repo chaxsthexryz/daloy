@@ -34,9 +34,11 @@ const LOCAL_CATCHERS = new Set(["", "mailpit", "localhost", "127.0.0.1", "::1"])
 /**
  * SHARED_MAIL picks the policy. Unset, the shared server is open only when it is a local catcher, so pointing SMTP_HOST
  * at a real relay locks it to approved owners unless the operator says otherwise. Any other value means approved.
+ * In production (NODE_ENV=production) unset always means approved: a localhost SMTP server there may be a relay.
  */
 export function sharedMailPolicy(env: NodeJS.ProcessEnv = process.env): MailDeps["sharedMail"] {
   if (env.SHARED_MAIL) return env.SHARED_MAIL === "open" ? "open" : "approved";
+  if (env.NODE_ENV === "production") return "approved";
   return LOCAL_CATCHERS.has(env.SMTP_HOST ?? "") ? "open" : "approved";
 }
 

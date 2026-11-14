@@ -1,4 +1,4 @@
-import { encryptSecret, secrets, type Db } from "@daloy/db";
+import { encryptSecret, retireSecret, secrets, type Db } from "@daloy/db";
 import { Body, Controller, Delete, Get, HttpCode, Inject, NotFoundException, Param, Put, UseGuards } from "@nestjs/common";
 import { and, asc, eq } from "drizzle-orm";
 import * as z from "zod";
@@ -26,16 +26,23 @@ export class SecretsController {
   @HttpCode(204)
   async put(@CurrentUser() user: SessionUser, @Param("name", secretName) name: string, @Body(new ZodPipe(secretInput)) body: z.output<typeof secretInput>) {
     const encrypted = encryptSecret(this.config.secretsKey, user.workspaceId, name, body.value);
-    await this.db
-      .insert(secrets)
-      .values({ userId: user.workspaceId, name, ...encrypted })
-      .onConflictDoUpdate({ target: [secrets.userId, secrets.name], set: encrypted });
+    // The old value stays known to run-history redaction after it is replaced (decision 0025).
+    await this.db.transaction(async (tx) => {
+      await retireSecret(tx, user.workspaceId, name);
+      await tx
+        .insert(secrets)
+        .values({ userId: user.workspaceId, name, ...encrypted })
+        .onConflictDoUpdate({ target: [secrets.userId, secrets.name], set: encrypted });
+    });
   }
 
   @Delete(":name")
   @HttpCode(204)
   async remove(@CurrentUser() user: SessionUser, @Param("name", secretName) name: string) {
-    const deleted = await this.db.delete(secrets).where(and(eq(secrets.userId, user.workspaceId), eq(secrets.name, name))).returning({ id: secrets.id });
+    const deleted = await this.db.transaction(async (tx) => {
+      await retireSecret(tx, user.workspaceId, name);
+      return tx.delete(secrets).where(and(eq(secrets.userId, user.workspaceId), eq(secrets.name, name))).returning({ id: secrets.id });
+    });
     if (deleted.length === 0) throw new NotFoundException();
   }
 }

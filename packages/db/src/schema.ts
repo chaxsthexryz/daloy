@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import { RUN_STATES, STEP_STATES } from "@daloy/engine";
-import { boolean, check, index, integer, jsonb, pgEnum, pgTable, primaryKey, text, timestamp, unique, uuid } from "drizzle-orm/pg-core";
+import { boolean, check, index, integer, jsonb, pgEnum, pgSequence, pgTable, primaryKey, text, timestamp, unique, uuid } from "drizzle-orm/pg-core";
 
 const id = () => uuid("id").primaryKey().defaultRandom();
 const createdAt = () => timestamp("created_at", { withTimezone: true }).notNull().defaultNow();
@@ -191,6 +191,22 @@ export const secrets = pgTable(
   (t) => [unique().on(t.userId, t.name)],
 );
 
+/**
+ * Earlier values of replaced or deleted secrets, still encrypted exactly as they were. Workflows never read this
+ * table: it exists so run history can keep hiding a value after the owner rotates or removes it (decision 0025).
+ */
+export const retiredSecrets = pgTable("retired_secrets", {
+  id: id(),
+  userId: uuid("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  ciphertext: text("ciphertext").notNull(),
+  iv: text("iv").notNull(),
+  authTag: text("auth_tag").notNull(),
+  retiredAt: createdAt(),
+});
+
 export const apiTokens = pgTable("api_tokens", {
   id: id(),
   userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
@@ -314,6 +330,9 @@ export type DeliveryState = (typeof DELIVERY_STATES)[number];
  * One per run and step, so a step re-run never queues a second one. payload is what gets sent (secrets already
  * redacted), fixed at queue time. checkFirst: an earlier call may have reached the provider, so look before sending.
  */
+/** Sheets developer metadata ids: positive 32-bit integers, unique per installation and so within any spreadsheet. */
+export const sheetMetaSeq = pgSequence("sheet_meta_seq", { startWith: 1, minValue: 1, maxValue: 2147483647 });
+
 export const deliveries = pgTable(
   "deliveries",
   {
@@ -330,6 +349,13 @@ export const deliveries = pgTable(
     nextAttemptAt: ts("next_attempt_at").notNull().defaultNow(),
     result: jsonb("result").$type<Record<string, string | boolean>>(),
     lastError: text("last_error"),
+    // The connection's account and destination when the delivery was queued. Null: queued before pinning existed.
+    pinnedAccount: text("pinned_account"),
+    pinnedDestination: jsonb("pinned_destination").$type<Record<string, string>>(),
+    // Sheets only: the developer metadata id and value that make the write happen once at Google (decision 0021).
+    sheetMetaId: integer("sheet_meta_id"),
+    sheetMetaValue: text("sheet_meta_value"),
+    sheetMetaClearedAt: ts("sheet_meta_cleared_at"),
     createdAt: createdAt(),
     updatedAt: ts("updated_at").notNull().defaultNow(),
   },

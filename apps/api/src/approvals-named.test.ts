@@ -55,7 +55,7 @@ const MESSAGE = "Buy a laser printer for 450 EUR?";
 async function namedApproval(approverId: string) {
   const [run] = await db.insert(runs).values({ workflowVersionId: versionId, state: "waiting", nextAttemptAt: new Date(Date.now() + 3_600_000) }).returning();
   const [step] = await db.insert(stepRuns).values({ runId: run!.id, stepId: "ask", attempt: 1, state: "waiting", input: { message: MESSAGE } }).returning();
-  const token = (await createApproval(db, step!.id, new Date(Date.now() + 3_600_000), approverId))!;
+  const token = (await createApproval(db, step!.id, new Date(Date.now() + 3_600_000), approverId))!.token;
   return { runId: run!.id, stepRunId: step!.id, token };
 }
 const rowOf = async (stepRunId: string) => (await db.select().from(approvals).where(eq(approvals.stepRunId, stepRunId)))[0]!;

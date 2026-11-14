@@ -175,5 +175,8 @@ describe("sendAs", () => {
     expect(mailDeps({ SMTP_HOST: "mailpit", SHARED_MAIL: "approved" }).sharedMail).toBe("approved");
     expect(mailDeps({ SMTP_HOST: "smtp.example.com", SHARED_MAIL: "open" }).sharedMail).toBe("open");
     expect(mailDeps({ SMTP_HOST: "smtp.example.com", SHARED_MAIL: "typo" }).sharedMail).toBe("approved");
+    // A hosted install: a localhost SMTP server may be a proxy to a real relay, so it is not trusted as a catcher.
+    expect(mailDeps({ SMTP_HOST: "127.0.0.1", NODE_ENV: "production" }).sharedMail).toBe("approved");
+    expect(mailDeps({ SMTP_HOST: "mailpit", NODE_ENV: "production", SHARED_MAIL: "open" }).sharedMail).toBe("open");
   });
 });

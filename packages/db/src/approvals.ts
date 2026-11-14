@@ -10,21 +10,37 @@ export type ApprovalDecision = "approved" | "rejected";
 
 export const hashToken = (token: string) => createHash("sha256").update(token).digest("hex");
 
-/**
- * Makes the link token for a waiting approval step: 32 random bytes, base64url. Only the SHA-256 is stored,
- * so a database leak gives no working links (decision 0009). An earlier unused link for the same step run is deleted,
- * so a step attempt that runs again after a crash leaves exactly one live link. If that earlier link was already
- * answered, it is kept and null is returned: the caller takes the recorded decision instead of asking again.
+/*
+ * One approval step of one run is one decision, however many links it sent (decision 0009). A retry after a failed
+ * send, or a re-run after a crash, is a new step run with its own link, and every earlier link stays usable: the
+ * first answer through any of them decides for all, and they all stop working together. Every write here takes the
+ * run's row lock first, so link creation, answers and the timeout are serialised per run, always in the same order.
  */
-export async function createApproval(db: AnyDb, stepRunId: string, expiresAt: Date, approverId?: string): Promise<string | null> {
+async function stepOf(w: Writer, stepRunId: string) {
+  const [row] = await w.select({ runId: stepRuns.runId, stepId: stepRuns.stepId }).from(stepRuns).where(eq(stepRuns.id, stepRunId));
+  if (!row) throw new Error(`step run ${stepRunId} not found`);
+  return row;
+}
+const lockRun = (w: Writer, runId: string) => w.select({ id: runs.id }).from(runs).where(eq(runs.id, runId)).for("update");
+/** Every link of the same approval step in the same run, whichever attempt sent it. */
+const sameStep = (runId: string, stepId: string) => sql`${approvals.stepRunId} in (select id from step_runs where run_id = ${runId} and step_id = ${stepId})`;
+
+/**
+ * Makes the link token for a waiting approval step: 32 random bytes, base64url. Only the SHA-256 is stored, so a
+ * database leak gives no working links. Returns null when an earlier link of this step was already answered: the
+ * caller takes that decision and asks nobody again. A later link keeps the first link's deadline, so a retry never
+ * extends the time the approver has.
+ */
+export async function createApproval(db: AnyDb, stepRunId: string, expiresAt: Date, approverId?: string): Promise<{ token: string; expiresAt: Date } | null> {
   const token = randomBytes(32).toString("base64url");
   return db.transaction(async (tx) => {
-    await tx.delete(approvals).where(and(eq(approvals.stepRunId, stepRunId), isNull(approvals.usedAt)));
-    // What is left was answered. The run's lease means only one worker is here for this step run.
-    const [answered] = await tx.select({ id: approvals.id }).from(approvals).where(eq(approvals.stepRunId, stepRunId));
-    if (answered) return null;
-    await tx.insert(approvals).values({ stepRunId, tokenHash: hashToken(token), expiresAt, approverId });
-    return token;
+    const { runId, stepId } = await stepOf(tx, stepRunId);
+    await lockRun(tx, runId);
+    const links = await tx.select({ usedAt: approvals.usedAt, expiresAt: approvals.expiresAt }).from(approvals).where(sameStep(runId, stepId));
+    if (links.some((l) => l.usedAt)) return null;
+    const deadline = links.reduce((d, l) => (l.expiresAt < d ? l.expiresAt : d), expiresAt);
+    await tx.insert(approvals).values({ stepRunId, tokenHash: hashToken(token), expiresAt: deadline, approverId });
+    return { token, expiresAt: deadline };
   });
 }
 
@@ -76,39 +92,54 @@ function allowed(by: Actor | undefined): SQL {
  */
 export async function recordDecision(db: AnyDb, token: string, decision: ApprovalDecision, by?: Actor): Promise<string | null> {
   return db.transaction(async (tx) => {
+    const [link] = await tx
+      .select({ runId: stepRuns.runId, stepId: stepRuns.stepId })
+      .from(approvals)
+      .innerJoin(stepRuns, eq(stepRuns.id, approvals.stepRunId))
+      .where(eq(approvals.tokenHash, hashToken(token)));
+    if (!link) return null;
+    await lockRun(tx, link.runId);
     const decidedBy = by ? sql`case when ${approvals.approverId} is null then null else ${by.id}::uuid end` : null;
     const decidedByEmail = by ? sql`case when ${approvals.approverId} is null then null else ${by.email} end` : null;
+    // Siblings are always answered together, so an unused clicked link means nobody has decided this step yet.
     const [used] = await tx
       .update(approvals)
       .set({ usedAt: sql`now()`, decision, decidedBy, decidedByEmail })
       .where(and(live(token), allowed(by)))
-      .returning({ stepRunId: approvals.stepRunId });
+      .returning({ usedAt: approvals.usedAt, decidedBy: approvals.decidedBy, decidedByEmail: approvals.decidedByEmail });
     if (!used) return null;
-    const [step] = await tx.select({ runId: stepRuns.runId }).from(stepRuns).where(eq(stepRuns.id, used.stepRunId));
-    await tx.update(runs).set({ nextAttemptAt: sql`now()` }).where(and(eq(runs.id, step!.runId), eq(runs.state, "waiting")));
-    return step!.runId;
+    await tx
+      .update(approvals)
+      .set({ usedAt: used.usedAt, decision, decidedBy: used.decidedBy, decidedByEmail: used.decidedByEmail })
+      .where(and(sameStep(link.runId, link.stepId), isNull(approvals.usedAt)));
+    await tx.update(runs).set({ nextAttemptAt: sql`now()` }).where(and(eq(runs.id, link.runId), eq(runs.state, "waiting")));
+    return link.runId;
   });
 }
 
 export type ApprovalOutcome = { branch: ApprovalDecision | "timeout"; decidedBy: string | null; decidedAt: string | null };
+/** Nobody answered and the deadline has not passed: the step keeps waiting until pendingUntil. */
+export type ApprovalPending = { branch: null; pendingUntil: Date; decidedBy: null; decidedAt: null };
 
 /**
- * Called by the worker when the waiting approval step wakes up. If nobody answered, it uses the link up as "timeout".
- * The UPDATE takes the row lock, so it and recordDecision cannot both win. Returns the branch to take and, for a
- * named approval, who decided and when, which the step keeps as its output.
+ * Called by the worker when the waiting approval step wakes up. Returns the recorded decision if anyone answered any
+ * link of this step. Otherwise, once the deadline has passed, it uses every link up as "timeout"; before that it
+ * returns pending, so an early wake-up never takes a branch. Call it inside a transaction: the run lock it takes must
+ * last until its update, so it and recordDecision cannot both win.
  */
-export async function claimTimeout(w: Writer, stepRunId: string): Promise<ApprovalOutcome> {
-  await w
-    .update(approvals)
-    .set({ usedAt: sql`now()`, decision: "timeout" })
-    .where(and(eq(approvals.stepRunId, stepRunId), isNull(approvals.usedAt)));
-  const [row] = await w
-    .select({ decision: approvals.decision, decidedBy: approvals.decidedByEmail, usedAt: approvals.usedAt })
+export async function claimTimeout(w: Writer, stepRunId: string): Promise<ApprovalOutcome | ApprovalPending> {
+  const { runId, stepId } = await stepOf(w, stepRunId);
+  await lockRun(w, runId);
+  const links = await w
+    .select({ decision: approvals.decision, decidedBy: approvals.decidedByEmail, usedAt: approvals.usedAt, expiresAt: approvals.expiresAt, expired: sql<boolean>`${approvals.expiresAt} <= now()` })
     .from(approvals)
-    .where(eq(approvals.stepRunId, stepRunId));
-  return {
-    branch: (row?.decision as ApprovalDecision | "timeout" | undefined) ?? "timeout",
-    decidedBy: row?.decidedBy ?? null,
-    decidedAt: row?.decidedBy ? row.usedAt!.toISOString() : null,
-  };
+    .where(sameStep(runId, stepId));
+  const answered = links.find((l) => l.usedAt);
+  if (answered) {
+    return { branch: answered.decision as ApprovalDecision | "timeout", decidedBy: answered.decidedBy, decidedAt: answered.decidedBy ? answered.usedAt!.toISOString() : null };
+  }
+  const first = links.reduce<(typeof links)[number] | undefined>((a, l) => (!a || l.expiresAt < a.expiresAt ? l : a), undefined);
+  if (first && !first.expired) return { branch: null, pendingUntil: first.expiresAt, decidedBy: null, decidedAt: null };
+  await w.update(approvals).set({ usedAt: sql`now()`, decision: "timeout" }).where(and(sameStep(runId, stepId), isNull(approvals.usedAt)));
+  return { branch: "timeout", decidedBy: null, decidedAt: null };
 }

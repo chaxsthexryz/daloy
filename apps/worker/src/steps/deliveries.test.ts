@@ -100,7 +100,8 @@ it("finishes the run, writes the sheet row, and retries only the Slack post that
   // The row starts with the reference and the time, and a secret is never sent to a provider.
   expect(rows).toHaveLength(1);
   expect(rows[0]![0]).toBe("REQ-2001");
-  expect(rows[0]!.slice(2)).toEqual(["Printer jammed", "[secret]"]);
+  // Secrets only reach HTTP steps (decision 0025), so a sheet column that names one stays empty.
+  expect(rows[0]!.slice(2)).toEqual(["Printer jammed", ""]);
 
   fake.slack.channels[0]!.is_member = true;
   expect(await retryDelivery(db, owner, slack!.id)).toBe(true);
@@ -120,7 +121,7 @@ it("sends Outlook mail and a Teams note as deliveries, with secrets hidden", asy
   expect(await until(() => runState(runId), (s) => s === "succeeded" || s === "failed")).toBe("succeeded");
   const all = await until(() => deliveriesOf(runId), (d) => d.length === 2 && d.every((x) => x.state === "delivered"));
   expect(all.map((d) => d.provider).sort()).toEqual(["outlook", "teams"]);
-  expect(fake.microsoft.sent).toEqual([{ to: "buy@contoso.example", subject: "Approved PUR-2001", text: "Buy a desk lamp. Door code [secret]." }]);
+  expect(fake.microsoft.sent).toEqual([{ to: "buy@contoso.example", subject: "Approved PUR-2001", text: "Buy a desk lamp. Door code ." }]);
   expect(fake.teams.posts.map((p) => p.text)).toEqual(["Purchase PUR-2001 approved: a desk lamp"]);
 });
 

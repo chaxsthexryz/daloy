@@ -40,7 +40,7 @@ afterAll(async () => {
 async function waitingApproval(message = "Refund 40 EUR to Ana?") {
   const [run] = await db.insert(runs).values({ workflowVersionId: versionId, state: "waiting", nextAttemptAt: new Date(Date.now() + 3_600_000) }).returning();
   const [step] = await db.insert(stepRuns).values({ runId: run!.id, stepId: "ask", attempt: 1, state: "waiting", input: { message } }).returning();
-  const token = (await createApproval(db, step!.id, new Date(Date.now() + 3_600_000)))!;
+  const token = (await createApproval(db, step!.id, new Date(Date.now() + 3_600_000)))!.token;
   return { runId: run!.id, stepRunId: step!.id, token };
 }
 const decisionOf = async (stepRunId: string) => (await db.select().from(approvals).where(eq(approvals.stepRunId, stepRunId)))[0]!;

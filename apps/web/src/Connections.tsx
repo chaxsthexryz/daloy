@@ -468,8 +468,9 @@ function describe(d: Delivery): string {
       return "sending";
     case "delivered":
       if (d.result?.confirmedBy === "operator") return `marked as ${sent(d.provider)}`;
-      if (d.result?.reconciled) return `found in the sheet (${String(d.result.range)}), not written twice`;
-      if (d.provider === "google_sheets") return `added (${String(d.result?.range ?? "")})`;
+      // Older rows carry the range they were written to; newer ones the tab (decision 0021).
+      if (d.result?.reconciled) return `already in the sheet (${String(d.result.sheet ?? d.result.range)}), not written twice`;
+      if (d.provider === "google_sheets") return `added to ${String(d.result?.sheet ?? d.result?.range ?? "the sheet")}`;
       if (d.provider === "outlook") return `sent to ${String(d.result?.to ?? "")}`;
       return d.provider === "teams" ? "accepted by Teams" : "posted";
     case "needs_review":

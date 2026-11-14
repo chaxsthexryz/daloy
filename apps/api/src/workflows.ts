@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { createRun, findApprover, listDeliveries, PROVIDER_NAMES, type Provider, publishedVersion, readConnections, requests, runs, SCHEDULE_QUEUE, triggers, workflows, workflowVersions, type Db } from "@daloy/db";
-import { BRANCHES, definitionSchema, guidedSetupInput, OFFICE_REQUEST, stepJsonSchemas, TEMPLATES, type Trigger, type WorkflowDefinition } from "@daloy/engine";
+import { BRANCHES, definitionSchema, guidedSetupInput, OFFICE_REQUEST, saveProblems, stepJsonSchemas, TEMPLATES, type Trigger, type WorkflowDefinition } from "@daloy/engine";
 import {
   BadRequestException,
   Body,
@@ -253,6 +253,9 @@ export class WorkflowsController {
 function parseDefinition(input: unknown): WorkflowDefinition {
   const parsed = definitionSchema.safeParse(input);
   if (!parsed.success) throw new BadRequestException(parsed.error.issues.map((i) => `${i.path.join(".") || "definition"}: ${i.message}`));
+  // JSON bodies, secrets outside HTTP steps and secrets sent to data-chosen addresses (decision 0025).
+  const problems = saveProblems(parsed.data);
+  if (problems.length > 0) throw new BadRequestException(problems);
   return parsed.data;
 }
 
