@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { aiConnection, checkRecipients, claimTimeout, createApproval, findApprover, queueDelivery, readSecrets, redactSecrets, secretForms, sendAs, type Db, type MailDeps, type Provider } from "@daloy/db";
-import { conditionBranch, type TestChoice, declaresJson, isRetryable, mockAiOutput, parseJsonTemplate, resolveJsonTemplate, resolveTemplate, StepError, usesSecrets, type ExpressionContext, type Step } from "@daloy/engine";
+import { conditionBranch, type TestChoice, declaresJson, parseInstant, isRetryable, mockAiOutput, parseJsonTemplate, resolveJsonTemplate, resolveTemplate, StepError, usesSecrets, type ExpressionContext, type Step } from "@daloy/engine";
 import type { StepExecutor, StepResult } from "../advance";
 import { runAi } from "./ai";
 import { httpRequest } from "./http";
@@ -55,8 +55,10 @@ function resolveInput(step: Step, ctx: ExpressionContext): Record<string, unknow
       const { left, op, right } = step.config.condition;
       return { left: resolveTemplate(left, ctx), op, right: typeof right === "string" ? resolveTemplate(right, ctx) : right };
     }
-    case "delay":
-      return { seconds: step.config.seconds };
+    case "delay": {
+      const { seconds, until, offsetSeconds } = step.config;
+      return until === undefined ? { seconds } : { until: text(until, ctx), ...(offsetSeconds === undefined ? {} : { offsetSeconds }) };
+    }
     case "http": {
       const { method, url, headers } = step.config;
       const input: HttpInput = { method, url: text(url, ctx), headers: Object.fromEntries(Object.entries(headers).map(([k, v]) => [k, text(v, ctx)])) };
@@ -98,10 +100,20 @@ async function runStep(deps: FullDeps, step: Step, input: unknown, ctx: Expressi
     case "condition":
       return { branch: conditionBranch(step.config.condition, ctx) };
     case "delay": {
-      // A mocked test run waits at most one second, so the builder shows the result straight away.
-      const seconds = mock ? Math.min(step.config.seconds, 1) : step.config.seconds;
-      const waitUntil = new Date(Date.now() + seconds * 1000);
-      return { output: { resumeAt: waitUntil.toISOString() }, waitUntil };
+      const cfg = input as { seconds?: number; until?: string; offsetSeconds?: number };
+      let resumeAt: Date;
+      if (cfg.until === undefined) resumeAt = new Date(Date.now() + cfg.seconds! * 1000);
+      else {
+        const at = parseInstant(cfg.until);
+        if (!at) throw new StepError(`"until" needs a date and time with an offset, like 2030-01-20T14:00:00+08:00, but got ${JSON.stringify(cfg.until)}`, false);
+        resumeAt = new Date(at.getTime() + (cfg.offsetSeconds ?? 0) * 1000);
+        // Already past: the advance step ends the run here unless the delay has a "late" edge (decision 0031).
+        if (resumeAt.getTime() <= Date.now()) return { branch: "late", output: { resumeAt: resumeAt.toISOString(), late: true } };
+      }
+      // A mocked test run waits at most one second, so the builder shows the result straight away, but it reports
+      // the wake-up time a live run would have.
+      if (mock) return { output: { resumeAt: resumeAt.toISOString(), mocked: true }, waitUntil: new Date(Math.min(resumeAt.getTime(), Date.now() + 1000)) };
+      return { output: { resumeAt: resumeAt.toISOString() }, waitUntil: resumeAt };
     }
     case "http": {
       const cfg = input as HttpInput;

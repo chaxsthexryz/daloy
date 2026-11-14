@@ -1,6 +1,6 @@
 import { createHmac, randomInt, randomUUID, timingSafeEqual } from "node:crypto";
 import { businessProfiles, createKeyedRun, createRun, publishedVersion, readSecret, requests, runs, triggers, workflows, type Db } from "@daloy/db";
-import { definitionSchema, OFFICE_REQUEST, parsePayload, PURCHASE_REQUEST, type FormField } from "@daloy/engine";
+import { definitionSchema, OFFICE_REQUEST, parsePayload, PURCHASE_REQUEST, type FormField, type Resource } from "@daloy/engine";
 import {
   BadRequestException,
   Body,
@@ -24,6 +24,7 @@ import type { PgBoss } from "pg-boss";
 import * as z from "zod";
 import { BOSS, CONFIG, DB, enqueueRun, eventKey, isUniqueViolation, RateLimit, validPayload, ZodPipe, type ApiConfig } from "./http";
 import { sessionUser } from "./auth";
+import { resourcesFor } from "./resources";
 
 // Starts with "_", which no field name can (definition.ts), so a real "website" field is never mistaken for it.
 const HONEYPOT = "_website";
@@ -65,7 +66,8 @@ export class HooksController {
       if (!key || !validSignature(req.rawBody ?? Buffer.alloc(0), signature, key)) throw new UnauthorizedException("bad signature");
     }
 
-    const payload = validPayload((row.trigger.config as { fields?: FormField[] }).fields, req.body ?? {});
+    const fields = (row.trigger.config as { fields?: FormField[] }).fields;
+    const payload = validPayload(fields, req.body ?? {}, await resourcesFor(this.db, row.userId, fields));
     // A repeated event gets the first run back and starts nothing (decision 0029).
     const { runId, duplicate } = await createKeyedRun(this.db, row.trigger.workflowId, version.id, payload, eventKey(definitionSchema.parse(version.definition).trigger, payload, idempotencyKey));
     if (!duplicate) await enqueueRun(this.boss, runId);
@@ -93,8 +95,8 @@ export class FormsController {
   // A request form carries a fresh submission key per load. no-store keeps the back button from reusing an old one.
   @Header("Cache-Control", "no-store")
   async page(@Param("id", new ZodPipe(z.uuid())) id: string) {
-    const { fields, tracked, businessName } = await this.form(id);
-    return renderForm(fields, tracked ? randomUUID() : undefined, businessName ?? undefined);
+    const { fields, tracked, businessName, workflow } = await this.form(id);
+    return renderForm(fields, await resourcesFor(this.db, workflow.userId, fields), tracked ? randomUUID() : undefined, businessName ?? undefined);
   }
 
   @Post(":id")
@@ -105,7 +107,7 @@ export class FormsController {
     const { fields, versionId, workflow, tracked } = await this.form(id);
     // Bots fill every field. Answer as if it worked so they learn nothing.
     if (body?.[HONEYPOT]) return page("Thanks, we received your message.");
-    const parsed = parsePayload(fields, body ?? {});
+    const parsed = parsePayload(fields, body ?? {}, { resources: await resourcesFor(this.db, workflow.userId, fields) });
     if (!parsed.ok) throw new BadRequestException(parsed.errors);
     if (!tracked) {
       const runId = await createRun(this.db, versionId, parsed.data);
@@ -182,13 +184,16 @@ export const page = (body: string, title = "Form") =>
   `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${title}</title></head><body><main>${body}</main></body></html>`;
 
 /** businessName comes from the owner's profile, so a form behind a website's contact button says whose form it is. */
-function renderForm(fields: FormField[], submissionKey?: string, businessName?: string) {
+function renderForm(fields: FormField[], resources: Resource[], submissionKey?: string, businessName?: string) {
   const inputs = fields
     .map((f) => {
       const attrs = `id="${f.name}" name="${f.name}"${f.required ? " required" : ""}`;
       // The browser's own limits are a convenience; the server checks the same ones (parsePayload).
       const limits = f.type === "number" ? `${f.min !== undefined ? ` min="${f.min}"` : ""}${f.max !== undefined ? ` max="${f.max}"` : ""} step="${f.integer ? 1 : "any"}"` : "";
-      const control = f.type === "textarea" ? `<textarea ${attrs} maxlength="5000"></textarea>` : `<input ${attrs} type="${f.type}"${limits}>`;
+      let control = f.type === "textarea" ? `<textarea ${attrs} maxlength="5000"></textarea>` : `<input ${attrs} type="${f.type}"${limits}>`;
+      // The server reads a datetime in the field's zone and checks the slot and "in the future" itself (parseZoned).
+      if (f.type === "datetime") control = `<input ${attrs} type="datetime-local" step="${(f.slotMinutes ?? 1) * 60}"><br><small>Times are in ${escapeHtml(f.timezone!)}</small>`;
+      if (f.type === "resource") control = `<select ${attrs}><option value="">Choose one</option>${resources.map((r) => `<option value="${r.id}">${escapeHtml(r.name)}</option>`).join("")}</select>`;
       return `<p><label for="${f.name}">${escapeHtml(f.label)}</label><br>${control}</p>`;
     })
     .join("");

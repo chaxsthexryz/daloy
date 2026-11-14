@@ -15,10 +15,11 @@ export type JsonSchema = {
   maxLength?: number;
   minimum?: number;
   maximum?: number;
+  description?: string;
 };
 type Obj = Record<string, unknown>;
 
-const LABELS: Record<string, string> = { op: "Operator", url: "URL", to: "To (comma-separated)", text: "Message", left: "Value", right: "Compare with", timeoutSeconds: "Timeout (seconds)" };
+const LABELS: Record<string, string> = { op: "Operator", url: "URL", to: "To (comma-separated)", text: "Message", left: "Value", right: "Compare with", timeoutSeconds: "Timeout (seconds)", seconds: "Wait (seconds)", offsetSeconds: "Offset (seconds)" };
 const label = (key: string) => LABELS[key] ?? key.charAt(0).toUpperCase() + key.slice(1);
 
 export function SchemaForm({ schema, value, onChange }: { schema: JsonSchema; value: Obj; onChange: (v: Obj) => void }) {
@@ -96,6 +97,7 @@ function Field({ name, schema, required, value, onChange }: { name: string; sche
         {!required && <span className="muted"> (optional)</span>}
       </label>
       {input}
+      {schema.description && <p className="muted">{schema.description}</p>}
     </div>
   );
 }

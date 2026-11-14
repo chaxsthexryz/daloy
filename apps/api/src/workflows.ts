@@ -21,6 +21,7 @@ import type { PgBoss } from "pg-boss";
 import * as z from "zod";
 import { SessionGuard } from "./auth";
 import { Allow, BOSS, CurrentUser, DB, enqueueRun, eventKey, isUniqueViolation, validPayload, ZodPipe, type SessionUser, MANAGE, OPERATE } from "./http";
+import { resourcesFor } from "./resources";
 
 const workflowInput = z.object({
   name: z.string().trim().min(1).max(200),
@@ -173,7 +174,8 @@ export class WorkflowsController {
     await this.owned(user.workspaceId, id);
     const definition = parseDefinition(body.definition);
     // A test run gets the same field checks as the form or webhook it stands in for, before anything is saved.
-    const payload = validPayload(triggerFields(definition.trigger), body.payload);
+    const fields = triggerFields(definition.trigger);
+    const payload = validPayload(fields, body.payload, await resourcesFor(this.db, user.workspaceId, fields));
     const mode = body.mode ?? (body.live ? "live" : "mock");
     const problems = choiceProblems(definition, body.choices, mode);
     if (problems.length > 0) throw new BadRequestException(problems);
@@ -242,7 +244,8 @@ export class WorkflowsController {
     const version = await publishedVersion(this.db, id);
     if (!version) throw new ConflictException("publish the workflow first");
     const { trigger } = definitionSchema.parse(version.definition);
-    const payload = validPayload(triggerFields(trigger), body.payload);
+    const fields = triggerFields(trigger);
+    const payload = validPayload(fields, body.payload, await resourcesFor(this.db, user.workspaceId, fields));
     const { runId, duplicate } = await createKeyedRun(this.db, id, version.id, payload, eventKey(trigger, payload));
     if (!duplicate) await enqueueRun(this.boss, runId);
     return duplicate ? { id: runId, duplicate } : { id: runId };

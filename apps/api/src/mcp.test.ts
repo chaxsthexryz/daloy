@@ -153,6 +153,30 @@ describe("MCP endpoint", () => {
     expect(listed!.lastUsedAt).not.toBeNull();
   });
 
+  it("takes only this workspace's active resources and a future zoned time", async () => {
+    const { agent, token } = await owner();
+    const other = await owner();
+    const ana = (await agent.post("/resources").send({ name: "Ana" }).expect(201)).body as { id: string };
+    const old = (await agent.post("/resources").send({ name: "Old room" }).expect(201)).body as { id: string };
+    await agent.patch(`/resources/${old.id}`).send({ active: false }).expect(200);
+    const foreign = (await other.agent.post("/resources").send({ name: "Ana" }).expect(201)).body as { id: string };
+    const wf = await workflow(agent, { type: "form", config: { fields: [{ name: "who", label: "Who", type: "resource", required: true }, { name: "at", label: "At", type: "datetime", required: true, timezone: "Asia/Manila", slotMinutes: 60 }] } });
+    const client = await connect(token);
+
+    const tool = (await client.listTools()).tools.find((t) => t.name === wf.slug)!;
+    expect(JSON.stringify(tool.inputSchema)).toContain(`Ana (${ana.id})`);
+    expect(JSON.stringify(tool.inputSchema)).not.toContain(old.id);
+    const at = `${new Date().getUTCFullYear() + 1}-01-20T14:00`;
+    for (const who of [foreign.id, old.id, "Ana"]) expect((await callTool(client, wf.slug, { who, at })).isError, who).toBe(true);
+    expect((await callTool(client, wf.slug, { who: ana.id, at: "2020-01-20T14:00" })).isError).toBe(true);
+
+    const res = await callTool(client, wf.slug, { who: ana.id, at });
+    expect(res.isError).toBeFalsy();
+    const [run] = await db.select().from(runs).where(eq(runs.id, (res.structuredContent as { runId: string }).runId));
+    expect(run!.triggerPayload).toEqual({ who: { id: ana.id, name: "Ana" }, at: `${at}:00+08:00` });
+    await client.close();
+  });
+
   it("starts a run with the validated arguments and rejects bad input", async () => {
     const { agent, token } = await owner();
     const wf = await workflow(agent, formTrigger);

@@ -221,6 +221,11 @@ async function runNext(deps: AdvanceDeps, run: Run): Promise<void> {
       const { left, op, right } = result.input as { left: unknown; op: string; right: unknown };
       throw new StepError(`"${step.id}" needs a number on both sides of ${op}, but got ${JSON.stringify(left) ?? "nothing"} and ${JSON.stringify(right) ?? "nothing"}. Add an "invalid" branch or check the field.`, false, { input: result.input });
     }
+    // A wake-up time that has passed with no "late" edge ends the run here, so a reminder is never sent late.
+    // Run history says so (decision 0031).
+    if (step.type === "delay" && result.branch === "late" && !def.edges.some((e) => e.from === step.id && e.on === "late")) {
+      result = { ...result, output: { ...(result.output as object), skipped: "The wake-up time had passed, so the steps after this delay did not run." } };
+    }
   } catch (err) {
     const decision = decideRetry(err, attempt, deps.retryPolicy ?? DEFAULT_RETRY_POLICY);
     const message = err instanceof Error ? err.message : String(err);

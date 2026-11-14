@@ -1,5 +1,6 @@
 import * as z from "zod";
 import { aiConfigSchema } from "./ai";
+import { isTimeZone, parseZoned } from "./zoned";
 
 // Ids end up inside expression paths ({{steps.<id>.output}}), so keep them to a safe charset.
 const stepId = z.string().regex(/^[a-z][a-z0-9_]{0,63}$/, "step ids use a-z, 0-9 and _, starting with a letter");
@@ -33,7 +34,21 @@ export const emailConfigSchema = z.object({
   text: template(50_000).min(1),
 });
 
-export const delayConfigSchema = z.object({ seconds: z.int().min(1).max(2_592_000) });
+// A fixed wait, or until a time from the run (a datetime field) moved by offsetSeconds. A wake-up time that has
+// passed takes the "late" edge, or ends the run when there is none (decision 0031).
+export const delayConfigSchema = z
+  .object({
+    seconds: z.int().min(1).max(2_592_000).optional(),
+    until: template(500)
+      .min(1)
+      .optional()
+      .describe("A date and time with an offset, such as {{trigger.appointment_at}} from a datetime field. If it has passed when the step runs, the run ends here, or takes the step's late edge when it has one."),
+    offsetSeconds: z.int().min(-2_592_000).max(2_592_000).optional().describe("Seconds after the until time; negative is before it, e.g. -3600 for an hour before."),
+  })
+  .superRefine((c, ctx) => {
+    if ((c.seconds === undefined) === (c.until === undefined)) ctx.addIssue({ code: "custom", path: ["seconds"], message: "set either seconds or until" });
+    if (c.offsetSeconds !== undefined && c.until === undefined) ctx.addIssue({ code: "custom", path: ["offsetSeconds"], message: "offsetSeconds needs until" });
+  });
 export type HttpConfig = z.infer<typeof httpConfigSchema>;
 export const isIdempotent = (cfg: Pick<HttpConfig, "method" | "idempotent">) => cfg.idempotent ?? ["GET", "PUT", "DELETE"].includes(cfg.method);
 export type EmailConfig = z.infer<typeof emailConfigSchema>;
@@ -95,13 +110,21 @@ export const formFieldSchema = z
   .object({
     name: stepId,
     label: z.string().min(1).max(200),
-    type: z.enum(["text", "email", "textarea", "number"]),
+    type: z.enum(["text", "email", "textarea", "number", "datetime", "resource"]),
     required: z.boolean().default(false),
     min: z.number().optional(),
     max: z.number().optional(),
     integer: z.boolean().optional(),
+    // datetime: the IANA zone the time is read in, and an optional slot grid counted from local midnight (decision 0031).
+    timezone: z.string().max(64).optional(),
+    slotMinutes: z.int().min(1).max(1440).optional(),
   })
   .superRefine((f, ctx) => {
+    if (f.type === "datetime" && f.timezone === undefined) ctx.addIssue({ code: "custom", path: ["timezone"], message: "a datetime field needs a timezone such as Asia/Manila" });
+    if (f.type === "datetime" && f.timezone !== undefined && !isTimeZone(f.timezone)) ctx.addIssue({ code: "custom", path: ["timezone"], message: "use an IANA timezone name such as Asia/Manila" });
+    if (f.type !== "datetime" && (f.timezone !== undefined || f.slotMinutes !== undefined)) {
+      ctx.addIssue({ code: "custom", path: ["type"], message: "timezone and slotMinutes are for datetime fields" });
+    }
     if (f.type !== "number" && (f.min !== undefined || f.max !== undefined || f.integer !== undefined)) {
       ctx.addIssue({ code: "custom", path: ["type"], message: "min, max and integer are for number fields" });
     }
@@ -134,11 +157,34 @@ const required = (fallback: string) => ({ error: (iss: { input: unknown }) => (i
  * The schema a submission must pass: from the public form, a test run, the console Run button, MCP, or a webhook with
  * fields. Empty text and null count as not given. Keys that are not fields are dropped.
  */
-export function payloadSchema(fields: FormField[]) {
+export type Resource = { id: string; name: string };
+/** resources: the workspace's active resources, the only ids a resource field accepts. now: for "in the future". */
+export type PayloadContext = { resources?: Resource[]; now?: number };
+
+export function payloadSchema(fields: FormField[], { resources = [], now }: PayloadContext = {}) {
   const shape: Record<string, z.ZodType> = {};
   for (const f of fields) {
     let base: z.ZodType;
-    if (f.type === "number") {
+    if (f.type === "datetime") {
+      base = z.string(required("must be a date and time like 2027-01-20T14:00")).transform((v, ctx) => {
+        const r = parseZoned(v.trim(), { timezone: f.timezone!, slotMinutes: f.slotMinutes }, now ?? Date.now());
+        if (r.ok) return r.value;
+        ctx.addIssue({ code: "custom", message: r.error });
+        return z.NEVER;
+      });
+    } else if (f.type === "resource") {
+      // The name is copied from the database row, so a later rename leaves this run's payload as it was.
+      const choices = resources.map((r) => `${r.name} (${r.id})`).join(", ");
+      base = z
+        .string(required("must be a resource id"))
+        .transform((v, ctx) => {
+          const r = resources.find((x) => x.id === v.trim());
+          if (r) return { id: r.id, name: r.name };
+          ctx.addIssue({ code: "custom", message: "must be one of this workspace's resources" });
+          return z.NEVER;
+        })
+        .describe(choices ? `A resource id: ${choices}` : "A resource id");
+    } else if (f.type === "number") {
       let n = z.number(required("must be a number"));
       if (f.min !== undefined) n = n.min(f.min, `must be at least ${f.min}`);
       if (f.max !== undefined) n = n.max(f.max, `must be at most ${f.max}`);
@@ -157,8 +203,8 @@ export function payloadSchema(fields: FormField[]) {
 }
 
 /** Checks a payload against its fields. Errors read "<field>: <problem>", one per field, in field order. */
-export function parsePayload(fields: FormField[], data: unknown): { ok: true; data: Record<string, unknown> } | { ok: false; errors: string[] } {
-  const r = payloadSchema(fields).safeParse(data ?? {});
+export function parsePayload(fields: FormField[], data: unknown, context?: PayloadContext): { ok: true; data: Record<string, unknown> } | { ok: false; errors: string[] } {
+  const r = payloadSchema(fields, context).safeParse(data ?? {});
   if (r.success) return { ok: true, data: r.data };
   return { ok: false, errors: r.error.issues.map((i) => `${i.path.join(".") || "payload"}: ${i.message}`) };
 }
@@ -201,7 +247,10 @@ export const definitionSchema = z
       if (labels && e.on !== undefined && !labels.includes(e.on)) {
         fail(`"${e.on}" is not a branch of ${from.type} step "${from.id}"`);
       }
-      if (!labels && e.on !== undefined) fail(`step "${from.id}" does not branch, so its edge cannot have a label`);
+      // A delay until a time may add a "late" edge next to its usual one (decision 0031).
+      if (!labels && e.on === "late" && from.type === "delay") {
+        if (from.config.until === undefined) fail(`only a delay with "until" can have a "late" edge, and "${from.id}" waits a fixed time`);
+      } else if (!labels && e.on !== undefined) fail(`step "${from.id}" does not branch, so its edge cannot have a label`);
 
       const label = e.on ?? "next";
       const key = `${e.from}\u0000${label}`;

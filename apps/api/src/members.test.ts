@@ -200,6 +200,9 @@ describe("role permissions", () => {
       ["post", `/deliveries/${randomUUID()}/retry`, operate, {}],
       ["post", `/deliveries/${randomUUID()}/confirm`, operate],
       ["delete", `/workflows/${randomUUID()}`, only],
+      ["get", "/resources", all],
+      ["post", "/resources", only, { name: `Room ${randomUUID().slice(0, 8)}` }],
+      ["patch", `/resources/${randomUUID()}`, only, { active: false }],
     ];
     const wrong: string[] = [];
     for (const [method, path, allowed, body] of routes) {

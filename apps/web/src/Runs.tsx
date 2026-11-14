@@ -40,6 +40,12 @@ function decided(output: unknown): string | null {
   return typeof o?.decidedBy === "string" && typeof o.decidedAt === "string" ? `Decided by ${o.decidedBy} at ${new Date(o.decidedAt).toLocaleString()}` : null;
 }
 
+// A delay whose time had passed and that has no late edge ends the run (decision 0031).
+const skipped = (output: unknown) => {
+  const s = (output as { skipped?: unknown } | null)?.skipped;
+  return typeof s === "string" ? `Skipped: ${s}` : null;
+};
+
 /** One run's steps: state, branch, attempt, timing, and the input and output the worker stored (secrets masked by the API). */
 export function RunResult({ run }: { run: Run }) {
   return (
@@ -58,6 +64,7 @@ export function RunResult({ run }: { run: Run }) {
             {s.inputTokens !== null && <span className="muted"> · {s.inputTokens} in, {s.outputTokens ?? 0} out tokens</span>}
             {s.error && <p className="message error">{s.error}</p>}
             {decided(s.output) && <p className="muted">{decided(s.output)}</p>}
+            {skipped(s.output) && <p className="muted">{skipped(s.output)}</p>}
             {s.outcome && <p className="muted">Outcome: {s.outcome.replace("_", " ")}</p>}
             {s.resolvedBy && s.resolvedAt && (
               <p className="muted">

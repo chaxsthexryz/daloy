@@ -201,6 +201,36 @@ describe("step executor", () => {
     expect(delay.waitUntil!.getTime() - before).toBeLessThan(61_000);
   });
 
+  describe("delay until a time", () => {
+    const until = (offsetSeconds?: number) => ({ id: "d", type: "delay", config: { until: "{{trigger.at}}", ...(offsetSeconds === undefined ? {} : { offsetSeconds }) } }) as Step;
+    const inAWeek = () => new Date(Date.now() + 7 * 86_400_000);
+    const zoned = (d: Date) => d.toISOString().replace("Z", "+00:00");
+
+    it("waits until the time from the run, moved by the offset", async () => {
+      const at = inAWeek();
+      const out = await run(until(-3600), { at: zoned(at) });
+      expect(out.waitUntil!.getTime()).toBe(at.getTime() - 3_600_000);
+      expect(out.output).toEqual({ resumeAt: new Date(at.getTime() - 3_600_000).toISOString() });
+      expect(out.input).toEqual({ until: zoned(at), offsetSeconds: -3600 });
+      expect(out.branch).toBeUndefined();
+    });
+
+    it("takes the late branch at once when that time has passed", async () => {
+      const at = new Date(Date.now() + 1_800_000);
+      const out = await run(until(-3600), { at: zoned(at) });
+      expect(out).toMatchObject({ branch: "late", output: { resumeAt: new Date(at.getTime() - 3_600_000).toISOString(), late: true } });
+      expect(out.waitUntil).toBeUndefined();
+    });
+
+    it("fails for good when the time has no offset or is not a time", async () => {
+      for (const at of ["2030-01-20T14:00", "next week", ""]) {
+        const err = (await run(until(), { at }).then(() => undefined, (e: unknown) => e)) as Error & { retryable: boolean };
+        expect(err.message, at).toBe(`"until" needs a date and time with an offset, like 2030-01-20T14:00:00+08:00, but got ${JSON.stringify(at)}`);
+        expect(err.retryable).toBe(false);
+      }
+    });
+  });
+
   describe("mock mode (builder test runs)", () => {
     const mocked = (step: Step, trigger: unknown = {}) =>
       executor().execute({ runId: "r", stepRunId: NO_STEP_RUN, userId, step, attempt: 1, idempotencyKey: "r:s", ctx: { trigger, steps: {} }, mock: true });
@@ -246,6 +276,18 @@ describe("step executor", () => {
       const before = Date.now();
       const delay = await mocked({ id: "d", type: "delay", config: { seconds: 3600 } });
       expect(delay.waitUntil!.getTime() - before).toBeLessThan(2_000);
+    });
+
+    it("reports the real wake-up time while waiting one second", async () => {
+      const before = Date.now();
+      const delay = await mocked({ id: "d", type: "delay", config: { seconds: 3600 } });
+      const resumeAt = new Date((delay.output as { resumeAt: string }).resumeAt).getTime();
+      expect(resumeAt - before).toBeGreaterThanOrEqual(3_600_000);
+      expect(delay.output).toMatchObject({ mocked: true });
+      const at = new Date(Date.now() + 7 * 86_400_000).toISOString();
+      const until = await mocked({ id: "d", type: "delay", config: { until: "{{trigger.at}}" } }, { at });
+      expect(until.output).toEqual({ resumeAt: at, mocked: true });
+      expect(until.waitUntil!.getTime() - Date.now()).toBeLessThan(2_000);
     });
   });
 
