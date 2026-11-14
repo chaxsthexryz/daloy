@@ -5,7 +5,7 @@ import { ConnectionsSection } from "./Connections";
 
 type Profile = { businessName: string | null; website: string | null; inquiryEmail: string | null; replyTo: string | null };
 type Sender = { address: string; status: "unverified" | "active" | "failed" | "disconnected"; lastError: string | null; verifiedAt: string | null; lastTestedAt: string | null };
-type Settings = { profile: Profile | null; sender: Sender | null; installationFrom: string; signInEmail: string };
+type Settings = { profile: Profile | null; sender: Sender | null; installationFrom: string; installationAllowed: boolean; signInEmail: string };
 type TestResult = { ok: true; to: string; from: string; replyTo?: string; gmail: boolean; needsConfirmation: boolean } | { ok: false; error: string };
 
 const APP_PASSWORD_HELP = "https://support.google.com/accounts/answer/185833";
@@ -132,7 +132,9 @@ function SenderSection({ data, onChange }: { data: Settings; onChange: () => Pro
   return (
     <section aria-labelledby="sender-h">
       <h2 id="sender-h">Email sender</h2>
-      {!sender ? (
+      {!sender && !data.installationAllowed ? (
+        <p className="message error">This installation's mail server does not send for your account. Connect Gmail below to send email from your own address.</p>
+      ) : !sender ? (
         <p>
           Your automations send from <code>{data.installationFrom}</code>, this installation's mail server. On a local install that is Mailpit, which keeps every message on this
           computer (open <a href="http://localhost:8025">localhost:8025</a> to read them).

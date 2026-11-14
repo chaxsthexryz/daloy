@@ -1,13 +1,14 @@
 import { randomBytes } from "node:crypto";
 import nodemailer, { type SendMailOptions } from "nodemailer";
 import type { Pool } from "pg";
+import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { startFakeSmtp } from "../../../test/fake-smtp";
 import { freshDatabase } from "../../../test/db";
-import type { Db } from "./index";
-import { sendAs, sendEmail, type MailDeps, type Mailer } from "./mail";
+import { createDb, type Db } from "./index";
+import { approveSharedMail, mailDeps, sendAs, sendEmail, type MailDeps, type Mailer } from "./mail";
 import { claimVerifyToken, connectGmail, issueVerifyToken, readSender, saveProfile } from "./mail-senders";
-import { users } from "./schema";
+import { sharedMailUsage, users } from "./schema";
 
 // jsonTransport builds the full message without sending it, so the test can read what would go out.
 const mailer: Mailer = { transport: nodemailer.createTransport({ jsonTransport: true }), from: "Daloy <daloy@example.com>" };
@@ -44,11 +45,12 @@ describe("sendEmail", () => {
 describe("sendAs", () => {
   let db: Db;
   let pool: Pool;
+  let url: string;
   let gmail: Awaited<ReturnType<typeof startFakeSmtp>>;
   const key = randomBytes(32);
   const installation: string[] = [];
   let seq = 0;
-  const deps = (): MailDeps => ({
+  const deps = (sharedMail: MailDeps["sharedMail"] = "open"): MailDeps => ({
     installation: {
       from: "Daloy <daloy@localhost>",
       transport: {
@@ -61,6 +63,7 @@ describe("sendAs", () => {
     },
     // The fake stands in for smtp.gmail.com:465; only host, port and TLS differ from the real transport.
     gmail: (auth) => nodemailer.createTransport({ host: "127.0.0.1", port: gmail.port, secure: false, ignoreTLS: true, auth }),
+    sharedMail,
   });
   const owner = async () => (await db.insert(users).values({ email: `send${++seq}@test.local`, passwordHash: "x" }).returning())[0]!.id;
   const connect = async (userId: string, address: string, appPassword: string) => {
@@ -70,7 +73,7 @@ describe("sendAs", () => {
   const mail = { to: "customer@example.com", subject: "Thanks", text: "We got it." };
 
   beforeAll(async () => {
-    ({ db, pool } = await freshDatabase());
+    ({ db, pool, url } = await freshDatabase());
     gmail = await startFakeSmtp(new Set(["revokedrevoked00"]));
   }, 120_000);
   afterAll(async () => {
@@ -121,5 +124,56 @@ describe("sendAs", () => {
     await connectGmail(db, key, u, { address: "new.owner@gmail.com", appPassword: "eeee ffff gggg hhhh" });
     await sendAs(db, key, deps(), u, { ...mail, to: "new.owner@gmail.com" }, "k6", { allowUnconfirmed: true });
     expect(gmail.messages.at(-1)).toMatchObject({ user: "new.owner@gmail.com", to: ["new.owner@gmail.com"] });
+  });
+
+  describe("shared mail server policy (approved)", () => {
+    it("sends nothing for an owner the operator has not approved", async () => {
+      const u = await owner();
+      const before = installation.length;
+      await expect(sendAs(db, key, deps("approved"), u, mail, "p1")).rejects.toMatchObject({ retryable: false, message: expect.stringContaining("Connect Gmail") });
+      expect(installation).toHaveLength(before);
+    });
+
+    it("sends for an approved owner and counts each recipient against the daily limit", async () => {
+      const u = await owner();
+      await approveSharedMail(db, u, 3);
+      await sendAs(db, key, deps("approved"), u, { ...mail, to: "a@example.com, b@example.com" }, "p2");
+      const [usage] = await db.select().from(sharedMailUsage).where(eq(sharedMailUsage.userId, u));
+      expect(usage!.sent).toBe(2);
+      const before = installation.length;
+      await expect(sendAs(db, key, deps("approved"), u, { ...mail, to: "c@example.com, d@example.com" }, "p3")).rejects.toMatchObject({ retryable: false, message: expect.stringContaining("limit of 3") });
+      expect(installation).toHaveLength(before);
+      await sendAs(db, key, deps("approved"), u, { ...mail, to: "c@example.com" }, "p4");
+      expect(installation).toHaveLength(before + 1);
+    });
+
+    it("holds the limit exactly when many processes send at once", async () => {
+      const u = await owner();
+      await approveSharedMail(db, u, 5);
+      // Separate pools stand in for separate API and worker processes.
+      const others = Array.from({ length: 4 }, () => createDb(url));
+      const before = installation.length;
+      const results = await Promise.allSettled(Array.from({ length: 20 }, (_, i) => sendAs(others[i % 4]!.db, key, deps("approved"), u, mail, `p5-${i}`)));
+      await Promise.all(others.map((o) => o.pool.end()));
+      expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(5);
+      expect(installation).toHaveLength(before + 5);
+    });
+
+    it("leaves owners who send from their own Gmail alone", async () => {
+      const u = await owner();
+      await connect(u, "own.box@gmail.com", "iiii jjjj kkkk llll");
+      await sendAs(db, key, deps("approved"), u, mail, "p6");
+      expect(gmail.messages.at(-1)).toMatchObject({ user: "own.box@gmail.com" });
+    });
+  });
+
+  it("chooses the policy from the environment, closed unless the server is a local catcher", () => {
+    expect(mailDeps({}).sharedMail).toBe("open");
+    expect(mailDeps({ SMTP_HOST: "mailpit" }).sharedMail).toBe("open");
+    expect(mailDeps({ SMTP_HOST: "127.0.0.1" }).sharedMail).toBe("open");
+    expect(mailDeps({ SMTP_HOST: "smtp.example.com" }).sharedMail).toBe("approved");
+    expect(mailDeps({ SMTP_HOST: "mailpit", SHARED_MAIL: "approved" }).sharedMail).toBe("approved");
+    expect(mailDeps({ SMTP_HOST: "smtp.example.com", SHARED_MAIL: "open" }).sharedMail).toBe("open");
+    expect(mailDeps({ SMTP_HOST: "smtp.example.com", SHARED_MAIL: "typo" }).sharedMail).toBe("approved");
   });
 });

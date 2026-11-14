@@ -77,7 +77,7 @@ beforeAll(async () => {
   worker = await startWorker({
     connectionString: url,
     db,
-    executor: createExecutor({ db, secretsKey: key, mail: { installation: smtpMailer({}), gmail: () => smtpMailer({}).transport } }),
+    executor: createExecutor({ db, secretsKey: key, mail: { installation: smtpMailer({}), gmail: () => smtpMailer({}).transport, sharedMail: "open" } }),
     deliveries: { secretsKey: key, urls: { ...fake.urls, timeoutMs: 2000, microsoft: { clientId: fake.microsoft.clientId, clientSecret: fake.microsoft.clientSecret, tenant: "organizations" } } },
     pollingIntervalSeconds: 0.5,
     sweepMs: 500,

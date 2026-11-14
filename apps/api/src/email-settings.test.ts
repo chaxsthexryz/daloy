@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { mailSenders, readSender, resolveSender, smtpMailer, users, type Db, type MailDeps } from "@daloy/db";
+import { approveSharedMail, mailSenders, readSender, resolveSender, smtpMailer, users, type Db, type MailDeps } from "@daloy/db";
 import { websiteInquiryDefinition } from "@daloy/engine";
 import type { INestApplication } from "@nestjs/common";
 import { eq } from "drizzle-orm";
@@ -21,6 +21,7 @@ let installation: Awaited<ReturnType<typeof startFakeSmtp>>;
 const key = randomBytes(32);
 let seq = 0;
 const REJECTED = "zzzzzzzzzzzzzzzz";
+let mail: MailDeps;
 
 beforeAll(async () => {
   let url: string;
@@ -29,10 +30,11 @@ beforeAll(async () => {
   await boss.start();
   gmail = await startFakeSmtp(new Set([REJECTED]));
   installation = await startFakeSmtp();
-  const mail: MailDeps = {
+  mail = {
     installation: smtpMailer({ SMTP_HOST: "127.0.0.1", SMTP_PORT: String(installation.port) }),
     // The fake stands in for smtp.gmail.com; the login is the owner's address and app password, as with the real one.
     gmail: (auth) => smtpMailer({ SMTP_HOST: "127.0.0.1", SMTP_PORT: String(gmail.port), SMTP_USER: auth.user, SMTP_PASS: auth.pass }).transport,
+    sharedMail: "open",
   };
   app = await createApp({ db, boss, secretsKey: key, secureCookies: false, mail, publicUrl: "https://daloy.example.com" });
   await app.init();
@@ -67,7 +69,7 @@ describe("email settings", () => {
 
   it("saves the business profile and validates it", async () => {
     const { agent } = await signedIn();
-    expect((await agent.get("/settings/email").expect(200)).body).toMatchObject({ profile: null, sender: null, installationFrom: "daloy@localhost" });
+    expect((await agent.get("/settings/email").expect(200)).body).toMatchObject({ profile: null, sender: null, installationFrom: "daloy@localhost", installationAllowed: true });
     await agent.put("/settings/email/profile").send(profile).expect(204);
     expect((await agent.get("/settings/email").expect(200)).body.profile).toEqual(profile);
     await agent.put("/settings/email/profile").send({ ...profile, businessName: "{{secrets.x}}" }).expect(400);
@@ -132,6 +134,24 @@ describe("email settings", () => {
     const res = await agent.post("/settings/email/test").expect(200);
     expect(res.body).toEqual({ ok: true, to: email, from: "daloy@localhost", gmail: false, needsConfirmation: false });
     expect(installation.messages.at(-1)).toMatchObject({ user: undefined, to: [email] });
+  });
+
+  it("with an approved-only shared server, a fresh sign-up's test email sends nothing and the page says so", async () => {
+    mail.sharedMail = "approved";
+    try {
+      const { agent, userId } = await signedIn();
+      expect((await agent.get("/settings/email").expect(200)).body).toMatchObject({ installationAllowed: false });
+      const before = installation.messages.length;
+      expect((await agent.post("/settings/email/test").expect(200)).body).toMatchObject({ ok: false, error: expect.stringContaining("Connect Gmail") });
+      expect(installation.messages).toHaveLength(before);
+
+      await approveSharedMail(db, userId, 5);
+      expect((await agent.get("/settings/email").expect(200)).body).toMatchObject({ installationAllowed: true });
+      expect((await agent.post("/settings/email/test").expect(200)).body).toMatchObject({ ok: true, gmail: false });
+      expect(installation.messages).toHaveLength(before + 1);
+    } finally {
+      mail.sharedMail = "open";
+    }
   });
 
   it("disconnect blocks sending and deletes the password; using the local server again removes the sender", async () => {

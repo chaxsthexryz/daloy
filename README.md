@@ -93,7 +93,15 @@ By default every email lands in Mailpit (http://localhost:8025) and nobody recei
 
 From then on, that account's published workflows, approval emails and test runs with "Make live calls" ticked send real mail from its address. Other accounts are not affected. **Disconnect** stops that account's mail until it reconnects; it never switches to another sender. Use your own addresses while testing. The steps for checking this against a real Gmail account are in [docs/live-gmail-check.md](docs/live-gmail-check.md).
 
-The `SMTP_*` settings in `.env` are the installation's own server, used by every account that connected no Gmail. Leave them on Mailpit unless that server may send for every account.
+The `SMTP_*` settings in `.env` are the installation's own server, used by accounts that connected no Gmail. With Mailpit every account may use it. With any other server only accounts you approve can, each with a daily recipient limit (decision 0024):
+
+1. Keep `SHARED_MAIL` empty or set it to `approved` (`open` would let every sign-up send through your server).
+2. Approve a workspace owner, here for 50 recipients a day (UTC):
+   ```bash
+   docker compose exec postgres psql -U daloy -d daloy -c "update users set shared_mail_daily_limit = 50 where email = 'owner@example.com'"
+   ```
+   Set it back to `null` to withdraw approval. Sign-up addresses are not verified, so check who owns an account before approving it.
+3. Everyone else sends nothing through your server. Their email steps, approval emails and test emails fail with "Connect Gmail", and Business and email says so.
 
 ## Google Sheets and Slack
 

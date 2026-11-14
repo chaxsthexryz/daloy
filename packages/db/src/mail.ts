@@ -1,12 +1,17 @@
 import { StepError, type EmailConfig } from "@daloy/engine";
+import { eq, sql } from "drizzle-orm";
 import nodemailer, { type Transporter } from "nodemailer";
 import * as z from "zod";
 import type { Db } from "./index";
 import { markSenderFailed, resolveSender, type ResolvedSender } from "./mail-senders";
+import { sharedMailUsage, users } from "./schema";
 
 export type Mailer = { transport: Transporter; from: string | { name: string; address: string }; replyTo?: string };
-/** The installation's own server, and how to log in to Gmail as one owner. Tests replace both. */
-export type MailDeps = { installation: Mailer; gmail: (auth: { user: string; pass: string }) => Transporter };
+/**
+ * The installation's own server, how to log in to Gmail as one owner, and who may use the shared server: "open" for
+ * everyone (a local catcher such as Mailpit), "approved" for workspace owners the operator approved (decision 0024).
+ */
+export type MailDeps = { installation: Mailer; gmail: (auth: { user: string; pass: string }) => Transporter; sharedMail: "open" | "approved" };
 
 const MAX_RECIPIENTS = 10;
 const address = z.email();
@@ -24,7 +29,55 @@ export function smtpMailer(env: NodeJS.ProcessEnv = process.env): Mailer {
 /** Gmail's SMTP server with the owner's app password. A new connection per send, so no login outlives its message. */
 export const gmailTransport = (auth: { user: string; pass: string }) => nodemailer.createTransport({ host: "smtp.gmail.com", port: 465, secure: true, auth });
 
-export const mailDeps = (env: NodeJS.ProcessEnv = process.env): MailDeps => ({ installation: smtpMailer(env), gmail: gmailTransport });
+const LOCAL_CATCHERS = new Set(["", "mailpit", "localhost", "127.0.0.1", "::1"]);
+
+/**
+ * SHARED_MAIL picks the policy. Unset, the shared server is open only when it is a local catcher, so pointing SMTP_HOST
+ * at a real relay locks it to approved owners unless the operator says otherwise. Any other value means approved.
+ */
+export function sharedMailPolicy(env: NodeJS.ProcessEnv = process.env): MailDeps["sharedMail"] {
+  if (env.SHARED_MAIL) return env.SHARED_MAIL === "open" ? "open" : "approved";
+  return LOCAL_CATCHERS.has(env.SMTP_HOST ?? "") ? "open" : "approved";
+}
+
+export const mailDeps = (env: NodeJS.ProcessEnv = process.env): MailDeps => ({ installation: smtpMailer(env), gmail: gmailTransport, sharedMail: sharedMailPolicy(env) });
+
+/** The operator approves a workspace owner for the shared server, with a daily recipient limit. Null withdraws it. */
+export async function approveSharedMail(db: Db, userId: string, dailyLimit: number | null) {
+  await db.update(users).set({ sharedMailDailyLimit: dailyLimit }).where(eq(users.id, userId));
+}
+
+/** Whether this workspace may send through the shared server under the policy. Shown on Business and email. */
+export async function sharedMailAllowed(db: Db, deps: MailDeps, userId: string) {
+  if (deps.sharedMail === "open") return true;
+  const [row] = await db.select({ limit: users.sharedMailDailyLimit }).from(users).where(eq(users.id, userId));
+  return (row?.limit ?? 0) > 0;
+}
+
+/**
+ * Counts n recipients against today's limit before anything is sent. One upsert under the row lock, so the limit holds
+ * exactly across any number of API and worker processes. Throws, without retrying, when not approved or over the limit.
+ */
+async function claimSharedMail(db: Db, userId: string, n: number) {
+  const [row] = await db.select({ limit: users.sharedMailDailyLimit }).from(users).where(eq(users.id, userId));
+  const limit = row?.limit ?? 0;
+  if (limit <= 0) {
+    throw new StepError("This installation's mail server only sends for accounts its operator approved. Connect Gmail in Settings, Business and email to send from your own address.", false);
+  }
+  const day = sql`(now() at time zone 'utc')::date::text`;
+  const claimed =
+    n <= limit &&
+    (
+      await db
+        .insert(sharedMailUsage)
+        .values({ userId, day, sent: n })
+        .onConflictDoUpdate({ target: [sharedMailUsage.userId, sharedMailUsage.day], set: { sent: sql`${sharedMailUsage.sent} + ${n}` }, setWhere: sql`${sharedMailUsage.sent} + ${n} <= ${limit}` })
+        .returning({ sent: sharedMailUsage.sent })
+    ).length > 0;
+  if (!claimed) {
+    throw new StepError(`This account reached today's limit of ${limit} recipients through this installation's mail server. Connect Gmail in Settings, Business and email, or try again tomorrow (UTC).`, false);
+  }
+}
 
 const addressOf = (from: Mailer["from"]) => (typeof from === "string" ? (/<([^>]+)>/.exec(from)?.[1] ?? from) : from.address);
 
@@ -59,6 +112,8 @@ const loginRefused = (err: unknown) => {
 export async function sendAs(db: Db, key: Buffer, deps: MailDeps, userId: string, cfg: EmailConfig, idempotencyKey: string, opts: { allowUnconfirmed?: boolean } = {}) {
   const sender = await resolveSender(db, key, userId, opts);
   const mailer = mailerFor(sender, deps);
+  // The shared server is the one an unapproved sign-up could abuse; Gmail sends as the owner's own confirmed mailbox.
+  if (sender.kind === "installation" && deps.sharedMail === "approved") await claimSharedMail(db, userId, checkRecipients(cfg.to).length);
   try {
     return { ...(await sendEmail(mailer, cfg, idempotencyKey)), from: addressOf(mailer.from), gmail: sender.kind === "gmail" };
   } catch (err) {

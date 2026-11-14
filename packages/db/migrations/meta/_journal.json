@@ -78,6 +78,13 @@
       "when": 1794590220862,
       "tag": "0010_microsoft_connections",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1794619641900,
+      "tag": "0011_shared_mail_policy",
+      "breakpoints": true
     }
   ]
 }

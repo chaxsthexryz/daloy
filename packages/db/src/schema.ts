@@ -14,7 +14,23 @@ export const users = pgTable("users", {
   email: text("email").notNull().unique(),
   passwordHash: text("password_hash").notNull(),
   createdAt: createdAt(),
+  // Recipients a day this workspace owner may send through the installation's shared mail server when SHARED_MAIL is
+  // "approved". Null: not approved. Only the operator sets it (decision 0024).
+  sharedMailDailyLimit: integer("shared_mail_daily_limit"),
 });
+
+/** Recipients sent through the shared mail server per workspace and UTC day. One row per day, counted atomically. */
+export const sharedMailUsage = pgTable(
+  "shared_mail_usage",
+  {
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    day: text("day").notNull(),
+    sent: integer("sent").notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.day] })],
+);
 
 export const ROLES = ["owner", "operator", "approver", "requester"] as const;
 export type Role = (typeof ROLES)[number];
