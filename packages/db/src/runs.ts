@@ -44,9 +44,14 @@ export async function createKeyedRun(db: AnyDb, workflowId: string, workflowVers
     });
   } catch (err) {
     if (!(err instanceof Duplicate)) throw err;
-    const [first] = await db.select({ runId: runKeys.runId }).from(runKeys).where(and(eq(runKeys.workflowId, workflowId), eq(runKeys.test, test), eq(runKeys.key, key)));
-    return { runId: first!.runId, duplicate: true };
+    return { runId: (await keyedRun(db, workflowId, key, test))!, duplicate: true };
   }
+}
+
+/** The run an event key already started, if any (decision 0029). */
+export async function keyedRun(db: AnyDb, workflowId: string, key: string, test = false): Promise<string | undefined> {
+  const [first] = await db.select({ runId: runKeys.runId }).from(runKeys).where(and(eq(runKeys.workflowId, workflowId), eq(runKeys.test, test), eq(runKeys.key, key)));
+  return first?.runId;
 }
 
 type RunOpts = { test?: boolean; live?: boolean; aiLive?: boolean; testChoices?: unknown };

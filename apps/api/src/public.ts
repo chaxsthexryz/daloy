@@ -22,7 +22,7 @@ import { and, eq } from "drizzle-orm";
 import type { Request } from "express";
 import type { PgBoss } from "pg-boss";
 import * as z from "zod";
-import { BOSS, CONFIG, DB, enqueueRun, eventKey, isUniqueViolation, RateLimit, validPayload, ZodPipe, type ApiConfig } from "./http";
+import { BOSS, CONFIG, DB, enqueueRun, eventKey, isUniqueViolation, RateLimit, replayedRun, validPayload, ZodPipe, type ApiConfig } from "./http";
 import { sessionUser } from "./auth";
 import { resourcesFor } from "./resources";
 
@@ -66,10 +66,13 @@ export class HooksController {
       if (!key || !validSignature(req.rawBody ?? Buffer.alloc(0), signature, key)) throw new UnauthorizedException("bad signature");
     }
 
+    const { trigger } = definitionSchema.parse(version.definition);
+    const first = await replayedRun(this.db, row.trigger.workflowId, trigger, req.body, idempotencyKey);
+    if (first) return { runId: first, duplicate: true };
     const fields = (row.trigger.config as { fields?: FormField[] }).fields;
     const payload = validPayload(fields, req.body ?? {}, await resourcesFor(this.db, row.userId, fields));
     // A repeated event gets the first run back and starts nothing (decision 0029).
-    const { runId, duplicate } = await createKeyedRun(this.db, row.trigger.workflowId, version.id, payload, eventKey(definitionSchema.parse(version.definition).trigger, payload, idempotencyKey));
+    const { runId, duplicate } = await createKeyedRun(this.db, row.trigger.workflowId, version.id, payload, eventKey(trigger, payload, idempotencyKey));
     if (!duplicate) await enqueueRun(this.boss, runId);
     return duplicate ? { runId, duplicate } : { runId };
   }
@@ -192,7 +195,10 @@ function renderForm(fields: FormField[], resources: Resource[], submissionKey?: 
       const limits = f.type === "number" ? `${f.min !== undefined ? ` min="${f.min}"` : ""}${f.max !== undefined ? ` max="${f.max}"` : ""} step="${f.integer ? 1 : "any"}"` : "";
       let control = f.type === "textarea" ? `<textarea ${attrs} maxlength="5000"></textarea>` : `<input ${attrs} type="${f.type}"${limits}>`;
       // The server reads a datetime in the field's zone and checks the slot and "in the future" itself (parseZoned).
-      if (f.type === "datetime") control = `<input ${attrs} type="datetime-local" step="${(f.slotMinutes ?? 1) * 60}"><br><small>Times are in ${escapeHtml(f.timezone!)}</small>`;
+      // The browser counts steps from 1970-01-01T00:00, which meets every local midnight only when the slot divides
+      // the day; other grids get whole minutes here, so no slot the server accepts is blocked (decision 0031).
+      const slot = f.slotMinutes && 1440 % f.slotMinutes === 0 ? f.slotMinutes : 1;
+      if (f.type === "datetime") control = `<input ${attrs} type="datetime-local" step="${slot * 60}"><br><small>Times are in ${escapeHtml(f.timezone!)}</small>`;
       if (f.type === "resource") control = `<select ${attrs}><option value="">Choose one</option>${resources.map((r) => `<option value="${r.id}">${escapeHtml(r.name)}</option>`).join("")}</select>`;
       return `<p><label for="${f.name}">${escapeHtml(f.label)}</label><br>${control}</p>`;
     })

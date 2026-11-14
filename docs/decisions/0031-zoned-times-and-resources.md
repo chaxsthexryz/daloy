@@ -29,12 +29,15 @@ Option 3, in `packages/engine/src/zoned.ts`.
 - Workspace resources: a `resources` table (id, workspace, name unique per workspace, active). Owners add, rename, archive and restore them; every member can list them. There is no delete, since runs and P6b's bookings point at the id.
 - A `resource` field takes an id. `parsePayload` gets the workspace's active resources from the caller and accepts only those; with no list it accepts nothing. The stored value is `{ id, name }` with the name read from the row at submission, so `{{trigger.therapist.name}}` works in emails and a later rename or archive leaves earlier runs as they were.
 - Every entry point loads the list for the workflow's own workspace: the hosted form (which also renders it as a `<select>`), webhooks, test runs, the Run button and MCP (where the tool schema describes the choices).
+- The hosted form gives the time input a browser `step` only when the slot divides the day (5, 15, 30, 45, 60, 90 minutes and so on). The browser counts steps from 1970-01-01T00:00, which meets every local midnight only then; a seven-minute grid gets whole-minute steps, so the browser never blocks a slot the server accepts. (Fix from Astra's review of ad0173f: 00:07 on a seven-minute grid was blocked.)
+- A webhook call or a Run button run whose event key already started a run gets that run with `duplicate: true` before its payload is checked again. Without this, replaying an accepted event after its resource was archived, or after its time had passed, answered 400 although the event had been taken. A new key still gets every check. (Same review.)
 
 ## Consequences
 
 - No new dependency. Zone data is whatever the Node and browser ICU carry, so a zone created after the runtime was built is refused until Node is updated.
 - A customer who picks 01:30 on a fall-back night gets a refusal they cannot fix from a datetime-local input; they pick another time. Webhooks and MCP can send the offset.
 - Payloads are parsed only where they come in. A stored datetime is never checked again, so a run that waits past the appointment still runs.
+- The replay lookup reads the key from the raw body. An `eventKey` template on a declared field whose stored form differs (trimmed text, a datetime, a resource) matches only after the checks, so such a replay can still get a 400. MCP checks its arguments before Daloy sees them, so an MCP retry with the same `idempotencyKey` after a resource was archived or a time passed gets an error, not the first run. Builder test runs are checked again too, by design.
 - The visual builder has no handle for a `late` edge. It can be set through the API, MCP or Build with AI; the delay's help text in the editor explains what happens without one.
 - Resource kinds (therapists versus rooms), opening hours, lead times and conflicts are P6b or later. A form's resource field lists every active resource of the workspace.
 - Migration 0018 adds one table and changes nothing else. All 64 versions in the development database still parse.

@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { api } from "./api";
 
 export type Resource = { id: string; name: string; active: boolean; createdAt: string };
@@ -11,7 +11,15 @@ export function ResourcesPage() {
   const [list, setList] = useState<Resource[] | null>(null);
   const [name, setName] = useState("");
   const [error, setError] = useState("");
-  const load = () => api<Resource[]>("GET", "/resources").then(setList, (e: Error) => setError(e.message));
+  // Only the newest list request may set the list, so a slow first load cannot hide a resource added after it.
+  const latest = useRef(0);
+  const load = () => {
+    const n = ++latest.current;
+    return api<Resource[]>("GET", "/resources").then(
+      (rows) => n === latest.current && setList(rows),
+      (e: Error) => setError(e.message),
+    );
+  };
   useEffect(() => {
     load();
   }, []);

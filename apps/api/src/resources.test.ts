@@ -6,7 +6,7 @@ import { eq } from "drizzle-orm";
 import type { Pool } from "pg";
 import { PgBoss } from "pg-boss";
 import request from "supertest";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { freshDatabase } from "../../../test/db";
 import { createApp } from "./app";
 import { sha256 } from "./http";
@@ -184,6 +184,47 @@ describe("resource and datetime fields at every entry point", () => {
     await submit({ therapist: ana.id, at: `${year}-01-20T14:00` }).expect(200);
     const rows = await db.select().from(runs);
     expect(rows.map((r) => r.triggerPayload)).toContainEqual({ therapist: { id: ana.id, name: "Ana <3" }, at: `${year}-01-20T14:00:00+08:00` });
+  });
+
+  it("answers a replayed event with its first run even when the payload would now be refused", async () => {
+    const agent = await owner();
+    const ana = await add(agent, "Ana");
+    // On the hour one to two hours ahead; the clock then moves three hours on, so that time has passed.
+    const soon = new Date(Math.ceil((Date.now() + 3_600_000) / 3_600_000) * 3_600_000).toISOString();
+    const byHeader = await published(agent, { type: "webhook", config: { fields } });
+    const byTemplate = await published(agent, { type: "webhook", config: { fields, eventKey: "{{trigger.event_id}}" } });
+    const hook = (wf: { trigger: { webhookPath: string } }, body: object, key?: string) => {
+      const req = request(server).post(`/hooks/${wf.trigger.webhookPath}`);
+      return (key ? req.set("Idempotency-Key", key) : req).send(body);
+    };
+    const event = (id: string, at: string) => ({ event_id: id, therapist: ana.id, at });
+
+    const first = await hook(byHeader, { therapist: ana.id, at: `${year}-01-20T14:00` }, "evt-1").expect(202);
+    const second = await hook(byTemplate, event("evt-2", soon)).expect(202);
+    // The Run button replays a webhook trigger's eventKey the same way.
+    const viaButton = await agent.post(`/workflows/${byTemplate.id}/runs`).send({ payload: event("evt-3", soon) }).expect(202);
+    await agent.patch(`/resources/${ana.id}`).send({ active: false }).expect(200);
+    vi.useFakeTimers({ toFake: ["Date"], now: Date.now() + 3 * 3_600_000 });
+    try {
+      expect((await hook(byHeader, { therapist: ana.id, at: `${year}-01-20T14:00` }, "evt-1").expect(202)).body).toEqual({ runId: first.body.runId, duplicate: true });
+      expect((await hook(byTemplate, event("evt-2", soon)).expect(202)).body).toEqual({ runId: second.body.runId, duplicate: true });
+      expect((await agent.post(`/workflows/${byTemplate.id}/runs`).send({ payload: event("evt-3", soon) }).expect(202)).body).toEqual({ id: viaButton.body.id, duplicate: true });
+
+      // A new key still gets the checks: the resource is archived and the time has passed.
+      expect((await hook(byHeader, { therapist: ana.id, at: `${year}-01-20T14:00` }, "evt-4").expect(400)).body.message).toEqual(["therapist: must be one of this workspace's resources"]);
+      expect((await hook(byTemplate, event("evt-5", soon)).expect(400)).body.message).toContain("at: must be in the future");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("gives the form's time input a browser step only when the slot divides the day, so every server slot can be sent", async () => {
+    const agent = await owner();
+    const slots = [7, 45, 60, 90, 1440];
+    const wf = await published(agent, { type: "form", config: { fields: slots.map((slotMinutes) => ({ name: `at_${slotMinutes}`, label: `At ${slotMinutes}`, type: "datetime", timezone: "Asia/Manila", slotMinutes })) } });
+    const page = (await request(server).get(`/forms/${wf.trigger.id}`).expect(200)).text;
+    const steps = Object.fromEntries([...page.matchAll(/id="(at_[0-9]+)"[^>]* step="([0-9]+)"/g)].map((m) => [m[1], m[2]]));
+    expect(slots.map((s) => steps[`at_${s}`])).toEqual(["60", "2700", "3600", "5400", "86400"]);
   });
 
   it("keeps the name a run started with after the resource is renamed or archived", async () => {
