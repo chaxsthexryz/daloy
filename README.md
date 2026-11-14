@@ -146,6 +146,7 @@ pnpm test        # vitest, all packages. Uses DATABASE_URL if set, otherwise sta
 pnpm typecheck
 pnpm lint
 pnpm e2e         # Playwright: builds the console, starts Postgres, the API and the worker, then runs the browser tests in Chromium
+pnpm vitest run apps/api/src/scenarios.test.ts   # the eight QA scenarios: what holds today and each known gap
 pnpm reliability:chaos   # 200 runs, the worker killed with SIGKILL ten times
 K6=/path/to/k6 pnpm reliability:load   # 1,000 runs started by k6 through the webhook API
 ```
