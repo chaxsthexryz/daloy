@@ -18,6 +18,8 @@ import {
   readConnections,
   removeConnection,
   retryDelivery,
+  BOOKING_CHANGED,
+  deliveryBookingMoved,
   saveConnection,
   serviceAccountSchema,
   setDestination,
@@ -304,7 +306,9 @@ export class DeliveriesController {
   @HttpCode(204)
   @UseGuards(RateLimit(30))
   async retry(@CurrentUser() user: SessionUser, @Param("id", uuid) id: string, @Body(new ZodPipe(retryInput)) body: z.output<typeof retryInput>) {
-    if (!(await retryDelivery(this.db, user.workspaceId, id, body))) await this.conflict(user.workspaceId, id);
+    if (await retryDelivery(this.db, user.workspaceId, id, body)) return;
+    if (await deliveryBookingMoved(this.db, user.workspaceId, id)) throw new ConflictException(BOOKING_CHANGED);
+    await this.conflict(user.workspaceId, id);
   }
 
   @Post(":id/confirm")

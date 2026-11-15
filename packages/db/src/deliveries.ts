@@ -4,7 +4,8 @@ import { and, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { connectionCredential, markConnectionFailed, PROVIDER_NAMES, rotateInto } from "./connections";
 import type { Db } from "./index";
 import { appendRowOnce, deleteSheetMarker, outlookSend, ProviderError, serviceAccountSchema, slackPost, teamsPost, type OutlookMessage, type ProviderUrls, type SheetDestination } from "./providers";
-import { connections, deliveries, type Provider } from "./schema";
+import { bookingSuperseded, supersededSql } from "./bookings";
+import { connections, deliveries, runs, type Provider } from "./schema";
 
 /**
  * Sheets rows, Slack and Teams notes and Outlook emails, delivered by the worker apart from the run that asked for them
@@ -25,6 +26,12 @@ export type DeliveryPayload = Delivery["payload"];
 export const DELIVERY_POLICY: RetryPolicy = { maxAttempts: 5, baseDelayMs: 2000, maxDelayMs: 10 * 60_000 };
 /** A delivery still "sending" after this long belongs to a worker that died mid-call. Well above a call's timeouts. */
 const STALE_SENDING = "2 minutes";
+
+/** Why a delivery of a run whose booking moved on was not sent, shown in the Requests list. */
+export const BOOKING_CHANGED = "The booking was rescheduled or cancelled, so this was not sent.";
+
+/** A delivery of a run whose booking moved on: Retry and Post again leave it alone. */
+const bookingMoved = sql`exists (select 1 from ${runs} where ${runs.id} = ${deliveries.runId} and ${supersededSql})`;
 
 /** A short random marker value for a Sheets write; with the id it tells our marker from anyone else's. */
 const markerValue = () => randomBytes(6).toString("base64url");
@@ -101,22 +108,37 @@ async function attempt(db: Db, key: Buffer, urls: ProviderUrls, d: Delivery): Pr
       error: `The ${name} connection changed since this was queued (it was for ${describe(d.provider, d.pinnedDestination ?? {})}, now ${describe(d.provider, conn.destination)}). Nothing was sent to the new one. Choose Post again to send it there, or Mark as posted.`,
     };
   }
-  try {
+  // Slack, Teams and Outlook have no read access to check with, so after a call that may have arrived a person decides.
+  if (d.checkFirst && d.provider !== "google_sheets") {
+    return { state: "needs_review", error: `${name} may have ${d.provider === "outlook" ? "sent" : "posted"} this before the connection dropped. ${reviewHint(d.provider, conn.destination)}` };
+  }
+  const destination = conn.destination;
+  const send = async (): Promise<Outcome> => {
     if (d.provider === "google_sheets") {
       const sa = serviceAccountSchema.parse(JSON.parse(conn.credential));
       // Retrying the same marked write is safe: Google adds the row at most once (decision 0021).
       const out = await appendRowOnce(urls, sa, conn.destination as SheetDestination, (d.payload as { row: string[] }).row, { id: d.sheetMetaId!, value: d.sheetMetaValue! });
       return { state: "delivered", result: out.reconciled ? { sheet: out.sheet, reconciled: true } : { sheet: out.sheet } };
     }
-    // Slack, Teams and Outlook have no read access to check with, so after a call that may have arrived a person decides.
-    if (d.checkFirst) return { state: "needs_review", error: `${name} may have ${d.provider === "outlook" ? "sent" : "posted"} this before the connection dropped. ${reviewHint(d.provider, conn.destination)}` };
     if (d.provider === "outlook") {
       const save = rotateInto(db, key, d.userId, "outlook", conn);
       return { state: "delivered", result: await outlookSend(urls, conn.credential, save, d.payload as OutlookMessage) };
     }
     const text = (d.payload as { text: string }).text;
     if (d.provider === "teams") return { state: "delivered", result: await teamsPost(urls, conn.credential, text) };
-    return { state: "delivered", result: await slackPost(urls, conn.credential, conn.destination.channelId!, text) };
+    return { state: "delivered", result: await slackPost(urls, conn.credential, destination.channelId!, text) };
+  };
+  try {
+    // The run's booking link as it is now (its own booking step may have moved it), checked under a share lock held
+    // until the provider answers: a cancel or reschedule either committed before this check (nothing is sent) or waits
+    // for the call to return (decision 0032).
+    return await db.transaction(async (tx) => {
+      const [run] = await tx.select({ bookingId: runs.bookingId, bookingVersion: runs.bookingVersion }).from(runs).where(eq(runs.id, d.runId));
+      if (run && (await bookingSuperseded(tx, run, true))) {
+        return { state: "failed", error: d.checkFirst ? `${BOOKING_CHANGED} An earlier attempt may have reached ${name}.` : BOOKING_CHANGED } as const;
+      }
+      return send();
+    });
   } catch (err) {
     const e = err instanceof ProviderError ? err : new ProviderError(err instanceof Error ? err.message : String(err), "unavailable");
     switch (e.kind) {
@@ -221,9 +243,15 @@ export async function retryDelivery(db: Db, userId: string, id: string, { postAg
         : {}),
       updatedAt: sql`now()`,
     })
-    .where(and(eq(deliveries.id, id), eq(deliveries.userId, userId), from))
+    .where(and(eq(deliveries.id, id), eq(deliveries.userId, userId), from, sql`not ${bookingMoved}`))
     .returning({ id: deliveries.id });
   return done.length === 1;
+}
+
+/** For a refused Retry or Post again: whether the delivery's run belongs to a booking that moved on. */
+export async function deliveryBookingMoved(db: Db, userId: string, id: string): Promise<boolean> {
+  const [row] = await db.select({ moved: bookingMoved }).from(deliveries).where(and(eq(deliveries.id, id), eq(deliveries.userId, userId)));
+  return row?.moved === true;
 }
 
 /** Mark as posted: the operator found the message, so the delivery counts as done without sending it again. */

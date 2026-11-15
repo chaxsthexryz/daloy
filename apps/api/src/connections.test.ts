@@ -1,8 +1,8 @@
 import { generateKeyPairSync, randomBytes, randomUUID } from "node:crypto";
-import { connections, deliveries, queueDelivery, requests, runs, users, workflowVersions, type Db } from "@daloy/db";
+import { BOOKING_CHANGED, bookings, connections, deliveries, queueDelivery, requests, resources, runs, users, workflowVersions, type Db } from "@daloy/db";
 import { defaultAnswers, officeRequestDefinition } from "@daloy/engine";
 import type { INestApplication } from "@nestjs/common";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import type { Pool } from "pg";
 import { PgBoss } from "pg-boss";
 import request from "supertest";
@@ -153,6 +153,18 @@ describe("turning on and retrying", () => {
     expect((await db.select().from(deliveries).where(eq(deliveries.id, d.id)))[0]!.state).toBe("queued");
     await agent.get(`/deliveries?runId=${run!.id}`).expect(200);
     await other.agent.get(`/deliveries?runId=${run!.id}`).expect(200).expect([]);
+
+    // Once the run's booking moved on (decision 0032), Retry is refused and says why.
+    const [res] = await db.insert(resources).values({ userId, name: `Chair ${seq}` }).returning();
+    const [b] = await db
+      .insert(bookings)
+      .values({ userId, test: false, reference: `B-T${seq}`, resourceId: res!.id, during: sql`tstzrange(now(), now() + interval '1 hour')` as unknown as string, timezone: "Asia/Manila", version: 2 })
+      .returning();
+    await db.update(runs).set({ bookingId: b!.id, bookingVersion: 1 }).where(eq(runs.id, run!.id));
+    await db.update(deliveries).set({ state: "failed" }).where(eq(deliveries.id, d.id));
+    const refused = await agent.post(`/deliveries/${d.id}/retry`).send({ postAgain: true }).expect(409);
+    expect(refused.body.message).toBe(BOOKING_CHANGED);
+    await other.agent.post(`/deliveries/${d.id}/retry`).send({}).expect(404);
   });
 
   it("answers 404 for an unknown delivery and 400 for a malformed id", async () => {
