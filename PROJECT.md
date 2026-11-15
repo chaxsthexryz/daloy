@@ -175,6 +175,24 @@ Also open:
 - Secret values deleted before `retired_secrets` existed are unknown to read-time redaction.
 - A Teams Workflows link replaced under the same channel name is not seen as a destination change.
 
+## Next phases (proposed, 15 November 2026)
+
+Decided after a second opinion on the post-P7 roadmap (`post-p7-roadmap.md`, outside the repo). No controlled pilot and no beta testers: the first outside users arrive when Daloy is published (phase N6), so the release checks come before that. External beta stays on hold until N6. Live AI requests are deferred until DeepSeek through OpenRouter is set up; real-model generation and repair quality stay unverified. One commit per phase, plan first, resume at the first unticked phase.
+
+Evidence this order rests on. Passed: a cancel or reschedule while a reminder waits stops the old run before it sends (`apps/api/src/bookings.test.ts` "cancels once" and "reschedules into one new run", `apps/worker/src/worker.test.ts` "stops after a wait"); a change that commits before an email's send claim refuses the send (`worker.test.ts` "refuses an unsafe send"; the version is read under a share lock in `apps/worker/src/advance.ts`, decision 0032). Not covered: Sheets, Slack, Outlook and Teams sends are queued deliveries, and `packages/db/src/deliveries.ts` never reads the booking, so a delivery retried or posted again after a cancellation still goes out. Accepted window: a cancellation that arrives while an email is being handed to SMTP waits for the send, so that one email goes. Every provider is tested against fakes only (the docs/live-*-check.md files are not run). Daloy stops a reminder only for changes made in Daloy.
+
+- [ ] N1. Baseline: confirm the current commit against 0d7fd09, list open blockers with an exit condition each, and record the provider test accounts to use. Documentation only.
+- [ ] N2. Live provider checks, one at a time, on a disposable stack with dedicated test accounts (the only phase that calls real providers):
+  - [ ] N2a. Gmail, by [docs/live-gmail-check.md](docs/live-gmail-check.md), plus a booking check: three bookings with a reminder that wakes within minutes; leave one, cancel one, reschedule one from the Bookings page. Expected in the Sent folder: four confirmations and exactly two reminders, none for the cancelled booking. Then revoke the app password and check the next reminder fails with "Gmail rejected the app password" and nothing goes from another address. A reminder to the cancelled guest, or Sent disagreeing with run history, stops the phase.
+  - [ ] N2b. Booking check for queued deliveries (code, tests first): a Sheets, Slack, Outlook or Teams delivery linked to a run whose booking changed is not sent, including Retry and Post again.
+  - [ ] N2c. Google Sheets, by [docs/live-sheets-slack-check.md](docs/live-sheets-slack-check.md), including developer metadata markers and duplicate refusal.
+  - [ ] N2d. Slack, by the same document.
+  - [ ] N2e. Outlook and Teams, by [docs/live-microsoft-check.md](docs/live-microsoft-check.md), only if a free Microsoft account and Microsoft 365 developer sandbox are available. Otherwise both stay marked unverified in the README.
+- [ ] N3. Independent retest and release readiness: Astra retests the booking, email and verified delivery paths at one commit (a6d7636 included, which has no retest of its own recorded). A deployment with backups and one tested restore, a way to stop all sends (turn workflows off and drain the worker) tried once, monitoring of failed and needs_review runs, and an upgrade from the previous migration tested.
+- [ ] N4. AI Workflow Doctor: explain failures first from run records, provider errors and lint results with fixed rules, no model needed. Suggested fixes and applying them with approval come after live AI is set up (G1 in the roadmap). Approving a fix never approves a run.
+- [ ] N5. Browser Automation: a separate isolated worker with typed, restricted operations, read-only navigation and extraction first (B1 in the roadmap). Authenticated actions and AI-proposed actions only after their own gates.
+- [ ] N6. Publish on the web: first a demo copy with Mailpit and no real sending, then real accounts only after a final security review that covers N4 and N5.
+
 ## Done when
 
 - The k6 and chaos tests pass and docs/reliability.md holds their output.
