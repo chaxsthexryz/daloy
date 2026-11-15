@@ -90,3 +90,19 @@ export const qa01NoInvalidEdge = {
   steps: [condition("gate", "{{trigger.budget}}", "gte", 30_000), email("urgent", "sales@example.com", "Urgent lead"), email("standard", "sales@example.com", "New lead")],
   edges: [edge("gate", "urgent", "true"), edge("gate", "standard", "false")],
 };
+
+/**
+ * The shape of the QA-01 v1 draft: a `dry_run` switch in the form and a branch that sends the urgent mail for real,
+ * and a classify step with three labels of which only one is routed (P7 lint, decision 0033).
+ */
+export const qa01DryRun = {
+  trigger: { type: "form", config: { fields: [{ name: "dry_run", label: "Dry run", type: "text" }, { name: "details", label: "Details", type: "textarea", required: true }] } },
+  steps: [
+    condition("is_dry", "{{trigger.dry_run}}", "eq", "true"),
+    { id: "classify", type: "ai", config: { task: "classify", input: "{{trigger.details}}", labels: { standard: "normal", urgent: "urgent", manual_review: "unclear" } } },
+    condition("route", "{{steps.classify.output.label}}", "eq", "urgent"),
+    email("urgent", "sales@example.com", "Urgent lead"),
+    email("dry", "sales@example.com", "Dry run"),
+  ],
+  edges: [edge("is_dry", "dry", "true"), edge("is_dry", "classify", "false"), edge("classify", "route"), edge("route", "urgent", "true")],
+};

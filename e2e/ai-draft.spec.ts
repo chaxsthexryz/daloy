@@ -23,3 +23,19 @@ test("describe a workflow, get an unpublished draft, then ask the AI to change i
   await expect(page.locator(".react-flow__node")).toHaveCount(3);
   await expect(page.getByRole("button", { name: "wait_a_day" }).first()).toBeVisible();
 });
+
+// The draft is valid but its approval ends the run in silence on reject and timeout, so the editor lists both.
+test("the editor warns about an approval with no rejected or timeout branch", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Create an account instead" }).click();
+  await page.getByLabel("Email").fill(`ai-lint-${Date.now()}@test.local`);
+  await page.getByLabel("Password").fill("e2e test password 1");
+  await page.getByRole("button", { name: "Create account" }).click();
+
+  await page.getByLabel("Describe the workflow in your own words").fill("Ask my boss approval, then thank the sender.");
+  await page.getByRole("button", { name: "Build draft" }).click();
+
+  const checks = page.getByRole("region", { name: "Check before publishing" });
+  await expect(checks).toContainText('Approval step "ask" has no "rejected" edge');
+  await expect(checks).toContainText('Approval step "ask" has no "timeout" edge');
+});

@@ -1,4 +1,4 @@
-import type { FormField, Step, Trigger } from "@daloy/engine";
+import { definitionSchema, lintDefinition, type FormField, type Step, type Trigger } from "@daloy/engine";
 import { Background, Controls, Handle, Position, ReactFlow, type Node, type NodeChange, type NodeProps } from "@xyflow/react";
 import { useEffect, useId, useMemo, useState } from "react";
 import { AskAi } from "./AiDraft";
@@ -121,6 +121,11 @@ export function Editor({ id }: { id: string }) {
     setDirty(true);
   };
   const flow = useMemo(() => toFlow(draft, selected), [draft, selected]);
+  // Advice only (decision 0033): a draft that does not parse yet is a work in progress, so it gets no checks.
+  const warnings = useMemo(() => {
+    const parsed = definitionSchema.safeParse(draft);
+    return parsed.success ? lintDefinition(parsed.data) : [];
+  }, [draft]);
   const nodes = flow.nodes.map((n) => (measured[n.id] ? { ...n, measured: measured[n.id] } : n));
 
   const onNodesChange = (changes: NodeChange[]) => {
@@ -229,6 +234,16 @@ export function Editor({ id }: { id: string }) {
             <p role={message.kind === "error" ? "alert" : "status"} className={`message ${message.kind}`}>
               {message.text}
             </p>
+          )}
+          {warnings.length > 0 && (
+            <section aria-labelledby="checks-heading">
+              <h2 id="checks-heading">Check before publishing</h2>
+              <ul>
+                {warnings.map((w) => (
+                  <li key={w}>{w}</li>
+                ))}
+              </ul>
+            </section>
           )}
           <AskAi
             workflowId={id}

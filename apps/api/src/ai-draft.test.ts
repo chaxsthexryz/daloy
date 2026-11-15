@@ -91,6 +91,48 @@ it("gives up after the second invalid draft and says why", async () => {
   expect(body.errors).toEqual(["The reply was not a JSON object."]);
 });
 
+// Valid for the schema, but the approval has no rejected or timeout edge (decision 0033).
+const warnedDefinition = {
+  trigger: { type: "manual", config: {} },
+  steps: [
+    { id: "ask", type: "approval", config: { approver: "boss@example.com", subject: "Approve?", message: "Please decide.", timeoutSeconds: 3600 } },
+    { id: "done", type: "email", config: { to: "a@example.com", subject: "Approved", text: "ok" } },
+  ],
+  edges: [{ from: "ask", to: "done", on: "approved" }],
+};
+const warned = JSON.stringify({ name: "Approval", summary: "Asks the boss.", definition: warnedDefinition });
+
+it("a clean draft makes one model call and carries no warnings", async () => {
+  replies = [valid];
+  const { body } = await (await signedIn()).post("/ai/draft").send({ request: "contact form flow" }).expect(200);
+  expect(body.warnings).toEqual([]);
+  expect(asked).toHaveLength(1);
+});
+
+it("sends lint warnings back once and keeps the fixed draft", async () => {
+  replies = [warned, valid];
+  const { body } = await (await signedIn()).post("/ai/draft").send({ request: "ask the boss" }).expect(200);
+  expect(body.name).toBe("Contact form triage");
+  expect(body.warnings).toEqual([]);
+  expect(asked).toHaveLength(2);
+  expect(asked[1]!.messages.at(-2)).toMatchObject({ role: "assistant", content: warned });
+  expect(asked[1]!.messages.at(-1)!.content).toMatch(/"ask" has no "rejected" edge/);
+});
+
+it("returns the warnings that remain after the second try instead of failing", async () => {
+  replies = [warned, warned];
+  const { body } = await (await signedIn()).post("/ai/draft").send({ request: "ask the boss" }).expect(200);
+  expect(asked).toHaveLength(2);
+  expect(body.warnings).toHaveLength(2);
+});
+
+it("keeps the first valid draft when the repair reply is broken", async () => {
+  replies = [warned, "not json at all"];
+  const { body } = await (await signedIn()).post("/ai/draft").send({ request: "ask the boss" }).expect(200);
+  expect(body.name).toBe("Approval");
+  expect(body.warnings).toHaveLength(2);
+});
+
 it("changes the current draft when one is sent", async () => {
   replies = [valid];
   const current = TEMPLATES[1]!.definition;
