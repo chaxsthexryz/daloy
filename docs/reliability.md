@@ -86,3 +86,4 @@ What the numbers say: six keys reached the receiver twice. Each time the worker 
 - One machine, one worker process, everything on loopback. The numbers show correctness under load and crashes, and rough speed. They are not a capacity figure.
 - The receiver answers at once. A slow external API holds up the other jobs in the worker's batch (decision 0014).
 - Neither test kills Postgres or the API.
+- Backup, restore and stopping all sends are covered by `docs/operations.md`, not by these tests.
