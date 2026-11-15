@@ -13,6 +13,15 @@ const changed = {
   definition: { trigger: form, steps: [{ id: "wait_a_day", type: "delay", config: { seconds: 86400 } }, thank], edges: [{ from: "wait_a_day", to: "thank" }] },
 };
 
+// A request that mentions "boss approval" gets a draft whose approval has no rejected or timeout edge, so the lint
+// warnings (decision 0033) reach the editor. The fake repeats it when asked to repair it.
+const approvalAsk = { id: "ask", type: "approval", config: { approver: "boss@example.com", subject: "Approve?", message: "Please decide.", timeoutSeconds: 3600 } };
+const warned = {
+  name: "Boss approval",
+  summary: "Asks the boss to approve.",
+  definition: { trigger: form, steps: [approvalAsk, thank], edges: [{ from: "ask", to: "thank", on: "approved" }] },
+};
+
 export function startLlmFake(port: number) {
   const server = createServer((req, res) => {
     let raw = "";
@@ -24,7 +33,8 @@ export function startLlmFake(port: number) {
       if (req.method !== "POST") return res.writeHead(404).end("{}");
       const body = JSON.parse(raw) as { messages: { content: string }[] };
       const change = body.messages.some((m) => m.content.startsWith("Change this workflow"));
-      res.end(JSON.stringify({ message: { content: JSON.stringify(change ? changed : built) }, prompt_eval_count: 1, eval_count: 1 }));
+      const reply = body.messages.some((m) => m.content.includes("boss approval")) ? warned : change ? changed : built;
+      res.end(JSON.stringify({ message: { content: JSON.stringify(reply) }, prompt_eval_count: 1, eval_count: 1 }));
     });
   });
   server.listen(port, "127.0.0.1");

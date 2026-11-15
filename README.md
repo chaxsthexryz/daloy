@@ -137,6 +137,8 @@ Tick them in the template's "Where approved requests go" step. Each email and no
 4. Change it by chatting in **Ask the AI**, for example "wait one hour before the thank-you email" or "also send me a one-line summary of each message". The canvas updates after each answer.
 5. Check each step, press **Test run draft** (outside calls are mocked), then **Publish**.
 
+The editor lists warnings under "Check before publishing" for things that are valid but probably wrong, such as an approval with no rejected or timeout branch, a classify label that leads nowhere, a `dry_run` switch or a number check with no invalid branch. Build with AI asks the model to fix them once. They are advice: Save and Publish still work.
+
 The AI only drafts. Nothing runs until you publish, and an invalid draft is refused with the reasons. Small local models get this wrong more often than Gemini or a larger model.
 
 ## Running tests
@@ -176,6 +178,7 @@ CI also runs Semgrep, gitleaks and `pnpm audit` on every push.
 - Anyone who has an unused approval link can approve or reject. The email is the only check on who clicks.
 - An approval timeout is picked up by the worker's 15-second sweep, so it can fire up to 15 seconds late.
 - Every AI step of a user's workflows uses the one model picked on the AI model page; there is no per-step model.
+- Draft warnings come from fixed rules and can be wrong (a form field really named `test` is flagged). Only the editor and Build with AI show them; the save API and MCP do not.
 - The hosted providers (Gemini, OpenAI, OpenRouter) are tested against mocked replies only. The first live call is the owner's own Test with their key.
 - The local choice uses whatever the operator set in `LLM_PROVIDER` and `LLM_BASE_URL`; users cannot enter their own server address.
 - Run history masks fields by key name. A field called `max_tokens` shows as `[secret]`, and a secret sent in trigger data under an ordinary key name stays visible to the workflow owner.

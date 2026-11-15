@@ -10,7 +10,7 @@ import { PgBoss } from "pg-boss";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { freshDatabase } from "../../../test/db";
-import { qa01, qa01NoInvalidEdge, qa01Unchecked } from "../../../test/scenarios/qa-01-sales-leads";
+import { qa01, qa01DryRun, qa01NoInvalidEdge, qa01Unchecked } from "../../../test/scenarios/qa-01-sales-leads";
 import { ANA, appointment, dayBeforeReminder, desired, hourDelay, qa02 } from "../../../test/scenarios/qa-02-spa-appointments";
 import { qa03 } from "../../../test/scenarios/qa-03-cafe-promotions";
 import { qa04 } from "../../../test/scenarios/qa-04-refunds";
@@ -278,8 +278,21 @@ describe("QA-01 sales lead prioritization", () => {
   it("Build with AI is told that test runs mock outside calls, so it adds no dry-run branches", () => {
     expect(engine.draftPrompt({ request: "x" }).system).toMatch(/never add dry-run/i);
   });
-  it("drafts are linted for dry-run branches and unrouted outcomes [gap P7: the engine has no lintDefinition]", () => {
-    expect("lintDefinition" in engine).toBe(false);
+  it("drafts are linted for dry-run branches and unrouted outcomes", () => {
+    const warnings = engine.lintDefinition(engine.definitionSchema.parse(qa01DryRun));
+    expect(warnings).toEqual([
+      expect.stringContaining('Classify label "standard" of "classify" reaches condition "route" and takes its "false" branch, which has no edge'),
+      expect.stringContaining('Classify label "manual_review" of "classify" reaches condition "route"'),
+      expect.stringContaining('"dry_run" looks like a switch for testing'),
+    ]);
+  });
+  it("the fixtures lint clean, except the saved QA-06 and QA-07 drafts, whose approval has no rejected or timeout edge", () => {
+    for (const s of [qa01, qa01Unchecked, qa02, qa03, qa04, qa05, qa06, qa07, qa08]) {
+      const warnings = engine.lintDefinition(engine.definitionSchema.parse(s.definition));
+      expect(warnings, s.name).toEqual(
+        s === qa06 || s === qa07 ? [expect.stringContaining('Approval step "ask" has no "rejected" edge'), expect.stringContaining('Approval step "ask" has no "timeout" edge')] : [],
+      );
+    }
   });
 });
 

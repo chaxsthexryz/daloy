@@ -1,6 +1,6 @@
 # Retest handoff: eight-workflow acceptance harness
 
-For Astra. P1 added the harness. P2 added field limits at every entry point and the condition `invalid` branch. P3 added test-run modes and chosen outcomes (migration 0014). P4 added business event keys (migration 0015). P5 added safe retries and review (migration 0017). P6a added zoned times, delays until a time and workspace resources (migration 0018). P6b added bookings (migration 0019). External beta stays on hold.
+For Astra. P1 added the harness. P2 added field limits at every entry point and the condition `invalid` branch. P3 added test-run modes and chosen outcomes (migration 0014). P4 added business event keys (migration 0015). P5 added safe retries and review (migration 0017). P6a added zoned times, delays until a time and workspace resources (migration 0018). P6b added bookings (migration 0019). P7 added draft lint warnings (no migration) and closed the last gap. External beta stays on hold until the real-provider checks are done.
 
 ## Run
 
@@ -13,10 +13,18 @@ It needs no Docker and no network. It starts an embedded Postgres, creates a thr
 
 ## What to check
 
-- 125 tests pass: 9 fixture checks, 1 setup step, 115 acceptance cases.
-- 10 cases carry `[gap <phase>: <reason>]`: P6a 6, P6b 3, P7 1. Each one asserts the current wrong behaviour.
-- Change one gap's `today` outcome in `test/scenarios/qa-0*.ts` and confirm that test fails. Rename a step id in one edge of a fixture and confirm the fixture check fails rather than a gap passing.
+- 129 tests pass: 9 fixture checks, 1 setup step, 119 acceptance cases. No case carries `[gap <phase>: <reason>]` any more.
+- Rename a step id in one edge of a fixture and confirm the fixture check fails. Add a `gap` to a case with the current outcome as `today` and confirm the case still passes only while that outcome is observed.
 - Compare the fixtures with the saved QA-01 to QA-08 drafts in the demo workspace. They are hand-written copies of the v2 shape; report anything that changes a branch or a threshold.
+
+## P7 checks (draft lint)
+
+- `pnpm vitest run packages/engine/src/lint.test.ts` passes 16 tests: each of the five rules fails and passes once, and every template and guided setup lints clean.
+- `lintDefinition` on the QA-01 v1 shape (a `dry_run` field and branch, a classify label with no route) returns three warnings. QA-06 and QA-07 as saved return two each (approval without rejected or timeout); every other fixture returns none.
+- With a fake model that returns a warned draft twice, `POST /ai/draft` answers 200 after two model calls and carries `warnings`. With a broken second reply it keeps the first valid draft. With a clean first draft it makes one call and returns `warnings: []`.
+- In the console, open a draft whose approval has only an `approved` edge: the side panel shows "Check before publishing" with two lines, and Save and Publish still work.
+- Check for false positives: a form field named `test` is flagged. The walk for classify labels follows only conditions on the label itself, so a label sent through another condition first is not checked.
+- Not covered: the save API and MCP return no warnings, and real-model behaviour of the repair round (the harness uses a fake). No migration, no new dependency.
 
 ## Known findings recorded by the harness
 
