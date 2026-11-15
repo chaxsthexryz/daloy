@@ -23,7 +23,7 @@ It needs no Docker and no network. It starts an embedded Postgres, creates a thr
 - `lintDefinition` on the QA-01 v1 shape (a `dry_run` field and branch, a classify label with no route) returns three warnings. QA-06 and QA-07 as saved return two each (approval without rejected or timeout); every other fixture returns none.
 - With a fake model that returns a warned draft twice, `POST /ai/draft` answers 200 after two model calls and carries `warnings`. With a broken second reply it keeps the first valid draft. With a clean first draft it makes one call and returns `warnings: []`.
 - In the console, open a draft whose approval has only an `approved` edge: the side panel shows "Check before publishing" with two lines, and Save and Publish still work.
-- Check for false positives: a form field named `test` is flagged. The walk for classify labels follows only conditions on the label itself, so a label sent through another condition first is not checked.
+- Check for false positives: a form field named `test` is flagged. The walk for classify labels follows only conditions that compare the label (either side) with a fixed value, so a label sent through another condition first, or compared with `{{trigger.x}}`, is not checked.
 - Not covered: the save API and MCP return no warnings, and real-model behaviour of the repair round (the harness uses a fake). No migration, no new dependency.
 
 ## Known findings recorded by the harness
