@@ -416,6 +416,16 @@ Edge cases: the Postgres init script only runs when the volume is created, so an
 
 Tests: `apps/worker/src/app-role.test.ts` applies the SQL to an embedded Postgres and checks, as `daloy_app`, that inserts, updates and deletes work, that CREATE, DROP, ALTER and TRUNCATE are refused (in `public` and `pgboss`), and that a worker with pg-boss runs a workflow to the end.
 
+## Operations (docs/operations.md, apps/api/src/upgrade.test.ts)
+
+What it does: `docs/operations.md` is the runbook for the Compose stack: a `pg_dump` backup, a restore onto a new volume, stopping all sends by stopping the worker, upgrades, and a daily check for `failed` and `needs_review` runs.
+
+Why this way: the worker is the only process that sends for workflows, and pg-boss keeps jobs in Postgres, so stopping it holds every run as `pending` without losing any. The backup is one dump of the whole database, so the queue and the migration history come back with the data. Monitoring reuses the Runs page and one read-only SQL query instead of a new alert service.
+
+Edge cases: a restore needs the same `SECRETS_KEY` to decrypt saved secrets and a new volume so the `daloy_app` role exists. The "Needs review" filter does not list failed runs, so the runbook checks both. Starting the worker again sends the whole backlog, and there is no switch for one workflow.
+
+Tests: `apps/api/src/upgrade.test.ts` upgrades databases holding data from 0008 to 0009 and from 0018 to the newest migration, 0019, then reads the old rows through the API and checks the booking overlap rule. The backup, restore, stop sends and monitoring drills are recorded in `docs/operations.md`.
+
 ## Reliability tests (apps/worker/reliability)
 
 What it does: two scripts start an embedded Postgres, a test receiver and real worker processes. The load test (`pnpm reliability:load`) also starts the API and has k6 send 1,000 webhook calls. The chaos test (`pnpm reliability:chaos`) creates 200 runs and kills the worker with SIGKILL ten times while it works, starting a new one after each kill. Both use a five-step workflow: HTTP call, condition, HTTP call, one-second delay, HTTP call. The HTTP steps are POSTs marked `idempotent: true`, because the receiver deduplicates by key; without the flag a kill mid-POST would park the run for review (decision 0030). Results are in [reliability.md](reliability.md).

@@ -60,6 +60,8 @@ Record only what is needed. No credentials go in this repo, in this file or in c
 | N3-11 | Production database failover and client reconnection during an approval decision are untested | Gate | `docs/retest-security-fec03cc.md` "Not covered" | Tried once on the disposable stack, or accepted for the demo copy |
 | N3-12 | CI only builds the compose images; it does not start the stack. The reliability numbers come from one laptop with one worker. | Limit | README limitations | Kept listed; the N3 deployment check is the first start of the real stack outside a laptop |
 
+Progress after N1, local and provider free: N3-3 is partly met. Backup, one restore, stopping all sends and a check for failed and `needs_review` runs were tried on a disposable Compose project and written up in `docs/operations.md`. Still open for N3-3: a chosen deployment with its own backup and restore, and an alert (today it is a daily check). There is no per-workflow off switch, so "turn workflows off" means stopping the worker. N3-4 is met by the 0018 to 0019 case in `apps/api/src/upgrade.test.ts`, which runs on the embedded test Postgres. The restore drill above ran the same migrations in Compose.
+
 ## N4: AI Workflow Doctor
 
 | # | Blocker | Severity | Evidence | Exit condition |
