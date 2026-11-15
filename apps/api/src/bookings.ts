@@ -41,7 +41,7 @@ function after(def: WorkflowDefinition, from: string): Set<string> {
  * no step after it may read a step that ran before it, since the new run starts after the booking step and would send
  * that value blank (decision 0032).
  */
-async function reschedulePlan(db: Db, booking: { id: string; workflowId: string | null }, start: string) {
+async function reschedulePlan(db: Db, booking: { id: string; workflowId: string | null; timezone: string }, start: string) {
   // The run that created the booking (its change from version 0) and its booking step. Later runs can belong to a desk
   // workflow that moved the booking, and their payload holds someone else's details (Astra, 7c73879).
   const [made] = await db
@@ -66,7 +66,8 @@ async function reschedulePlan(db: Db, booking: { id: string; workflowId: string 
     }
   }
 
-  const time = parseZoned(start.trim(), { timezone: field.timezone!, slotMinutes: field.slotMinutes });
+  // Read in the booking's zone, which the Bookings page shows, not the field's: a workflow edit can change the field's zone later.
+  const time = parseZoned(start.trim(), { timezone: booking.timezone, slotMinutes: field.slotMinutes });
   if (!time.ok) throw new BadRequestException([`start: ${time.error}`]);
   return { versionId: version.id, stepId: made.stepId, field: field.name, at: time.at, value: time.value, payload: made.payload as Record<string, unknown> };
 }
