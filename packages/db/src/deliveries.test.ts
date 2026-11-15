@@ -8,7 +8,7 @@ import { connectionCredential, readConnections, removeConnection, saveConnection
 import { claimDueDeliveries, clearSheetWriteKeys, confirmDelivery, DELIVERY_POLICY, queueDelivery, retryDelivery, runDueDeliveries } from "./deliveries";
 import type { Db } from "./index";
 import { appendRowOnce, serviceAccountSchema, type ProviderUrls, type SheetDestination } from "./providers";
-import { connections, deliveries, runs, users, workflows, workflowVersions } from "./schema";
+import { bookings, connections, deliveries, resources, runs, users, workflows, workflowVersions } from "./schema";
 
 // Roadmap phase 3 acceptance: each delivery is handled on its own, and a call that may have reached the provider is
 // reconciled (Sheets) or held for review (Slack) instead of being repeated.
@@ -664,5 +664,79 @@ describe("markers of uncertain Sheets deliveries (retest of 6e13e32)", () => {
     expect(cleared.reduce((a, b) => a + b, 0)).toBeGreaterThanOrEqual(1);
     expect(sheetState.metadata.has((await state(d.id)).sheetMetaId!)).toBe(false);
     expect((await state(d.id)).sheetMetaClearedAt).not.toBeNull();
+  });
+});
+
+describe("booking changes stop queued deliveries (N2b, decision 0032)", () => {
+  const notSent = "The booking was rescheduled or cancelled, so this was not sent.";
+  /** A run linked to version 1 of a booking, as its booking step leaves it. bump() raises the version, as cancel and reschedule do. */
+  async function bookedRun(userId: string) {
+    const runId = await newRun(userId);
+    const tag = randomBytes(4).toString("hex");
+    const [res] = await db.insert(resources).values({ userId, name: `Chair ${tag}` }).returning();
+    const [b] = await db
+      .insert(bookings)
+      .values({ userId, test: false, reference: `B-${tag}`, resourceId: res!.id, during: sql`tstzrange(now(), now() + interval '1 hour')` as unknown as string, timezone: "Asia/Manila", runId })
+      .returning();
+    await db.update(runs).set({ bookingId: b!.id, bookingVersion: 1 }).where(eq(runs.id, runId));
+    return { runId, bump: () => db.update(bookings).set({ version: sql`${bookings.version} + 1` }).where(eq(bookings.id, b!.id)) };
+  }
+
+  it("sends nothing when the booking changed before the delivery was claimed, and says why", async () => {
+    const b = await bookedRun(ana);
+    const row = await sheet(ana, b.runId, "REQ-B1");
+    const msg = await slack(ana, b.runId, "REQ-B1");
+    await b.bump();
+    const before = appends();
+    await deliverDue();
+    expect(appends()).toBe(before);
+    expect(sheetRows).toHaveLength(0);
+    expect(fake.slack.messages).toHaveLength(0);
+    for (const d of [await state(row.id), await state(msg.id)]) expect(d).toMatchObject({ state: "failed", lastError: notSent });
+  });
+
+  it("refuses Retry and Post again once the booking changed, and a retry queued before the change sends nothing", async () => {
+    const b = await bookedRun(ana);
+    const d = await slack(ana, b.runId, "REQ-B2");
+    await db.update(deliveries).set({ state: "failed", lastError: "Slack is down." }).where(eq(deliveries.id, d.id));
+    expect(await retryDelivery(db, ana, d.id)).toBe(true);
+    await b.bump();
+    await deliverDue();
+    expect(fake.slack.messages).toHaveLength(0);
+    expect(await state(d.id)).toMatchObject({ state: "failed", lastError: notSent });
+    expect(await retryDelivery(db, ana, d.id)).toBe(false);
+    await db.update(deliveries).set({ state: "needs_review" }).where(eq(deliveries.id, d.id));
+    expect(await retryDelivery(db, ana, d.id, { postAgain: true })).toBe(false);
+    expect((await state(d.id)).state).toBe("needs_review");
+  });
+
+  it("makes a change that arrives while the delivery is sending wait until the call returns", async () => {
+    const b = await bookedRun(ana);
+    const d = await slack(ana, b.runId, "REQ-B3");
+    let release!: () => void;
+    fake.once("chat.postMessage", { heldUntil: new Promise<void>((r) => (release = r)) });
+    const sending = runDueDeliveries(db, key, { ...urls, timeoutMs: 5000 });
+    for (let i = 0; i < 300 && fake.slack.messages.length === 0; i++) await sleep(10);
+    expect(fake.slack.messages).toHaveLength(1);
+    let changed = false;
+    const change = b.bump().then(() => (changed = true));
+    await sleep(300);
+    expect(changed).toBe(false);
+    release();
+    await sending;
+    await change;
+    expect(await state(d.id)).toMatchObject({ state: "delivered" });
+  });
+
+  it("delivers for a run with no booking, and for a run whose own booking step moved the link", async () => {
+    const plain = await slack(ana, await newRun(ana), "REQ-B4");
+    const b = await bookedRun(ana);
+    await b.bump();
+    await db.update(runs).set({ bookingVersion: 2 }).where(eq(runs.id, b.runId));
+    const moved = await slack(ana, b.runId, "REQ-B5");
+    await deliverDue();
+    expect(await state(plain.id)).toMatchObject({ state: "delivered" });
+    expect(await state(moved.id)).toMatchObject({ state: "delivered" });
+    expect(fake.slack.messages).toHaveLength(2);
   });
 });
