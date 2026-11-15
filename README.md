@@ -162,7 +162,7 @@ CI also runs Semgrep, gitleaks and `pnpm audit` on every push.
 - Version 1 supports linear flows with branches only: no loops, no parallel branches, no sub-workflows.
 - One workspace per user.
 - Gmail is connected with an app password. Accounts that cannot create one (some work and school accounts) cannot send from their own address yet; there is no Google sign-in (OAuth) option.
-- The Gmail path is tested against a fake SMTP server only. The live check in [docs/live-gmail-check.md](docs/live-gmail-check.md) has not been run.
+- The automated tests use a fake SMTP server. The live Gmail check in [docs/live-gmail-check.md](docs/live-gmail-check.md) passed once by hand, on 15 November 2026 at commit 9df014d, with two real Gmail accounts.
 - When an account's Gmail stops working, its runs fail with "Reconnect Gmail". There is no button to retry only the failed email after reconnecting.
 - Google Sheets and Slack are tested against a local fake only. The live check in [docs/live-sheets-slack-check.md](docs/live-sheets-slack-check.md) has not been run.
 - Sheets connects with a service account key, not Google sign-in. Some Google Workspace organisations block creating service account keys.
