@@ -73,7 +73,7 @@ export function resolveTemplate(template: string, ctx: ExpressionContext, limits
 }
 
 // Form fields arrive as strings, so "5" and 5 compare as numbers.
-const toNumber = (v: unknown): number =>
+export const toNumber = (v: unknown): number =>
   typeof v === "number" ? v : typeof v === "string" && v.trim() !== "" ? Number(v) : NaN;
 
 function looseEqual(a: unknown, b: unknown): boolean {

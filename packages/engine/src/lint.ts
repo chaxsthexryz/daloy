@@ -1,5 +1,5 @@
 import { triggerFields, type Condition, type WorkflowDefinition } from "./definition";
-import { conditionBranch } from "./expressions";
+import { conditionBranch, toNumber } from "./expressions";
 import { entryStep } from "./graph";
 
 /**
@@ -37,7 +37,12 @@ export function lintDefinition(def: WorkflowDefinition): string[] {
       while (at && !seen.has(at)) {
         seen.add(at);
         const step = byId.get(at);
-        if (step?.type !== "condition" || LABEL_REF.exec(step.config.condition.left)?.[1] !== s.id) break;
+        if (step?.type !== "condition") break;
+        // The branch is only known when one side is this label and the other is a fixed value, whichever way round.
+        const { left, right } = step.config.condition;
+        const isLabel = (v: unknown) => typeof v === "string" && LABEL_REF.exec(v)?.[1] === s.id;
+        const fixed = (v: unknown) => typeof v !== "string" || !v.includes("{{");
+        if (!((isLabel(left) && (fixed(right) || isLabel(right))) || (isLabel(right) && fixed(left)))) break;
         const branch = safeBranch(step.config.condition, ctx);
         const next = branch && edgeTo(step.id, branch);
         if (!next) {
@@ -60,12 +65,12 @@ export function lintDefinition(def: WorkflowDefinition): string[] {
       }
     }
   }
-  for (const name of names) warnings.push(`"${name}" looks like a switch for testing. Test runs already mock outside calls, so remove it and its branch.`);
+  for (const name of names) warnings.push(`"${name}" looks like a switch for testing. Mock test runs already send nothing, but a Live run or a real event follows the branch and can send, so remove it and its branch and test with Mock mode.`);
 
   // A number comparison on a value that may be missing or text needs an "invalid" edge, or bad data fails the run (decision 0027).
   const required = new Set((triggerFields(def.trigger) ?? []).filter((f) => f.type === "number" && f.required).map((f) => f.name));
   const certain = (side: Condition["right"]) =>
-    typeof side === "number" || (typeof side === "string" && (/^[+-]?\d+(\.\d+)?$/.test(side.trim()) || required.has(TRIGGER_REF.exec(side)?.[1] ?? "")));
+    typeof side === "number" || (typeof side === "string" && (side.includes("{{") ? required.has(TRIGGER_REF.exec(side)?.[1] ?? "") : Number.isFinite(toNumber(side))));
   const neverInvalid = ({ op, left, right }: Condition) => !NUMERIC_OPS.includes(op) || (certain(left) && certain(right));
   for (const { id, cond } of conditions) {
     if (NUMERIC_OPS.includes(cond.op) && !neverInvalid(cond) && !edgeTo(id, "invalid")) {

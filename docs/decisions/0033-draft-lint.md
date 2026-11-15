@@ -16,7 +16,7 @@ Option 2. `lintDefinition(def)` in `packages/engine/src/lint.ts` takes a parsed 
 
 - Approval without a `rejected` or `timeout` edge.
 - A classify label that, followed through the conditions testing `{{steps.<id>.output.label}}`, lands on a branch with no edge.
-- A trigger field or condition named like a test switch (`dry_run`, `test`, `test_mode`, `is_test`, `sandbox`, `simulate`, `debug`). Test runs already mock outside calls (decision 0028).
+- A trigger field or condition named like a test switch (`dry_run`, `test`, `test_mode`, `is_test`, `sandbox`, `simulate`, `debug`). Mock test runs already send nothing (decision 0028), but a Live run or a real event follows the branch and can send, and the warning says so.
 - A `gt`, `gte`, `lt` or `lte` condition with no `invalid` edge, unless both sides are certain numbers: a number literal, or a required number field of a form or a webhook with fields (checked at every entry point since decision 0027).
 - A step only reachable through an `invalid` edge that cannot be taken (a condition that is not a number comparison, or whose sides are certain numbers).
 
@@ -26,7 +26,7 @@ Messages carry only step ids, field names and labels, which use a fixed charset,
 
 ## Consequences
 
-- Warnings can be wrong. A form field really called `test` is flagged, and the walk for classify labels only follows conditions on the label itself. A false warning costs one line of text.
+- Warnings can be wrong. A form field really called `test` is flagged, and the walk for classify labels only follows conditions that compare the label (on either side) with a fixed value. A condition whose other side comes from the run, such as `{{trigger.priority}}`, ends the walk with no warning, because the branch is not known. A false warning costs one line of text.
 - Only Build with AI repairs on them. MCP and the save API accept the same drafts without a list.
 - The saved QA-06 and QA-07 fixtures lint with two warnings each (their approval has no rejected or timeout edge). They stay as saved so the harness shows the lint finding real drafts.
 - No migration and no dependency.

@@ -35,7 +35,7 @@ const SYSTEM = [
   'An http POST or PATCH is sent once: when its outcome is unknown (a timeout or a 5xx), the run waits for a person instead of resending. Set "idempotent": true only when the request names an API that is safe to call twice with the same request.',
   'Give an approval step an edge for each of "approved", "rejected" and "timeout", so the requester is told either way, and make sure every label of a classify step reaches a step.',
   "Use real-looking placeholders such as you@example.com when the request gives no address. Keep steps to what was asked.",
-  "Test runs in Daloy already fake every email, HTTP call, approval and connected app, and the tester can pick AI labels and approval outcomes, so never add dry-run flags, test fields or branches for testing.",
+  "Mock test runs in Daloy fake every email, HTTP call, approval and connected app, and the tester can pick AI labels and approval outcomes, so never add dry-run flags, test fields or branches for testing.",
   "",
   `Example, for "${example.description}":`,
   JSON.stringify({ name: example.name, summary: example.description, definition: example.definition }),

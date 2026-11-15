@@ -63,6 +63,26 @@ describe("classify labels", () => {
     expect(warnings.join("\n")).not.toMatch(/label "urgent"/);
   });
 
+  it("reads the label on either side of the comparison", () => {
+    const reversed = gate("is_urgent", "urgent", "eq", "{{steps.sort.output.label}}");
+    const edges = [
+      { from: "sort", to: "is_urgent" },
+      { from: "is_urgent", to: "page", on: "true" },
+    ];
+    const warnings = lint({ trigger, steps: [classify, reversed, mail("page")], edges });
+    expect(warnings).toHaveLength(2);
+    expect(warnings.join(" ")).toMatch(/label "standard".*"false"/);
+  });
+
+  it("makes no claim when the other side comes from the run, since the branch is not known", () => {
+    const byInput = gate("is_urgent", "{{steps.sort.output.label}}", "eq", "{{trigger.priority}}");
+    const edges = [
+      { from: "sort", to: "is_urgent" },
+      { from: "is_urgent", to: "page", on: "true" },
+    ];
+    expect(lint({ trigger, steps: [classify, byInput, mail("page")], edges })).toEqual([]);
+  });
+
   it("follows a chain of conditions on the label", () => {
     const isStandard = gate("is_standard", "{{steps.sort.output.label}}", "eq", "standard");
     const edges = [
@@ -94,7 +114,8 @@ describe("dry-run switches", () => {
     };
     const warnings = lint(def);
     expect(warnings).toHaveLength(1);
-    expect(warnings[0]).toMatch(/"dry_run".*test runs/i);
+    // Mock test runs send nothing, but a Live run or a real event follows the branch and can send.
+    expect(warnings[0]).toMatch(/"dry_run".*Mock.*Live/);
   });
 
   it("catches a test_mode condition on a webhook without fields, and ignores ordinary names", () => {
@@ -136,6 +157,13 @@ describe("numeric comparisons", () => {
 
   it("passes without one when the value is a required number field, which every entry point checks", () => {
     expect(lint({ trigger: budgetForm(), steps: steps.slice(0, 3), edges: edges(false) })).toEqual([]);
+  });
+
+  it("reads a threshold the way the engine does, so 1e3 counts as a number", () => {
+    const exp = [gate("big", "{{trigger.budget}}", "gte", "1e3"), mail("a"), mail("b")];
+    expect(lint({ trigger: budgetForm(), steps: exp, edges: edges(false) })).toEqual([]);
+    const text = [gate("big", "{{trigger.budget}}", "gte", "abc"), mail("a"), mail("b")];
+    expect(lint({ trigger: budgetForm(), steps: text, edges: edges(false) })).toHaveLength(1);
   });
 
   it("still warns for an optional number field, which can be missing", () => {
