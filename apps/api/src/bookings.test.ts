@@ -373,6 +373,32 @@ describe("staff changes", () => {
     }
   });
 
+  it("reads staff's time in the booking's timezone even after the workflow's field moved to another zone", async () => {
+    const s = await setup();
+    await s.book();
+    const [b] = await s.listed();
+    // The published version's appointment field now says New York; the booking itself stays in Manila.
+    const edited = spa() as { trigger: { config: { fields: { name: string; timezone?: string }[] } } };
+    edited.trigger.config.fields = edited.trigger.config.fields.map((f) => (f.name === "at" ? { ...f, timezone: "America/New_York" } : f));
+    await s.agent.post(`/workflows/${s.wf.id}/versions`).send({ definition: edited, publish: true }).expect(201);
+    const body = { version: 1, start: at("16:00") };
+    const sent = mailSent.length;
+    const res = await s.agent.post(`/bookings/${b!.id}/reschedule`).send(body).expect(200);
+    expect(res.body.booking).toMatchObject({ timezone: "Asia/Manila", start: `${at("16:00")}:00+08:00`, end: `${at("17:00")}:00+08:00` });
+    expect((await drive(res.body.runId)).state).toBe("waiting");
+    expect(mailSent.slice(sent).map((m) => [m.to, m.text])).toEqual([["mia@example.com", `${at("16:00")}:00+08:00 with Ana`]]);
+    expect((await s.listed())[0]).toMatchObject({ start: `${at("16:00")}:00+08:00` });
+
+    // The same request after the appointment time has passed gets the original run.
+    const operator = await member(s.agent, "operator");
+    vi.useFakeTimers({ toFake: ["Date"], now: new Date(`${year + 1}-06-01T00:00:00Z`) });
+    try {
+      expect((await operator.post(`/bookings/${b!.id}/reschedule`).send(body).expect(200)).body).toMatchObject({ duplicate: true, runId: res.body.runId });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("refuses to reschedule when the published version lost the booking step, or a later step reads one before it", async () => {
     const s = await setup();
     await s.book();
