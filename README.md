@@ -159,6 +159,10 @@ The first `pnpm e2e` needs a browser: `pnpm exec playwright install chromium`. T
 
 CI also runs Semgrep, gitleaks and `pnpm audit` on every push.
 
+## How AI was used
+
+Claude Code wrote the code in this repository. I reviewed it, ran it and verified it. What the repository records as checks: the CI workflow (lint, typecheck, tests, Semgrep, gitleaks and `pnpm audit`), the manual live Gmail check in [docs/live-gmail-check.md](docs/live-gmail-check.md), and the independent retests by Astra, which are listed in `PROJECT.md`.
+
 ## Known limitations
 
 - Version 1 supports linear flows with branches only: no loops, no parallel branches, no sub-workflows.
