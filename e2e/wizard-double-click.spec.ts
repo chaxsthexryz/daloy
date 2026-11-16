@@ -8,7 +8,7 @@ test("a double click on Next and Turn on acts once, setup resumes the draft, and
   await page.getByLabel("Email").fill(`dc-${Date.now()}@test.local`);
   await page.getByLabel("Password").fill("e2e test password 1");
   await page.getByRole("button", { name: "Create account" }).click();
-  await expect(page.getByRole("heading", { name: "Workflows", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Automations", exact: true })).toBeVisible();
 
   // Two clicks on Set up for my office make one workflow; going Home and starting again reopens it.
   await page.getByRole("link", { name: "Try an example" }).click();

@@ -10,13 +10,13 @@ Small teams do the same multi-step admin work by hand every day: sorting inquiri
 
 ## Screenshots
 
-The workflow list of the seeded demo, the builder with the inquiry triage template, a workflow's run history and one run. They are taken by `e2e/demo.spec.ts` (`SCREENSHOTS=1 pnpm e2e`).
+The Automations home of the seeded demo, the builder with the inquiry triage template, a workflow's activity list and one run. They are taken by `e2e/demo.spec.ts` (`SCREENSHOTS=1 pnpm e2e`).
 
-![Workflow list](docs/screenshots/workflows.png)
+![Automations home](docs/screenshots/workflows.png)
 
 ![Builder](docs/screenshots/editor.png)
 
-![Run history](docs/screenshots/run-history.png)
+![Activity](docs/screenshots/run-history.png)
 
 ![One run](docs/screenshots/run.png)
 
@@ -69,7 +69,7 @@ After the seed: `demo@daloy.local`, password `daloy-demo-2026`. The account has 
 
 ## Try the AI
 
-1. Sign in and open **AI model** (top of the workflow list).
+1. Sign in, open **Advanced** in the menu, then **AI model**.
 2. Pick a provider:
    - **Local model** (Ollama on this computer): run `ollama pull llama3.2` once and keep Ollama running.
    - **Gemini API** (free tier): get a key at Google AI Studio, no credit card. The model is prefilled as `gemini-3.8-flash`; the model field also suggests `gemini-3.6-flash`, `gemini-3.5-flash-lite` and `gemini-4-hydrogen`, which helps when one is overloaded (HTTP 503). Google may use free-tier data to improve its products, so use test data.
@@ -133,7 +133,7 @@ Tick them in the template's "Where approved requests go" step. Each email and no
 ## Build a workflow by describing it
 
 1. Pick a model on the **AI model** page and press Test (see above).
-2. On the workflow list, write what you want under **Build with AI**, for example:
+2. On **Advanced**, write what you want under **Build with AI**, for example:
    "When someone fills my contact form with their name, email and message, thank them by email. If the message is about a payment or invoice, send it to billing@mydomain.com, otherwise to help@mydomain.com."
 3. Press **Build draft**. The editor opens on a new workflow the AI drafted. It is not published.
 4. Change it by chatting in **Ask the AI**, for example "wait one hour before the thank-you email" or "also send me a one-line summary of each message". The canvas updates after each answer.

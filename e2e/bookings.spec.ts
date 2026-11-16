@@ -8,7 +8,7 @@ test("staff reschedule and cancel a booking on the Bookings page", async ({ page
   await page.getByLabel("Email").fill(`desk-${Date.now()}@test.local`);
   await page.getByLabel("Password").fill("e2e test password 1");
   await page.getByRole("button", { name: "Create account" }).click();
-  await expect(page.getByRole("heading", { name: "Workflows", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Automations", exact: true })).toBeVisible();
 
   const ana = await (await page.request.post("/resources", { data: { name: "Ana" } })).json();
   const wf = await (await page.request.post("/workflows", { data: { name: "Spa", slug: `spa-${Date.now()}` } })).json();

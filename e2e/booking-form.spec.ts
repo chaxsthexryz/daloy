@@ -8,7 +8,7 @@ test("an owner adds a resource and a customer books it on the public form", asyn
   await page.getByLabel("Email").fill(`spa-${Date.now()}@test.local`);
   await page.getByLabel("Password").fill("e2e test password 1");
   await page.getByRole("button", { name: "Create account" }).click();
-  await expect(page.getByRole("heading", { name: "Workflows", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Automations", exact: true })).toBeVisible();
 
   // The page's first, empty list answers only after Ana is added. That late answer must not hide her again.
   let releaseFirst!: () => void;
@@ -22,6 +22,7 @@ test("an owner adds a resource and a customer books it on the public form", asyn
     }
     return route.continue();
   });
+  await page.getByRole("link", { name: "Advanced" }).click();
   await page.getByRole("link", { name: "Resources" }).click();
   await expect.poll(() => lists).toBe(1);
   await page.getByLabel("Name").fill("Ana");

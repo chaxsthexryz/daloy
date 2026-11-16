@@ -26,11 +26,12 @@ test("sign in to the seeded demo and browse its workflows and runs", async ({ pa
   await page.getByRole("link", { name: "Runs" }).click();
   await expect(async () => {
     await page.reload();
-    await expect(page.getByRole("table").getByText("succeeded")).toHaveCount(2, { timeout: 1000 });
+    await expect(page.getByRole("table").getByText("Done")).toHaveCount(2, { timeout: 1000 });
   }).toPass({ timeout: 60_000 });
   await shot(page, "run-history");
 
   await page.getByRole("table").getByRole("link").first().click();
-  await expect(page.getByRole("heading", { name: "Run", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "What happened", exact: true })).toBeVisible();
+  await page.getByText("Details for a technician").click();
   await shot(page, "run");
 });

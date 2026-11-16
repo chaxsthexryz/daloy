@@ -8,6 +8,7 @@ test("pick Gemini with a key, then come back and see the key is saved", async ({
   await page.getByLabel("Password").fill("e2e test password 1");
   await page.getByRole("button", { name: "Create account" }).click();
 
+  await page.getByRole("link", { name: "Advanced" }).click();
   await page.getByRole("link", { name: "AI model" }).click();
   await expect(page.getByLabel("Local model")).toBeChecked();
   await page.getByLabel("Gemini API").check();

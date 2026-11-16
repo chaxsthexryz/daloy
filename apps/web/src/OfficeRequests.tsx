@@ -484,8 +484,13 @@ function LivePage({ wf, formId }: { wf: Detail; formId: string }) {
           Open form
         </a>
         <a href={`#/w/${wf.id}/runs`}>View activity</a>
-        <a href={`#/w/${wf.id}`}>Open advanced editor</a>
       </div>
+      <details className="extras">
+        <summary>Advanced</summary>
+        <p>
+          <a href={`#/w/${wf.id}`}>Open advanced editor</a>
+        </p>
+      </details>
       <h2>Requests</h2>
       <div className="actions">
         <button type="button" className="quiet" onClick={() => void load()}>
@@ -500,7 +505,7 @@ function LivePage({ wf, formId }: { wf: Detail; formId: string }) {
         <p className="muted">No requests yet. Open the form and send one.</p>
       ) : (
         <div className="table-wrap">
-          <table className="table">
+          <table className="table cards">
             <thead>
               <tr>
                 <th scope="col">Reference</th>
@@ -514,14 +519,14 @@ function LivePage({ wf, formId }: { wf: Detail; formId: string }) {
             <tbody>
               {rows.map((r) => (
                 <tr key={r.id}>
-                  <td>{r.reference}</td>
-                  <td>{r.subject}</td>
-                  <td>{new Date(r.createdAt).toLocaleString()}</td>
-                  <td>{wf.name}</td>
-                  <td>
+                  <td data-label="Reference">{r.reference}</td>
+                  <td data-label="Subject">{r.subject}</td>
+                  <td data-label="Received">{new Date(r.createdAt).toLocaleString()}</td>
+                  <td data-label="Recorded in">{wf.name}</td>
+                  <td data-label="Progress">
                     {outcome(r, (wf.setup as { template?: string } | null)?.template === PURCHASE_REQUEST ? "Finished" : "Processed")} <a href={`#/runs/${r.runId}`}>Details</a>
                   </td>
-                  <td>{r.deliveries.length ? <DeliveryList deliveries={r.deliveries} onChange={load} /> : <span className="muted">None</span>}</td>
+                  <td data-label="Deliveries">{r.deliveries.length ? <DeliveryList deliveries={r.deliveries} onChange={load} /> : <span className="muted">None</span>}</td>
                 </tr>
               ))}
             </tbody>

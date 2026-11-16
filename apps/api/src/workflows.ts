@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { createKeyedRun, findApprover, listDeliveries, PROVIDER_NAMES, type Provider, publishedVersion, readConnections, requests, runs, SCHEDULE_QUEUE, triggers, workflows, workflowVersions, type Db } from "@daloy/db";
+import { createKeyedRun, deliveries, findApprover, listDeliveries, PROVIDER_NAMES, type Provider, publishedVersion, readConnections, requests, runs, SCHEDULE_QUEUE, supersededSql, triggers, workflows, workflowVersions, type Db } from "@daloy/db";
 import { BRANCHES, choiceProblems, definitionSchema, testChoicesSchema, testModeSchema, guidedSetupInput, OFFICE_REQUEST, saveProblems, stepJsonSchemas, TEMPLATES, triggerFields, type Trigger, type WorkflowDefinition } from "@daloy/engine";
 import {
   BadRequestException,
@@ -45,15 +45,43 @@ export class WorkflowsController {
     @Inject(BOSS) private readonly boss: PgBoss,
   ) {}
 
-  /** live: the workflow has a published version, which for a guided template means it is accepting requests. */
+  /**
+   * live: the workflow has a published version, which for a guided template means it is accepting requests.
+   * formId: the form trigger's id. last: its newest real (non-test) run with the flags the Automations home turns into a plain state, or null.
+   */
   @Get()
-  list(@CurrentUser() user: SessionUser) {
-    const live = sql<boolean>`exists (select 1 from ${workflowVersions} where ${workflowVersions.workflowId} = ${workflows.id} and ${workflowVersions.published})`;
-    return this.db
-      .select({ ...getTableColumns(workflows), live })
+  async list(@CurrentUser() user: SessionUser) {
+    // Drizzle drops the table name from a column in a one-table select, which would make "id" below mean the subquery's own id: name the table.
+    const wfId = sql.raw('"workflows"."id"');
+    const live = sql<boolean>`exists (select 1 from ${workflowVersions} where ${workflowVersions.workflowId} = ${wfId} and ${workflowVersions.published})`;
+    // formId: the public form's id once it exists, for "Copy form link".
+    const formId = sql<string | null>`(select ${triggers.id} from ${triggers} where ${triggers.workflowId} = ${wfId} and ${triggers.type} = 'form')`;
+    const list = await this.db
+      .select({ ...getTableColumns(workflows), live, formId })
       .from(workflows)
       .where(eq(workflows.userId, user.workspaceId))
       .orderBy(desc(workflows.createdAt));
+    const inReview = (state: string) => sql<boolean>`exists (select 1 from ${deliveries} where ${deliveries.runId} = ${runs.id} and ${deliveries.state} = ${state})`;
+    const newest = await this.db
+      .selectDistinctOn([workflowVersions.workflowId], {
+        workflowId: workflowVersions.workflowId,
+        runId: runs.id,
+        state: runs.state,
+        createdAt: runs.createdAt,
+        needsReview: sql<boolean>`(${runs.state} = 'needs_review' or ${inReview("needs_review")})`,
+        deliveryFailed: inReview("failed"),
+        superseded: sql<boolean>`(${runs.state} in ('pending', 'running', 'waiting', 'needs_review') and ${supersededSql})`,
+        reference: sql<string | null>`(select ${requests.reference} from ${requests} where ${requests.runId} = ${runs.id})`,
+      })
+      .from(runs)
+      .innerJoin(workflowVersions, eq(workflowVersions.id, runs.workflowVersionId))
+      .innerJoin(workflows, eq(workflows.id, workflowVersions.workflowId))
+      .where(and(eq(workflows.userId, user.workspaceId), eq(runs.test, false)))
+      .orderBy(workflowVersions.workflowId, desc(runs.createdAt));
+    return list.map((w) => {
+      const found = newest.find((n) => n.workflowId === w.id);
+      return { ...w, last: found ? { ...found, workflowId: undefined } : null };
+    });
   }
 
   @Post()

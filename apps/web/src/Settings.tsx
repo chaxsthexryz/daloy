@@ -107,7 +107,7 @@ export function SettingsPage() {
   return (
     <main className="page narrow">
       <header className="toolbar plain">
-        <a href="#/">Workflows</a>
+        <a href="#/advanced">Advanced</a>
         <h1>AI model</h1>
       </header>
       <p>Every AI step in your workflows, and Build with AI, uses the model you pick here. You can switch at any time; saved keys are kept for each provider.</p>
