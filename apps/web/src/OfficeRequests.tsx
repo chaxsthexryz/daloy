@@ -1,6 +1,7 @@
 import {
   defaultAnswers,
   defaultPurchaseAnswers,
+  OFFICE_REQUEST,
   officeRequestDefinition,
   previewOfficeRequest,
   previewPurchaseRequest,
@@ -19,6 +20,10 @@ import {
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { api, ApiError, type Workflow } from "./api";
 import { DeliveryList, type Delivery } from "./Connections";
+import { newestDraft } from "./lib/drafts";
+import { takingLonger } from "./lib/poll";
+import { MailNotice } from "./MailNotice";
+import { TAKING_LONGER } from "./Runs";
 
 type Step = (typeof SETUP_STEPS)[number];
 type Detail = Omit<Workflow, "live"> & { trigger: { id: string } | null; live: unknown };
@@ -29,7 +34,18 @@ export const startOfficeSetup = (email: string) => startGuided("office-requests"
 /** The purchase request template (roadmap phase 5): the owner is the first suggested approver and purchasing address. */
 export const startPurchaseSetup = (email: string) => startGuided("purchase-requests", { template: PURCHASE_REQUEST, step: "name", answers: defaultPurchaseAnswers(email) });
 
-async function startGuided(slug: string, setup: { template?: string; step: string; answers: { name: string } }) {
+type Start = { template?: string; step: string; answers: { name: string } };
+// One start at a time: a second click while the first is still creating the draft joins it instead of making another.
+let starting: Promise<void> | null = null;
+const startGuided = (slug: string, setup: Start) => (starting ??= createOrResume(slug, setup).finally(() => (starting = null)));
+
+async function createOrResume(slug: string, setup: Start) {
+  // A second click, or coming back later, reopens the unfinished draft instead of adding another.
+  const draft = newestDraft(await api<Workflow[]>("GET", "/workflows"), setup.template ?? OFFICE_REQUEST);
+  if (draft) {
+    location.hash = `#/a/${draft.id}`;
+    return;
+  }
   for (let n = 1; n <= 20; n++) {
     try {
       const wf = await api<Workflow>("POST", "/workflows", { name: setup.answers.name, slug: n === 1 ? slug : `${slug}-${n}` });
@@ -151,6 +167,8 @@ function useWizard<S extends string, A extends { name: string }>(wf: Detail, ste
   const [step, setStep] = useState<S>(start);
   const [answers, setAnswers] = useState(initial);
   const [error, setError] = useState("");
+  // One save at a time: a fast double click must not run Next twice, publish two versions or step back over saved answers.
+  const [busy, setBusy] = useState(false);
   const index = steps.indexOf(step);
   const save = async (next: S) => {
     setError("");
@@ -165,20 +183,32 @@ function useWizard<S extends string, A extends { name: string }>(wf: Detail, ste
   };
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    if (index < steps.length - 1) {
-      if (await save(steps[index + 1]!)) setStep(steps[index + 1]!);
-      return;
-    }
-    if (!(await save(step))) return;
+    if (busy) return;
+    setBusy(true);
     try {
-      await api("POST", `/workflows/${wf.id}/versions`, { definition: definition(answers), publish: true });
-      await onLive();
-    } catch (err) {
-      setError((err as Error).message);
+      if (index < steps.length - 1) {
+        if (await save(steps[index + 1]!)) setStep(steps[index + 1]!);
+        return;
+      }
+      if (!(await save(step))) return;
+      try {
+        await api("POST", `/workflows/${wf.id}/versions`, { definition: definition(answers), publish: true });
+        await onLive();
+      } catch (err) {
+        setError((err as Error).message);
+      }
+    } finally {
+      setBusy(false);
     }
   };
   const later = async () => {
-    if (await save(step)) location.hash = "#/";
+    if (busy) return;
+    setBusy(true);
+    try {
+      if (await save(step)) location.hash = "#/";
+    } finally {
+      setBusy(false);
+    }
   };
   const edit = (to: S) => (
     <button type="button" className="quiet" onClick={() => setStep(to)}>
@@ -200,12 +230,14 @@ function useWizard<S extends string, A extends { name: string }>(wf: Detail, ste
         </p>
         <div className="actions">
           {index > 0 && (
-            <button type="button" className="quiet" onClick={() => setStep(steps[index - 1]!)}>
+            <button type="button" className="quiet" disabled={busy} onClick={() => setStep(steps[index - 1]!)}>
               Back
             </button>
           )}
-          <button className="primary">{index === steps.length - 1 ? "Turn on" : "Next"}</button>
-          <button type="button" className="quiet" onClick={() => void later()}>
+          <button className="primary" disabled={busy}>
+            {busy ? "Saving…" : index === steps.length - 1 ? "Turn on" : "Next"}
+          </button>
+          <button type="button" className="quiet" disabled={busy} onClick={() => void later()}>
             Save and finish later
           </button>
         </div>
@@ -284,6 +316,7 @@ function SetupWizard({ wf, setup, onLive }: { wf: Detail; setup: Setup; onLive: 
               {answers.sheets && <li>Add a row to your Google Sheet, starting with the reference. {edit("destinations")}</li>}
               {answers.slack && <li>Post the reference and subject to your Slack channel. {edit("destinations")}</li>}
             </ul>
+            <MailNotice />
             <p className="muted">Email goes out through the mail server in this installation's settings. A local demo delivers it to Mailpit.</p>
             <details>
               <summary>Example messages</summary>
@@ -380,6 +413,7 @@ function PurchaseWizard({ wf, setup, onLive }: { wf: Detail; setup: PurchaseSetu
             </li>
             <li>If rejected, or nobody decides within a week, tell the employee.</li>
           </ul>
+          <MailNotice />
           <p className="muted">
             {answers.outlook ? "Emails to the employee and to purchasing go out from your connected Outlook mailbox." : "Emails go out through the mail server in this installation's settings."} The
             approval request carries a sign-in link and goes out through the Business and email sender. A Teams note never approves anything.
@@ -407,12 +441,20 @@ function PurchaseWizard({ wf, setup, onLive }: { wf: Detail; setup: PurchaseSetu
 
 const outcome = (r: RequestRow, done: string) =>
   // "Stopped", not "Not sent": earlier steps of a failed run may already have sent something (Details shows each step).
-  r.runState === "succeeded" ? done : r.runState === "failed" ? "Stopped, open details" : r.runState === "waiting" ? "Waiting for a decision" : "Sending";
+  r.runState === "succeeded" ? done : r.runState === "failed" ? "Stopped, open details" : r.runState === "waiting" ? "Waiting for a decision" : takingLonger(r.createdAt) ? `Sending. ${TAKING_LONGER}` : "Sending";
 
 function LivePage({ wf, formId }: { wf: Detail; formId: string }) {
   const [rows, setRows] = useState<RequestRow[] | null>(null);
   const [copied, setCopied] = useState("");
-  const load = () => api<RequestRow[]>("GET", `/workflows/${wf.id}/requests`).then(setRows, () => setRows([]));
+  const [failed, setFailed] = useState(false);
+  const load = () =>
+    api<RequestRow[]>("GET", `/workflows/${wf.id}/requests`).then(
+      (r) => {
+        setFailed(false);
+        setRows(r);
+      },
+      () => setFailed(true),
+    );
   useEffect(() => void load(), [wf.id]);
   const link = `${location.origin}/forms/${formId}`;
   const local = ["localhost", "127.0.0.1", "[::1]"].includes(location.hostname);
@@ -429,6 +471,7 @@ function LivePage({ wf, formId }: { wf: Detail; formId: string }) {
       <p role="status">
         <span className="tag ok">Accepting requests</span> {copied}
       </p>
+      <MailNotice />
       <p>
         Form link: <code>{link}</code>
       </p>
@@ -449,7 +492,9 @@ function LivePage({ wf, formId }: { wf: Detail; formId: string }) {
           Refresh
         </button>
       </div>
-      {rows === null ? (
+      {failed ? (
+        <p role="alert">Couldn't load. <button type="button" onClick={() => void load()}>Retry</button></p>
+      ) : rows === null ? (
         <p>Loading…</p>
       ) : rows.length === 0 ? (
         <p className="muted">No requests yet. Open the form and send one.</p>

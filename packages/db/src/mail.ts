@@ -7,7 +7,7 @@ import type { Db } from "./index";
 import { markSenderFailed, resolveSender, type ResolvedSender } from "./mail-senders";
 import { sharedMailUsage, users } from "./schema";
 
-export type Mailer = { transport: Transporter; from: string | { name: string; address: string }; replyTo?: string };
+export type Mailer = { host?: string; transport: Transporter; from: string | { name: string; address: string }; replyTo?: string };
 /**
  * The installation's own server, how to log in to Gmail as one owner, and who may use the shared server: "open" for
  * everyone (a local catcher such as Mailpit), "approved" for workspace owners the operator approved (decision 0024).
@@ -21,8 +21,10 @@ const address = z.email();
 export function smtpMailer(env: NodeJS.ProcessEnv = process.env): Mailer {
   const port = Number(env.SMTP_PORT ?? 1025);
   const auth = env.SMTP_USER ? { user: env.SMTP_USER, pass: env.SMTP_PASS ?? "" } : undefined;
+  const host = env.SMTP_HOST ?? "localhost";
   return {
-    transport: nodemailer.createTransport({ host: env.SMTP_HOST ?? "localhost", port, secure: port === 465, auth }),
+    host,
+    transport: nodemailer.createTransport({ host, port, secure: port === 465, auth }),
     from: env.SMTP_FROM ?? "Daloy <daloy@localhost>",
   };
 }
@@ -31,6 +33,8 @@ export function smtpMailer(env: NodeJS.ProcessEnv = process.env): Mailer {
 export const gmailTransport = (auth: { user: string; pass: string }) => nodemailer.createTransport({ host: "smtp.gmail.com", port: 465, secure: true, auth });
 
 const LOCAL_CATCHERS = new Set(["", "mailpit", "localhost", "127.0.0.1", "::1"]);
+/** shortcut: judged by host name only, so a real server behind a local name reads as local; fine for a hint. */
+export const isLocalCatcher = (host: string | undefined) => LOCAL_CATCHERS.has(host ?? "");
 
 /**
  * SHARED_MAIL picks the policy. Unset, the shared server is open only when it is a local catcher, so pointing SMTP_HOST
@@ -40,7 +44,7 @@ const LOCAL_CATCHERS = new Set(["", "mailpit", "localhost", "127.0.0.1", "::1"])
 export function sharedMailPolicy(env: NodeJS.ProcessEnv = process.env): MailDeps["sharedMail"] {
   if (env.SHARED_MAIL) return env.SHARED_MAIL === "open" ? "open" : "approved";
   if (env.NODE_ENV === "production") return "approved";
-  return LOCAL_CATCHERS.has(env.SMTP_HOST ?? "") ? "open" : "approved";
+  return isLocalCatcher(env.SMTP_HOST) ? "open" : "approved";
 }
 
 export const mailDeps = (env: NodeJS.ProcessEnv = process.env): MailDeps => ({ installation: smtpMailer(env), gmail: gmailTransport, sharedMail: sharedMailPolicy(env) });

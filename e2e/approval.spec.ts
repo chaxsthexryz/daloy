@@ -3,6 +3,8 @@ import { approvalLink } from "./mail";
 
 // Human approval: the run waits, the approver gets an email, opens the link, approves, and the run carries on.
 test("a live run waits for approval, and the emailed link approves it once", async ({ page, context }) => {
+  // Publish, Run live version and Disconnect ask first (N4a); accept each.
+  page.on("dialog", (d) => void d.accept());
   const approver = `boss-${Date.now()}@test.local`;
   await page.goto("/");
   await page.getByRole("button", { name: "Create an account instead" }).click();

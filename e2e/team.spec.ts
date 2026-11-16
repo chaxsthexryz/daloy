@@ -6,6 +6,8 @@ const PASSWORD = "e2e test password 1";
 // Named approval (decision 0022): the owner invites an approver, names them on an approval step, and only that
 // person, signed in, can answer. A forwarded link shows nothing private and the run records who decided.
 test("an invited approver answers a named approval; the owner and a signed-out visitor cannot", async ({ page, context, browser }) => {
+  // Publish, Run live version and Disconnect ask first (N4a); accept each.
+  page.on("dialog", (d) => void d.accept());
   const approver = `approver-${Date.now()}@test.local`;
   await page.goto("/");
   await page.getByRole("button", { name: "Create an account instead" }).click();

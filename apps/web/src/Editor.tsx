@@ -97,7 +97,7 @@ export function Editor({ id }: { id: string }) {
   // stepId -> a test choice as JSON text ("" = the default outcome), so a <select> can hold it.
   const [choices, setChoices] = useState<Record<string, string>>({});
   const [runId, setRunId] = useState<string | null>(null);
-  const run = useRun(runId);
+  const { run } = useRun(runId);
 
   const reload = async () => {
     const w = await api<Loaded>("GET", `/workflows/${id}`);
@@ -180,6 +180,7 @@ export function Editor({ id }: { id: string }) {
       if (r.duplicate) return `This event key already ran, so nothing ran now. Showing the earlier ${{ mock: "mocked", ai: "real AI only", live: "live" }[r.mode ?? "mock"]} test run; change the event id to test again.`;
     });
   const runLive = () =>
+    window.confirm("Run the live version now? It sends real email and calls real services.") &&
     act("Run", async () => {
       const r = await api<{ id: string }>("POST", `/workflows/${id}/runs`, { payload: parsedPayload() });
       setRunId(r.id);
@@ -205,7 +206,7 @@ export function Editor({ id }: { id: string }) {
           <button type="button" onClick={() => save(false)} disabled={busy || draft.steps.length === 0}>
             Save
           </button>
-          <button type="button" className="primary" onClick={() => save(true)} disabled={busy || draft.steps.length === 0}>
+          <button type="button" className="primary" onClick={() => window.confirm("Publish this version? It replaces the live version at once.") && save(true)} disabled={busy || draft.steps.length === 0}>
             Publish
           </button>
         </div>

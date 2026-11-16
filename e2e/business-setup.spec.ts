@@ -7,6 +7,8 @@ const mail = () => readFileSync(process.env.E2E_MAIL_FILE!, "utf8").split("\n").
 // Roadmap phase 2, local path: the owner saves their business details, tests email, turns on inquiry replies and
 // submits an inquiry as a customer without opening the editor. Mail goes to the e2e SMTP sink, never to Gmail.
 test("an owner sets up inquiry replies and a customer's inquiry reaches both inboxes", async ({ page, context }) => {
+  // Publish, Run live version and Disconnect ask first (N4a); accept each.
+  page.on("dialog", (d) => void d.accept());
   const stamp = Date.now();
   const owner = `owner-${stamp}@test.local`;
   const inbox = `front-${stamp}@clinic.test`;

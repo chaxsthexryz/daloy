@@ -1,20 +1,29 @@
 import { useEffect, useState } from "react";
-import { api, FINISHED, type Run, type RunSummary, type Workflow } from "./api";
+import { api, type Run, type RunSummary, type Workflow } from "./api";
 import { DeliveryList, type Delivery } from "./Connections";
+import { pollDelay, takingLonger } from "./lib/poll";
 
-/** Polls a run until it finishes, so the page shows each step as the worker records it. A new `reload` value polls again. */
+/**
+ * Polls a run until it finishes, so the page shows each step as the worker records it: every second while work moves,
+ * every 10 s while a person must act (pollDelay). A failed fetch sets `error` and keeps polling until one succeeds.
+ * A new `reload` value polls again.
+ */
 export function useRun(runId: string | null, reload = 0) {
   const [run, setRun] = useState<Run | null>(null);
+  const [error, setError] = useState(false);
   useEffect(() => {
     setRun(null);
+    setError(false);
     if (!runId) return;
     let timer: ReturnType<typeof setTimeout>;
     let stopped = false;
     const tick = async () => {
       const r = await api<Run>("GET", `/runs/${runId}`).catch(() => null);
       if (stopped) return;
+      setError(!r);
       if (r) setRun(r);
-      if (!r || !FINISHED.has(r.state)) timer = setTimeout(tick, 1000);
+      const delay = r ? pollDelay(r.state) : 1000;
+      if (delay !== null) timer = setTimeout(tick, delay);
     };
     void tick();
     return () => {
@@ -22,7 +31,7 @@ export function useRun(runId: string | null, reload = 0) {
       clearTimeout(timer);
     };
   }, [runId, reload]);
-  return run;
+  return { run, error };
 }
 
 /** Time between two timestamps ("850 ms", "1.2 s", "3 min"), or "not finished" while the second one is missing. */
@@ -32,6 +41,7 @@ export function duration(from: string, to: string | null): string {
   return ms < 1000 ? `${ms} ms` : ms < 120_000 ? `${(ms / 1000).toFixed(1)} s` : `${Math.round(ms / 60_000)} min`;
 }
 
+export const TAKING_LONGER = "Taking longer than usual. Tell the person who runs Daloy.";
 const SUPERSEDED = "Superseded: its booking was rescheduled or cancelled. It stops at its next step and sends nothing more.";
 
 const kind = (r: { test: boolean; live: boolean; aiLive?: boolean }) => (r.test ? (r.live ? "test run, live calls" : r.aiLive ? "test run, real AI, other calls mocked" : "test run, mocked calls") : "live run");
@@ -172,8 +182,23 @@ export function RunsPage({ workflowId }: { workflowId: string }) {
 /** #/runs/<id>: one run with its trigger payload and every step attempt. Polls until the run finishes. */
 export function RunPage({ runId }: { runId: string }) {
   const [reload, setReload] = useState(0);
-  const run = useRun(runId, reload);
-  if (!run) return <main className="page">Loading…</main>;
+  const { run, error } = useRun(runId, reload);
+  if (!run) {
+    return (
+      <main className="page">
+        {error ? (
+          <>
+            <p role="alert">Couldn't load this run. Trying again.</p>
+            <button type="button" onClick={() => setReload((n) => n + 1)}>
+              Retry
+            </button>
+          </>
+        ) : (
+          "Loading…"
+        )}
+      </main>
+    );
+  }
   return (
     <main className="page">
       <header className="toolbar plain">
@@ -183,6 +208,14 @@ export function RunPage({ runId }: { runId: string }) {
           v{run.version} · started {new Date(run.createdAt).toLocaleString()} · {duration(run.createdAt, run.finishedAt)}
         </span>
       </header>
+      {error && <p role="alert" className="message error">Couldn't refresh. Trying again.</p>}
+      {(run.state === "pending" || run.state === "running" || run.state === "queued") && takingLonger(run.createdAt) && <p className="message">{TAKING_LONGER}</p>}
+      {error && (
+        <p role="alert" className="message error">
+          Couldn't refresh. Trying again.
+        </p>
+      )}
+      {(run.state === "pending" || run.state === "running" || run.state === "queued") && takingLonger(run.createdAt) && <p className="message">{TAKING_LONGER}</p>}
       <h2>Trigger data</h2>
       <pre aria-label="Trigger data">{json(run.triggerPayload)}</pre>
       <RunActions run={run} onDone={() => setReload((n) => n + 1)} />
@@ -196,8 +229,17 @@ export function RunPage({ runId }: { runId: string }) {
 /** Sheets rows and Slack notes this run queued. They are delivered apart from the run, so they have their own state. */
 function RunDeliveries({ runId }: { runId: string }) {
   const [list, setList] = useState<Delivery[]>([]);
-  const load = () => api<Delivery[]>("GET", `/deliveries?runId=${runId}`).then(setList, () => setList([]));
+  const [failed, setFailed] = useState(false);
+  const load = () =>
+    api<Delivery[]>("GET", `/deliveries?runId=${runId}`).then(
+      (l) => {
+        setFailed(false);
+        setList(l);
+      },
+      () => setFailed(true),
+    );
   useEffect(() => void load(), [runId]);
+  if (failed) return <p role="alert">Couldn't load deliveries. <button type="button" onClick={() => void load()}>Retry</button></p>;
   if (list.length === 0) return null;
   return (
     <>
@@ -217,6 +259,7 @@ function RunActions({ run, onDone }: { run: Run; onDone: () => void }) {
   if (run.state !== "needs_review" && run.state !== "failed") return null;
   const last = run.steps.at(-1);
   const act = async (path: string, body: object = {}) => {
+    if (body && (body as { action?: string }).action === "again" && !window.confirm("Send it once more? If it already arrived, they get it twice.")) return;
     setBusy(true);
     setMessage("");
     try {

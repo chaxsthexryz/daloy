@@ -1,3 +1,4 @@
+import { isDraft } from "./lib/drafts";
 import { TEMPLATES } from "@daloy/engine";
 import { useEffect, useState, type FormEvent } from "react";
 import { api, ApiError, type Workflow } from "./api";
@@ -137,9 +138,16 @@ function Workflows({ user, onSignOut }: { user: User; onSignOut: () => void }) {
   const [error, setError] = useState("");
   // Operators see and follow the owner's automations; only the owner creates or changes them.
   const owner = user.role === "owner";
-  useEffect(() => {
-    api<Workflow[]>("GET", "/workflows").then(setList, (e: Error) => setError(e.message));
-  }, []);
+  const [listError, setListError] = useState(false);
+  const loadList = () =>
+    api<Workflow[]>("GET", "/workflows").then(
+      (l) => {
+        setListError(false);
+        setList(l);
+      },
+      () => setListError(true),
+    );
+  useEffect(() => void loadList(), []);
 
   const create = async (e: FormEvent) => {
     e.preventDefault();
@@ -228,8 +236,13 @@ function Workflows({ user, onSignOut }: { user: User; onSignOut: () => void }) {
         </>
       )}
       <h2>{owner ? "Your workflows" : "Workflows"}</h2>
+      {listError && (
+        <p role="alert" className="message error">
+          Couldn't load your workflows. <button type="button" onClick={() => void loadList()}>Retry</button>
+        </p>
+      )}
       {list === null ? (
-        <p>Loading…</p>
+        listError ? null : <p>Loading…</p>
       ) : list.length === 0 ? (
         <p className="muted">None yet.</p>
       ) : (
@@ -237,7 +250,7 @@ function Workflows({ user, onSignOut }: { user: User; onSignOut: () => void }) {
           {list.map((w) => (
             <li key={w.id}>
               <a href={w.setup ? `#/a/${w.id}` : `#/w/${w.id}`}>{w.name}</a> <span className="muted">{w.slug}</span>
-              {w.setup ? w.live ? <span className="tag ok">Accepting requests</span> : <a className="tag" href={`#/a/${w.id}`}>Draft: continue setup</a> : null}
+              {w.setup ? isDraft(w) ? <a className="tag" href={`#/a/${w.id}`}>Draft: continue setup</a> : <span className="tag ok">Accepting requests</span> : null}
             </li>
           ))}
         </ul>

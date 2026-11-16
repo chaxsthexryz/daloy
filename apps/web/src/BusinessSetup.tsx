@@ -5,7 +5,7 @@ import { ConnectionsSection } from "./Connections";
 
 type Profile = { businessName: string | null; website: string | null; inquiryEmail: string | null; replyTo: string | null };
 type Sender = { address: string; status: "unverified" | "active" | "failed" | "disconnected"; lastError: string | null; verifiedAt: string | null; lastTestedAt: string | null };
-type Settings = { profile: Profile | null; sender: Sender | null; installationFrom: string; installationAllowed: boolean; signInEmail: string };
+type Settings = { profile: Profile | null; sender: Sender | null; installationFrom: string; installationAllowed: boolean; installationLocal: boolean; signInEmail: string };
 type TestResult = { ok: true; to: string; from: string; replyTo?: string; gmail: boolean; needsConfirmation: boolean } | { ok: false; error: string };
 
 const APP_PASSWORD_HELP = "https://support.google.com/accounts/answer/185833";
@@ -159,7 +159,7 @@ function SenderSection({ data, onChange }: { data: Settings; onChange: () => Pro
           </button>
         )}
         {sender && sender.status !== "disconnected" && (
-          <button type="button" className="quiet" disabled={busy} onClick={() => void act(() => api("POST", "/settings/email/disconnect"))}>
+          <button type="button" className="quiet" disabled={busy} onClick={() => window.confirm("Disconnect Gmail? Email from your automations pauses until you reconnect.") && void act(() => api("POST", "/settings/email/disconnect"))}>
             Disconnect
           </button>
         )}

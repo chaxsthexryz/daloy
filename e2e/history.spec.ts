@@ -2,6 +2,8 @@ import { expect, test } from "@playwright/test";
 
 // Run history and versions: see a run's step input and output, change the flow, diff the versions, roll back.
 test("open the run history, diff two versions and roll back", async ({ page }) => {
+  // Publish, Run live version and Disconnect ask first (N4a); accept each.
+  page.on("dialog", (d) => void d.accept());
   await page.goto("/");
   await page.getByRole("button", { name: "Create an account instead" }).click();
   await page.getByLabel("Email").fill(`history-${Date.now()}@test.local`);

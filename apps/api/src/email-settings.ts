@@ -3,7 +3,9 @@ import {
   claimVerifyToken,
   connectGmail,
   disconnectGmail,
+  isLocalCatcher,
   issueVerifyToken,
+  type Mailer,
   mailSenders,
   markSenderWorking,
   readProfile,
@@ -22,6 +24,8 @@ import { SessionGuard } from "./auth";
 import { Allow, CONFIG, CurrentUser, DB, RateLimit, ZodPipe, type ApiConfig, type SessionUser, MANAGE } from "./http";
 
 const verifyInput = z.strictObject({ token: z.string().regex(/^[A-Za-z0-9_-]{43}$/) });
+/** Heuristic: the installation server is a local catcher (Mailpit, localhost), judged by host name only. */
+export const installationLocal = (m: Mailer) => isLocalCatcher(m.host);
 const addressOf = (from: string | { address: string }) => (typeof from === "string" ? (/<([^>]+)>/.exec(from)?.[1] ?? from) : from.address);
 
 /** The owner's business profile and their own Gmail sender (roadmap phase 2, decision 0020). The app password is write-only. */
@@ -42,6 +46,7 @@ export class EmailSettingsController {
       installationFrom: addressOf(this.config.mail.installation.from),
       // False when the shared server only sends for approved owners and this one is not approved (decision 0024).
       installationAllowed: await sharedMailAllowed(this.db, this.config.mail, user.workspaceId),
+      installationLocal: installationLocal(this.config.mail.installation),
       signInEmail: user.email,
     };
   }

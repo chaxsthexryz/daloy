@@ -2,6 +2,8 @@ import { expect, test } from "@playwright/test";
 
 // The main flow from CLAUDE.md: sign up, build a two-step flow, test it, publish, run, see it succeed.
 test("sign up, build, test-run, publish and run a workflow", async ({ page }) => {
+  // Publish, Run live version and Disconnect ask first (N4a); accept each.
+  page.on("dialog", (d) => void d.accept());
   await page.goto("/");
   await page.getByRole("button", { name: "Create an account instead" }).click();
   await page.getByLabel("Email").fill(`e2e-${Date.now()}@test.local`);
