@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { blockListOf, checkUrl, defaultGuard, guardedLookup, isBlocked, SsrfError, type SsrfGuard } from "./ssrf";
+import { allowedHosts, blockListOf, checkUrl, defaultGuard, guardedLookup, isBlocked, SsrfError, type SsrfGuard } from "./ssrf";
 
 const list = blockListOf();
 
@@ -70,6 +70,32 @@ describe("checkUrl", () => {
 
   it("marks SSRF errors as not retryable", () => {
     expect(() => checkUrl("http://10.0.0.1/", guard)).toThrow(expect.objectContaining({ retryable: false }));
+  });
+});
+
+describe("allowed hosts (HTTP_ALLOWED_HOSTS)", () => {
+  const guard = { ...defaultGuard(), allowHosts: allowedHosts(" API.example.com, *.hooks.example.org ,,") };
+
+  it("reads a comma list, ignoring case, spaces and empty entries", () => {
+    expect(guard.allowHosts).toEqual(["api.example.com", "*.hooks.example.org"]);
+    expect(allowedHosts("")).toBeUndefined();
+    expect(allowedHosts(undefined)).toBeUndefined();
+  });
+
+  it("allows listed hosts and subdomains of a wildcard entry", () => {
+    for (const url of ["https://api.example.com/x", "https://API.EXAMPLE.COM", "https://a.hooks.example.org", "https://b.a.hooks.example.org/y"]) {
+      expect(() => checkUrl(url, guard), url).not.toThrow();
+    }
+  });
+
+  it("refuses every other host, including look-alikes and IP literals", () => {
+    for (const url of ["https://example.com", "https://hooks.example.org", "https://api.example.com.evil.test", "https://evilhooks.example.org", "http://93.184.216.34/"]) {
+      expect(() => checkUrl(url, guard), url).toThrow(/not in HTTP_ALLOWED_HOSTS/);
+    }
+  });
+
+  it("allows any public host when the list is empty", () => {
+    expect(() => checkUrl("https://example.com", defaultGuard())).not.toThrow();
   });
 });
 

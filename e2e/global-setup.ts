@@ -100,6 +100,8 @@ export default async function setup() {
     MICROSOFT_LOGIN_URL: providers.urls.microsoftLogin,
     MICROSOFT_GRAPH_URL: providers.urls.graph,
     TEAMS_WEBHOOK_HOSTS: "127.0.0.1",
+    // Every spec signs up from 127.0.0.1.
+    REGISTER_LIMIT_PER_HOUR: "1000",
   };
   const api = start("api", env);
   await waitFor(`http://localhost:${E2E_PORT}/auth/me`, 60_000);

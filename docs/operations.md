@@ -83,9 +83,9 @@ Any row means someone should look. A workflow that keeps failing the same way ca
 
 ## Deployment target
 
-Not chosen yet, and nothing is deployed. Free options that fit the no-card rule:
+Chosen in N3: an always-on machine the owner controls, running this same `docker compose up`, reached through a free Cloudflare Tunnel. [docs/deployment.md](deployment.md) has the setup, the nightly off-machine backup and the restore rehearsal. Nothing is deployed yet. The options that were weighed:
 
-1. An always-on machine the owner controls running this same `docker compose up`, reached through a free Cloudflare Tunnel. No code changes, and every procedure in this file works as written. Uptime depends on that machine.
+1. That machine and a Cloudflare Tunnel. No code changes, and every procedure in this file works as written. Uptime depends on that machine.
 2. Render's free web service with Neon's free Postgres. Free web services sleep when idle and background workers are not on the free plan, so the worker would have to run inside the API process and schedules would pause while it sleeps. That needs code changes.
 
 Oracle Always Free, Google Cloud's e2-micro, Fly.io, Railway and Koyeb ask for a card at signup as far as we know, so they are left out until that is checked.

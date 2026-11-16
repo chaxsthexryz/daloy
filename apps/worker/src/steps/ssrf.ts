@@ -31,14 +31,26 @@ export function blockListOf(ranges = BLOCKED_RANGES): BlockList {
 }
 
 export type Resolver = (hostname: string) => Promise<{ address: string; family: number }[]>;
-/** Everything the SSRF checks depend on, injectable so tests can point at a local server and fake DNS. */
-export type SsrfGuard = { blockList: BlockList; resolve: Resolver; ports: string[] };
+/**
+ * Everything the SSRF checks depend on, injectable so tests can point at a local server and fake DNS. allowHosts, when
+ * set, is the only hosts an HTTP step may call (HTTP_ALLOWED_HOSTS, for the public demo).
+ */
+export type SsrfGuard = { blockList: BlockList; resolve: Resolver; ports: string[]; allowHosts?: string[] };
+
+/** HTTP_ALLOWED_HOSTS: a comma list of host names, each exact or "*.domain" for its subdomains. Empty means any public host. */
+export function allowedHosts(raw: string | undefined): string[] | undefined {
+  const hosts = (raw ?? "").split(",").map((h) => h.trim().toLowerCase()).filter(Boolean);
+  return hosts.length ? hosts : undefined;
+}
+
+const hostAllowed = (host: string, allow: string[]) => allow.some((a) => (a.startsWith("*.") ? host.endsWith(a.slice(1)) : host === a));
 
 export const defaultGuard = (): SsrfGuard => ({
   blockList: blockListOf(),
   resolve: (hostname) => dnsLookup(hostname, { all: true, order: "verbatim" }),
   // "" is the scheme's default port; URL drops ":80" on http and ":443" on https.
   ports: ["", "80", "443"],
+  allowHosts: allowedHosts(process.env.HTTP_ALLOWED_HOSTS),
 });
 
 export class SsrfError extends StepError {
@@ -69,6 +81,7 @@ export function checkUrl(raw: string | URL, guard: SsrfGuard): URL {
   if (!guard.ports.includes(url.port)) throw new SsrfError(`port ${url.port} is not allowed`);
   const host = url.hostname.replace(/^\[(.*)\]$/, "$1");
   if (isIP(host) && isBlocked(host, guard.blockList)) throw new SsrfError(`${host} is a blocked address`);
+  if (guard.allowHosts && !hostAllowed(host, guard.allowHosts)) throw new SsrfError(`${host} is not in HTTP_ALLOWED_HOSTS`);
   return url;
 }
 
