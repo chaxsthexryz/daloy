@@ -43,10 +43,10 @@ What it does: decides which status changes are allowed for a run and for a step 
 The rules live in `transitions.json`:
 
 - A run goes `pending` to `running`. While running it can finish (`succeeded`, `failed`), be `cancelled`, or go to `waiting` when it reaches a delay or approval. A waiting run goes back to `running` when its scheduled job fires, or is cancelled.
-- A step attempt goes `pending` to `running` (or `skipped` when its branch is not taken). A running attempt ends `succeeded` or `failed`, or goes to `waiting` for a delay or approval and ends from there.
-- Finished states have no way out. A retry is a new attempt row, so a failed attempt never goes back to pending.
+- A step attempt goes `pending` to `running`. The table also allows `skipped`, but nothing in the code sets it: a step on a branch that is not taken has no attempt row. A running attempt ends `succeeded` or `failed`, or goes to `waiting` for a delay or approval and ends from there.
+- `succeeded` and `cancelled` runs have no way out. A `failed` run can go back to `running` when an operator retries it. A step attempt in a finished state never moves again: a retry is a new attempt row, so a failed attempt never goes back to pending.
 
-Why this way: the table is data, so the tests are generated from it. Every pair of states is tested, 72 cases in total, and a new rule cannot be added without a matching test result. In the worker each transition will be one database transaction (phase 2).
+Why this way: the table is data, so the tests are generated from it. Every pair of states is tested, 85 cases in total (49 for runs, 36 for steps), and a new rule cannot be added without a matching test result. In the worker each transition will be one database transaction (phase 2).
 
 Tests: `packages/engine/src/state-machine.test.ts`.
 
@@ -96,7 +96,7 @@ Claims: every attempt gets a random `claim_id` when a worker starts it, and the 
 
 Retries: when a step throws, the engine's `decideRetry` picks one of four outcomes. A retryable error with attempts left marks the attempt failed, stores the time of the next attempt on the run (`next_attempt_at`) and queues a delayed job. A retryable error on the last attempt marks the attempt failed with `dead_letter = true` and fails the run. The dead-letter list is a query on that column. An unknown outcome that is not safe to repeat marks the attempt failed with its outcome and moves the run to `needs_review`, where nothing happens until an operator answers (see Run history below). Any other error fails the run at once. The failed attempt stores its outcome in `step_runs.outcome`.
 
-State changes: every change goes through `assertTransition` and then a guarded UPDATE (`WHERE state = <expected>`), so an illegal or concurrent change throws instead of overwriting. A failed step and its failed run are written in one transaction.
+State changes: every change to an existing row goes through `assertTransition` and then a guarded UPDATE (`WHERE state = <expected>`), so an illegal or concurrent change throws instead of overwriting. A step attempt row that is inserted already `running` or `succeeded` (the worker's first attempt, a booking reschedule, an operator's reconcile) is created in that state and does not pass through it. A failed step and its failed run are written in one transaction.
 
 Fetching: the run queue uses Postgres NOTIFY, so a job that is sent wakes the worker at once instead of at its next 2-second poll. The worker fetches up to 10 jobs at a time and fetches again straight away while batches come back full. The runs in a batch are advanced in parallel: the queue holds one waiting job per run, so a batch never contains the same run twice, and each run is still guarded by its lease. Without this the worker managed about half a job a second, because pg-boss waits a poll interval after every fetch (decision 0014).
 

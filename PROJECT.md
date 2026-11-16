@@ -204,7 +204,7 @@ Order: N3, N4, N5 with the pilot search P in parallel, then N6 to N11 only as th
   - Voice through the browser's Web Speech API and an avatar only if a user asks.
 - [ ] N11. Real accounts: final security review at the release commit covering N6 to N10, a daily recipient cap on Gmail and Outlook receipts, a timestamp in the webhook signature, MCP token scopes and expiry, password change and reset, per-workflow pause and cancel of a pending run, read-side secret redaction on every surface, a purge policy for retired secrets.
 
-Hygiene, any time: add a LICENSE (MIT), the README "How AI was used" section CLAUDE.md asks for, and fix by hand the four statements in docs/how-it-works.md that the code contradicts (steps never reach `skipped`, the table has 85 cases not 72, `failed` can go back to `running`, not every change goes through `assertTransition`).
+Hygiene, any time (done 16 November 2026): add a LICENSE (MIT), the README "How AI was used" section CLAUDE.md asks for, and fix by hand the four statements in docs/how-it-works.md that the code contradicts (steps never reach `skipped`, the table has 85 cases not 72, `failed` can go back to `running`, not every change goes through `assertTransition`).
 
 ## Done when
 
