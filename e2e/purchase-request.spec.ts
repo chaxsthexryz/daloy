@@ -35,8 +35,9 @@ test("a purchase request goes from the form to the named approver, then to purch
   await joining.close();
 
   // Outlook: the administrator requirement is shown before leaving Daloy, and a blocked consent comes back explained.
-  await page.getByRole("link", { name: "Workflows" }).click();
+  await page.getByRole("link", { name: "Automations" }).click();
   await page.getByRole("link", { name: "Business and email" }).first().click();
+  await page.locator("summary", { hasText: "Optional extras" }).click();
   const panel = (name: string) => page.locator(".connection").filter({ has: page.getByRole("heading", { name, exact: true }) });
   const outlook = panel("Outlook");
   await expect(outlook).toContainText("Many organizations only let an administrator approve a new app.");

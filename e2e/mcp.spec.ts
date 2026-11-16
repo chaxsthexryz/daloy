@@ -14,7 +14,7 @@ test("create an API token, run a workflow as an MCP tool, then revoke the token"
   await page.getByLabel("Email").fill(`mcp-${Date.now()}@test.local`);
   await page.getByLabel("Password").fill("e2e test password 1");
   await page.getByRole("button", { name: "Create account" }).click();
-  await expect(page.getByRole("heading", { name: "Workflows", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Automations", exact: true })).toBeVisible();
 
   // The builder is covered by main-flow.spec.ts; here the workflow comes from the API with the console session.
   const slug = `contact-${Date.now()}`;
@@ -26,6 +26,7 @@ test("create an API token, run a workflow as an MCP tool, then revoke the token"
   };
   expect((await page.request.post(`/workflows/${wf.id}/versions`, { data: { definition, publish: true } })).status()).toBe(201);
 
+  await page.getByRole("link", { name: "Advanced" }).click();
   await page.getByRole("link", { name: "API tokens" }).click();
   await expect(page.getByRole("heading", { name: "API tokens" })).toBeVisible();
   await page.getByLabel("Name").fill("e2e client");

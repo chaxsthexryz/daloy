@@ -8,7 +8,7 @@ test("answer a run that needs review with It went through", async ({ page }) => 
   await page.getByLabel("Email").fill(`review-${Date.now()}@test.local`);
   await page.getByLabel("Password").fill("e2e test password 1");
   await page.getByRole("button", { name: "Create account" }).click();
-  await expect(page.getByRole("heading", { name: "Workflows", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Automations", exact: true })).toBeVisible();
 
   // The builder is covered by main-flow.spec.ts; here the workflow and test run come from the API with the console session.
   const wf = await (await page.request.post("/workflows", { data: { name: "Orders", slug: `orders-${Date.now()}` } })).json();
@@ -25,11 +25,12 @@ test("answer a run that needs review with It went through", async ({ page }) => 
   const { id } = await res.json();
 
   await page.goto(`/#/runs/${id}`);
-  const review = page.getByRole("region", { name: "Needs review" });
+  const review = page.getByRole("region", { name: "Needs you" });
   await expect(review).toBeVisible({ timeout: 30_000 });
-  await expect(review).toContainText("A receiver that does not deduplicate may get it twice");
+  await expect(review).toContainText("If it already arrived, they get it twice");
   await review.getByRole("button", { name: "It went through" }).click();
-  await expect(page.locator(".run > p").first()).toHaveText(/^succeeded/, { timeout: 30_000 });
+  await expect(page.locator(".state").first()).toHaveText("Done", { timeout: 30_000 });
+  await page.getByText("Details for a technician").click();
   await expect(page.locator(".run")).toContainText("Answered by");
   await expect(page.getByLabel("Output of post")).toContainText('"reconciled": "delivered"');
 });

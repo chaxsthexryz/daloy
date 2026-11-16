@@ -118,6 +118,25 @@ describe("workflows", () => {
     expect((await other.agent.get("/workflows").expect(200)).body).toEqual([]);
   });
 
+  it("reports the newest real run of each workflow as `last`, for the Automations home", async () => {
+    const { agent } = await signedIn();
+    const wf = await publishedWorkflow(agent, { type: "manual" });
+    const rowOf = async () => (await agent.get("/workflows").expect(200)).body.find((w: { id: string }) => w.id === wf.id);
+    const lastOf = async () => (await rowOf()).last;
+    expect(await lastOf()).toBeNull();
+    expect(await rowOf()).toMatchObject({ live: true, formId: null });
+    const form = await publishedWorkflow(agent, { type: "form", config: { fields: [{ name: "email", label: "Email", type: "email", required: true }] } });
+    const formRow = (await agent.get("/workflows").expect(200)).body.find((w: { id: string }) => w.id === form.id);
+    expect(formRow).toMatchObject({ live: true, formId: form.trigger.id });
+    const first = await agent.post(`/workflows/${wf.id}/runs`).send({ payload: { n: 1 } }).expect(202);
+    const second = await agent.post(`/workflows/${wf.id}/runs`).send({ payload: { n: 2 } }).expect(202);
+    await db.update(runs).set({ state: "failed", createdAt: new Date(Date.now() + 5000) }).where(eq(runs.id, second.body.id));
+    expect(await lastOf()).toMatchObject({ runId: second.body.id, state: "failed", needsReview: false, deliveryFailed: false, superseded: false, reference: null });
+    // A preview run never counts as the automation's last result.
+    await db.update(runs).set({ test: true }).where(eq(runs.id, second.body.id));
+    expect((await lastOf()).runId).toBe(first.body.id);
+  });
+
   it("starts a manual run of the published version and lists it", async () => {
     const { agent } = await signedIn();
     const wf = await publishedWorkflow(agent, { type: "manual" });

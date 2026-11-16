@@ -1,3 +1,4 @@
+import type { LastRun } from "./lib/states";
 /** JSON fetch against the API on the same origin (the Vite proxy in dev, the API itself in compose). */
 export class ApiError extends Error {
   constructor(
@@ -24,7 +25,7 @@ export async function api<T>(method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE"
 }
 
 // setup is the guided setup progress (null for workflows built in the editor); live is set by the list route.
-export type Workflow = { id: string; name: string; slug: string; createdAt: string; setup?: unknown; live?: boolean };
+export type Workflow = { id: string; name: string; slug: string; createdAt: string; setup?: unknown; live?: boolean; formId?: string | null; last?: LastRun | null };
 export type VersionSummary = { id: string; version: number; published: boolean; createdAt: string };
 export type Version = VersionSummary & { definition: unknown };
 export type StepRun = {

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api, type Run, type RunSummary, type Workflow } from "./api";
 import { DeliveryList, type Delivery } from "./Connections";
 import { pollDelay, takingLonger } from "./lib/poll";
+import { plainState, runKind } from "./lib/states";
 
 /**
  * Polls a run until it finishes, so the page shows each step as the worker records it: every second while work moves,
@@ -46,6 +47,17 @@ const SUPERSEDED = "Superseded: its booking was rescheduled or cancelled. It sto
 
 const kind = (r: { test: boolean; live: boolean; aiLive?: boolean }) => (r.test ? (r.live ? "test run, live calls" : r.aiLive ? "test run, real AI, other calls mocked" : "test run, mocked calls") : "live run");
 const json = (v: unknown) => JSON.stringify(v, null, 2);
+
+/** The owner-facing state of a run (Done, Waiting, Needs you, Problem, Working), with its note. The raw state stays in the technician block. */
+function StateLabel({ run }: { run: { state: string; createdAt: string; needsReview: boolean; superseded?: boolean } }) {
+  const s = plainState(run);
+  return (
+    <>
+      <span className={`state ${s.key}`}>{s.label}</span>
+      {s.note && <span className="muted"> {s.note}</span>}
+    </>
+  );
+}
 // A named approval's step output holds who answered and when (decision 0022).
 function decided(output: unknown): string | null {
   const o = output as { decidedBy?: unknown; decidedAt?: unknown } | null;
@@ -118,16 +130,15 @@ export function RunsPage({ workflowId }: { workflowId: string }) {
     <main className="page">
       <header className="toolbar plain">
         <a href={`#/w/${workflowId}`}>{wf?.name ?? "Workflow"}</a>
-        <h1>Run history</h1>
-        <a href={`#/w/${workflowId}/versions`}>Versions</a>
+        <h1>Activity</h1>
       </header>
       <div className="field inline">
         <label htmlFor="run-filter">Show</label>
         <select id="run-filter" value={filter} onChange={(e) => setFilter(e.target.value as keyof typeof FILTERS)}>
-          <option value="all">All runs</option>
-          <option value="live">Live runs</option>
-          <option value="test">Test runs</option>
-          <option value="review">Needs review</option>
+          <option value="all">Everything</option>
+          <option value="live">Real runs</option>
+          <option value="test">Previews</option>
+          <option value="review">Needs you</option>
         </select>
       </div>
       <p role="alert" className="message error" hidden={!error}>
@@ -136,39 +147,30 @@ export function RunsPage({ workflowId }: { workflowId: string }) {
       {list === null ? (
         <p>Loading…</p>
       ) : list.length === 0 ? (
-        <p className="muted">No runs yet.</p>
+        <p className="muted">Nothing has happened yet.</p>
       ) : (
         <div className="table-wrap">
-          <table className="table">
-            <caption className="muted">{list.length === 1 ? "1 run" : `Latest ${list.length} runs, newest first`}</caption>
+          <table className="table cards">
+            <caption className="muted">{list.length === 1 ? "1 item" : `Latest ${list.length} items, newest first`}</caption>
             <thead>
               <tr>
                 <th scope="col">Started</th>
-                <th scope="col">State</th>
+                <th scope="col">Result</th>
                 <th scope="col">Kind</th>
-                <th scope="col">Version</th>
-                <th scope="col">Duration</th>
+                <th scope="col">Took</th>
               </tr>
             </thead>
             <tbody>
               {list.map((r) => (
                 <tr key={r.id}>
-                  <td>
+                  <td data-label="Started">
                     <a href={`#/runs/${r.id}`}>{new Date(r.createdAt).toLocaleString()}</a>
                   </td>
-                  <td>
-                    <span className={`badge ${r.state}`}>{r.state.replace("_", " ")}</span>
-                    {r.needsReview && r.state !== "needs_review" && <span className="badge needs_review"> delivery needs review</span>}
-                    {r.superseded && (
-                      <span className="badge" title={SUPERSEDED}>
-                        {" "}
-                        superseded
-                      </span>
-                    )}
+                  <td data-label="Result">
+                    <StateLabel run={r} />
                   </td>
-                  <td>{kind(r)}</td>
-                  <td>v{r.version}</td>
-                  <td>{duration(r.createdAt, r.finishedAt)}</td>
+                  <td data-label="Kind">{runKind(r)}</td>
+                  <td data-label="Took">{duration(r.createdAt, r.finishedAt)}</td>
                 </tr>
               ))}
             </tbody>
@@ -199,29 +201,32 @@ export function RunPage({ runId }: { runId: string }) {
       </main>
     );
   }
+  const working = run.state === "pending" || run.state === "running" || run.state === "queued";
   return (
     <main className="page">
       <header className="toolbar plain">
-        <a href={`#/w/${run.workflowId}/runs`}>Run history</a>
-        <h1>Run</h1>
-        <span className="muted status">
-          v{run.version} · started {new Date(run.createdAt).toLocaleString()} · {duration(run.createdAt, run.finishedAt)}
-        </span>
+        <a href={`#/w/${run.workflowId}/runs`}>Activity</a>
+        <h1>What happened</h1>
       </header>
       {error && <p role="alert" className="message error">Couldn't refresh. Trying again.</p>}
-      {(run.state === "pending" || run.state === "running" || run.state === "queued") && takingLonger(run.createdAt) && <p className="message">{TAKING_LONGER}</p>}
-      {error && (
-        <p role="alert" className="message error">
-          Couldn't refresh. Trying again.
-        </p>
-      )}
-      {(run.state === "pending" || run.state === "running" || run.state === "queued") && takingLonger(run.createdAt) && <p className="message">{TAKING_LONGER}</p>}
-      <h2>Trigger data</h2>
-      <pre aria-label="Trigger data">{json(run.triggerPayload)}</pre>
+      {working && takingLonger(run.createdAt) && <p className="message">{TAKING_LONGER}</p>}
+      <p aria-live="polite">
+        <StateLabel run={run} /> <span className="muted">{runKind(run)} · started {new Date(run.createdAt).toLocaleString()} · {duration(run.createdAt, run.finishedAt)}</span>
+      </p>
+      {run.superseded && <p className="message">{SUPERSEDED}</p>}
+      {run.error && <p className="message error">{run.error}</p>}
       <RunActions run={run} onDone={() => setReload((n) => n + 1)} />
-      <h2>Steps</h2>
-      <RunResult run={run} />
       <RunDeliveries runId={runId} />
+      <details className="technician">
+        <summary>Details for a technician</summary>
+        <p className="muted">
+          Raw state: {run.state} · version v{run.version} · {kind(run)}
+        </p>
+        <h2>Trigger data</h2>
+        <pre aria-label="Trigger data">{json(run.triggerPayload)}</pre>
+        <h2>Steps</h2>
+        <RunResult run={run} />
+      </details>
     </main>
   );
 }
@@ -243,7 +248,7 @@ function RunDeliveries({ runId }: { runId: string }) {
   if (list.length === 0) return null;
   return (
     <>
-      <h2>Deliveries</h2>
+      <h2>Where it was sent</h2>
       <DeliveryList deliveries={list} onChange={load} />
     </>
   );
@@ -274,7 +279,7 @@ function RunActions({ run, onDone }: { run: Run; onDone: () => void }) {
   if (run.state === "failed") {
     return (
       <section aria-label="Retry">
-        <p>Retry runs the step {last ? `"${last.stepId}"` : ""} once more, with the same Idempotency-Key.</p>
+        <p>Something went wrong at one step. Retry runs that step once more, with the same request key, so a receiver that checks it does not act twice.</p>
         <button type="button" disabled={busy} onClick={() => void act("retry")}>
           Retry
         </button>
@@ -285,28 +290,36 @@ function RunActions({ run, onDone }: { run: Run; onDone: () => void }) {
     );
   }
   return (
-    <section aria-label="Needs review" className="review">
-      <h2>Needs review</h2>
-      <p>
-        The step {last ? `"${last.stepId}"` : ""} may or may not have reached the receiver, and it is not safe to send again on its own. Check with the
-        receiver, then choose.
-      </p>
+    <section aria-label="Needs you" className="review">
+      <h2>Needs you</h2>
+      <p>A message or delivery may or may not have reached its destination, and Daloy cannot tell. Check whether it arrived, then choose.</p>
       {last?.error && <p className="message error">{last.error}</p>}
-      {last?.input !== null && last?.input !== undefined && <pre aria-label="Request that may have gone through">{json(last.input)}</pre>}
-      <div className="actions">
-        <button type="button" disabled={busy} onClick={() => void act("resolve", { action: "delivered" })}>
-          It went through
-        </button>
-        <button type="button" disabled={busy} onClick={() => void act("resolve", { action: "again" })}>
-          Send again
-        </button>
-        <button type="button" disabled={busy} onClick={() => void act("resolve", { action: "stop" })}>
-          Stop
-        </button>
-      </div>
-      <p className="muted">
-        Send again sends the same request once more, with the same Idempotency-Key. A receiver that does not deduplicate may get it twice.
-      </p>
+      {last?.input !== null && last?.input !== undefined && (
+        <details>
+          <summary>What was sent</summary>
+          <pre aria-label="Request that may have gone through">{json(last.input)}</pre>
+        </details>
+      )}
+      <ul className="choices">
+        <li>
+          <button type="button" disabled={busy} onClick={() => void act("resolve", { action: "delivered" })}>
+            It went through
+          </button>{" "}
+          I checked, it arrived.
+        </li>
+        <li>
+          <button type="button" disabled={busy} onClick={() => void act("resolve", { action: "again" })}>
+            Send again
+          </button>{" "}
+          Send it once more. If it already arrived, they get it twice.
+        </li>
+        <li>
+          <button type="button" disabled={busy} onClick={() => void act("resolve", { action: "stop" })}>
+            Stop
+          </button>{" "}
+          Do not send, close this.
+        </li>
+      </ul>
       <p role="alert" className="message error" hidden={!message}>
         {message}
       </p>

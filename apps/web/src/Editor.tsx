@@ -194,7 +194,7 @@ export function Editor({ id }: { id: string }) {
   return (
     <div className="editor">
       <header className="toolbar">
-        <a href="#/">Workflows</a>
+        <a href="#/advanced">Advanced</a>
         <h1>{wf.name}</h1>
         <a href={`#/w/${id}/runs`}>Runs</a>
         <a href={`#/w/${id}/versions`}>Versions</a>

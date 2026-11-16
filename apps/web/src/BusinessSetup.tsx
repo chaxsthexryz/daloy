@@ -9,6 +9,7 @@ type Settings = { profile: Profile | null; sender: Sender | null; installationFr
 type TestResult = { ok: true; to: string; from: string; replyTo?: string; gmail: boolean; needsConfirmation: boolean } | { ok: false; error: string };
 
 const APP_PASSWORD_HELP = "https://support.google.com/accounts/answer/185833";
+const PILL: Record<Sender["status"], string> = { unverified: "Not confirmed", active: "Connected", failed: "Needs attention", disconnected: "Disconnected" };
 const STATUS: Record<Sender["status"], string> = {
   unverified: "Waiting for you to confirm the test email",
   active: "Sending from this address",
@@ -38,10 +39,14 @@ export function BusinessSetupPage({ outlookOutcome }: { outlookOutcome?: string 
         <p>Loading…</p>
       ) : (
         <>
-          <ProfileForm profile={data.profile} onSaved={load} />
           <SenderSection data={data} onChange={load} />
-          <ConnectionsSection outlookOutcome={outlookOutcome} />
+          <ProfileForm profile={data.profile} onSaved={load} />
           <InquiryForm data={data} />
+          {/* Open when the Outlook consent callback lands here, so its result is not hidden. */}
+          <details className="extras" open={!!outlookOutcome}>
+            <summary>Optional extras: Sheets, Slack, Outlook and Teams (for your IT person)</summary>
+            <ConnectionsSection outlookOutcome={outlookOutcome} />
+          </details>
         </>
       )}
     </main>
@@ -131,7 +136,9 @@ function SenderSection({ data, onChange }: { data: Settings; onChange: () => Pro
 
   return (
     <section aria-labelledby="sender-h">
-      <h2 id="sender-h">Email sender</h2>
+      <h2 id="sender-h">
+        Email sender <span className={`tag${sender?.status === "active" ? " ok" : ""}`}>{sender ? PILL[sender.status] : "Not connected"}</span>
+      </h2>
       {!sender && !data.installationAllowed ? (
         <p className="message error">This installation's mail server does not send for your account. Connect Gmail below to send email from your own address.</p>
       ) : !sender ? (
@@ -231,13 +238,17 @@ function GmailForm({ address: initial, title, onSaved, onCancel }: { address: st
   return (
     <form onSubmit={save} aria-labelledby="gmail-h">
       <h3 id="gmail-h">{title}</h3>
-      <p>
-        Daloy sends as you with a Google app password, a 16-letter code that works for email only. Your Google account needs 2-Step Verification turned on before Google offers
-        app passwords. Some work and school accounts do not offer them; ask your administrator.{" "}
-        <a href={APP_PASSWORD_HELP} target="_blank" rel="noreferrer">
-          How to create an app password
-        </a>
-      </p>
+      <p>Daloy sends as you with a Google app password, a 16-letter code that works for email only. Some work and school accounts do not offer them; ask your administrator.</p>
+      <ol className="numbered">
+        <li>Turn on 2-Step Verification in your Google account. Google offers app passwords only after that.</li>
+        <li>
+          Create an app password.{" "}
+          <a href={APP_PASSWORD_HELP} target="_blank" rel="noreferrer">
+            How to create an app password
+          </a>
+        </li>
+        <li>Enter your Gmail address and the app password below, then save.</li>
+      </ol>
       <div className="field">
         <label htmlFor="g-address">Gmail address</label>
         <input id="g-address" type="email" value={address} onChange={(e) => setAddress(e.target.value)} required autoComplete="email" />

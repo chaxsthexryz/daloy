@@ -152,3 +152,55 @@ details summary { cursor: pointer; font-size: 0.875rem; margin-top: 0.25rem; }
 
 /* Mail notice on the wizard review step and the live page (N4a). */
 .notice { border: 1px solid var(--warn); background: var(--surface); padding: 0.5rem 0.75rem; margin: 0 0 0.75rem; }
+
+/* Automations home and the console menu (N4b). */
+.console-header { height: auto; min-height: 56px; }
+.console-header .who { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.console-header nav { flex-shrink: 0; }
+.console-header nav { display: flex; align-items: center; gap: 1rem; margin-left: auto; }
+.console-header nav a[aria-current="page"] { font-weight: 700; text-decoration: none; }
+.menu-button { display: none; margin-left: auto; }
+.cards { list-style: none; padding: 0; margin: 1rem 0; display: grid; gap: 0.75rem; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 0.25rem 1rem 0.75rem; }
+.card-head { display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem; }
+.card-head h2 { margin: 0.6rem 0 0.4rem; font-size: 1.05rem; margin-right: auto; }
+.card-head .tag { margin-left: 0; }
+.card p { margin: 0.25rem 0; }
+.card .actions { align-items: center; }
+.state { display: inline-block; font-size: 0.75rem; font-weight: 600; border: 1px solid currentColor; border-radius: 3px; padding: 0 0.35rem; }
+.state.done { color: var(--ok); }
+.state.waiting, .state.needs_you { color: var(--warn); }
+.state.problem { color: var(--danger); }
+.state.working { color: var(--muted); }
+.needs-you { border: 1px solid var(--warn); background: var(--surface); padding: 0.5rem 0.75rem; margin: 1rem 0 0; }
+
+/* Collapsed blocks for the person who runs the installation. */
+.technician, .extras { border-top: 1px solid var(--border); margin-top: 1rem; padding-top: 0.25rem; }
+.technician summary, .extras summary { font-weight: 600; }
+.numbered { padding-left: 1.4rem; }
+.choices { list-style: none; padding: 0; }
+.choices li { margin-bottom: 0.5rem; }
+
+@media (max-width: 800px) {
+  .toolbar { height: auto; min-height: 56px; flex-wrap: wrap; padding-top: 0.25rem; padding-bottom: 0.25rem; }
+  .menu-button { display: inline-block; }
+  .console-header nav { display: none; flex-basis: 100%; flex-direction: column; align-items: stretch; gap: 0; margin-left: 0; }
+  .console-header nav.open { display: flex; }
+  .who { display: none; }
+  button, select, input:not([type="checkbox"]):not([type="radio"]), .actions a, .console-header nav a, .toolbar a { min-height: 44px; }
+  .actions a, .console-header nav a, .toolbar a { display: inline-flex; align-items: center; }
+  .console-header nav > * { justify-content: flex-start; }
+  .page { padding: 1rem; }
+}
+
+/* Tables become cards: one block per row, each cell labelled by its column. */
+@media (max-width: 600px) {
+  .table.cards thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .table.cards, .table.cards tbody, .table.cards tr, .table.cards td { display: block; }
+  .table.cards tr { border: 1px solid var(--border); border-radius: 6px; padding: 0.4rem 0.6rem; margin-bottom: 0.6rem; background: var(--surface); }
+  .table.cards td { border: 0; padding: 0.2rem 0; }
+  .table.cards td::before { content: attr(data-label); display: block; font-size: 0.75rem; color: var(--muted); }
+}
+@media (prefers-reduced-motion: reduce) {
+  * { scroll-behavior: auto !important; }
+}

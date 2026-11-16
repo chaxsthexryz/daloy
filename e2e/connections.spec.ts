@@ -16,6 +16,7 @@ test("an owner connects Sheets and Slack, and retries only the Slack note that f
 
   // Connections on the Business and email page.
   await page.getByRole("link", { name: "Business and email" }).first().click();
+  await page.locator("summary", { hasText: "Optional extras" }).click();
   await page.getByLabel("Service account key file (JSON)").fill(process.env.E2E_SHEETS_KEY!);
   await expect(page.getByText("Share the sheet with daloy-e2e@office-demo.iam.gserviceaccount.com as an Editor.")).toBeVisible();
   await page.getByLabel("Sheet link").fill("https://docs.google.com/spreadsheets/d/e2e-sheet-0000000001/edit");

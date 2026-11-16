@@ -9,6 +9,7 @@ test("open the run history, diff two versions and roll back", async ({ page }) =
   await page.getByLabel("Email").fill(`history-${Date.now()}@test.local`);
   await page.getByLabel("Password").fill("e2e test password 1");
   await page.getByRole("button", { name: "Create account" }).click();
+  await page.goto("/#/advanced");
   await page.getByLabel("Name").fill("History");
   await page.getByRole("button", { name: "Create" }).click();
 
@@ -24,7 +25,8 @@ test("open the run history, diff two versions and roll back", async ({ page }) =
 
   // The run page shows the trigger data with the secret-looking field masked, and the step's resolved input.
   await page.getByRole("link", { name: "Open this run in the run history" }).click();
-  await expect(page.getByRole("heading", { name: "Run", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "What happened", exact: true })).toBeVisible();
+  await page.getByText("Details for a technician").click();
   const trigger = page.getByLabel("Trigger data");
   await expect(trigger).toContainText('"amount": 250');
   await expect(trigger).toContainText('"api_key": "[secret]"');
@@ -34,10 +36,10 @@ test("open the run history, diff two versions and roll back", async ({ page }) =
   await expect(page.locator(".run")).toContainText("condition_1 → true");
 
   // The run list links back to the same run.
-  await page.getByRole("link", { name: "Run history" }).click();
-  await expect(page.getByRole("table")).toContainText("live run");
+  await page.getByRole("link", { name: "Activity" }).click();
+  await expect(page.getByRole("table")).toContainText("Real run");
   await page.getByLabel("Show").selectOption("test");
-  await expect(page.getByText("No runs yet.")).toBeVisible();
+  await expect(page.getByText("Nothing has happened yet.")).toBeVisible();
 
   // Version 2 changes the operator.
   await page.getByRole("link", { name: "History" }).click();

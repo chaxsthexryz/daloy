@@ -41,7 +41,7 @@ export function TokensPage() {
   return (
     <main className="page">
       <header className="toolbar plain">
-        <a href="#/">Workflows</a>
+        <a href="#/advanced">Advanced</a>
         <h1>API tokens</h1>
       </header>
       <p>

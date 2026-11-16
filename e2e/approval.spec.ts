@@ -11,6 +11,7 @@ test("a live run waits for approval, and the emailed link approves it once", asy
   await page.getByLabel("Email").fill(`approval-${Date.now()}@test.local`);
   await page.getByLabel("Password").fill("e2e test password 1");
   await page.getByRole("button", { name: "Create account" }).click();
+  await page.goto("/#/advanced");
   await page.getByLabel("Name").fill("Approval");
   await page.getByRole("button", { name: "Create" }).click();
 

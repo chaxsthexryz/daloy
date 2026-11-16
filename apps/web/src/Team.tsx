@@ -48,7 +48,7 @@ export function TeamPage() {
   return (
     <main className="page">
       <header className="toolbar plain">
-        <a href="#/">Workflows</a>
+        <a href="#/">Automations</a>
         <h1>Team</h1>
       </header>
       <form onSubmit={send} className="create">

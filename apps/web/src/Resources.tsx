@@ -47,7 +47,7 @@ export function ResourcesPage() {
   return (
     <main className="page">
       <header className="toolbar plain">
-        <a href="#/">Workflows</a>
+        <a href="#/advanced">Advanced</a>
         <h1>Resources</h1>
       </header>
       <p className="muted">People, rooms or tables a form can be booked for. Add a field of type resource to a form to let people choose one.</p>

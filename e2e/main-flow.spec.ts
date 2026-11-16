@@ -10,6 +10,7 @@ test("sign up, build, test-run, publish and run a workflow", async ({ page }) =>
   await page.getByLabel("Password").fill("e2e test password 1");
   await page.getByRole("button", { name: "Create account" }).click();
 
+  await page.goto("/#/advanced");
   await page.getByLabel("Name").fill("Large orders");
   await page.getByRole("button", { name: "Create" }).click();
   await expect(page.getByRole("heading", { name: "Large orders" })).toBeVisible();
@@ -46,6 +47,7 @@ test("the step outline works from the keyboard", async ({ page }) => {
   await page.getByLabel("Email").fill(`kb-${Date.now()}@test.local`);
   await page.getByLabel("Password").fill("e2e test password 1");
   await page.keyboard.press("Enter");
+  await page.goto("/#/advanced");
   await page.getByLabel("Start from").selectOption("inquiry-triage");
   await page.getByLabel("Name").fill("Keyboard");
   await page.keyboard.press("Enter");
