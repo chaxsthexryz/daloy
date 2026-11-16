@@ -25,6 +25,7 @@ test("a beginner previews, sets up, turns on and receives one office request", a
   await page.getByRole("button", { name: "Set up for my office" }).click();
   await expect(page.getByLabel("Automation name")).toHaveValue("Office requests");
   await page.getByRole("button", { name: "Next" }).click();
+  await expect(page.getByRole("heading", { name: "Fields staff fill in" })).toBeVisible();
   await page.getByLabel("Anything else we should know?").check();
   await page.getByRole("button", { name: "Next" }).click();
   await expect(page.getByRole("heading", { name: "Where requests and alerts go" })).toBeVisible();
@@ -32,6 +33,7 @@ test("a beginner previews, sets up, turns on and receives one office request", a
   await page.getByRole("link", { name: "Draft: continue setup" }).click();
   await expect(page.getByRole("heading", { name: "Where requests and alerts go" })).toBeVisible();
   await page.getByRole("button", { name: "Next" }).click();
+  await expect(page.getByRole("heading", { name: "Review" })).toBeVisible();
   await expect(page.getByText("Ask for name, email, what needs attention, where it is, anything else.")).toBeVisible();
   await page.getByRole("button", { name: "Turn on" }).click();
   await expect(page.getByRole("status")).toContainText("Accepting requests");

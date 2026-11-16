@@ -144,7 +144,7 @@ function SheetsConnection({ conn, onChange }: { conn: Connection | null; onChang
               Change sheet or key
             </button>
           )}
-          <button type="button" className="quiet" disabled={busy} onClick={() => void act(() => api("DELETE", "/settings/connections/google-sheets"))}>
+          <button type="button" className="quiet" disabled={busy} onClick={() => window.confirm("Disconnect Sheets? Automations stop sending there until you reconnect.") && void act(() => api("DELETE", "/settings/connections/google-sheets"))}>
             Disconnect
           </button>
         </div>
@@ -238,7 +238,7 @@ function SlackConnection({ conn, onChange }: { conn: Connection | null; onChange
                 Replace token
               </button>
             )}
-            <button type="button" className="quiet" disabled={busy} onClick={() => void act(() => api("DELETE", "/settings/connections/slack"))}>
+            <button type="button" className="quiet" disabled={busy} onClick={() => window.confirm("Disconnect Slack? Automations stop sending there until you reconnect.") && void act(() => api("DELETE", "/settings/connections/slack"))}>
               Disconnect
             </button>
           </div>
@@ -352,7 +352,7 @@ function OutlookConnection({ conn, setup, outcome, onChange }: { conn: Connectio
                 <button type="button" disabled={busy} onClick={() => void act(async () => setTest(await api<TestResult>("POST", "/settings/connections/outlook/test")))}>
                   Send a test email to {conn.account}
                 </button>
-                <button type="button" className="quiet" disabled={busy} onClick={() => void act(() => api("DELETE", "/settings/connections/outlook"))}>
+                <button type="button" className="quiet" disabled={busy} onClick={() => window.confirm("Disconnect Outlook? Automations stop sending there until you reconnect.") && void act(() => api("DELETE", "/settings/connections/outlook"))}>
                   Disconnect
                 </button>
               </>
@@ -398,7 +398,7 @@ function TeamsConnection({ conn, onChange }: { conn: Connection | null; onChange
               Replace link
             </button>
           )}
-          <button type="button" className="quiet" disabled={busy} onClick={() => void act(() => api("DELETE", "/settings/connections/teams"))}>
+          <button type="button" className="quiet" disabled={busy} onClick={() => window.confirm("Disconnect Teams? Automations stop sending there until you reconnect.") && void act(() => api("DELETE", "/settings/connections/teams"))}>
             Disconnect
           </button>
         </div>

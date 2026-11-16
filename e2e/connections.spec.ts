@@ -41,7 +41,9 @@ test("an owner connects Sheets and Slack, and retries only the Slack note that f
   await page.getByRole("link", { name: "Try an example" }).click();
   await page.getByRole("button", { name: "Set up for my office" }).click();
   await page.getByRole("button", { name: "Next" }).click();
+  await expect(page.getByRole("heading", { name: "Fields staff fill in" })).toBeVisible();
   await page.getByRole("button", { name: "Next" }).click();
+  await expect(page.getByRole("heading", { name: "Where requests and alerts go" })).toBeVisible();
   await page.getByLabel("A row in your Google Sheet").check();
   await page.getByLabel(/A short note in your Slack channel/).check();
   await page.getByRole("button", { name: "Next" }).click();

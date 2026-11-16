@@ -10,6 +10,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { startFakeSmtp } from "../../../test/fake-smtp";
 import { freshDatabase } from "../../../test/db";
 import { createApp } from "./app";
+import { installationLocal } from "./email-settings";
 
 let app: INestApplication;
 let boss: PgBoss;
@@ -134,6 +135,13 @@ describe("email settings", () => {
     const res = await agent.post("/settings/email/test").expect(200);
     expect(res.body).toEqual({ ok: true, to: email, from: "daloy@localhost", gmail: false, needsConfirmation: false });
     expect(installation.messages.at(-1)).toMatchObject({ user: undefined, to: [email] });
+  });
+
+  it("tells the page whether the installation's mail server is a local catcher", async () => {
+    const { agent } = await signedIn();
+    expect((await agent.get("/settings/email").expect(200)).body).toMatchObject({ installationLocal: true });
+    expect(installationLocal(smtpMailer({ SMTP_HOST: "mailpit" }))).toBe(true);
+    expect(installationLocal(smtpMailer({ SMTP_HOST: "smtp.example.com" }))).toBe(false);
   });
 
   it("with an approved-only shared server, a fresh sign-up's test email sends nothing and the page says so", async () => {
