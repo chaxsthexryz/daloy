@@ -50,7 +50,7 @@ The API validates input, stores workflows and starts runs. The worker takes one 
 Needs Docker. For development and tests: Node 24 and pnpm 10.
 
 ```bash
-cp .env.example .env   # then set SECRETS_KEY: openssl rand -base64 32
+cp .env.example .env   # then set SECRETS_KEY (openssl rand -base64 32), POSTGRES_PASSWORD and APP_DB_PASSWORD (openssl rand -hex 24)
 docker compose up -d
 docker compose exec api node_modules/.bin/tsx src/seed.ts
 ```
@@ -83,7 +83,7 @@ After the seed: `demo@daloy.local`, password `daloy-demo-2026`. The account has 
    - Under **Runs**, each run shows the label the model picked and which branch ran.
    - Mailpit (http://localhost:8025) has the thank-you email and the email forwarded to billing@ or support@.
 
-The choice applies to all AI steps in your workflows and takes effect on the next step, without a restart.
+The choice applies to all AI steps in your workflows and takes effect on the next step, without a restart. A key in `LLM_API_KEY` is only sent for accounts when `.env` has `SHARED_LLM_KEY=open`; otherwise each account saves its own key here.
 
 ## Send real email
 

@@ -1,11 +1,13 @@
 import { createDb, migrate } from "@daloy/db";
 import { PgBoss } from "pg-boss";
 import { createApp } from "./app";
+import { deployEnv } from "./http";
 
 const url = process.env.DATABASE_URL;
 const key = process.env.SECRETS_KEY;
 if (!url) throw new Error("DATABASE_URL is not set");
 if (!key) throw new Error("SECRETS_KEY is not set (generate one with: openssl rand -base64 32)");
+const deploy = deployEnv(process.env);
 
 // false in compose, where the apps connect as the DML-only role and the `migrate` service owns the schema (decision 0013).
 const ownsSchema = process.env.MIGRATE_ON_BOOT !== "false";
@@ -15,7 +17,7 @@ const boss = new PgBoss({ connectionString: url, migrate: ownsSchema });
 boss.on("error", (err) => console.error("pg-boss", err));
 await boss.start();
 
-const app = await createApp({ db, boss, secretsKey: Buffer.from(key, "base64"), secureCookies: process.env.NODE_ENV === "production" });
+const app = await createApp({ db, boss, secretsKey: Buffer.from(key, "base64"), ...deploy });
 app.enableShutdownHooks();
 // The built console (apps/web/dist). Served from the API's origin so the session cookie needs no CORS. It uses hash routes, so index.html at / is enough.
 if (process.env.WEB_DIST) app.useStaticAssets(process.env.WEB_DIST);

@@ -19,8 +19,23 @@ import type * as z from "zod";
 export const DB = Symbol("db");
 export const BOSS = Symbol("boss");
 export const CONFIG = Symbol("config");
-/** mail and publicUrl are for the test email and its confirmation link; createApp fills them from the env vars when left out. */
-export type ApiConfig = { secretsKey: Buffer; secureCookies: boolean; mail?: MailDeps; publicUrl?: string; providers?: ProviderUrls };
+/**
+ * mail and publicUrl are for the test email and its confirmation link; createApp fills them from the env vars when left out.
+ * trustProxy is the number of proxies in front of the API (Express "trust proxy"), so req.ip is the real client.
+ */
+export type ApiConfig = { secretsKey: Buffer; secureCookies: boolean; trustProxy?: number; mail?: MailDeps; publicUrl?: string; providers?: ProviderUrls };
+
+/**
+ * TRUST_PROXY and SECURE_COOKIES from the env (docs/deployment.md). A value that cannot be read stops the boot, so a
+ * typo never leaves every client in one rate-limit bucket or the session cookie without Secure.
+ */
+export function deployEnv(env: Record<string, string | undefined>): { trustProxy: number; secureCookies: boolean } {
+  const hops = env.TRUST_PROXY ?? "";
+  if (!/^\d*$/.test(hops) || Number(hops) > 10) throw new Error(`TRUST_PROXY must be the number of proxies in front of the API (0 to 10), got "${hops}"`);
+  const secure = env.SECURE_COOKIES ?? "";
+  if (!["", "true", "false"].includes(secure)) throw new Error(`SECURE_COOKIES must be true or false, got "${secure}"`);
+  return { trustProxy: Number(hops), secureCookies: secure === "true" || env.NODE_ENV === "production" };
+}
 
 /** Validates a body, param or query value with zod at the route boundary. */
 export class ZodPipe<T extends z.ZodType> implements PipeTransform {

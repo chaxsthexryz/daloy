@@ -187,6 +187,14 @@ describe("httpRequest", () => {
     }
   });
 
+  it("refuses a redirect to a host outside HTTP_ALLOWED_HOSTS", async () => {
+    const allowOnly = { guard: { ...guard(), allowHosts: ["public.test"] } };
+    expect((await get("/json", allowOnly)).status).toBe(200);
+    const err = await stepError(get(`/redirect/${encodeURIComponent(`http://other.test:${port}/json`)}`, allowOnly));
+    expect(err.message).toMatch(/not in HTTP_ALLOWED_HOSTS/);
+    expect(err.retryable).toBe(false);
+  });
+
   it("drops the caller's headers on a redirect to another origin", async () => {
     const target = encodeURIComponent(`http://other.test:${port}/echo`);
     const out = await get(`/redirect/${target}`, {}, { Authorization: "Bearer t" });
