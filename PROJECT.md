@@ -194,6 +194,10 @@ Evidence this order rests on. Passed: a cancel or reschedule while a reminder wa
 - [ ] N5. Browser Automation: a separate isolated worker with typed, restricted operations, read-only navigation and extraction first (B1 in the roadmap). Authenticated actions and AI-proposed actions only after their own gates.
 - [ ] N6. Publish on the web: first a demo copy with Mailpit and no real sending, then real accounts only after a final security review that covers N4 and N5.
 
+## Unofficial portfolio demo
+
+- [x] Build Astra Daloy at `/#/demo`. Visitors can edit a sample office request, submit it, view the two simulated messages and reset. This route uses the existing template and browser memory. Public deployment remains under N6. See [decision 0034](docs/decisions/0034-browser-demo.md) and `e2e/portfolio-demo.spec.ts`.
+
 ## Done when
 
 - The k6 and chaos tests pass and docs/reliability.md holds their output.
