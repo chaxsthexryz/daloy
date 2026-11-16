@@ -293,6 +293,12 @@ Edge cases: a token that is missing, unknown, malformed or revoked gets 401. A r
 
 Tests: `apps/api/src/mcp.test.ts` has unit tests for `toolsFromRows` and `runStatus`, and integration tests that drive the endpoint with the official MCP client: missing, unknown and revoked tokens, a raw 2025-era `initialize`, the tool list and `last_used_at`, input validation and run creation, hidden runs of other users, a waiting approval, and the rate limit. `e2e/mcp.spec.ts` (Playwright) creates a token in the console, lists and calls a tool, polls `get_run_status` until the run succeeds, revokes the token and checks the client is refused.
 
+## Astra Daloy visitor demo
+
+Open `/#/demo` to try an office request without signing in. The page gets its fields from the office-request definition, validates them with `parsePayload`, and uses `previewOfficeRequest` to show the manager's notification and the employee's receipt. Both carry the template's fixed `REQ-SAMPLE` reference. The three run-history entries illustrate the workflow. Only the browser holds the result. Refresh or Start again restores the sample.
+
+`e2e/portfolio-demo.spec.ts` opens the route on a phone-sized screen, takes it offline, edits the form, double-clicks Submit, reads both messages and starts again. It also checks for API calls and horizontal overflow. See [decision 0034](decisions/0034-browser-demo.md).
+
 ## Track an office request (packages/engine/src/office-request.ts, apps/api/src/public.ts, apps/web/src/OfficeRequests.tsx)
 
 What it does: the home screen offers "Track an office request". "Try an example" opens a Preview only page with the sample reference, the row that would be recorded, the office notification and the employee receipt. "Set up for my office" creates a workflow named Office requests and walks through four steps: name, fields staff fill in, where alerts go, and review. Each Next or "Save and finish later" saves the step and the answers, so the owner resumes on the same step from "Draft: continue setup" on the home screen. "Turn on" publishes the definition built from the answers: a form trigger and two email steps (notify the office, send the receipt). The page then shows Accepting requests, the form link with Copy form link and Open form, and the request list. Each row has the reference, subject, time received, where it was recorded and whether the emails went out. "Details" opens the run in the existing run history.

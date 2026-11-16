@@ -81,3 +81,7 @@ Kept current with each phase. A mitigation marked "planned" does not exist in co
 | A preview mistaken for a live send | The Preview only page is computed in the browser with no API call, so it cannot record a request or send an email. | Done, roadmap phase 1 |
 | Test runs used to reach internal hosts or send mail | Test runs mock HTTP and email unless "live calls" is ticked; live test runs use the same SSRF guard and recipient cap as real runs | Done, phase 5 |
 | Script injection in the console | React escapes all rendered values, including step outputs and trigger data; no `dangerouslySetInnerHTML`; helmet's CSP blocks inline scripts on the served console | Done, phase 5 |
+
+## Astra Daloy demo boundary
+
+The visitor route `/#/demo` accepts sample request text and email addresses. It renders them as React text, keeps them in browser memory, and calls the shared template preview locally. No account, database or mail service receives the form. The route runs on the same origin as the console, so shipping this page alone does not isolate a publicly exposed console. The offline browser test in `e2e/portfolio-demo.spec.ts` checks submission and reset without API calls.

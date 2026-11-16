@@ -11,6 +11,7 @@ import { SettingsPage } from "./Settings";
 import { BusinessSetupPage, VerifySenderPage } from "./BusinessSetup";
 import { TokensPage } from "./Tokens";
 import { VersionsPage } from "./Versions";
+import { Demo } from "./Demo";
 import { AcceptInvitePage, MyRequestsPage, TeamPage, type User } from "./Team";
 
 const ANSWER = /^#\/answer\/([A-Za-z0-9_-]{43})$/;
@@ -34,8 +35,13 @@ function useHash() {
 }
 
 export function App() {
-  const [user, setUser] = useState<User | null | undefined>(undefined);
   const hash = useHash();
+  if (hash === "#/demo") return <Demo />;
+  return <Console hash={hash} />;
+}
+
+function Console({ hash }: { hash: string }) {
+  const [user, setUser] = useState<User | null | undefined>(undefined);
   useEffect(() => {
     api<User>("GET", "/auth/me").then(setUser, () => setUser(null));
   }, []);
