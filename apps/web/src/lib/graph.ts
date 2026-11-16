@@ -1,5 +1,6 @@
 import { BRANCHES, type Step, type WorkflowDefinition } from "@daloy/engine";
 import type { Edge as FlowEdge, Node as FlowNode } from "@xyflow/react";
+import { STATUS, type EdgeState, type NodeState } from "./run-flow";
 
 /**
  * The editor keeps the workflow definition as its only state. Every edit is a pure function from one
@@ -49,7 +50,9 @@ function newStepId(draft: Draft, type: string) {
   return `${type}_${n}`;
 }
 
-const entryOf = (draft: Draft) => draft.steps.find((s) => !draft.edges.some((e) => e.to === s.id));
+export const entryOf = (draft: Draft) => draft.steps.find((s) => !draft.edges.some((e) => e.to === s.id));
+/** The React Flow id of a draft edge; run-flow.ts keys its edge states by it. */
+export const edgeId = (e: Edge) => `${e.from}:${e.on ?? "next"}`;
 
 /**
  * Adds a step after `after.id` (on branch `after.on`, or the first free branch). If that slot already
@@ -111,13 +114,19 @@ export function layout(draft: Draft): Record<string, { x: number; y: number }> {
   return pos;
 }
 
-export type StepNodeData = { step?: Step; trigger?: Draft["trigger"]; branches?: readonly string[] };
+export type StepNodeData = { step?: Step; trigger?: Draft["trigger"]; branches?: readonly string[]; status?: NodeState };
+export type RunEdgeData = { state: EdgeState };
+/** What a run says about the diagram (see runFlow). Without it the diagram is drawn plain, as in the editor with no run. */
+export type FlowState = { nodes: Record<string, NodeState>; edges: Record<string, EdgeState> };
 
-export function toFlow(draft: Draft, selected: string | null): { nodes: FlowNode<StepNodeData>[]; edges: FlowEdge[] } {
+export function toFlow(draft: Draft, selected: string | null, state?: FlowState): { nodes: FlowNode<StepNodeData>[]; edges: FlowEdge[] } {
   const pos = layout(draft);
+  // Screen readers get the state in words, as sighted users do on the node.
+  const said = (id: string) => (state ? `, ${STATUS[state.nodes[id] ?? "idle"].label}` : "");
+  const edgeProps = (id: string) => (state ? { type: "run", data: { state: state.edges[id] ?? "idle" } satisfies RunEdgeData } : {});
   const at = (id: string) => ({ x: pos[id]!.x - NODE_W / 2, y: pos[id]!.y });
   const nodes: FlowNode<StepNodeData>[] = [
-    { id: "trigger", type: "trigger", ariaLabel: `Trigger: ${draft.trigger.type}`, position: at("trigger"), data: { trigger: draft.trigger }, selected: selected === "trigger", deletable: false },
+    { id: "trigger", type: "trigger", ariaLabel: `Trigger: ${draft.trigger.type}${said("trigger")}`, position: at("trigger"), data: { trigger: draft.trigger, status: state?.nodes.trigger }, selected: selected === "trigger", deletable: false },
     ...draft.steps.map((step) => ({
       id: step.id,
       type: "step",
@@ -125,20 +134,21 @@ export function toFlow(draft: Draft, selected: string | null): { nodes: FlowNode
       ariaLabel: `${step.type} step ${step.id}${draft.edges
         .filter((e) => e.from === step.id)
         .map((e) => `, ${e.on ? `on ${e.on} ` : ""}goes to ${e.to}`)
-        .join("")}`,
+        .join("")}${said(step.id)}`,
       position: at(step.id),
-      data: { step, branches: BRANCHES[step.type] },
+      data: { step, branches: BRANCHES[step.type], status: state?.nodes[step.id] },
       selected: selected === step.id,
     })),
   ];
   const entry = entryOf(draft);
   const edges: FlowEdge[] = [
-    ...(entry ? [{ id: "trigger->entry", source: "trigger", target: entry.id, deletable: false }] : []),
+    ...(entry ? [{ id: "trigger->entry", source: "trigger", target: entry.id, deletable: false, ...edgeProps("trigger->entry") }] : []),
     ...draft.edges.map((e) => ({
-      id: `${e.from}:${e.on ?? "next"}`,
+      id: edgeId(e),
       source: e.from,
       target: e.to,
       deletable: false,
+      ...edgeProps(edgeId(e)),
       ...(e.on && { sourceHandle: e.on, label: e.on }),
     })),
   ];

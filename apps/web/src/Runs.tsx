@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
-import { api, type Run, type RunSummary, type Workflow } from "./api";
+import { api, type Run, type RunSummary, type Version, type Workflow } from "./api";
 import { DeliveryList, type Delivery } from "./Connections";
+import { RunFlow } from "./FlowCanvas";
+import type { Draft } from "./lib/graph";
 import { pollDelay, takingLonger } from "./lib/poll";
 import { plainState, runKind } from "./lib/states";
 
@@ -217,6 +219,7 @@ export function RunPage({ runId }: { runId: string }) {
       {run.error && <p className="message error">{run.error}</p>}
       <RunActions run={run} onDone={() => setReload((n) => n + 1)} />
       <RunDeliveries runId={runId} />
+      <RunPath run={run} />
       <details className="technician">
         <summary>Details for a technician</summary>
         <p className="muted">
@@ -228,6 +231,28 @@ export function RunPage({ runId }: { runId: string }) {
         <RunResult run={run} />
       </details>
     </main>
+  );
+}
+
+/** The path this run took: the version's diagram, redrawn on every poll with the state of each step (read only). */
+function RunPath({ run }: { run: Run }) {
+  const [draft, setDraft] = useState<Draft | null>(null);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    setDraft(null);
+    setFailed(false);
+    api<Version>("GET", `/workflows/${run.workflowId}/versions/${run.version}`).then(
+      (v) => setDraft(v.definition as Draft),
+      () => setFailed(true),
+    );
+  }, [run.workflowId, run.version]);
+  if (failed) return <p className="muted">The diagram could not load. The steps are listed under Details for a technician.</p>;
+  if (!draft) return null;
+  return (
+    <section className="run-path" aria-label="Path it took">
+      <h2>Path it took</h2>
+      <RunFlow draft={draft} run={run} />
+    </section>
   );
 }
 
