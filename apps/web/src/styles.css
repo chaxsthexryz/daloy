@@ -108,6 +108,28 @@ legend { font-size: 0.875rem; font-weight: 600; padding: 0 0.25rem; }
 .node-title { font-weight: 600; }
 .node-summary { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .react-flow__edge-textbg { fill: var(--bg); }
+
+/* Run state on the diagram (N4c). The words and symbols in .node-status carry the state; colour and motion only add to it. */
+.node-status { font-weight: 600; font-size: 0.75rem; margin-top: 0.1rem; color: var(--muted); }
+.node.run-idle { border-style: dashed; }
+.node.run-done { border-color: var(--ok); }
+.node.run-done .node-status { color: var(--ok); }
+.node.run-working { border-color: var(--accent); }
+.node.run-working .node-status { color: var(--accent); }
+.node.run-waiting, .node.run-needs_you { border-color: var(--warn); }
+.node.run-waiting .node-status, .node.run-needs_you .node-status { color: var(--warn); }
+.node.run-problem { border-color: var(--danger); box-shadow: 0 0 0 1px var(--danger); }
+.node.run-problem .node-status { color: var(--danger); }
+.react-flow__edge-path.run-edge { stroke: var(--muted); stroke-width: 1.5; stroke-dasharray: 2 4; }
+.react-flow__edge-path.run-edge.skipped { stroke-dasharray: 6 4; }
+.react-flow__edge-path.run-edge.done, .react-flow__edge-path.run-edge.flowing { stroke: var(--ok); stroke-width: 2.5; stroke-dasharray: none; }
+.run-dot { fill: var(--ok); stroke: var(--bg); stroke-width: 1.5; }
+.run-canvas { height: 360px; border: 1px solid var(--border); border-radius: 6px; }
+@media (max-width: 600px) { .run-path { display: none; } } /* the canvas is desktop only; the step list below says the same */
+@media (prefers-reduced-motion: no-preference) {
+  .node.run-working { animation: node-pulse 1.6s ease-in-out infinite; }
+}
+@keyframes node-pulse { 0%, 100% { box-shadow: 0 0 0 0 transparent; } 50% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 35%, transparent); } }
 .react-flow__edge-text { fill: var(--text); }
 
 .run .steps { list-style: none; padding: 0; }

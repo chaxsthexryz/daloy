@@ -1,75 +1,16 @@
 import { definitionSchema, lintDefinition, type FormField, type Step, type Trigger } from "@daloy/engine";
-import { Background, Controls, Handle, Position, ReactFlow, type Node, type NodeChange, type NodeProps } from "@xyflow/react";
+import { Background, Controls, ReactFlow, type NodeChange } from "@xyflow/react";
 import { useEffect, useId, useMemo, useState } from "react";
 import { AskAi } from "./AiDraft";
 import { api, type Version, type Workflow } from "./api";
+import { edgeTypes, nodeTypes, TYPE_NAMES } from "./FlowCanvas";
 import { RunResult, useRun } from "./Runs";
-import { ADDABLE, addStep, blankDraft, removeStep, toFlow, type AddableType, type Draft, type StepNodeData } from "./lib/graph";
+import { ADDABLE, addStep, blankDraft, removeStep, toFlow, type AddableType, type Draft } from "./lib/graph";
+import { runFlow } from "./lib/run-flow";
 import { SchemaForm, type JsonSchema } from "./SchemaForm";
 
 type Catalog = { schemas: Record<string, JsonSchema>; branches: Record<string, string[]> };
 type Loaded = Workflow & { trigger: { id: string; type: string; webhookPath: string | null } | null; live: Version | null; latest: Version | null };
-
-const TYPE_NAMES: Record<string, string> = { condition: "Condition", http: "HTTP request", email: "Send email", delay: "Delay", ai: "AI task", approval: "Approval", sheets: "Add to Google Sheets", slack: "Post to Slack", outlook: "Send from Outlook", teams: "Post to Teams" };
-
-function summary(step: Step): string {
-  switch (step.type) {
-    case "condition":
-      return `${step.config.condition.left} ${step.config.condition.op} ${step.config.condition.right ?? ""}`;
-    case "http":
-      return `${step.config.method} ${step.config.url}`;
-    case "email":
-    case "outlook":
-      return `to ${step.config.to}`;
-    case "delay": {
-      const { seconds, until, offsetSeconds } = step.config;
-      if (until === undefined) return `${seconds} s`;
-      return offsetSeconds ? `until ${until} ${offsetSeconds < 0 ? "minus" : "plus"} ${Math.abs(offsetSeconds)} s` : `until ${until}`;
-    }
-    case "ai":
-      return step.config.task === "classify" ? `classify: ${Object.keys(step.config.labels ?? {}).join(", ")}` : step.config.task;
-    case "approval":
-      return `ask ${step.config.approver ?? step.config.to}`;
-    case "sheets":
-      return `${step.config.columns.length + 2} columns, reference first`;
-    case "slack":
-    case "teams":
-      return step.config.text.slice(0, 60);
-    case "booking":
-      return step.config.action === "create" ? `book ${step.config.resource} at ${step.config.start}, ${step.config.minutes} min` : `${step.config.action} ${step.config.booking}`;
-  }
-}
-
-function TriggerNode({ data }: NodeProps<Node<StepNodeData, "trigger">>) {
-  return (
-    <div className="node trigger-node">
-      <span className="node-type">Trigger</span>
-      <span className="node-title">{data.trigger!.type}</span>
-      <Handle type="source" position={Position.Bottom} isConnectable={false} />
-    </div>
-  );
-}
-
-function StepNode({ data }: NodeProps<Node<StepNodeData, "step">>) {
-  const step = data.step!;
-  return (
-    <div className="node">
-      <Handle type="target" position={Position.Top} isConnectable={false} />
-      <span className="node-type">{TYPE_NAMES[step.type]}</span>
-      <span className="node-title">{step.id}</span>
-      <span className="node-summary">{summary(step)}</span>
-      {data.branches ? (
-        data.branches.map((b, i) => (
-          <Handle key={b} id={b} type="source" position={Position.Bottom} isConnectable={false} style={{ left: `${((i + 1) / (data.branches!.length + 1)) * 100}%` }} />
-        ))
-      ) : (
-        <Handle type="source" position={Position.Bottom} isConnectable={false} />
-      )}
-    </div>
-  );
-}
-
-const nodeTypes = { trigger: TriggerNode, step: StepNode };
 
 // Tomorrow at 10:00 in the field's own zone, which is on any slot grid that divides the hours evenly.
 const tomorrowAtTen = () => `${new Date(Date.now() + 86_400_000).toISOString().slice(0, 10)}T10:00`;
@@ -120,7 +61,7 @@ export function Editor({ id }: { id: string }) {
     setDraft(next);
     setDirty(true);
   };
-  const flow = useMemo(() => toFlow(draft, selected), [draft, selected]);
+  const flow = useMemo(() => toFlow(draft, selected, run ? runFlow(draft, run) : undefined), [draft, selected, run]);
   // Advice only (decision 0033): a draft that does not parse yet is a work in progress, so it gets no checks.
   const warnings = useMemo(() => {
     const parsed = definitionSchema.safeParse(draft);
@@ -217,6 +158,7 @@ export function Editor({ id }: { id: string }) {
             nodes={nodes}
             edges={flow.edges}
             nodeTypes={nodeTypes}
+            edgeTypes={edgeTypes}
             onNodesChange={onNodesChange}
             onPaneClick={() => setSelected(null)}
             nodesDraggable={false}
