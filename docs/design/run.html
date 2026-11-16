@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Daloy mockup: one run, with Path it took</title>
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="console.css">
+<style>
+/* Mockup only: the reference sheet at the bottom of this file. */
+.spec { margin-top: var(--space-8); padding-top: var(--space-4); border-top: var(--border-width) dashed var(--border); }
+.spec-grid { display: flex; flex-wrap: wrap; gap: var(--space-4); }
+.spec-edges { display: block; width: 100%; max-width: 520px; height: 96px; margin-top: var(--space-4); }
+</style>
+</head>
+<body>
+<!-- Markup copied from RunPage, RunActions, RunPath and RunResult in apps/web/src/Runs.tsx and from FlowCanvas.tsx. -->
+<main class="page">
+  <header class="toolbar plain">
+    <a href="automations.html">Activity</a>
+    <h1>What happened</h1>
+  </header>
+
+  <p aria-live="polite"><span class="state problem">Problem</span> <span class="muted">Real run · started 11/17/2026, 9:14:05 AM · 3.4 s</span></p>
+  <p class="message error">step to_support: Gmail rejected the app password. Reconnect Gmail in Settings, Business and email.</p>
+
+  <section aria-label="Retry">
+    <p>Something went wrong at one step. Retry runs that step once more, with the same request key, so a receiver that checks it does not act twice.</p>
+    <button type="button">Retry</button>
+  </section>
+
+  <section class="run-path" aria-label="Path it took">
+    <h2>Path it took</h2>
+    <div class="run-canvas">
+      <div class="stage">
+        <svg viewBox="0 0 520 600" aria-hidden="true">
+          <path class="react-flow__edge-path run-edge done" d="M260 88 C260 102 260 102 260 116"/>
+          <path class="react-flow__edge-path run-edge done" d="M260 208 C260 222 260 222 260 237"/>
+          <path class="react-flow__edge-path run-edge done" d="M260 329 C260 343 260 343 260 358"/>
+          <path class="react-flow__edge-path run-edge skipped" d="M223 450 C223 470 130 467 130 487"/>
+          <path class="react-flow__edge-path run-edge done" d="M297 450 C297 470 390 467 390 487"/>
+          <rect class="react-flow__edge-textbg" x="158" y="459" width="36" height="18" rx="4"/>
+          <text class="react-flow__edge-text" x="176" y="472" text-anchor="middle">true</text>
+          <rect class="react-flow__edge-textbg" x="324" y="459" width="40" height="18" rx="4"/>
+          <text class="react-flow__edge-text" x="344" y="472" text-anchor="middle">false</text>
+        </svg>
+        <div class="react-flow__node" style="left:150px;top:12px">
+          <div class="node trigger-node run-done"><span class="node-type">Trigger</span><span class="node-title">form</span><span class="node-status"><span aria-hidden="true">✓</span> Done</span></div>
+        </div>
+        <div class="react-flow__node" style="left:150px;top:116px">
+          <div class="node run-done"><span class="node-type">Send email</span><span class="node-title">acknowledge</span><span class="node-summary">to {{trigger.email}}</span><span class="node-status"><span aria-hidden="true">✓</span> Done</span></div>
+        </div>
+        <div class="react-flow__node" style="left:150px;top:237px">
+          <div class="node run-done"><span class="node-type">AI task</span><span class="node-title">classify</span><span class="node-summary">classify: billing, support</span><span class="node-status"><span aria-hidden="true">✓</span> Done</span></div>
+        </div>
+        <div class="react-flow__node" style="left:150px;top:358px">
+          <div class="node run-done"><span class="node-type">Condition</span><span class="node-title">is_billing</span><span class="node-summary">{{steps.classify.output.label}} == billing</span><span class="node-status"><span aria-hidden="true">✓</span> Done</span></div>
+        </div>
+        <div class="react-flow__node" style="left:20px;top:487px">
+          <div class="node run-idle"><span class="node-type">Send email</span><span class="node-title">to_billing</span><span class="node-summary">to billing@example.com</span><span class="node-status"><span aria-hidden="true">-</span> Not reached</span></div>
+        </div>
+        <div class="react-flow__node" style="left:280px;top:487px">
+          <div class="node run-problem"><span class="node-type">Send email</span><span class="node-title">to_support</span><span class="node-summary">to support@example.com</span><span class="node-status"><span aria-hidden="true">✕</span> Problem</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <details class="technician" open>
+    <summary>Details for a technician</summary>
+    <p class="muted">Raw state: failed · version v3 · live run</p>
+    <h2>Trigger data</h2>
+    <pre aria-label="Trigger data">{
+  "name": "Liza Marasigan",
+  "email": "liza@example.com",
+  "message": "Our printer on the second floor stopped working. Who do I ask?"
+}</pre>
+    <h2>Steps</h2>
+    <div class="run" aria-live="polite">
+      <p><span class="badge failed">failed</span> live run</p>
+      <ol class="steps">
+        <li><span class="badge succeeded">succeeded</span> acknowledge<span class="muted"> · 412 ms</span></li>
+        <li><span class="badge succeeded">succeeded</span> classify<span class="muted"> · 1.2 s</span><span class="muted"> · 184 in, 12 out tokens</span>
+          <pre aria-label="Output of classify">{
+  "label": "support"
+}</pre>
+        </li>
+        <li><span class="badge succeeded">succeeded</span> is_billing<span class="muted"> → false</span><span class="muted"> · 3 ms</span></li>
+        <li><span class="badge failed">failed</span> to_support<span class="muted"> attempt 3</span><span class="muted"> · 1.7 s</span>
+          <p class="message error">Gmail rejected the app password. Reconnect Gmail in Settings, Business and email.</p>
+        </li>
+      </ol>
+    </div>
+  </details>
+
+  <!-- Mockup only, not part of the page: every node and edge state, for V2. -->
+  <section class="spec" aria-label="Reference: node and edge states">
+    <h2>Reference for V2: every node and edge state</h2>
+    <p class="muted">This block is not part of the run page. It shows the states one run cannot show together.</p>
+    <div class="spec-grid">
+      <div class="node run-done"><span class="node-type">Send email</span><span class="node-title">acknowledge</span><span class="node-summary">to {{trigger.email}}</span><span class="node-status"><span aria-hidden="true">✓</span> Done</span></div>
+      <div class="node run-working"><span class="node-type">AI task</span><span class="node-title">classify</span><span class="node-summary">classify: billing, support</span><span class="node-status"><span aria-hidden="true">…</span> Working</span></div>
+      <div class="node run-waiting"><span class="node-type">Approval</span><span class="node-title">approve</span><span class="node-summary">to approver@example.com</span><span class="node-status"><span aria-hidden="true">⏸</span> Waiting</span></div>
+      <div class="node run-needs_you"><span class="node-type">Post to Slack</span><span class="node-title">notify</span><span class="node-summary">#office-requests</span><span class="node-status"><span aria-hidden="true">!</span> Needs you</span></div>
+      <div class="node run-problem"><span class="node-type">Send email</span><span class="node-title">to_support</span><span class="node-summary">to support@example.com</span><span class="node-status"><span aria-hidden="true">✕</span> Problem</span></div>
+      <div class="node run-idle"><span class="node-type">Send email</span><span class="node-title">to_billing</span><span class="node-summary">to billing@example.com</span><span class="node-status"><span aria-hidden="true">-</span> Not reached</span></div>
+    </div>
+    <svg class="spec-edges" viewBox="0 -12 520 108" role="img" aria-label="Four edge states: done, flowing with a moving dot, not reached, branch not taken">
+      <path class="react-flow__edge-path run-edge flowing" d="M150 20 L370 20"/>
+      <path class="react-flow__edge-path run-edge done" d="M150 4 L370 4"/>
+      <circle r="4" class="run-dot"><animateMotion dur="1.2s" repeatCount="indefinite" path="M150 20 L370 20" calcMode="linear"/></circle>
+      <path class="react-flow__edge-path run-edge" d="M150 52 L370 52"/>
+      <path class="react-flow__edge-path run-edge skipped" d="M150 84 L370 84"/>
+      <text class="react-flow__edge-text" x="0" y="8">Done</text>
+      <text class="react-flow__edge-text" x="0" y="24">Flowing</text>
+      <text class="react-flow__edge-text" x="0" y="56">Not reached</text>
+      <text class="react-flow__edge-text" x="0" y="88">Branch not taken</text>
+    </svg>
+  </section>
+</main>
+<script>
+// Mockup only. FlowCanvas.tsx already skips the moving dot when the visitor asks for less motion; this mirrors it.
+if (matchMedia("(prefers-reduced-motion: reduce)").matches) document.querySelectorAll(".run-dot").forEach((d) => d.remove());
+</script>
+<script src="reveal.js"></script>
+</body>
+</html>

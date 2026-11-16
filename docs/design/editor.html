@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Daloy mockup: editor</title>
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="console.css">
+</head>
+<body>
+<!-- Markup copied from apps/web/src/Editor.tsx and FlowCanvas.tsx. A preview run is in flight: classify is Working. -->
+<div class="editor">
+  <header class="toolbar">
+    <a href="#">Advanced</a>
+    <h1>Inquiry triage</h1>
+    <a href="#">Runs</a>
+    <a href="#">Versions</a>
+    <span class="muted status" aria-live="polite">Version 3 (live)</span>
+    <div class="actions">
+      <button type="button">Save</button>
+      <button type="button" class="primary">Publish</button>
+    </div>
+  </header>
+  <main class="workspace">
+    <section class="canvas" aria-label="Workflow diagram. Tab to a step and press Enter to select it, Delete to remove it.">
+      <div class="run-canvas">
+        <div class="stage">
+          <svg viewBox="0 0 520 600" aria-hidden="true">
+            <path class="react-flow__edge-path run-edge done" d="M260 88 C260 102 260 102 260 116"/>
+            <path class="react-flow__edge-path run-edge flowing" d="M260 208 C260 222 260 222 260 237"/>
+            <circle r="4" class="run-dot"><animateMotion dur="1.2s" repeatCount="indefinite" path="M260 208 C260 222 260 222 260 237" calcMode="linear"/></circle>
+            <path class="react-flow__edge-path run-edge" d="M260 329 C260 343 260 343 260 358"/>
+            <path class="react-flow__edge-path run-edge" d="M223 450 C223 470 130 467 130 487"/>
+            <path class="react-flow__edge-path run-edge" d="M297 450 C297 470 390 467 390 487"/>
+            <rect class="react-flow__edge-textbg" x="158" y="459" width="36" height="18" rx="4"/>
+            <text class="react-flow__edge-text" x="176" y="472" text-anchor="middle">true</text>
+            <rect class="react-flow__edge-textbg" x="324" y="459" width="40" height="18" rx="4"/>
+            <text class="react-flow__edge-text" x="344" y="472" text-anchor="middle">false</text>
+          </svg>
+          <div class="react-flow__node" style="left:150px;top:12px">
+            <div class="node trigger-node run-done"><span class="node-type">Trigger</span><span class="node-title">form</span><span class="node-status"><span aria-hidden="true">✓</span> Done</span></div>
+          </div>
+          <div class="react-flow__node" style="left:150px;top:116px">
+            <div class="node run-done"><span class="node-type">Send email</span><span class="node-title">acknowledge</span><span class="node-summary">to {{trigger.email}}</span><span class="node-status"><span aria-hidden="true">✓</span> Done</span></div>
+          </div>
+          <div class="react-flow__node selected" style="left:150px;top:237px">
+            <div class="node run-working"><span class="node-type">AI task</span><span class="node-title">classify</span><span class="node-summary">classify: billing, support</span><span class="node-status"><span aria-hidden="true">…</span> Working</span></div>
+          </div>
+          <div class="react-flow__node" style="left:150px;top:358px">
+            <div class="node run-idle"><span class="node-type">Condition</span><span class="node-title">is_billing</span><span class="node-summary">{{steps.classify.output.label}} == billing</span><span class="node-status"><span aria-hidden="true">-</span> Not reached</span></div>
+          </div>
+          <div class="react-flow__node" style="left:20px;top:487px">
+            <div class="node run-idle"><span class="node-type">Send email</span><span class="node-title">to_billing</span><span class="node-summary">to billing@example.com</span><span class="node-status"><span aria-hidden="true">-</span> Not reached</span></div>
+          </div>
+          <div class="react-flow__node" style="left:280px;top:487px">
+            <div class="node run-idle"><span class="node-type">Send email</span><span class="node-title">to_support</span><span class="node-summary">to support@example.com</span><span class="node-status"><span aria-hidden="true">-</span> Not reached</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+    <aside class="panel">
+      <nav aria-label="Steps">
+        <h2>Steps</h2>
+        <ol class="outline">
+          <li><button type="button" aria-pressed="false">Trigger: form</button></li>
+          <li><button type="button" aria-pressed="false">acknowledge <span class="muted">Send email</span></button></li>
+          <li><button type="button" aria-pressed="true">classify <span class="muted">AI task</span></button></li>
+          <li><button type="button" aria-pressed="false">is_billing <span class="muted">Condition</span></button></li>
+          <li><button type="button" aria-pressed="false">to_billing <span class="muted">Send email</span></button></li>
+          <li><button type="button" aria-pressed="false">to_support <span class="muted">Send email</span></button></li>
+        </ol>
+      </nav>
+      <div class="add-step">
+        <div class="field">
+          <label for="add-type">Add a step after classify</label>
+          <div class="row">
+            <select id="add-type"><option>Send email</option></select>
+            <button type="button">Add</button>
+          </div>
+        </div>
+      </div>
+      <section aria-labelledby="step-heading">
+        <h2 id="step-heading">AI task: classify</h2>
+        <p class="muted hint">Use {{trigger.field}}, {{steps.step_id.output.field}} and {{secrets.name}} in text fields.</p>
+        <div class="field">
+          <label for="f-task">Task</label>
+          <select id="f-task"><option>classify</option></select>
+        </div>
+        <div class="field">
+          <label for="f-input">Input</label>
+          <textarea id="f-input" rows="2" spellcheck="false">{{trigger.message}}</textarea>
+        </div>
+        <button type="button" class="danger">Delete step</button>
+      </section>
+      <section aria-labelledby="run-heading">
+        <h2 id="run-heading">Run</h2>
+        <div class="field">
+          <label for="payload">Sample trigger data (JSON)</label>
+          <textarea id="payload" rows="5" spellcheck="false">{
+  "name": "Liza Marasigan",
+  "email": "liza@example.com",
+  "message": "Our printer stopped working."
+}</textarea>
+        </div>
+        <div class="field">
+          <label for="test-mode">Test calls</label>
+          <select id="test-mode"><option>Mocked: nothing is sent and no model is called</option></select>
+        </div>
+        <div class="actions">
+          <button type="button" disabled>Test run draft</button>
+          <button type="button" disabled>Run live version</button>
+        </div>
+        <div class="run" aria-live="polite">
+          <p><span class="badge running">running</span> test run, mocked calls</p>
+          <ol class="steps">
+            <li><span class="badge succeeded">succeeded</span> acknowledge<span class="muted"> · 8 ms</span></li>
+            <li><span class="badge running">running</span> classify<span class="muted"> · not finished</span></li>
+          </ol>
+        </div>
+        <p><a href="run.html">Open this run in the run history</a></p>
+      </section>
+    </aside>
+  </main>
+</div>
+<script>
+// Mockup only. FlowCanvas.tsx already skips the moving dot when the visitor asks for less motion; this mirrors it.
+if (matchMedia("(prefers-reduced-motion: reduce)").matches) document.querySelectorAll(".run-dot").forEach((d) => d.remove());
+</script>
+</body>
+</html>
