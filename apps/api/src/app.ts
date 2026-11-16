@@ -46,6 +46,8 @@ export async function createApp({ db, boss, ...config }: AppOptions) {
 
   // rawBody keeps the exact bytes for webhook signature checks.
   const app = await NestFactory.create<NestExpressApplication>(AppModule, { rawBody: true, logger: ["error", "warn"] });
+  // Hop count, not true: trusting every X-Forwarded-For entry would let a client pick its own rate-limit bucket.
+  if (config.trustProxy) app.set("trust proxy", config.trustProxy);
   app.useBodyParser("json", { limit: "256kb" });
   app.useBodyParser("urlencoded", { limit: "64kb", extended: false });
   app.use(helmet());

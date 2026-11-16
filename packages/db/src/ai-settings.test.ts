@@ -21,12 +21,29 @@ afterAll(async () => {
 });
 afterEach(() => vi.unstubAllEnvs());
 
-it("falls back to the env vars when the user saved nothing", async () => {
+it("falls back to the env vars when the user saved nothing, without the operator's key", async () => {
   vi.stubEnv("LLM_PROVIDER", "openai");
   vi.stubEnv("LLM_BASE_URL", "http://lmstudio.local:1234/v1");
   vi.stubEnv("LLM_API_KEY", "env-key");
   vi.stubEnv("LLM_MODEL", "qwen");
-  expect(await aiConnection(db, key, await newUser())).toEqual({ provider: "openai", baseUrl: "http://lmstudio.local:1234/v1", apiKey: "env-key", model: "qwen" });
+  vi.stubEnv("SHARED_LLM_KEY", "");
+  expect(await aiConnection(db, key, await newUser())).toEqual({ provider: "openai", baseUrl: "http://lmstudio.local:1234/v1", apiKey: undefined, model: "qwen" });
+});
+
+it("sends the operator's key for the env connection only with SHARED_LLM_KEY=open", async () => {
+  vi.stubEnv("LLM_API_KEY", "env-key");
+  const userId = await newUser();
+  for (const value of ["", "off", "OPEN", "yes"]) {
+    vi.stubEnv("SHARED_LLM_KEY", value);
+    expect((await aiConnection(db, key, userId)).apiKey, value).toBeUndefined();
+  }
+  vi.stubEnv("SHARED_LLM_KEY", "open");
+  expect((await aiConnection(db, key, userId)).apiKey).toBe("env-key");
+  // The "Local model" preset is the same env connection, so it follows the same rule.
+  await saveAiSettings(db, key, userId, { preset: "local", model: "llama3.2" });
+  expect((await aiConnection(db, key, userId)).apiKey).toBe("env-key");
+  vi.stubEnv("SHARED_LLM_KEY", "off");
+  expect((await aiConnection(db, key, userId)).apiKey).toBeUndefined();
 });
 
 it("uses the fixed Gemini URL and the saved, encrypted key", async () => {
