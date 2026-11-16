@@ -133,7 +133,7 @@ Local models: for the local choice the page lists the models the server in `.env
 
 Why this way: switching models used to mean editing `.env` and restarting the worker. Hosted providers have fixed URLs in code and the local choice uses the operator's `LLM_BASE_URL`, so a user can never make the server call an address of their choosing (decision 0016).
 
-Edge cases: no saved choice means the env vars decide, as before. A hosted choice without a key, new or saved, is refused. The provider is part of each key's associated data, so a key saved for one provider never decrypts as another's. Keys are encrypted like secrets and the API never returns them, only `hasKey` and the list of providers with a key (`keys`). The test is limited to 10 a minute per IP because it costs tokens. Failure messages come from the HTTP status only, never the provider's response body.
+Edge cases: no saved choice means the env vars decide, as before, and so does the "Local model" choice. Neither sends `LLM_API_KEY` unless `SHARED_LLM_KEY=open`, so an account on a public installation cannot spend the operator's key (decision 0035); a hosted provider then needs the account's own key. A hosted choice without a key, new or saved, is refused. The provider is part of each key's associated data, so a key saved for one provider never decrypts as another's. Keys are encrypted like secrets and the API never returns them, only `hasKey` and the list of providers with a key (`keys`). The test is limited to 10 a minute per IP because it costs tokens. Failure messages come from the HTTP status only, never the provider's response body.
 
 Tests: `packages/db/src/ai-settings.test.ts` (env fallback, encrypted key, each provider's key kept across switches, a key moved to another provider does not decrypt, key required), `apps/api/src/settings.test.ts` (session needed, key never returned, validation, local default from `LLM_MODEL`, local model list and a server that is down, live test against a fake Ollama, unreachable model), `packages/llm-ts/src/index.test.ts` ("listModels"), `apps/worker/src/steps/index.test.ts` (an AI step uses its owner's model), `e2e/settings.spec.ts` (save Gemini with a key, key shown as saved but never displayed, switch to local and back with the key kept).
 
@@ -185,9 +185,9 @@ What it does: stops an HTTP step from reaching the server's own network. Only `h
 
 Why this way: the hostname is checked inside the `lookup` function passed to `http.request`. The socket connects to the exact address that lookup returned, so a DNS server cannot answer once with a public address for the check and then with a private one for the connection. See [decision 0006](decisions/0006-ssrf.md).
 
-Edge cases: Node does not call `lookup` for IP literals, so `checkUrl` checks those first. `new URL()` has already normalised spellings such as `http://2130706433` and `http://0x7f.1` to `127.0.0.1`. A hostname is refused if any of its addresses is blocked. Requests use `agent: false`, so a pooled connection never skips the check.
+Edge cases: Node does not call `lookup` for IP literals, so `checkUrl` checks those first. `new URL()` has already normalised spellings such as `http://2130706433` and `http://0x7f.1` to `127.0.0.1`. A hostname is refused if any of its addresses is blocked. Requests use `agent: false`, so a pooled connection never skips the check. When `HTTP_ALLOWED_HOSTS` is set (the public demo), `checkUrl` also refuses any host not on that list; an entry is an exact host or `*.domain` for its subdomains, and `*.example.com` does not match `example.com` itself. Redirects go through `checkUrl` again, so they cannot leave the list either.
 
-Tests: `steps/ssrf.test.ts` (every range, IPv6 and mapped addresses, scheme and port rules, odd IP spellings, lookup with mixed answers) and `steps/http.test.ts` (redirect to a private address, DNS rebinding with a resolver that changes its answer, the redirect limit, the 1 MB limit, the timeout, header stripping across origins).
+Tests: `steps/ssrf.test.ts` (every range, IPv6 and mapped addresses, scheme and port rules, odd IP spellings, lookup with mixed answers, the allowlist with exact, wildcard and look-alike hosts) and `steps/http.test.ts` (redirect to a private address, redirect to a host off the allowlist, DNS rebinding with a resolver that changes its answer, the redirect limit, the 1 MB limit, the timeout, header stripping across origins).
 
 ## API (apps/api)
 
@@ -195,7 +195,7 @@ What it does: the console API covers sign up, login, workflows and their version
 
 Validation: every body, path parameter and query value goes through `ZodPipe` with a zod schema before a handler sees it. Workflow definitions are checked with the engine's `definitionSchema`, so the API and the worker apply the same rules.
 
-Sessions: logging in creates 32 random bytes, sent as an httpOnly, SameSite=Lax cookie (Secure in production). Only the SHA-256 of the cookie is stored, so a database leak does not hand out live sessions. Passwords are hashed with argon2id. A login with an unknown email still runs a hash check, so response time does not reveal which emails exist.
+Sessions: logging in creates 32 random bytes, sent as an httpOnly, SameSite=Lax cookie, marked Secure when `SECURE_COOKIES=true` or `NODE_ENV=production`. Only the SHA-256 of the cookie is stored, so a database leak does not hand out live sessions. Passwords are hashed with argon2id. A login with an unknown email still runs a hash check, so response time does not reveal which emails exist.
 
 Ownership: every console query filters on the signed-in user, and another user's workflow returns 404, the same as one that does not exist.
 
@@ -205,9 +205,9 @@ Secrets: values are encrypted with AES-256-GCM using `SECRETS_KEY`, with a fresh
 
 API tokens: shown once at creation, stored as SHA-256, and revocable. MCP clients send them as bearer tokens (see MCP below). The console page `#/tokens` creates, lists and revokes them.
 
-Rate limits: every route allows 120 requests per minute per IP, login, form submissions and approval decisions 10, approval pages 30, webhooks 60. Request bodies are capped at 256 kb for JSON and 64 kb for forms.
+Rate limits: every route allows 120 requests per minute per IP, login, form submissions and approval decisions 10, approval pages 30, webhooks 60, and sign-up 10 per hour (`REGISTER_LIMIT_PER_HOUR`). Request bodies are capped at 256 kb for JSON and 64 kb for forms. The IP is `req.ip`. Behind a proxy that is the proxy's address, so every client would share one bucket; `TRUST_PROXY` tells Express how many proxies sit in front, and it then takes the client address from that many entries from the right of `X-Forwarded-For`. A hop count, never "trust all", because the left entries are whatever the client sent. `deployEnv()` in `http.ts` refuses a `TRUST_PROXY` or `SECURE_COOKIES` value it cannot read, so a typo stops the boot instead of turning a protection off.
 
-Tests: `api.test.ts` drives the real app with supertest against Postgres. `secrets.test.ts` covers encryption and signature checks. `e2e.test.ts` runs the API and the worker together, from a webhook call to a finished run.
+Tests: `api.test.ts` drives the real app with supertest against Postgres. `deploy.test.ts` covers one proxy hop (a bucket per client, a spoofed left entry ignored), no proxy (`X-Forwarded-For` ignored), the sign-up limit, the Secure cookie and `deployEnv`. `secrets.test.ts` covers encryption and signature checks. `e2e.test.ts` runs the API and the worker together, from a webhook call to a finished run.
 
 Limits: rate limit counters live in process memory, so each API instance counts on its own.
 

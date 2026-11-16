@@ -53,10 +53,15 @@ function thinkingControl(provider: string, baseUrl: string): Pick<AiConnection, 
   return {};
 }
 
+/**
+ * The operator's server from the env vars. LLM_API_KEY goes with it only when SHARED_LLM_KEY=open, so on a public
+ * installation an account without its own key cannot spend the operator's (decision 0035).
+ */
 const env = (): AiConnection => {
   const provider = process.env.LLM_PROVIDER || "ollama";
   const baseUrl = process.env.LLM_BASE_URL ?? "http://localhost:11434";
-  return { provider, baseUrl, apiKey: process.env.LLM_API_KEY || undefined, model: process.env.LLM_MODEL || "llama3.2", ...thinkingControl(provider, baseUrl) };
+  const apiKey = process.env.SHARED_LLM_KEY === "open" ? process.env.LLM_API_KEY || undefined : undefined;
+  return { provider, baseUrl, apiKey, model: process.env.LLM_MODEL || "llama3.2", ...thinkingControl(provider, baseUrl) };
 };
 
 // The preset is part of the associated data, so a key saved for one provider never decrypts as another's.
