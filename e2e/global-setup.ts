@@ -86,6 +86,9 @@ export default async function setup() {
   process.env.E2E_TELEGRAM_TOKEN = providers.telegram.token;
   process.env.E2E_PAYMONGO_KEY = "sk_test_e2e0000000000000000";
   process.env.E2E_PAYMONGO_WEBHOOK_SECRET = "whsk_e2e000000000000";
+  providers.notion.token = "ntn_e2eNotionToken0123456789abcdef";
+  process.env.E2E_NOTION_TOKEN = providers.notion.token;
+  process.env.E2E_NOTION_DATABASE = providers.notion.database;
   process.env.E2E_SHEETS_KEY = JSON.stringify({ type: "service_account", client_email: saEmail, private_key: privateKey.export({ type: "pkcs8", format: "pem" }).toString() });
   process.env.E2E_SLACK_TOKEN = providers.slack.token;
   process.env.E2E_PROVIDERS_URL = providers.urls.slack;
@@ -109,6 +112,9 @@ export default async function setup() {
     SLACK_API_URL: providers.urls.slack,
     TELEGRAM_API_URL: providers.urls.telegram,
     PAYMONGO_API_URL: providers.urls.paymongo,
+    AIRTABLE_API_URL: providers.urls.airtable,
+    NOTION_API_URL: providers.urls.notion,
+    TRELLO_API_URL: providers.urls.trello,
     MICROSOFT_CLIENT_ID: providers.microsoft.clientId,
     MICROSOFT_CLIENT_SECRET: providers.microsoft.clientSecret,
     MICROSOFT_LOGIN_URL: providers.urls.microsoftLogin,

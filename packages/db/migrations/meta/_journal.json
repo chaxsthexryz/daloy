@@ -190,6 +190,13 @@
       "when": 1794932525915,
       "tag": "0026_paymongo",
       "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1794932931725,
+      "tag": "0027_record_providers",
+      "breakpoints": true
     }
   ]
 }

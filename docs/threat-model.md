@@ -131,3 +131,11 @@ The demo page (`apps/web/demo`, published as `site/demo/` on Cloudflare Pages) a
 - A live key by mistake: `sk_live_` is refused unless the server has `PAYMONGO_LIVE=on`, and an event whose `livemode` differs from the connection is refused.
 - A GCash screenshot as proof: nothing in Daloy marks a payment paid except a signed PayMongo event that matches the stored amount.
 - Remaining risk: abandoned links stay pending (PayMongo sends no expiry event), failed payments and partial refunds are not handled, and the signing format is only checked against PayMongo's documentation until the live check is run.
+
+## Airtable, Notion and Trello (decision 0044)
+
+- The Airtable token, Notion secret and Trello key and token are encrypted like the Slack token, bound to the owner and provider, and never returned or logged. Trello's key and token are in its request URL, so Daloy never prints a request URL or puts one in an error message.
+- The three addresses are fixed or set by the installation's env vars, never by a user.
+- Ids are validated at the boundary (a Notion link is reduced to its 32-character id), and the target is pinned to each delivery when it is queued, so editing the connection cannot redirect what is already queued.
+- Field values come from run data and go only to the owner's own base, database or list. Keep private details out of anything the whole board or workspace can read.
+- A leaked token lets someone write to what it was granted. Revoke it at the provider, then Replace token in Apps. Grant the narrowest scope: Airtable data.records read and write on one base, Notion access to one database.
