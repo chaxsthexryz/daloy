@@ -28,6 +28,10 @@ export async function startFakeProviders(port = 0) {
   const sheets = new Map<string, { title: string; tabs: Map<string, string[][]>; editors: Set<string>; metadata: Map<number, SheetMeta> }>();
   const slack = { token: "", team: "Lim Dental", channels: [{ id: "C0REQ", name: "office-requests", is_member: true }], messages: [] as { channel: string; text: string; ts: string }[], revoked: false };
   const telegram = { token: "", bot: "daloy_test_bot", chats: [{ id: -1001234567890, title: "Office team" }] as { id: number; title: string }[], messages: [] as { chat: string; text: string; id: number }[], revoked: false };
+  // Airtable, Notion and Trello (N15, decision 0044): a bearer or key/token check, one target each, and the records added.
+  const airtable = { token: "", base: "appFAKEBASE000001", table: "tblFAKETABLE00001", records: [] as { id: string; fields: Record<string, unknown> }[], revoked: false };
+  const notion = { token: "", database: "0123456789abcdef0123456789abcdef", title: "Office requests", titleProperty: "Name", pages: [] as { id: string; properties: Record<string, unknown> }[], revoked: false };
+  const trello = { key: "", token: "", username: "daloy_tester", list: "5f0000000000000000000001", listName: "To do", cards: [] as { id: string; name: string; desc: string }[], revoked: false };
   // Microsoft: consent decides what the authorize page answers. Every refresh hands out a new refresh token; like the
   // real service, the old one keeps working until it is revoked (refreshTokens.clear()).
   const microsoft = {
@@ -106,6 +110,9 @@ export async function startFakeProviders(port = 0) {
         teamsPosts: teams.posts.map((p) => p.text),
         telegramMessages: telegram.messages.map((m) => m.text),
         paymongoSessions: paymongo.sessions,
+        airtableRecords: airtable.records.map((r) => r.fields),
+        notionPages: notion.pages.map((p) => p.properties),
+        trelloCards: trello.cards.map((c) => c.name),
       });
     }
 
@@ -340,16 +347,60 @@ export async function startFakeProviders(port = 0) {
       }
       return json(res, 404, { ok: false, error_code: 404, description: "Not Found" });
     }
+    // Airtable: Bearer token, 401 for a bad one, 404 for another base or table. Each added record gets an id.
+    const at = /^\/v0\/([^/]+)\/([^/]+)$/.exec(path);
+    if (at) {
+      if (!airtable.token || req.headers.authorization !== `Bearer ${airtable.token}` || airtable.revoked) return json(res, 401, { error: { type: "AUTHENTICATION_REQUIRED" } });
+      if (at[1] !== airtable.base || at[2] !== airtable.table) return json(res, 404, { error: { type: "TABLE_NOT_FOUND" } });
+      if (req.method === "GET") return json(res, 200, { records: airtable.records.slice(0, 1) });
+      const fields = (JSON.parse(raw) as { fields?: Record<string, unknown> }).fields ?? {};
+      const id = `rec${String(++seq).padStart(14, "0")}`;
+      airtable.records.push({ id, fields });
+      return answer(200, { id, fields, createdTime: new Date().toISOString() });
+    }
+    // Notion: Bearer token and a Notion-Version header. A page needs the database's title property.
+    if (path.startsWith("/v1/")) {
+      if (!notion.token || req.headers.authorization !== `Bearer ${notion.token}` || notion.revoked) return json(res, 401, { object: "error", code: "unauthorized" });
+      if (!req.headers["notion-version"]) return json(res, 400, { object: "error", code: "missing_version" });
+      if (req.method === "GET" && path === `/v1/databases/${notion.database}`) return json(res, 200, { object: "database", id: notion.database, title: [{ plain_text: notion.title }], properties: { [notion.titleProperty]: { type: "title" }, Notes: { type: "rich_text" } } });
+      if (req.method === "POST" && path === "/v1/pages") {
+        const page = JSON.parse(raw) as { parent?: { database_id?: string }; properties?: Record<string, { title?: unknown }> };
+        if (page.parent?.database_id !== notion.database) return json(res, 404, { object: "error", code: "object_not_found" });
+        if (!page.properties?.[notion.titleProperty]?.title) return json(res, 400, { object: "error", code: "validation_error" });
+        const id = `page-${++seq}`;
+        notion.pages.push({ id, properties: page.properties });
+        return answer(200, { object: "page", id });
+      }
+      return json(res, 404, { object: "error", code: "object_not_found" });
+    }
+    // Trello: key and token in the query string. Answers are plain text on errors, like the real API.
+    if (path.startsWith("/1/")) {
+      const q = url.searchParams;
+      if (!trello.token || q.get("key") !== trello.key || q.get("token") !== trello.token || trello.revoked) return res.writeHead(401, { "content-type": "text/plain" }).end("invalid token");
+      if (path === "/1/members/me") return json(res, 200, { username: trello.username });
+      if (path === `/1/lists/${trello.list}`) return json(res, 200, { id: trello.list, name: trello.listName });
+      if (path === "/1/cards" && req.method === "POST") {
+        const c = JSON.parse(raw) as { idList?: string; name?: string; desc?: string };
+        if (c.idList !== trello.list) return res.writeHead(400, { "content-type": "text/plain" }).end("invalid value for idList");
+        const id = `card${++seq}`;
+        trello.cards.push({ id, name: c.name ?? "", desc: c.desc ?? "" });
+        return answer(200, { id, name: c.name });
+      }
+      return res.writeHead(404, { "content-type": "text/plain" }).end("not found");
+    }
     json(res, 404, { error: "not found" });
   });
   await new Promise<void>((resolve) => server.listen(port, "127.0.0.1", resolve));
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 
   return {
-    urls: { googleToken: `${base}/token`, sheets: base, calendar: base, paymongo: base, slack: base, telegram: base, microsoftLogin: `${base}/ms`, graph: `${base}/graph`, teamsHosts: ["127.0.0.1"] },
+    urls: { googleToken: `${base}/token`, sheets: base, calendar: base, paymongo: base, airtable: base, notion: base, trello: base, slack: base, telegram: base, microsoftLogin: `${base}/ms`, graph: `${base}/graph`, teamsHosts: ["127.0.0.1"] },
     calls,
     slack,
     telegram,
+    airtable,
+    notion,
+    trello,
     microsoft,
     teams,
     teamsUrl: (flowId: string) => `${base}/teams/workflows/${flowId}`,

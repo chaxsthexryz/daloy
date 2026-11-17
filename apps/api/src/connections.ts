@@ -33,6 +33,12 @@ import {
   slackChannels,
   slackIdentity,
   slackPost,
+  airtableCheck,
+  notionAddPage,
+  notionDatabase,
+  trelloAddCard,
+  trelloIdentity,
+  trelloList,
   telegramChat,
   telegramIdentity,
   telegramSend,
@@ -68,10 +74,30 @@ const paymongoInput = z.strictObject({
   secretKey: z.string().trim().regex(/^sk_(test|live)_\S+$/, "Paste the secret key from PayMongo, which starts with sk_test_ or sk_live_"),
   webhookSecret: z.string().trim().regex(/^whsk_\S+$/, "Paste the webhook secret from PayMongo, which starts with whsk_"),
 });
+// Airtable: a personal access token (pat...), a base id (app...) and a table id (tbl...) or name. Notion: an internal
+// integration token and a database id (or the link to it). Trello: the API key, a token, and a list id (decision 0044).
+const airtableInput = z.strictObject({
+  token: z.string().trim().regex(/^pat[A-Za-z0-9]+\.[A-Za-z0-9]{20,100}$/, "Paste the personal access token, which starts with pat"),
+  baseId: z.string().trim().regex(/^app[A-Za-z0-9]{10,30}$/, "The base id starts with app"),
+  tableId: z.string().trim().regex(/^[^/?#\\]{1,100}$/, "Enter the table id (tbl...) or the table name"),
+});
+const notionInput = z.strictObject({
+  token: z.string().trim().regex(/^(secret_|ntn_)[A-Za-z0-9]{20,100}$/, "Paste the internal integration secret, which starts with ntn_ or secret_"),
+  database: z.string().trim().max(500).transform((s, ctx) => {
+    const id = /[0-9a-f]{32}/i.exec(s.replace(/-/g, ""))?.[0]?.toLowerCase();
+    if (!id) ctx.addIssue({ code: "custom", message: "Paste the database link or its 32-character id" });
+    return id ?? "";
+  }),
+});
+const trelloInput = z.strictObject({
+  key: z.string().trim().regex(/^[a-f0-9]{32}$/i, "The API key is 32 letters and digits"),
+  token: z.string().trim().regex(/^[A-Za-z0-9_-]{32,200}$/, "Paste the token you got after allowing access"),
+  listId: z.string().trim().regex(/^[a-f0-9]{24}$/i, "The list id is 24 letters and digits"),
+});
 const calendarInput = z.strictObject({ serviceAccount: z.string().min(2).max(10_000), calendar: z.string().trim().min(3).max(300) });
 const retryInput = z.strictObject({ postAgain: z.boolean().default(false) });
 const teamsInput = z.strictObject({ url: z.string().trim().min(10).max(2000), channelName: z.string().trim().min(1).max(100) });
-const SLUGS: Record<string, Provider> = { "google-sheets": "google_sheets", slack: "slack", outlook: "outlook", teams: "teams", telegram: "telegram", "google-calendar": "google_calendar", paymongo: "paymongo" };
+const SLUGS: Record<string, Provider> = { "google-sheets": "google_sheets", slack: "slack", outlook: "outlook", teams: "teams", telegram: "telegram", "google-calendar": "google_calendar", paymongo: "paymongo", airtable: "airtable", notion: "notion", trello: "trello" };
 const providerSlug = new ZodPipe(z.enum(Object.keys(SLUGS) as [string, ...string[]]).transform((s) => SLUGS[s]!));
 const uuid = new ZodPipe(z.uuid());
 
@@ -225,6 +251,61 @@ export class ConnectionsController {
   async testPaymongo(@CurrentUser() user: SessionUser) {
     const conn = await this.connection(user.workspaceId, "paymongo");
     return this.test(user.workspaceId, "paymongo", conn, () => checkPaymongoKey((JSON.parse(conn.credential) as { secretKey: string }).secretKey, this.urls));
+  }
+
+  /** Connect or Reconnect Airtable: a read of one record proves the token, base and table. The token is never returned. */
+  @Put("airtable")
+  @UseGuards(RateLimit(10))
+  async putAirtable(@CurrentUser() user: SessionUser, @Body(new ZodPipe(airtableInput)) body: z.output<typeof airtableInput>) {
+    const destination = await airtableCheck(this.urls, body.token, body.baseId, body.tableId).catch(asBadRequest);
+    await saveConnection(this.db, this.config.secretsKey, user.workspaceId, "airtable", { account: body.baseId, credential: body.token, destination });
+    return this.get(user);
+  }
+
+  /** A record needs field names Daloy does not know, so this repeats the read check instead of adding a row. */
+  @Post("airtable/test")
+  @HttpCode(200)
+  @UseGuards(RateLimit(5))
+  async testAirtable(@CurrentUser() user: SessionUser) {
+    const conn = await this.connection(user.workspaceId, "airtable");
+    return this.test(user.workspaceId, "airtable", conn, () => airtableCheck(this.urls, conn.credential, conn.destination!.baseId!, conn.destination!.tableId!));
+  }
+
+  /** Connect or Reconnect Notion: the database must be shared with the integration; its title property is found and saved. */
+  @Put("notion")
+  @UseGuards(RateLimit(10))
+  async putNotion(@CurrentUser() user: SessionUser, @Body(new ZodPipe(notionInput)) body: z.output<typeof notionInput>) {
+    const destination = await notionDatabase(this.urls, body.token, body.database).catch(asBadRequest);
+    await saveConnection(this.db, this.config.secretsKey, user.workspaceId, "notion", { account: destination.databaseTitle, credential: body.token, destination });
+    return this.get(user);
+  }
+
+  /** Adds a page that only has a title, which every database accepts. */
+  @Post("notion/test")
+  @HttpCode(200)
+  @UseGuards(RateLimit(5))
+  async testNotion(@CurrentUser() user: SessionUser) {
+    const conn = await this.connection(user.workspaceId, "notion");
+    return this.test(user.workspaceId, "notion", conn, () => notionAddPage(this.urls, conn.credential, conn.destination as { databaseId: string; titleProperty: string }, "Test page from Daloy. You can delete this page.", {}));
+  }
+
+  /** Connect or Reconnect Trello: the key and token are saved together as one secret, never returned. */
+  @Put("trello")
+  @UseGuards(RateLimit(10))
+  async putTrello(@CurrentUser() user: SessionUser, @Body(new ZodPipe(trelloInput)) body: z.output<typeof trelloInput>) {
+    const cred = { key: body.key, token: body.token };
+    const { account } = await trelloIdentity(this.urls, cred).catch(asBadRequest);
+    const destination = await trelloList(this.urls, cred, body.listId).catch(asBadRequest);
+    await saveConnection(this.db, this.config.secretsKey, user.workspaceId, "trello", { account, credential: JSON.stringify(cred), destination });
+    return this.get(user);
+  }
+
+  @Post("trello/test")
+  @HttpCode(200)
+  @UseGuards(RateLimit(5))
+  async testTrello(@CurrentUser() user: SessionUser) {
+    const conn = await this.connection(user.workspaceId, "trello");
+    return this.test(user.workspaceId, "trello", conn, () => trelloAddCard(this.urls, JSON.parse(conn.credential), conn.destination!.listId!, "Test card from Daloy. You can archive this card.", ""));
   }
 
   @Get("slack/channels")

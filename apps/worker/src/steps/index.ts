@@ -46,6 +46,7 @@ type ApprovalInput = { to?: string; approver?: string; subject: string; message:
 type SheetsInput = { columns: string[] };
 type SlackInput = { text: string };
 type CalendarInput = { title: string; description: string };
+type RecordInput = { fields?: Record<string, string>; title?: string; name?: string; desc?: string };
 
 /**
  * The config a step runs with, its templates resolved. The executor stores it (redacted) on the step run,
@@ -93,6 +94,18 @@ function resolveInput(step: Step, ctx: ExpressionContext): Record<string, unknow
     case "paymongo_link": {
       const { amount, description, reference } = step.config;
       return { amount: text(amount, ctx), description: text(description, ctx), reference: text(reference, ctx) };
+    }
+    case "airtable":
+    case "notion":
+    case "trello": {
+      // Field and property names are the owner's literals; only values are templates.
+      const c = step.config as { fields?: Record<string, string>; title?: string; name?: string; desc?: string };
+      return {
+        ...(c.fields && { fields: Object.fromEntries(Object.entries(c.fields).map(([k, v]) => [k, text(v, ctx)])) }),
+        ...(c.title !== undefined && { title: text(c.title, ctx) }),
+        ...(c.name !== undefined && { name: text(c.name, ctx) }),
+        ...(c.desc !== undefined && { desc: text(c.desc, ctx) }),
+      } satisfies RecordInput;
     }
     case "booking": {
       const { action, resource, booking, start, minutes } = step.config;
@@ -232,7 +245,10 @@ async function runStep(deps: FullDeps, step: Step, input: unknown, ctx: Expressi
     case "slack":
     case "outlook":
     case "teams":
-    case "telegram": {
+    case "telegram":
+    case "airtable":
+    case "notion":
+    case "trello": {
       // The request reference when the run came from a guided form, else the run id, so every row and message can be traced.
       const ref = (ctx.trigger as { reference?: unknown } | null)?.reference;
       const reference = typeof ref === "string" ? ref : runId;
@@ -241,7 +257,9 @@ async function runStep(deps: FullDeps, step: Step, input: unknown, ctx: Expressi
           ? { row: [reference, new Date().toISOString(), ...(input as SheetsInput).columns] }
           : step.type === "outlook"
             ? { ...(input as EmailInput), to: checkRecipients((input as EmailInput).to).join(",") }
-            : { text: (input as SlackInput).text };
+            : step.type === "airtable" || step.type === "notion" || step.type === "trello"
+              ? (input as RecordInput)
+              : { text: (input as SlackInput).text };
       if (mock) return { output: { mocked: true, reference, ...payload } };
       if (step.type === "outlook") await claim("email", (payload as { to: string }).to.split(",").length);
       // Queued, not sent: the worker delivers it apart from the run, so one provider's trouble never holds up the other
