@@ -139,6 +139,12 @@ it("asks Gemini for low thinking and leaves room for it, from the preset or the 
   expect((await aiConnection(db, key, await newUser())).reasoningTokens).toBeUndefined();
 });
 
+it("connects the DeepSeek preset to DeepSeek's own API with the saved key and thinking off", async () => {
+  const user = await newUser();
+  await saveAiSettings(db, key, user, { preset: "deepseek", model: "deepseek-flash", apiKey: "sk-test-deepseek" });
+  expect(await aiConnection(db, key, user)).toMatchObject({ baseUrl: "https://api.deepseek.com", apiKey: "sk-test-deepseek", model: "deepseek-flash", extraBody: { thinking: { type: "disabled" } } });
+});
+
 // Daloy's AI jobs (label, summary, short draft, rewording) do not need thinking; off is faster and cheaper.
 it("turns DeepSeek thinking off", async () => {
   vi.stubEnv("LLM_PROVIDER", "openai");
