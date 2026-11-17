@@ -107,7 +107,7 @@ No model configured, or the draft call fails: the questions still work, and the 
 
 Since N3, an account without its own AI settings cannot use the operator's `LLM_API_KEY` unless `SHARED_LLM_KEY=open` (decision 0035). Before N6 the tab spends only the workspace's own model (its own key or a local Ollama), never the operator's money. The questions make no model calls; a draft is at most two calls (the draft and one repair); `RateLimit(10)` per user per minute stays.
 
-Recommendation: build the tab now and show it to owners; keep `SHARED_LLM_KEY` closed on every public or pilot installation until N6 adds a per-workspace AI quota. On the locked demo (N5) the tab runs the questions and shows the template suggestion only. The alternative, hiding the tab until N6, delays the feature without saving money, since no operator key is used.
+Recommendation: build the tab now and show it to owners; keep `SHARED_LLM_KEY` closed on every public or pilot installation until N6 adds a per-workspace AI quota. N6 has since added it: with `open`, the key is used only for a workspace that has a plan (decision 0038). On the locked demo (N5) the tab runs the questions and shows the template suggestion only. The alternative, hiding the tab until N6, delays the feature without saving money, since no operator key is used.
 
 ## 6. Proposed PROJECT.md entries
 

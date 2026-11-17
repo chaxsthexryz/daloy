@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { aiConnection, bookFromStep, checkRecipients, claimTimeout, createApproval, findApprover, queueDelivery, readSecrets, redactSecrets, secretForms, sendAs, type Db, type MailDeps, type Provider } from "@daloy/db";
+import { aiConnection, bookFromStep, checkRecipients, claimTimeout, claimUsage, createApproval, findApprover, queueDelivery, readSecrets, redactSecrets, secretForms, sendAs, type Db, type MailDeps, type Provider } from "@daloy/db";
 import { bookingStartField, conditionBranch, parseZoned, type TestChoice, type Trigger, declaresJson, parseInstant, isRetryable, mockAiOutput, parseJsonTemplate, resolveJsonTemplate, resolveTemplate, StepError, usesSecrets, type ExpressionContext, type Step } from "@daloy/engine";
 import type { StepExecutor, StepResult } from "../advance";
 import { runAi } from "./ai";
@@ -106,6 +106,9 @@ async function runStep(deps: FullDeps, step: Step, input: unknown, ctx: Expressi
   if (mock && choice && "fail" in choice && (choice.fail !== "unknown" || attempt === 1)) {
     throw new StepError(`Test run: this step was set to fail (${choice.fail}).`, choice.fail === "retryable", choice.fail === "unknown" ? { outcome: "unknown" } : {});
   }
+  // Counted right before the outside call, under the step key, so a retried attempt is not counted twice. A QuotaError
+  // is not retryable and not sent, so the run fails with its plain message.
+  const claim = (kind: "ai" | "email" | "http", n = 1) => claimUsage(deps.db, userId, kind, { n, key: idempotencyKey });
   switch (step.type) {
     case "condition":
       return { branch: conditionBranch(step.config.condition, ctx) };
@@ -153,11 +156,13 @@ async function runStep(deps: FullDeps, step: Step, input: unknown, ctx: Expressi
       const cfg = input as HttpInput;
       // Same shape as a real response, so later steps that read {{steps.x.output.body}} still resolve.
       if (mock) return { output: { mocked: true, status: 200, headers: {}, body: null, request: { method: cfg.method, url: cfg.url } } };
+      await claim("http");
       return { output: await httpRequest(cfg, idempotencyKey, { guard: deps.guard, claim: claimSend }) };
     }
     case "email": {
       const mail = input as EmailInput;
       if (mock) return { output: { mocked: true, to: mail.to, subject: mail.subject } };
+      await claim("email", checkRecipients(mail.to).length);
       // The Message-ID stays per attempt; the step key is the same on every attempt.
       // An email may not be sent twice on its own: sendAs claims the send once the sender is known.
       const sent = await sendAs(deps.db, deps.secretsKey, deps.mail, userId, mail, `${idempotencyKey}:${attempt}`, { claim: claimSend });
@@ -166,6 +171,7 @@ async function runStep(deps: FullDeps, step: Step, input: unknown, ctx: Expressi
     case "ai": {
       if (mock && choice && "label" in choice) return { output: { label: choice.label } };
       if (mock && !aiLive) return { output: mockAiOutput(step.config) };
+      await claim("ai");
       // The model the workflow owner picked in the console, or the env vars if they picked none.
       const { model, ...connection } = await aiConnection(deps.db, deps.secretsKey, userId);
       return runAi(step.config, (input as AiInput).input, { connection, model, attempt });
@@ -180,6 +186,8 @@ async function runStep(deps: FullDeps, step: Step, input: unknown, ctx: Expressi
       // A named approver must still be a member who may approve; the API checks again when they answer (decision 0022).
       const approver = cfg.approver ? await findApprover(deps.db, userId, cfg.approver) : null;
       if (cfg.approver && !approver) throw new StepError(`The approver ${cfg.approver} is not a member of this workspace who can approve.`, false);
+      // The link email counts once: a retry sends a new link under the same step key.
+      await claim("email");
       const created = await createApproval(deps.db, stepRunId, new Date(Date.now() + cfg.timeoutSeconds * 1000), approver?.id);
       if (!created) {
         // A retry or re-run, and the approver already answered an earlier link: take that answer, ask nobody again.
@@ -216,6 +224,7 @@ async function runStep(deps: FullDeps, step: Step, input: unknown, ctx: Expressi
             ? { ...(input as EmailInput), to: checkRecipients((input as EmailInput).to).join(",") }
             : { text: (input as SlackInput).text };
       if (mock) return { output: { mocked: true, reference, ...payload } };
+      if (step.type === "outlook") await claim("email", (payload as { to: string }).to.split(",").length);
       // Queued, not sent: the worker delivers it apart from the run, so one provider's trouble never holds up the other
       // (decision 0021). A re-run of this step gets the first delivery back, with its original payload.
       const provider: Provider = step.type === "sheets" ? "google_sheets" : step.type;

@@ -83,7 +83,7 @@ After the seed: `demo@daloy.local`, password `daloy-demo-2026`. The account has 
    - Under **Runs**, each run shows the label the model picked and which branch ran.
    - Mailpit (http://localhost:8025) has the thank-you email and the email forwarded to billing@ or support@.
 
-The choice applies to all AI steps in your workflows and takes effect on the next step, without a restart. A key in `LLM_API_KEY` is only sent for accounts when `.env` has `SHARED_LLM_KEY=open`; otherwise each account saves its own key here.
+The choice applies to all AI steps in your workflows and takes effect on the next step, without a restart. A key in `LLM_API_KEY` is only sent for accounts when `.env` has `SHARED_LLM_KEY=open` and the workspace has a plan (set by you, see docs/operations.md); otherwise each account saves its own key here.
 
 ## Send real email
 

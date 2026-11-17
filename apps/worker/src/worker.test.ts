@@ -1,7 +1,8 @@
-import { bookings, createApproval, recordDecision, resources, runs, stepRuns, users, workflows, workflowVersions, type Db } from "@daloy/db";
+import { bookings, createApproval, recordDecision, resources, runs, SCHEDULE_QUEUE, stepRuns, users, workflows, workflowVersions, type Db } from "@daloy/db";
 import { evaluateCondition, StepError } from "@daloy/engine";
 import { asc, eq, sql } from "drizzle-orm";
 import type { Pool } from "pg";
+import { PgBoss } from "pg-boss";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { freshDatabase } from "../../../test/db";
 import type { StepExecutor } from "./advance";
@@ -11,6 +12,7 @@ import { startWorker, type Worker } from "./worker";
 let db: Db;
 let pool: Pool;
 let worker: Worker;
+let dbUrl: string;
 const calls: string[] = [];
 // runId -> its booking, for steps that change the booking as if staff did it while the step runs (decision 0032).
 const bookingOf = new Map<string, string>();
@@ -53,10 +55,9 @@ const executor: StepExecutor = {
 };
 
 beforeAll(async () => {
-  let url: string;
-  ({ url, db, pool } = await freshDatabase());
+  ({ url: dbUrl, db, pool } = await freshDatabase());
   worker = await startWorker({
-    connectionString: url,
+    connectionString: dbUrl,
     db,
     executor,
     leaseMs: 2000,
@@ -289,6 +290,57 @@ describe("worker", () => {
     expect((await waitForEnd(bad)).state).toBe("failed");
     expect((await attemptsOf(bad))[0]).toMatchObject({ state: "failed", inputTokens: 90, outputTokens: 7 });
   });
+});
+
+describe("schedule guard (plan minimum interval)", () => {
+  // Fires the schedule queue like pg-boss's cron does, and waits until the worker has handled the job.
+  async function fire(workflowId: string) {
+    const boss = new PgBoss({ connectionString: dbUrl });
+    await boss.start();
+    try {
+      const id = (await boss.send(SCHEDULE_QUEUE, { workflowId }))!;
+      for (let i = 0; i < 100; i++) {
+        if ((await boss.getJobById(SCHEDULE_QUEUE, id))?.state === "completed") return;
+        await new Promise((r) => setTimeout(r, 100));
+      }
+      throw new Error("schedule job was not handled");
+    } finally {
+      await boss.stop({ graceful: false });
+    }
+  }
+  const runsOf = (workflowId: string) => db.select({ id: runs.id }).from(runs).innerJoin(workflowVersions, eq(workflowVersions.id, runs.workflowVersionId)).where(eq(workflowVersions.workflowId, workflowId));
+
+  async function scheduled(plan: string | null) {
+    const [user] = await db.insert(users).values({ email: `s${++seq}@test.local`, passwordHash: "x", plan }).returning();
+    const [wf] = await db.insert(workflows).values({ userId: user!.id, name: "s", slug: `s${seq}` }).returning();
+    await db.insert(workflowVersions).values({ workflowId: wf!.id, version: 1, definition: flow({ id: "a" }), published: true });
+    return wf!.id;
+  }
+
+  it("skips a fire inside the plan's minimum interval and runs one after it", async () => {
+    const wf = await scheduled("pilot");
+    await fire(wf);
+    expect(await runsOf(wf)).toHaveLength(1);
+    await fire(wf);
+    expect(await runsOf(wf)).toHaveLength(1);
+    // 59 minutes 45 seconds is an hourly cron firing a little early: within the tolerance, so it runs.
+    for (const { id } of await runsOf(wf)) await db.update(runs).set({ createdAt: sql`now() - interval '3585 seconds'` }).where(eq(runs.id, id));
+    await fire(wf);
+    expect(await runsOf(wf)).toHaveLength(2);
+  }, 30_000);
+
+  it("does not count a test run, and puts no guard on a workspace with no plan", async () => {
+    const wf = await scheduled("pilot");
+    const [v] = await db.select().from(workflowVersions).where(eq(workflowVersions.workflowId, wf));
+    await db.insert(runs).values({ workflowVersionId: v!.id, triggerPayload: {}, test: true });
+    await fire(wf);
+    expect(await runsOf(wf)).toHaveLength(2);
+
+    const free = await scheduled(null);
+    await fire(free);
+    await fire(free);
+    expect(await runsOf(free)).toHaveLength(2);
+  }, 30_000);
 });
 
 describe("booking versions (decision 0032)", () => {
