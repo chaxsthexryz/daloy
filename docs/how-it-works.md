@@ -235,6 +235,24 @@ Limits: rate limit counters live in process memory, so each API instance counts 
 - Form: `GET /forms/:triggerId` renders an HTML form from the field list in the definition, with labels escaped. `POST` validates the fields and starts a run. Number inputs carry the field's `min`, `max` and `step` so the browser warns early; the server checks the same limits. A hidden honeypot field (`_website`, a name no form field can have) catches bots: if it is filled, the API answers as if it worked and starts nothing. A form of an office request automation also records a request (see "Track an office request").
 - Schedule: publishing registers a pg-boss cron schedule keyed by workflow id. pg-boss sends a job to `schedule-trigger` at each tick, and the worker starts a run of the live version. Publishing a version with another trigger type removes the schedule.
 
+### Forms on another website
+
+See the setup steps in the [README](../README.md#connect-a-website-form).
+
+The console copies an iframe pointing to `/forms/:triggerId/embed` and a link to the standalone form. The iframe loads the current published fields directly from Daloy. Edits to those fields appear without copying the code again. Both addresses use the same POST handler, field checks, honeypot and per-IP limit. Tracked forms keep the same submission key and receipt when a visitor retries.
+
+The embed accepts anonymous requests even if the browser sends a Daloy session cookie. A member using the standalone form can still find their own submissions under My requests. Only the embed path allows another website to frame the page. `apps/api/src/members.test.ts` checks attribution and headers, `apps/api/src/deploy.test.ts` checks the shared limit, and `e2e/form-embed.spec.ts` submits the copied code from a second origin.
+
+### Incoming website email
+
+The owner chooses the email trigger in the editor and connects the folder receiving website notifications. The API checks workspace ownership and stores the encrypted password separately from the definition. A successful check on a draft verifies access. After publication, **Listening for new mail** means the worker has recorded the folder's current position. A draft-period message stays in the inbox. Editing a continuously published email workflow keeps its position. Switching away and back starts from new mail.
+
+The worker opens the folder read-only. It reads a window of up to 20 message numbers at a time, checks sizes before downloading, skips messages above 256 KiB, and stores up to 20,000 characters of decoded body text. Steps can read `from`, `replyTo`, `to`, `subject`, `text`, `messageId` and `receivedAt` under `trigger`. The received time comes from the mailbox. The From and Reply-To headers are supplied by the sender.
+
+Each poll holds a temporary claim. A replaced credential, disconnected mailbox or newer claim prevents an old response from recording a run. The worker saves the run, event key and checkpoint together. If it stops after saving but before enqueueing, the regular sweep finds the pending run. It retries temporary connection failures. If the mailbox renumbers its messages, the owner must confirm a fresh baseline before intake resumes.
+
+`apps/api/src/email-source.test.ts` covers ownership, connection checks and publication. `packages/db/src/email-sources.test.ts` checks credential storage. The worker's `email-in.test.ts` and `imap.test.ts` exercise redelivery, competing polls, network boundaries, MIME decoding and interrupted reads. `e2e/email-in.spec.ts` connects a local mailbox from the editor and follows a new inquiry through run history.
+
 ## Zoned times, reminders and resources (packages/engine/src/zoned.ts, apps/api/src/resources.ts)
 
 What it does: a `datetime` field reads a time in the field's IANA timezone and checks it on the server: it must be a real date and time, exist in that zone, be in the future, and start on the field's slot grid (`slotMinutes`, counted from local midnight). It is stored as local time with the offset, such as `2027-01-20T14:00:00+08:00`. A delay can wait `until` such a time, moved by `offsetSeconds` (-3600 for an hour before). A `resource` field takes the id of one of the workspace's active resources (Resources page, `GET/POST/PATCH /resources`) and stores `{ id, name }`.
@@ -464,7 +482,9 @@ Why this way: the seed talks to the running API over HTTP instead of writing row
 
 Edge cases: running it twice is safe. A second run signs in instead of signing up and skips workflows whose slug exists. Mocked test runs cap a delay at one second, so the invoice run's one-week wait passes at once and all five runs succeed.
 
-Tests: `apps/api/src/seed.test.ts` seeds twice against the real API and checks one demo user, five published workflows, five mocked test runs, no office requests, the business profile and that the demo owner's sender is the installation server. `e2e/demo.spec.ts` seeds the e2e stack, signs in with the demo login in Chromium and waits for the inquiry runs to succeed.
+The seed also creates an unpublished Website inbox workflow. A sixth mocked run supplies the headers and text of a Saturday delivery inquiry, so the owner can inspect an incoming message before connecting a mailbox.
+
+`apps/api/src/seed.test.ts` seeds twice through the API and checks the five published workflows, the draft, their six mocked runs, the empty requests list, the profile and the sender. `e2e/demo.spec.ts` seeds the browser test stack, signs in and waits for the inquiry runs to succeed.
 
 ## Database roles (docker/app-role.sql, apps/worker/src/migrate.ts)
 

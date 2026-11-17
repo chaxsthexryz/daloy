@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { createKeyedRun, deliveries, findApprover, listDeliveries, PLANS, PROVIDER_NAMES, type Provider, publishedVersion, readConnections, requests, runs, SCHEDULE_QUEUE, supersededSql, triggers, users, workflows, workflowVersions, type Db } from "@daloy/db";
+import { createKeyedRun, deliveries, emailSources, findApprover, listDeliveries, PLANS, PROVIDER_NAMES, type Provider, publishedVersion, readConnections, requests, runs, SCHEDULE_QUEUE, supersededSql, syncEmailSourceOnPublish, triggers, users, workflows, workflowVersions, type Db } from "@daloy/db";
 import { BRANCHES, choiceProblems, definitionSchema, testChoicesSchema, testModeSchema, guidedSetupInput, OFFICE_REQUEST, saveProblems, stepJsonSchemas, TEMPLATES, triggerFields, type Trigger, type WorkflowDefinition } from "@daloy/engine";
 import {
   BadRequestException,
@@ -192,6 +192,10 @@ export class WorkflowsController {
     // The owner's row is locked from the plan check to the save, so two publishes cannot both take the last live slot.
     return this.db.transaction(async (tx) => {
       await this.checkPlan(tx, user.workspaceId, id, definition.trigger);
+      if (definition.trigger.type === "email") {
+        const [source] = await tx.select({ status: emailSources.status }).from(emailSources).where(eq(emailSources.workflowId, id)).for("update");
+        if (source?.status !== "active") throw new BadRequestException("Connect the mailbox and wait for its status to be active before publishing an email trigger.");
+      }
       // Scheduled before saving: pg-boss rejects a bad cron here, before anything is saved.
       await this.syncSchedule(id, definition.trigger);
       return this.saveVersion(id, definition, true, tx);
@@ -279,7 +283,10 @@ export class WorkflowsController {
           .insert(workflowVersions)
           .values({ workflowId: id, version: (latest ?? 0) + 1, definition, published: publish })
           .returning({ id: workflowVersions.id, version: workflowVersions.version, published: workflowVersions.published });
-        if (publish) await syncTrigger(tx, id, definition.trigger);
+        if (publish) {
+          await syncEmailSourceOnPublish(tx, id, definition.trigger.type);
+          await syncTrigger(tx, id, definition.trigger);
+        }
         return row;
       });
     } catch (err) {
