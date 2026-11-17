@@ -212,6 +212,24 @@ Order: N3, N4, V1, then V2 and W together, N5 with the pilot search P in paralle
   - Voice through the browser's Web Speech API and an avatar only if a user asks.
 - [ ] N11. Real accounts: final security review at the release commit covering N6 to N10, a daily recipient cap on Gmail and Outlook receipts, a timestamp in the webhook signature, MCP token scopes and expiry, password change and reset, per-workflow pause and cancel of a pending run, read-side secret redaction on every surface, a purge policy for retired secrets.
 
+Model and effort per open phase. Each phase runs in its own Claude Code session. The phase session plans, reviews diffs and runs the checks; it hands file-by-file implementation and test runs to subagents on a cheaper model, so the large reads and edits do not fill the expensive model's context. A phase whose plan is already detailed can skip the orchestrator.
+
+| Phase | Session (orchestrator) | Subagents (implementation) |
+|---|---|---|
+| N2c, N2d, N2e live checks | done by the owner by hand | none |
+| N3 deployment | Fable 5.2, high | Sonnet 5.5, medium |
+| N4e structure | Fable 5.2, medium | Sonnet 5.5, high |
+| N4f Build with AI tab | Fable 5.2, high | Sonnet 5.5, high |
+| AI-led demo and landing | Fable 5.2, high | Sonnet 5.5, medium |
+| N5 locked demo | Fable 5.2, high | Sonnet 5.5, medium |
+| N6 quotas and metering | Fable 5.2, high | Sonnet 5.5, high |
+| N7 SMS | Fable 5.2, medium | Sonnet 5.5, high |
+| N8 Tagalog | Sonnet 5.5, medium | Sonnet 5.5, low |
+| N9 email-in and embed form | Fable 5.2, high | Sonnet 5.5, high |
+| N10 AI helper | Fable 5.2, high | Sonnet 5.5, high |
+| N11 real accounts and security review | Fable 5.2, high | Sonnet 5.5, medium for fixes |
+| Read-only checks and retests | Sonnet 5.5, medium | none |
+
 Hygiene, any time (done 16 November 2026): add a LICENSE (MIT), the README "How AI was used" section CLAUDE.md asks for, and fix by hand the four statements in docs/how-it-works.md that the code contradicts (steps never reach `skipped`, the table has 85 cases not 72, `failed` can go back to `running`, not every change goes through `assertTransition`).
 
 ## Done when
