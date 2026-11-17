@@ -57,6 +57,22 @@ export async function seed(baseUrl: string) {
     const wf = (await call("POST", "/workflows", { name: "Website inquiries", slug: WEBSITE_INQUIRY_SLUG }))!;
     await call("POST", `/workflows/${wf.id}/versions`, { definition: websiteInquiryDefinition(profile), publish: true });
   }
+
+  // The preview saves a draft and a mocked run. Seeding never connects an inbox.
+  if (!existing.has("website-inbox")) {
+    const wf = (await call("POST", "/workflows", { name: "Website inbox", slug: "website-inbox" }))!;
+    const definition = {
+      trigger: { type: "email", config: {} },
+      steps: [{ id: "notify_office", type: "email", config: { to: DEMO_EMAIL, subject: "Website inquiry: {{trigger.subject}}", text: "{{trigger.text}}" } }],
+      edges: [],
+    };
+    const payload = {
+      from: "forms@example.com", replyTo: "maya@example.com", to: ["inquiries@example.com"],
+      subject: "Question about Saturday delivery", text: "Can you deliver to Quezon City on Saturday?",
+      messageId: "<website-105@example.com>", receivedAt: "2026-11-16T02:30:00.000Z",
+    };
+    await call("POST", `/workflows/${wf.id}/test-runs`, { definition, payload, mode: "mock" });
+  }
 }
 
 if (process.argv[1] && import.meta.filename === resolve(process.argv[1])) {

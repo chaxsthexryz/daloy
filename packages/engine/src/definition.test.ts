@@ -37,6 +37,11 @@ describe("definitionSchema", () => {
   describe("trigger config", () => {
     const withTrigger = (trigger: unknown) => ({ ...triage(), trigger });
 
+    it("accepts email intake without embedding mailbox credentials in versions", () => {
+      expect(issues(withTrigger({ type: "email", config: {} }))).toEqual([]);
+      expect(issues(withTrigger({ type: "email", config: { password: "secret" } }))).not.toEqual([]);
+    });
+
     it("needs at least one form field", () => {
       expect(issues(withTrigger({ type: "form", config: { fields: [] } }))).not.toEqual([]);
       expect(issues(withTrigger({ type: "form", config: {} }))).not.toEqual([]);
@@ -144,7 +149,7 @@ describe("definitionSchema", () => {
 
   it("rejects unknown step and trigger types", () => {
     expect(issues({ trigger: { type: "manual" }, steps: [step("a", "shell")] }).length).toBeGreaterThan(0);
-    expect(issues({ trigger: { type: "email" }, steps: [step("a")] }).length).toBeGreaterThan(0);
+    expect(issues({ trigger: { type: "unknown" }, steps: [step("a")] }).length).toBeGreaterThan(0);
   });
 
   it("rejects step ids that are unsafe in expressions", () => {

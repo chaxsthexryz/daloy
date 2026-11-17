@@ -278,11 +278,30 @@ describe("my requests", () => {
     await request(server).post(`/forms/${formId}`).type("form").send({ ...submission, submission_key: randomUUID() }).expect(200);
     await stranger.agent.post(`/forms/${formId}`).type("form").send({ ...submission, submission_key: randomUUID() }).expect(200);
 
+    const embedded = `/forms/${formId}/embed`;
+    const shown = await rosa.agent.get(embedded).expect(200);
+    expect(shown.headers["x-frame-options"]).toBeUndefined();
+    expect(shown.headers["content-security-policy"]).toMatch(/frame-ancestors [^;]*https:/);
+    const key = /name="submission_key" value="([^"]+)"/.exec(shown.text)![1];
+    const data = { ...submission, submission_key: key };
+    await rosa.agent.post(embedded).type("form").send({ ...data, email: "invalid" }).expect(400);
+    await rosa.agent.post(embedded).type("form").send({ ...data, _website: "spam" }).expect(200);
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const receipt = await rosa.agent.post(embedded).type("form").send(data).expect(200);
+      expect(receipt.text).toContain("Request received");
+      expect(receipt.headers["x-frame-options"]).toBeUndefined();
+    }
+    for (const path of [`/forms/${formId}`, "/workflows", "/approvals/invalid"]) {
+      const protectedPage = await rosa.agent.get(path);
+      expect(protectedPage.headers["content-security-policy"]).toContain("frame-ancestors 'self'");
+      expect(protectedPage.headers["x-frame-options"]).toBe("SAMEORIGIN");
+    }
+
     const mine = (await rosa.agent.get("/my/requests").expect(200)).body as { reference: string; subject: string; automation: string }[];
     expect(mine).toHaveLength(1);
     expect(mine[0]).toMatchObject({ subject: submission.summary, automation: "Office requests" });
     expect((await other.agent.get("/my/requests").expect(200)).body).toEqual([]);
     expect((await stranger.agent.get("/my/requests").expect(200)).body).toEqual([]);
-    expect((await o.agent.get(`/workflows/${wf.body.id}/requests`).expect(200)).body).toHaveLength(3);
+    expect((await o.agent.get(`/workflows/${wf.body.id}/requests`).expect(200)).body).toHaveLength(4);
   });
 });

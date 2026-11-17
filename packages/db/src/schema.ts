@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import { RUN_STATES, STEP_STATES } from "@daloy/engine";
-import { boolean, check, customType, date, index, integer, jsonb, pgEnum, pgSequence, pgTable, primaryKey, text, timestamp, unique, uuid, type AnyPgColumn } from "drizzle-orm/pg-core";
+import { bigint, boolean, check, customType, date, index, integer, jsonb, pgEnum, pgSequence, pgTable, primaryKey, text, timestamp, unique, uuid, type AnyPgColumn } from "drizzle-orm/pg-core";
 
 const id = () => uuid("id").primaryKey().defaultRandom();
 const createdAt = () => timestamp("created_at", { withTimezone: true }).notNull().defaultNow();
@@ -143,6 +143,31 @@ export const triggers = pgTable("triggers", {
   webhookPath: text("webhook_path").unique(),
   createdAt: createdAt(),
 });
+
+/** One dedicated mailbox per workflow. Revision and claim fence old checks, polls and disconnected credentials. */
+export const emailSources = pgTable("email_sources", {
+  id: id(),
+  workflowId: uuid("workflow_id").notNull().unique().references(() => workflows.id, { onDelete: "cascade" }),
+  host: text("host").notNull(),
+  username: text("username").notNull(),
+  folder: text("folder").notNull(),
+  ciphertext: text("ciphertext"),
+  iv: text("iv"),
+  authTag: text("auth_tag"),
+  revision: uuid("revision").notNull().defaultRandom(),
+  mailboxId: uuid("mailbox_id").notNull().defaultRandom(),
+  status: text("status").$type<"pending" | "active" | "failed" | "disconnected">().notNull().default("pending"),
+  listening: boolean("listening").notNull().default(false),
+  uidValidity: text("uid_validity"),
+  // IMAP UIDs are unsigned 32-bit values, above PostgreSQL's signed integer range.
+  lastUid: bigint("last_uid", { mode: "number" }),
+  claimId: uuid("claim_id"),
+  claimUntil: ts("claim_until"),
+  nextPollAt: ts("next_poll_at").notNull().defaultNow(),
+  lastCheckedAt: ts("last_checked_at"),
+  lastError: text("last_error"),
+  createdAt: createdAt(),
+}, (t) => [check("email_sources_status", sql`${t.status} in ('pending', 'active', 'failed', 'disconnected')`)]);
 
 export const runs = pgTable("runs", {
   id: id(),

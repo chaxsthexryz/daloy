@@ -67,6 +67,8 @@ For a visitor walkthrough, open the [public demo](http://localhost:3000/demo/) a
 
 After the seed: `demo@daloy.local`, password `daloy-demo-2026`. The account has the three starter templates (inquiry triage, invoice follow-up, booking no-show follow-up) as published workflows, and five mocked test runs in their run history. It also has **Office requests** ("Track an office request"), turned on and empty: open its form and send a request to see the receipt in Mailpit. Under **Business and email** it has a profile for "Daloy Demo Office" and **Website inquiries** turned on, sending through Mailpit: open the inquiry form, send a message, and find the customer's reply and the office's notification in Mailpit. A new account can try the same template from the home screen: **Try an example** shows a preview that sends nothing, and **Set up for my office** walks through four steps and turns the form on. These are demo credentials for a local install; change or delete the account anywhere else.
 
+The seed also creates **Website inbox**, a draft with a sample email from a website contact form. Open its Activity to inspect the mocked run. It needs no mailbox credentials.
+
 ## Try the AI
 
 1. Sign in, open **Advanced** in the menu, then **AI model**.
@@ -104,6 +106,17 @@ The `SMTP_*` settings in `.env` are the installation's own server, used by accou
    ```
    Set it back to `null` to withdraw approval. Sign-up addresses are not verified, so check who owns an account before approving it.
 3. Everyone else sends nothing through your server. Their email steps, approval emails and test emails fail with "Connect Gmail", and Business and email says so.
+
+## Connect a website form
+
+To display a Daloy form on a website, publish the form automation and choose **Copy embed code** on its Automations card. In the seeded demo, use **Website inquiries**. Paste the code where the form should appear. It includes a link for visitors who prefer to open the form on its own. Customers need a public HTTPS address for Daloy.
+
+- In Wix Editor, add an Embed HTML element and paste the snippet. [Wix embed instructions](https://support.wix.com/en/article/wix-editor-embedding-a-site-or-a-widget)
+- In WordPress, paste it in a Custom HTML block where your site permits iframes. If the editor removes the iframe, use the form link on a button. [WordPress embed instructions](https://wordpress.com/support/wordpress-editor/blocks/embed-block/)
+- In Shopify, use a Custom Liquid block or section on the page if the theme offers one. [Shopify theme editor instructions](https://help.shopify.com/en/manual/online-store/themes/customizing-themes/theme-editor/customizing-sections)
+- On a custom site, paste the snippet in the page body. If the site sets a `frame-src` policy, include the Daloy origin.
+
+To keep the form already on your site, direct its notification emails to a dedicated mailbox folder. In the workflow editor choose the email trigger, enter the IMAP host, mailbox username, app password and folder, and connect it. Publish the automation and wait for the worker to start listening before submitting a sample on the website. Check Activity for the subject and message. A notification's From address may belong to the website itself. Check its Reply-To and body before using a customer address in a step.
 
 ## Google Sheets and Slack
 
@@ -161,7 +174,7 @@ CI also runs Semgrep, gitleaks and `pnpm audit` on every push.
 
 ## How AI was used
 
-Claude Code wrote the code in this repository. I reviewed it, ran it and verified it. What the repository records as checks: the CI workflow (lint, typecheck, tests, Semgrep, gitleaks and `pnpm audit`), the manual live Gmail check in [docs/live-gmail-check.md](docs/live-gmail-check.md), and the independent retests by Astra, which are listed in `PROJECT.md`.
+Claude Code wrote the earlier phases. Codex wrote the email-in trigger and form embed. Owner verification includes the [live Gmail sending check](docs/live-gmail-check.md). The N9 tests use a local mailbox and a separate website origin in Chromium. Live IMAP accounts and hosted website editors still need an owner check.
 
 ## Known limitations
 
@@ -179,7 +192,7 @@ Claude Code wrote the code in this repository. I reviewed it, ran it and verifie
 - The purchase request's approval email goes through the Business and email sender, not Outlook.
 - An ambiguous Slack post (the call timed out) waits for someone to choose Mark as posted or Post again; Daloy cannot look in the channel.
 - A run with Sheets or Slack steps succeeds once the deliveries are queued. Their outcome shows in the Requests list and `GET /deliveries?runId=`, not in the run's own state.
-- Saving a website address connects nothing. A client's existing website form keeps working on its own; only Daloy's hosted inquiry form starts the automation.
+- Saving a website address alone does not connect a form. An existing form must send notification emails to the monitored folder, or the owner can put the Daloy form on the page. Email-in reads message text and headers. It does not import historical mail, extract attachments or map vendor-specific form fields.
 - AI prompts are tested against a fake model server only. Their accuracy with a real model has not been measured. Delimiting and schema checks limit prompt injection but do not stop a model from choosing a wrong label.
 - Anyone who has an unused approval link can approve or reject. The email is the only check on who clicks.
 - An approval timeout is picked up by the worker's 15-second sweep, so it can fire up to 15 seconds late.
@@ -223,6 +236,8 @@ Claude Code wrote the code in this repository. I reviewed it, ran it and verifie
 | cookie-parser | Reads the session cookie | MIT |
 | supertest | API route tests | MIT |
 | nodemailer, @types/nodemailer | SMTP client for email steps, approval mail and the test email (worker and db packages) | MIT-0, MIT |
+| imapflow | Read-only IMAP connection and mailbox UIDs | MIT |
+| mailparser, @types/mailparser | Decode MIME messages into text and typed headers | MIT |
 | react, react-dom, @types/react, @types/react-dom | Console UI | MIT |
 | @xyflow/react | Workflow canvas (React Flow) | MIT |
 | vite, @vitejs/plugin-react | Console dev server and build | MIT |

@@ -6,6 +6,7 @@ Kept current with each phase. A mitigation marked "planned" does not exist in co
 
 - Stored secrets (API keys and SMTP credentials that workflows use)
 - Each owner's Gmail app password, and the right to send as their address
+- IMAP credentials, incoming message text and the saved position of each monitored folder
 - Each owner's Google service account key and Slack bot token, which can write to their shared sheets and post to their channels
 - Each owner's Microsoft refresh token, which can send email as their mailbox, and their Teams workflow link, which lets anyone holding it post to one channel
 - The installation's Microsoft Entra client secret (`MICROSOFT_CLIENT_SECRET`)
@@ -17,7 +18,8 @@ Kept current with each phase. A mitigation marked "planned" does not exist in co
 ## Entry points
 
 - Console API (session cookie)
-- Webhook URLs and hosted forms (public)
+- Webhook URLs and hosted forms, including anonymous embedded forms (public)
+- Owner mailbox setup and the worker's outbound IMAP connection
 - Approval links (public, random single-use token; a named approval also needs the approver's session)
 - Invite links (public, random single-use token)
 - Gmail confirmation links (need the owner's session and a random single-use token)
@@ -29,6 +31,9 @@ Kept current with each phase. A mitigation marked "planned" does not exist in co
 
 | Threat | Mitigation | Status |
 | --- | --- | --- |
+| A site frames a signed-in console or attributes an inquiry to a visiting employee | Cross-origin framing is enabled only for the public form embed. Its submissions ignore cookies for requester attribution. Standalone and embedded forms share field validation, the honeypot and the ten-post per-IP limit. | Implemented, N9 |
+| Someone reads a mailbox password or directs the worker to an internal service | Only the workspace owner can manage a mailbox. Credentials are encrypted for the workspace and workflow, omitted from status responses, and cleared on disconnect. The worker checks all resolved addresses and connects to a checked public IP with TLS certificate verification against the entered host on port 993. Provider error text and authentication data stay out of logs. | Implemented, N9 |
+| Replayed messages, a large attachment or a forged sender starts unintended work | The worker bounds each read and stores a run and mailbox checkpoint together. Obsolete polls lose their claim. It skips oversized mail, exposes plain text and leaves attachments in the mailbox. Sender and Reply-To headers are untrusted. A workflow that needs authorization must use a separate approval. | Implemented, N9 |
 | SSRF through the HTTP step | Allow only http and https on ports 80 and 443. Block private, loopback, link-local and metadata ranges for IPv4 and IPv6, including IPv4-mapped addresses. Check inside the socket's DNS lookup, so the connection goes to the checked address. Re-check after each redirect (max 3) and drop the caller's headers on a cross-origin redirect. A 307 or 308 to another origin fails instead of resending the body. 1 MB and 10 second limits. On a public demo `HTTP_ALLOWED_HOSTS` limits HTTP steps, and their redirects, to listed hosts. See [decision 0006](decisions/0006-ssrf.md). | Done, phase 4; allowlist N3 |
 | Webhook spoofing | Random 32-byte URL path, optional HMAC-SHA256 signature checked in constant time, 256 kb body limit, 60 requests a minute per IP | Done, phase 3 |
 | Secrets leaking into logs | Secrets are inserted by reference (`{{secrets.name}}`) only while a step runs. The stored step input is a preview resolved with `[secret]` in place of each secret, so no encoding of a secret is stored through it; output and error text have every form of every value (raw, JSON-escaped, URL- and form-encoded) replaced before anything is stored. The run history API replaces every form of current and retired secret values again on the way out, so older rows and rotated values stay hidden, then masks by key name (`password`, `token`, `authorization`, `api_key`, `cookie` and similar) in trigger data, step input and step output. See [decision 0008](decisions/0008-step-input.md). | Done, phases 4 and 6 |
