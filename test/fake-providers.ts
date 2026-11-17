@@ -27,6 +27,7 @@ export async function startFakeProviders(port = 0) {
   const tokens = new Map<string, string>(); // access token -> email
   const sheets = new Map<string, { title: string; tabs: Map<string, string[][]>; editors: Set<string>; metadata: Map<number, SheetMeta> }>();
   const slack = { token: "", team: "Lim Dental", channels: [{ id: "C0REQ", name: "office-requests", is_member: true }], messages: [] as { channel: string; text: string; ts: string }[], revoked: false };
+  const telegram = { token: "", bot: "daloy_test_bot", chats: [{ id: -1001234567890, title: "Office team" }] as { id: number; title: string }[], messages: [] as { chat: string; text: string; id: number }[], revoked: false };
   // Microsoft: consent decides what the authorize page answers. Every refresh hands out a new refresh token; like the
   // real service, the old one keeps working until it is revoked (refreshTokens.clear()).
   const microsoft = {
@@ -98,6 +99,7 @@ export async function startFakeProviders(port = 0) {
         slackMessages: slack.messages.map((m) => m.text),
         outlookMessages: microsoft.sent,
         teamsPosts: teams.posts.map((p) => p.text),
+        telegramMessages: telegram.messages.map((m) => m.text),
       });
     }
 
@@ -271,15 +273,32 @@ export async function startFakeProviders(port = 0) {
       }
       return json(res, 200, { ok: false, error: "unknown_method" });
     }
+    // Telegram Bot API: the token is in the path, answers are { ok, result } or { ok: false, description } with a matching HTTP status.
+    const tg = /^\/bot([^/]+)\/(\w+)$/.exec(path);
+    if (tg) {
+      const body = raw ? (JSON.parse(raw) as { chat_id?: string; text?: string }) : {};
+      if (!telegram.token || tg[1] !== telegram.token || telegram.revoked) return json(res, 401, { ok: false, error_code: 401, description: "Unauthorized" });
+      if (tg[2] === "getMe") return json(res, 200, { ok: true, result: { id: 123456789, is_bot: true, username: telegram.bot } });
+      const chat = telegram.chats.find((c) => String(c.id) === body.chat_id);
+      if (!chat) return json(res, 400, { ok: false, error_code: 400, description: "Bad Request: chat not found" });
+      if (tg[2] === "getChat") return json(res, 200, { ok: true, result: { id: chat.id, title: chat.title, type: "group" } });
+      if (tg[2] === "sendMessage") {
+        const id = ++seq;
+        telegram.messages.push({ chat: String(chat.id), text: body.text ?? "", id });
+        return answer(200, { ok: true, result: { message_id: id, chat: { id: chat.id } } });
+      }
+      return json(res, 404, { ok: false, error_code: 404, description: "Not Found" });
+    }
     json(res, 404, { error: "not found" });
   });
   await new Promise<void>((resolve) => server.listen(port, "127.0.0.1", resolve));
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 
   return {
-    urls: { googleToken: `${base}/token`, sheets: base, slack: base, microsoftLogin: `${base}/ms`, graph: `${base}/graph`, teamsHosts: ["127.0.0.1"] },
+    urls: { googleToken: `${base}/token`, sheets: base, slack: base, telegram: base, microsoftLogin: `${base}/ms`, graph: `${base}/graph`, teamsHosts: ["127.0.0.1"] },
     calls,
     slack,
+    telegram,
     microsoft,
     teams,
     teamsUrl: (flowId: string) => `${base}/teams/workflows/${flowId}`,

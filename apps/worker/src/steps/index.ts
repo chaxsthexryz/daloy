@@ -84,6 +84,7 @@ function resolveInput(step: Step, ctx: ExpressionContext): Record<string, unknow
       return { columns: step.config.columns.map((c) => text(c, ctx)) } satisfies SheetsInput;
     case "slack":
     case "teams":
+    case "telegram":
       return { text: text(step.config.text, ctx) } satisfies SlackInput;
     case "booking": {
       const { action, resource, booking, start, minutes } = step.config;
@@ -213,7 +214,8 @@ async function runStep(deps: FullDeps, step: Step, input: unknown, ctx: Expressi
     case "sheets":
     case "slack":
     case "outlook":
-    case "teams": {
+    case "teams":
+    case "telegram": {
       // The request reference when the run came from a guided form, else the run id, so every row and message can be traced.
       const ref = (ctx.trigger as { reference?: unknown } | null)?.reference;
       const reference = typeof ref === "string" ? ref : runId;
