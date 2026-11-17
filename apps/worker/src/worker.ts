@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { hostname } from "node:os";
-import { clearSheetWriteKeys, createRun, publishedVersion, runDueDeliveries, RUN_QUEUE, RUN_QUEUE_OPTIONS, runs, SCHEDULE_QUEUE, type Db, type ProviderUrls } from "@daloy/db";
+import { clearSheetWriteKeys, createRun, planOf, PLANS, publishedVersion, runDueDeliveries, RUN_QUEUE, RUN_QUEUE_OPTIONS, runs, SCHEDULE_QUEUE, workflows, workflowVersions, type Db, type ProviderUrls } from "@daloy/db";
 import type { RetryPolicy } from "@daloy/engine";
-import { and, inArray, isNull, lt, lte, or, sql } from "drizzle-orm";
+import { and, eq, gt, inArray, isNull, lt, lte, or, sql } from "drizzle-orm";
 import { PgBoss } from "pg-boss";
 import { advance, type AdvanceDeps, type StepExecutor } from "./advance";
 
@@ -20,6 +20,21 @@ export type WorkerOptions = {
   deliveries?: { secretsKey: Buffer; urls: ProviderUrls };
 };
 export type Worker = Awaited<ReturnType<typeof startWorker>>;
+
+/** The owner's plan sets a minimum time between scheduled runs. 30 s of slack, so an exact hourly cron is not skipped. */
+async function tooSoon(db: Db, workflowId: string) {
+  const [wf] = await db.select({ userId: workflows.userId }).from(workflows).where(eq(workflows.id, workflowId));
+  const { plan } = wf ? await planOf(db, wf.userId) : { plan: null };
+  if (!plan) return false;
+  const since = sql`now() - make_interval(secs => ${PLANS[plan].minScheduleMinutes * 60 - 30})`;
+  const recent = await db
+    .select({ id: runs.id })
+    .from(runs)
+    .innerJoin(workflowVersions, eq(workflowVersions.id, runs.workflowVersionId))
+    .where(and(eq(workflowVersions.workflowId, workflowId), eq(runs.test, false), gt(runs.createdAt, since)))
+    .limit(1);
+  return recent.length > 0;
+}
 
 export async function startWorker(opts: WorkerOptions) {
   const { db, leaseMs = 30_000, sweepMs = 15_000 } = opts;
@@ -52,6 +67,10 @@ export async function startWorker(opts: WorkerOptions) {
   // A schedule trigger fired: start a run of the workflow's live version, with the fire time as the payload.
   await boss.work<{ workflowId: string }>(SCHEDULE_QUEUE, { pollingIntervalSeconds: opts.pollingIntervalSeconds ?? 2 }, async (jobs) => {
     for (const job of jobs) {
+      if (await tooSoon(db, job.data.workflowId)) {
+        console.log(`schedule: skipped ${job.data.workflowId}, the plan's minimum interval has not passed`);
+        continue;
+      }
       const version = await publishedVersion(db, job.data.workflowId);
       if (version) await deps.enqueue(await createRun(db, version.id, { firedAt: new Date().toISOString() }));
     }

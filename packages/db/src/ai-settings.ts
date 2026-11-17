@@ -1,7 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { decryptSecret, encryptSecret } from "./crypto";
 import type { Db } from "./index";
-import { aiKeys, aiSettings } from "./schema";
+import { aiKeys, aiSettings, users } from "./schema";
 
 /**
  * The AI models a user can pick in the console. Hosted ones have a fixed URL, so a user cannot point the server at an
@@ -55,12 +55,13 @@ function thinkingControl(provider: string, baseUrl: string): Pick<AiConnection, 
 
 /**
  * The operator's server from the env vars. LLM_API_KEY goes with it only when SHARED_LLM_KEY=open, so on a public
- * installation an account without its own key cannot spend the operator's (decision 0035).
+ * installation an account without its own key cannot spend the operator's (decision 0035). It also goes only to a
+ * workspace with a plan, so a sign-up without one cannot spend it either.
  */
-const env = (): AiConnection => {
+const env = (hasPlan = false): AiConnection => {
   const provider = process.env.LLM_PROVIDER || "ollama";
   const baseUrl = process.env.LLM_BASE_URL ?? "http://localhost:11434";
-  const apiKey = process.env.SHARED_LLM_KEY === "open" ? process.env.LLM_API_KEY || undefined : undefined;
+  const apiKey = hasPlan && process.env.SHARED_LLM_KEY === "open" ? process.env.LLM_API_KEY || undefined : undefined;
   return { provider, baseUrl, apiKey, model: process.env.LLM_MODEL || "llama3.2", ...thinkingControl(provider, baseUrl) };
 };
 
@@ -68,7 +69,7 @@ const env = (): AiConnection => {
 const keyName = (preset: string) => `ai_api_key:${preset}`;
 
 /** The local server from the env vars, for listing its models. */
-export const localConnection = env;
+export const localConnection = () => env();
 
 const savedKey = async (db: Db, userId: string, preset: string) =>
   (await db.select().from(aiKeys).where(and(eq(aiKeys.userId, userId), eq(aiKeys.preset, preset))))[0];
@@ -99,8 +100,9 @@ export async function saveAiSettings(db: Db, secretsKey: Buffer, userId: string,
 /** Where the AI step of this user's workflows sends its requests. */
 export async function aiConnection(db: Db, secretsKey: Buffer, userId: string): Promise<AiConnection> {
   const [row] = await db.select().from(aiSettings).where(eq(aiSettings.userId, userId));
-  if (!row) return env();
-  if (row.preset === "local") return { ...env(), model: row.model };
+  const shared = async () => env(((await db.select({ plan: users.plan }).from(users).where(eq(users.id, userId)))[0]?.plan ?? null) !== null);
+  if (!row) return shared();
+  if (row.preset === "local") return { ...(await shared()), model: row.model };
   const preset = PRESETS[row.preset as Exclude<Preset, "local">];
   const key = await savedKey(db, userId, row.preset);
   if (!key) throw new Error(`${preset.label} has no saved API key`);

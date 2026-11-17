@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { createKeyedRun, deliveries, findApprover, listDeliveries, PROVIDER_NAMES, type Provider, publishedVersion, readConnections, requests, runs, SCHEDULE_QUEUE, supersededSql, triggers, workflows, workflowVersions, type Db } from "@daloy/db";
+import { createKeyedRun, deliveries, findApprover, listDeliveries, PLANS, PROVIDER_NAMES, type Provider, publishedVersion, readConnections, requests, runs, SCHEDULE_QUEUE, supersededSql, triggers, users, workflows, workflowVersions, type Db } from "@daloy/db";
 import { BRANCHES, choiceProblems, definitionSchema, testChoicesSchema, testModeSchema, guidedSetupInput, OFFICE_REQUEST, saveProblems, stepJsonSchemas, TEMPLATES, triggerFields, type Trigger, type WorkflowDefinition } from "@daloy/engine";
 import {
   BadRequestException,
@@ -7,6 +7,7 @@ import {
   ConflictException,
   Controller,
   Delete,
+  ForbiddenException,
   Get,
   HttpCode,
   Inject,
@@ -17,6 +18,7 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { and, desc, eq, getTableColumns, max, sql } from "drizzle-orm";
+import { CronExpressionParser } from "cron-parser";
 import type { PgBoss } from "pg-boss";
 import * as z from "zod";
 import { SessionGuard } from "./auth";
@@ -186,9 +188,33 @@ export class WorkflowsController {
 
     if (body.publish) await this.checkConnections(user.workspaceId, definition);
     if (body.publish) await this.checkApprovers(user.workspaceId, definition);
-    // Scheduled first: pg-boss rejects a bad cron here, before anything is saved.
-    if (body.publish) await this.syncSchedule(id, definition.trigger);
-    return this.saveVersion(id, definition, body.publish);
+    if (!body.publish) return this.saveVersion(id, definition, false);
+    // The owner's row is locked from the plan check to the save, so two publishes cannot both take the last live slot.
+    return this.db.transaction(async (tx) => {
+      await this.checkPlan(tx, user.workspaceId, id, definition.trigger);
+      // Scheduled before saving: pg-boss rejects a bad cron here, before anything is saved.
+      await this.syncSchedule(id, definition.trigger);
+      return this.saveVersion(id, definition, true, tx);
+    });
+  }
+
+  /** A plan caps live automations and how often a schedule fires. A workspace without a plan has no limits; drafts never reach this. */
+  private async checkPlan(tx: Tx, workspaceId: string, id: string, trigger: Trigger) {
+    const [owner] = await tx.select({ plan: users.plan }).from(users).where(eq(users.id, workspaceId)).for("update");
+    const plan = owner?.plan ? PLANS[owner.plan as keyof typeof PLANS] : undefined;
+    if (!plan) return;
+    if (trigger.type === "schedule" && fastestGapMinutes(trigger.config.cron) < plan.minScheduleMinutes) {
+      throw new BadRequestException(`Your ${plan.label} plan runs a schedule at most once every ${plan.minScheduleMinutes} minutes. Pick a less frequent schedule, or ask Daloy to move you to a larger plan.`);
+    }
+    const liveNow = await tx
+      .selectDistinct({ id: workflows.id })
+      .from(workflows)
+      .innerJoin(workflowVersions, and(eq(workflowVersions.workflowId, workflows.id), eq(workflowVersions.published, true)))
+      .where(eq(workflows.userId, workspaceId));
+    // An already live workflow can always be published again, even if a plan change left the workspace over its limit.
+    if (liveNow.length >= plan.automations && !liveNow.some((w) => w.id === id)) {
+      throw new ForbiddenException(`Your ${plan.label} plan allows ${plan.automations} live automation${plan.automations === 1 ? "" : "s"}. Delete one, or ask Daloy to move you to a larger plan.`);
+    }
   }
 
   /**
@@ -245,9 +271,9 @@ export class WorkflowsController {
     }
   }
 
-  private async saveVersion(id: string, definition: WorkflowDefinition, publish: boolean) {
+  private async saveVersion(id: string, definition: WorkflowDefinition, publish: boolean, outer: Pick<Db, "transaction"> = this.db) {
     try {
-      return await this.db.transaction(async (tx) => {
+      return await outer.transaction(async (tx) => {
         const [{ latest }] = (await tx.select({ latest: max(workflowVersions.version) }).from(workflowVersions).where(eq(workflowVersions.workflowId, id))) as [{ latest: number | null }];
         const [row] = await tx
           .insert(workflowVersions)
@@ -294,6 +320,23 @@ export class WorkflowsController {
     } catch (err) {
       throw new BadRequestException(`trigger.config.cron: ${err instanceof Error ? err.message : "invalid"}`);
     }
+  }
+}
+
+/** Smallest gap in minutes between the next 10 fire times (UTC, as pg-boss schedules). A cron that does not parse is left for pg-boss to reject. */
+function fastestGapMinutes(cron: string) {
+  try {
+    const next = CronExpressionParser.parse(cron, { tz: "UTC" });
+    let last = next.next().getTime();
+    let gap = Infinity;
+    for (let i = 0; i < 9; i++) {
+      const at = next.next().getTime();
+      gap = Math.min(gap, at - last);
+      last = at;
+    }
+    return gap / 60_000;
+  } catch {
+    return Infinity;
   }
 }
 

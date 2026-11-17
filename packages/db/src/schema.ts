@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import { RUN_STATES, STEP_STATES } from "@daloy/engine";
-import { boolean, check, customType, index, integer, jsonb, pgEnum, pgSequence, pgTable, primaryKey, text, timestamp, unique, uuid, type AnyPgColumn } from "drizzle-orm/pg-core";
+import { boolean, check, customType, date, index, integer, jsonb, pgEnum, pgSequence, pgTable, primaryKey, text, timestamp, unique, uuid, type AnyPgColumn } from "drizzle-orm/pg-core";
 
 const id = () => uuid("id").primaryKey().defaultRandom();
 const createdAt = () => timestamp("created_at", { withTimezone: true }).notNull().defaultNow();
@@ -17,7 +17,34 @@ export const users = pgTable("users", {
   // Recipients a day this workspace owner may send through the installation's shared mail server when SHARED_MAIL is
   // "approved". Null: not approved. Only the operator sets it (decision 0024).
   sharedMailDailyLimit: integer("shared_mail_daily_limit"),
-});
+  // The plan the operator set; null means none yet (no limits, and no shared AI key). plan_started_on anchors the monthly cycle.
+  plan: text("plan"),
+  planStartedOn: date("plan_started_on"),
+}, (t) => [check("users_plan", sql`${t.plan} in ('pilot', 'business', 'business_plus')`)]);
+
+/** Metered work per workspace, kind (ai, email, http) and period (a Manila day, or a monthly cycle start). */
+export const usageCounts = pgTable(
+  "usage_counts",
+  {
+    userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    kind: text("kind").notNull(),
+    period: text("period").notNull(),
+    used: integer("used").notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.kind, t.period] })],
+);
+
+/** Keys of work already counted, so a retried step is not counted twice. */
+export const usageClaims = pgTable(
+  "usage_claims",
+  {
+    userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    kind: text("kind").notNull(),
+    key: text("key").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.kind, t.key] })],
+);
 
 /** Recipients sent through the shared mail server per workspace and UTC day. One row per day, counted atomically. */
 export const sharedMailUsage = pgTable(

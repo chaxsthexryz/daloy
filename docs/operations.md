@@ -81,6 +81,41 @@ Tried on the drill project: after the run with an invalid address failed, the qu
 
 Any row means someone should look. A workflow that keeps failing the same way can be stopped with the procedure above while it is fixed.
 
+## Plans, usage and invoicing
+
+Limits come from a workspace's plan (decision 0038). `pilot`, `business` and `business_plus` are the only values. Only you can set one, with SQL. A workspace with no plan has no limits and cannot use the shared AI key.
+
+Set a plan and the date its monthly cycle starts. The AI count resets on that day each month, Manila time:
+
+```bash
+docker compose exec postgres psql -U daloy -d daloy -c "update users set plan = 'business', plan_started_on = '2026-12-01' where email = 'owner@example.com'"
+```
+
+Remove a plan with `plan = null`. The limits go away, usage is still counted, and the shared AI key stops working for that workspace.
+
+Read a workspace's use. `period` is the Manila day for `email` and `http`, and the cycle's start date for `ai`:
+
+```bash
+docker compose exec postgres psql -U daloy -d daloy -c "select c.kind, c.period, c.used from usage_counts c join users u on u.id = c.user_id where u.email = 'owner@example.com' order by c.kind, c.period desc limit 10"
+```
+
+The owner sees the same numbers in Settings, under Plan and usage. When a workspace hits a limit the run stops at that step and nothing is sent. The owner presses Retry after the reset, or after you change the plan.
+
+### Monthly invoice (GCash or Maya)
+
+Payment is by hand. There is no payment code. Keep a ledger, for example a spreadsheet with one row per payment: date, workspace email, plan, amount, reference.
+
+1. On each workspace's plan start date, send an invoice. State the amount, $10 a month for Business or $25 for Business Plus (Pilot is free), in pesos at that day's rate, or a fixed peso price you have written down. Add your GCash or Maya number and a reference such as `DALOY-<workspace>-<YYYYMM>`.
+2. When the customer says they paid, find the payment in the GCash or Maya app and match its reference and amount.
+3. Add the row to the ledger.
+4. If it is still unpaid after 7 days, move the workspace to Pilot:
+
+```bash
+docker compose exec postgres psql -U daloy -d daloy -c "update users set plan = 'pilot' where email = 'owner@example.com'"
+```
+
+Nothing is deleted. Live automations above the Pilot limit keep running, but no new ones can be published. Set the plan back when the payment arrives.
+
 ## Deployment target
 
 Chosen in N3: a free VM (Oracle Always Free Ampere A1, or Google Cloud e2-micro), running this same `docker compose up`, behind a Cloudflare Tunnel, with nightly dumps to Google Drive through an rclone `crypt` remote. [docs/deployment.md](deployment.md) has the setup, the backup and the restore rehearsal. Nothing is deployed yet. The options that were weighed:

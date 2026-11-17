@@ -21,6 +21,7 @@ import { ResourcesController } from "./resources";
 import { SecretsController } from "./secrets";
 import { SettingsController } from "./settings";
 import { TokensController } from "./tokens";
+import { UsageController } from "./usage";
 import { CatalogController, WorkflowsController } from "./workflows";
 
 export type AppOptions = ApiConfig & { db: Db; boss: PgBoss };
@@ -32,7 +33,7 @@ export async function createApp({ db, boss, ...config }: AppOptions) {
   await boss.createQueue(SCHEDULE_QUEUE);
 
   @Module({
-    controllers: [AuthController, WorkflowsController, CatalogController, SecretsController, ResourcesController, BookingsController, TokensController, RunsController, HooksController, FormsController, ApprovalsController, McpController, SettingsController, EmailSettingsController, ConnectionsController, OutlookCallbackController, DeliveriesController, AiDraftController, MembersController, MyRequestsController],
+    controllers: [AuthController, WorkflowsController, CatalogController, SecretsController, ResourcesController, BookingsController, TokensController, RunsController, HooksController, FormsController, ApprovalsController, McpController, SettingsController, EmailSettingsController, ConnectionsController, OutlookCallbackController, DeliveriesController, AiDraftController, MembersController, MyRequestsController, UsageController],
     providers: [
       { provide: DB, useValue: db },
       { provide: BOSS, useValue: boss },
