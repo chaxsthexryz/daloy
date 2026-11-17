@@ -50,6 +50,7 @@ function thinkingControl(provider: string, baseUrl: string): Pick<AiConnection, 
   if (provider !== "openai") return {};
   if (LOCAL_HOST.test(host)) return { extraBody: { chat_template_kwargs: { enable_thinking: false } } };
   if (host === "generativelanguage.googleapis.com") return { extraBody: { reasoning_effort: "low" }, reasoningTokens: 2048 };
+  if (host === "api.deepseek.com") return { extraBody: { thinking: { type: "disabled" } } };
   return {};
 }
 

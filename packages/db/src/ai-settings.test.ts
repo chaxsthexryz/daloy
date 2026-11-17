@@ -138,3 +138,10 @@ it("asks Gemini for low thinking and leaves room for it, from the preset or the 
   vi.stubEnv("LLM_BASE_URL", "http://localhost:18434/v1");
   expect((await aiConnection(db, key, await newUser())).reasoningTokens).toBeUndefined();
 });
+
+// Daloy's AI jobs (label, summary, short draft, rewording) do not need thinking; off is faster and cheaper.
+it("turns DeepSeek thinking off", async () => {
+  vi.stubEnv("LLM_PROVIDER", "openai");
+  vi.stubEnv("LLM_BASE_URL", "https://api.deepseek.com");
+  expect(await aiConnection(db, key, await newUser())).toMatchObject({ extraBody: { thinking: { type: "disabled" } } });
+});
