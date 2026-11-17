@@ -1,6 +1,7 @@
 import { WEBSITE_INQUIRY_SLUG, websiteInquiryDefinition } from "@daloy/engine";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { api, ApiError, type Workflow } from "./api";
+import { FormEmbed } from "./FormEmbed";
 
 type Profile = { businessName: string | null; website: string | null; inquiryEmail: string | null; replyTo: string | null };
 type Sender = { address: string; status: "unverified" | "active" | "failed" | "disconnected"; lastError: string | null; verifiedAt: string | null; lastTestedAt: string | null };
@@ -367,6 +368,7 @@ function FormLink({ link, local, workflowId }: { link: string; local: boolean; w
         <button type="button" onClick={() => void copy()}>
           Copy inquiry form link
         </button>
+        <FormEmbed link={link} />
         <a href={link} target="_blank" rel="noreferrer">
           Open form
         </a>
@@ -375,8 +377,8 @@ function FormLink({ link, local, workflowId }: { link: string; local: boolean; w
       <p role="status">{copied}</p>
       <h3>Put it behind your website's contact button</h3>
       <p>
-        In your website builder, edit the Contact button and set its link to the inquiry form link above. If your website already has its own form, that form keeps working as
-        before and does not reach Daloy. Sending its entries here needs a developer, or an integration Daloy does not have yet.
+        Set your Contact button to the inquiry form link. To display the form on your page, paste the embed code into an HTML block.
+        To keep your existing form, you can send its notification emails to a folder connected to an email-in automation.
       </p>
     </>
   );

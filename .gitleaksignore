@@ -1,2 +1,4 @@
 # Fake token in the redaction test (apps/worker/src/steps/index.test.ts): it checks that secret values never reach stored step data.
 3e28a2b9b975f9f8bb2f0591c47b8998091e605e:apps/worker/src/steps/index.test.ts:generic-api-key:13
+# The same synthetic redaction fixture in the phase 4 commit on main's current history.
+bc2a6b452cd0b52507642b354d582867e1c54ac0:apps/worker/src/steps/index.test.ts:generic-api-key:13

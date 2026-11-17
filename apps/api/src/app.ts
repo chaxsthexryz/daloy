@@ -4,6 +4,7 @@ import { Module } from "@nestjs/common";
 import { APP_GUARD, NestFactory } from "@nestjs/core";
 import type { NestExpressApplication } from "@nestjs/platform-express";
 import cookieParser from "cookie-parser";
+import type { RequestHandler } from "express";
 import helmet from "helmet";
 import type { PgBoss } from "pg-boss";
 import { AiDraftController } from "./ai-draft";
@@ -11,10 +12,11 @@ import { ApprovalsController } from "./approvals";
 import { AuthController, SessionGuard } from "./auth";
 import { ConnectionsController, DeliveriesController, OutlookCallbackController } from "./connections";
 import { EmailSettingsController } from "./email-settings";
+import { EmailSourceController } from "./email-source";
 import { BOSS, CONFIG, DB, RateLimit, type ApiConfig } from "./http";
 import { McpController } from "./mcp";
 import { MembersController, MyRequestsController } from "./members";
-import { FormsController, HooksController } from "./public";
+import { FormsController, HooksController, isFormEmbed } from "./public";
 import { RunsController } from "./runs";
 import { BookingsController } from "./bookings";
 import { ResourcesController } from "./resources";
@@ -33,7 +35,7 @@ export async function createApp({ db, boss, ...config }: AppOptions) {
   await boss.createQueue(SCHEDULE_QUEUE);
 
   @Module({
-    controllers: [AuthController, WorkflowsController, CatalogController, SecretsController, ResourcesController, BookingsController, TokensController, RunsController, HooksController, FormsController, ApprovalsController, McpController, SettingsController, EmailSettingsController, ConnectionsController, OutlookCallbackController, DeliveriesController, AiDraftController, MembersController, MyRequestsController, UsageController],
+    controllers: [AuthController, WorkflowsController, CatalogController, SecretsController, ResourcesController, BookingsController, TokensController, RunsController, HooksController, FormsController, ApprovalsController, McpController, SettingsController, EmailSettingsController, EmailSourceController, ConnectionsController, OutlookCallbackController, DeliveriesController, AiDraftController, MembersController, MyRequestsController, UsageController],
     providers: [
       { provide: DB, useValue: db },
       { provide: BOSS, useValue: boss },
@@ -51,7 +53,14 @@ export async function createApp({ db, boss, ...config }: AppOptions) {
   if (config.trustProxy) app.set("trust proxy", config.trustProxy);
   app.useBodyParser("json", { limit: "256kb" });
   app.useBodyParser("urlencoded", { limit: "64kb", extended: false });
-  app.use(helmet());
+  const standardHeaders = helmet();
+  const embedHeaders = helmet({
+    xFrameOptions: false,
+    contentSecurityPolicy: { directives: { frameAncestors: ["'self'", "https:", "http:"] } },
+  });
+  const headers: RequestHandler = (req, res, next) =>
+    (isFormEmbed(req.path) ? embedHeaders : standardHeaders)(req, res, next);
+  app.use(headers);
   app.use(cookieParser());
   return app;
 }

@@ -2,6 +2,7 @@ import { definitionSchema, lintDefinition, type FormField, type Step, type Trigg
 import { Background, Controls, ReactFlow, type NodeChange } from "@xyflow/react";
 import { useEffect, useId, useMemo, useState } from "react";
 import { AskAi } from "./AiDraft";
+import { FormEmbed } from "./FormEmbed";
 import { api, type Version, type Workflow } from "./api";
 import { edgeTypes, nodeTypes, TYPE_NAMES } from "./FlowCanvas";
 import { RunResult, useRun } from "./Runs";
@@ -9,6 +10,7 @@ import { ADDABLE, addStep, blankDraft, removeStep, toFlow, type AddableType, typ
 import { runFlow } from "./lib/run-flow";
 import { AutomationTabs } from "./Nav";
 import { SchemaForm, type JsonSchema } from "./SchemaForm";
+import { EmailSource } from "./EmailSource";
 
 type Catalog = { schemas: Record<string, JsonSchema>; branches: Record<string, string[]> };
 type Loaded = Workflow & { trigger: { id: string; type: string; webhookPath: string | null } | null; live: Version | null; latest: Version | null };
@@ -17,6 +19,7 @@ type Loaded = Workflow & { trigger: { id: string; type: string; webhookPath: str
 const tomorrowAtTen = () => `${new Date(Date.now() + 86_400_000).toISOString().slice(0, 10)}T10:00`;
 
 function samplePayload(trigger: Trigger, resourceId = "a resource id from the Resources page"): string {
+  if (trigger.type === "email") return JSON.stringify({ from: "ana@example.com", replyTo: "ana@example.com", to: ["inquiries@example.com"], subject: "Website inquiry", text: "I would like a quote.", messageId: "sample-inquiry@example.com", receivedAt: new Date().toISOString() }, null, 2);
   if (trigger.type !== "form") return "{}";
   const sample = Object.fromEntries(
     trigger.config.fields.map((f) => [f.name, f.type === "number" ? 1 : f.type === "email" ? "ana@example.com" : f.type === "datetime" ? tomorrowAtTen() : f.type === "resource" ? resourceId : `Sample ${f.label.toLowerCase()}`]),
@@ -328,6 +331,7 @@ function AddStep({ draft, after, branches, onAdd }: { draft: Draft; after?: Step
 
 const TRIGGER_DEFAULTS: Record<Trigger["type"], Trigger> = {
   manual: { type: "manual", config: {} },
+  email: { type: "email", config: {} },
   webhook: { type: "webhook", config: {} },
   schedule: { type: "schedule", config: { cron: "0 9 * * 1" } },
   form: { type: "form", config: { fields: [{ name: "email", label: "Email", type: "email", required: true }] } },
@@ -348,8 +352,10 @@ function TriggerPanel({ trigger, wf, onChange }: { trigger: Trigger; wf: Loaded;
           <option value="webhook">A webhook is called</option>
           <option value="schedule">On a schedule</option>
           <option value="form">A form is submitted</option>
+          <option value="email">An email arrives</option>
         </select>
       </div>
+      {trigger.type === "email" && <EmailSource workflowId={wf.id} published={wf.trigger?.type === "email" && !!wf.live} />}
       {trigger.type === "schedule" && (
         <div className="field">
           <label htmlFor={`${id}-cron`}>Cron expression (UTC)</label>
@@ -430,9 +436,10 @@ function TriggerPanel({ trigger, wf, onChange }: { trigger: Trigger; wf: Loaded;
         </p>
       )}
       {published && trigger.type === "form" && (
-        <p className="muted hint">
+        <div className="actions">
           Public form: <a href={`/forms/${published.id}`}>{`${location.origin}/forms/${published.id}`}</a>
-        </p>
+          <FormEmbed link={`${location.origin}/forms/${published.id}`} />
+        </div>
       )}
     </section>
   );

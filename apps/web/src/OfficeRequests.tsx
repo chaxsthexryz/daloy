@@ -19,6 +19,7 @@ import {
 } from "@daloy/engine";
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { api, ApiError, type Workflow } from "./api";
+import { FormEmbed } from "./FormEmbed";
 import { DeliveryList, type Delivery } from "./Connections";
 import { newestDraft } from "./lib/drafts";
 import { takingLonger } from "./lib/poll";
@@ -482,6 +483,7 @@ function LivePage({ wf, formId }: { wf: Detail; formId: string }) {
         <button type="button" className="primary" onClick={() => void copy()}>
           Copy form link
         </button>
+        <FormEmbed link={link} />
         <a href={link} target="_blank" rel="noreferrer">
           Open form
         </a>

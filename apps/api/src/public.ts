@@ -33,6 +33,10 @@ const HONEYPOT = "_website";
 export const isTracked = (setup: unknown) => [OFFICE_REQUEST, PURCHASE_REQUEST].includes((setup as { template?: string } | null)?.template ?? "");
 const SUBMISSION_KEY = "submission_key";
 
+// Both spellings use one submit handler so they share the same per-IP limit.
+const FORM_PATHS = [":id", ":id/embed"];
+export const isFormEmbed = (path: string) => /^\/forms\/[^/]+\/embed\/?$/i.test(path);
+
 /** Public, unauthenticated routes that start runs. Each one is rate limited per IP. */
 @Controller("hooks")
 @UseGuards(RateLimit(60))
@@ -93,7 +97,7 @@ export class FormsController {
     @Inject(BOSS) private readonly boss: PgBoss,
   ) {}
 
-  @Get(":id")
+  @Get(FORM_PATHS)
   @Header("Content-Type", "text/html; charset=utf-8")
   // A request form carries a fresh submission key per load. no-store keeps the back button from reusing an old one.
   @Header("Cache-Control", "no-store")
@@ -102,7 +106,7 @@ export class FormsController {
     return renderForm(fields, await resourcesFor(this.db, workflow.userId, fields), tracked ? randomUUID() : undefined, businessName ?? undefined);
   }
 
-  @Post(":id")
+  @Post(FORM_PATHS)
   @HttpCode(200)
   @UseGuards(RateLimit(10))
   @Header("Content-Type", "text/html; charset=utf-8")
@@ -122,7 +126,7 @@ export class FormsController {
     if (!key.success) throw new BadRequestException(`${SUBMISSION_KEY}: reload the form and send it again`);
     // A member of this workspace who is signed in is recorded as the requester, for My requests (decision 0022).
     // The session cookie is SameSite=Lax, so another site can't post the form as them.
-    const member = await sessionUser(this.db, req);
+    const member = isFormEmbed(req.path) ? undefined : await sessionUser(this.db, req);
     const requestedBy = member?.workspaceId === workflow.userId ? member.id : undefined;
     const { reference, runId } = await recordRequest(this.db, workflow, versionId, key.data, parsed.data, requestedBy);
     if (runId) await enqueueRun(this.boss, runId);

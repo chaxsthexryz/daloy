@@ -85,6 +85,11 @@ export function AppsPage({ outlookOutcome }: { outlookOutcome?: string }) {
     <main className="page">
       <Header title="Apps" />
       <p className="muted">Everything here is optional. Each app is used only by the automations you turn on, and the demo works without any of them.</p>
+      <section aria-labelledby="email-in-setup">
+        <h2 id="email-in-setup">Receive website form emails</h2>
+        <p>Connect a dedicated IMAP mailbox in an automation's Steps tab. Under Starts when, choose An email arrives, then connect the mailbox. Each automation has its own inbox settings.</p>
+        <a href="#/">Choose an automation</a>
+      </section>
       <div className="filters">
         <div className="actions" role="group" aria-label="Show">
           <button type="button" aria-pressed={!onlyConnected} onClick={() => setOnlyConnected(false)}>

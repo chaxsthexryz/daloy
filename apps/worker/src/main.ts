@@ -20,6 +20,7 @@ const worker = await startWorker({
   migrate: ownsSchema,
   executor: createExecutor({ db, secretsKey, mail: mailDeps(), publicUrl: process.env.PUBLIC_URL }),
   deliveries: { secretsKey, urls: providerUrls() },
+  emailIn: { secretsKey, ...(process.env.NODE_ENV === "test" && process.env.DALOY_TEST_IMAP_ENDPOINT ? { intervalMs: 500 } : {}) },
 });
 console.log("worker started");
 

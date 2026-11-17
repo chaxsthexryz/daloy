@@ -163,6 +163,8 @@ const fieldList = z.array(formFieldSchema).min(1).max(30);
 
 const triggerSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("manual"), config: z.object({}).default({}) }),
+  // The mailbox credential belongs to the installation's encrypted source row, never to a saved version.
+  z.object({ type: z.literal("email"), config: z.strictObject({}).default({}) }),
   // hmacSecret names a stored secret; the API checks X-Daloy-Signature against it. fields, when set, are checked like a form's.
   // eventKey is a template such as {{trigger.event_id}}: a second event with the same key gets the first run (decision 0029).
   z.object({ type: z.literal("webhook"), config: z.object({ hmacSecret: z.string().max(100).optional(), fields: fieldList.optional(), eventKey: z.string().min(1).max(500).optional() }).default({}) }),

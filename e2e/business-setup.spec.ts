@@ -54,7 +54,8 @@ test("an owner sets up inquiry replies and a customer's inquiry reaches both inb
   await page.getByRole("button", { name: "Turn on inquiry replies" }).click();
   await expect(page.getByText("Inquiry replies are on.")).toBeVisible();
   await expect(page.getByRole("button", { name: "Copy inquiry form link" })).toBeVisible();
-  await expect(page.getByText("does not reach Daloy")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Copy embed code" })).toBeVisible();
+  await expect(page.getByText(/send its notification emails to a folder connected to an email-in automation/)).toBeVisible();
 
   // The customer's side: the hosted form names the business.
   const form = await context.newPage();
