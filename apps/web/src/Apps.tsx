@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { api } from "./api";
 import { PILL, SenderSection, type Settings } from "./BusinessSetup";
-import { OutlookConnection, SheetsConnection, SlackConnection, TeamsConnection, type Connection, type OutlookSetup, type Provider } from "./Connections";
+import { OutlookConnection, SheetsConnection, SlackConnection, TeamsConnection, TelegramConnection, type Connection, type OutlookSetup, type Provider } from "./Connections";
 import { Header } from "./Nav";
 
 type Key = "gmail" | Provider;
@@ -12,6 +12,7 @@ const APPS: { key: Key; name: string; line: string }[] = [
   { key: "google_sheets", name: "Google Sheets", line: "Add a row to a sheet for every request." },
   { key: "slack", name: "Slack", line: "Post a short note to a channel." },
   { key: "teams", name: "Microsoft Teams", line: "Post a note to a Teams channel." },
+  { key: "telegram", name: "Telegram", line: "Send a message to a Telegram chat." },
 ];
 
 /**
@@ -58,6 +59,7 @@ export function AppsPage({ outlookOutcome }: { outlookOutcome?: string }) {
     slack: () => <SlackConnection conn={conn("slack")} onChange={load} />,
     outlook: () => <OutlookConnection conn={conn("outlook")} setup={conns.outlook} outcome={outlookOutcome} onChange={load} />,
     teams: () => <TeamsConnection conn={conn("teams")} onChange={load} />,
+    telegram: () => <TelegramConnection conn={conn("telegram")} onChange={load} />,
   };
   const card = (a: (typeof APPS)[number]) => {
     const s = state(a.key);

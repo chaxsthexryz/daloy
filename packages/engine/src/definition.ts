@@ -78,6 +78,8 @@ export const slackConfigSchema = z.object({ text: template(3000).min(1) });
 // are answered in Daloy by the named approver.
 export const outlookConfigSchema = emailConfigSchema;
 export const teamsConfigSchema = slackConfigSchema;
+// A Telegram message goes to the one chat picked in Apps, as plain text (decision 0042). Queued like Slack.
+export const telegramConfigSchema = slackConfigSchema;
 export type SheetsConfig = z.infer<typeof sheetsConfigSchema>;
 export type SlackConfig = z.infer<typeof slackConfigSchema>;
 
@@ -117,6 +119,7 @@ const stepSchema = z.discriminatedUnion("type", [
   z.object({ id: stepId, type: z.literal("slack"), config: slackConfigSchema }),
   z.object({ id: stepId, type: z.literal("outlook"), config: outlookConfigSchema }),
   z.object({ id: stepId, type: z.literal("teams"), config: teamsConfigSchema }),
+  z.object({ id: stepId, type: z.literal("telegram"), config: telegramConfigSchema }),
   z.object({ id: stepId, type: z.literal("booking"), config: bookingConfigSchema }),
 ]);
 export type Step = z.infer<typeof stepSchema>;

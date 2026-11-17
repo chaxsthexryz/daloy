@@ -7,7 +7,7 @@ Kept current with each phase. A mitigation marked "planned" does not exist in co
 - Stored secrets (API keys and SMTP credentials that workflows use)
 - Each owner's Gmail app password, and the right to send as their address
 - IMAP credentials, incoming message text and the saved position of each monitored folder
-- Each owner's Google service account key and Slack bot token, which can write to their shared sheets and post to their channels
+- Each owner's Google service account key and Slack bot token, which can write to their shared sheets and post to their channels, and their Telegram bot token, which can message every chat the bot is in
 - Each owner's Microsoft refresh token, which can send email as their mailbox, and their Teams workflow link, which lets anyone holding it post to one channel
 - The installation's Microsoft Entra client secret (`MICROSOFT_CLIENT_SECRET`)
 - Console sessions and API tokens
@@ -103,3 +103,11 @@ Kept current with each phase. A mitigation marked "planned" does not exist in co
 ## Public demo boundary
 
 The demo page (`apps/web/demo`, published as `site/demo/` on Cloudflare Pages) accepts a free-text request and sample form values. It renders them as React text, keeps them in browser memory, and never sends them anywhere: there is no model call, no API call and no storage. On daloyapp.pages.dev it is a static site with no console behind it. The API also serves it at `/demo/` on an installation, on the console's origin, where it makes no requests either. `e2e/portfolio-demo.spec.ts` runs the whole flow offline and checks that no request was made.
+
+## Telegram (decision 0042)
+
+- The bot token is encrypted like the Slack token, bound to the owner and provider, and never returned by the API or written to logs. It is part of the Telegram request URL, so Daloy never prints a request URL or puts one in an error message.
+- The Telegram address is fixed (`api.telegram.org`) or set by the installation's env var, never by a user, so a user cannot point Daloy at an internal host.
+- The chat id is validated (a number or `@name`), and the chat is pinned to each delivery when it is queued, so editing the connection cannot redirect messages already queued.
+- Anyone in the chat can read what is sent. The same rule as Slack: keep private details out of the message text.
+- A bot token that leaks lets someone message the bot's chats. Replace it in BotFather (/revoke), then Replace token in Apps.

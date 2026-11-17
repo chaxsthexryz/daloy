@@ -406,6 +406,14 @@ Edge cases:
 
 Tests: `packages/db/src/deliveries.test.ts` (one row per step, retry Slack alone after the sheet succeeded, reconcile after a timed-out write that did or did not arrive, Slack held for review, Mark as posted and Post again, token refresh, revoked key without touching another owner, unshared sheet, `Retry-After` and the last attempt, revoked Slack token, disconnect and Retry, double-click Retry, one claim per worker, a dead worker's claim, and stale workers whose late success or refusal arrives after a take-over, a Retry or a Post again to another sheet, with a new claim id each time), `apps/worker/src/steps/deliveries.test.ts` (a run finishes while Slack fails, the row starts with the reference, secrets redacted, retry posts once, test runs queue nothing), `apps/api/src/connections.test.ts` (connect, key never returned or stored in the clear, wrong key file, unshared sheet, missing tab, channel picker, test row and message, disconnect, turn-on refused without Slack, deliveries in the request list, owner-only Retry), `packages/engine/src/office-request.test.ts` (steps only when chosen, no name or email in the note, preview), `e2e/connections.spec.ts` (connect both, test each, turn on, Slack fails and the sheet row still goes in, Retry posts the note once). These use `test/fake-providers.ts` and never contact Google or Slack. The live check is a manual list in [live Sheets and Slack check](live-sheets-slack-check.md), not run yet.
 
+## Telegram (packages/db/src/providers.ts, deliveries.ts, apps/api/src/connections.ts, apps/web/src/Connections.tsx)
+
+What it does: Apps has a Telegram card. The owner pastes a bot token from BotFather and a chat id, and Daloy checks both with `getMe` and `getChat` before saving. The `telegram` step sends a plain text message to that chat.
+
+How it works: exactly like Slack (decision 0042). The step queues a delivery pinned to the bot and chat at that moment, and the worker sends it. 429 waits for `retry_after`, a revoked token marks the connection as needing a reconnect, a bot that was removed from the chat fails with a hint, and a send that may have arrived goes to needs_review with Retry off and Post again available. Viber is not supported: its bot API costs about EUR 100 a month.
+
+Tests: `packages/db/src/deliveries.test.ts` (Telegram: send, chat changed, revoked token, rate limit, ambiguous), `apps/api/src/connections.test.ts` (validation, no token in the answer), `e2e/telegram.spec.ts`. The fake is in `test/fake-providers.ts`.
+
 ## Office teams and named approvals (packages/db/src/members.ts, apps/api/src/members.ts, apps/api/src/auth.ts, apps/web/src/Team.tsx)
 
 What it does: an office has one owner and any number of operators, approvers and requesters. The owner invites people from the Team page, changes their roles and removes them. Approvals can name a member, and only that member can answer.

@@ -80,6 +80,8 @@ export default async function setup() {
   providers.addServiceAccount(saEmail, publicKey.export({ type: "spki", format: "pem" }).toString());
   providers.addSheet("e2e-sheet-0000000001", "Office requests", "Requests", [saEmail]);
   providers.slack.token = "xoxb-e2e-0000000000-abcdefabcdef";
+  providers.telegram.token = "100000001:E2E-telegram-token-aaaaaaaaaaaaaaaaaa";
+  process.env.E2E_TELEGRAM_TOKEN = providers.telegram.token;
   process.env.E2E_SHEETS_KEY = JSON.stringify({ type: "service_account", client_email: saEmail, private_key: privateKey.export({ type: "pkcs8", format: "pem" }).toString() });
   process.env.E2E_SLACK_TOKEN = providers.slack.token;
   process.env.E2E_PROVIDERS_URL = providers.urls.slack;
@@ -100,6 +102,7 @@ export default async function setup() {
     GOOGLE_TOKEN_URL: providers.urls.googleToken,
     GOOGLE_SHEETS_URL: providers.urls.sheets,
     SLACK_API_URL: providers.urls.slack,
+    TELEGRAM_API_URL: providers.urls.telegram,
     MICROSOFT_CLIENT_ID: providers.microsoft.clientId,
     MICROSOFT_CLIENT_SECRET: providers.microsoft.clientSecret,
     MICROSOFT_LOGIN_URL: providers.urls.microsoftLogin,

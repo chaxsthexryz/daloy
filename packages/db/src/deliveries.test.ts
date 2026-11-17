@@ -746,3 +746,50 @@ describe("booking changes stop queued deliveries (N2b, decision 0032)", () => {
     expect(fake.slack.messages).toHaveLength(2);
   });
 });
+
+describe("Telegram", () => {
+  const tg = (userId: string, runId: string, reference: string) =>
+    queueDelivery(db, { userId, runId, stepId: "send_to_telegram", provider: "telegram", reference, payload: { text: `New request ${reference}` } });
+  beforeEach(async () => {
+    fake.telegram.token = "100000001:ana-telegram-token-aaaaaaaaaaaaaaaaaaaa";
+    fake.telegram.revoked = false;
+    fake.telegram.messages.length = 0;
+    await saveConnection(db, key, ana, "telegram", { account: "@daloy_test_bot", credential: fake.telegram.token, destination: { chatId: "-1001234567890", chatTitle: "Office team" } });
+  });
+
+  it("delivers to the chat saved on the connection", async () => {
+    const d = await tg(ana, await newRun(ana), "REQ-2001");
+    await deliverDue();
+    expect(await state(d.id)).toMatchObject({ state: "delivered", result: { chatId: "-1001234567890" } });
+    expect(fake.telegram.messages.map((m) => m.text)).toEqual(["New request REQ-2001"]);
+  });
+
+  it("holds for review when the chat changed after queueing, and sends nothing", async () => {
+    const d = await tg(ana, await newRun(ana), "REQ-2002");
+    await saveConnection(db, key, ana, "telegram", { account: "@daloy_test_bot", credential: fake.telegram.token, destination: { chatId: "-1009999999999", chatTitle: "Other" } });
+    await deliverDue();
+    expect(await state(d.id)).toMatchObject({ state: "needs_review", errorKind: "destination_changed" });
+    expect(fake.telegram.messages).toHaveLength(0);
+  });
+
+  it("fails and marks the connection when the token is revoked", async () => {
+    const d = await tg(ana, await newRun(ana), "REQ-2003");
+    fake.telegram.revoked = true;
+    await deliverDue();
+    expect(await state(d.id)).toMatchObject({ state: "failed", errorKind: "auth" });
+  });
+
+  it("retries after a rate limit, then holds for review when Telegram may have accepted the message", async () => {
+    const d = await tg(ana, await newRun(ana), "REQ-2004");
+    fake.once("sendMessage", { status: 429, body: { ok: false, description: "Too Many Requests", parameters: { retry_after: 1 } }, headers: {} });
+    await deliverDue();
+    expect(await state(d.id)).toMatchObject({ state: "queued", errorKind: "quota" });
+    const e = await tg(ana, await newRun(ana), "REQ-2005");
+    fake.once("sendMessage", "hang-after");
+    await deliverDue();
+    const held = await state(e.id);
+    expect(held).toMatchObject({ state: "needs_review", errorKind: "ambiguous" });
+    expect(held.lastError).toMatch(/telegram chat/i);
+    expect(await retryDelivery(db, ana, e.id)).toBe(false);
+  });
+});

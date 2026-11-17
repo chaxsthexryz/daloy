@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { api } from "./api";
 
-export type Provider = "google_sheets" | "slack" | "outlook" | "teams";
+export type Provider = "google_sheets" | "slack" | "outlook" | "teams" | "telegram";
 export type Connection = { provider: Provider; status: "active" | "failed"; account: string; destination: Record<string, string> | null; lastError: string | null; lastTestedAt: string | null };
 type TestResult = { ok: true; range?: string; channel?: string } | { ok: false; error: string };
 export type OutlookSetup = { configured: boolean; adminConsentUrl?: string };
@@ -9,6 +9,7 @@ type Channel = { id: string; name: string; isMember: boolean };
 
 const SERVICE_ACCOUNT_HELP = "https://cloud.google.com/iam/docs/service-accounts-create";
 const SLACK_APP_HELP = "https://api.slack.com/quickstart";
+const TELEGRAM_BOT_HELP = "https://core.telegram.org/bots/tutorial";
 const TEAMS_WORKFLOWS_HELP = "https://support.microsoft.com/en-us/workflows/send-messages-in-teams-using-incoming-webhooks";
 const MICROSOFT_CONSENT_HELP = "https://learn.microsoft.com/en-us/entra/identity/enterprise-apps/configure-user-consent";
 
@@ -268,6 +269,81 @@ export function SlackConnection({ conn, onChange }: { conn: Connection | null; o
   );
 }
 
+export function TelegramConnection({ conn, onChange }: { conn: Connection | null; onChange: () => Promise<unknown> }) {
+  const { error, busy, act } = useAction(onChange);
+  const [editing, setEditing] = useState(false);
+  const [test, setTest] = useState<TestResult | null>(null);
+  const [form, setForm] = useState({ token: "", chatId: conn?.destination?.chatId ?? "" });
+  const save = (e: FormEvent) => {
+    e.preventDefault();
+    void act(async () => {
+      await api("PUT", "/settings/connections/telegram", form);
+      setForm({ ...form, token: "" });
+      setEditing(false);
+      setTest(null);
+    });
+  };
+
+  return (
+    <div className="connection" aria-labelledby="telegram-h">
+      <h3 id="telegram-h">Telegram</h3>
+      {conn && <Status conn={conn} label="Bot" />}
+      {conn?.destination && (
+        <p>
+          Messages go to <strong>{conn.destination.chatTitle}</strong>. Everyone in that chat can read them.
+        </p>
+      )}
+      {conn && (
+        <div className="actions">
+          <button type="button" disabled={busy} onClick={() => void act(async () => setTest(await api<TestResult>("POST", "/settings/connections/telegram/test")))}>
+            Send a test message
+          </button>
+          {!editing && (
+            <button type="button" className="quiet" onClick={() => setEditing(true)}>
+              Replace token or chat
+            </button>
+          )}
+          <button type="button" className="quiet" disabled={busy} onClick={() => window.confirm("Disconnect Telegram? Automations stop sending there until you reconnect.") && void act(() => api("DELETE", "/settings/connections/telegram"))}>
+            Disconnect
+          </button>
+        </div>
+      )}
+      <Outcome test={test} what="Telegram accepted a test message" />
+      {(!conn || editing) && (
+        <form onSubmit={save}>
+          <p>
+            Create a bot with BotFather in Telegram, add it to the chat, and send any message there. Paste the bot token and the chat id.{" "}
+            <a href={TELEGRAM_BOT_HELP} target="_blank" rel="noreferrer">
+              How to create a Telegram bot
+            </a>
+          </p>
+          <div className="field">
+            <label htmlFor="tg-token">Bot token</label>
+            <input id="tg-token" type="password" value={form.token} onChange={(e) => setForm({ ...form, token: e.target.value })} required placeholder="123456789:AA…" autoComplete="off" />
+          </div>
+          <div className="field">
+            <label htmlFor="tg-chat">Chat id</label>
+            <input id="tg-chat" value={form.chatId} onChange={(e) => setForm({ ...form, chatId: e.target.value })} required placeholder="-1001234567890 or @channelname" autoComplete="off" />
+          </div>
+          <div className="actions">
+            <button type="submit" className="primary" disabled={busy}>
+              {conn ? "Save" : "Connect Telegram"}
+            </button>
+            {conn && (
+              <button type="button" className="quiet" onClick={() => setEditing(false)}>
+                Cancel
+              </button>
+            )}
+          </div>
+        </form>
+      )}
+      <p role="alert" className="message error" hidden={!error}>
+        {error}
+      </p>
+    </div>
+  );
+}
+
 export function OutlookConnection({ conn, setup, outcome, onChange }: { conn: Connection | null; setup: OutlookSetup; outcome?: string; onChange: () => Promise<unknown> }) {
   const { error, busy, act } = useAction(onChange);
   const [test, setTest] = useState<TestResult | null>(null);
@@ -419,7 +495,7 @@ export type Delivery = {
   lastError: string | null;
 };
 
-const NAMES: Record<Provider, string> = { google_sheets: "Sheet row", slack: "Slack note", outlook: "Outlook email", teams: "Teams note" };
+const NAMES: Record<Provider, string> = { google_sheets: "Sheet row", slack: "Slack note", outlook: "Outlook email", teams: "Teams note", telegram: "Telegram message" };
 const sent = (p: Provider) => (p === "outlook" ? "sent" : "posted");
 
 function describe(d: Delivery): string {
