@@ -110,8 +110,11 @@ function RunEdge({ id, sourceX, sourceY, targetX, targetY, sourcePosition, targe
 export const nodeTypes = { trigger: TriggerNode, step: StepNode };
 export const edgeTypes = { run: RunEdge };
 
-/** The path one run took through its definition, read only. The run page uses it; polling comes from useRun. The light-only public demo fixes colorMode. */
-export function RunFlow({ draft, run, colorMode = "system" }: { draft: Draft; run: FlowRun | null; colorMode?: "system" | "light" }) {
+/**
+ * The path one run took through its definition, read only. The run page uses it; polling comes from useRun. In the console
+ * it follows the theme chosen in Settings (html data-theme); the light-only public demo fixes colorMode.
+ */
+export function RunFlow({ draft, run, colorMode }: { draft: Draft; run: FlowRun | null; colorMode?: "light" }) {
   const flow = useMemo(() => toFlow(draft, null, runFlow(draft, run)), [draft, run]);
   return (
     <div className="run-canvas">
@@ -125,7 +128,7 @@ export function RunFlow({ draft, run, colorMode = "system" }: { draft: Draft; ru
         elementsSelectable={false}
         zoomOnScroll={false}
         preventScrolling={false}
-        colorMode={colorMode}
+        colorMode={colorMode ?? (document.documentElement.dataset.theme === "dark" ? "dark" : "light")}
         fitView
         fitViewOptions={{ maxZoom: 1 }}
       >

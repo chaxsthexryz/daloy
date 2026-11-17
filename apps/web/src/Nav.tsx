@@ -4,9 +4,11 @@ import type { User } from "./Team";
 /** Which menu entry a hash route belongs to, so the same menu shows on every page and marks where you are. */
 function section(hash: string) {
   if (hash === "#/settings" || hash === "#/settings/ai") return "Settings";
+  if (hash === "#/activity") return "Activity";
   if (hash.startsWith("#/bookings")) return "Bookings";
   if (hash.startsWith("#/team")) return "Team";
-  if (hash.startsWith("#/settings/business") || hash.startsWith("#/verify-sender")) return "Business and email";
+  if (hash.startsWith("#/settings/business/outlook-") || hash === "#/apps" || hash.startsWith("#/verify-sender")) return "Apps";
+  if (hash === "#/settings/business") return "Business";
   if (/^#\/(advanced|tokens|settings|resources)/.test(hash)) return "Advanced";
   return "Automations";
 }
@@ -32,18 +34,26 @@ export function Shell({ user, hash, onSignOut, children }: { user: User; hash: s
         <div className="sidebar-top">
           <img src="/logo.svg" alt="Daloy" width="28" height="28" />
           <span className="sidebar-name">Daloy</span>
-          <button type="button" className="quiet menu-button" aria-expanded={open} aria-controls="main-menu" onClick={() => setOpen(!open)}>
-            Menu
-          </button>
+          {owner && (
+            <a href="#/new" className="primary top-new">
+              New
+            </a>
+          )}
         </div>
         <nav id="main-menu" aria-label="Main" className={open ? "open" : undefined}>
           {owner && link("#/new", "New automation", "primary")}
           {link("#/", "Automations")}
-          {(owner || user.role === "operator") && link("#/bookings", "Bookings")}
+          {(owner || user.role === "operator") && (
+            <>
+              {link("#/activity", "Activity")}
+              {link("#/bookings", "Bookings")}
+            </>
+          )}
           {owner && (
             <>
               {link("#/team", "Team")}
-              {link("#/settings/business", "Business and email")}
+              {link("#/apps", "Apps")}
+              {link("#/settings/business", "Business")}
               {link("#/advanced", "Advanced")}
             </>
           )}
@@ -54,8 +64,32 @@ export function Shell({ user, hash, onSignOut, children }: { user: User; hash: s
           </button>
         </nav>
       </aside>
+      {/* Under 800 px: the main places within thumb reach, and the button that opens the whole menu above it. */}
+      <nav className="bottom-bar" aria-label="Quick">
+        {link("#/", "Automations")}
+        {(owner || user.role === "operator") && link("#/activity", "Activity")}
+        <button type="button" className="quiet menu-button" aria-expanded={open} aria-controls="main-menu" onClick={() => setOpen(!open)}>
+          Menu
+        </button>
+      </nav>
       <div className="shell-main">{children}</div>
     </div>
+  );
+}
+
+/** One automation's tabs: Overview (guided automations that are on), Activity and Steps. The routes stay as they were. */
+export function AutomationTabs({ id, here, overview }: { id: string; here: "overview" | "activity" | "steps"; overview: boolean }) {
+  const tab = (key: typeof here, href: string, text: string) => (
+    <a href={href} aria-current={here === key ? "page" : undefined}>
+      {text}
+    </a>
+  );
+  return (
+    <nav className="tabs" aria-label="This automation">
+      {overview && tab("overview", `#/a/${id}`, "Overview")}
+      {tab("activity", `#/w/${id}/runs`, "Activity")}
+      {tab("steps", `#/w/${id}`, "Steps")}
+    </nav>
   );
 }
 

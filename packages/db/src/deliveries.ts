@@ -91,9 +91,9 @@ type Outcome =
 async function attempt(db: Db, key: Buffer, urls: ProviderUrls, d: Delivery): Promise<Outcome | null> {
   const name = PROVIDER_NAMES[d.provider];
   const conn = await connectionCredential(db, key, d.userId, d.provider);
-  if (!conn) return { state: "failed", error: `${name} is not connected. Connect it in Settings, Business and email, then retry.` };
-  if (conn.status === "failed") return { state: "failed", error: `${name} needs to be connected again (${conn.account}). Reconnect it in Settings, Business and email, then retry.` };
-  if (!conn.destination) return { state: "failed", error: `No ${d.provider === "google_sheets" ? "sheet" : "channel"} is chosen for ${name}. Pick one in Settings, Business and email, then retry.` };
+  if (!conn) return { state: "failed", error: `${name} is not connected. Connect it in Apps, then retry.` };
+  if (conn.status === "failed") return { state: "failed", error: `${name} needs to be connected again (${conn.account}). Reconnect it in Apps, then retry.` };
+  if (!conn.destination) return { state: "failed", error: `No ${d.provider === "google_sheets" ? "sheet" : "channel"} is chosen for ${name}. Pick one in Apps, then retry.` };
   if (d.pinnedAccount === null) {
     return { state: "needs_review", error: `This was queued before Daloy recorded where deliveries go, so it cannot confirm the ${name} destination. Choose Post again to send it to ${describe(d.provider, conn.destination)}, or Mark as posted.` };
   }

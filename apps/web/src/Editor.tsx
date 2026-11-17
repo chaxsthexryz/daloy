@@ -7,6 +7,7 @@ import { edgeTypes, nodeTypes, TYPE_NAMES } from "./FlowCanvas";
 import { RunResult, useRun } from "./Runs";
 import { ADDABLE, addStep, blankDraft, removeStep, toFlow, type AddableType, type Draft } from "./lib/graph";
 import { runFlow } from "./lib/run-flow";
+import { AutomationTabs } from "./Nav";
 import { SchemaForm, type JsonSchema } from "./SchemaForm";
 
 type Catalog = { schemas: Record<string, JsonSchema>; branches: Record<string, string[]> };
@@ -137,7 +138,7 @@ export function Editor({ id }: { id: string }) {
       <header className="toolbar">
         <a href="#/">Automations</a>
         <h1>{wf.name}</h1>
-        <a href={`#/w/${id}/runs`}>Activity</a>
+        <AutomationTabs id={id} here="steps" overview={!!wf.setup && !!wf.live} />
         <a href={`#/w/${id}/versions`}>Versions</a>
         <span className="muted status" aria-live="polite">
           {status}
@@ -164,7 +165,7 @@ export function Editor({ id }: { id: string }) {
             nodesDraggable={false}
             nodesConnectable={false}
             deleteKeyCode="Delete"
-            colorMode="system"
+            colorMode={document.documentElement.dataset.theme === "dark" ? "dark" : "light"}
             fitView
             fitViewOptions={{ maxZoom: 1 }}
           >

@@ -14,9 +14,9 @@ test("an owner connects Sheets and Slack, and retries only the Slack note that f
   await page.getByLabel("Password").fill("e2e test password 1");
   await page.getByRole("button", { name: "Create account" }).click();
 
-  // Connections on the Business and email page.
-  await page.getByRole("link", { name: "Business and email" }).first().click();
-  await page.locator("summary", { hasText: "Optional extras" }).click();
+  // Connections on the Apps page: each card opens its own setup.
+  await page.getByRole("link", { name: "Apps" }).first().click();
+  await page.getByRole("button", { name: "Connect Google Sheets" }).click();
   await page.getByLabel("Service account key file (JSON)").fill(process.env.E2E_SHEETS_KEY!);
   await expect(page.getByText("Share the sheet with daloy-e2e@office-demo.iam.gserviceaccount.com as an Editor.")).toBeVisible();
   await page.getByLabel("Sheet link").fill("https://docs.google.com/spreadsheets/d/e2e-sheet-0000000001/edit");
@@ -28,6 +28,7 @@ test("an owner connects Sheets and Slack, and retries only the Slack note that f
   await expect(page.getByText(/Google Sheets accepted a test row/)).toBeVisible();
   expect((await control()).sheetRows).toBe(rowsBefore + 1);
 
+  await page.getByRole("button", { name: "Connect Slack" }).click();
   await page.getByLabel("Bot token").fill(process.env.E2E_SLACK_TOKEN!);
   await page.getByRole("button", { name: "Connect Slack" }).click();
   await page.getByRole("button", { name: "Pick a channel" }).click();

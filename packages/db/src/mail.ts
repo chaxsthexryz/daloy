@@ -54,7 +54,7 @@ export async function approveSharedMail(db: Db, userId: string, dailyLimit: numb
   await db.update(users).set({ sharedMailDailyLimit: dailyLimit }).where(eq(users.id, userId));
 }
 
-/** Whether this workspace may send through the shared server under the policy. Shown on Business and email. */
+/** Whether this workspace may send through the shared server under the policy. Shown on Apps. */
 export async function sharedMailAllowed(db: Db, deps: MailDeps, userId: string) {
   if (deps.sharedMail === "open") return true;
   const [row] = await db.select({ limit: users.sharedMailDailyLimit }).from(users).where(eq(users.id, userId));
@@ -69,7 +69,7 @@ async function claimSharedMail(db: Db, userId: string, n: number) {
   const [row] = await db.select({ limit: users.sharedMailDailyLimit }).from(users).where(eq(users.id, userId));
   const limit = row?.limit ?? 0;
   if (limit <= 0) {
-    throw new StepError("This installation's mail server only sends for accounts its operator approved. Connect Gmail in Settings, Business and email to send from your own address.", false);
+    throw new StepError("This installation's mail server only sends for accounts its operator approved. Connect Gmail in Apps to send from your own address.", false);
   }
   const day = sql`(now() at time zone 'utc')::date::text`;
   const claimed =
@@ -82,7 +82,7 @@ async function claimSharedMail(db: Db, userId: string, n: number) {
         .returning({ sent: sharedMailUsage.sent })
     ).length > 0;
   if (!claimed) {
-    throw new StepError(`This account reached today's limit of ${limit} recipients through this installation's mail server. Connect Gmail in Settings, Business and email, or try again tomorrow (UTC).`, false);
+    throw new StepError(`This account reached today's limit of ${limit} recipients through this installation's mail server. Connect Gmail in Apps, or try again tomorrow (UTC).`, false);
   }
 }
 
@@ -136,7 +136,7 @@ export async function sendAs(db: Db, key: Buffer, deps: MailDeps, userId: string
   } catch (err) {
     if (sender.kind !== "gmail" || !loginRefused(err)) throw err;
     await markSenderFailed(db, userId, "Gmail rejected the app password.");
-    throw new StepError("Gmail rejected the app password. Reconnect Gmail in Settings, Business and email.", false, { cause: err });
+    throw new StepError("Gmail rejected the app password. Reconnect Gmail in Apps.", false, { cause: err });
   }
 }
 

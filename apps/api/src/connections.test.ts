@@ -11,7 +11,7 @@ import { freshDatabase } from "../../../test/db";
 import { startFakeProviders, type FakeProviders } from "../../../test/fake-providers";
 import { createApp } from "./app";
 
-// Business and email, Connections: Google Sheets and Slack (roadmap phase 3, decision 0021). Fake providers only.
+// Apps (was Business and email), connections: Google Sheets and Slack (roadmap phase 3, decision 0021). Fake providers only.
 let app: INestApplication;
 let boss: PgBoss;
 let db: Db;

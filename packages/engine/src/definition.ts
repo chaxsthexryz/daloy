@@ -68,7 +68,7 @@ export const approvalConfigSchema = z
   .refine((c) => c.to !== undefined || c.approver !== undefined, { message: "set a recipient (to) or a named approver", path: ["to"] });
 export type ApprovalConfig = z.infer<typeof approvalConfigSchema>;
 
-// Sheets and Slack go to the destination the owner picked in Business and email (decision 0021). The worker queues them
+// Sheets and Slack go to the destination the owner picked in Apps (decision 0021). The worker queues them
 // as deliveries, so the run carries on and each one is retried on its own. The row starts with the request reference
 // and the time, then these columns. Keep private details out of Slack text: everyone in the channel can read it.
 export const sheetsConfigSchema = z.object({ columns: z.array(template(2000)).min(1).max(20) });

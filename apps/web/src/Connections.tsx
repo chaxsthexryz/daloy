@@ -1,10 +1,10 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 import { api } from "./api";
 
-type Provider = "google_sheets" | "slack" | "outlook" | "teams";
-type Connection = { provider: Provider; status: "active" | "failed"; account: string; destination: Record<string, string> | null; lastError: string | null; lastTestedAt: string | null };
+export type Provider = "google_sheets" | "slack" | "outlook" | "teams";
+export type Connection = { provider: Provider; status: "active" | "failed"; account: string; destination: Record<string, string> | null; lastError: string | null; lastTestedAt: string | null };
 type TestResult = { ok: true; range?: string; channel?: string } | { ok: false; error: string };
-type OutlookSetup = { configured: boolean; adminConsentUrl?: string };
+export type OutlookSetup = { configured: boolean; adminConsentUrl?: string };
 type Channel = { id: string; name: string; isMember: boolean };
 
 const SERVICE_ACCOUNT_HELP = "https://cloud.google.com/iam/docs/service-accounts-create";
@@ -21,44 +21,6 @@ const OUTLOOK_OUTCOMES: Record<string, { ok: boolean; text: string }> = {
   expired: { ok: false, text: "That sign-in took too long or was started by someone else. Start again with Connect Outlook." },
   failed: { ok: false, text: "Microsoft did not finish connecting. Start again with Connect Outlook." },
 };
-
-/** Business and email, Connections: Google Sheets and Slack (roadmap phase 3), Outlook and Teams (phase 5). */
-export function ConnectionsSection({ outlookOutcome }: { outlookOutcome?: string }) {
-  const [list, setList] = useState<Connection[] | null>(null);
-  const [outlook, setOutlook] = useState<OutlookSetup>({ configured: false });
-  const [error, setError] = useState("");
-  const load = () =>
-    api<{ connections: Connection[]; outlook: OutlookSetup }>("GET", "/settings/connections").then(
-      (r) => {
-        setList(r.connections);
-        setOutlook(r.outlook);
-      },
-      (e: Error) => setError(e.message),
-    );
-  useEffect(() => void load(), []);
-  const of = (p: Provider) => list?.find((c) => c.provider === p) ?? null;
-
-  return (
-    <section aria-labelledby="connections-h">
-      <h2 id="connections-h">Connections</h2>
-      <p>
-        Office requests can also add a row to a Google Sheet and post a short note to a Slack channel. Purchase requests can send email from an Outlook mailbox and post a note to a
-        Teams channel. All of them are optional. Each delivery is tracked on its own, so one problem never holds up the others, and the local demo works without any of them.
-      </p>
-      <p role="alert" className="message error" hidden={!error}>
-        {error}
-      </p>
-      {list && (
-        <>
-          <SheetsConnection conn={of("google_sheets")} onChange={load} />
-          <SlackConnection conn={of("slack")} onChange={load} />
-          <OutlookConnection conn={of("outlook")} setup={outlook} outcome={outlookOutcome} onChange={load} />
-          <TeamsConnection conn={of("teams")} onChange={load} />
-        </>
-      )}
-    </section>
-  );
-}
 
 function useAction(onChange: () => Promise<unknown>) {
   const [error, setError] = useState("");
@@ -101,7 +63,7 @@ function Outcome({ test, what }: { test: TestResult | null; what: string }) {
   );
 }
 
-function SheetsConnection({ conn, onChange }: { conn: Connection | null; onChange: () => Promise<unknown> }) {
+export function SheetsConnection({ conn, onChange }: { conn: Connection | null; onChange: () => Promise<unknown> }) {
   const { error, busy, act } = useAction(onChange);
   const [editing, setEditing] = useState(false);
   const [test, setTest] = useState<TestResult | null>(null);
@@ -195,7 +157,7 @@ function SheetsConnection({ conn, onChange }: { conn: Connection | null; onChang
   );
 }
 
-function SlackConnection({ conn, onChange }: { conn: Connection | null; onChange: () => Promise<unknown> }) {
+export function SlackConnection({ conn, onChange }: { conn: Connection | null; onChange: () => Promise<unknown> }) {
   const { error, busy, act } = useAction(onChange);
   const [token, setToken] = useState("");
   const [editing, setEditing] = useState(false);
@@ -306,7 +268,7 @@ function SlackConnection({ conn, onChange }: { conn: Connection | null; onChange
   );
 }
 
-function OutlookConnection({ conn, setup, outcome, onChange }: { conn: Connection | null; setup: OutlookSetup; outcome?: string; onChange: () => Promise<unknown> }) {
+export function OutlookConnection({ conn, setup, outcome, onChange }: { conn: Connection | null; setup: OutlookSetup; outcome?: string; onChange: () => Promise<unknown> }) {
   const { error, busy, act } = useAction(onChange);
   const [test, setTest] = useState<TestResult | null>(null);
   const shown = outcome && setup.configured ? OUTLOOK_OUTCOMES[outcome] : undefined;
@@ -368,7 +330,7 @@ function OutlookConnection({ conn, setup, outcome, onChange }: { conn: Connectio
   );
 }
 
-function TeamsConnection({ conn, onChange }: { conn: Connection | null; onChange: () => Promise<unknown> }) {
+export function TeamsConnection({ conn, onChange }: { conn: Connection | null; onChange: () => Promise<unknown> }) {
   const { error, busy, act } = useAction(onChange);
   const [editing, setEditing] = useState(false);
   const [test, setTest] = useState<TestResult | null>(null);

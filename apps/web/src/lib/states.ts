@@ -54,8 +54,8 @@ export const ownerError = (error: string) => error.replace(/^step [^:]+: /, "");
 
 /** The page that fixes a failed run, read from the error text the steps and providers write (null when it cannot tell). */
 export function fixFor(error: string): { href: string; label: string } | null {
-  if (/gmail|mail server/i.test(error)) return { href: "#/settings/business", label: "Connect Gmail" };
-  if (/google sheets|service account|slack|outlook|teams|microsoft/i.test(error)) return { href: "#/settings/business", label: "Check the connection" };
+  if (/gmail|mail server/i.test(error)) return { href: "#/apps", label: "Connect Gmail" };
+  if (/google sheets|service account|slack|outlook|teams|microsoft/i.test(error)) return { href: "#/apps", label: "Check the connection" };
   if (/api key|ai model/i.test(error)) return { href: "#/settings/ai", label: "Check the AI model" };
   return null;
 }

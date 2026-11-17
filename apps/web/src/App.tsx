@@ -11,6 +11,7 @@ import { ResourcesPage } from "./Resources";
 import { AiModelPage } from "./Settings";
 import { SettingsPage } from "./AppSettings";
 import { BusinessSetupPage, VerifySenderPage } from "./BusinessSetup";
+import { AppsPage } from "./Apps";
 import { TokensPage } from "./Tokens";
 import { VersionsPage } from "./Versions";
 import { Shell } from "./Nav";
@@ -20,7 +21,7 @@ const ANSWER = /^#\/answer\/([A-Za-z0-9_-]{43})$/;
 const INVITE = /^#\/invite\/([A-Za-z0-9_-]{43})$/;
 
 /**
- * Hash routes (#/ is Automations, #/advanced the developer menu, #/w/<id>, #/w/<id>/runs, #/w/<id>/versions, #/runs/<id>, #/tokens, #/settings, #/settings/business, #/resources, #/bookings,
+ * Hash routes (#/ is Automations, #/advanced the developer menu, #/w/<id>, #/w/<id>/runs, #/w/<id>/versions, #/runs/<id>, #/tokens, #/settings, #/settings/ai, #/settings/business, #/apps, #/activity, #/new, #/resources, #/bookings,
  * #/verify-sender/<token> for the Gmail confirmation link, #/team, #/invite/<token> for an invite link,
  * #/answer/<token> to sign in before a named approval (decision 0022),
  * #/try/office-request for the preview and #/a/<id> for a guided automation),
@@ -75,15 +76,18 @@ function Route({ hash, user }: { hash: string; user: User }) {
   if (run) return <RunPage key={run[1]} runId={run[1]!} owner={user.role === "owner"} />;
   const guided = /^#\/a\/([0-9a-f-]{36})$/.exec(hash);
   if (guided) return <OfficeRequestPage key={guided[1]} id={guided[1]!} />;
+  if (hash === "#/activity" && (user.role === "owner" || user.role === "operator")) return <RunsPage />;
   if (hash === "#/try/office-request") return <TryOfficeRequest email={user.email} />;
   if (hash === "#/advanced" && user.role === "owner") return <AdvancedPage />;
   if (hash === "#/new" && user.role === "owner") return <NewAutomationPage email={user.email} />;
   if (hash === "#/tokens") return <TokensPage />;
   if (hash === "#/settings") return <SettingsPage user={user} />;
   if (hash === "#/settings/ai") return <AiModelPage />;
-  // #/settings/business/outlook-<outcome> is where the Outlook consent callback lands (decision 0023).
-  const business = /^#\/settings\/business(?:\/outlook-([a-z_]+))?$/.exec(hash);
-  if (business) return <BusinessSetupPage outlookOutcome={business[1]} />;
+  if (hash === "#/apps") return <AppsPage />;
+  // #/settings/business/outlook-<outcome> is where the Outlook consent callback lands (decision 0023); Outlook is on Apps now.
+  const outlook = /^#\/settings\/business\/outlook-([a-z_]+)$/.exec(hash);
+  if (outlook) return <AppsPage outlookOutcome={outlook[1]} />;
+  if (hash === "#/settings/business") return <BusinessSetupPage />;
   if (hash === "#/team" && user.role === "owner") return <TeamPage />;
   if (hash === "#/resources" && user.role === "owner") return <ResourcesPage />;
   if (hash === "#/bookings" && (user.role === "owner" || user.role === "operator")) return <BookingsPage />;

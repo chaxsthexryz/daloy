@@ -12,13 +12,13 @@ describe("fixFor", () => {
   it("points mail errors to Connect Gmail", () => {
     for (const e of [
       "step a: This installation's mail server only sends for accounts its operator approved.",
-      "step a: Gmail rejected the app password. Reconnect Gmail in Settings, Business and email.",
+      "step a: Gmail rejected the app password. Reconnect Gmail in Apps.",
     ])
-      expect(fixFor(e)).toEqual({ href: "#/settings/business", label: "Connect Gmail" });
+      expect(fixFor(e)).toEqual({ href: "#/apps", label: "Connect Gmail" });
   });
   it("points provider errors to the connections", () => {
     for (const e of ["Slack no longer accepts the app's token.", "Connect Google Sheets again.", "Reconnect Outlook.", "The Teams workflow was deleted."])
-      expect(fixFor(e)).toEqual({ href: "#/settings/business", label: "Check the connection" });
+      expect(fixFor(e)).toEqual({ href: "#/apps", label: "Check the connection" });
   });
   it("points AI key errors to the AI model page", () => {
     expect(fixFor("step c: OpenRouter has no saved API key")).toEqual({ href: "#/settings/ai", label: "Check the AI model" });

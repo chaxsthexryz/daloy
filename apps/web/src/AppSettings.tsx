@@ -38,7 +38,10 @@ export function SettingsPage({ user }: { user: User }) {
           <h2>Your office</h2>
           <ul className="list">
             <li>
-              <a href="#/settings/business">Business and email</a> <span className="muted">business details, the email sender, Sheets, Slack, Outlook and Teams</span>
+              <a href="#/apps">Apps</a> <span className="muted">Gmail, Outlook, Google Sheets, Slack and Teams</span>
+            </li>
+            <li>
+              <a href="#/settings/business">Business</a> <span className="muted">your business details and the website inquiry form</span>
             </li>
             <li>
               <a href="#/team">Team</a> <span className="muted">who can use Daloy and what each person may do</span>

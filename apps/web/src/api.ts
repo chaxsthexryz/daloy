@@ -49,6 +49,9 @@ export type StepRun = {
 export type RunSummary = {
   id: string;
   workflowId: string;
+  workflowName: string;
+  /** The request that started it, for guided automations. */
+  reference: string | null;
   version: number;
   state: string;
   test: boolean;

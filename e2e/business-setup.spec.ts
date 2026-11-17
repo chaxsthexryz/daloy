@@ -21,7 +21,7 @@ test("an owner sets up inquiry replies and a customer's inquiry reaches both inb
 
   await page.getByRole("link", { name: "New automation" }).first().click();
   await page.getByRole("link", { name: "Set up inquiry replies" }).click();
-  await expect(page.getByRole("heading", { name: "Business and email", level: 1 })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Business", level: 1 })).toBeVisible();
   await expect(page.getByText("Save a business name and an inbox for new inquiries above first.")).toBeVisible();
   await page.getByLabel("Business name").fill("Lim Dental");
   await page.getByLabel("Website", { exact: true }).fill("https://limdental.example");
@@ -29,12 +29,17 @@ test("an owner sets up inquiry replies and a customer's inquiry reaches both inb
   await page.getByRole("button", { name: "Save business details" }).click();
   await expect(page.getByText("Saved.")).toBeVisible();
 
-  // Connecting Gmail sends nothing; disconnecting pauses mail until the owner picks the local server again.
+  // Connecting Gmail (on Apps) sends nothing; disconnecting pauses mail until the owner picks the local server again.
+  await page.getByRole("link", { name: "Apps" }).first().click();
+  await page.getByRole("button", { name: "Connect Gmail" }).click();
   await page.getByLabel("Gmail address").fill(`lim.dental.${stamp}@gmail.com`);
   await page.getByLabel("App password").fill("abcd efgh ijkl mnop");
   await page.getByRole("button", { name: "Save Gmail sender" }).click();
   await expect(page.getByText("Waiting for you to confirm the test email")).toBeVisible();
+  await page.getByRole("link", { name: "Business", exact: true }).first().click();
   await expect(page.getByText("Customer replies will not be sent until Gmail is confirmed and working.")).toBeVisible();
+  await page.getByRole("link", { name: "Apps" }).first().click();
+  await page.getByRole("button", { name: "Manage Gmail" }).click();
   await page.getByRole("button", { name: "Disconnect" }).click();
   await expect(page.getByText("Mail from your automations is paused until you reconnect Gmail.")).toBeVisible();
   await page.getByRole("button", { name: "Use the local mail server instead" }).click();
@@ -43,6 +48,7 @@ test("an owner sets up inquiry replies and a customer's inquiry reaches both inb
   await page.getByRole("button", { name: "Send a test email to me" }).click();
   await expect(page.getByText(`accepted a test email to ${owner}`)).toBeVisible();
   expect(mail().filter((m) => m.includes(`To: ${owner}`) && m.includes("Daloy test email"))).toHaveLength(1);
+  await page.getByRole("link", { name: "Business", exact: true }).first().click();
 
   await expect(page.getByText(`New inquiries go to ${inbox}.`)).toBeVisible();
   await page.getByRole("button", { name: "Turn on inquiry replies" }).click();

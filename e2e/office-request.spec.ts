@@ -64,4 +64,24 @@ test("a beginner previews, sets up, turns on and receives one office request", a
   expect(receipts).toHaveLength(1);
   expect(receipts[0]).toContain(`Your reference is ${reference}`);
   expect(mail().some((m) => m.includes("REQ-SAMPLE"))).toBe(false);
+
+  // One automation, three tabs (N4e): Overview, Activity and Steps.
+  const tabs = page.getByRole("navigation", { name: "This automation" });
+  await tabs.getByRole("link", { name: "Activity" }).click();
+  await expect(tabs.getByRole("link", { name: "Activity" })).toHaveAttribute("aria-current", "page");
+  await tabs.getByRole("link", { name: "Steps" }).click();
+  await expect(page.locator(".react-flow__node").first()).toBeVisible();
+  await tabs.getByRole("link", { name: "Overview" }).click();
+  await expect(page.getByRole("status")).toContainText("Accepting requests");
+
+  // On a phone, from Home: the bottom bar's Activity, the reference typed in, and its run (three taps).
+  await page.setViewportSize({ width: 390, height: 800 });
+  await page.goto("/#/");
+  await page.getByRole("navigation", { name: "Quick" }).getByRole("link", { name: "Activity" }).click();
+  await page.getByLabel("Find a request or automation").fill(reference);
+  const found = page.locator("tbody tr");
+  await expect(found).toHaveCount(1);
+  await expect(found).toContainText(reference);
+  await found.getByRole("link").click();
+  await expect(page.getByRole("heading", { name: "What happened" })).toBeVisible();
 });

@@ -100,3 +100,20 @@ test("Settings in the menu sets light or dark on this device, and System follows
   await page.emulateMedia({ colorScheme: "dark" });
   await expect.poll(theme).toBe("dark");
 });
+
+test("Apps lists each app as a card, and Connect opens that app's own setup", async ({ page }) => {
+  await signUp(page);
+  await page.getByRole("link", { name: "Apps" }).first().click();
+  await expect(page.getByRole("button", { name: "All 5" })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("button", { name: "Connected 0" })).toBeVisible();
+  const more = page.getByRole("region", { name: "More" });
+  for (const name of ["Gmail", "Outlook", "Google Sheets", "Slack", "Microsoft Teams"]) await expect(more.getByRole("heading", { name, exact: true })).toBeVisible();
+
+  await page.getByLabel("Find an app").fill("sla");
+  await expect(more.getByRole("listitem")).toHaveCount(1);
+  await page.getByRole("button", { name: "Connect Slack" }).click();
+  await expect(page.getByRole("region", { name: "Slack setup" }).getByLabel("Bot token")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Close Slack" })).toHaveAttribute("aria-expanded", "true");
+  await page.getByRole("button", { name: "Connected 0" }).click();
+  await expect(page.getByText("Nothing is connected yet.")).toBeVisible();
+});

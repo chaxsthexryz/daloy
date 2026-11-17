@@ -1,6 +1,6 @@
-import { deliveries, redactSecrets, resolveRun, runs, secretForms, supersededSql, secretValuesToHide, stepRuns, workflows, workflowVersions, type Db, type RunAction } from "@daloy/db";
+import { deliveries, redactSecrets, requests, resolveRun, runs, secretForms, supersededSql, secretValuesToHide, stepRuns, workflows, workflowVersions, type Db, type RunAction } from "@daloy/db";
 import { Body, ConflictException, Controller, Get, HttpCode, Inject, NotFoundException, Param, Post, Query, UseGuards } from "@nestjs/common";
-import { and, asc, desc, eq, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, ilike, or, sql } from "drizzle-orm";
 import type { PgBoss } from "pg-boss";
 import * as z from "zod";
 import { SessionGuard } from "./auth";
@@ -11,7 +11,17 @@ const testFlag = new ZodPipe(z.enum(["true", "false"]).optional());
 const resolveInput = z.object({ action: z.enum(["delivered", "again", "stop"]) });
 const uuid = new ZodPipe(z.uuid());
 // A run that waits for a person: parked itself, or one of its Sheets or Slack deliveries is.
-const deliveryInReview = sql<boolean>`exists (select 1 from ${deliveries} where ${deliveries.runId} = ${runs.id} and ${deliveries.state} = 'needs_review')`;
+const deliveryIn = (state: string) => sql<boolean>`exists (select 1 from ${deliveries} where ${deliveries.runId} = ${runs.id} and ${deliveries.state} = ${state})`;
+const deliveryInReview = deliveryIn("needs_review");
+// The owner's plain states (apps/web/src/lib/states.ts): a failed delivery is a Problem too.
+const STATES = {
+  problem: or(eq(runs.state, "failed"), deliveryIn("failed")),
+  waiting: eq(runs.state, "waiting"),
+  done: eq(runs.state, "succeeded"),
+};
+const reference = sql<string | null>`(select ${requests.reference} from ${requests} where ${requests.runId} = ${runs.id})`;
+// Text to find, with LIKE's wildcards matched as themselves.
+const like = (q: string) => `%${q.replace(/[\\%_]/g, (c) => "\\" + c)}%`;
 
 /**
  * Run history, plus the operator's answers to a run in review (decision 0030). On the way out, every payload, step input, output and error first has every form of the
@@ -32,13 +42,18 @@ export class RunsController {
     return (v: unknown) => maskSecrets(redactSecrets(v, forms));
   }
 
-  /** The latest 50 runs, newest first. test=true lists builder test runs only, test=false the others. review=true lists runs waiting for a person. */
+  /**
+   * The latest 50 runs, newest first. test=true lists builder test runs only, test=false the others. review=true lists runs
+   * waiting for a person, state one plain state, and q runs whose automation name or request reference contains the text.
+   */
   @Get()
   async list(
     @CurrentUser() user: SessionUser,
     @Query("workflowId", new ZodPipe(z.uuid().optional())) workflowId?: string,
     @Query("test", testFlag) test?: "true" | "false",
     @Query("review", new ZodPipe(z.literal("true").optional())) review?: "true",
+    @Query("state", new ZodPipe(z.enum(["problem", "waiting", "done"]).optional())) state?: keyof typeof STATES,
+    @Query("q", new ZodPipe(z.string().trim().max(100).optional())) q?: string,
   ) {
     const rows = await this.owned()
       .where(
@@ -47,6 +62,8 @@ export class RunsController {
           workflowId ? eq(workflows.id, workflowId) : undefined,
           test ? eq(runs.test, test === "true") : undefined,
           review ? or(eq(runs.state, "needs_review"), deliveryInReview) : undefined,
+          state ? STATES[state] : undefined,
+          q ? or(ilike(workflows.name, like(q)), sql`${reference} ilike ${like(q)}`) : undefined,
         ),
       )
       .orderBy(desc(runs.createdAt))
@@ -116,6 +133,8 @@ export class RunsController {
         // Not finished, but its booking was changed since: it stops at its next step and sends nothing more (decision 0032).
         superseded: sql<boolean>`(${runs.state} in ('pending', 'running', 'waiting', 'needs_review') and ${supersededSql})`,
         workflowId: workflows.id,
+        workflowName: workflows.name,
+        reference,
         version: workflowVersions.version,
       })
       .from(runs)
