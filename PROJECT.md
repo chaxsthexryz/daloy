@@ -211,9 +211,14 @@ Order: N3, N4, V1, then V2 and W together, N5 with the pilot search P in paralle
   - [x] N10a. Explain failures from run records, provider error kinds and lint rules in plain language: fixed rules first, then DeepSeek through OpenRouter for the wording. Only structured error data goes to the model, never form text or booking details. Done in decision 0039: a run page in Problem or Needs you shows "Why it stopped" from a fixed table (`apps/api/src/explain.ts`, `GET /runs/:id/explanation`), keyed by the delivery error kind (new `deliveries.error_kind`, migration 0021), the failed step's type, outcome, HTTP status and a reason from a fixed list, and lint rule ids (`lintFindings`). Owners can press "Explain in simpler words (uses 1 AI action)" (`POST /runs/:id/explanation/reword`): the workspace's AI model gets only `{ facts, fixed }`, the reply is plain text, never stored and never acts. Passed: lint, typecheck, 1096 unit and API tests (`explain.test.ts`, `explain-api.test.ts` with the privacy, unchanged-rows, quota and role tests), 36 Playwright tests (`e2e/explain.spec.ts`). Not done: a live model (tests use the fake); wording quality is measured in N10b.
   - [x] N10b. Extend the Build with AI tab (N4f) to answer "what happened to request X". Measured on twenty real failure explanations in English and Tagalog before it is on by default. A suggestion never approves a run. Done: "Ask about a request", fixed answers to three tap questions, model rewording on request ([decision 0041](docs/decisions/0041-ask-about-a-request.md)). It stays off (`AI_ASK` unset) until the measurement in [docs/ai-ask-measurement.md](docs/ai-ask-measurement.md) is done.
   - Voice through the browser's Web Speech API and an avatar only if a user asks.
+- [ ] N12. PayMongo payments (test keys first): a payment link step and a signed webhook trigger, so an order or invoice is marked paid only when PayMongo confirms it. A GCash screenshot is never proof. Live mode needs the owner's PayMongo business verification.
+- [ ] N13. Google Calendar: create, move and cancel events from a booking, and stop reminders for a cancelled event.
+- [ ] N14. Telegram and Viber messages: send a message from a bot (Telegram bot token, Viber Public Account), as a delivery with needs_review on an unknown outcome.
+- [ ] N15. Airtable, Notion and Trello: add or update a record, page or card, as deliveries like Sheets.
+- [ ] N16. Facebook Messenger orders, last: only after pilots ask for it and Meta approves the app. Until then a link from the Page to the Daloy order form covers it.
 - [ ] N11. Real accounts: final security review at the release commit covering N6 to N10, a daily recipient cap on Gmail and Outlook receipts, a timestamp in the webhook signature, MCP token scopes and expiry, password change and reset, per-workflow pause and cancel of a pending run, read-side secret redaction on every surface, a purge policy for retired secrets.
 
-Model and effort per open phase. One Fable 5.2 session coordinates: it picks the model for each phase session, checks results, merges and pushes. Phase sessions run on Opus or Sonnet; the lead plans and reviews, and hands file-by-file edits and test runs to Sonnet subagents. Claude Code or ChatGPT Codex can take a phase; `AGENTS.md` has the shared rules and the claim step.
+Model and effort per open phase. One coordinator session (Opus 5.5) coordinates: it picks the model for each phase session, checks results, merges and pushes. Phase sessions run on Opus or Sonnet; the lead plans and reviews, and hands file-by-file edits and test runs to Sonnet subagents. Claude Code or ChatGPT Codex can take a phase; `AGENTS.md` has the shared rules and the claim step.
 
 | Phase | Claude lead | Codex lead |
 |---|---|---|
@@ -224,7 +229,12 @@ Model and effort per open phase. One Fable 5.2 session coordinates: it picks the
 | N8 Tagalog | Sonnet 5.5, medium | GPT-6.1 Terra |
 | N9 email-in and embed form | Opus 5.5, high | GPT-6.1 Sol, High |
 | N10 AI helper | Opus 5.5, high | GPT-6.1 Sol, High |
-| N11 real accounts and security review | Fable 5.2, high | GPT-6 Astra, Extra High |
+| N11 real accounts and security review | Opus 5.5, high | GPT-6 Astra, Extra High |
+| N12 PayMongo payments | Opus 5.5, high | GPT-6.1 Sol, High |
+| N13 Google Calendar | Sonnet 5.5, high | GPT-6.1 Sol, Medium |
+| N14 Telegram and Viber | Sonnet 5.5, medium | GPT-6.1 Sol, Medium |
+| N15 Airtable, Notion, Trello | Sonnet 5.5, medium | GPT-6.1 Sol, Medium |
+| N16 Messenger | Opus 5.5, high | GPT-6.1 Sol, High |
 | Read-only checks and retests | Sonnet 5.5, medium | GPT-6.1 Terra |
 
 Hygiene, any time (done 16 November 2026): add a LICENSE (MIT), the README "How AI was used" section CLAUDE.md asks for, and fix by hand the four statements in docs/how-it-works.md that the code contradicts (steps never reach `skipped`, the table has 85 cases not 72, `failed` can go back to `running`, not every change goes through `assertTransition`).

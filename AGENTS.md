@@ -40,7 +40,7 @@ Short version of the working rules, if `../CLAUDE.md` is missing:
 
 | Role | Claude | Codex |
 |---|---|---|
-| Coordinator, design, security review | Fable 5.2, high | GPT-6 Astra, Extra High |
+| Coordinator, design, security review | Opus 5.5, high | GPT-6 Astra, Extra High |
 | Phase lead for hard phases (quotas, security, concurrency) | Opus 5.5, high | GPT-6.1 Sol, High |
 | Implementing an approved plan | Sonnet 5.5, medium or high | GPT-6.1 Sol, Medium |
 | Docs, copy, mechanical edits, read-only checks | Sonnet 5.5, low or medium | GPT-6.1 Terra |
