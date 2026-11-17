@@ -106,9 +106,11 @@ it("retries Slack alone when the sheet row went in and Slack failed", async () =
   const failed = await state(msg.id);
   expect(failed).toMatchObject({ state: "failed" });
   expect(failed.lastError).toMatch(/invite/i);
+  expect(failed.errorKind).toBe("permission");
 
   fake.slack.channels[0]!.is_member = true;
   expect(await retryDelivery(db, ana, msg.id)).toBe(true);
+  expect((await state(msg.id)).errorKind).toBeNull(); // Retry clears it
   await deliverDue();
   expect((await state(msg.id)).state).toBe("delivered");
   expect(fake.slack.messages).toHaveLength(1);
@@ -159,6 +161,7 @@ it("holds a Slack post for review when Slack may have accepted it, and repeats i
   const held = await state(d.id);
   expect(held.state).toBe("needs_review");
   expect(held.lastError).toMatch(/may have posted/i);
+  expect(held.errorKind).toBe("ambiguous");
   expect(fake.slack.messages).toHaveLength(1);
 
   expect(await retryDelivery(db, ana, d.id)).toBe(false); // a plain Retry does not repeat an ambiguous post
@@ -166,12 +169,13 @@ it("holds a Slack post for review when Slack may have accepted it, and repeats i
   expect(fake.slack.messages).toHaveLength(1);
 
   expect(await confirmDelivery(db, ana, d.id)).toBe(true); // the operator saw it in the channel
-  expect(await state(d.id)).toMatchObject({ state: "delivered", result: { confirmedBy: "operator" } });
+  expect(await state(d.id)).toMatchObject({ state: "delivered", result: { confirmedBy: "operator" }, errorKind: null });
 
   const again = await slack(ana, await newRun(ana), "REQ-1007");
   fake.once("chat.postMessage", "hang-after");
   await deliverDue();
   expect(await retryDelivery(db, ana, again.id, { postAgain: true })).toBe(true);
+  expect((await state(again.id)).errorKind).toBeNull(); // Post again clears it
   await deliverDue();
   expect((await state(again.id)).state).toBe("delivered");
   expect(fake.slack.messages).toHaveLength(3);
@@ -201,6 +205,7 @@ it("marks the connection failed when Google rejects the key, without touching an
   await deliverDue();
   expect(await state(a.id)).toMatchObject({ state: "failed" });
   expect((await state(a.id)).lastError).toMatch(/connect google sheets again/i);
+  expect((await state(a.id)).errorKind).toBe("auth");
   expect((await readConnections(db, ana)).find((c) => c.provider === "google_sheets")?.status).toBe("failed");
   expect(await state(b.id)).toMatchObject({ state: "delivered" });
   expect((await readConnections(db, ben))[0]?.status).toBe("active");
@@ -209,7 +214,7 @@ it("marks the connection failed when Google rejects the key, without touching an
   const calls = fake.calls.length;
   const c = await sheet(ana, await newRun(ana), "REQ-1012");
   await deliverDue();
-  expect((await state(c.id)).state).toBe("failed");
+  expect(await state(c.id)).toMatchObject({ state: "failed", errorKind: "reconnect" });
   expect(fake.calls.length).toBe(calls);
 });
 
@@ -220,6 +225,7 @@ it("fails without retrying when the sheet is not shared, and says who to share i
   const row = await state(d.id);
   expect(row).toMatchObject({ state: "failed", attempts: 1 });
   expect(row.lastError).toContain("sheets@ana.iam.gserviceaccount.com");
+  expect(row.errorKind).toBe("permission");
   expect((await readConnections(db, ana)).find((c) => c.provider === "google_sheets")?.status).toBe("active");
 });
 
@@ -228,7 +234,7 @@ it("waits as long as Slack asks after a rate limit, and gives up after the last 
   fake.once("chat.postMessage", { status: 429, body: { ok: false, error: "ratelimited" }, headers: { "retry-after": "30" } });
   await deliverDue();
   const waiting = await state(d.id);
-  expect(waiting.state).toBe("queued");
+  expect(waiting).toMatchObject({ state: "queued", errorKind: "quota" });
   expect(waiting.nextAttemptAt.getTime()).toBeGreaterThanOrEqual(Date.now() + 29_000);
 
   for (let i = 1; i < DELIVERY_POLICY.maxAttempts; i++) {
@@ -236,7 +242,7 @@ it("waits as long as Slack asks after a rate limit, and gives up after the last 
     await makeDue(d.id);
     await deliverDue();
   }
-  expect(await state(d.id)).toMatchObject({ state: "failed", attempts: DELIVERY_POLICY.maxAttempts });
+  expect(await state(d.id)).toMatchObject({ state: "failed", attempts: DELIVERY_POLICY.maxAttempts, errorKind: "quota" });
   expect(fake.slack.messages).toHaveLength(0);
 });
 
@@ -244,7 +250,7 @@ it("fails a revoked Slack token and marks the connection failed", async () => {
   fake.slack.revoked = true;
   const d = await slack(ana, await newRun(ana), "REQ-1015");
   await deliverDue();
-  expect((await state(d.id)).state).toBe("failed");
+  expect(await state(d.id)).toMatchObject({ state: "failed", errorKind: "auth" });
   expect((await readConnections(db, ana)).find((c) => c.provider === "slack")?.status).toBe("failed");
 });
 
@@ -252,7 +258,7 @@ it("fails a delivery while disconnected, then delivers it after reconnecting and
   await removeConnection(db, ana, "slack");
   const d = await slack(ana, await newRun(ana), "REQ-1016");
   await deliverDue();
-  expect(await state(d.id)).toMatchObject({ state: "failed", lastError: expect.stringMatching(/not connected/i) });
+  expect(await state(d.id)).toMatchObject({ state: "failed", lastError: expect.stringMatching(/not connected/i), errorKind: "not_connected" });
   await saveConnection(db, key, ana, "slack", { account: "Lim Dental", credential: "xoxb-ana", destination: { channelId: "C0REQ", channelName: "office-requests" } });
   await retryDelivery(db, ana, d.id);
   await deliverDue();
@@ -341,7 +347,7 @@ describe("exactly-once Sheets writes and pinned destinations (QA regression, fec
     const { sheetMetaId } = await state(d.id);
     sheetState.metadata.set(sheetMetaId!, { metadataId: sheetMetaId!, metadataKey: "another-tool", location: { sheetId: 1 }, visibility: "PROJECT" });
     await deliverDue();
-    expect(await state(d.id)).toMatchObject({ state: "needs_review", lastError: expect.stringContaining("marker") });
+    expect(await state(d.id)).toMatchObject({ state: "needs_review", lastError: expect.stringContaining("marker"), errorKind: "review" });
     expect(sheetRows).toHaveLength(0);
   });
 
@@ -367,11 +373,11 @@ describe("exactly-once Sheets writes and pinned destinations (QA regression, fec
     await db.update(connections).set({ destination: { spreadsheetId: "sheet-ana-2", tab: "Requests", title: "New requests" } }).where(and(eq(connections.userId, ana), eq(connections.provider, "google_sheets")));
     await makeDue(d.id);
     await deliverDue();
-    expect(await state(d.id)).toMatchObject({ state: "needs_review", lastError: expect.stringContaining("changed") });
+    expect(await state(d.id)).toMatchObject({ state: "needs_review", lastError: expect.stringContaining("changed"), errorKind: "destination_changed" });
     expect([sheetRows.length, newRows.length]).toEqual([0, 0]);
     expect(await retryDelivery(db, ana, d.id, { postAgain: true })).toBe(true);
     await deliverDue();
-    expect(await state(d.id)).toMatchObject({ state: "delivered" });
+    expect(await state(d.id)).toMatchObject({ state: "delivered", errorKind: null });
     expect([sheetRows.length, newRows.length]).toEqual([0, 1]);
   });
 
@@ -380,7 +386,7 @@ describe("exactly-once Sheets writes and pinned destinations (QA regression, fec
     const d = await slack(ana, await newRun(ana), "REQ-2007");
     await saveConnection(db, key, ana, "slack", { account: "Lim Dental", credential: "xoxb-ana", destination: { channelId: "C0NEW", channelName: "front-desk" } });
     await deliverDue();
-    expect(await state(d.id)).toMatchObject({ state: "needs_review", lastError: expect.stringContaining("#office-requests") });
+    expect(await state(d.id)).toMatchObject({ state: "needs_review", lastError: expect.stringContaining("#office-requests"), errorKind: "destination_changed" });
     expect(fake.slack.messages).toHaveLength(0);
     await retryDelivery(db, ana, d.id, { postAgain: true });
     await deliverDue();
@@ -392,7 +398,7 @@ describe("exactly-once Sheets writes and pinned destinations (QA regression, fec
     const d = await sheet(ana, await newRun(ana), "REQ-2008");
     await db.update(deliveries).set({ pinnedAccount: null, pinnedDestination: null }).where(eq(deliveries.id, d.id));
     await deliverDue();
-    expect(await state(d.id)).toMatchObject({ state: "needs_review", lastError: expect.stringContaining("before Daloy recorded") });
+    expect(await state(d.id)).toMatchObject({ state: "needs_review", lastError: expect.stringContaining("before Daloy recorded"), errorKind: "queued_before_pin" });
     expect(sheetRows).toHaveLength(0);
   });
 });
@@ -692,7 +698,7 @@ describe("booking changes stop queued deliveries (N2b, decision 0032)", () => {
     expect(appends()).toBe(before);
     expect(sheetRows).toHaveLength(0);
     expect(fake.slack.messages).toHaveLength(0);
-    for (const d of [await state(row.id), await state(msg.id)]) expect(d).toMatchObject({ state: "failed", lastError: notSent });
+    for (const d of [await state(row.id), await state(msg.id)]) expect(d).toMatchObject({ state: "failed", lastError: notSent, errorKind: "booking_changed" });
   });
 
   it("refuses Retry and Post again once the booking changed, and a retry queued before the change sends nothing", async () => {

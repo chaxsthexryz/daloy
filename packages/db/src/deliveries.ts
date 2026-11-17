@@ -3,7 +3,7 @@ import { backoffDelayMs, type RetryPolicy } from "@daloy/engine";
 import { and, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { connectionCredential, markConnectionFailed, PROVIDER_NAMES, rotateInto } from "./connections";
 import type { Db } from "./index";
-import { appendRowOnce, deleteSheetMarker, outlookSend, ProviderError, serviceAccountSchema, slackPost, teamsPost, type OutlookMessage, type ProviderUrls, type SheetDestination } from "./providers";
+import { appendRowOnce, deleteSheetMarker, outlookSend, ProviderError, serviceAccountSchema, slackPost, teamsPost, type OutlookMessage, type ProviderErrorKind, type ProviderUrls, type SheetDestination } from "./providers";
 import { bookingSuperseded, supersededSql } from "./bookings";
 import { connections, deliveries, runs, type Provider } from "./schema";
 
@@ -22,6 +22,8 @@ import { connections, deliveries, runs, type Provider } from "./schema";
  */
 export type Delivery = typeof deliveries.$inferSelect;
 export type DeliveryPayload = Delivery["payload"];
+/** What the last failure was, as a closed value (decision 0039). */
+export type DeliveryErrorKind = ProviderErrorKind | "not_connected" | "reconnect" | "no_destination" | "destination_changed" | "queued_before_pin" | "booking_changed";
 
 export const DELIVERY_POLICY: RetryPolicy = { maxAttempts: 5, baseDelayMs: 2000, maxDelayMs: 10 * 60_000 };
 /** A delivery still "sending" after this long belongs to a worker that died mid-call. Well above a call's timeouts. */
@@ -81,8 +83,8 @@ export async function claimDueDeliveries(db: Db, limit = 10): Promise<Delivery[]
 
 type Outcome =
   | { state: "delivered"; result: Record<string, string | boolean> }
-  | { state: "failed" | "needs_review"; error: string }
-  | { state: "queued"; error: string; retryAfterMs?: number; checkFirst?: boolean };
+  | { state: "failed" | "needs_review"; error: string; kind: DeliveryErrorKind }
+  | { state: "queued"; error: string; kind: DeliveryErrorKind; retryAfterMs?: number; checkFirst?: boolean };
 
 /**
  * One attempt at a claimed delivery. Never throws for provider trouble: the outcome is written to the row. null means
@@ -91,11 +93,11 @@ type Outcome =
 async function attempt(db: Db, key: Buffer, urls: ProviderUrls, d: Delivery): Promise<Outcome | null> {
   const name = PROVIDER_NAMES[d.provider];
   const conn = await connectionCredential(db, key, d.userId, d.provider);
-  if (!conn) return { state: "failed", error: `${name} is not connected. Connect it in Apps, then retry.` };
-  if (conn.status === "failed") return { state: "failed", error: `${name} needs to be connected again (${conn.account}). Reconnect it in Apps, then retry.` };
-  if (!conn.destination) return { state: "failed", error: `No ${d.provider === "google_sheets" ? "sheet" : "channel"} is chosen for ${name}. Pick one in Apps, then retry.` };
+  if (!conn) return { state: "failed", error: `${name} is not connected. Connect it in Apps, then retry.`, kind: "not_connected" };
+  if (conn.status === "failed") return { state: "failed", error: `${name} needs to be connected again (${conn.account}). Reconnect it in Apps, then retry.`, kind: "reconnect" };
+  if (!conn.destination) return { state: "failed", error: `No ${d.provider === "google_sheets" ? "sheet" : "channel"} is chosen for ${name}. Pick one in Apps, then retry.`, kind: "no_destination" };
   if (d.pinnedAccount === null) {
-    return { state: "needs_review", error: `This was queued before Daloy recorded where deliveries go, so it cannot confirm the ${name} destination. Choose Post again to send it to ${describe(d.provider, conn.destination)}, or Mark as posted.` };
+    return { state: "needs_review", error: `This was queued before Daloy recorded where deliveries go, so it cannot confirm the ${name} destination. Choose Post again to send it to ${describe(d.provider, conn.destination)}, or Mark as posted.`, kind: "queued_before_pin" };
   }
   if (d.pinnedAccount === "") {
     // Nothing was connected when it was queued: this connection is the first, so pin it now.
@@ -106,11 +108,12 @@ async function attempt(db: Db, key: Buffer, urls: ProviderUrls, d: Delivery): Pr
     return {
       state: "needs_review",
       error: `The ${name} connection changed since this was queued (it was for ${describe(d.provider, d.pinnedDestination ?? {})}, now ${describe(d.provider, conn.destination)}). Nothing was sent to the new one. Choose Post again to send it there, or Mark as posted.`,
+      kind: "destination_changed",
     };
   }
   // Slack, Teams and Outlook have no read access to check with, so after a call that may have arrived a person decides.
   if (d.checkFirst && d.provider !== "google_sheets") {
-    return { state: "needs_review", error: `${name} may have ${d.provider === "outlook" ? "sent" : "posted"} this before the connection dropped. ${reviewHint(d.provider, conn.destination)}` };
+    return { state: "needs_review", error: `${name} may have ${d.provider === "outlook" ? "sent" : "posted"} this before the connection dropped. ${reviewHint(d.provider, conn.destination)}`, kind: "ambiguous" };
   }
   const destination = conn.destination;
   const send = async (): Promise<Outcome> => {
@@ -135,7 +138,7 @@ async function attempt(db: Db, key: Buffer, urls: ProviderUrls, d: Delivery): Pr
     return await db.transaction(async (tx) => {
       const [run] = await tx.select({ bookingId: runs.bookingId, bookingVersion: runs.bookingVersion }).from(runs).where(eq(runs.id, d.runId));
       if (run && (await bookingSuperseded(tx, run, true))) {
-        return { state: "failed", error: d.checkFirst ? `${BOOKING_CHANGED} An earlier attempt may have reached ${name}.` : BOOKING_CHANGED } as const;
+        return { state: "failed", error: d.checkFirst ? `${BOOKING_CHANGED} An earlier attempt may have reached ${name}.` : BOOKING_CHANGED, kind: "booking_changed" } as const;
       }
       return send();
     });
@@ -144,18 +147,18 @@ async function attempt(db: Db, key: Buffer, urls: ProviderUrls, d: Delivery): Pr
     switch (e.kind) {
       case "auth":
         await markConnectionFailed(db, d.userId, d.provider, e.message, conn.revision);
-        return { state: "failed", error: e.message };
+        return { state: "failed", error: e.message, kind: e.kind };
       case "permission":
       case "invalid":
-        return { state: "failed", error: e.message };
+        return { state: "failed", error: e.message, kind: e.kind };
       case "review":
-        return { state: "needs_review", error: e.message };
+        return { state: "needs_review", error: e.message, kind: e.kind };
       case "ambiguous":
-        if (d.provider !== "google_sheets") return { state: "needs_review", error: `${e.message} ${name} may have ${d.provider === "outlook" ? "sent" : "posted"} it. ${reviewHint(d.provider, conn.destination)}` };
-        return { state: "queued", error: e.message, checkFirst: true };
+        if (d.provider !== "google_sheets") return { state: "needs_review", error: `${e.message} ${name} may have ${d.provider === "outlook" ? "sent" : "posted"} it. ${reviewHint(d.provider, conn.destination)}`, kind: e.kind };
+        return { state: "queued", error: e.message, kind: e.kind, checkFirst: true };
       case "quota":
       case "unavailable":
-        return { state: "queued", error: e.message, retryAfterMs: e.retryAfterMs };
+        return { state: "queued", error: e.message, kind: e.kind, retryAfterMs: e.retryAfterMs };
     }
   }
 }
@@ -190,7 +193,7 @@ const heldBy = (d: Delivery) => and(eq(deliveries.id, d.id), eq(deliveries.state
 async function finish(db: Db, d: Delivery, o: Outcome) {
   const claim = heldBy(d);
   if (o.state === "delivered") {
-    await db.update(deliveries).set({ state: "delivered", result: o.result, lastError: null, checkFirst: false, updatedAt: sql`now()` }).where(claim);
+    await db.update(deliveries).set({ state: "delivered", result: o.result, lastError: null, errorKind: null, checkFirst: false, updatedAt: sql`now()` }).where(claim);
     return;
   }
   const checkFirst = d.checkFirst || (o.state === "queued" && o.checkFirst === true);
@@ -198,11 +201,11 @@ async function finish(db: Db, d: Delivery, o: Outcome) {
   const sheetMarkerUncertain = sql`${deliveries.sheetMarkerUncertain} or ${o.state === "queued" && o.checkFirst === true}`;
   if (o.state === "queued" && d.attempts < DELIVERY_POLICY.maxAttempts) {
     const delay = Math.max(backoffDelayMs(d.attempts, DELIVERY_POLICY), o.retryAfterMs ?? 0);
-    await db.update(deliveries).set({ state: "queued", lastError: o.error, checkFirst, sheetMarkerUncertain, nextAttemptAt: new Date(Date.now() + delay), updatedAt: sql`now()` }).where(claim);
+    await db.update(deliveries).set({ state: "queued", lastError: o.error, errorKind: o.kind, checkFirst, sheetMarkerUncertain, nextAttemptAt: new Date(Date.now() + delay), updatedAt: sql`now()` }).where(claim);
     return;
   }
   // The last attempt keeps checkFirst, so a manual Retry of an uncertain Sheets row still looks before writing.
-  await db.update(deliveries).set({ state: o.state === "queued" ? "failed" : o.state, lastError: o.error, checkFirst, sheetMarkerUncertain, updatedAt: sql`now()` }).where(claim);
+  await db.update(deliveries).set({ state: o.state === "queued" ? "failed" : o.state, lastError: o.error, errorKind: o.kind, checkFirst, sheetMarkerUncertain, updatedAt: sql`now()` }).where(claim);
 }
 
 /** The worker's poll: claims what is due and delivers each one independently. */
@@ -230,6 +233,7 @@ export async function retryDelivery(db: Db, userId: string, id: string, { postAg
       attempts: 0,
       nextAttemptAt: sql`now()`,
       lastError: null,
+      errorKind: null,
       // Post again is the operator's explicit choice: it goes to the connection as it is now (pinned on the next
       // attempt), and a Sheets row gets a fresh marker, as the old one may sit in another sheet or belong to someone else.
       ...(postAgain
@@ -258,7 +262,7 @@ export async function deliveryBookingMoved(db: Db, userId: string, id: string): 
 export async function confirmDelivery(db: Db, userId: string, id: string): Promise<boolean> {
   const done = await db
     .update(deliveries)
-    .set({ state: "delivered", result: { confirmedBy: "operator" }, lastError: null, checkFirst: false, updatedAt: sql`now()` })
+    .set({ state: "delivered", result: { confirmedBy: "operator" }, lastError: null, errorKind: null, checkFirst: false, updatedAt: sql`now()` })
     .where(and(eq(deliveries.id, id), eq(deliveries.userId, userId), eq(deliveries.state, "needs_review")))
     .returning({ id: deliveries.id });
   return done.length === 1;
@@ -279,6 +283,7 @@ export async function listDeliveries(db: Db, userId: string, runIds: string[]) {
       attempts: deliveries.attempts,
       result: deliveries.result,
       lastError: deliveries.lastError,
+      errorKind: deliveries.errorKind,
       nextAttemptAt: deliveries.nextAttemptAt,
       updatedAt: deliveries.updatedAt,
     })

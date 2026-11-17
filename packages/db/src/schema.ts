@@ -495,6 +495,8 @@ export const deliveries = pgTable(
     nextAttemptAt: ts("next_attempt_at").notNull().defaultNow(),
     result: jsonb("result").$type<Record<string, string | boolean>>(),
     lastError: text("last_error"),
+    // What the last failure was, as a closed value (decision 0039), so explanations never need the error text.
+    errorKind: text("error_kind"),
     // The connection's account and destination when the delivery was queued. Null: queued before pinning existed.
     pinnedAccount: text("pinned_account"),
     pinnedDestination: jsonb("pinned_destination").$type<Record<string, string>>(),
