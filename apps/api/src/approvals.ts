@@ -1,4 +1,5 @@
-import { CAN_APPROVE, findPendingApproval, recordDecision, type Db } from "@daloy/db";
+import { publicCopy } from "./public-copy";
+import { workspaceLanguage, CAN_APPROVE, findPendingApproval, recordDecision, type Db } from "@daloy/db";
 import { Body, Controller, Get, Header, HttpCode, Inject, Param, Post, Req, Res, UseGuards } from "@nestjs/common";
 import type { Request, Response } from "express";
 import type { PgBoss } from "pg-boss";
@@ -13,10 +14,15 @@ const decisionBody = z.object({ decision: z.enum(["approved", "rejected"]) });
 // Unknown, used and expired links all get this, so the page tells an attacker nothing about a token.
 const GONE = page("This approval link is not valid. It may have been used already or expired.", "Approval");
 // A named approval opened by someone else. It says nothing about the request: its details are private.
-const NOT_YOURS = page("<h1>Approval requested</h1><p>This approval is assigned to someone else. Only the person it names can answer it.</p>", "Approval");
+const notYours = (language: "en" | "tl") => {
+  const copy = publicCopy[language];
+  return page(`<h1>${copy.requested}</h1><p>${copy.notYours}</p>`, copy.approval, language);
+};
 // The console's #/answer route signs the visitor in and comes back here. The token is checked against a strict pattern there.
-const signIn = (value: string) =>
-  page(`<h1>Approval requested</h1><p>This approval is for a named person. Sign in to see it and answer.</p><p><a href="/#/answer/${value}">Sign in</a></p>`, "Approval");
+const signIn = (value: string, language: "en" | "tl") => {
+  const copy = publicCopy[language];
+  return page(`<h1>${copy.requested}</h1><p>${copy.named}</p><p><a href="/#/answer/${value}">${copy.signIn}</a></p>`, copy.approval, language);
+};
 
 type Pending = NonNullable<Awaited<ReturnType<typeof findPendingApproval>>>;
 type Access = { ok: true; user: SessionUser | null } | { ok: false; status: 401 | 403; html: string };
@@ -49,12 +55,15 @@ export class ApprovalsController {
       res.status(access.status);
       return access.html;
     }
+    const language = await workspaceLanguage(this.db, pending.workspaceId);
+    const copy = publicCopy[language];
     const message = String((pending.input as { message?: unknown } | null)?.message ?? "");
-    const who = access.user ? `<p class="muted">Signed in as ${escapeHtml(access.user.email)}</p>` : "";
+    const who = access.user ? `<p class="muted">${copy.signedIn} ${escapeHtml(access.user.email)}</p>` : "";
     return page(
-      `<h1>Approval requested</h1>${who}<p style="white-space:pre-wrap">${escapeHtml(message)}</p>` +
-        `<form method="post"><button type="submit" name="decision" value="approved">Approve</button> <button type="submit" name="decision" value="rejected">Reject</button></form>`,
-      "Approval",
+      `<h1>${copy.requested}</h1>${who}<p style="white-space:pre-wrap">${escapeHtml(message)}</p>` +
+        `<form method="post"><button type="submit" name="decision" value="approved">${copy.approve}</button> <button type="submit" name="decision" value="rejected">${copy.reject}</button></form>`,
+      copy.approval,
+      language,
     );
   }
 
@@ -70,6 +79,10 @@ export class ApprovalsController {
     @Res({ passthrough: true }) res: Response,
   ) {
     const user = await sessionUser(this.db, req);
+    // Read the workspace before recordDecision consumes the token.
+    const pendingBefore = await findPendingApproval(this.db, value);
+    const language = pendingBefore ? await workspaceLanguage(this.db, pendingBefore.workspaceId) : "en";
+    const copy = publicCopy[language];
     const runId = await recordDecision(this.db, value, body.decision, user ?? undefined);
     if (!runId) {
       // Nothing was recorded. If the link is still live, it was the wrong person; otherwise it is used or expired.
@@ -84,14 +97,15 @@ export class ApprovalsController {
     }
     // If this send fails, the worker's sweep still finds the woken run.
     await enqueueRun(this.boss, runId);
-    return page(`<p>Thanks. Your answer (${body.decision}) is recorded.</p>`, "Approval");
+    return page(`<p>${copy.recorded} (${copy[body.decision]}) ${copy.recordedEnd}</p>`, copy.approval, language);
   }
 
   private async access(pending: Pending, value: string, req: Request): Promise<Access> {
+    const language = await workspaceLanguage(this.db, pending.workspaceId);
     if (!pending.approverId) return { ok: true, user: null };
     const user = await sessionUser(this.db, req);
-    if (!user) return { ok: false, status: 401, html: signIn(value) };
+    if (!user) return { ok: false, status: 401, html: signIn(value, language) };
     const mayAnswer = user.id === pending.approverId && user.workspaceId === pending.workspaceId && CAN_APPROVE.includes(user.role);
-    return mayAnswer ? { ok: true, user } : { ok: false, status: 403, html: NOT_YOURS };
+    return mayAnswer ? { ok: true, user } : { ok: false, status: 403, html: notYours(language) };
   }
 }

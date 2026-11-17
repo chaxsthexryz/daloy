@@ -27,12 +27,12 @@ const reference = sql<string | null>`(select ${requests.reference} from ${reques
 const like = (q: string) => `%${q.replace(/[\\%_]/g, (c) => "\\" + c)}%`;
 
 const REWORD_SYSTEM =
-  "You explain why a Daloy automation stopped, for a small office owner. You get JSON with facts and a fixed explanation. Write 2 to 4 short, plain sentences. Keep the fix from the fixed explanation. Use the words automation, Apps and Activity. Never give links or addresses. Never guess causes that are not in the facts. Reply with the text only.";
+  "You explain why a Daloy automation stopped, for a small office owner. You get JSON with facts and a fixed explanation. Write 2 to 4 short, plain sentences. Write in plain Tagalog (Taglish is fine) when language is tl, otherwise in English. Keep the fix from the fixed explanation. Use the words automation, Apps and Activity. Never give links or addresses. Never guess causes that are not in the facts. Reply with the text only.";
 
 const ASK_SYSTEM =
   "You answer one question about a Daloy request, for a small office owner. You get JSON with the question (happened, why or next), the language, facts and a fixed answer. Answer only that question in 2 to 4 short, plain sentences. Write in plain Tagalog (Taglish is fine) when language is tl, otherwise in English. Keep the fix from the fixed answer. Use the words automation, Apps and Activity. Never give links or addresses. Never guess causes that are not in the facts. Reply with the text only.";
 const askReference = z.string().trim().min(1).max(60);
-const askReword = z.object({ reference: askReference, question: z.enum(["happened", "why", "next"]), language: z.enum(["en", "tl"]).default("en") });
+const askReword = z.object({ reference: askReference, question: z.enum(["happened", "why", "next"]), language: z.enum(["en", "tl"]).optional() });
 
 /**
  * Run history, plus the operator's answers to a run in review (decision 0030). On the way out, every payload, step input, output and error first has every form of the
@@ -87,7 +87,7 @@ export class RunsController {
   @Get("ask")
   async ask(@CurrentUser() user: SessionUser, @Query("reference", new ZodPipe(askReference)) reference: string) {
     const { found, facts } = await this.asked(user.workspaceId, reference);
-    return { ...found, answers: answerAll(facts) };
+    return { ...found, answers: answerAll(facts, user.language) };
   }
 
   /** One of those answers reworded by the workspace's AI model, from the same closed-set facts. Costs one AI action, writes nothing else. */
@@ -96,9 +96,10 @@ export class RunsController {
   @UseGuards(Allow(MANAGE), RateLimit(10))
   async askReword(@CurrentUser() user: SessionUser, @Body(new ZodPipe(askReword)) body: z.output<typeof askReword>) {
     const { facts } = await this.asked(user.workspaceId, body.reference);
-    const fixed = answerAll(facts)[body.question];
+    const language = body.language ?? user.language;
+    const fixed = answerAll(facts, language)[body.question];
     if (!fixed) throw new ConflictException("There is nothing to explain for this question.");
-    return this.reworded(user.workspaceId, ASK_SYSTEM, { question: body.question, language: body.language, facts, fixed });
+    return this.reworded(user.workspaceId, ASK_SYSTEM, { question: body.question, language, facts, fixed });
   }
 
   @Get(":id")
@@ -118,7 +119,7 @@ export class RunsController {
   /** Why a failed run stopped, in plain words, from a fixed table. No model, no usage. null when nothing failed. */
   @Get(":id/explanation")
   async explanation(@CurrentUser() user: SessionUser, @Param("id", uuid) id: string) {
-    return this.explained(user.workspaceId, id);
+    return this.explained(user.workspaceId, id, user.language);
   }
 
   /**
@@ -129,9 +130,9 @@ export class RunsController {
   @HttpCode(200)
   @UseGuards(Allow(MANAGE), RateLimit(10))
   async reword(@CurrentUser() user: SessionUser, @Param("id", uuid) id: string) {
-    const input = await this.explained(user.workspaceId, id);
+    const input = await this.explained(user.workspaceId, id, user.language);
     if (!input) throw new ConflictException("There is nothing to explain for this run.");
-    return this.reworded(user.workspaceId, REWORD_SYSTEM, input);
+    return this.reworded(user.workspaceId, REWORD_SYSTEM, { ...input, language: user.language });
   }
 
   private async reworded(workspaceId: string, system: string, input: unknown) {
@@ -180,12 +181,12 @@ export class RunsController {
     return { found, facts: askFacts(await this.loaded(workspaceId, found.runId)) };
   }
 
-  private async explained(workspaceId: string, id: string) {
+  private async explained(workspaceId: string, id: string, language: "en" | "tl" = "en") {
     const input = await this.loaded(workspaceId, id);
     const stuck = (s: string) => s === "failed" || s === "needs_review";
     if (!stuck(input.run.state) && !input.deliveries.some((d) => stuck(d.state))) return null;
     const facts = failureFacts(input);
-    return { facts, fixed: explainFailure(facts) };
+    return { facts, fixed: explainFailure(facts, language) };
   }
 
   /** It went through, Send again or Stop, for a run in review. Of two operators acting at once, the second gets a 409. */

@@ -1,3 +1,6 @@
+import { Text } from "./Language";
+import { useLanguage } from "./Language";
+import type { Language } from "./lib/locale";
 import {
   defaultAnswers,
   defaultPurchaseAnswers,
@@ -32,9 +35,9 @@ type Detail = Omit<Workflow, "live"> & { trigger: { id: string } | null; live: u
 type RequestRow = { id: string; reference: string; subject: string; createdAt: string; runId: string; runState: string; runError: string | null; deliveries: Delivery[] };
 
 /** "Set up for my office": a new workflow with guided setup progress, named "Office requests" (or -2, -3 when taken). */
-export const startOfficeSetup = (email: string) => startGuided("office-requests", { step: "name", answers: defaultAnswers(email) });
+export const startOfficeSetup = (email: string, language: Language = "en") => startGuided("office-requests", { step: "name", answers: defaultAnswers(email, language) });
 /** The purchase request template (roadmap phase 5): the owner is the first suggested approver and purchasing address. */
-export const startPurchaseSetup = (email: string) => startGuided("purchase-requests", { template: PURCHASE_REQUEST, step: "name", answers: defaultPurchaseAnswers(email) });
+export const startPurchaseSetup = (email: string, language: Language = "en") => startGuided("purchase-requests", { template: PURCHASE_REQUEST, step: "name", answers: defaultPurchaseAnswers(email, language) });
 
 type Start = { template?: string; step: string; answers: { name: string } };
 // One start at a time: a second click while the first is still creating the draft joins it instead of making another.
@@ -61,18 +64,19 @@ async function createOrResume(slug: string, setup: Start) {
   throw new Error("Rename one of your automations of this kind and try again.");
 }
 
-const back = <a href="#/">Automations</a>;
+const back = <a href="#/"><Text>Automations</Text></a>;
 
 /** The sample run with no side effects: everything below is worked out in the browser. */
 export function TryOfficeRequest({ email }: { email: string }) {
+  const { language } = useLanguage();
   const [summary, setSummary] = useState(SAMPLE_REQUEST.summary);
   const [shown, setShown] = useState<string | null>(null);
   const [error, setError] = useState("");
   return (
     <main className="page">
       <p>{back}</p>
-      <h1>Preview only</h1>
-      <p className="muted">Try an example of Track an office request. Nothing is sent and no request is recorded.</p>
+      <h1><Text>Preview only</Text></h1>
+      <p className="muted"><Text>Try an example of Track an office request. Nothing is sent and no request is recorded.</Text></p>
       <form
         className="create"
         onSubmit={(e) => {
@@ -80,21 +84,21 @@ export function TryOfficeRequest({ email }: { email: string }) {
           setShown(summary);
         }}
       >
-        <h2>Sample form</h2>
+        <h2><Text>Sample form</Text></h2>
         <p className="muted">
           {SAMPLE_REQUEST.name}, {SAMPLE_REQUEST.email}, {SAMPLE_REQUEST.location}
         </p>
         <div className="field">
-          <label htmlFor="try-summary">What needs attention?</label>
+          <label htmlFor="try-summary"><Text>What needs attention?</Text></label>
           <input id="try-summary" value={summary} onChange={(e) => setSummary(e.target.value)} required maxLength={500} />
         </div>
         <div className="actions">
-          <button className="primary">Try with sample details</button>
+          <button className="primary"><Text>Try with sample details</Text></button>
         </div>
       </form>
-      {shown && <PreviewResult answers={defaultAnswers("office@example.com")} sample={{ ...SAMPLE_REQUEST, summary: shown }} />}
+      {shown && <PreviewResult answers={defaultAnswers("office@example.com", language)} sample={{ ...SAMPLE_REQUEST, summary: shown }} />}
       <div className="actions">
-        <button type="button" className="primary" onClick={() => startOfficeSetup(email).catch((e: Error) => setError(e.message))}>
+        <button type="button" className="primary" onClick={() => startOfficeSetup(email, language).catch((e: Error) => setError(e.message))}>
           Set up for my office
         </button>
       </div>
@@ -106,28 +110,30 @@ export function TryOfficeRequest({ email }: { email: string }) {
 }
 
 function PreviewResult({ answers, sample }: { answers: OfficeRequestAnswers; sample: Record<string, string> }) {
-  const p = previewOfficeRequest(answers, sample);
+  const { language } = useLanguage();
+  const { t } = useLanguage();
+  const p = previewOfficeRequest(answers, sample, language);
   return (
-    <section aria-label="Preview result">
-      <h2>What would happen (preview only)</h2>
+    <section aria-label={t("Preview result")}>
+      <h2><Text>What would happen (preview only)</Text></h2>
       <p>
-        Sample reference: <strong>{p.reference}</strong>
+        {t("Sample reference:")} <strong>{p.reference}</strong>
       </p>
-      <h3>Row in {p.record.list}</h3>
+      <h3>{t("Row in {list}", { list: p.record.list })}</h3>
       <p>
         {p.record.reference}, {p.record.subject}, open
       </p>
-      <Message title="Notification to the office" mail={p.notification} />
-      <Message title="Receipt to the employee" mail={p.receipt} />
+      <Message title={t("Notification to the office")} mail={p.notification} />
+      <Message title={t("Receipt to the employee")} mail={p.receipt} />
       {p.sheetRow && (
         <>
-          <h3>Row added to your Google Sheet</h3>
+          <h3><Text>Row added to your Google Sheet</Text></h3>
           <pre>{p.sheetRow.join(" | ")}</pre>
         </>
       )}
       {p.slackMessage && (
         <>
-          <h3>Note posted to your Slack channel</h3>
+          <h3><Text>Note posted to your Slack channel</Text></h3>
           <pre>{p.slackMessage}</pre>
         </>
       )}
@@ -136,11 +142,12 @@ function PreviewResult({ answers, sample }: { answers: OfficeRequestAnswers; sam
 }
 
 function Message({ title, mail }: { title: string; mail: { to: string; subject: string; text: string } }) {
+  const { t } = useLanguage();
   return (
     <>
       <h3>{title}</h3>
       <p className="muted">
-        To {mail.to}. Subject: {mail.subject}
+        {t("To {to}. Subject: {subject}", { to: mail.to, subject: mail.subject })}
       </p>
       <pre>{mail.text}</pre>
     </>
@@ -156,7 +163,7 @@ export function OfficeRequestPage({ id }: { id: string }) {
   if (error) return <main className="page">{back}<p role="alert" className="message error">{error}</p></main>;
   if (!wf) return <main className="page" />;
   const setup = wf.setup as Setup | PurchaseSetup | null;
-  if (!setup) return <main className="page">{back}<p>This workflow has no guided setup. <a href={`#/w/${id}`}>Open advanced editor</a></p></main>;
+  if (!setup) return <main className="page">{back}<p><Text>This workflow has no guided setup.</Text> <a href={`#/w/${id}`}><Text>Open advanced editor</Text></a></p></main>;
   if (wf.live && wf.trigger) return <LivePage wf={wf} formId={wf.trigger.id} />;
   return setup.template === PURCHASE_REQUEST ? <PurchaseWizard wf={wf} setup={setup} onLive={load} /> : <SetupWizard wf={wf} setup={setup as Setup} onLive={load} />;
 }
@@ -166,6 +173,7 @@ export function OfficeRequestPage({ id }: { id: string }) {
  * the definition built from the answers. The API refuses Turn on while a connection or the named approver is missing.
  */
 function useWizard<S extends string, A extends { name: string }>(wf: Detail, steps: readonly S[], start: S, initial: A, template: string | undefined, definition: (a: A) => WorkflowDefinition, onLive: () => Promise<void>) {
+  const { t } = useLanguage();
   const [step, setStep] = useState<S>(start);
   const [answers, setAnswers] = useState(initial);
   const [error, setError] = useState("");
@@ -214,18 +222,18 @@ function useWizard<S extends string, A extends { name: string }>(wf: Detail, ste
   };
   const edit = (to: S) => (
     <button type="button" className="quiet" onClick={() => setStep(to)}>
-      Edit
+      {t("Edit")}
     </button>
   );
   const frame = (title: string, stepTitle: string, body: ReactNode) => (
     <main className="page">
       <p>{back}</p>
-      <h1>Set up: {title}</h1>
+      <h1>{t("Set up: {title}", { title: t(title) })}</h1>
       <p className="muted">
-        Step {index + 1} of {steps.length}: {stepTitle}. Your answers are saved at each step.
+        {t("Step {step} of {total}: {title}. Your answers are saved at each step.", { step: index + 1, total: steps.length, title: t(stepTitle) })}
       </p>
       <form className="create" onSubmit={(e) => void onSubmit(e)}>
-        <h2>{stepTitle}</h2>
+        <h2>{t(stepTitle)}</h2>
         {body}
         <p role="alert" className="message error" hidden={!error}>
           {error}
@@ -233,14 +241,14 @@ function useWizard<S extends string, A extends { name: string }>(wf: Detail, ste
         <div className="actions">
           {index > 0 && (
             <button type="button" className="quiet" disabled={busy} onClick={() => setStep(steps[index - 1]!)}>
-              Back
+              {t("Back")}
             </button>
           )}
           <button className="primary" disabled={busy}>
             {busy ? "Saving…" : index === steps.length - 1 ? "Turn on" : "Next"}
           </button>
           <button type="button" className="quiet" disabled={busy} onClick={() => void later()}>
-            Save and finish later
+            {t("Save and finish later")}
           </button>
         </div>
       </form>
@@ -252,7 +260,8 @@ function useWizard<S extends string, A extends { name: string }>(wf: Detail, ste
 const STEP_TITLES: Record<Step, string> = { name: "Name", fields: "Fields staff fill in", destinations: "Where requests and alerts go", review: "Review" };
 
 function SetupWizard({ wf, setup, onLive }: { wf: Detail; setup: Setup; onLive: () => Promise<void> }) {
-  const { step, answers, setAnswers, edit, frame } = useWizard(wf, SETUP_STEPS, setup.step, setup.answers, undefined, officeRequestDefinition, onLive);
+  const { language, t } = useLanguage();
+  const { step, answers, setAnswers, edit, frame } = useWizard(wf, SETUP_STEPS, setup.step, setup.answers, undefined, (a) => officeRequestDefinition(a, language), onLive);
   const extra = (f: "location" | "details", on: boolean) =>
     setAnswers({ ...answers, extraFields: (["location", "details"] as const).filter((x) => (x === f ? on : answers.extraFields.includes(x))) });
 
@@ -262,66 +271,66 @@ function SetupWizard({ wf, setup, onLive }: { wf: Detail; setup: Setup; onLive: 
     <>
         {step === "name" && (
           <div className="field">
-            <label htmlFor="setup-name">Automation name</label>
+            <label htmlFor="setup-name"><Text>Automation name</Text></label>
             <input id="setup-name" value={answers.name} onChange={(e) => setAnswers({ ...answers, name: e.target.value })} required maxLength={200} />
           </div>
         )}
         {step === "fields" && (
           <fieldset>
-            <legend>Staff always give their name, their email and what needs attention. Also ask:</legend>
+            <legend><Text>Staff always give their name, their email and what needs attention. Also ask:</Text></legend>
             <label className="check">
               <input type="checkbox" checked={answers.extraFields.includes("location")} onChange={(e) => extra("location", e.target.checked)} />
-              Where is it?
+              {t("Where is it?")}
             </label>
             <label className="check">
               <input type="checkbox" checked={answers.extraFields.includes("details")} onChange={(e) => extra("details", e.target.checked)} />
-              Anything else we should know?
+              {t("Anything else we should know?")}
             </label>
           </fieldset>
         )}
         {step === "destinations" && (
           <>
-            <p>Requests are saved to the request list of {answers.name} in Daloy.</p>
+            <p>{t("Requests are saved to the request list of {name} in Daloy.", { name: answers.name })}</p>
             <div className="field">
-              <label htmlFor="setup-notify">Send the office notification to</label>
+              <label htmlFor="setup-notify"><Text>Send the office notification to</Text></label>
               <input id="setup-notify" type="email" value={answers.notifyEmail} onChange={(e) => setAnswers({ ...answers, notifyEmail: e.target.value })} required maxLength={254} />
             </div>
             <fieldset>
-              <legend>Also send each request to (optional)</legend>
+              <legend><Text>Also send each request to (optional)</Text></legend>
               <label className="check">
-                <input type="checkbox" checked={answers.sheets ?? false} onChange={(e) => setAnswers({ ...answers, sheets: e.target.checked })} /> A row in your Google Sheet
+                <input type="checkbox" checked={answers.sheets ?? false} onChange={(e) => setAnswers({ ...answers, sheets: e.target.checked })} /> {t("A row in your Google Sheet")}
               </label>
               <label className="check">
-                <input type="checkbox" checked={answers.slack ?? false} onChange={(e) => setAnswers({ ...answers, slack: e.target.checked })} /> A short note in your Slack channel (reference and subject only)
+                <input type="checkbox" checked={answers.slack ?? false} onChange={(e) => setAnswers({ ...answers, slack: e.target.checked })} /> {t("A short note in your Slack channel (reference and subject only)")}
               </label>
               <p className="muted">
-                Connect them and pick the sheet and channel in <a href="#/apps">Apps</a>. Turning on checks that they are connected.
+                <Text>Connect them and pick the sheet and channel in</Text> <a href="#/apps"><Text>Apps</Text></a><Text>. Turning on checks that they are connected.</Text>
               </p>
             </fieldset>
           </>
         )}
         {step === "review" && (
           <>
-            <p>When someone submits this form:</p>
+            <p><Text>When someone submits this form:</Text></p>
             <ul>
               <li>
-                Save each request to {answers.name}. {edit("name")}
+                {t("Save each request to {name}.", { name: answers.name })} {edit("name")}
               </li>
               <li>
-                Ask for name, email, what needs attention{answers.extraFields.includes("location") && ", where it is"}
-                {answers.extraFields.includes("details") && ", anything else"}. {edit("fields")}
+                {t("Ask for name, email, what needs attention")}{answers.extraFields.includes("location") && t(", where it is")}
+                {answers.extraFields.includes("details") && t(", anything else")}. {edit("fields")}
               </li>
               <li>
-                Notify the office at {answers.notifyEmail}. {edit("destinations")}
+                {t("Notify the office at {email}.", { email: answers.notifyEmail })} {edit("destinations")}
               </li>
-              <li>Send the employee a receipt with the request reference.</li>
-              {answers.sheets && <li>Add a row to your Google Sheet, starting with the reference. {edit("destinations")}</li>}
-              {answers.slack && <li>Post the reference and subject to your Slack channel. {edit("destinations")}</li>}
+              <li><Text>Send the employee a receipt with the request reference.</Text></li>
+              {answers.sheets && <li>{t("Add a row to your Google Sheet, starting with the reference.")} {edit("destinations")}</li>}
+              {answers.slack && <li>{t("Post the reference and subject to your Slack channel.")} {edit("destinations")}</li>}
             </ul>
             <MailNotice />
-            <p className="muted">Email goes out through the mail server in this installation's settings. A local demo delivers it to Mailpit.</p>
+            <p className="muted"><Text>Email goes out through the mail server in this installation's settings. A local demo delivers it to Mailpit.</Text></p>
             <details>
-              <summary>Example messages</summary>
+              <summary><Text>Example messages</Text></summary>
               <PreviewResult answers={answers} sample={SAMPLE_REQUEST} />
             </details>
           </>
@@ -335,19 +344,20 @@ const PURCHASE_TITLES: Record<(typeof PURCHASE_SETUP_STEPS)[number], string> = {
 
 /** Purchase request with a named approver (roadmap phase 5): the Microsoft office template, Outlook and Teams optional. */
 function PurchaseWizard({ wf, setup, onLive }: { wf: Detail; setup: PurchaseSetup; onLive: () => Promise<void> }) {
+  const { language, t } = useLanguage();
   const { step, answers, setAnswers, edit, frame } = useWizard<(typeof PURCHASE_SETUP_STEPS)[number], PurchaseRequestAnswers>(
     wf,
     PURCHASE_SETUP_STEPS,
     setup.step,
     setup.answers,
     PURCHASE_REQUEST,
-    purchaseRequestDefinition,
+    (a) => purchaseRequestDefinition(a, language),
     onLive,
   );
   // Only the owner and members with the approver role may decide (decision 0022).
   const [approvers, setApprovers] = useState<Member[] | null>(null);
   useEffect(() => void api<Member[]>("GET", "/workspace/members").then((m) => setApprovers(m.filter((x) => x.role === "owner" || x.role === "approver")), () => setApprovers([])), []);
-  const preview = previewPurchaseRequest(answers, SAMPLE_PURCHASE);
+  const preview = previewPurchaseRequest(answers, SAMPLE_PURCHASE, language);
 
   return frame(
     "Purchase request with a named approver",
@@ -355,14 +365,14 @@ function PurchaseWizard({ wf, setup, onLive }: { wf: Detail; setup: PurchaseSetu
     <>
       {step === "name" && (
         <div className="field">
-          <label htmlFor="setup-name">Automation name</label>
+          <label htmlFor="setup-name"><Text>Automation name</Text></label>
           <input id="setup-name" value={answers.name} onChange={(e) => setAnswers({ ...answers, name: e.target.value })} required maxLength={200} />
         </div>
       )}
       {step === "approver" && (
         <>
           <div className="field">
-            <label htmlFor="setup-approver">Who approves purchases</label>
+            <label htmlFor="setup-approver"><Text>Who approves purchases</Text></label>
             <select id="setup-approver" value={answers.approver} onChange={(e) => setAnswers({ ...answers, approver: e.target.value })} required>
               {approvers?.map((m) => (
                 <option key={m.userId} value={m.email}>
@@ -372,28 +382,27 @@ function PurchaseWizard({ wf, setup, onLive }: { wf: Detail; setup: PurchaseSetu
             </select>
           </div>
           <p className="muted">
-            Only this person can approve or reject, signed in to Daloy. A forwarded link does not work for anyone else. To add someone, invite them as an approver on the{" "}
-            <a href="#/team">Team</a> page.
+            <Text>Only this person can approve or reject, signed in to Daloy. A forwarded link does not work for anyone else. To add someone, invite them as an approver on the</Text>{" "}
+            <a href="#/team"><Text>Team</Text></a> <Text>page.</Text>
           </p>
         </>
       )}
       {step === "destinations" && (
         <>
           <div className="field">
-            <label htmlFor="setup-purchasing">Send approved requests to (purchasing)</label>
+            <label htmlFor="setup-purchasing"><Text>Send approved requests to (purchasing)</Text></label>
             <input id="setup-purchasing" type="email" value={answers.purchasingEmail} onChange={(e) => setAnswers({ ...answers, purchasingEmail: e.target.value })} required maxLength={254} />
           </div>
           <fieldset>
-            <legend>Microsoft 365 (optional)</legend>
+            <legend><Text>Microsoft 365 (optional)</Text></legend>
             <label className="check">
-              <input type="checkbox" checked={answers.outlook ?? false} onChange={(e) => setAnswers({ ...answers, outlook: e.target.checked })} /> Send the emails from our Outlook mailbox
+              <input type="checkbox" checked={answers.outlook ?? false} onChange={(e) => setAnswers({ ...answers, outlook: e.target.checked })} /> {t("Send the emails from our Outlook mailbox")}
             </label>
             <label className="check">
-              <input type="checkbox" checked={answers.teams ?? false} onChange={(e) => setAnswers({ ...answers, teams: e.target.checked })} /> Post a note in our Teams channel when a purchase is approved
-              (reference and item only)
+              <input type="checkbox" checked={answers.teams ?? false} onChange={(e) => setAnswers({ ...answers, teams: e.target.checked })} /> {t("Post a note in our Teams channel when a purchase is approved (reference and item only)")}
             </label>
             <p className="muted">
-              Connect them in <a href="#/apps">Apps</a>. Turning on checks that they are connected. Your organization may need an administrator to
+              <Text>Connect them in</Text> <a href="#/apps"><Text>Apps</Text></a><Text>. Turning on checks that they are connected.</Text> Your organization may need an administrator to
               approve Outlook or the Teams Workflows app; that page says how.
             </p>
           </fieldset>
@@ -401,36 +410,35 @@ function PurchaseWizard({ wf, setup, onLive }: { wf: Detail; setup: PurchaseSetu
       )}
       {step === "review" && (
         <>
-          <p>When someone submits this form:</p>
+          <p><Text>When someone submits this form:</Text></p>
           <ul>
             <li>
-              Save the request to {answers.name} with a reference, and send the employee a receipt. {edit("name")}
+              {t("Save the request to {name} with a reference, and send the employee a receipt.", { name: answers.name })} {edit("name")}
             </li>
             <li>
-              Ask {answers.approver} to approve or reject it, signed in to Daloy. {edit("approver")}
+              {t("Ask {approver} to approve or reject it, signed in to Daloy.", { approver: answers.approver })} {edit("approver")}
             </li>
             <li>
-              If approved, email purchasing at {answers.purchasingEmail}
-              {answers.teams && " and post a note in your Teams channel"}, then tell the employee. {edit("destinations")}
+              {t("If approved, email purchasing at {email}", { email: answers.purchasingEmail })}
+              {answers.teams && t(" and post a note in your Teams channel")}{t(", then tell the employee.")} {edit("destinations")}
             </li>
-            <li>If rejected, or nobody decides within a week, tell the employee.</li>
+            <li><Text>If rejected, or nobody decides within a week, tell the employee.</Text></li>
           </ul>
           <MailNotice />
           <p className="muted">
-            {answers.outlook ? "Emails to the employee and to purchasing go out from your connected Outlook mailbox." : "Emails go out through the mail server in this installation's settings."} The
-            approval request carries a sign-in link and goes out through the email sender on Apps. A Teams note never approves anything.
+            {t(answers.outlook ? "Emails to the employee and to purchasing go out from your connected Outlook mailbox." : "Emails go out through the mail server in this installation's settings.")} {t("The approval request carries a sign-in link and goes out through the email sender on Apps. A Teams note never approves anything.")}
           </p>
           <details>
-            <summary>Example messages</summary>
+            <summary><Text>Example messages</Text></summary>
             <p>
-              Sample reference: <strong>{preview.reference}</strong>
+              <Text>Sample reference:</Text> <strong>{preview.reference}</strong>
             </p>
             {preview.messages.map((m) => (
-              <Message key={m.title} title={`${m.title} (${m.via})`} mail={m} />
+              <Message key={m.title} title={`${t(m.title)} (${t(m.via)})`} mail={m} />
             ))}
             {preview.teamsMessage && (
               <>
-                <h3>Note in your Teams channel, once approved</h3>
+                <h3><Text>Note in your Teams channel, once approved</Text></h3>
                 <pre>{preview.teamsMessage}</pre>
               </>
             )}
@@ -446,6 +454,7 @@ const outcome = (r: RequestRow, done: string) =>
   r.runState === "succeeded" ? done : r.runState === "failed" ? "Stopped, open details" : r.runState === "waiting" ? "Waiting for a decision" : takingLonger(r.createdAt) ? `Sending. ${TAKING_LONGER}` : "Sending";
 
 function LivePage({ wf, formId }: { wf: Detail; formId: string }) {
+  const { t } = useLanguage();
   const [rows, setRows] = useState<RequestRow[] | null>(null);
   const [copied, setCopied] = useState("");
   const [failed, setFailed] = useState(false);
@@ -462,8 +471,8 @@ function LivePage({ wf, formId }: { wf: Detail; formId: string }) {
   const local = ["localhost", "127.0.0.1", "[::1]"].includes(location.hostname);
   const copy = () =>
     navigator.clipboard.writeText(link).then(
-      () => setCopied("Form link copied."),
-      () => setCopied(`Copy this link: ${link}`),
+      () => setCopied(t("Form link copied.")),
+      () => setCopied(t("Copy this link: {link}", { link })),
     );
 
   return (
@@ -472,58 +481,58 @@ function LivePage({ wf, formId }: { wf: Detail; formId: string }) {
       <h1>{wf.name}</h1>
       <AutomationTabs id={wf.id} here="overview" overview />
       <p role="status">
-        <span className="tag ok">Accepting requests</span> {copied}
+        <span className="tag ok">{t("Accepting requests")}</span> {copied}
       </p>
       <MailNotice />
       <p>
-        Form link: <code>{link}</code>
+        {t("Form link:")} <code>{link}</code>
       </p>
-      {local && <p className="muted">This link works on this computer only. To share the form with staff, run Daloy on an address they can reach.</p>}
+      {local && <p className="muted"><Text>This link works on this computer only. To share the form with staff, run Daloy on an address they can reach.</Text></p>}
       <div className="actions">
         <button type="button" className="primary" onClick={() => void copy()}>
-          Copy form link
+          {t("Copy form link")}
         </button>
         <FormEmbed link={link} />
         <a href={link} target="_blank" rel="noreferrer">
-          Open form
+          {t("Open form")}
         </a>
       </div>
-      <h2>Requests</h2>
+      <h2><Text>Requests</Text></h2>
       <div className="actions">
         <button type="button" className="quiet" onClick={() => void load()}>
-          Refresh
+          {t("Refresh")}
         </button>
       </div>
       {failed ? (
-        <p role="alert">Couldn't load. <button type="button" onClick={() => void load()}>Retry</button></p>
+        <p role="alert">{t("Couldn't load.")} <button type="button" onClick={() => void load()}><Text>Retry</Text></button></p>
       ) : rows === null ? (
-        <p>Loading…</p>
+        <p><Text>Loading…</Text></p>
       ) : rows.length === 0 ? (
-        <p className="muted">No requests yet. Open the form and send one.</p>
+        <p className="muted"><Text>No requests yet. Open the form and send one.</Text></p>
       ) : (
         <div className="table-wrap">
           <table className="table cards">
             <thead>
               <tr>
-                <th scope="col">Reference</th>
-                <th scope="col">Subject</th>
-                <th scope="col">Received</th>
-                <th scope="col">Recorded in</th>
-                <th scope="col">Progress</th>
-                <th scope="col">Deliveries</th>
+                <th scope="col"><Text>Reference</Text></th>
+                <th scope="col"><Text>Subject</Text></th>
+                <th scope="col"><Text>Received</Text></th>
+                <th scope="col"><Text>Recorded in</Text></th>
+                <th scope="col"><Text>Progress</Text></th>
+                <th scope="col"><Text>Deliveries</Text></th>
               </tr>
             </thead>
             <tbody>
               {rows.map((r) => (
                 <tr key={r.id}>
-                  <td data-label="Reference">{r.reference}</td>
-                  <td data-label="Subject">{r.subject}</td>
-                  <td data-label="Received">{new Date(r.createdAt).toLocaleString()}</td>
-                  <td data-label="Recorded in">{wf.name}</td>
-                  <td data-label="Progress">
-                    {outcome(r, (wf.setup as { template?: string } | null)?.template === PURCHASE_REQUEST ? "Finished" : "Processed")} <a href={`#/runs/${r.runId}`}>Details</a>
+                  <td data-label={t("Reference") }>{r.reference}</td>
+                  <td data-label={t("Subject") }>{r.subject}</td>
+                  <td data-label={t("Received") }>{new Date(r.createdAt).toLocaleString()}</td>
+                  <td data-label={t("Recorded in") }>{wf.name}</td>
+                  <td data-label={t("Progress") }>
+                    {t(outcome(r, (wf.setup as { template?: string } | null)?.template === PURCHASE_REQUEST ? "Finished" : "Processed"))} <a href={`#/runs/${r.runId}`}><Text>Details</Text></a>
                   </td>
-                  <td data-label="Deliveries">{r.deliveries.length ? <DeliveryList deliveries={r.deliveries} onChange={load} /> : <span className="muted">None</span>}</td>
+                  <td data-label={t("Deliveries") }>{r.deliveries.length ? <DeliveryList deliveries={r.deliveries} onChange={load} /> : <span className="muted">{t("None")}</span>}</td>
                 </tr>
               ))}
             </tbody>

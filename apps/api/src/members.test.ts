@@ -70,7 +70,30 @@ async function member(ownerAgent: Agent, role: "operator" | "approver" | "reques
 describe("registration and sign-in", () => {
   it("makes a new account the owner of its own workspace", async () => {
     const o = await owner();
-    expect((await o.agent.get("/auth/me").expect(200)).body).toEqual({ id: o.id, email: o.email, workspaceId: o.id, role: "owner", ask: false });
+    expect((await o.agent.get("/auth/me").expect(200)).body).toEqual({ id: o.id, email: o.email, workspaceId: o.id, role: "owner", ask: false, language: "en" });
+  });
+});
+
+describe("workspace language", () => {
+  it("starts in English, applies the owner's choice to existing members, and can switch back", async () => {
+    const o = await owner();
+    const operator = await member(o.agent, "operator");
+    const other = await owner();
+    const path = "/settings/language";
+    await request(server).put(path).send({ language: "tl" }).expect(401);
+    await operator.agent.put(path).send({ language: "tl" }).expect(403);
+    await o.agent.put(path).send({ language: "fr" }).expect(400);
+    await o.agent.put(path).send({ language: "tl", workspaceId: other.id }).expect(400);
+    await o.agent.put(path).send({ language: "tl" }).expect(200, { language: "tl" });
+    expect((await operator.agent.get("/auth/me")).body.language).toBe("tl");
+    expect((await other.agent.get("/auth/me")).body.language).toBe("en");
+    const login = await request(server).post("/auth/login").send({ email: operator.email, password: PASSWORD }).expect(200);
+    expect(login.body.language).toBe("tl");
+    const invite = await o.agent.post("/workspace/invites").send({ email: nextEmail(), role: "requester" }).expect(201);
+    const joined = await request(server).post(`/auth/invites/${tokenOf(invite.body.link)}/accept`).send({ password: PASSWORD }).expect(200);
+    expect(joined.body.language).toBe("tl");
+    await o.agent.put(path).send({ language: "en" }).expect(200, { language: "en" });
+    expect((await operator.agent.get("/auth/me")).body.language).toBe("en");
   });
 });
 

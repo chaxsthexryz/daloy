@@ -16,7 +16,7 @@ import {
   sharedMailAllowed,
   type Db,
 } from "@daloy/db";
-import { gmailInput, profileInput } from "@daloy/engine";
+import { builtInEmailCopy, gmailInput, profileInput } from "@daloy/engine";
 import { BadRequestException, Body, Controller, Delete, Get, HttpCode, Inject, NotFoundException, Post, Put, UseGuards } from "@nestjs/common";
 import { eq } from "drizzle-orm";
 import * as z from "zod";
@@ -77,19 +77,20 @@ export class EmailSettingsController {
     if (sender?.status === "disconnected") return { ok: false, error: "Gmail is disconnected. Connect it again first." };
     const to = sender?.address ?? user.email;
     const needsConfirmation = !!sender && !sender.verifiedAt;
-    const lines = ["This is a test email from Daloy. Mail from your automations will look like this."];
+    const copy = builtInEmailCopy(user.language);
+    const lines = [copy.testBody as string];
     if (needsConfirmation) {
       const token = await issueVerifyToken(this.db, user.workspaceId);
       lines.push(
         "",
-        "To start sending your automations' email from this address, open this link while you are signed in to Daloy:",
+        copy.verify,
         `${this.config.publicUrl}/#/verify-sender/${token}`,
         "",
-        "The link works once and expires in 30 minutes.",
+        copy.verifyExpiry,
       );
     }
     try {
-      const sent = await sendAs(this.db, this.config.secretsKey, this.config.mail, user.workspaceId, { to, subject: "Daloy test email", text: lines.join("\n") }, `test:${randomUUID()}`, {
+      const sent = await sendAs(this.db, this.config.secretsKey, this.config.mail, user.workspaceId, { to, subject: copy.testSubject, text: lines.join("\n") }, `test:${randomUUID()}`, {
         allowUnconfirmed: true,
       });
       if (sent.gmail) await markSenderWorking(this.db, user.workspaceId);

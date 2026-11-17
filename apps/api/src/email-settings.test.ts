@@ -63,6 +63,21 @@ const lastText = () => gmail.messages.at(-1)!.raw.replace(/=\r?\n/g, "");
 const lastLink = () => /verify-sender\/([A-Za-z0-9_-]{43})/.exec(lastText())?.[1];
 
 describe("email settings", () => {
+  it("uses the workspace language for built-in test and confirmation email", async () => {
+    const { agent, userId } = await signedIn();
+    await db.update(users).set({ language: "tl" }).where(eq(users.id, userId));
+    await agent.post("/settings/email/test").expect(200);
+    expect(installation.messages.at(-1)!.raw).toContain("Subject: Test email ng Daloy");
+    expect(installation.messages.at(-1)!.raw).toContain("Test email ito ng Daloy");
+    await agent.put("/settings/email/gmail").send({ address: "tagalog@gmail.com", appPassword: "abcdefghijklmnop" }).expect(200);
+    await agent.post("/settings/email/test").expect(200);
+    expect(lastText()).toContain("Para makapagpadala ng email");
+    expect(lastLink()).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    await db.update(users).set({ language: "en" }).where(eq(users.id, userId));
+    await agent.post("/settings/email/test").expect(200);
+    expect(gmail.messages.at(-1)!.raw).toContain("Subject: Daloy test email");
+  });
+
   it("needs a session", async () => {
     await request(server).get("/settings/email").expect(401);
     await request(server).put("/settings/email/gmail").send({ address: "a@gmail.com", appPassword: "abcdefghijklmnop" }).expect(401);
