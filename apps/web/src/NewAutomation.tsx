@@ -1,7 +1,6 @@
 import { TEMPLATES } from "@daloy/engine";
 import { useState, type FormEvent } from "react";
 import { api, ApiError, type Workflow } from "./api";
-import { BuildWithAi } from "./AiDraft";
 import { Header } from "./Nav";
 import { startOfficeSetup, startPurchaseSetup } from "./OfficeRequests";
 
@@ -61,7 +60,15 @@ export function NewAutomationPage({ email }: { email: string }) {
           {startError}
         </p>
       </section>
-      <BuildWithAi />
+      <section className="create" aria-labelledby="describe-ai">
+        <h2 id="describe-ai">Describe it to the AI</h2>
+        <p>Say what should happen in your own words, answer a few questions, and check the draft before anything is saved.</p>
+        <div className="actions">
+          <a href="#/ai" className="primary">
+            Build with AI
+          </a>
+        </div>
+      </section>
       <form onSubmit={create} className="create">
         <h2>Blank or from a template, for a technician</h2>
         <p className="muted">Opens the diagram editor. You add and connect the steps yourself.</p>

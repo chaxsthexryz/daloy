@@ -5,6 +5,7 @@ import type { User } from "./Team";
 function section(hash: string) {
   if (hash === "#/settings" || hash === "#/settings/ai") return "Settings";
   if (hash === "#/activity") return "Activity";
+  if (hash === "#/ai") return "Build with AI";
   if (hash.startsWith("#/bookings")) return "Bookings";
   if (hash.startsWith("#/team")) return "Team";
   if (hash.startsWith("#/settings/business/outlook-") || hash === "#/apps" || hash.startsWith("#/verify-sender")) return "Apps";
@@ -23,8 +24,9 @@ export function Shell({ user, hash, onSignOut, children }: { user: User; hash: s
   const here = section(hash);
   // The phone menu closes on any page change, the browser's Back button included.
   useEffect(() => setOpen(false), [hash]);
-  const link = (href: string, text: string, className?: string) => (
-    <a href={href} className={className} aria-current={here === text ? "page" : undefined} onClick={() => setOpen(false)}>
+  // `name` is the section the link marks, when its text differs from it (the bottom bar says "AI").
+  const link = (href: string, text: string, className?: string, name = text) => (
+    <a href={href} className={className} aria-current={here === name ? "page" : undefined} onClick={() => setOpen(false)}>
       {text}
     </a>
   );
@@ -43,12 +45,9 @@ export function Shell({ user, hash, onSignOut, children }: { user: User; hash: s
         <nav id="main-menu" aria-label="Main" className={open ? "open" : undefined}>
           {owner && link("#/new", "New automation", "primary")}
           {link("#/", "Automations")}
-          {(owner || user.role === "operator") && (
-            <>
-              {link("#/activity", "Activity")}
-              {link("#/bookings", "Bookings")}
-            </>
-          )}
+          {(owner || user.role === "operator") && link("#/activity", "Activity")}
+          {owner && link("#/ai", "Build with AI")}
+          {(owner || user.role === "operator") && link("#/bookings", "Bookings")}
           {owner && (
             <>
               {link("#/team", "Team")}
@@ -68,6 +67,7 @@ export function Shell({ user, hash, onSignOut, children }: { user: User; hash: s
       <nav className="bottom-bar" aria-label="Quick">
         {link("#/", "Automations")}
         {(owner || user.role === "operator") && link("#/activity", "Activity")}
+        {owner && link("#/ai", "AI", undefined, "Build with AI")}
         <button type="button" className="quiet menu-button" aria-expanded={open} aria-controls="main-menu" onClick={() => setOpen(!open)}>
           Menu
         </button>
