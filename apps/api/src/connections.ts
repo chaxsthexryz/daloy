@@ -27,6 +27,9 @@ import {
   slackChannels,
   slackIdentity,
   slackPost,
+  telegramChat,
+  telegramIdentity,
+  telegramSend,
   spreadsheetIdFrom,
   teamsPost,
   teamsWebhookUrl,
@@ -49,9 +52,14 @@ const destinationInput = sheetsInput.omit({ serviceAccount: true });
 // Bot tokens only (xoxb-): a user token (xoxp-) would post as a person.
 const slackInput = z.strictObject({ token: z.string().trim().regex(/^xoxb-[A-Za-z0-9-]{10,200}$/, "Paste the Bot User OAuth Token, which starts with xoxb-") });
 const channelInput = z.strictObject({ channelId: z.string().regex(/^[CG][A-Z0-9]{2,20}$/) });
+// A bot token is <bot id>:<secret>; a chat is a numeric id (negative for groups) or a public @name.
+const telegramInput = z.strictObject({
+  token: z.string().trim().regex(/^\d{6,12}:[A-Za-z0-9_-]{30,50}$/, "Paste the bot token from BotFather, like 123456789:AA..."),
+  chatId: z.string().trim().regex(/^(-?\d{1,20}|@[A-Za-z][A-Za-z0-9_]{4,31})$/, "Enter the chat id (a number) or the public @name"),
+});
 const retryInput = z.strictObject({ postAgain: z.boolean().default(false) });
 const teamsInput = z.strictObject({ url: z.string().trim().min(10).max(2000), channelName: z.string().trim().min(1).max(100) });
-const SLUGS: Record<string, Provider> = { "google-sheets": "google_sheets", slack: "slack", outlook: "outlook", teams: "teams" };
+const SLUGS: Record<string, Provider> = { "google-sheets": "google_sheets", slack: "slack", outlook: "outlook", teams: "teams", telegram: "telegram" };
 const providerSlug = new ZodPipe(z.enum(Object.keys(SLUGS) as [string, ...string[]]).transform((s) => SLUGS[s]!));
 const uuid = new ZodPipe(z.uuid());
 
@@ -136,6 +144,24 @@ export class ConnectionsController {
     const old = await connectionCredential(this.db, this.config.secretsKey, user.workspaceId, "slack");
     await saveConnection(this.db, this.config.secretsKey, user.workspaceId, "slack", { account: team, credential: body.token, destination: old?.destination ?? null });
     return this.get(user);
+  }
+
+  /** Connect or Reconnect Telegram: the bot must work and see the chat, and both are saved together. The token is never returned. */
+  @Put("telegram")
+  @UseGuards(RateLimit(10))
+  async putTelegram(@CurrentUser() user: SessionUser, @Body(new ZodPipe(telegramInput)) body: z.output<typeof telegramInput>) {
+    const { bot } = await telegramIdentity(this.urls, body.token).catch(asBadRequest);
+    const chat = await telegramChat(this.urls, body.token, body.chatId).catch(asBadRequest);
+    await saveConnection(this.db, this.config.secretsKey, user.workspaceId, "telegram", { account: bot, credential: body.token, destination: chat });
+    return this.get(user);
+  }
+
+  @Post("telegram/test")
+  @HttpCode(200)
+  @UseGuards(RateLimit(5))
+  async testTelegram(@CurrentUser() user: SessionUser) {
+    const conn = await this.connection(user.workspaceId, "telegram");
+    return this.test(user.workspaceId, "telegram", conn, () => telegramSend(this.urls, conn.credential, conn.destination!.chatId!, "Test message from Daloy."));
   }
 
   @Get("slack/channels")

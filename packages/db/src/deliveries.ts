@@ -3,7 +3,7 @@ import { backoffDelayMs, type RetryPolicy } from "@daloy/engine";
 import { and, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { connectionCredential, markConnectionFailed, PROVIDER_NAMES, rotateInto } from "./connections";
 import type { Db } from "./index";
-import { appendRowOnce, deleteSheetMarker, outlookSend, ProviderError, serviceAccountSchema, slackPost, teamsPost, type OutlookMessage, type ProviderErrorKind, type ProviderUrls, type SheetDestination } from "./providers";
+import { appendRowOnce, deleteSheetMarker, outlookSend, ProviderError, serviceAccountSchema, slackPost, teamsPost, telegramSend, type OutlookMessage, type ProviderErrorKind, type ProviderUrls, type SheetDestination } from "./providers";
 import { bookingSuperseded, supersededSql } from "./bookings";
 import { connections, deliveries, runs, type Provider } from "./schema";
 
@@ -95,7 +95,7 @@ async function attempt(db: Db, key: Buffer, urls: ProviderUrls, d: Delivery): Pr
   const conn = await connectionCredential(db, key, d.userId, d.provider);
   if (!conn) return { state: "failed", error: `${name} is not connected. Connect it in Apps, then retry.`, kind: "not_connected" };
   if (conn.status === "failed") return { state: "failed", error: `${name} needs to be connected again (${conn.account}). Reconnect it in Apps, then retry.`, kind: "reconnect" };
-  if (!conn.destination) return { state: "failed", error: `No ${d.provider === "google_sheets" ? "sheet" : "channel"} is chosen for ${name}. Pick one in Apps, then retry.`, kind: "no_destination" };
+  if (!conn.destination) return { state: "failed", error: `No ${d.provider === "google_sheets" ? "sheet" : d.provider === "telegram" ? "chat" : "channel"} is chosen for ${name}. Pick one in Apps, then retry.`, kind: "no_destination" };
   if (d.pinnedAccount === null) {
     return { state: "needs_review", error: `This was queued before Daloy recorded where deliveries go, so it cannot confirm the ${name} destination. Choose Post again to send it to ${describe(d.provider, conn.destination)}, or Mark as posted.`, kind: "queued_before_pin" };
   }
@@ -129,6 +129,7 @@ async function attempt(db: Db, key: Buffer, urls: ProviderUrls, d: Delivery): Pr
     }
     const text = (d.payload as { text: string }).text;
     if (d.provider === "teams") return { state: "delivered", result: await teamsPost(urls, conn.credential, text) };
+    if (d.provider === "telegram") return { state: "delivered", result: await telegramSend(urls, conn.credential, destination.chatId!, text) };
     return { state: "delivered", result: await slackPost(urls, conn.credential, destination.channelId!, text) };
   };
   try {
@@ -167,18 +168,20 @@ async function attempt(db: Db, key: Buffer, urls: ProviderUrls, d: Delivery): Pr
 function describe(provider: Provider, dest: Record<string, string>) {
   if (provider === "google_sheets") return `the sheet "${dest.title ?? dest.spreadsheetId}", tab "${dest.tab}"`;
   if (provider === "slack") return `#${dest.channelName ?? dest.channelId}`;
+  if (provider === "telegram") return `the Telegram chat ${dest.chatTitle ?? dest.chatId}`;
   if (provider === "outlook") return dest.mailbox ?? "the Outlook mailbox";
   return `the Teams channel ${dest.channelName ?? ""}`.trim();
 }
 
 /** Same place: the fields that pick where a delivery lands. Display names may change without moving anything. */
 function sameDestination(a: Record<string, string> | null, b: Record<string, string>) {
-  const where = (d: Record<string, string> | null) => JSON.stringify([d?.spreadsheetId, d?.tab, d?.channelId, d?.mailbox, d?.channelName]);
+  const where = (d: Record<string, string> | null) => JSON.stringify([d?.spreadsheetId, d?.tab, d?.channelId, d?.chatId, d?.mailbox, d?.channelName]);
   return where(a) === where(b);
 }
 
 function reviewHint(provider: Provider, dest: Record<string, string>) {
   if (provider === "outlook") return `Look in Sent Items of ${dest.mailbox ?? "the mailbox"}, then choose Mark as sent or Send again.`;
+  if (provider === "telegram") return `Check the Telegram chat ${dest.chatTitle ?? dest.chatId}, then choose Mark as posted or Post again.`;
   return `Check ${provider === "slack" ? `#${dest.channelName ?? dest.channelId}` : `the Teams channel ${dest.channelName ?? ""}`.trim()}, then choose Mark as posted or Post again.`;
 }
 

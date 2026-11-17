@@ -92,6 +92,26 @@ describe("Google Sheets", () => {
   });
 });
 
+describe("Telegram", () => {
+  it("validates the token and chat at the boundary, never returns the token, and sends a test message", async () => {
+    const { agent } = await signedIn();
+    fake.telegram.token = `${100000000 + seq}:abcdefghijklmnopqrstuvwxyzABCDEF_-0`;
+    const good = { token: fake.telegram.token, chatId: "-1001234567890" };
+    await agent.put("/settings/connections/telegram").send({ ...good, token: "not-a-token" }).expect(400);
+    await agent.put("/settings/connections/telegram").send({ ...good, chatId: "my chat" }).expect(400);
+    await agent.put("/settings/connections/telegram").send({ ...good, extra: 1 }).expect(400);
+    await agent.put("/settings/connections/telegram").send({ ...good, token: "123456789:wrongwrongwrongwrongwrongwrongwrong" }).expect(400);
+    await agent.put("/settings/connections/telegram").send({ ...good, chatId: "-1000000000001" }).expect(400);
+    const res = await agent.put("/settings/connections/telegram").send(good).expect(200);
+    expect(res.body.connections[0]).toMatchObject({ provider: "telegram", status: "active", account: "@daloy_test_bot", destination: { chatId: "-1001234567890", chatTitle: "Office team" } });
+    expect(JSON.stringify(res.body)).not.toContain(good.token);
+    const before = fake.telegram.messages.length;
+    expect((await agent.post("/settings/connections/telegram/test").expect(200)).body).toMatchObject({ ok: true });
+    expect(fake.telegram.messages.length).toBe(before + 1);
+    await agent.delete("/settings/connections/telegram").expect(204);
+  });
+});
+
 describe("Slack", () => {
   it("connects with a bot token, lists channels, saves the chosen one and posts a test message", async () => {
     const { agent } = await signedIn();
