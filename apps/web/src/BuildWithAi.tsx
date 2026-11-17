@@ -4,6 +4,7 @@ import { api } from "./api";
 import { saveDraft } from "./AiDraft";
 import { ChoiceQuestion, PlanList } from "./AiFlow";
 import { buildRequest, closestTemplate, plainDraft, questions, withLabels, withPeople, type Answers, type Member } from "./lib/ai-build";
+import { AskRequest } from "./AskRequest";
 import { Header } from "./Nav";
 import { startOfficeSetup, startPurchaseSetup } from "./OfficeRequests";
 
@@ -30,7 +31,7 @@ const WHY: Record<string, string> = {
 const SETUP_LABEL: Record<string, string> = { purchase: "Set up purchase requests", office: "Set up for my office", link: "Set up inquiry replies" };
 
 /** #/ai (owners): the Build with AI flow of docs/console-navigation-plan.md section 4. The draft stays in this page until Save as draft. */
-export function BuildWithAiPage({ email }: { email: string }) {
+export function BuildWithAiPage({ email, ask = false }: { email: string; ask?: boolean }) {
   const [connected, setConnected] = useState<ReadonlySet<string>>(new Set());
   const [members, setMembers] = useState<Member[]>([]);
   const [ready, setReady] = useState(false);
@@ -170,6 +171,7 @@ export function BuildWithAiPage({ email }: { email: string }) {
     <main className="page">
       <Header title="Build with AI" />
       <div className="ai-build">
+        {ask && stage === "describe" && <AskRequest />}
         {stage === "describe" && (
           <form className="demo-card" onSubmit={next}>
             <h2 ref={heading} tabIndex={-1}>

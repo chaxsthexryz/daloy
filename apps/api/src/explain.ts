@@ -13,6 +13,11 @@ export type Facts = {
   deliveries: { provider: string; state: string; errorKind: string | null; attempts: number }[];
   lint: { rule: LintRule; count: number }[];
 };
+export type Question = "happened" | "why" | "next";
+export type AskFacts = Facts & {
+  plainState: "needs you" | "problem" | "waiting" | "done" | "in progress";
+  steps: { type: string; state: string; outcome: string | null; attempts: number }[];
+};
 export type Explanation = { headline: string; lines: string[]; fix: { href: string; label: string } | null };
 type FactsInput = {
   run: { state: string; test: boolean; error?: string | null };
@@ -31,9 +36,11 @@ const REASONS: [Reason, RegExp][] = [
   ["preview_choice", /^Test run: this step was set to fail/],
 ];
 
+const time = (s: FactsInput["steps"][number]) => (s.createdAt ? new Date(s.createdAt).getTime() : 0);
+const stuck = (state: string) => state === "failed" || state === "needs_review";
+
 export function failureFacts({ run, steps, deliveries, definition }: FactsInput): Facts {
   const def = definition as Partial<WorkflowDefinition> | null;
-  const time = (s: FactsInput["steps"][number]) => (s.createdAt ? new Date(s.createdAt).getTime() : 0);
   const failed = steps.filter((s) => s.state === "failed" || s.state === "needs_review").sort((a, b) => time(b) - time(a) || b.attempt - a.attempt)[0];
   const text = failed?.error ?? run.error ?? "";
   const reason = REASONS.find(([, re]) => re.test(text))?.[0] ?? null;
@@ -61,6 +68,22 @@ export function failureFacts({ run, steps, deliveries, definition }: FactsInput)
     deliveries: deliveries.filter((d) => d.state === "failed" || d.state === "needs_review" || (d.state === "queued" && d.errorKind)).map((d) => ({ provider: d.provider, state: d.state, errorKind: d.errorKind, attempts: d.attempts })),
     lint,
   };
+}
+
+/** failureFacts plus the plain state (as apps/web/src/lib/states.ts) and a timeline of step types. Still no ids, labels or text. */
+export function askFacts(input: FactsInput): AskFacts {
+  const def = input.definition as Partial<WorkflowDefinition> | null;
+  const { run, deliveries } = input;
+  const latest = new Map<string, FactsInput["steps"][number]>();
+  for (const s of [...input.steps].sort((a, b) => time(a) - time(b) || a.attempt - b.attempt)) latest.set(s.stepId, s);
+  const plainState =
+    run.state === "needs_review" || deliveries.some((d) => d.state === "needs_review") ? "needs you"
+    : run.state === "failed" || deliveries.some((d) => d.state === "failed") ? "problem"
+    : run.state === "waiting" ? "waiting"
+    : run.state === "succeeded" || run.state === "cancelled" ? "done"
+    : "in progress";
+  const steps = [...latest.values()].map((s) => ({ type: def?.steps?.find((d) => d.id === s.stepId)?.type ?? "unknown", state: s.state, outcome: s.outcome, attempts: s.attempt }));
+  return { ...failureFacts(input), plainState, steps };
 }
 
 const APPS: Record<string, string> = { google_sheets: "Google Sheets", slack: "Slack", outlook: "Outlook", teams: "Microsoft Teams" };
@@ -149,4 +172,21 @@ export function explainFailure(facts: Facts): Explanation {
   const first = facts.deliveries.map(ofDelivery).find(Boolean) ?? (facts.step ? ofStep(facts.step) : null);
   const base = first ?? { headline: "Daloy could not tell why this stopped.", lines: ["The details for a technician below have the full record."], fix: null };
   return { ...base, lines: [...base.lines, ...facts.lint.map((l) => LINT_LINES[l.rule])] };
+}
+
+// The console's names for step types (apps/web/src/FlowCanvas.tsx TYPE_NAMES), plus booking.
+const TYPE_NAMES: Record<string, string> = { condition: "Condition", http: "HTTP request", email: "Send email", delay: "Delay", ai: "AI task", approval: "Approval", sheets: "Add to Google Sheets", slack: "Post to Slack", outlook: "Send from Outlook", teams: "Post to Teams", booking: "Booking" };
+const HEADLINES = { "needs you": "This request needs you before it goes on.", done: "This request is done.", problem: "This request stopped with a problem.", waiting: "This request is waiting.", "in progress": "This request is still going." };
+const OPEN_ACTIVITY = "Open the request in Activity to see every step.";
+
+/** The three fixed answers for the Ask panel. Every word is from a table above or a closed field. */
+export function answerAll(facts: AskFacts): { happened: Explanation; why: Explanation | null; next: Explanation } {
+  const n = facts.steps.length;
+  const happened = [n ? `${n} ${n === 1 ? "step" : "steps"} ran.` : "No steps have run yet."];
+  if (facts.step) happened.push(`It stopped at: ${TYPE_NAMES[facts.step.type] ?? "a step"}.`);
+  const why = stuck(facts.runState) || facts.deliveries.some((d) => stuck(d.state)) ? explainFailure(facts) : null;
+  const next = why
+    ? { headline: "What to do next.", lines: [...why.lines, OPEN_ACTIVITY], fix: why.fix }
+    : { headline: "What to do next.", lines: ["Nothing needs to be done.", ...facts.lint.map((l) => LINT_LINES[l.rule]), OPEN_ACTIVITY], fix: null };
+  return { happened: { headline: HEADLINES[facts.plainState], lines: happened, fix: null }, why, next };
 }

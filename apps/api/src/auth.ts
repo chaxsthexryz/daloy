@@ -89,7 +89,7 @@ export class AuthController {
         return u!;
       });
       await this.startSession(user.id, res);
-      return { id: user.id, email: user.email, workspaceId: user.id, role: "owner" };
+      return this.signedIn({ id: user.id, email: user.email, workspaceId: user.id, role: "owner" });
     } catch (err) {
       if (isUniqueViolation(err)) throw new ConflictException("email already registered");
       throw err;
@@ -107,7 +107,7 @@ export class AuthController {
     const membership = await membershipOf(this.db, user.id);
     if (!membership) throw new ForbiddenException("this account is no longer a member of a workspace");
     await this.startSession(user.id, res);
-    return { id: user.id, email: user.email, ...membership };
+    return this.signedIn({ id: user.id, email: user.email, ...membership });
   }
 
   /**
@@ -136,7 +136,7 @@ export class AuthController {
       return { id: userId!, email: invite.email, workspaceId: invite.workspaceId, role: invite.role };
     });
     await this.startSession(joined.id, res);
-    return joined;
+    return this.signedIn(joined);
   }
 
   @Post("logout")
@@ -150,7 +150,12 @@ export class AuthController {
   @Get("me")
   @UseGuards(SessionGuard)
   me(@CurrentUser() user: SessionUser) {
-    return user;
+    return this.signedIn(user);
+  }
+
+  /** The user plus whether Ask about a request is on (AI_ASK, decision 0041), so the console knows without a reload. */
+  private signedIn(user: SessionUser) {
+    return { ...user, ask: this.config.ask === true };
   }
 
   /** The cookie holds 32 random bytes; the database holds only their SHA-256. */

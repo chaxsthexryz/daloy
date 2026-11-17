@@ -5,7 +5,7 @@ import { and, asc, desc, eq, ilike, or, sql } from "drizzle-orm";
 import type { PgBoss } from "pg-boss";
 import * as z from "zod";
 import { SessionGuard } from "./auth";
-import { explainFailure, failureFacts } from "./explain";
+import { answerAll, askFacts, explainFailure, failureFacts } from "./explain";
 import { Allow, BOSS, CONFIG, CurrentUser, DB, enqueueRun, RateLimit, ZodPipe, type ApiConfig, type SessionUser, MANAGE, OPERATE } from "./http";
 import { maskSecrets } from "./mask";
 import { explain } from "./settings";
@@ -28,6 +28,11 @@ const like = (q: string) => `%${q.replace(/[\\%_]/g, (c) => "\\" + c)}%`;
 
 const REWORD_SYSTEM =
   "You explain why a Daloy automation stopped, for a small office owner. You get JSON with facts and a fixed explanation. Write 2 to 4 short, plain sentences. Keep the fix from the fixed explanation. Use the words automation, Apps and Activity. Never give links or addresses. Never guess causes that are not in the facts. Reply with the text only.";
+
+const ASK_SYSTEM =
+  "You answer one question about a Daloy request, for a small office owner. You get JSON with the question (happened, why or next), the language, facts and a fixed answer. Answer only that question in 2 to 4 short, plain sentences. Write in plain Tagalog (Taglish is fine) when language is tl, otherwise in English. Keep the fix from the fixed answer. Use the words automation, Apps and Activity. Never give links or addresses. Never guess causes that are not in the facts. Reply with the text only.";
+const askReference = z.string().trim().min(1).max(60);
+const askReword = z.object({ reference: askReference, question: z.enum(["happened", "why", "next"]), language: z.enum(["en", "tl"]).default("en") });
 
 /**
  * Run history, plus the operator's answers to a run in review (decision 0030). On the way out, every payload, step input, output and error first has every form of the
@@ -78,6 +83,24 @@ export class RunsController {
     return rows.map((r) => ({ ...r, triggerPayload: hide(r.triggerPayload), error: hide(r.error) as string | null }));
   }
 
+  /** The three fixed answers about a request, found by its reference (phase N10b). 404 while the switch is off. Read-only. */
+  @Get("ask")
+  async ask(@CurrentUser() user: SessionUser, @Query("reference", new ZodPipe(askReference)) reference: string) {
+    const { found, facts } = await this.asked(user.workspaceId, reference);
+    return { ...found, answers: answerAll(facts) };
+  }
+
+  /** One of those answers reworded by the workspace's AI model, from the same closed-set facts. Costs one AI action, writes nothing else. */
+  @Post("ask/reword")
+  @HttpCode(200)
+  @UseGuards(Allow(MANAGE), RateLimit(10))
+  async askReword(@CurrentUser() user: SessionUser, @Body(new ZodPipe(askReword)) body: z.output<typeof askReword>) {
+    const { facts } = await this.asked(user.workspaceId, body.reference);
+    const fixed = answerAll(facts)[body.question];
+    if (!fixed) throw new ConflictException("There is nothing to explain for this question.");
+    return this.reworded(user.workspaceId, ASK_SYSTEM, { question: body.question, language: body.language, facts, fixed });
+  }
+
   @Get(":id")
   async get(@CurrentUser() user: SessionUser, @Param("id", new ZodPipe(z.uuid())) id: string) {
     const [run] = await this.owned().where(and(eq(workflows.userId, user.workspaceId), eq(runs.id, id)));
@@ -108,16 +131,20 @@ export class RunsController {
   async reword(@CurrentUser() user: SessionUser, @Param("id", uuid) id: string) {
     const input = await this.explained(user.workspaceId, id);
     if (!input) throw new ConflictException("There is nothing to explain for this run.");
+    return this.reworded(user.workspaceId, REWORD_SYSTEM, input);
+  }
+
+  private async reworded(workspaceId: string, system: string, input: unknown) {
     // The connection first, as in /ai/draft: a missing key costs no AI action.
-    const { model, ...connection } = await aiConnection(this.db, this.config.secretsKey, user.workspaceId).catch((err: unknown) => {
+    const { model, ...connection } = await aiConnection(this.db, this.config.secretsKey, workspaceId).catch((err: unknown) => {
       throw new HttpException({ message: explain(err) }, HttpStatus.BAD_GATEWAY);
     });
-    await claimUsage(this.db, user.workspaceId, "ai").catch((err: unknown) => {
+    await claimUsage(this.db, workspaceId, "ai").catch((err: unknown) => {
       throw err instanceof QuotaError ? new HttpException({ message: err.message }, HttpStatus.TOO_MANY_REQUESTS) : err;
     });
     let text: string;
     try {
-      ({ text } = await generate({ system: REWORD_SYSTEM, messages: [{ role: "user", content: JSON.stringify(input) }], model, connection, temperature: 0.2, maxTokens: 300, timeoutMs: 30_000 }));
+      ({ text } = await generate({ system, messages: [{ role: "user", content: JSON.stringify(input) }], model, connection, temperature: 0.2, maxTokens: 300, timeoutMs: 30_000 }));
     } catch (err) {
       throw new HttpException({ message: explain(err) }, HttpStatus.BAD_GATEWAY);
     }
@@ -126,7 +153,8 @@ export class RunsController {
     return { text };
   }
 
-  private async explained(workspaceId: string, id: string) {
+  /** Everything the explanations read for one run of this workspace. */
+  private async loaded(workspaceId: string, id: string) {
     const [run] = await this.db
       .select({ state: runs.state, test: runs.test, error: runs.error, definition: workflowVersions.definition })
       .from(runs)
@@ -134,10 +162,29 @@ export class RunsController {
       .innerJoin(workflows, eq(workflows.id, workflowVersions.workflowId))
       .where(and(eq(workflows.userId, workspaceId), eq(runs.id, id)));
     if (!run) throw new NotFoundException();
-    const [steps, sent] = await Promise.all([this.db.select().from(stepRuns).where(eq(stepRuns.runId, id)), listDeliveries(this.db, workspaceId, [id])]);
+    const [steps, deliveries] = await Promise.all([this.db.select().from(stepRuns).where(eq(stepRuns.runId, id)), listDeliveries(this.db, workspaceId, [id])]);
+    return { run, steps, deliveries, definition: run.definition };
+  }
+
+  /** The run behind a reference, or the same 404 whether the switch is off, the reference is unknown or it is another workspace's. */
+  private async asked(workspaceId: string, ref: string) {
+    if (!this.config.ask) throw new NotFoundException();
+    const [found] = await this.db
+      .select({ runId: requests.runId, reference: requests.reference, workflowName: workflows.name })
+      .from(requests)
+      .innerJoin(runs, eq(runs.id, requests.runId))
+      .innerJoin(workflowVersions, eq(workflowVersions.id, runs.workflowVersionId))
+      .innerJoin(workflows, eq(workflows.id, workflowVersions.workflowId))
+      .where(and(eq(workflows.userId, workspaceId), eq(requests.reference, ref)));
+    if (!found) throw new NotFoundException();
+    return { found, facts: askFacts(await this.loaded(workspaceId, found.runId)) };
+  }
+
+  private async explained(workspaceId: string, id: string) {
+    const input = await this.loaded(workspaceId, id);
     const stuck = (s: string) => s === "failed" || s === "needs_review";
-    if (!stuck(run.state) && !sent.some((d) => stuck(d.state))) return null;
-    const facts = failureFacts({ run, steps, deliveries: sent, definition: run.definition });
+    if (!stuck(input.run.state) && !input.deliveries.some((d) => stuck(d.state))) return null;
+    const facts = failureFacts(input);
     return { facts, fixed: explainFailure(facts) };
   }
 
