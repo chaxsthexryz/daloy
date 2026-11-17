@@ -1,6 +1,6 @@
 import type { WorkflowDefinition } from "@daloy/engine";
 import { describe, expect, it } from "vitest";
-import { OTHER, PEOPLE, buildRequest, closestTemplate, plainDraft, questions, withLabels, withPeople } from "./ai-build";
+import { OTHER, PEOPLE, buildRequest, closestTemplate, plainDraft, questions, warningForLanguage, withLabels, withPeople } from "./ai-build";
 
 const none = new Set<string>();
 const ids = (q: { choices: { value: string }[] }) => q.choices.map((c) => c.value);
@@ -194,4 +194,29 @@ describe("closestTemplate", () => {
   it("falls back to tracking an office request", () => {
     expect(closestTemplate({ approve: "no" }, "keep track of things")).toMatchObject({ action: "office", label: "Track an office request" });
   });
+});
+
+
+describe("localized builder copy", () => {
+  it("translates fixed questions without translating member names or answer values", () => {
+    const qs = questions(none, [{ email: "ana@example.com", name: "Me" }], "tl");
+    expect(qs[0]?.text).toBe("Ano ang magsisimula nito?");
+    expect(byId(qs, "who").choices[0]).toEqual({ value: "me", label: "Ako" });
+    expect(byId(qs, "who").choices[1]).toEqual({ value: "member:0", label: "Me" });
+  });
+  it("translates plan sentences while preserving addresses, subjects, and branch identifiers", () => {
+    const def: WorkflowDefinition = {
+      trigger: { type: "manual", config: {} },
+      steps: [{ id: "mail", type: "email", config: { to: "owner@example.com", subject: "Save", text: "Hi" } }], edges: [],
+    };
+    expect(plainDraft(def, "tl")).toEqual({ when: "Kapag mano-mano mong pinatakbo", steps: ["Mag-email sa owner@example.com (paksa: Save)"] });
+    expect(plainDraft(def).steps).toEqual(["Email owner@example.com (subject: Save)"]);
+  });
+});
+
+
+it("translates only known lint warnings and keeps identifiers and arbitrary AI warnings unchanged", () => {
+  expect(warningForLanguage('Condition "Save" compares numbers but has no "invalid" edge, so a missing or non-number value fails the run.', "tl")).toContain('"Save"');
+  expect(warningForLanguage('Condition "Save" compares numbers but has no "invalid" edge, so a missing or non-number value fails the run.', "tl")).toContain('walang');
+  expect(warningForLanguage("Save", "tl")).toBe("Save");
 });

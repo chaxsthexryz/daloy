@@ -1,3 +1,4 @@
+import { Text, useLanguage } from "./Language";
 import { useEffect, useState } from "react";
 import { api } from "./api";
 
@@ -5,6 +6,7 @@ type Mail = { sender: { status: string } | null; installationAllowed: boolean; i
 
 /** Warns the owner, where they turn an automation on, that email may not reach anyone: no Gmail sender is active and the installation's server is a local catcher or not approved for them. */
 export function MailNotice() {
+  const { t } = useLanguage();
   const [mail, setMail] = useState<Mail | null>(null);
   useEffect(() => {
     // The notice is a hint: when settings cannot be read it stays hidden.
@@ -15,7 +17,7 @@ export function MailNotice() {
   if (!text) return null;
   return (
     <p className="notice">
-      {text} <a href="#/apps">Apps</a>
+      {t(text)} <a href="#/apps"><Text>Apps</Text></a>
     </p>
   );
 }

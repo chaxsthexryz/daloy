@@ -1,3 +1,4 @@
+import { builtInEmailCopy } from "@daloy/engine";
 import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import {
   appendRow,
@@ -209,8 +210,9 @@ export class ConnectionsController {
   async testOutlook(@CurrentUser() user: SessionUser) {
     const conn = await this.connection(user.workspaceId, "outlook");
     const save = rotateInto(this.db, this.config.secretsKey, user.workspaceId, "outlook", conn);
+    const copy = builtInEmailCopy(user.language);
     return this.test(user.workspaceId, "outlook", conn, () =>
-      outlookSend(this.urls, conn.credential, save, { to: conn.account, subject: "Test email from Daloy", text: "Daloy can send from this mailbox. Approved purchase requests will go out from here." }),
+      outlookSend(this.urls, conn.credential, save, { to: conn.account, subject: copy.outlookSubject, text: copy.outlookBody }),
     );
   }
 

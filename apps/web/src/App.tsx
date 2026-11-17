@@ -1,5 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { api } from "./api";
+import { LanguageContext } from "./Language";
+import type { Language } from "./lib/locale";
 import { Editor } from "./Editor";
 import { RunPage, RunsPage } from "./Runs";
 import { AdvancedPage } from "./Advanced";
@@ -44,10 +46,15 @@ export function App() {
 }
 
 function Console({ hash }: { hash: string }) {
+  const [language, setLanguage] = useState<Language>("en");
   const [user, setUser] = useState<User | null | undefined>(undefined);
   useEffect(() => {
     api<User>("GET", "/auth/me").then(setUser, () => setUser(null));
   }, []);
+  useEffect(() => {
+    setLanguage(user?.language === "tl" ? "tl" : "en");
+  }, [user?.language]);
+  useEffect(() => { document.documentElement.lang = language; }, [language]);
   // Back to the server-rendered approval page once signed in; it checks again that this user is the approver.
   const answer = ANSWER.exec(hash)?.[1];
   useEffect(() => {
@@ -60,11 +67,14 @@ function Console({ hash }: { hash: string }) {
   if (invite) return <AcceptInvitePage key={invite[1]} token={invite[1]!} onDone={setUser} />;
   if (!user) return <SignIn onDone={setUser} />;
   // Approvers and requesters have no console beyond their own requests; the API refuses the rest anyway.
-  if (user.role === "approver" || user.role === "requester") return <MyRequestsPage user={user} onSignOut={signOut} />;
   return (
-    <Shell user={user} hash={hash} onSignOut={signOut}>
-      <Route hash={hash} user={user} />
-    </Shell>
+    <LanguageContext.Provider value={{ language, setLanguage }}>
+      {user.role === "approver" || user.role === "requester" ? <MyRequestsPage user={user} onSignOut={signOut} /> : (
+        <Shell user={user} hash={hash} onSignOut={signOut}>
+          <Route hash={hash} user={user} />
+        </Shell>
+      )}
+    </LanguageContext.Provider>
   );
 }
 

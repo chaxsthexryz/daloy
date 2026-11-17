@@ -1,3 +1,5 @@
+import type { Language } from "./language";
+import { localizeGeneratedDefinition } from "./template-language";
 import * as z from "zod";
 import type { FormField, WorkflowDefinition } from "./definition";
 import { resolveTemplate } from "./expressions";
@@ -32,7 +34,7 @@ export type OfficeRequestAnswers = z.input<typeof officeRequestAnswers>;
 export const setupInput = z.strictObject({ step: z.enum(SETUP_STEPS), answers: officeRequestAnswers });
 export type Setup = z.infer<typeof setupInput> & { template: typeof OFFICE_REQUEST };
 
-export const defaultAnswers = (notifyEmail: string): OfficeRequestAnswers => ({ name: "Office requests", notifyEmail, extraFields: ["location"], sheets: false, slack: false });
+export const defaultAnswers = (notifyEmail: string, language: Language = "en"): OfficeRequestAnswers => ({ name: language === "tl" ? "Mga office request" : "Office requests", notifyEmail, extraFields: ["location"], sheets: false, slack: false });
 
 export const SAMPLE_REQUEST = {
   name: "Rosa Diaz",
@@ -47,7 +49,7 @@ function lines(answers: OfficeRequestAnswers) {
   return answers.extraFields.map((f) => extra[f]).join("\n");
 }
 
-export function officeRequestDefinition(answers: OfficeRequestAnswers): WorkflowDefinition {
+export function officeRequestDefinition(answers: OfficeRequestAnswers, language: Language = "en"): WorkflowDefinition {
   const more = lines(answers);
   // After the receipt, so the people waiting on email never wait on Sheets or Slack. Both are queued deliveries,
   // retried on their own (decision 0021). The Slack note has no name or email: everyone in the channel can read it.
@@ -60,7 +62,7 @@ export function officeRequestDefinition(answers: OfficeRequestAnswers): Workflow
     extra.push({ id: "post_to_slack", type: "slack", config: { text: "New office request {{trigger.reference}}: {{trigger.summary}}\nDetails are in Daloy under Requests." } });
   }
   const chain = ["send_receipt", ...extra.map((s) => s.id)];
-  return {
+  return localizeGeneratedDefinition({
     trigger: {
       type: "form",
       config: {
@@ -94,17 +96,17 @@ export function officeRequestDefinition(answers: OfficeRequestAnswers): Workflow
       ...extra,
     ],
     edges: [{ from: "notify_office", to: "send_receipt" }, ...chain.slice(1).map((to, i) => ({ from: chain[i]!, to }))],
-  };
+  }, language, OFFICE_REQUEST, { extraFields: answers.extraFields });
 }
 
 /**
  * What a submission would produce, worked out here with the same template resolver the worker uses.
  * Pure: no run, no request record and no email, so a preview cannot reach anyone.
  */
-export function previewOfficeRequest(answers: OfficeRequestAnswers, sample: Record<string, string>) {
+export function previewOfficeRequest(answers: OfficeRequestAnswers, sample: Record<string, string>, language: Language = "en") {
   const reference = "REQ-SAMPLE";
   const ctx = { trigger: { ...sample, reference }, steps: {} };
-  const steps = officeRequestDefinition(answers).steps;
+  const steps = officeRequestDefinition(answers, language).steps;
   const [notify, receipt] = steps.slice(0, 2).map((s) => {
     const c = s.config as { to: string; subject: string; text: string };
     return { to: String(resolveTemplate(c.to, ctx)), subject: String(resolveTemplate(c.subject, ctx)), text: String(resolveTemplate(c.text, ctx)) };

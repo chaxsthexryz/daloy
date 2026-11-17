@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { claimInvite, joinWorkspace, membershipOf, sessions, users, workspaceMembers, type Db } from "@daloy/db";
+import { claimInvite, joinWorkspace, membershipOf, sessions, users, workspaceLanguage, workspaceMembers, type Db } from "@daloy/db";
 import {
   Body,
   type CanActivate,
@@ -21,6 +21,7 @@ import {
 } from "@nestjs/common";
 import { hash, verify } from "@node-rs/argon2";
 import { and, eq, gt, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import type { Request, Response } from "express";
 import * as z from "zod";
 import { CONFIG, CurrentUser, DB, isUniqueViolation, RateLimit, sha256, ZodPipe, type ApiConfig, type SessionUser } from "./http";
@@ -45,11 +46,13 @@ const inviteToken = new ZodPipe(z.string().regex(/^[A-Za-z0-9_-]{43}$/));
 export async function sessionUser(db: Db, req: Request): Promise<SessionUser | null> {
   const token: unknown = req.cookies?.[COOKIE];
   if (typeof token !== "string" || token.length > 100) return null;
+  const owner = alias(users, "workspace_owner");
   const [user] = await db
-    .select({ id: users.id, email: users.email, workspaceId: workspaceMembers.workspaceId, role: workspaceMembers.role })
+    .select({ id: users.id, email: users.email, workspaceId: workspaceMembers.workspaceId, role: workspaceMembers.role, language: owner.language })
     .from(sessions)
     .innerJoin(users, eq(users.id, sessions.userId))
     .innerJoin(workspaceMembers, eq(workspaceMembers.userId, users.id))
+    .innerJoin(owner, eq(owner.id, workspaceMembers.workspaceId))
     .where(and(eq(sessions.idHash, sha256(token)), gt(sessions.expiresAt, sql`now()`)));
   return user ?? null;
 }
@@ -89,7 +92,7 @@ export class AuthController {
         return u!;
       });
       await this.startSession(user.id, res);
-      return this.signedIn({ id: user.id, email: user.email, workspaceId: user.id, role: "owner" });
+      return this.signedIn({ id: user.id, email: user.email, workspaceId: user.id, role: "owner", language: user.language });
     } catch (err) {
       if (isUniqueViolation(err)) throw new ConflictException("email already registered");
       throw err;
@@ -107,7 +110,7 @@ export class AuthController {
     const membership = await membershipOf(this.db, user.id);
     if (!membership) throw new ForbiddenException("this account is no longer a member of a workspace");
     await this.startSession(user.id, res);
-    return this.signedIn({ id: user.id, email: user.email, ...membership });
+    return this.signedIn({ id: user.id, email: user.email, ...membership, language: await workspaceLanguage(this.db, membership.workspaceId) });
   }
 
   /**
@@ -136,7 +139,7 @@ export class AuthController {
       return { id: userId!, email: invite.email, workspaceId: invite.workspaceId, role: invite.role };
     });
     await this.startSession(joined.id, res);
-    return this.signedIn(joined);
+    return this.signedIn({ ...joined, language: await workspaceLanguage(this.db, joined.workspaceId) });
   }
 
   @Post("logout")

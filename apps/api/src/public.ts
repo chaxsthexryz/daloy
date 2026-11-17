@@ -1,5 +1,6 @@
+import { publicCopy } from "./public-copy";
 import { createHmac, randomInt, randomUUID, timingSafeEqual } from "node:crypto";
-import { businessProfiles, createKeyedRun, createRun, publishedVersion, readSecret, requests, runs, triggers, workflows, type Db } from "@daloy/db";
+import { workspaceLanguage, businessProfiles, createKeyedRun, createRun, publishedVersion, readSecret, requests, runs, triggers, workflows, type Db } from "@daloy/db";
 import { definitionSchema, OFFICE_REQUEST, parsePayload, PURCHASE_REQUEST, type FormField, type Resource } from "@daloy/engine";
 import {
   BadRequestException,
@@ -103,7 +104,7 @@ export class FormsController {
   @Header("Cache-Control", "no-store")
   async page(@Param("id", new ZodPipe(z.uuid())) id: string) {
     const { fields, tracked, businessName, workflow } = await this.form(id);
-    return renderForm(fields, await resourcesFor(this.db, workflow.userId, fields), tracked ? randomUUID() : undefined, businessName ?? undefined);
+    return renderForm(fields, await resourcesFor(this.db, workflow.userId, fields), tracked ? randomUUID() : undefined, businessName ?? undefined, await workspaceLanguage(this.db, workflow.userId));
   }
 
   @Post(FORM_PATHS)
@@ -112,14 +113,16 @@ export class FormsController {
   @Header("Content-Type", "text/html; charset=utf-8")
   async submit(@Param("id", new ZodPipe(z.uuid())) id: string, @Body() body: Record<string, unknown> | undefined, @Req() req: Request) {
     const { fields, versionId, workflow, tracked } = await this.form(id);
+    const language = await workspaceLanguage(this.db, workflow.userId);
+    const copy = publicCopy[language];
     // Bots fill every field. Answer as if it worked so they learn nothing.
-    if (body?.[HONEYPOT]) return page("Thanks, we received your message.");
+    if (body?.[HONEYPOT]) return page(copy.thanks, copy.form, language);
     const parsed = parsePayload(fields, body ?? {}, { resources: await resourcesFor(this.db, workflow.userId, fields) });
     if (!parsed.ok) throw new BadRequestException(parsed.errors);
     if (!tracked) {
       const runId = await createRun(this.db, versionId, parsed.data);
       await enqueueRun(this.boss, runId);
-      return page("Thanks, we received your message.");
+      return page(copy.thanks, copy.form, language);
     }
 
     const key = z.uuid().safeParse(body?.[SUBMISSION_KEY]);
@@ -131,8 +134,9 @@ export class FormsController {
     const { reference, runId } = await recordRequest(this.db, workflow, versionId, key.data, parsed.data, requestedBy);
     if (runId) await enqueueRun(this.boss, runId);
     return page(
-      `<h1>Request received</h1><p>Your reference is <strong>${reference}</strong>. Quote it if you ask about this request. A receipt is on its way to your email.</p><p><a href="">Send another request</a></p>`,
-      "Request received",
+      `<h1>${copy.received}</h1><p>${copy.reference} <strong>${reference}</strong>. ${copy.receipt}</p><p><a href="">${copy.another}</a></p>`,
+      copy.received,
+      language,
     );
   }
 
@@ -187,11 +191,12 @@ export async function recordRequest(db: Db, workflow: { id: string; userId: stri
 const ENTITIES: Record<string, string> = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
 export const escapeHtml = (s: string) => s.replace(/[&<>"']/g, (c) => ENTITIES[c]!);
 
-export const page = (body: string, title = "Form") =>
-  `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${title}</title></head><body><main>${body}</main></body></html>`;
+export const page = (body: string, title = "Form", language: "en" | "tl" = "en") =>
+  `<!doctype html><html lang="${language}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${title}</title></head><body><main>${body}</main></body></html>`;
 
 /** businessName comes from the owner's profile, so a form behind a website's contact button says whose form it is. */
-function renderForm(fields: FormField[], resources: Resource[], submissionKey?: string, businessName?: string) {
+export function renderForm(fields: FormField[], resources: Resource[], submissionKey?: string, businessName?: string, language: "en" | "tl" = "en") {
+  const copy = publicCopy[language];
   const inputs = fields
     .map((f) => {
       const attrs = `id="${f.name}" name="${f.name}"${f.required ? " required" : ""}`;
@@ -202,8 +207,8 @@ function renderForm(fields: FormField[], resources: Resource[], submissionKey?: 
       // The browser counts steps from 1970-01-01T00:00, which meets every local midnight only when the slot divides
       // the day; other grids get whole minutes here, so no slot the server accepts is blocked (decision 0031).
       const slot = f.slotMinutes && 1440 % f.slotMinutes === 0 ? f.slotMinutes : 1;
-      if (f.type === "datetime") control = `<input ${attrs} type="datetime-local" step="${slot * 60}"><br><small>Times are in ${escapeHtml(f.timezone!)}</small>`;
-      if (f.type === "resource") control = `<select ${attrs}><option value="">Choose one</option>${resources.map((r) => `<option value="${r.id}">${escapeHtml(r.name)}</option>`).join("")}</select>`;
+      if (f.type === "datetime") control = `<input ${attrs} type="datetime-local" step="${slot * 60}"><br><small>${copy.times} ${escapeHtml(f.timezone!)}</small>`;
+      if (f.type === "resource") control = `<select ${attrs}><option value="">${copy.choose}</option>${resources.map((r) => `<option value="${r.id}">${escapeHtml(r.name)}</option>`).join("")}</select>`;
       return `<p><label for="${f.name}">${escapeHtml(f.label)}</label><br>${control}</p>`;
     })
     .join("");
@@ -211,5 +216,5 @@ function renderForm(fields: FormField[], resources: Resource[], submissionKey?: 
   const honeypot = `<div aria-hidden="true" style="position:absolute;left:-9999px"><label for="${HONEYPOT}">Website</label><input id="${HONEYPOT}" name="${HONEYPOT}" tabindex="-1" autocomplete="off"></div>`;
   const key = submissionKey ? `<input type="hidden" name="${SUBMISSION_KEY}" value="${submissionKey}">` : "";
   const heading = businessName ? `<h1>${escapeHtml(businessName)}</h1>` : "";
-  return page(`${heading}<form method="post">${inputs}${honeypot}${key}<button type="submit">Send</button></form>`, businessName ? escapeHtml(businessName) : undefined);
+  return page(`${heading}<form method="post">${inputs}${honeypot}${key}<button type="submit">${copy.send}</button></form>`, businessName ? escapeHtml(businessName) : copy.form, language);
 }

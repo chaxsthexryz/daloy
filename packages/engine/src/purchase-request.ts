@@ -1,3 +1,5 @@
+import type { Language } from "./language";
+import { localizeGeneratedDefinition } from "./template-language";
 import * as z from "zod";
 import type { WorkflowDefinition } from "./definition";
 import { resolveTemplate } from "./expressions";
@@ -29,7 +31,7 @@ export type PurchaseSetup = z.infer<typeof purchaseSetupInput>;
 /** Body of PATCH /workflows/:id/setup for either guided template. A body without a template is an office request, as before. */
 export const guidedSetupInput = z.union([setupInput.extend({ template: z.literal(OFFICE_REQUEST).optional() }), purchaseSetupInput]);
 
-export const defaultPurchaseAnswers = (email: string): PurchaseRequestAnswers => ({ name: "Purchase requests", approver: email, purchasingEmail: email, outlook: false, teams: false });
+export const defaultPurchaseAnswers = (email: string, language: Language = "en"): PurchaseRequestAnswers => ({ name: language === "tl" ? "Mga purchase request" : "Purchase requests", approver: email, purchasingEmail: email, outlook: false, teams: false });
 
 export const SAMPLE_PURCHASE = {
   name: "Marco Reyes",
@@ -39,7 +41,7 @@ export const SAMPLE_PURCHASE = {
   reason: "The current chair is broken and hurts my back.",
 };
 
-export function purchaseRequestDefinition(a: PurchaseRequestAnswers): WorkflowDefinition {
+export function purchaseRequestDefinition(a: PurchaseRequestAnswers, language: Language = "en"): WorkflowDefinition {
   // Every email except the approval request goes from the Outlook mailbox when the owner chose it. The approval request
   // stays an approval step: it carries the single-use link and goes through the email sender on Apps.
   const mail = (id: string, to: string, subject: string, text: string) => ({ id, type: a.outlook ? ("outlook" as const) : ("email" as const), config: { to, subject, text } });
@@ -58,7 +60,7 @@ export function purchaseRequestDefinition(a: PurchaseRequestAnswers): WorkflowDe
     toRequester("tell_approved", "Your purchase request {{trigger.reference}} was approved", `${a.approver} approved your request for {{trigger.summary}}. Purchasing has it now.`),
   ];
   const chain = ["decide", ...approved.map((s) => s.id)];
-  return {
+  return localizeGeneratedDefinition({
     trigger: {
       type: "form",
       config: {
@@ -94,7 +96,7 @@ export function purchaseRequestDefinition(a: PurchaseRequestAnswers): WorkflowDe
       { from: "decide", to: "tell_rejected", on: "rejected" },
       { from: "decide", to: "tell_no_decision", on: "timeout" },
     ],
-  };
+  }, language, PURCHASE_REQUEST, { approver: a.approver });
 }
 
 const TITLES: Record<string, string> = {
@@ -107,13 +109,13 @@ const TITLES: Record<string, string> = {
 };
 
 /** Every message a submission can lead to, worked out with the worker's resolver. Pure: nothing is recorded or sent. */
-export function previewPurchaseRequest(answers: PurchaseRequestAnswers, sample: Record<string, string>) {
+export function previewPurchaseRequest(answers: PurchaseRequestAnswers, sample: Record<string, string>, language: Language = "en") {
   const reference = "PUR-SAMPLE";
   const ctx = { trigger: { ...sample, reference }, steps: {} };
   const text = (t: string) => String(resolveTemplate(t, ctx) ?? "");
   const messages: { title: string; via: string; to: string; subject: string; text: string }[] = [];
   let teamsMessage: string | undefined;
-  for (const s of purchaseRequestDefinition(answers).steps) {
+  for (const s of purchaseRequestDefinition(answers, language).steps) {
     if (s.type === "teams") teamsMessage = text(s.config.text);
     if (s.type === "email" || s.type === "outlook") {
       messages.push({ title: TITLES[s.id]!, via: s.type === "outlook" ? "Outlook" : "Email", to: text(s.config.to), subject: text(s.config.subject), text: text(s.config.text) });

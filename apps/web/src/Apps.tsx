@@ -1,3 +1,4 @@
+import { Text, useLanguage } from "./Language";
 import { useEffect, useState, type ReactNode } from "react";
 import { api } from "./api";
 import { PILL, SenderSection, type Settings } from "./BusinessSetup";
@@ -20,6 +21,7 @@ const APPS: { key: Key; name: string; line: string }[] = [
  * cards. The Outlook consent callback (#/settings/business/outlook-<code>) lands here with Outlook open.
  */
 export function AppsPage({ outlookOutcome }: { outlookOutcome?: string }) {
+  const { t } = useLanguage();
   const [mail, setMail] = useState<Settings | null>(null);
   const [conns, setConns] = useState<{ connections: Connection[]; outlook: OutlookSetup } | null>(null);
   const [error, setError] = useState("");
@@ -41,7 +43,7 @@ export function AppsPage({ outlookOutcome }: { outlookOutcome?: string }) {
     document.getElementById("app-setup")?.scrollIntoView({ block: "start" });
   }, [open]);
 
-  if (!mail || !conns) return <main className="page">{error ? <p role="alert" className="message error">{error}</p> : <p>Loading…</p>}</main>;
+  if (!mail || !conns) return <main className="page">{error ? <p role="alert" className="message error">{error}</p> : <p>{t("Loading…")}</p>}</main>;
   const conn = (p: Provider) => conns.connections.find((c) => c.provider === p) ?? null;
   const state = (key: Key): string | null => {
     if (key === "gmail") return mail.sender && mail.sender.status !== "disconnected" ? PILL[mail.sender.status] : null;
@@ -70,12 +72,12 @@ export function AppsPage({ outlookOutcome }: { outlookOutcome?: string }) {
         </span>
         <div className="app-text">
           <h3>{a.name}</h3>
-          <p className="muted">{a.line}</p>
+          <p className="muted">{t(a.line)}</p>
         </div>
         <div className="actions">
-          {s && <span className={`tag${s === "Connected" ? " ok" : ""}`}>{s}</span>}
+          {s && <span className={`tag${s === "Connected" ? " ok" : ""}`}>{t(s)}</span>}
           <button type="button" aria-expanded={open === a.key} aria-controls="app-setup" onClick={() => setOpen(open === a.key ? null : a.key)}>
-            {open === a.key ? "Close" : s ? "Manage" : "Connect"}
+            {open === a.key ? t("Close") : s ? t("Manage") : t("Connect")}
             <span className="visually-hidden"> {a.name}</span>
           </button>
         </div>
@@ -85,42 +87,40 @@ export function AppsPage({ outlookOutcome }: { outlookOutcome?: string }) {
 
   return (
     <main className="page">
-      <Header title="Apps" />
-      <p className="muted">Everything here is optional. Each app is used only by the automations you turn on, and the demo works without any of them.</p>
+      <Header title={t("Apps")} />
+      <p className="muted">{t("Everything here is optional. Each app is used only by the automations you turn on, and the demo works without any of them.")}</p>
       <section aria-labelledby="email-in-setup">
-        <h2 id="email-in-setup">Receive website form emails</h2>
-        <p>Connect a dedicated IMAP mailbox in an automation's Steps tab. Under Starts when, choose An email arrives, then connect the mailbox. Each automation has its own inbox settings.</p>
-        <a href="#/">Choose an automation</a>
+        <h2 id="email-in-setup"><Text>Receive website form emails</Text></h2>
+        <p>{t("Connect a dedicated IMAP mailbox in an automation's Steps tab. Under Starts when, choose An email arrives, then connect the mailbox. Each automation has its own inbox settings.")}</p>
+        <a href="#/"><Text>Choose an automation</Text></a>
       </section>
       <div className="filters">
-        <div className="actions" role="group" aria-label="Show">
-          <button type="button" aria-pressed={!onlyConnected} onClick={() => setOnlyConnected(false)}>
-            All {APPS.length}
+        <div className="actions" role="group" aria-label={t("Show")}>
+          <button type="button" aria-pressed={!onlyConnected} onClick={() => setOnlyConnected(false)}>{t("All {count}", { count: APPS.length })}
           </button>
-          <button type="button" aria-pressed={onlyConnected} onClick={() => setOnlyConnected(true)}>
-            Connected {total}
+          <button type="button" aria-pressed={onlyConnected} onClick={() => setOnlyConnected(true)}>{t("Connected {count}", { count: total })}
           </button>
         </div>
         <div className="field">
-          <label htmlFor="app-find">Find an app</label>
+          <label htmlFor="app-find"><Text>Find an app</Text></label>
           <input id="app-find" type="search" value={query} onChange={(e) => setQuery(e.target.value)} />
         </div>
       </div>
       {connected.length > 0 && (
         <section aria-labelledby="apps-connected">
-          <h2 id="apps-connected">Connected</h2>
+          <h2 id="apps-connected"><Text>Connected</Text></h2>
           <ul className="apps">{connected.map(card)}</ul>
         </section>
       )}
       {!onlyConnected && more.length > 0 && (
         <section aria-labelledby="apps-more">
-          <h2 id="apps-more">More</h2>
+          <h2 id="apps-more"><Text>More</Text></h2>
           <ul className="apps">{more.map(card)}</ul>
         </section>
       )}
-      {(onlyConnected ? connected : found).length === 0 && <p className="muted">{onlyConnected && total === 0 ? "Nothing is connected yet." : "No app matches."}</p>}
+      {(onlyConnected ? connected : found).length === 0 && <p className="muted">{onlyConnected && total === 0 ? t("Nothing is connected yet.") : t("No app matches.")}</p>}
       {open && (
-        <section id="app-setup" className="app-setup" aria-label={`${APPS.find((a) => a.key === open)!.name} setup`}>
+        <section id="app-setup" className="app-setup" aria-label={t("{app} setup", { app: APPS.find((a) => a.key === open)!.name })}>
           {setup[open]()}
         </section>
       )}

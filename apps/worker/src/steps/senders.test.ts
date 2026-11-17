@@ -83,6 +83,24 @@ it("sends approval mail from the owner's account too", async () => {
   expect(gmail.messages.at(-1)).toMatchObject({ user: "ben.clinic@gmail.com", to: ["manager@example.com"] });
 });
 
+it("localizes approval instructions and keeps saved email content after the owner switches language", async () => {
+  const userId = await owner("tagalog@test.local");
+  await db.update(users).set({ language: "tl" }).where(eq(users.id, userId));
+  const [wf] = await db.insert(workflows).values({ userId, name: "English authored name", slug: "language" }).returning();
+  const [v] = await db.insert(workflowVersions).values({ workflowId: wf!.id, version: 1, definition: {} }).returning();
+  const [r] = await db.insert(runs).values({ workflowVersionId: v!.id }).returning();
+  const [sr] = await db.insert(stepRuns).values({ runId: r!.id, stepId: "ask", attempt: 1 }).returning();
+  const ask: Step = { id: "ask", type: "approval", config: { to: "manager@example.com", subject: "English subject", message: "Keep this English message", timeoutSeconds: 3600 } };
+  await run(userId, ask, { stepRunId: sr!.id });
+  const raw = installation.messages.at(-1)!.raw.replace(/=\r?\n/g, "");
+  expect(raw).toContain("Subject: English subject");
+  expect(raw).toContain("Keep this English message");
+  expect(raw).toContain("I-approve o tanggihan dito");
+  await run(userId, receipt);
+  expect(installation.messages.at(-1)!.raw).toContain("Subject: Thanks");
+  expect(installation.messages.at(-1)!.raw).toContain("We got it.");
+});
+
 it("disconnecting one owner blocks only that owner, without falling back to the installation server", async () => {
   await disconnectGmail(db, ana);
   const counts = [gmail.messages.length, installation.messages.length];

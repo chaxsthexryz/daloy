@@ -1,3 +1,4 @@
+import { Text, useLanguage } from "./Language";
 import { useEffect, useState, type FormEvent } from "react";
 import { api } from "./api";
 
@@ -7,6 +8,7 @@ const when = (iso: string | null) => (iso ? new Date(iso).toLocaleString() : "ne
 
 /** API tokens for MCP clients. The API returns a new token once; only its hash is stored. */
 export function TokensPage() {
+  const { t } = useLanguage();
   const [list, setList] = useState<Token[] | null>(null);
   const [name, setName] = useState("");
   const [created, setCreated] = useState<{ name: string; token: string } | null>(null);
@@ -27,11 +29,11 @@ export function TokensPage() {
       setError((err as Error).message);
     }
   };
-  const revoke = async (t: Token) => {
-    if (!confirm(`Revoke "${t.name}"? Clients using it stop working.`)) return;
+  const revoke = async (token: Token) => {
+    if (!confirm(t('Revoke "{name}"? Clients using it stop working.', { name: token.name }))) return;
     setError("");
     try {
-      await api("DELETE", `/tokens/${t.id}`);
+      await api("DELETE", `/tokens/${token.id}`);
       await load();
     } catch (err) {
       setError((err as Error).message);
@@ -41,26 +43,24 @@ export function TokensPage() {
   return (
     <main className="page">
       <header className="toolbar plain">
-        <a href="#/advanced">Advanced</a>
-        <h1>API tokens</h1>
+        <a href="#/advanced">{t("Advanced")}</a>
+        <h1><Text>API tokens</Text></h1>
       </header>
-      <p>
-        MCP clients connect to <code>{location.origin}/mcp</code> with <code>Authorization: Bearer &lt;token&gt;</code>. Each published workflow with a form
-        trigger is a tool, plus <code>get_run_status</code>.
+      <p>{t("MCP clients connect to ")}<code>{location.origin}/mcp</code>{t(" with ")}<code>Authorization: Bearer &lt;token&gt;</code>{t(". Each published workflow with a form trigger is a tool, plus ")}<code>get_run_status</code>.
       </p>
       <form onSubmit={create} className="create">
-        <h2>New token</h2>
+        <h2>{t("New token")}</h2>
         <div className="row">
           <div className="field">
-            <label htmlFor="token-name">Name</label>
+            <label htmlFor="token-name"><Text>Name</Text></label>
             <input id="token-name" value={name} onChange={(e) => setName(e.target.value)} required maxLength={100} placeholder="Claude Desktop" />
           </div>
-          <button className="primary">Create token</button>
+          <button className="primary">{t("Create token")}</button>
         </div>
         {created && (
           <div role="status">
-            <p className="message ok">Copy the token for {created.name} now. It is not shown again.</p>
-            <pre className="token" aria-label="New token">
+            <p className="message ok">{t("Copy the token for {name} now. It is not shown again.", { name: created.name })}</p>
+            <pre className="token" aria-label={t("New token")}>
               {created.token}
             </pre>
           </div>
@@ -69,35 +69,33 @@ export function TokensPage() {
           {error}
         </p>
       </form>
-      <h2>Your tokens</h2>
+      <h2>{t("Your tokens")}</h2>
       {list === null ? (
-        <p>Loading…</p>
+        <p><Text>Loading…</Text></p>
       ) : list.length === 0 ? (
-        <p className="muted">None yet.</p>
+        <p className="muted">{t("None yet.")}</p>
       ) : (
         <div className="table-wrap">
           <table className="table">
             <thead>
               <tr>
-                <th scope="col">Name</th>
-                <th scope="col">Created</th>
-                <th scope="col">Last used</th>
-                <th scope="col">Status</th>
+                <th scope="col"><Text>Name</Text></th>
+                <th scope="col">{t("Created")}</th>
+                <th scope="col">{t("Last used")}</th>
+                <th scope="col"><Text>Status</Text></th>
               </tr>
             </thead>
             <tbody>
-              {list.map((t) => (
-                <tr key={t.id}>
-                  <td>{t.name}</td>
-                  <td>{when(t.createdAt)}</td>
-                  <td>{when(t.lastUsedAt)}</td>
+              {list.map((token) => (
+                <tr key={token.id}>
+                  <td>{token.name}</td>
+                  <td>{when(token.createdAt)}</td>
+                  <td>{token.lastUsedAt ? when(token.lastUsedAt) : t("never")}</td>
                   <td>
-                    {t.revokedAt ? (
-                      <span className="muted">Revoked {when(t.revokedAt)}</span>
+                    {token.revokedAt ? (
+                      <span className="muted">{t("Revoked ")}{when(token.revokedAt)}</span>
                     ) : (
-                      <button type="button" onClick={() => revoke(t)} aria-label={`Revoke ${t.name}`}>
-                        Revoke
-                      </button>
+                      <button type="button" onClick={() => revoke(token)} aria-label={t("Revoke {name}", { name: token.name })}>{t("Revoke")}</button>
                     )}
                   </td>
                 </tr>

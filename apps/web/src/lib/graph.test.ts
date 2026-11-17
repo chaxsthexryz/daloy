@@ -111,3 +111,23 @@ describe("layout and toFlow", () => {
     expect(flow.edges).toContainEqual(expect.objectContaining({ source: "condition_1", target: "http_1", sourceHandle: "true", label: "true" }));
   });
 });
+
+
+describe("localized diagram labels", () => {
+  it("keeps graph ids and branch handles stable", () => {
+    const draft = addStep(blankDraft(), "condition").draft;
+    const withEmail = addStep(draft, "email", { id: "condition_1", on: "true" }).draft;
+    const translated = toFlow(withEmail, null, undefined, "tl");
+    expect(translated.nodes[0]?.ariaLabel).toBe("Simula: manual");
+    expect(translated.edges[1]).toMatchObject({ sourceHandle: "true", label: "oo" });
+    expect(translated.nodes[1]?.id).toBe("condition_1");
+    expect(toFlow(withEmail, null).edges[1]?.label).toBe("true");
+  });
+});
+
+
+it("localizes newly added defaults while keeping config identifiers stable", () => {
+  const draft = addStep(blankDraft(), "email", undefined, "tl").draft;
+  expect(draft.steps[0]?.config).toMatchObject({ to: "{{trigger.email}}", subject: "Kumusta", text: "Kumusta, salamat sa pakikipag-ugnayan." });
+  expect(addStep(blankDraft(), "email").draft.steps[0]?.config).toMatchObject({ subject: "Hello" });
+});
