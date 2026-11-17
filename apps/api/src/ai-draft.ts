@@ -1,4 +1,4 @@
-import { aiConnection, type Db } from "@daloy/db";
+import { aiConnection, claimUsage, QuotaError, type Db } from "@daloy/db";
 import { draftPrompt, lintDefinition, parseDraftReply, type WorkflowDefinition } from "@daloy/engine";
 import { generate, type Message } from "@daloy/llm-ts";
 import { Body, Controller, HttpCode, HttpException, HttpStatus, Inject, Post, UseGuards } from "@nestjs/common";
@@ -26,6 +26,10 @@ export class AiDraftController {
   @UseGuards(RateLimit(10))
   async draft(@CurrentUser() user: SessionUser, @Body(new ZodPipe(draftInput)) body: z.output<typeof draftInput>) {
     const { model, ...connection } = await aiConnection(this.db, this.config.secretsKey, user.workspaceId);
+    // One request is one AI action, whatever the second try below does.
+    await claimUsage(this.db, user.workspaceId, "ai").catch((err: unknown) => {
+      throw err instanceof QuotaError ? new HttpException({ message: err.message }, HttpStatus.TOO_MANY_REQUESTS) : err;
+    });
     const prompt = draftPrompt(body);
     const messages: Message[] = [...prompt.messages];
     let errors: string[] = [];

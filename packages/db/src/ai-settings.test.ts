@@ -11,7 +11,7 @@ let db: Db;
 let pool: Pool;
 const key = randomBytes(32);
 let seq = 0;
-const newUser = async () => (await db.insert(users).values({ email: `ai${++seq}@test.local`, passwordHash: "x" }).returning())[0]!.id;
+const newUser = async (plan: "pilot" | null = "pilot") => (await db.insert(users).values({ email: `ai${++seq}@test.local`, passwordHash: "x", plan }).returning())[0]!.id;
 
 beforeAll(async () => {
   ({ db, pool } = await freshDatabase());
@@ -44,6 +44,20 @@ it("sends the operator's key for the env connection only with SHARED_LLM_KEY=ope
   expect((await aiConnection(db, key, userId)).apiKey).toBe("env-key");
   vi.stubEnv("SHARED_LLM_KEY", "off");
   expect((await aiConnection(db, key, userId)).apiKey).toBeUndefined();
+});
+
+it("keeps the operator's key from a workspace without a plan, and leaves its own key and a local model alone", async () => {
+  vi.stubEnv("LLM_API_KEY", "env-key");
+  vi.stubEnv("SHARED_LLM_KEY", "open");
+  const userId = await newUser(null);
+  expect((await aiConnection(db, key, userId)).apiKey).toBeUndefined();
+  await saveAiSettings(db, key, userId, { preset: "local", model: "llama3.2" });
+  expect((await aiConnection(db, key, userId)).apiKey).toBeUndefined();
+  await saveAiSettings(db, key, userId, { preset: "openai", model: "gpt-x", apiKey: "sk-own" });
+  expect((await aiConnection(db, key, userId)).apiKey).toBe("sk-own");
+  await db.update(users).set({ plan: "pilot" }).where(eq(users.id, userId));
+  await saveAiSettings(db, key, userId, { preset: "local", model: "llama3.2" });
+  expect((await aiConnection(db, key, userId)).apiKey).toBe("env-key");
 });
 
 it("uses the fixed Gemini URL and the saved, encrypted key", async () => {

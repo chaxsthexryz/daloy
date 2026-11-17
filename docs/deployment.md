@@ -42,7 +42,7 @@ TRUST_PROXY=1
 SECURE_COOKIES=true
 # Only the owner's approved workspaces may send through the installation's SMTP server.
 SHARED_MAIL=approved
-# Accounts bring their own AI key.
+# Accounts bring their own AI key. With open, only workspaces with a plan can use LLM_API_KEY.
 SHARED_LLM_KEY=off
 # For the public demo: the only hosts HTTP steps may call.
 HTTP_ALLOWED_HOSTS=<comma list>
