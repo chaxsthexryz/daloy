@@ -66,8 +66,11 @@ test("an owner starts from the top button, narrows the list, deletes a draft and
   expect(h.y).toBeLessThan(d.y);
 
   // The run's error is shown without the step id; the full text stays for a technician.
+  // The raw error shows first and N10a's "Why it stopped" panel replaces it once the explanation loads, so wait for that load.
+  const explained = page.waitForResponse((r) => r.url().includes(`/runs/${run.id}/explanation`), { timeout: 30_000 });
   await page.goto(`/#/runs/${run.id}`);
-  const error = page.locator("main > .message.error");
+  await explained;
+  const error = page.locator('section[aria-label="Why it stopped"], main > .message.error').first();
   await expect(error).toBeVisible({ timeout: 30_000 });
   await expect(error).not.toContainText("step check:");
   await expect(page.getByText("Retry runs the failed step again.")).toBeVisible();
