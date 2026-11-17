@@ -27,6 +27,7 @@ export class ProviderError extends Error {
 export type ProviderUrls = {
   googleToken: string;
   sheets: string;
+  calendar: string;
   slack: string;
   telegram: string;
   microsoftLogin?: string;
@@ -41,6 +42,7 @@ const trim = (url: string) => url.replace(/\/+$/, "");
 export const providerUrls = (env: NodeJS.ProcessEnv = process.env): ProviderUrls => ({
   googleToken: env.GOOGLE_TOKEN_URL ?? "https://oauth2.googleapis.com/token",
   sheets: trim(env.GOOGLE_SHEETS_URL ?? "https://sheets.googleapis.com"),
+  calendar: trim(env.GOOGLE_CALENDAR_URL ?? "https://www.googleapis.com"),
   slack: trim(env.SLACK_API_URL ?? "https://slack.com"),
   telegram: trim(env.TELEGRAM_API_URL ?? "https://api.telegram.org"),
   microsoftLogin: trim(env.MICROSOFT_LOGIN_URL ?? "https://login.microsoftonline.com"),
@@ -98,23 +100,24 @@ export function spreadsheetIdFrom(input: string): string | null {
   return /^[\w-]{10,100}$/.test(id) ? id : null;
 }
 
-const SCOPE = "https://www.googleapis.com/auth/spreadsheets";
+const SHEETS_SCOPE = "https://www.googleapis.com/auth/spreadsheets";
+const CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar.events";
 // Access tokens by key, in memory. ponytail: per process, so the API and the worker each fetch their own; fine at this scale.
 const tokenCache = new Map<string, { token: string; expiresAt: number }>();
-const cacheKey = (sa: ServiceAccount) => createHash("sha256").update(`${sa.client_email}\n${sa.private_key}`).digest("hex");
+const cacheKey = (sa: ServiceAccount, scope = SHEETS_SCOPE) => createHash("sha256").update(`${scope}\n${sa.client_email}\n${sa.private_key}`).digest("hex");
 
 /** The OAuth JWT bearer grant for service accounts: a signed assertion swapped for a one-hour access token. */
-async function accessToken(urls: ProviderUrls, sa: ServiceAccount): Promise<string> {
-  const cached = tokenCache.get(cacheKey(sa));
+async function accessToken(urls: ProviderUrls, sa: ServiceAccount, scope = SHEETS_SCOPE): Promise<string> {
+  const cached = tokenCache.get(cacheKey(sa, scope));
   if (cached && cached.expiresAt > Date.now() + 60_000) return cached.token;
   const now = Math.floor(Date.now() / 1000);
   const part = (o: object) => Buffer.from(JSON.stringify(o)).toString("base64url");
-  const unsigned = `${part({ alg: "RS256", typ: "JWT" })}.${part({ iss: sa.client_email, scope: SCOPE, aud: urls.googleToken, iat: now, exp: now + 3600 })}`;
+  const unsigned = `${part({ alg: "RS256", typ: "JWT" })}.${part({ iss: sa.client_email, scope, aud: urls.googleToken, iat: now, exp: now + 3600 })}`;
   let signature: string;
   try {
     signature = createSign("RSA-SHA256").update(unsigned).sign(sa.private_key, "base64url");
   } catch {
-    throw new ProviderError("The service account key could not be read. Connect Google Sheets again with a new key file.", "auth");
+    throw new ProviderError("The service account key could not be read. Connect Google again with a new key file.", "auth");
   }
   const body = new URLSearchParams({ grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer", assertion: `${unsigned}.${signature}` });
   const res = await call(urls.googleToken, { method: "POST", body }, urls.timeoutMs ?? 10_000, false, "Google sign-in");
@@ -123,7 +126,7 @@ async function accessToken(urls: ProviderUrls, sa: ServiceAccount): Promise<stri
   }
   if (res.status !== 200 || typeof res.body.access_token !== "string") throw new ProviderError(`Google sign-in answered ${res.status}. Daloy will try again.`, "unavailable");
   const expiresIn = typeof res.body.expires_in === "number" ? res.body.expires_in : 3600;
-  tokenCache.set(cacheKey(sa), { token: res.body.access_token, expiresAt: Date.now() + expiresIn * 1000 });
+  tokenCache.set(cacheKey(sa, scope), { token: res.body.access_token, expiresAt: Date.now() + expiresIn * 1000 });
   return res.body.access_token;
 }
 
@@ -146,7 +149,7 @@ async function sheets(urls: ProviderUrls, sa: ServiceAccount, path: string, init
     const res = await call(`${urls.sheets}${path}`, { ...init, headers: { ...init.headers, authorization: `Bearer ${token}` } }, urls.timeoutMs ?? 10_000, write, "Google Sheets");
     if (res.status === 200) return res.body;
     if (res.status === 401 && tries === 0) {
-      tokenCache.delete(cacheKey(sa));
+      tokenCache.delete(cacheKey(sa, SHEETS_SCOPE));
       continue;
     }
     throw sheetsFailure(res, sa, write);
@@ -230,6 +233,99 @@ export async function appendRowOnce(urls: ProviderUrls, sa: ServiceAccount, dest
 export async function deleteSheetMarker(urls: ProviderUrls, sa: ServiceAccount, spreadsheetId: string, key: SheetWriteKey) {
   const requests = [{ deleteDeveloperMetadata: { dataFilter: { developerMetadataLookup: { metadataId: key.id, metadataKey: MARKER_KEY, metadataValue: key.value } } } }];
   await sheets(urls, sa, `/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}:batchUpdate`, { method: "POST", headers: json, body: JSON.stringify({ requests }) }, false);
+}
+
+// ---------------------------------------------------------------- Google Calendar
+
+export type CalendarDestination = { calendarId: string; title: string };
+
+/** A calendar id (an address, or a long id ending in @group.calendar.google.com), as shown in the calendar's settings. */
+export function calendarIdFrom(input: string): string | null {
+  const id = input.trim();
+  return /^[\w.+%-]{3,200}@[\w.-]{3,100}$/.test(id) ? id : null;
+}
+
+/**
+ * The Calendar event id for a booking. Google accepts an id chosen by the caller (base32hex: a-v and 0-9) and answers 409
+ * when it exists, so creating the event twice is impossible whatever retries happen (decision 0043).
+ */
+export const calendarEventId = (bookingId: string) => `dl${createHash("sha256").update(bookingId).digest("hex").slice(0, 40)}`;
+
+function calendarFailure(res: Reply, sa: ServiceAccount, write: boolean): ProviderError {
+  const error = (res.body.error ?? {}) as { message?: unknown; errors?: { reason?: unknown }[] };
+  const message = String(error.message ?? "");
+  const share = `Share the calendar with ${sa.client_email} and choose "Make changes to events".`;
+  if (res.status === 401) return new ProviderError("Google did not accept Daloy's access. Connect Google Calendar again.", "auth");
+  if (res.status === 429 || (res.status === 403 && /rateLimitExceeded|quotaExceeded/i.test(String(error.errors?.[0]?.reason ?? "")))) {
+    return new ProviderError("Google Calendar is limiting requests right now. Daloy will try again.", "quota", retryAfter(res.headers));
+  }
+  if (res.status === 403) return new ProviderError(`Google Calendar refused access. ${share}${message ? ` Google said: ${message}` : ""}`, "permission");
+  if (res.status === 404) return new ProviderError(`The calendar or event was not found. Check the calendar id, and ${share.charAt(0).toLowerCase()}${share.slice(1)}`, "permission");
+  if (res.status >= 500) return new ProviderError(`Google Calendar answered ${res.status}.`, write ? "ambiguous" : "unavailable");
+  return new ProviderError(`Google Calendar rejected the request${message ? `: ${message}` : ` (${res.status})`}.`, "invalid");
+}
+
+/** A Calendar API call with the cached token. Statuses in `accept` come back to the caller instead of failing. */
+async function calendar(urls: ProviderUrls, sa: ServiceAccount, path: string, init: RequestInit, write: boolean, accept: number[] = []): Promise<Reply> {
+  for (let tries = 0; ; tries++) {
+    const token = await accessToken(urls, sa, CALENDAR_SCOPE);
+    const res = await call(`${urls.calendar}${path}`, { ...init, headers: { ...init.headers, authorization: `Bearer ${token}` } }, urls.timeoutMs ?? 10_000, write, "Google Calendar");
+    if (res.status === 200 || res.status === 204 || accept.includes(res.status)) return res;
+    if (res.status === 401 && tries === 0) {
+      tokenCache.delete(cacheKey(sa, CALENDAR_SCOPE));
+      continue;
+    }
+    throw calendarFailure(res, sa, write);
+  }
+}
+
+const eventsPath = (calendarId: string) => `/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events`;
+
+/** The calendar's title, to check access when connecting. Reads only. */
+export async function calendarInfo(urls: ProviderUrls, sa: ServiceAccount, calendarId: string) {
+  const res = await calendar(urls, sa, `${eventsPath(calendarId)}?maxResults=1&fields=summary`, {}, false);
+  return { title: String(res.body.summary ?? calendarId) };
+}
+
+/**
+ * Proves Daloy can write: creates a one-hour event tomorrow under a one-off id and deletes it again. A calendar shared
+ * as "see all event details" passes the read check but fails here.
+ */
+export async function calendarWriteTest(urls: ProviderUrls, sa: ServiceAccount, calendarId: string) {
+  const eventId = `dltest${createHash("sha256").update(String(Math.random()) + Date.now()).digest("hex").slice(0, 20)}`;
+  const start = new Date(Date.now() + 24 * 3600_000);
+  const body = { id: eventId, summary: "Test event from Daloy", start: { dateTime: start.toISOString() }, end: { dateTime: new Date(start.getTime() + 3600_000).toISOString() } };
+  await calendar(urls, sa, eventsPath(calendarId), { method: "POST", headers: json, body: JSON.stringify(body) }, true);
+  await calendar(urls, sa, `${eventsPath(calendarId)}/${eventId}`, { method: "DELETE" }, true, [404, 410]);
+  return { created: true, deleted: true };
+}
+
+export type CalendarBooking = { status: "active" | "cancelled"; start: Date; end: Date; timezone: string };
+export type CalendarContent = { title: string; description: string };
+
+/**
+ * Makes the calendar match the booking as it is now. Active: insert the event under the booking's own id; a 409 means it
+ * exists, so patch it to the current title and times (status "confirmed" also restores one that was deleted by hand).
+ * Cancelled: delete it; already gone (404, 410) is fine. Each branch can be repeated at any time with the same result,
+ * so a retry after a lost answer is always safe (decision 0043). Times are sent in UTC with the booking's own zone.
+ */
+export async function syncCalendarEvent(urls: ProviderUrls, sa: ServiceAccount, calendarId: string, bookingId: string, b: CalendarBooking, content: CalendarContent): Promise<{ event: "created" | "updated" | "deleted"; eventId: string }> {
+  const eventId = calendarEventId(bookingId);
+  const base = eventsPath(calendarId);
+  if (b.status === "cancelled") {
+    await calendar(urls, sa, `${base}/${eventId}`, { method: "DELETE" }, true, [404, 410]);
+    return { event: "deleted", eventId };
+  }
+  const fields = {
+    summary: content.title,
+    description: content.description,
+    start: { dateTime: b.start.toISOString(), timeZone: b.timezone },
+    end: { dateTime: b.end.toISOString(), timeZone: b.timezone },
+  };
+  const made = await calendar(urls, sa, base, { method: "POST", headers: json, body: JSON.stringify({ id: eventId, ...fields }) }, true, [409]);
+  if (made.status !== 409) return { event: "created", eventId };
+  await calendar(urls, sa, `${base}/${eventId}`, { method: "PATCH", headers: json, body: JSON.stringify({ ...fields, status: "confirmed" }) }, true);
+  return { event: "updated", eventId };
 }
 
 // ---------------------------------------------------------------- Slack

@@ -40,3 +40,14 @@ Not run yet. The automated tests use a fake Bot API.
 4. Add a Telegram step to an automation, turn it on, and run it. Expect one message and a delivered state on the request.
 5. Remove the bot from the group and run again. Expect the delivery failed with "The bot cannot message that chat". Add it back, select Retry, expect one message.
 6. In BotFather send /revoke, then run again. Expect "Telegram no longer accepts the bot token" and the card showing Needs reconnecting.
+
+## Google Calendar (N13)
+
+Not run yet. The automated tests use a fake Calendar API. You need a Google Cloud project with the Calendar API turned on, a service account with a JSON key (the Sheets one works), and a test calendar.
+
+1. In Google Calendar, create a test calendar. In its settings, share it with the service account's email and choose Make changes to events. Copy its calendar id (Integrate calendar).
+2. In Apps, open Google Calendar, paste the key file and the calendar id, select Connect Google Calendar. Expect the calendar's name. Select Add a test event. Expect "Google Calendar accepted a test event" and no test event left on the calendar.
+3. Build an automation with a booking step and, after it, an Add to Google Calendar step (title "Massage for {{trigger.guest}}"), turn it on, and make a booking. Expect one event on the calendar at the booked time, in the time zone you chose. The request shows the delivery as delivered.
+4. On Bookings, reschedule it. Expect the same event, not a new one, at the new time.
+5. Cancel it. Expect the event to disappear, and no reminder email for it.
+6. Stop sharing the calendar and make another booking. Expect the delivery failed with the address to share the calendar with. Share it again and select Retry. Expect one event.

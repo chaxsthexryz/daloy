@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { api } from "./api";
 
-export type Provider = "google_sheets" | "slack" | "outlook" | "teams" | "telegram";
+export type Provider = "google_sheets" | "slack" | "outlook" | "teams" | "telegram" | "google_calendar";
 export type Connection = { provider: Provider; status: "active" | "failed"; account: string; destination: Record<string, string> | null; lastError: string | null; lastTestedAt: string | null };
 type TestResult = { ok: true; range?: string; channel?: string } | { ok: false; error: string };
 export type OutlookSetup = { configured: boolean; adminConsentUrl?: string };
@@ -142,6 +142,95 @@ export function SheetsConnection({ conn, onChange }: { conn: Connection | null; 
           <div className="actions">
             <button type="submit" className="primary" disabled={busy}>
               {conn ? "Save sheet" : "Connect Google Sheets"}
+            </button>
+            {conn && (
+              <button type="button" className="quiet" onClick={() => setEditing(false)}>
+                Cancel
+              </button>
+            )}
+          </div>
+        </form>
+      )}
+      <p role="alert" className="message error" hidden={!error}>
+        {error}
+      </p>
+    </div>
+  );
+}
+
+export function CalendarConnection({ conn, onChange }: { conn: Connection | null; onChange: () => Promise<unknown> }) {
+  const { error, busy, act } = useAction(onChange);
+  const [editing, setEditing] = useState(false);
+  const [test, setTest] = useState<TestResult | null>(null);
+  const [form, setForm] = useState({ serviceAccount: "", calendar: "" });
+  // The key file names the account to share the calendar with. Read here only to show it; the file is sent once, on save.
+  let shareWith = conn?.account ?? "";
+  try {
+    shareWith = (JSON.parse(form.serviceAccount) as { client_email?: string }).client_email ?? shareWith;
+  } catch {
+    // not pasted yet
+  }
+  const save = (e: FormEvent) => {
+    e.preventDefault();
+    void act(async () => {
+      await api("PUT", "/settings/connections/google-calendar", form);
+      setForm({ serviceAccount: "", calendar: "" });
+      setEditing(false);
+      setTest(null);
+    });
+  };
+  const showForm = !conn || editing;
+
+  return (
+    <div className="connection" aria-labelledby="calendar-h">
+      <h3 id="calendar-h">Google Calendar</h3>
+      {conn && <Status conn={conn} label="Service account" />}
+      {conn?.destination && (
+        <p>
+          Events go to <strong>{conn.destination.title}</strong>. An event follows its booking: moved when the booking is rescheduled, deleted when it is cancelled.
+        </p>
+      )}
+      {conn && (
+        <div className="actions">
+          <button type="button" disabled={busy} onClick={() => void act(async () => setTest(await api<TestResult>("POST", "/settings/connections/google-calendar/test")))}>
+            Add a test event
+          </button>
+          {!editing && (
+            <button type="button" className="quiet" onClick={() => setEditing(true)}>
+              Change calendar or key
+            </button>
+          )}
+          <button type="button" className="quiet" disabled={busy} onClick={() => window.confirm("Disconnect Google Calendar? Events stop following their bookings until you reconnect.") && void act(() => api("DELETE", "/settings/connections/google-calendar"))}>
+            Disconnect
+          </button>
+        </div>
+      )}
+      <Outcome test={test} what="Google Calendar accepted a test event" />
+      {showForm && (
+        <form onSubmit={save}>
+          <p>
+            Daloy writes as a Google Cloud service account, so no personal Google sign-in is stored. Create a service account in a Google Cloud project with the Google Calendar API
+            turned on, add a JSON key, then share your calendar with the account's email and choose Make changes to events.{" "}
+            <a href={SERVICE_ACCOUNT_HELP} target="_blank" rel="noreferrer">
+              How to create a service account
+            </a>
+          </p>
+          <div className="field">
+            <label htmlFor="c-key">Service account key file (JSON)</label>
+            <textarea id="c-key" rows={4} value={form.serviceAccount} onChange={(e) => setForm({ ...form, serviceAccount: e.target.value })} required autoComplete="off" spellCheck={false} />
+          </div>
+          {shareWith && (
+            <p className="muted">
+              Share the calendar with <code>{shareWith}</code> and choose Make changes to events.
+            </p>
+          )}
+          <div className="field">
+            <label htmlFor="c-id">Calendar id</label>
+            <input id="c-id" value={form.calendar} onChange={(e) => setForm({ ...form, calendar: e.target.value })} required placeholder="abc123@group.calendar.google.com" />
+          </div>
+          <div className="actions">
+            <button type="submit" className="primary" disabled={busy}>
+              {conn ? "Save calendar" : "Connect Google Calendar"}
             </button>
             {conn && (
               <button type="button" className="quiet" onClick={() => setEditing(false)}>
@@ -495,7 +584,7 @@ export type Delivery = {
   lastError: string | null;
 };
 
-const NAMES: Record<Provider, string> = { google_sheets: "Sheet row", slack: "Slack note", outlook: "Outlook email", teams: "Teams note", telegram: "Telegram message" };
+const NAMES: Record<Provider, string> = { google_sheets: "Sheet row", slack: "Slack note", outlook: "Outlook email", teams: "Teams note", telegram: "Telegram message", google_calendar: "Calendar event" };
 const sent = (p: Provider) => (p === "outlook" ? "sent" : "posted");
 
 function describe(d: Delivery): string {
@@ -509,6 +598,7 @@ function describe(d: Delivery): string {
       // Older rows carry the range they were written to; newer ones the tab (decision 0021).
       if (d.result?.reconciled) return `already in the sheet (${String(d.result.sheet ?? d.result.range)}), not written twice`;
       if (d.provider === "google_sheets") return `added to ${String(d.result?.sheet ?? d.result?.range ?? "the sheet")}`;
+      if (d.provider === "google_calendar") return d.result?.event === "deleted" ? "event removed from the calendar" : d.result?.event === "updated" ? "event updated on the calendar" : "event added to the calendar";
       if (d.provider === "outlook") return `sent to ${String(d.result?.to ?? "")}`;
       return d.provider === "teams" ? "accepted by Teams" : "posted";
     case "needs_review":

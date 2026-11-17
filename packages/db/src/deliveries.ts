@@ -3,8 +3,9 @@ import { backoffDelayMs, type RetryPolicy } from "@daloy/engine";
 import { and, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { connectionCredential, markConnectionFailed, PROVIDER_NAMES, rotateInto } from "./connections";
 import type { Db } from "./index";
-import { appendRowOnce, deleteSheetMarker, outlookSend, ProviderError, serviceAccountSchema, slackPost, teamsPost, telegramSend, type OutlookMessage, type ProviderErrorKind, type ProviderUrls, type SheetDestination } from "./providers";
+import { appendRowOnce, deleteSheetMarker, outlookSend, ProviderError, serviceAccountSchema, slackPost, syncCalendarEvent, teamsPost, telegramSend, type CalendarDestination, type OutlookMessage, type ProviderErrorKind, type ProviderUrls, type SheetDestination } from "./providers";
 import { bookingSuperseded, supersededSql } from "./bookings";
+import { bookingForCalendar } from "./calendar";
 import { connections, deliveries, runs, type Provider } from "./schema";
 
 /**
@@ -32,8 +33,11 @@ const STALE_SENDING = "2 minutes";
 /** Why a delivery of a run whose booking moved on was not sent, shown in the Requests list. */
 export const BOOKING_CHANGED = "The booking was rescheduled or cancelled, so this was not sent.";
 
-/** A delivery of a run whose booking moved on: Retry and Post again leave it alone. */
-const bookingMoved = sql`exists (select 1 from ${runs} where ${runs.id} = ${deliveries.runId} and ${supersededSql})`;
+/** A delivery of a run whose booking moved on: Retry and Post again leave it alone. A calendar sync is the exception: a changed booking is what it syncs. */
+const bookingMoved = sql`(${deliveries.provider} <> 'google_calendar' and exists (select 1 from ${runs} where ${runs.id} = ${deliveries.runId} and ${supersededSql}))`;
+
+/** Sheets and Calendar writes can be repeated safely, so an unknown outcome is looked at again, never sent to a person. */
+const repeatable = (p: Provider) => p === "google_sheets" || p === "google_calendar";
 
 /** A short random marker value for a Sheets write; with the id it tells our marker from anyone else's. */
 const markerValue = () => randomBytes(6).toString("base64url");
@@ -95,7 +99,7 @@ async function attempt(db: Db, key: Buffer, urls: ProviderUrls, d: Delivery): Pr
   const conn = await connectionCredential(db, key, d.userId, d.provider);
   if (!conn) return { state: "failed", error: `${name} is not connected. Connect it in Apps, then retry.`, kind: "not_connected" };
   if (conn.status === "failed") return { state: "failed", error: `${name} needs to be connected again (${conn.account}). Reconnect it in Apps, then retry.`, kind: "reconnect" };
-  if (!conn.destination) return { state: "failed", error: `No ${d.provider === "google_sheets" ? "sheet" : d.provider === "telegram" ? "chat" : "channel"} is chosen for ${name}. Pick one in Apps, then retry.`, kind: "no_destination" };
+  if (!conn.destination) return { state: "failed", error: `No ${d.provider === "google_sheets" ? "sheet" : d.provider === "google_calendar" ? "calendar" : d.provider === "telegram" ? "chat" : "channel"} is chosen for ${name}. Pick one in Apps, then retry.`, kind: "no_destination" };
   if (d.pinnedAccount === null) {
     return { state: "needs_review", error: `This was queued before Daloy recorded where deliveries go, so it cannot confirm the ${name} destination. Choose Post again to send it to ${describe(d.provider, conn.destination)}, or Mark as posted.`, kind: "queued_before_pin" };
   }
@@ -112,7 +116,7 @@ async function attempt(db: Db, key: Buffer, urls: ProviderUrls, d: Delivery): Pr
     };
   }
   // Slack, Teams and Outlook have no read access to check with, so after a call that may have arrived a person decides.
-  if (d.checkFirst && d.provider !== "google_sheets") {
+  if (d.checkFirst && !repeatable(d.provider)) {
     return { state: "needs_review", error: `${name} may have ${d.provider === "outlook" ? "sent" : "posted"} this before the connection dropped. ${reviewHint(d.provider, conn.destination)}`, kind: "ambiguous" };
   }
   const destination = conn.destination;
@@ -122,6 +126,13 @@ async function attempt(db: Db, key: Buffer, urls: ProviderUrls, d: Delivery): Pr
       // Retrying the same marked write is safe: Google adds the row at most once (decision 0021).
       const out = await appendRowOnce(urls, sa, conn.destination as SheetDestination, (d.payload as { row: string[] }).row, { id: d.sheetMetaId!, value: d.sheetMetaValue! });
       return { state: "delivered", result: out.reconciled ? { sheet: out.sheet, reconciled: true } : { sheet: out.sheet } };
+    }
+    if (d.provider === "google_calendar") {
+      const { bookingId } = d.payload as { bookingId: string };
+      const b = await bookingForCalendar(db, d.userId, bookingId);
+      if (!b) return { state: "failed", error: "The booking or its calendar event details are gone, so nothing was sent.", kind: "invalid" };
+      const out = await syncCalendarEvent(urls, serviceAccountSchema.parse(JSON.parse(conn.credential)), (conn.destination as CalendarDestination).calendarId, bookingId, b, b);
+      return { state: "delivered", result: { event: out.event, eventId: out.eventId } };
     }
     if (d.provider === "outlook") {
       const save = rotateInto(db, key, d.userId, "outlook", conn);
@@ -138,7 +149,7 @@ async function attempt(db: Db, key: Buffer, urls: ProviderUrls, d: Delivery): Pr
     // for the call to return (decision 0032).
     return await db.transaction(async (tx) => {
       const [run] = await tx.select({ bookingId: runs.bookingId, bookingVersion: runs.bookingVersion }).from(runs).where(eq(runs.id, d.runId));
-      if (run && (await bookingSuperseded(tx, run, true))) {
+      if (run && d.provider !== "google_calendar" && (await bookingSuperseded(tx, run, true))) {
         return { state: "failed", error: d.checkFirst ? `${BOOKING_CHANGED} An earlier attempt may have reached ${name}.` : BOOKING_CHANGED, kind: "booking_changed" } as const;
       }
       return send();
@@ -155,7 +166,7 @@ async function attempt(db: Db, key: Buffer, urls: ProviderUrls, d: Delivery): Pr
       case "review":
         return { state: "needs_review", error: e.message, kind: e.kind };
       case "ambiguous":
-        if (d.provider !== "google_sheets") return { state: "needs_review", error: `${e.message} ${name} may have ${d.provider === "outlook" ? "sent" : "posted"} it. ${reviewHint(d.provider, conn.destination)}`, kind: e.kind };
+        if (!repeatable(d.provider)) return { state: "needs_review", error: `${e.message} ${name} may have ${d.provider === "outlook" ? "sent" : "posted"} it. ${reviewHint(d.provider, conn.destination)}`, kind: e.kind };
         return { state: "queued", error: e.message, kind: e.kind, checkFirst: true };
       case "quota":
       case "unavailable":
@@ -167,6 +178,7 @@ async function attempt(db: Db, key: Buffer, urls: ProviderUrls, d: Delivery): Pr
 /** The destination as a person would name it, for review messages. */
 function describe(provider: Provider, dest: Record<string, string>) {
   if (provider === "google_sheets") return `the sheet "${dest.title ?? dest.spreadsheetId}", tab "${dest.tab}"`;
+  if (provider === "google_calendar") return `the calendar "${dest.title ?? dest.calendarId}"`;
   if (provider === "slack") return `#${dest.channelName ?? dest.channelId}`;
   if (provider === "telegram") return `the Telegram chat ${dest.chatTitle ?? dest.chatId}`;
   if (provider === "outlook") return dest.mailbox ?? "the Outlook mailbox";
@@ -175,7 +187,7 @@ function describe(provider: Provider, dest: Record<string, string>) {
 
 /** Same place: the fields that pick where a delivery lands. Display names may change without moving anything. */
 function sameDestination(a: Record<string, string> | null, b: Record<string, string>) {
-  const where = (d: Record<string, string> | null) => JSON.stringify([d?.spreadsheetId, d?.tab, d?.channelId, d?.chatId, d?.mailbox, d?.channelName]);
+  const where = (d: Record<string, string> | null) => JSON.stringify([d?.spreadsheetId, d?.calendarId, d?.tab, d?.channelId, d?.chatId, d?.mailbox, d?.channelName]);
   return where(a) === where(b);
 }
 
