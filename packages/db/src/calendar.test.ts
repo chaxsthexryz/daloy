@@ -12,7 +12,7 @@ import type { Db } from "./index";
 import { calendarEventId, calendarIdFrom, type ProviderUrls } from "./providers";
 import { bookings, deliveries, resources, runs, users, workflows, workflowVersions } from "./schema";
 
-// Decision 0043: one Google Calendar event per booking, with an id derived from the booking, kept equal to the booking
+// Decision 0044: one Google Calendar event per booking, with an id derived from the booking, kept equal to the booking
 // by sync deliveries that can be repeated without harm.
 const key = randomBytes(32);
 const CAL = "clinic@group.calendar.google.com";
