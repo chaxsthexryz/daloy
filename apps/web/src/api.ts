@@ -68,3 +68,18 @@ export type RunSummary = {
 export type Run = RunSummary & { steps: StepRun[] };
 
 export const FINISHED = new Set(["succeeded", "failed", "cancelled"]);
+
+export type Meter = { used: number; limit: number | null; resetsOn: string };
+export type Plan = "pilot" | "business" | "business_plus";
+/** GET /usage (owners and operators): the plan, what this workspace has used, and when each count resets. plan null means no limits. */
+export type Usage = {
+  plan: Plan | null;
+  label: string | null;
+  limits: Record<string, number> | null;
+  ai: Meter;
+  email: Meter;
+  http: Meter;
+  automations: { live: number; limit: number | null };
+  minScheduleMinutes: number | null;
+};
+export const getUsage = () => api<Usage>("GET", "/usage");

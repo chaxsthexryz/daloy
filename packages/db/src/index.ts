@@ -16,6 +16,7 @@ export * from "./members";
 export * from "./providers";
 export * from "./runs";
 export * from "./schema";
+export * from "./usage";
 export { schema };
 
 /** max is the pool size; pg's default is 10. */

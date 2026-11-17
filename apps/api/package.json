@@ -18,6 +18,7 @@
     "@nestjs/platform-express": "^12.4.2",
     "@node-rs/argon2": "^2.2.2",
     "cookie-parser": "^1.4.7",
+    "cron-parser": "5.10.4",
     "drizzle-orm": "^0.45.4",
     "helmet": "^8.3.0",
     "pg": "^8.23.1",
