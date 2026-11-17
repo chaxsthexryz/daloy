@@ -81,7 +81,7 @@ function Route({ hash, user }: { hash: string; user: User }) {
   if (hash === "#/try/office-request") return <TryOfficeRequest email={user.email} />;
   if (hash === "#/advanced" && user.role === "owner") return <AdvancedPage />;
   if (hash === "#/new" && user.role === "owner") return <NewAutomationPage email={user.email} />;
-  if (hash === "#/ai" && user.role === "owner") return <BuildWithAiPage email={user.email} />;
+  if (hash === "#/ai" && user.role === "owner") return <BuildWithAiPage email={user.email} ask={user.ask === true} />;
   if (hash === "#/tokens") return <TokensPage />;
   if (hash === "#/settings") return <SettingsPage user={user} />;
   if (hash === "#/settings/ai") return <AiModelPage />;
