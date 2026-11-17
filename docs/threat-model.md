@@ -111,3 +111,14 @@ The demo page (`apps/web/demo`, published as `site/demo/` on Cloudflare Pages) a
 - The chat id is validated (a number or `@name`), and the chat is pinned to each delivery when it is queued, so editing the connection cannot redirect messages already queued.
 - Anyone in the chat can read what is sent. The same rule as Slack: keep private details out of the message text.
 - A bot token that leaks lets someone message the bot's chats. Replace it in BotFather (/revoke), then Replace token in Apps.
+
+## PayMongo (decision 0043)
+
+- A forged webhook: the path is 32 random bytes and finds the connection, then `Paymongo-Signature` must verify (HMAC-SHA256 of `t.rawBody` with the webhook secret, constant-time compare, only the part for the connection's mode). A bad signature is 401 and an unknown path is 404.
+- Replay: a seen event id answers 200 `duplicate`. A `t` older than 72 hours or more than 5 minutes ahead is refused. Runs are keyed `paymongo:<paymentId>:<status>`, so a replayed or second event starts nothing. The 72 hours is wide on purpose (PayMongo retries, and disables a failing webhook) and is to be tightened after the live check.
+- Amount tampering: the paid amount and currency must equal the centavos and PHP stored when the link was made, or the payment goes to needs_review and no run starts. The amount is parsed from text into integer centavos, never a float. Payment state never moves back.
+- A leaked webhook path: it only finds the connection. Without the webhook secret a caller cannot pass the signature. The path is kept when keys are replaced, so disconnect and connect PayMongo again to get a new one, and update the URL in PayMongo.
+- Key leakage: the secret key and webhook secret are encrypted per workspace like the other connections and never returned or logged. The key is sent only in the `Authorization` header, and errors never include a header or body. If a key leaks, roll it in PayMongo and replace it in Apps.
+- A live key by mistake: `sk_live_` is refused unless the server has `PAYMONGO_LIVE=on`, and an event whose `livemode` differs from the connection is refused.
+- A GCash screenshot as proof: nothing in Daloy marks a payment paid except a signed PayMongo event that matches the stored amount.
+- Remaining risk: abandoned links stay pending (PayMongo sends no expiry event), failed payments and partial refunds are not handled, and the signing format is only checked against PayMongo's documentation until the live check is run.
