@@ -458,7 +458,7 @@ Tests: `apps/worker/src/app-role.test.ts` applies the SQL to an embedded Postgre
 
 ## Operations (docs/operations.md, apps/api/src/upgrade.test.ts)
 
-What it does: `docs/operations.md` is the runbook for the Compose stack: a `pg_dump` backup, a restore onto a new volume, stopping all sends by stopping the worker, upgrades, and a daily check for `failed` and `needs_review` runs.
+What it does: `docs/operations.md` is the runbook for the Compose stack: a `pg_dump` backup, a restore onto a new volume, stopping all sends by stopping the worker, upgrades, and a daily check for `failed` and `needs_review` runs. `docs/deployment.md` covers running the stack on a free VM behind a Cloudflare Tunnel with nightly encrypted dumps to Google Drive.
 
 Why this way: the worker is the only process that sends for workflows, and pg-boss keeps jobs in Postgres, so stopping it holds every run as `pending` without losing any. The backup is one dump of the whole database, so the queue and the migration history come back with the data. Monitoring reuses the Runs page and one read-only SQL query instead of a new alert service.
 

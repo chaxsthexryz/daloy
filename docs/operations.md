@@ -83,9 +83,8 @@ Any row means someone should look. A workflow that keeps failing the same way ca
 
 ## Deployment target
 
-Chosen in N3: an always-on machine the owner controls, running this same `docker compose up`, reached through a free Cloudflare Tunnel. [docs/deployment.md](deployment.md) has the setup, the nightly off-machine backup and the restore rehearsal. Nothing is deployed yet. The options that were weighed:
+Chosen in N3: a free VM (Oracle Always Free Ampere A1, or Google Cloud e2-micro), running this same `docker compose up`, behind a Cloudflare Tunnel, with nightly dumps to Google Drive through an rclone `crypt` remote. [docs/deployment.md](deployment.md) has the setup, the backup and the restore rehearsal. Nothing is deployed yet. The options that were weighed:
 
-1. That machine and a Cloudflare Tunnel. No code changes, and every procedure in this file works as written. Uptime depends on that machine.
+1. An owner-run machine at home and a Cloudflare Tunnel. No card, no code changes. Uptime depends on that machine.
 2. Render's free web service with Neon's free Postgres. Free web services sleep when idle and background workers are not on the free plan, so the worker would have to run inside the API process and schedules would pause while it sleeps. That needs code changes.
-
-Oracle Always Free, Google Cloud's e2-micro, Fly.io, Railway and Koyeb ask for a card at signup as far as we know, so they are left out until that is checked.
+3. The free VM (chosen). No code changes, always on, and every procedure in this file works as written. The provider asks for a card at signup to verify identity; the free tier is not charged.
