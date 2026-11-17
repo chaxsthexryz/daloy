@@ -690,7 +690,7 @@ type RecordApp = {
   testButton: string;
   testOk: string;
 };
-// Airtable, Notion and Trello add one record, page or card to the target saved here (decision 0044). Same shape, so one form.
+// Airtable, Notion and Trello add one record, page or card to the target saved here (decision 0046). Same shape, so one form.
 const RECORD_APPS: Record<"airtable" | "notion" | "trello", RecordApp> = {
   airtable: {
     name: "Airtable",

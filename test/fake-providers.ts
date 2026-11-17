@@ -28,7 +28,7 @@ export async function startFakeProviders(port = 0) {
   const sheets = new Map<string, { title: string; tabs: Map<string, string[][]>; editors: Set<string>; metadata: Map<number, SheetMeta> }>();
   const slack = { token: "", team: "Lim Dental", channels: [{ id: "C0REQ", name: "office-requests", is_member: true }], messages: [] as { channel: string; text: string; ts: string }[], revoked: false };
   const telegram = { token: "", bot: "daloy_test_bot", chats: [{ id: -1001234567890, title: "Office team" }] as { id: number; title: string }[], messages: [] as { chat: string; text: string; id: number }[], revoked: false };
-  // Airtable, Notion and Trello (N15, decision 0044): a bearer or key/token check, one target each, and the records added.
+  // Airtable, Notion and Trello (N15, decision 0046): a bearer or key/token check, one target each, and the records added.
   const airtable = { token: "", base: "appFAKEBASE000001", table: "tblFAKETABLE00001", records: [] as { id: string; fields: Record<string, unknown> }[], revoked: false };
   const notion = { token: "", database: "0123456789abcdef0123456789abcdef", title: "Office requests", titleProperty: "Name", pages: [] as { id: string; properties: Record<string, unknown> }[], revoked: false };
   const trello = { key: "", token: "", username: "daloy_tester", list: "5f0000000000000000000001", listName: "To do", cards: [] as { id: string; name: string; desc: string }[], revoked: false };

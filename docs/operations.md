@@ -103,7 +103,7 @@ The owner sees the same numbers in Settings, under Plan and usage. When a worksp
 
 ### Monthly invoice (GCash or Maya)
 
-Payment is by hand. Daloy has no payment code for its own subscription. The PayMongo step and trigger ([decision 0043](decisions/0043-paymongo-payments.md), [live check](live-paymongo-check.md)) are for an owner's customers, not for billing the owner. Keep a ledger, for example a spreadsheet with one row per payment: date, workspace email, plan, amount, reference.
+Payment is by hand. Daloy has no payment code for its own subscription. The PayMongo step and trigger ([decision 0045](decisions/0045-paymongo-payments.md), [live check](live-paymongo-check.md)) are for an owner's customers, not for billing the owner. Keep a ledger, for example a spreadsheet with one row per payment: date, workspace email, plan, amount, reference.
 
 1. On each workspace's plan start date, send an invoice. State the amount, $10 a month for Business or $25 for Business Plus (Pilot is free), in pesos at that day's rate, or a fixed peso price you have written down. Add your GCash or Maya number and a reference such as `DALOY-<workspace>-<YYYYMM>`.
 2. When the customer says they paid, find the payment in the GCash or Maya app and match its reference and amount.

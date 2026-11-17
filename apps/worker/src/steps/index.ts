@@ -162,7 +162,7 @@ async function runStep(deps: FullDeps, step: Step, input: unknown, ctx: Expressi
       const cfg = input as CalendarInput;
       // A test run, and a booking made by one, never reach a real calendar.
       if (mock || booking?.test) return { output: { mocked: true, ...cfg } };
-      // Queued, not sent: the worker syncs it apart from the run, and later booking changes keep it in line (decision 0043).
+      // Queued, not sent: the worker syncs it apart from the run, and later booking changes keep it in line (decision 0044).
       const d = await queueCalendarEvent(deps.db, { userId, runId, stepId: step.id, ...cfg });
       if (!d) throw new StepError("A calendar step needs a booking step before it in the same run.", false);
       return { output: { deliveryId: d.id, reference: d.reference, state: d.state } };
