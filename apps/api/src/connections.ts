@@ -75,7 +75,7 @@ const paymongoInput = z.strictObject({
   webhookSecret: z.string().trim().regex(/^whsk_\S+$/, "Paste the webhook secret from PayMongo, which starts with whsk_"),
 });
 // Airtable: a personal access token (pat...), a base id (app...) and a table id (tbl...) or name. Notion: an internal
-// integration token and a database id (or the link to it). Trello: the API key, a token, and a list id (decision 0044).
+// integration token and a database id (or the link to it). Trello: the API key, a token, and a list id (decision 0046).
 const airtableInput = z.strictObject({
   token: z.string().trim().regex(/^pat[A-Za-z0-9]+\.[A-Za-z0-9]{20,100}$/, "Paste the personal access token, which starts with pat"),
   baseId: z.string().trim().regex(/^app[A-Za-z0-9]{10,30}$/, "The base id starts with app"),

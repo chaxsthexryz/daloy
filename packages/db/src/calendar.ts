@@ -3,7 +3,7 @@ import type { Db } from "./index";
 import { bookings, calendarEvents, connections, deliveries, runs } from "./schema";
 
 /**
- * Google Calendar events for bookings (decision 0043). A calendar step records that a booking has an event; after that,
+ * Google Calendar events for bookings (decision 0044). A calendar step records that a booking has an event; after that,
  * every change to the booking queues one sync delivery for its new version. Each delivery makes the calendar match the
  * booking as it is when the delivery is sent, so the order they arrive in never matters.
  */

@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 // Phase N13: a booking made by a workflow gets a Google Calendar event (fake Calendar API from e2e/global-setup.ts);
-// staff move the booking and the event moves, staff cancel it and the event is removed and its reminder stops (decision 0043).
+// staff move the booking and the event moves, staff cancel it and the event is removed and its reminder stops (decision 0044).
 type FakeEvent = { id: string; status: string; summary?: string; start?: { dateTime: string; timeZone?: string } };
 const events = async () => ((await (await fetch(`${process.env.E2E_PROVIDERS_URL}/__control`)).json()) as { calendarEvents: FakeEvent[] }).calendarEvents;
 

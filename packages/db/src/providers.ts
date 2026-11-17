@@ -256,7 +256,7 @@ export function calendarIdFrom(input: string): string | null {
 
 /**
  * The Calendar event id for a booking. Google accepts an id chosen by the caller (base32hex: a-v and 0-9) and answers 409
- * when it exists, so creating the event twice is impossible whatever retries happen (decision 0043).
+ * when it exists, so creating the event twice is impossible whatever retries happen (decision 0044).
  */
 export const calendarEventId = (bookingId: string) => `dl${createHash("sha256").update(bookingId).digest("hex").slice(0, 40)}`;
 
@@ -316,7 +316,7 @@ export type CalendarContent = { title: string; description: string };
  * Makes the calendar match the booking as it is now. Active: insert the event under the booking's own id; a 409 means it
  * exists, so patch it to the current title and times (status "confirmed" also restores one that was deleted by hand).
  * Cancelled: delete it; already gone (404, 410) is fine. Each branch can be repeated at any time with the same result,
- * so a retry after a lost answer is always safe (decision 0043). Times are sent in UTC with the booking's own zone.
+ * so a retry after a lost answer is always safe (decision 0044). Times are sent in UTC with the booking's own zone.
  */
 export async function syncCalendarEvent(urls: ProviderUrls, sa: ServiceAccount, calendarId: string, bookingId: string, b: CalendarBooking, content: CalendarContent): Promise<{ event: "created" | "updated" | "deleted"; eventId: string }> {
   const eventId = calendarEventId(bookingId);
@@ -415,7 +415,7 @@ export async function telegramSend(urls: ProviderUrls, token: string, chatId: st
   return { chatId, messageId: String(msg.message_id) };
 }
 
-// ---------------------------------------------------------------- Airtable, Notion, Trello (decision 0044)
+// ---------------------------------------------------------------- Airtable, Notion, Trello (decision 0046)
 
 /**
  * One mapping of an HTTP answer to a ProviderError for the three record providers. None of them has a documented

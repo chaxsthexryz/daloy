@@ -121,7 +121,7 @@ The demo page (`apps/web/demo`, published as `site/demo/` on Cloudflare Pages) a
 - Event title and description are text from the workflow's templates and can hold guest details. Anyone with access to the calendar sees them: share the calendar only with the people who may see bookings.
 - No attendees are invited, so Daloy sends no Google invitation email to an address a guest supplied.
 
-## PayMongo (decision 0043)
+## PayMongo (decision 0045)
 
 - A forged webhook: the path is 32 random bytes and finds the connection, then `Paymongo-Signature` must verify (HMAC-SHA256 of `t.rawBody` with the webhook secret, constant-time compare, only the part for the connection's mode). A bad signature is 401 and an unknown path is 404.
 - Replay: a seen event id answers 200 `duplicate`. A `t` older than 72 hours or more than 5 minutes ahead is refused. Runs are keyed `paymongo:<paymentId>:<status>`, so a replayed or second event starts nothing. The 72 hours is wide on purpose (PayMongo retries, and disables a failing webhook) and is to be tightened after the live check.
@@ -132,7 +132,7 @@ The demo page (`apps/web/demo`, published as `site/demo/` on Cloudflare Pages) a
 - A GCash screenshot as proof: nothing in Daloy marks a payment paid except a signed PayMongo event that matches the stored amount.
 - Remaining risk: abandoned links stay pending (PayMongo sends no expiry event), failed payments and partial refunds are not handled, and the signing format is only checked against PayMongo's documentation until the live check is run.
 
-## Airtable, Notion and Trello (decision 0044)
+## Airtable, Notion and Trello (decision 0046)
 
 - The Airtable token, Notion secret and Trello key and token are encrypted like the Slack token, bound to the owner and provider, and never returned or logged. Trello's key and token are in its request URL, so Daloy never prints a request URL or puts one in an error message.
 - The three addresses are fixed or set by the installation's env vars, never by a user.

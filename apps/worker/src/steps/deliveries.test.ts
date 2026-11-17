@@ -137,7 +137,7 @@ it("fails the step and queues nothing when the Outlook recipient is not an addre
   expect(await deliveriesOf(runId)).toEqual([]);
 });
 
-it("puts a booking on the calendar from a calendar step, and removes the event when staff cancel the booking (decision 0043)", async () => {
+it("puts a booking on the calendar from a calendar step, and removes the event when staff cancel the booking (decision 0044)", async () => {
   const email = "calendar@office.iam.gserviceaccount.com";
   const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
   fake.addServiceAccount(email, publicKey.export({ type: "spki", format: "pem" }).toString());

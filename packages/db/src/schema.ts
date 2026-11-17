@@ -551,7 +551,7 @@ export const deliveries = pgTable(
 );
 
 /**
- * A booking that has a Google Calendar event (decision 0043). The calendar step writes it with the event's title and
+ * A booking that has a Google Calendar event (decision 0044). The calendar step writes it with the event's title and
  * description; from then on every change to the booking queues a sync delivery. The event id is derived from booking_id,
  * so no id is stored.
  */

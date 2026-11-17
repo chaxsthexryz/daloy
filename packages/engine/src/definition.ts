@@ -80,11 +80,11 @@ export const outlookConfigSchema = emailConfigSchema;
 export const teamsConfigSchema = slackConfigSchema;
 // A Telegram message goes to the one chat picked in Apps, as plain text (decision 0042). Queued like Slack.
 export const telegramConfigSchema = slackConfigSchema;
-// A calendar event for the run's booking, in the one calendar picked in Apps (decision 0043). It follows the booking: moved when it is rescheduled, deleted when it is cancelled.
+// A calendar event for the run's booking, in the one calendar picked in Apps (decision 0044). It follows the booking: moved when it is rescheduled, deleted when it is cancelled.
 export const calendarConfigSchema = z.object({ title: template(300).min(1), description: template(3000).optional() });
-// A PayMongo checkout link for the amount in pesos (text, so a template works), sent on by a later step (decision 0043). Idempotent per run and step.
+// A PayMongo checkout link for the amount in pesos (text, so a template works), sent on by a later step (decision 0045). Idempotent per run and step.
 export const paymongoLinkConfigSchema = z.object({ amount: template(100).min(1), description: template(200).min(1), reference: template(200).min(1) });
-// Airtable, Notion and Trello add one record, page or card to the target picked in Apps (decision 0044), queued like
+// Airtable, Notion and Trello add one record, page or card to the target picked in Apps (decision 0046), queued like
 // Sheets. Field and property names are the owner's literals; values are templates. Notion fields are text properties.
 const fieldName = z.string().trim().min(1).max(100);
 const fieldMap = z.record(fieldName, template(2000)).refine((f) => Object.keys(f).length <= 20, "at most 20 fields");
