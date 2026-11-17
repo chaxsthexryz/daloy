@@ -1,4 +1,5 @@
 import { takingLonger } from "./poll";
+import type { Language } from "./locale";
 
 /** What GET /workflows reports about a workflow's newest real (non-test) run. */
 export type LastRun = {
@@ -31,10 +32,10 @@ export function plainState(r: RunLike, now = Date.now()): PlainState {
 }
 
 /** "just now", "5 minutes ago", "2 hours ago", "3 days ago", "2 months ago". */
-export function ago(iso: string, now = Date.now()): string {
+export function ago(iso: string, now = Date.now(), language: Language = "en"): string {
   const s = Math.max(0, Math.floor((now - new Date(iso).getTime()) / 1000));
-  const unit = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"} ago`;
-  if (s < 60) return "just now";
+  const unit = (n: number, word: string) => language === "tl" ? `${n} ${({ minute: "minuto", hour: "oras", day: "araw", month: "buwan" } as Record<string, string>)[word]} ang nakalipas` : `${n} ${word}${n === 1 ? "" : "s"} ago`;
+  if (s < 60) return language === "tl" ? "kakaunti pa lang" : "just now";
   if (s < 3600) return unit(Math.floor(s / 60), "minute");
   if (s < 86400) return unit(Math.floor(s / 3600), "hour");
   if (s < 30 * 86400) return unit(Math.floor(s / 86400), "day");
@@ -42,8 +43,10 @@ export function ago(iso: string, now = Date.now()): string {
 }
 
 /** The last thing that happened, in a sentence. */
-export const lastEvent = (last: LastRun | null, now = Date.now()) =>
-  !last ? "No activity yet" : last.reference ? `Request ${last.reference} received ${ago(last.createdAt, now)}` : `Last ran ${ago(last.createdAt, now)}`;
+export const lastEvent = (last: LastRun | null, now = Date.now(), language: Language = "en") =>
+  !last ? (language === "tl" ? "Wala pang aktibidad" : "No activity yet") : language === "tl"
+    ? last.reference ? `Natanggap ang request ${last.reference} ${ago(last.createdAt, now, language)}` : `Huling tumakbo ${ago(last.createdAt, now, language)}`
+    : last.reference ? `Request ${last.reference} received ${ago(last.createdAt, now)}` : `Last ran ${ago(last.createdAt, now)}`;
 
 /** Owner wording for a run's kind. The old labels ("test run, mocked calls") stay in the technician block. */
 export const runKind = (r: { test: boolean; live: boolean; aiLive?: boolean }) =>

@@ -1,12 +1,15 @@
+import { translate, type Language } from "./lib/locale";
+import { useLanguage } from "./Language";
 import type { Step } from "@daloy/engine";
 import { BaseEdge, Background, Controls, getBezierPath, Handle, Position, ReactFlow, type Edge, type EdgeProps, type Node, type NodeProps } from "@xyflow/react";
 import { useEffect, useMemo, useState } from "react";
 import { toFlow, type Draft, type RunEdgeData, type StepNodeData } from "./lib/graph";
 import { runFlow, STATUS, type FlowRun } from "./lib/run-flow";
 
-export const TYPE_NAMES: Record<string, string> = { condition: "Condition", http: "HTTP request", email: "Send email", delay: "Delay", ai: "AI task", approval: "Approval", sheets: "Add to Google Sheets", slack: "Post to Slack", outlook: "Send from Outlook", teams: "Post to Teams", telegram: "Send to Telegram" };
+export const TYPE_NAMES: Record<string, string> = { condition: "Condition", http: "HTTP request", email: "Send email", delay: "Delay", ai: "AI task", approval: "Approval", sheets: "Add to Google Sheets", slack: "Post to Slack", outlook: "Send from Outlook", teams: "Post to Teams", telegram: "Send to Telegram", booking: "Booking" };
 
-export function summary(step: Step): string {
+export function summary(step: Step, language: Language = "en"): string {
+  const t = (source: string, values?: Record<string, string | number>) => translate(language, source, values);
   switch (step.type) {
     case "condition":
       return `${step.config.condition.left} ${step.config.condition.op} ${step.config.condition.right ?? ""}`;
@@ -14,34 +17,35 @@ export function summary(step: Step): string {
       return `${step.config.method} ${step.config.url}`;
     case "email":
     case "outlook":
-      return `to ${step.config.to}`;
+      return t("to {recipient}", { recipient: String(step.config.to) });
     case "delay": {
       const { seconds, until, offsetSeconds } = step.config;
       if (until === undefined) return `${seconds} s`;
-      return offsetSeconds ? `until ${until} ${offsetSeconds < 0 ? "minus" : "plus"} ${Math.abs(offsetSeconds)} s` : `until ${until}`;
+      return offsetSeconds ? t("until {time} {sign} {seconds} s", { time: until, sign: t(offsetSeconds < 0 ? "minus" : "plus"), seconds: Math.abs(offsetSeconds) }) : t("until {time}", { time: until });
     }
     case "ai":
-      return step.config.task === "classify" ? `classify: ${Object.keys(step.config.labels ?? {}).join(", ")}` : step.config.task;
+      return step.config.task === "classify" ? t("classify: {labels}", { labels: Object.keys(step.config.labels ?? {}).join(", ") }) : t(step.config.task);
     case "approval":
-      return `ask ${step.config.approver ?? step.config.to}`;
+      return t("ask {person}", { person: String(step.config.approver ?? step.config.to) });
     case "sheets":
-      return `${step.config.columns.length + 2} columns, reference first`;
+      return t("{count} columns, reference first", { count: step.config.columns.length + 2 });
     case "slack":
     case "teams":
     case "telegram":
       return step.config.text.slice(0, 60);
     case "booking":
-      return step.config.action === "create" ? `book ${step.config.resource} at ${step.config.start}, ${step.config.minutes} min` : `${step.config.action} ${step.config.booking}`;
+      return step.config.action === "create" ? t("book {resource} at {start}, {minutes} min", { resource: String(step.config.resource), start: String(step.config.start), minutes: String(step.config.minutes) }) : t("{action} {booking}", { action: t(step.config.action), booking: String(step.config.booking) });
   }
 }
 
 /** The state in words and a symbol under the title, shown whenever a run is drawn. Colour only adds to it. */
 function Status({ status }: { status: StepNodeData["status"] }) {
+  const { t } = useLanguage();
   if (!status) return null;
   const s = STATUS[status];
   return (
     <span className="node-status">
-      <span aria-hidden="true">{s.symbol}</span> {s.label}
+      <span aria-hidden="true">{s.symbol}</span> {t(s.label)}
     </span>
   );
 }
@@ -49,10 +53,11 @@ function Status({ status }: { status: StepNodeData["status"] }) {
 const nodeClass = (base: string, status: StepNodeData["status"]) => (status ? `${base} run-${status}` : base);
 
 function TriggerNode({ data }: NodeProps<Node<StepNodeData, "trigger">>) {
+  const { t } = useLanguage();
   return (
     <div className={nodeClass("node trigger-node", data.status)}>
-      <span className="node-type">Trigger</span>
-      <span className="node-title">{data.trigger!.type}</span>
+      <span className="node-type">{t("Trigger")}</span>
+      <span className="node-title">{t(data.trigger!.type)}</span>
       <Status status={data.status} />
       <Handle type="source" position={Position.Bottom} isConnectable={false} />
     </div>
@@ -60,13 +65,14 @@ function TriggerNode({ data }: NodeProps<Node<StepNodeData, "trigger">>) {
 }
 
 function StepNode({ data }: NodeProps<Node<StepNodeData, "step">>) {
+  const { t, language } = useLanguage();
   const step = data.step!;
   return (
     <div className={nodeClass("node", data.status)}>
       <Handle type="target" position={Position.Top} isConnectable={false} />
-      <span className="node-type">{TYPE_NAMES[step.type]}</span>
+      <span className="node-type">{t(TYPE_NAMES[step.type]!)}</span>
       <span className="node-title">{step.id}</span>
-      <span className="node-summary">{summary(step)}</span>
+      <span className="node-summary">{summary(step, language)}</span>
       <Status status={data.status} />
       {data.branches ? (
         data.branches.map((b, i) => (
@@ -108,6 +114,23 @@ function RunEdge({ id, sourceX, sourceY, targetX, targetY, sourcePosition, targe
   );
 }
 
+/** React Flow supplies this wording itself, so it needs the workspace language too. */
+export function flowAriaLabels(language: Language) {
+  const t = (source: string) => translate(language, source);
+  return {
+    "node.a11yDescription.default": t("Press enter or space to select a node. Press delete to remove it and escape to cancel."),
+    "node.a11yDescription.keyboardDisabled": t("Press enter or space to select a node. You can then use the arrow keys to move the node around. Press delete to remove it and escape to cancel."),
+    "edge.a11yDescription.default": t("Press enter or space to select an edge. You can then press delete to remove it or escape to cancel."),
+    "controls.ariaLabel": t("Control Panel"),
+    "controls.zoomIn.ariaLabel": t("Zoom In"),
+    "controls.zoomOut.ariaLabel": t("Zoom Out"),
+    "controls.fitView.ariaLabel": t("Fit View"),
+    "controls.interactive.ariaLabel": t("Toggle Interactivity"),
+    "minimap.ariaLabel": t("Mini Map"),
+    "handle.ariaLabel": t("Handle"),
+  };
+}
+
 export const nodeTypes = { trigger: TriggerNode, step: StepNode };
 export const edgeTypes = { run: RunEdge };
 
@@ -116,10 +139,12 @@ export const edgeTypes = { run: RunEdge };
  * it follows the theme chosen in Settings (html data-theme); the light-only public demo fixes colorMode.
  */
 export function RunFlow({ draft, run, colorMode }: { draft: Draft; run: FlowRun | null; colorMode?: "light" }) {
-  const flow = useMemo(() => toFlow(draft, null, runFlow(draft, run)), [draft, run]);
+  const { language } = useLanguage();
+  const flow = useMemo(() => toFlow(draft, null, runFlow(draft, run), language), [draft, run, language]);
   return (
     <div className="run-canvas">
       <ReactFlow
+        ariaLabelConfig={flowAriaLabels(language)}
         nodes={flow.nodes}
         edges={flow.edges}
         nodeTypes={nodeTypes}

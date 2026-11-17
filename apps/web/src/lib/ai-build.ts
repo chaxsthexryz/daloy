@@ -1,3 +1,4 @@
+import { translate, type Language } from "./locale";
 import type { WorkflowDefinition } from "@daloy/engine";
 
 /**
@@ -16,9 +17,10 @@ export const OTHER = "other:";
 export const PEOPLE = { owner: "owner@people.invalid", member1: "member1@people.invalid" } as const;
 
 const PROVIDER_KINDS = ["google_sheets", "slack", "outlook", "teams"];
-const choice = (value: string, label: string) => ({ value, label });
 
-export function questions(connected: ConnectedSet, members: Member[]): Question[] {
+export function questions(connected: ConnectedSet, members: Member[], language: Language = "en"): Question[] {
+  const t = (source: string) => translate(language, source);
+  const choice = (value: string, label: string) => ({ value, label: t(label) });
   const where = [choice("email", "Email"), choice("daloy", "Only Daloy's request list")];
   if (connected.has("google_sheets")) where.push(choice("sheets", "Google Sheet"));
   if (connected.has("slack")) where.push(choice("slack", "Slack"));
@@ -26,21 +28,21 @@ export function questions(connected: ConnectedSet, members: Member[]): Question[
   return [
     {
       id: "start",
-      text: "What starts it?",
+      text: t("What starts it?"),
       choices: [choice("form", "Someone fills a form"), choice("booking", "A booking is made"), choice("webhook", "Another system sends a web request"), choice("schedule", "On a schedule")],
     },
     {
       id: "who",
-      text: "Who should know?",
+      text: t("Who should know?"),
       choices: [
         choice("me", "Me"),
-        ...members.map((m, i) => choice(`member:${i}`, m.name?.trim() || m.email.split("@")[0]!)),
+        ...members.map((m, i) => ({ value: `member:${i}`, label: m.name?.trim() || m.email.split("@")[0]! })),
         choice("filler", "The person who filled the form"),
         choice("none", "No one"),
       ],
     },
-    { id: "where", text: "Where should it go?", choices: where },
-    { id: "approve", text: "Does someone need to approve it first?", choices: [choice("no", "No"), choice("yes", "Yes, the person named above")] },
+    { id: "where", text: t("Where should it go?"), choices: where },
+    { id: "approve", text: t("Does someone need to approve it first?"), choices: [choice("no", "No"), choice("yes", "Yes, the person named above")] },
   ];
 }
 
@@ -112,56 +114,58 @@ const OPS: Record<string, string> = { eq: "is", neq: "is not", gt: "is more than
 const AI_TASKS: Record<string, string> = { classify: "sort it into a group", extract: "pull out the details", summarize: "summarize it", draft: "write a draft" };
 
 const text = (v: unknown, fallback: string) => (typeof v === "string" && v.trim() ? v : typeof v === "number" || typeof v === "boolean" ? String(v) : fallback);
-const unit = (n: number, one: string) => `${n} ${one}${n === 1 ? "" : "s"}`;
-function duration(seconds: number): string {
+function duration(seconds: number, language: Language): string {
+  const unit = (n: number, one: string) => translate(language, `{count} ${one}${n === 1 ? "" : "s"}`, { count: n });
   for (const [size, name] of [[86_400, "day"], [3600, "hour"], [60, "minute"]] as const) if (seconds % size === 0) return unit(seconds / size, name);
   return unit(seconds, "second");
 }
 
-function sentence(step: WorkflowDefinition["steps"][number]): string {
+function sentence(step: WorkflowDefinition["steps"][number], language: Language): string {
+  const t = (source: string, values?: Record<string, string | number>) => translate(language, source, values);
   const c = (step.config ?? {}) as Record<string, unknown>;
   switch (step.type) {
     case "email": {
       const subject = text(c.subject, "");
-      return `Email ${text(c.to, "someone")}${subject ? ` (subject: ${subject})` : ""}`;
+      return t("Email {recipient}{subject}", { recipient: text(c.to, t("someone")), subject: subject ? t(" (subject: {subject})", { subject }) : "" });
     }
     case "outlook":
-      return `Email ${text(c.to, "someone")} from Outlook`;
+      return t("Email {recipient} from Outlook", { recipient: text(c.to, t("someone")) });
     case "approval":
-      return `Ask ${text(c.approver, text(c.to, "someone"))} to approve: ${text(c.subject, "this")}`;
+      return t("Ask {person} to approve: {subject}", { person: text(c.approver, text(c.to, t("someone"))), subject: text(c.subject, t("this")) });
     case "sheets":
-      return "Add a row to your Google Sheet";
+      return t("Add a row to your Google Sheet");
     case "slack":
-      return "Post to your Slack channel";
+      return t("Post to your Slack channel");
     case "teams":
-      return "Post to your Teams channel";
+      return t("Post to your Teams channel");
     case "delay": {
       if (typeof c.until === "string") {
         const off = typeof c.offsetSeconds === "number" ? c.offsetSeconds : 0;
-        return `Wait until ${off === 0 ? "" : `${duration(Math.abs(off))} ${off < 0 ? "before" : "after"} `}${c.until}`;
+        return t("Wait until {offset}{time}", { offset: off === 0 ? "" : t("{duration} {direction} ", { duration: duration(Math.abs(off), language), direction: t(off < 0 ? "before" : "after") }), time: c.until });
       }
-      return typeof c.seconds === "number" ? `Wait ${duration(c.seconds)}` : "Wait a while";
+      return typeof c.seconds === "number" ? t("Wait {duration}", { duration: duration(c.seconds, language) }) : t("Wait a while");
     }
     case "condition": {
       const cond = (c.condition ?? {}) as Record<string, unknown>;
       const op = typeof cond.op === "string" ? cond.op : "";
       const right = op === "exists" ? "" : ` ${text(cond.right, "")}`;
-      return `Check ${text(cond.left, "a value")} ${op === "exists" ? "is filled in" : (OPS[op] ?? "matches")}${right}`.trimEnd();
+      return t("Check {left} {operator}{right}", { left: text(cond.left, t("a value")), operator: t(op === "exists" ? "is filled in" : (OPS[op] ?? "matches")), right }).trimEnd();
     }
     case "ai":
-      return `Ask the AI to ${AI_TASKS[String(c.task)] ?? "help"}`;
+      return t("Ask the AI to {task}", { task: t(AI_TASKS[String(c.task)] ?? "help") });
     case "http":
-      return `Send a web request to ${/^(?:[a-z]+:\/\/)?([^/?#]+)/i.exec(text(c.url, ""))?.[1] ?? "another system"}`;
+      return t("Send a web request to {host}", { host: /^(?:[a-z]+:\/\/)?([^/?#]+)/i.exec(text(c.url, ""))?.[1] ?? t("another system") });
     case "booking":
-      return "Hold the booked time";
+      return t("Hold the booked time");
     default:
-      return "Do something";
+      return t("Do something");
   }
 }
 
-export function plainDraft(def: WorkflowDefinition): { when: string; steps: string[] } {
-  const t = def.trigger;
-  const when = t.type === "schedule" ? `On a schedule (${t.config.cron})` : (WHEN[t.type] ?? "When you run it by hand");
+export function plainDraft(def: WorkflowDefinition, language: Language = "en"): { when: string; steps: string[] } {
+  const t = (source: string, values?: Record<string, string | number>) => translate(language, source, values);
+  const trigger = def.trigger;
+  const when = trigger.type === "schedule" ? t("On a schedule ({cron})", { cron: trigger.config.cron }) : t(WHEN[trigger.type] ?? "When you run it by hand");
   const steps: string[] = [];
   const seen = new Set<string>();
   const targets = new Set(def.edges.map((e) => e.to));
@@ -172,12 +176,12 @@ export function plainDraft(def: WorkflowDefinition): { when: string; steps: stri
       seen.add(id);
       const step = def.steps.find((s) => s.id === id);
       if (!step) break;
-      steps.push(prefix + sentence(step));
+      steps.push(prefix + sentence(step, language));
       const out = def.edges.filter((e) => e.from === id);
       for (const e of out) if (e.on !== undefined) later.push({ to: e.to, on: e.on });
       id = out.find((e) => e.on === undefined)?.to;
     }
-    for (const b of later) walk(b.to, `${BRANCH[b.on] ?? `If ${b.on}:`} `);
+    for (const b of later) walk(b.to, `${BRANCH[b.on] ? t(BRANCH[b.on]!) : t("If {branch}:", { branch: b.on })} `);
   };
   walk(def.steps.find((s) => !targets.has(s.id))?.id, "");
   return { when, steps };
@@ -189,4 +193,21 @@ export function closestTemplate(answers: Answers, description: string): Template
   if (answers.approve === "yes") return { slug: "purchase-request", label: "Purchase request with a named approver", action: "purchase" };
   if (/website|inquiry/i.test(description)) return { slug: "website-inquiry", label: "Reply to a website inquiry", href: "#/settings/business" };
   return { slug: "office-request", label: "Track an office request", action: "office" };
+}
+
+
+/** Known engine lint wording is fixed; all captured identifiers remain as written. Other warnings pass through. */
+export function warningForLanguage(warning: string, language: Language): string {
+  const patterns: [RegExp, string, string[]][] = [
+    [/^Approval step "([^"]+)" has no "([^"]+)" edge, so the run ends there and nobody is told\.$/, 'Approval step "{step}" has no "{branch}" edge, so the run ends there and nobody is told.', ["step", "branch"]],
+    [/^Classify label "([^"]+)" of "([^"]+)" reaches condition "([^"]+)" and takes its "([^"]+)" branch, which has no edge, so the run ends there\.$/, 'Classify label "{label}" of "{step}" reaches condition "{condition}" and takes its "{branch}" branch, which has no edge, so the run ends there.', ["label", "step", "condition", "branch"]],
+    [/^"([^"]+)" looks like a switch for testing\. Mock test runs already send nothing, but a Live run or a real event follows the branch and can send, so remove it and its branch and test with Mock mode\.$/, '"{field}" looks like a switch for testing. Mock test runs already send nothing, but a Live run or a real event follows the branch and can send, so remove it and its branch and test with Mock mode.', ["field"]],
+    [/^Condition "([^"]+)" compares numbers but has no "invalid" edge, so a missing or non-number value fails the run\.$/, 'Condition "{step}" compares numbers but has no "invalid" edge, so a missing or non-number value fails the run.', ["step"]],
+    [/^Step "([^"]+)" can never run: only an "invalid" edge that cannot be taken leads to it\.$/, 'Step "{step}" can never run: only an "invalid" edge that cannot be taken leads to it.', ["step"]],
+  ];
+  for (const [pattern, source, keys] of patterns) {
+    const match = pattern.exec(warning);
+    if (match) return translate(language, source, Object.fromEntries(keys.map((key, i) => [key, match[i + 1]!])));
+  }
+  return warning;
 }

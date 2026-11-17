@@ -1,3 +1,4 @@
+import { useLanguage } from "./Language";
 import { useEffect, useState, type FormEvent } from "react";
 import { api, ApiError } from "./api";
 
@@ -14,13 +15,14 @@ const QUESTIONS: { key: Which; label: string }[] = [
 
 /** #/ai with AI_ASK on (decision 0041): pick a request by reference and read Daloy's fixed answers. Links only; the optional reword costs one AI action and changes no run. */
 export function AskRequest() {
+  const { t, language: workspaceLanguage } = useLanguage();
   const [recent, setRecent] = useState<Recent[]>([]);
   const [text, setText] = useState("");
   const [reply, setReply] = useState<Reply | null>(null);
   const [which, setWhich] = useState<Which>("happened");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [language, setLanguage] = useState<"en" | "tl">("en");
+  const [language, setLanguage] = useState<"en" | "tl">(workspaceLanguage);
   const [wording, setWording] = useState<{ busy: boolean; text: string; error: string }>({ busy: false, text: "", error: "" });
 
   useEffect(() => {
@@ -43,7 +45,7 @@ export function AskRequest() {
       setReply(r);
       setWhich("happened");
     } catch (err) {
-      setError(err instanceof ApiError && err.status === 404 ? "No request with that reference in this office." : (err as Error).message);
+      setError(err instanceof ApiError && err.status === 404 ? t("No request with that reference in this office.") : (err as Error).message);
     } finally {
       setBusy(false);
     }
@@ -73,15 +75,15 @@ export function AskRequest() {
   const shown = reply ? (reply.answers[which] ?? reply.answers.happened) : null;
   return (
     <section className="demo-card" aria-labelledby="ask-title">
-      <h2 id="ask-title">Ask about a request</h2>
+      <h2 id="ask-title">{t("Ask about a request")}</h2>
       <form onSubmit={submit}>
         <div className="field">
-          <label htmlFor="ask-reference">Request reference</label>
+          <label htmlFor="ask-reference">{t("Request reference")}</label>
           <input id="ask-reference" value={text} maxLength={40} onChange={(e) => setText(e.target.value)} />
         </div>
         {recent.length > 0 && (
           <>
-            <p className="muted">Or pick a request that ran into a problem:</p>
+            <p className="muted">{t("Or pick a request that ran into a problem:")}</p>
             <ul className="demo-starters">
               {recent.map((r) => (
                 <li key={r.id}>
@@ -95,12 +97,12 @@ export function AskRequest() {
         )}
         <div className="actions">
           <button className="primary" disabled={busy || !text.trim()}>
-            Ask
+            {t("Ask")}
           </button>
         </div>
       </form>
       <p role="status" className="muted">
-        {busy ? "Looking up the request..." : ""}
+        {busy ? t("Looking up the request...") : ""}
       </p>
       <p role="alert" className="message error" hidden={!error}>
         {error}
@@ -110,10 +112,10 @@ export function AskRequest() {
           <h3>
             {reply.reference}, {reply.workflowName}
           </h3>
-          <div className="actions" role="group" aria-label="Question">
+          <div className="actions" role="group" aria-label={t("Question")}>
             {QUESTIONS.filter((q) => q.key !== "why" || reply.answers.why).map((q) => (
               <button key={q.key} type="button" className={which === q.key ? "primary" : undefined} aria-pressed={which === q.key} onClick={() => choose(q.key)}>
-                {q.label}
+                {t(q.label)}
               </button>
             ))}
           </div>
@@ -134,14 +136,14 @@ export function AskRequest() {
                 {" · "}
               </>
             )}
-            <a href={`#/runs/${reply.runId}`}>Open this request</a>
+            <a href={`#/runs/${reply.runId}`}>{t("Open this request")}</a>
           </p>
           <div className="actions">
             <button type="button" disabled={wording.busy} onClick={() => void reword()}>
-              Say it in simpler words (uses 1 AI action)
+              {t("Say it in simpler words (uses 1 AI action)")}
             </button>
             <label htmlFor="ask-language" className="muted">
-              Language
+              {t("Language")}
             </label>
             <select id="ask-language" value={language} onChange={(e) => setLanguage(e.target.value as "en" | "tl")}>
               <option value="en">English</option>
@@ -149,18 +151,18 @@ export function AskRequest() {
             </select>
           </div>
           <p role="status" className="muted">
-            {wording.busy ? "Asking the AI model..." : ""}
+            {wording.busy ? t("Asking the AI model...") : ""}
           </p>
           {wording.text && (
             <>
-              <h4>Written by the AI model</h4>
+              <h4>{t("Written by the AI model")}</h4>
               <p>{wording.text}</p>
             </>
           )}
           <p role="alert" className="message error" hidden={!wording.error}>
             {wording.error}
           </p>
-          <p className="muted">Answers come from Daloy's own rules. Nothing here changes the request.</p>
+          <p className="muted">{t("Answers come from Daloy's own rules. Nothing here changes the request.")}</p>
         </div>
       )}
     </section>

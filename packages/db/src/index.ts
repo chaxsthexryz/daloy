@@ -11,6 +11,7 @@ export * from "./connections";
 export * from "./crypto";
 export * from "./deliveries";
 export * from "./email-sources";
+export * from "./language";
 export * from "./mail";
 export * from "./mail-senders";
 export * from "./members";

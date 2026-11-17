@@ -1,3 +1,4 @@
+import { Text, useLanguage } from "./Language";
 import { useEffect, useState, type FormEvent } from "react";
 import { api } from "./api";
 
@@ -24,6 +25,7 @@ const KEY_LINKS: Record<string, { href: string; text: string }> = {
 
 /** The AI model every AI step of this user's workflows runs with, and a live test on a sample inquiry. */
 export function AiModelPage() {
+  const { t } = useLanguage();
   const [presets, setPresets] = useState<Record<string, Preset> | null>(null);
   const [current, setCurrent] = useState<Current | null>(null);
   const [local, setLocal] = useState<LocalModels | null>(null);
@@ -80,9 +82,9 @@ export function AiModelPage() {
       await api("PUT", "/settings/ai", { preset, model, apiKey: apiKey || undefined });
       setApiKey("");
       await load();
-      const saved = `Saved. Your workflows now use ${presets?.[preset]?.label}, model ${model}.`;
+      const saved = t("Saved. Your workflows now use {provider}, model {model}.", { provider: presets?.[preset]?.label ?? "", model });
       if (alsoTest) {
-        setStatus(`${saved} Testing it now…`);
+        setStatus(t("{saved} Testing it now…", { saved }));
         await runTest();
       }
       setStatus(saved);
@@ -107,101 +109,91 @@ export function AiModelPage() {
   return (
     <main className="page narrow">
       <header className="toolbar plain">
-        <a href="#/settings">Settings</a>
-        <h1>AI model</h1>
+        <a href="#/settings"><Text>Settings</Text></a>
+        <h1><Text>AI model</Text></h1>
       </header>
-      <p>Every AI step in your workflows, and Build with AI, uses the model you pick here. You can switch at any time; saved keys are kept for each provider.</p>
+      <p>{t("Every AI step in your workflows, and Build with AI, uses the model you pick here. You can switch at any time; saved keys are kept for each provider.")}</p>
       {!presets || !current ? (
-        <p>Loading…</p>
+        <p><Text>Loading…</Text></p>
       ) : (
         <form onSubmit={save}>
-          <p className="in-use">
-            In use: <strong>{presets[current.preset]?.label}</strong>, model <code>{current.model}</code>
-            {!current.saved && <span className="muted"> (the default from .env)</span>}
+          <p className="in-use">{t("In use: ")}<strong>{presets[current.preset]?.label}</strong>{t(", model ")}<code>{current.model}</code>
+            {!current.saved && <span className="muted">{t(" (the default from .env)")}</span>}
           </p>
           <fieldset>
-            <legend>Model provider</legend>
+            <legend>{t("Model provider")}</legend>
             {Object.entries(presets).map(([id, p]) => (
               <div key={id} className="choice">
                 <input type="radio" id={`preset-${id}`} name="preset" value={id} checked={preset === id} onChange={() => choose(id)} />
                 <label htmlFor={`preset-${id}`}>
                   <span>
                     <strong>{p.label}</strong>
-                    {current.saved && current.preset === id && <span className="tag ok">in use</span>}
-                    {p.needsKey && current.keys.includes(id) && <span className="tag">key saved</span>}
+                    {current.saved && current.preset === id && <span className="tag ok">{t("in use")}</span>}
+                    {p.needsKey && current.keys.includes(id) && <span className="tag">{t("key saved")}</span>}
                   </span>
-                  <span className="muted">{NOTES[id]}</span>
+                  <span className="muted">{t(NOTES[id] ?? "")}</span>
                 </label>
               </div>
             ))}
           </fieldset>
 
           <div className="field">
-            <label htmlFor="ai-model">Model name</label>
-            {preset === "local" && local === null && <span className="muted hint">Checking the local server…</span>}
+            <label htmlFor="ai-model">{t("Model name")}</label>
+            {preset === "local" && local === null && <span className="muted hint">{t("Checking the local server…")}</span>}
             {models.length > 0 && (
               <select id="ai-model" value={otherModel ? OTHER : model} onChange={(e) => setModel(e.target.value === OTHER ? "" : e.target.value)}>
                 {models.map((m) => (
                   <option key={m.id} value={m.id}>
                     {m.id}
-                    {preset !== "local" && ` (${m.free ? "free" : "paid"})`}
+                    {preset !== "local" && t(m.free ? " (free)" : " (paid)")}
                   </option>
                 ))}
-                <option value={OTHER}>Other model…</option>
+                <option value={OTHER}>{t("Other model…")}</option>
               </select>
             )}
             {(otherModel || models.length === 0) && (
               <input
                 id={models.length ? "ai-model-other" : "ai-model"}
-                aria-label={models.length ? "Other model name" : undefined}
+                aria-label={models.length ? t("Other model name") : undefined}
                 value={model}
                 onChange={(e) => setModel(e.target.value)}
                 required
                 maxLength={200}
-                placeholder="Any model name the provider offers"
+                placeholder={t("Any model name the provider offers")}
               />
             )}
-            {preset === "local" && local?.ok && <span className="muted hint">These are the models on the local server set in .env.</span>}
+            {preset === "local" && local?.ok && <span className="muted hint">{t("These are the models on the local server set in .env.")}</span>}
             {preset === "local" && local && !local.ok && (
-              <span className="message error hint">
-                The local server is not answering: {local.error}{" "}
-                <button type="button" className="quiet" onClick={() => void checkLocal()}>
-                  Check again
-                </button>
+              <span className="message error hint">{t("The local server is not answering: ")}{local.error}{" "}
+                <button type="button" className="quiet" onClick={() => void checkLocal()}>{t("Check again")}</button>
               </span>
             )}
             {suggestion?.note && (
               <span className="muted hint">
-                {suggestion.free ? "Free tier." : "Paid."} {suggestion.note}
+                {suggestion.free ? t("Free tier.") : t("Paid.")} {t(suggestion.note)}
               </span>
             )}
           </div>
 
           {presets[preset]?.needsKey && (
             <div className="field">
-              <label htmlFor="ai-key">API key {keySaved && <span className="muted">(saved; leave empty to keep it)</span>}</label>
+              <label htmlFor="ai-key">{t("API key ")}{keySaved && <span className="muted">{t("(saved; leave empty to keep it)")}</span>}</label>
               <input id="ai-key" type="password" autoComplete="off" value={apiKey} onChange={(e) => setApiKey(e.target.value)} required={!keySaved} maxLength={500} />
               {KEY_LINKS[preset] && (
                 <span className="muted hint">
                   <a href={KEY_LINKS[preset].href} target="_blank" rel="noreferrer">
-                    {KEY_LINKS[preset].text}
-                  </a>
-                  . The key is stored encrypted and never shown again.
-                </span>
+                    {t(KEY_LINKS[preset].text)}
+                  </a>{t(". The key is stored encrypted and never shown again.")}</span>
               )}
             </div>
           )}
 
           <div className="actions">
             <button className="primary" value="save-and-test" disabled={busy}>
-              {busy ? "Working…" : "Save and test"}
+              {busy ? t("Working…") : t("Save and test")}
             </button>
-            <button value="save-only" disabled={busy}>
-              Save without testing
-            </button>
-            <button type="button" onClick={testAgain} disabled={busy || !current.saved || preset !== current.preset}>
-              Test again
-            </button>
+            <button value="save-only" disabled={busy}>{t("Save without testing")}</button>
+            <button type="button" onClick={testAgain} disabled={busy || !current.saved || preset !== current.preset}>{t("Test again")}</button>
           </div>
           <p role="status" className="message ok" hidden={!status}>
             {status}
@@ -212,16 +204,13 @@ export function AiModelPage() {
         </form>
       )}
       {test && (
-        <section aria-label="Test result">
-          <h2>Test result</h2>
-          <p className="muted">Sample inquiry: “{test.sample}”</p>
+        <section aria-label={t("Test result")}>
+          <h2>{t("Test result")}</h2>
+          <p className="muted">{t("Sample inquiry: “{sample}”", { sample: test.sample })}</p>
           {test.ok ? (
-            <p className="message ok">
-              Working. {test.model} classified it as <strong>{test.label}</strong> in {test.ms} ms ({test.inputTokens} input and {test.outputTokens} output tokens).
-            </p>
+            <p className="message ok">{t("Working. {model} classified it as ", { model: test.model })}<strong>{test.label}</strong>{t(" in {ms} ms ({input} input and {output} output tokens).", { ms: test.ms ?? "", input: test.inputTokens ?? "", output: test.outputTokens ?? "" })}</p>
           ) : (
-            <p className="message error">
-              Not working with {test.model}: {test.error}
+            <p className="message error">{t("Not working with {model}: {error}", { model: test.model, error: test.error ?? "" })}
             </p>
           )}
         </section>

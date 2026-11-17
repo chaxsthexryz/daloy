@@ -1,0 +1,88 @@
+export const guidedTranslations: Record<string, string> = {
+
+  "Set up with a few questions": "Mag-set up sa ilang tanong", "Track an office request": "Subaybayan ang office request",
+
+  "Staff fill in a form. Each request gets a reference. Your office receives a notification.": "Sasagutan ng staff ang form. Bawat request ay may reference. Makakatanggap ng abiso ang opisina mo.",
+
+  "Try an example": "Subukan ang halimbawa", "Set up for my office": "I-set up para sa opisina ko",
+
+  "Purchase request with a named approver": "Purchase request na may nakatalagang approver",
+
+  "Staff ask to buy something and get a reference. The person you name approves or rejects it in Daloy. Approved requests go to purchasing, from Outlook and with a Teams note if you connect them.": "Hihiling ang staff ng bibilhin at makakakuha ng reference. Ang itinalaga mo ang mag-a-approve o tatanggi sa Daloy. Ipapadala ang na-approve sa purchasing gamit ang Outlook at sa Teams kung nakakonekta ang mga ito.",
+
+  "Set up purchase requests": "I-set up ang purchase requests", "Reply to a website inquiry": "Sumagot sa website inquiry",
+
+  "Visitors fill in your inquiry form. They get a reply from your own email address, and your inbox gets the inquiry.": "Sasagutan ng bisita ang inquiry form. Makakatanggap sila ng sagot mula sa email address mo, at darating ang inquiry sa inbox mo.",
+
+  "Set up inquiry replies": "I-set up ang mga sagot sa inquiry", "Describe it to the AI": "Ilarawan ito sa AI",
+
+  "Say what should happen in your own words, answer a few questions, and check the draft before anything is saved.": "Sabihin sa sariling salita ang dapat mangyari, sagutin ang ilang tanong, at tingnan ang draft bago ito i-save.",
+
+  "Blank or from a template, for a technician": "Blanko o mula sa template, para sa technician", "Opens the diagram editor. You add and connect the steps yourself.": "Bubuksan ang diagram editor. Ikaw ang magdadagdag at magkokonekta ng mga hakbang.",
+
+  "Start from": "Magsimula sa", "Blank": "Blanko", "Template: {name}": "Template: {name}", "Create": "Gumawa", "An automation with that name already exists.": "May automation na may ganyang pangalan.",
+
+  "Preview only": "Preview lamang", "Try an example of Track an office request. Nothing is sent and no request is recorded.": "Subukan ang halimbawa ng office request. Walang ipapadala at walang request na itatala.",
+
+  "Sample form": "Halimbawang form", "What needs attention?": "Ano ang kailangang asikasuhin?", "Try with sample details": "Subukan gamit ang halimbawang detalye", "What would happen (preview only)": "Ano ang mangyayari (preview lamang)",
+
+  "Row added to your Google Sheet": "Row na idadagdag sa Google Sheet mo", "Note posted to your Slack channel": "Note na ipapadala sa Slack channel mo", "Open advanced editor": "Buksan ang advanced editor",
+
+  "Automation name": "Pangalan ng automation", "Staff always give their name, their email and what needs attention. Also ask:": "Laging ibibigay ng staff ang kanilang pangalan, email at kailangang asikasuhin. Itanong din ang:",
+
+  "Send the office notification to": "Ipadala ang abiso ng opisina sa", "Also send each request to (optional)": "Ipadala rin ang bawat request sa (opsyonal)", "When someone submits this form:": "Kapag may nagsumite ng form na ito:",
+
+  "Email goes out through the mail server in this installation's settings. A local demo delivers it to Mailpit.": "Ipapadala ang email sa mail server sa settings ng installation na ito. Sa local demo, mapupunta ito sa Mailpit.",
+
+  "Example messages": "Mga halimbawang mensahe", "Who approves purchases": "Sino ang mag-a-approve ng purchases", "Send approved requests to (purchasing)": "Ipadala ang na-approve na requests sa (purchasing)", "Microsoft 365 (optional)": "Microsoft 365 (opsyonal)", "Note in your Teams channel, once approved": "Note sa Teams channel mo kapag na-approve",
+
+  "This link works on this computer only. To share the form with staff, run Daloy on an address they can reach.": "Sa computer na ito lang gumagana ang link. Para maibahagi sa staff, patakbuhin ang Daloy sa address na maaabot nila.",
+
+  "Requests": "Mga request", "No requests yet. Open the form and send one.": "Wala pang request. Buksan ang form at magpadala ng isa.", "Subject": "Paksa", "Received": "Natanggap", "Recorded in": "Naitala sa", "Progress": "Usad", "Deliveries": "Mga pagpapadala", "Details": "Mga detalye",
+
+  "Reply to website inquiries": "Sumagot sa website inquiries", "A visitor fills in your inquiry form. They get a thank-you reply, and the inquiry goes to your inbox. No AI is involved.": "Sasagutan ng bisita ang inquiry form. Makakatanggap sila ng pasasalamat at mapupunta ang inquiry sa inbox mo. Walang AI na ginagamit.",
+
+  "Save a business name and an inbox for new inquiries above first.": "I-save muna sa itaas ang pangalan ng negosyo at inbox para sa bagong inquiry.", "Customer replies will not be sent until Gmail is confirmed and working.": "Hindi ipapadala ang mga sagot sa customer hangga't hindi kumpirmado at gumagana ang Gmail.",
+
+  "This link works on this computer only. Customers need Daloy running on an address they can reach.": "Sa computer na ito lang gumagana ang link. Kailangang patakbuhin ang Daloy sa address na maaabot ng customers.", "View activity": "Tingnan ang aktibidad", "Put it behind your website's contact button": "Ilagay ito sa contact button ng website mo", "Confirm your Gmail sender": "Kumpirmahin ang Gmail sender mo", "Confirming…": "Kinukumpirma…", "Confirmed. Your automations now send from your Gmail address.": "Kumpirmado na. Sa Gmail address mo na nagpapadala ang mga automation mo.", "Back to Apps": "Bumalik sa Apps",
+
+  "Gmail address": "Gmail address", "App password": "App password", "Find an automation": "Maghanap ng automation", "None match.": "Walang tumugma.", "Copy form link": "Kopyahin ang form link", "Open the oldest": "Buksan ang pinakaluma", "Add your first one": "Idagdag ang una mo",
+
+  "Needs you": "Kailangan ka", "Problem": "May problema", "Waiting": "Naghihintay", "Off": "Naka-off", "On": "Naka-on", "Done": "Tapos na", "Working": "Ginagawa", "Closed": "Isinara", "Closed: its booking changed": "Isinara: nagbago ang booking", "Waiting for a time or an approval": "Naghihintay ng oras o approval", "Taking longer than usual": "Mas matagal kaysa karaniwan", "No activity yet": "Wala pang aktibidad",
+
+  "This installation's mail server does not send for your account. Connect Gmail below to send email from your own address.": "Hindi nagpapadala ang mail server ng installation na ito para sa account mo. Ikonekta ang Gmail sa ibaba para magpadala mula sa sarili mong address.",
+
+  "Mail from your automations is paused. Replace the app password to send again. Nothing is sent from another address in the meantime.": "Naka-pause ang email mula sa mga automation mo. Palitan ang app password para makapagpadala ulit. Walang ipapadala mula sa ibang address habang naghihintay.",
+
+  "Mail from your automations is paused until you reconnect Gmail. Nothing is sent from another address in the meantime.": "Naka-pause ang email mula sa mga automation mo hanggang ikonekta mong muli ang Gmail. Walang ipapadala mula sa ibang address habang naghihintay.",
+
+  "Open the link in that email while you are signed in here. Your automations start sending from this address after that.": "Buksan ang link sa email habang naka-sign in ka rito. Pagkatapos nito, magpapadala ang mga automation mo mula sa address na ito.",
+
+  "Daloy sends as you with a Google app password, a 16-letter code that works for email only. Some work and school accounts do not offer them; ask your administrator.": "Nagpapadala ang Daloy sa pangalan mo gamit ang Google app password, isang 16 na letrang code para sa email lamang. Hindi ito available sa ilang work at school account; magtanong sa administrator mo.",
+
+  "Form link copied for {name}.": "Nakopya ang form link para sa {name}.", "this automation": "automation na ito", "Copy this link: {link}": "Kopyahin ang link na ito: {link}",
+
+  "Delete the draft {name}? This cannot be undone.": "Burahin ang draft na {name}? Hindi na ito maibabalik.", "Couldn't load your automations.": "Hindi na-load ang mga automation mo.", "No automations yet.": "Wala pang automation.", "Drafts ({count})": "Mga draft ({count})", "{name}: continue setup": "{name}: ipagpatuloy ang setup", "started {date}": "sinimulan noong {date}", "Show": "Ipakita",
+
+  "Preview result": "Resulta ng preview", "Sample reference:": "Halimbawang reference:", "Row in {list}": "Row sa {list}", "Notification to the office": "Abiso sa opisina", "Receipt to the employee": "Resibo para sa empleyado", "To {to}. Subject: {subject}": "Para kay {to}. Paksa: {subject}",
+
+  "Set up: {title}": "I-set up: {title}", "Step {step} of {total}: {title}. Your answers are saved at each step.": "Hakbang {step} sa {total}: {title}. Naka-save ang mga sagot mo sa bawat hakbang.", "Saving…": "Sine-save…", "Turn on": "I-on", "Save and finish later": "I-save at tapusin mamaya", "Fields staff fill in": "Mga sasagutan ng staff", "Where requests and alerts go": "Saan mapupunta ang requests at abiso", "Review": "Suriin", "Who decides": "Sino ang magpapasya", "Where approved requests go": "Saan mapupunta ang mga na-approve na request",
+
+  "Where is it?": "Saan ito?", "Anything else we should know?": "May iba pa ba kaming dapat malaman?", "Requests are saved to the request list of {name} in Daloy.": "Naka-save ang mga request sa listahan ng {name} sa Daloy.", "A row in your Google Sheet": "Isang row sa Google Sheet mo", "A short note in your Slack channel (reference and subject only)": "Maikling note sa Slack channel mo (reference at paksa lamang)", "Send the employee a receipt with the request reference.": "Padalhan ang empleyado ng resibo na may reference ng request.", "If rejected, or nobody decides within a week, tell the employee.": "Sabihan ang empleyado kung tinanggihan o walang nagpasya sa loob ng isang linggo.", "Send the emails from our Outlook mailbox": "Ipadala ang mga email mula sa Outlook mailbox namin", "Post a note in our Teams channel when a purchase is approved (reference and item only)": "Magpadala ng note sa Teams channel namin kapag na-approve ang purchase (reference at item lamang)",
+
+  "For your records only. Saving it does not connect a form that is already on your website.": "Para sa talaan mo lamang. Hindi nito ikokonekta ang form na nasa website mo na.", "When a customer answers one of your emails, the answer goes here.": "Dito mapupunta ang sagot ng customer sa email mo.", "Save business details": "I-save ang detalye ng negosyo", "Saved.": "Na-save.", "Email sender": "Nagpapadala ng email", "Not connected": "Hindi nakakonekta", "Not confirmed": "Hindi pa kumpirmado", "Needs attention": "Kailangang asikasuhin", "Disconnected": "Nadiskonekta", "Waiting for you to confirm the test email": "Naghihintay na kumpirmahin mo ang test email", "Sending from this address": "Nagpapadala mula sa address na ito", "Google rejected the app password": "Tinanggihan ng Google ang app password", "Send a test email to me": "Magpadala sa akin ng test email", "Replace password": "Palitan ang password", "Reconnect Gmail": "Ikonekta muli ang Gmail", "Disconnect Gmail? Email from your automations pauses until you reconnect.": "Idiskonekta ang Gmail? Hihinto ang email mula sa mga automation mo hanggang ikonekta mo itong muli.", "Use the local mail server instead": "Gamitin na lang ang local mail server", "Turn on 2-Step Verification in your Google account. Google offers app passwords only after that.": "I-on ang 2-Step Verification sa Google account mo. Pagkatapos nito lang nagbibigay ang Google ng app password.", "How to create an app password": "Paano gumawa ng app password", "Enter your Gmail address and the app password below, then save.": "Ilagay ang Gmail address at app password mo sa ibaba, saka i-save.", "Save Gmail sender": "I-save ang Gmail sender",
+
+  "Save each request to {name}.": "I-save ang bawat request sa {name}.", "Notify the office at {email}.": "Abisuhan ang opisina sa {email}.", "Add a row to your Google Sheet, starting with the reference.": "Magdagdag ng row sa Google Sheet mo, simula sa reference.", "Post the reference and subject to your Slack channel.": "Ipadala ang reference at paksa sa Slack channel mo.", "Save the request to {name} with a reference, and send the employee a receipt.": "I-save ang request sa {name} kasama ang reference, at padalhan ng resibo ang empleyado.", "Ask {approver} to approve or reject it, signed in to Daloy.": "Hilingin kay {approver} na i-approve o tanggihan ito habang naka-sign in sa Daloy.", "Ask for name, email, what needs attention": "Itanong ang pangalan, email at kailangang asikasuhin", ", where it is": ", kung saan ito", ", anything else": ", at iba pang detalye", "If approved, email purchasing at {email}": "Kung na-approve, mag-email sa purchasing sa {email}", " and post a note in your Teams channel": " at magpadala ng note sa Teams channel mo", ", then tell the employee.": ", saka sabihan ang empleyado.",
+
+  "Inquiry replies are on.": "Naka-on na ang mga sagot sa inquiry.", "Update inquiry replies": "I-update ang mga sagot sa inquiry", "Turn on inquiry replies": "I-on ang mga sagot sa inquiry", "Replies to customers are sent from": "Ang mga sagot sa customer ay mula sa", ", and their answers go to": ", at ang mga sagot nila ay mapupunta sa", "New inquiries go to": "Ang mga bagong inquiry ay mapupunta sa", "Inquiry form link copied.": "Nakopya ang inquiry form link.", "Inquiry form link:": "Inquiry form link:", "Copy inquiry form link": "Kopyahin ang inquiry form link", "Open form": "Buksan ang form", "Set your Contact button to the inquiry form link. To display the form on your page, paste the embed code into an HTML block.": "Itakda ang Contact button sa inquiry form link. Para ipakita ang form sa page mo, ilagay ang embed code sa HTML block.",
+
+  "Inquiry triage": "Pag-uuri ng inquiry", "Invoice follow-up": "Follow-up sa invoice", "Booking no-show follow-up": "Follow-up sa hindi dumating sa booking", "Thank the sender, let the model classify the message, then route billing questions and everything else to different inboxes.": "Pasalamatan ang nagpadala, ipauri ang mensahe sa model, at ipadala ang mga tanong sa billing at iba pa sa magkahiwalay na inbox.", "Seven days after an invoice is sent, check whether it is paid and email a reminder if not.": "Pitong araw matapos ipadala ang invoice, tingnan kung bayad na ito at mag-email ng paalala kung hindi pa.", "When a booking is marked as a no-show, wait an hour, then send a link to rebook.": "Kapag minarkahang hindi dumating sa booking, maghintay ng isang oras at magpadala ng link para mag-book muli.",
+
+  "Accepting requests": "Tumatanggap ng mga request", "Form link:": "Form link:", "Form link copied.": "Nakopya ang form link.", "Refresh": "I-refresh", "Couldn't load.": "Hindi na-load.", "Finished": "Natapos", "Processed": "Naasikaso", "Stopped, open details": "Huminto, buksan ang detalye", "Waiting for a decision": "Naghihintay ng desisyon", "Sending": "Ipinapadala", "None": "Wala", "50 or more": "50 o higit pa", "request needs you.": "request ang nangangailangan sa iyo.", "requests need you.": "request ang nangangailangan sa iyo.",
+
+  "This workflow has no guided setup.": "Walang guided setup ang workflow na ito.", "Connect them and pick the sheet and channel in": "Ikonekta ang mga ito at piliin ang sheet at channel sa", ". Turning on checks that they are connected.": ". Susuriin kung nakakonekta ang mga ito kapag in-on.", "Only this person can approve or reject, signed in to Daloy. A forwarded link does not work for anyone else. To add someone, invite them as an approver on the": "Ang taong ito lang ang puwedeng mag-approve o tumanggi habang naka-sign in sa Daloy. Hindi gagana sa iba ang ipinasa na link. Para magdagdag ng tao, imbitahan siyang approver sa", "page.": "page.", "Connect them in": "Ikonekta ang mga ito sa", ". Turning on checks that they are connected. Your organization may need an administrator to approve Outlook or the Teams Workflows app; that page says how.": ". Susuriin kung nakakonekta ang mga ito kapag in-on. Maaaring kailanganin ng administrator ng organisasyon mo na aprubahan ang Outlook o Teams Workflows app; nasa page na iyon ang paraan.", "Emails to the employee and to purchasing go out from your connected Outlook mailbox.": "Ang mga email sa empleyado at purchasing ay mula sa nakakonektang Outlook mailbox mo.", "Emails go out through the mail server in this installation's settings.": "Ang mga email ay ipinapadala gamit ang mail server sa settings ng installation na ito.", "The approval request carries a sign-in link and goes out through the email sender on Apps. A Teams note never approves anything.": "May sign-in link ang approval request at ipinapadala ito gamit ang email sender sa Apps. Hindi nag-a-approve ang Teams note.",
+
+  "Approval request to the approver": "Approval request sa approver", "Email to purchasing, once approved": "Email sa purchasing kapag na-approve", "Approved, to the employee": "Na-approve, para sa empleyado", "Not approved, to the employee": "Hindi na-approve, para sa empleyado", "No decision after a week, to the employee": "Walang desisyon makalipas ang isang linggo, para sa empleyado", "Daloy approval link": "Daloy approval link",
+
+};
+

@@ -1,3 +1,4 @@
+import { Text, useLanguage } from "./Language";
 import { useEffect, useState } from "react";
 import { api, type Version, type VersionSummary, type Workflow } from "./api";
 import { jsonDiff, type Change } from "./lib/diff";
@@ -6,9 +7,10 @@ type Opened = Workflow & { live: Version | null };
 const show = (v: unknown) => JSON.stringify(v);
 
 function ChangeLine({ c }: { c: Change }) {
+  const { t } = useLanguage();
   return (
     <li className={`change ${c.kind}`}>
-      <code>{c.path || "(whole definition)"}</code> {c.kind}
+      <code>{c.path || t("(whole definition)")}</code> {t(c.kind)}
       {c.kind !== "added" && <span className="before"> {show(c.before)}</span>}
       {c.kind === "changed" && " →"}
       {c.kind !== "removed" && <span className="after"> {show(c.after)}</span>}
@@ -21,6 +23,7 @@ function ChangeLine({ c }: { c: Change }) {
  * and rollback. A rollback publishes the old definition as a new version, so history is never rewritten.
  */
 export function VersionsPage({ workflowId }: { workflowId: string }) {
+  const { t } = useLanguage();
   const [wf, setWf] = useState<Opened | null>(null);
   const [list, setList] = useState<VersionSummary[] | null>(null);
   const [showDrafts, setShowDrafts] = useState(false);
@@ -53,7 +56,7 @@ export function VersionsPage({ workflowId }: { workflowId: string }) {
     if (!diff) return;
     try {
       const v = await api<VersionSummary>("POST", `/workflows/${workflowId}/versions`, { definition: diff.version.definition, publish: true });
-      setMessage({ text: `Version ${v.version} is live, with the definition of version ${diff.version.version}.`, error: false });
+      setMessage({ text: t("Version {version} is live, with the definition of version {previous}.", { version: v.version, previous: diff.version.version }), error: false });
       setSelected(v.version);
       await load();
     } catch (e) {
@@ -67,52 +70,48 @@ export function VersionsPage({ workflowId }: { workflowId: string }) {
   return (
     <main className="page">
       <header className="toolbar plain">
-        <a href={`#/w/${workflowId}`}>{wf?.name ?? "Workflow"}</a>
-        <h1>Versions</h1>
-        <a href={`#/w/${workflowId}/runs`}>Run history</a>
+        <a href={`#/w/${workflowId}`}>{wf?.name ?? t("Workflow")}</a>
+        <h1>{t("Versions")}</h1>
+        <a href={`#/w/${workflowId}/runs`}>{t("Run history")}</a>
       </header>
       <p role="status" className={`message ${message.error ? "error" : "ok"}`} hidden={!message.text}>
         {message.text}
       </p>
       <label className="check">
-        <input type="checkbox" checked={showDrafts} onChange={(e) => setShowDrafts(e.target.checked)} />
-        Show drafts (versions saved or test-run but never published)
-      </label>
+        <input type="checkbox" checked={showDrafts} onChange={(e) => setShowDrafts(e.target.checked)} />{t("Show drafts (versions saved or test-run but never published)")}</label>
       {list === null ? (
-        <p>Loading…</p>
+        <p><Text>Loading…</Text></p>
       ) : shown.length === 0 ? (
-        <p className="muted">{list.length === 0 ? "Nothing saved yet." : "No published versions yet."}</p>
+        <p className="muted">{list.length === 0 ? t("Nothing saved yet.") : t("No published versions yet.")}</p>
       ) : (
         <div className="versions">
-          <ul className="outline" aria-label="Versions">
+          <ul className="outline" aria-label={t("Versions")}>
             {shown.map((v) => (
               <li key={v.id}>
-                <button type="button" aria-pressed={v.version === selected} onClick={() => setSelected(v.version)}>
-                  v{v.version} <span className="muted">{v.version === liveVersion ? "live" : v.published ? "published" : "draft"}</span>
+                <button type="button" aria-pressed={v.version === selected} onClick={() => setSelected(v.version)}>{"v"}{v.version} <span className="muted">{v.version === liveVersion ? t("live") : v.published ? t("published") : t("draft")}</span>
                 </button>
               </li>
             ))}
           </ul>
           <section aria-labelledby="diff-heading">
-            <h2 id="diff-heading">{selected === null ? "Version" : `Version ${selected}`}</h2>
+            <h2 id="diff-heading">{selected === null ? t("Version") : t("Version {version}", { version: selected })}</h2>
             {!diff ? (
-              <p>Loading…</p>
+              <p><Text>Loading…</Text></p>
             ) : (
               <>
                 <p className="muted">
-                  {diff.version.published ? "Published" : "Draft"}, saved {new Date(diff.version.createdAt).toLocaleString()}.
-                  {selected === 1 ? " The first version." : ` ${diff.changes.length} change${diff.changes.length === 1 ? "" : "s"} against version ${selected! - 1}.`}
+                  {diff.version.published ? t("Published") : t("Draft")}{t(", saved ")}{new Date(diff.version.createdAt).toLocaleString()}.
+                  {selected === 1 ? t(" The first version.") : t(diff.changes.length === 1 ? " {count} change against version {version}." : " {count} changes against version {version}.", { count: diff.changes.length, version: selected! - 1 })}
                 </p>
                 {diff.changes.length > 0 && (
-                  <ul className="changes" aria-label="Changes">
+                  <ul className="changes" aria-label={t("Changes")}>
                     {diff.changes.map((c) => (
                       <ChangeLine key={`${c.kind}:${c.path}`} c={c} />
                     ))}
                   </ul>
                 )}
                 {selected !== liveVersion && (
-                  <button type="button" className="primary" onClick={rollback}>
-                    Roll back to v{selected}
+                  <button type="button" className="primary" onClick={rollback}>{t("Roll back to v{version}", { version: selected ?? "" })}
                   </button>
                 )}
               </>
