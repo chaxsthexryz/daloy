@@ -2,7 +2,7 @@ import { useLanguage } from "./Language";
 import { useState, type FormEvent } from "react";
 import { api } from "./api";
 
-export type Provider = "google_sheets" | "slack" | "outlook" | "teams" | "telegram" | "google_calendar";
+export type Provider = "google_sheets" | "slack" | "outlook" | "teams" | "telegram" | "google_calendar" | "paymongo";
 export type Connection = { provider: Provider; status: "active" | "failed"; account: string; destination: Record<string, string> | null; lastError: string | null; lastTestedAt: string | null };
 type TestResult = { ok: true; range?: string; channel?: string } | { ok: false; error: string };
 export type OutlookSetup = { configured: boolean; adminConsentUrl?: string };
@@ -329,6 +329,87 @@ export function SlackConnection({ conn, onChange }: { conn: Connection | null; o
   );
 }
 
+export function PaymongoConnection({ conn, webhookBase, onChange }: { conn: Connection | null; webhookBase: string; onChange: () => Promise<unknown> }) {
+  const { error, busy, act } = useAction(onChange);
+  const [editing, setEditing] = useState(false);
+  const [test, setTest] = useState<TestResult | null>(null);
+  const [form, setForm] = useState({ secretKey: "", webhookSecret: "" });
+  const save = (e: FormEvent) => {
+    e.preventDefault();
+    void act(async () => {
+      await api("PUT", "/settings/connections/paymongo", form);
+      setForm({ secretKey: "", webhookSecret: "" });
+      setEditing(false);
+      setTest(null);
+    });
+  };
+
+  return (
+    <div className="connection" aria-labelledby="paymongo-h">
+      <h3 id="paymongo-h">PayMongo</h3>
+      {conn && <Status conn={conn} label="Key" />}
+      {conn?.destination && (
+        <>
+          <p>
+            <strong>{conn.destination.mode === "live" ? "Live mode" : "Test mode"}</strong>
+          </p>
+          <p>
+            In PayMongo → Developers → Webhooks, add this URL with the events checkout_session.payment.paid and payment.refunded, then paste the webhook secret here.
+          </p>
+          <p>
+            <code>{`${webhookBase}/${conn.destination.webhookPath}`}</code>{" "}
+            <button type="button" className="quiet" onClick={() => void navigator.clipboard?.writeText(`${webhookBase}/${conn.destination!.webhookPath}`)}>
+              Copy
+            </button>
+          </p>
+        </>
+      )}
+      {conn && (
+        <div className="actions">
+          <button type="button" disabled={busy} onClick={() => void act(async () => setTest(await api<TestResult>("POST", "/settings/connections/paymongo/test")))}>
+            Test
+          </button>
+          {!editing && (
+            <button type="button" className="quiet" onClick={() => setEditing(true)}>
+              Replace key or secret
+            </button>
+          )}
+          <button type="button" className="quiet" disabled={busy} onClick={() => window.confirm("Disconnect PayMongo? Payment links stop working and payments are no longer recorded until you reconnect.") && void act(() => api("DELETE", "/settings/connections/paymongo"))}>
+            Disconnect
+          </button>
+        </div>
+      )}
+      <Outcome test={test} what="PayMongo accepted the key" />
+      {(!conn || editing) && (
+        <form onSubmit={save}>
+          <p>Paste your PayMongo secret key and the webhook secret. Both are stored encrypted and never shown again.</p>
+          <div className="field">
+            <label htmlFor="pm-key">Secret key</label>
+            <input id="pm-key" type="password" value={form.secretKey} onChange={(e) => setForm({ ...form, secretKey: e.target.value })} required placeholder="sk_test_…" autoComplete="off" />
+          </div>
+          <div className="field">
+            <label htmlFor="pm-whsk">Webhook secret</label>
+            <input id="pm-whsk" type="password" value={form.webhookSecret} onChange={(e) => setForm({ ...form, webhookSecret: e.target.value })} required placeholder="whsk_…" autoComplete="off" />
+          </div>
+          <div className="actions">
+            <button type="submit" className="primary" disabled={busy}>
+              {conn ? "Save" : "Connect PayMongo"}
+            </button>
+            {conn && (
+              <button type="button" className="quiet" onClick={() => setEditing(false)}>
+                Cancel
+              </button>
+            )}
+          </div>
+        </form>
+      )}
+      <p role="alert" className="message error" hidden={!error}>
+        {error}
+      </p>
+    </div>
+  );
+}
+
 export function TelegramConnection({ conn, onChange }: { conn: Connection | null; onChange: () => Promise<unknown> }) {
   const { t } = useLanguage();
   const { error, busy, act } = useAction(onChange);
@@ -533,7 +614,7 @@ export type Delivery = {
   lastError: string | null;
 };
 
-const NAMES: Record<Provider, string> = { google_sheets: "Sheet row", slack: "Slack note", outlook: "Outlook email", teams: "Teams note", telegram: "Telegram message", google_calendar: "Calendar event" };
+const NAMES: Record<Provider, string> = { google_sheets: "Sheet row", slack: "Slack note", outlook: "Outlook email", teams: "Teams note", telegram: "Telegram message", google_calendar: "Calendar event", paymongo: "PayMongo" };
 
 function describe(d: Delivery, t: ReturnType<typeof useLanguage>["t"]): string {
   switch (d.state) {

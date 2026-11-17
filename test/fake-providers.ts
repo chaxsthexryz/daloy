@@ -44,6 +44,7 @@ export async function startFakeProviders(port = 0) {
   // Google Calendar: events by calendar id then event id. Like Google, a deleted event stays as "cancelled" and its id cannot be inserted again.
   type CalendarEvent = { id: string; status: "confirmed" | "cancelled"; summary?: string; description?: string; start?: { dateTime: string; timeZone?: string }; end?: { dateTime: string; timeZone?: string } };
   const calendars = new Map<string, { title: string; editors: Set<string>; events: Map<string, CalendarEvent> }>();
+  const paymongo = { sessions: [] as { id: string; amount: number }[], keys: new Map<string, unknown>() }; // keys: Idempotency-Key -> stored response
   const teams = { flows: new Set(["flow-purchasing"]), posts: [] as { flow: string; text: string }[] };
   const pending: { path: string; behaviour: Behaviour }[] = [];
   const calls: string[] = [];
@@ -104,6 +105,7 @@ export async function startFakeProviders(port = 0) {
         outlookMessages: microsoft.sent,
         teamsPosts: teams.posts.map((p) => p.text),
         telegramMessages: telegram.messages.map((m) => m.text),
+        paymongoSessions: paymongo.sessions,
       });
     }
 
@@ -308,6 +310,20 @@ export async function startFakeProviders(port = 0) {
       }
       return json(res, 200, { ok: false, error: "unknown_method" });
     }
+    // PayMongo: Basic auth with a test secret key. A repeated Idempotency-Key gets the stored answer, not a second session.
+    if (path === "/v1/checkout_sessions" || path === "/v1/webhooks") {
+      const [user] = Buffer.from((req.headers.authorization ?? "").replace(/^Basic /, ""), "base64").toString().split(":");
+      if (!user?.startsWith("sk_test_")) return json(res, 401, { errors: [{ code: "authentication_error", detail: "Invalid authentication credentials" }] });
+      if (path === "/v1/webhooks") return json(res, 200, { data: [] });
+      const key = String(req.headers["idempotency-key"] ?? "");
+      if (key && paymongo.keys.has(key)) return json(res, 200, paymongo.keys.get(key));
+      const { line_items } = (JSON.parse(raw) as { data: { attributes: { line_items: { amount: number }[] } } }).data.attributes;
+      const id = `cs_e2e_${++seq}`;
+      const response = { data: { id, type: "checkout_session", attributes: { checkout_url: `https://checkout.paymongo.test/${id}`, livemode: false, status: "active", line_items } } };
+      paymongo.sessions.push({ id, amount: line_items[0]!.amount });
+      if (key) paymongo.keys.set(key, response);
+      return answer(200, response);
+    }
     // Telegram Bot API: the token is in the path, answers are { ok, result } or { ok: false, description } with a matching HTTP status.
     const tg = /^\/bot([^/]+)\/(\w+)$/.exec(path);
     if (tg) {
@@ -330,7 +346,7 @@ export async function startFakeProviders(port = 0) {
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 
   return {
-    urls: { googleToken: `${base}/token`, sheets: base, calendar: base, slack: base, telegram: base, microsoftLogin: `${base}/ms`, graph: `${base}/graph`, teamsHosts: ["127.0.0.1"] },
+    urls: { googleToken: `${base}/token`, sheets: base, calendar: base, paymongo: base, slack: base, telegram: base, microsoftLogin: `${base}/ms`, graph: `${base}/graph`, teamsHosts: ["127.0.0.1"] },
     calls,
     slack,
     telegram,

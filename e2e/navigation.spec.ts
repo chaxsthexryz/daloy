@@ -110,7 +110,7 @@ test("Apps lists each app as a card, and Connect opens that app's own setup", as
   await expect(page.getByRole("button", { name: "All 7" })).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByRole("button", { name: "Connected 0" })).toBeVisible();
   const more = page.getByRole("region", { name: "More" });
-  for (const name of ["Gmail", "Outlook", "Google Sheets", "Slack", "Microsoft Teams", "Telegram", "Google Calendar"]) await expect(more.getByRole("heading", { name, exact: true })).toBeVisible();
+  for (const name of ["Gmail", "Outlook", "Google Sheets", "Slack", "Microsoft Teams", "Telegram", "Google Calendar", "PayMongo"]) await expect(more.getByRole("heading", { name, exact: true })).toBeVisible();
 
   await page.getByLabel("Find an app").fill("sla");
   await expect(more.getByRole("listitem")).toHaveCount(1);

@@ -340,6 +340,7 @@ const TRIGGER_DEFAULTS: Record<Trigger["type"], Trigger> = {
   webhook: { type: "webhook", config: {} },
   schedule: { type: "schedule", config: { cron: "0 9 * * 1" } },
   form: { type: "form", config: { fields: [{ name: "email", label: "Email", type: "email", required: true }] } },
+  payment: { type: "payment", config: { events: ["paid"] } },
 };
 
 function TriggerPanel({ trigger, wf, onChange }: { trigger: Trigger; wf: Loaded; onChange: (t: Trigger) => void }) {
@@ -359,8 +360,27 @@ function TriggerPanel({ trigger, wf, onChange }: { trigger: Trigger; wf: Loaded;
           <option value="schedule">{t("On a schedule")}</option>
           <option value="form">{t("A form is submitted")}</option>
           <option value="email">{t("An email arrives")}</option>
+          <option value="payment">{t("When a PayMongo payment is confirmed")}</option>
         </select>
       </div>
+      {trigger.type === "payment" && (
+        <fieldset>
+          <legend>Run when a payment is</legend>
+          {(["paid", "refunded"] as const).map((e) => (
+            <label key={e}>
+              <input
+                type="checkbox"
+                checked={trigger.config.events.includes(e)}
+                onChange={(ev) => {
+                  const events = ev.target.checked ? [...trigger.config.events, e] : trigger.config.events.filter((x) => x !== e);
+                  if (events.length) onChange({ type: "payment", config: { events } });
+                }}
+              />{" "}
+              {e === "paid" ? "paid" : "refunded"}
+            </label>
+          ))}
+        </fieldset>
+      )}
       {trigger.type === "email" && <EmailSource workflowId={wf.id} published={wf.trigger?.type === "email" && !!wf.live} />}
       {trigger.type === "schedule" && (
         <div className="field">

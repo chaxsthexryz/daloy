@@ -17,6 +17,8 @@ import {
   outlookCodeTokens,
   outlookMailbox,
   outlookSend,
+  checkPaymongoKey,
+  paymongoMode,
   PROVIDER_NAMES,
   ProviderError,
   readConnections,
@@ -61,10 +63,15 @@ const telegramInput = z.strictObject({
   token: z.string().trim().regex(/^\d{6,12}:[A-Za-z0-9_-]{30,50}$/, "Paste the bot token from BotFather, like 123456789:AA..."),
   chatId: z.string().trim().regex(/^(-?\d{1,20}|@[A-Za-z][A-Za-z0-9_]{4,31})$/, "Enter the chat id (a number) or the public @name"),
 });
+// PayMongo's secret key and the signing secret of the webhook the owner made in PayMongo. Both are kept encrypted and never returned.
+const paymongoInput = z.strictObject({
+  secretKey: z.string().trim().regex(/^sk_(test|live)_\S+$/, "Paste the secret key from PayMongo, which starts with sk_test_ or sk_live_"),
+  webhookSecret: z.string().trim().regex(/^whsk_\S+$/, "Paste the webhook secret from PayMongo, which starts with whsk_"),
+});
 const calendarInput = z.strictObject({ serviceAccount: z.string().min(2).max(10_000), calendar: z.string().trim().min(3).max(300) });
 const retryInput = z.strictObject({ postAgain: z.boolean().default(false) });
 const teamsInput = z.strictObject({ url: z.string().trim().min(10).max(2000), channelName: z.string().trim().min(1).max(100) });
-const SLUGS: Record<string, Provider> = { "google-sheets": "google_sheets", slack: "slack", outlook: "outlook", teams: "teams", telegram: "telegram", "google-calendar": "google_calendar" };
+const SLUGS: Record<string, Provider> = { "google-sheets": "google_sheets", slack: "slack", outlook: "outlook", teams: "teams", telegram: "telegram", "google-calendar": "google_calendar", paymongo: "paymongo" };
 const providerSlug = new ZodPipe(z.enum(Object.keys(SLUGS) as [string, ...string[]]).transform((s) => SLUGS[s]!));
 const uuid = new ZodPipe(z.uuid());
 
@@ -93,7 +100,7 @@ export class ConnectionsController {
   @Get()
   async get(@CurrentUser() user: SessionUser) {
     const outlook = this.urls.microsoft ? { configured: true, adminConsentUrl: outlookAdminConsentUrl(this.urls, outlookRedirectUri(this.config)) } : { configured: false };
-    return { connections: await readConnections(this.db, user.workspaceId), outlook };
+    return { connections: await readConnections(this.db, user.workspaceId), outlook, paymongoWebhookBase: `${this.config.publicUrl}/hooks/paymongo` };
   }
 
   /** The sheet and tab, checked with a read before saving. Shared by connect and "change sheet". */
@@ -193,6 +200,31 @@ export class ConnectionsController {
   async testTelegram(@CurrentUser() user: SessionUser) {
     const conn = await this.connection(user.workspaceId, "telegram");
     return this.test(user.workspaceId, "telegram", conn, () => telegramSend(this.urls, conn.credential, conn.destination!.chatId!, "Test message from Daloy."));
+  }
+
+  /** Connect or Reconnect PayMongo. The webhook path is made once and kept, so the URL given to PayMongo keeps working. */
+  @Put("paymongo")
+  @UseGuards(RateLimit(10))
+  async putPaymongo(@CurrentUser() user: SessionUser, @Body(new ZodPipe(paymongoInput)) body: z.output<typeof paymongoInput>) {
+    const mode = paymongoMode(body.secretKey);
+    if (mode === "live" && process.env.PAYMONGO_LIVE !== "on") throw new BadRequestException("Live mode needs PayMongo business verification, which is not switched on here. Use a test key (sk_test_) for now.");
+    await checkPaymongoKey(body.secretKey, this.urls).catch(asBadRequest);
+    const old = await connectionCredential(this.db, this.config.secretsKey, user.workspaceId, "paymongo");
+    const webhookPath = old?.destination?.webhookPath ?? randomBytes(32).toString("base64url");
+    await saveConnection(this.db, this.config.secretsKey, user.workspaceId, "paymongo", {
+      account: `${mode === "live" ? "Live" : "Test"} mode key`,
+      credential: JSON.stringify({ secretKey: body.secretKey, webhookSecret: body.webhookSecret }),
+      destination: { webhookPath, mode },
+    });
+    return this.get(user);
+  }
+
+  @Post("paymongo/test")
+  @HttpCode(200)
+  @UseGuards(RateLimit(5))
+  async testPaymongo(@CurrentUser() user: SessionUser) {
+    const conn = await this.connection(user.workspaceId, "paymongo");
+    return this.test(user.workspaceId, "paymongo", conn, () => checkPaymongoKey((JSON.parse(conn.credential) as { secretKey: string }).secretKey, this.urls));
   }
 
   @Get("slack/channels")
