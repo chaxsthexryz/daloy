@@ -108,6 +108,8 @@ services:
       LLM_PROVIDER: ${LLM_PROVIDER:-ollama}
       LLM_API_KEY: ${LLM_API_KEY:-}
       SHARED_LLM_KEY: ${SHARED_LLM_KEY:-off}
+      # on turns on "Ask about a request" in Build with AI (decision 0041). Keep off until docs/ai-ask-measurement.md is done.
+      AI_ASK: ${AI_ASK:-off}
       # Behind cloudflared or Caddy: 1, so rate limits key on the real client (docs/deployment.md). 0 when nothing is in front.
       TRUST_PROXY: ${TRUST_PROXY:-0}
       # true on any installation served over HTTPS, so the session cookie is only sent over HTTPS.
