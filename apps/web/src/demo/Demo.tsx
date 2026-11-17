@@ -1,5 +1,6 @@
 import { definitionSchema, lintDefinition, parsePayload, triggerFields, type FormField } from "@daloy/engine";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { ChoiceQuestion, PlanList } from "../AiFlow";
 import { RunFlow } from "../FlowCanvas";
 import { runFlow, STATUS, type FlowRun } from "../lib/run-flow";
 import { matchScript, SCRIPTS, type Script } from "./scripts";
@@ -261,23 +262,14 @@ export function Demo() {
               )}
 
               {script && question && (
-                <fieldset className="demo-question">
-                  <legend>
-                    <h2 ref={questionHeading} tabIndex={-1}>
-                      {question.text}
-                    </h2>
-                  </legend>
-                  <p className="muted">
-                    Question {script.questions.indexOf(question) + 1} of {script.questions.length}. The page asks these, not a model.
-                  </p>
-                  <div className="demo-choices">
-                    {question.choices.map((c) => (
-                      <button key={c.value} type="button" onClick={() => answer(question.id, c.value, c.label)}>
-                        {c.label}
-                      </button>
-                    ))}
-                  </div>
-                </fieldset>
+                <ChoiceQuestion
+                  text={question.text}
+                  position={script.questions.indexOf(question) + 1}
+                  total={script.questions.length}
+                  choices={question.choices}
+                  focus={questionHeading}
+                  onPick={(value, label) => answer(question.id, value, label)}
+                />
               )}
 
               {draft && (
@@ -285,29 +277,22 @@ export function Demo() {
                   <h2 id="review-title" ref={reviewHeading} tabIndex={-1}>
                     {approved ? "Approved draft" : "Check the draft"}: {draft.name}
                   </h2>
-                  <p>{draft.when}, Daloy will:</p>
-                  <ol className="numbered demo-plan">
-                    {draft.definition.steps.map((s, i) => (
-                      <li key={s.id}>
-                        {draft.plan[i]}
-                        {states && (
-                          <span className={`state ${states[s.id]}`}>
-                            <span aria-hidden="true">{STATUS[states[s.id]!].symbol}</span> {STATUS[states[s.id]!].label}
+                  <PlanList
+                    lead={draft.when}
+                    steps={draft.definition.steps.map((_, i) => draft.plan[i] ?? "")}
+                    warnings={warnings}
+                    cleanNote="The checker found nothing to fix. This is Daloy's real checker, run in your browser."
+                    stateOf={(i) => {
+                      const id = draft.definition.steps[i]!.id;
+                      return (
+                        states && (
+                          <span className={`state ${states[id]}`}>
+                            <span aria-hidden="true">{STATUS[states[id]!].symbol}</span> {STATUS[states[id]!].label}
                           </span>
-                        )}
-                      </li>
-                    ))}
-                  </ol>
-                  <h3>Check before turning on</h3>
-                  {warnings.length ? (
-                    <ul className="list">
-                      {warnings.map((w) => (
-                        <li key={w}>{w}</li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <p>The checker found nothing to fix. This is Daloy's real checker, run in your browser.</p>
-                  )}
+                        )
+                      );
+                    }}
+                  />
                   {!approved ? (
                     <div className="actions">
                       <button type="button" className="primary" onClick={() => setApproved(true)}>

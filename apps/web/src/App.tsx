@@ -5,6 +5,7 @@ import { RunPage, RunsPage } from "./Runs";
 import { AdvancedPage } from "./Advanced";
 import { Automations } from "./Automations";
 import { NewAutomationPage } from "./NewAutomation";
+import { BuildWithAiPage } from "./BuildWithAi";
 import { OfficeRequestPage, TryOfficeRequest } from "./OfficeRequests";
 import { BookingsPage } from "./Bookings";
 import { ResourcesPage } from "./Resources";
@@ -21,7 +22,7 @@ const ANSWER = /^#\/answer\/([A-Za-z0-9_-]{43})$/;
 const INVITE = /^#\/invite\/([A-Za-z0-9_-]{43})$/;
 
 /**
- * Hash routes (#/ is Automations, #/advanced the developer menu, #/w/<id>, #/w/<id>/runs, #/w/<id>/versions, #/runs/<id>, #/tokens, #/settings, #/settings/ai, #/settings/business, #/apps, #/activity, #/new, #/resources, #/bookings,
+ * Hash routes (#/ is Automations, #/advanced the developer menu, #/w/<id>, #/w/<id>/runs, #/w/<id>/versions, #/runs/<id>, #/tokens, #/settings, #/settings/ai, #/settings/business, #/apps, #/activity, #/new, #/ai (Build with AI), #/resources, #/bookings,
  * #/verify-sender/<token> for the Gmail confirmation link, #/team, #/invite/<token> for an invite link,
  * #/answer/<token> to sign in before a named approval (decision 0022),
  * #/try/office-request for the preview and #/a/<id> for a guided automation),
@@ -80,6 +81,7 @@ function Route({ hash, user }: { hash: string; user: User }) {
   if (hash === "#/try/office-request") return <TryOfficeRequest email={user.email} />;
   if (hash === "#/advanced" && user.role === "owner") return <AdvancedPage />;
   if (hash === "#/new" && user.role === "owner") return <NewAutomationPage email={user.email} />;
+  if (hash === "#/ai" && user.role === "owner") return <BuildWithAiPage email={user.email} />;
   if (hash === "#/tokens") return <TokensPage />;
   if (hash === "#/settings") return <SettingsPage user={user} />;
   if (hash === "#/settings/ai") return <AiModelPage />;
