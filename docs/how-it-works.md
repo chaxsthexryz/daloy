@@ -414,6 +414,14 @@ How it works: exactly like Slack (decision 0042). The step queues a delivery pin
 
 Tests: `packages/db/src/deliveries.test.ts` (Telegram: send, chat changed, revoked token, rate limit, ambiguous), `apps/api/src/connections.test.ts` (validation, no token in the answer), `e2e/telegram.spec.ts`. The fake is in `test/fake-providers.ts`.
 
+## Airtable, Notion and Trello (packages/db/src/providers.ts, deliveries.ts, apps/api/src/connections.ts, apps/web/src/Connections.tsx)
+
+What it does: Apps has a card for each. The owner pastes a token and a target (an Airtable base and table, a Notion database, a Trello list), and Daloy reads the target before saving. The `airtable`, `notion` and `trello` steps add one record, page or card, with field names the owner types and values from the run (decision 0044).
+
+How it works: like Telegram. The step queues a delivery pinned to the connection and target, and the worker adds it. These services have no way to ask whether an add landed, so a timeout or 5xx goes to needs_review with Retry off and Post again available. 429 waits for the provider's time, a revoked token marks the connection as needing a reconnect.
+
+Tests: `packages/db/src/deliveries.test.ts` (add, target changed, revoked, rate limit, ambiguous), `apps/api/src/connections.test.ts`, `apps/worker/src/steps/deliveries.test.ts`, `e2e/notion.spec.ts`. The fakes are in `test/fake-providers.ts`.
+
 ## Office teams and named approvals (packages/db/src/members.ts, apps/api/src/members.ts, apps/api/src/auth.ts, apps/web/src/Team.tsx)
 
 What it does: an office has one owner and any number of operators, approvers and requesters. The owner invites people from the Team page, changes their roles and removes them. Approvals can name a member, and only that member can answer.

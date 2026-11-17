@@ -29,6 +29,9 @@ export type ProviderUrls = {
   sheets: string;
   slack: string;
   telegram: string;
+  airtable: string;
+  notion: string;
+  trello: string;
   microsoftLogin?: string;
   graph?: string;
   /** Host suffixes a Teams Workflows URL may use. 127.0.0.1 (tests only) is the one host allowed over http. */
@@ -43,6 +46,9 @@ export const providerUrls = (env: NodeJS.ProcessEnv = process.env): ProviderUrls
   sheets: trim(env.GOOGLE_SHEETS_URL ?? "https://sheets.googleapis.com"),
   slack: trim(env.SLACK_API_URL ?? "https://slack.com"),
   telegram: trim(env.TELEGRAM_API_URL ?? "https://api.telegram.org"),
+  airtable: trim(env.AIRTABLE_API_URL ?? "https://api.airtable.com"),
+  notion: trim(env.NOTION_API_URL ?? "https://api.notion.com"),
+  trello: trim(env.TRELLO_API_URL ?? "https://api.trello.com"),
   microsoftLogin: trim(env.MICROSOFT_LOGIN_URL ?? "https://login.microsoftonline.com"),
   graph: trim(env.MICROSOFT_GRAPH_URL ?? "https://graph.microsoft.com"),
   teamsHosts: (env.TEAMS_WEBHOOK_HOSTS ?? "logic.azure.com,powerplatform.com").split(",").map((h) => h.trim().toLowerCase()).filter(Boolean),
@@ -308,6 +314,95 @@ export async function telegramChat(urls: ProviderUrls, token: string, chatId: st
 export async function telegramSend(urls: ProviderUrls, token: string, chatId: string, text: string) {
   const msg = await telegramCall(urls, token, "sendMessage", { chat_id: chatId, text, disable_web_page_preview: "true" }, true);
   return { chatId, messageId: String(msg.message_id) };
+}
+
+// ---------------------------------------------------------------- Airtable, Notion, Trello (decision 0044)
+
+/**
+ * One mapping of an HTTP answer to a ProviderError for the three record providers. None of them has a documented
+ * idempotency key, so a 5xx or timeout on an add is "ambiguous" (a person decides), never retried on its own. Errors
+ * never include the request URL (Trello's key and token are in it) or the answer's text.
+ */
+function recordFailure(res: Reply, what: string, write: boolean, defaultWaitMs: number): never {
+  if (res.status === 429) throw new ProviderError(`${what} is limiting requests right now. Daloy will try again.`, "quota", retryAfter(res.headers) ?? defaultWaitMs);
+  if (res.status >= 500) throw new ProviderError(`${what} answered ${res.status}.`, write ? "ambiguous" : "unavailable");
+  if (res.status === 401) throw new ProviderError(`${what} no longer accepts the saved token. Connect ${what} again.`, "auth");
+  if (res.status === 403 || res.status === 404) throw new ProviderError(`${what} cannot reach that target with this token. Check that it is shared with the token and has write access.`, "permission");
+  throw new ProviderError(`${what} refused the request. Check that the field and property names match.`, "invalid");
+}
+
+const enc = encodeURIComponent;
+
+// Airtable: 5 requests a second per base, and a 429 means wait 30 seconds.
+async function airtableCall(urls: ProviderUrls, token: string, method: "GET" | "POST", path: string, body?: object) {
+  const res = await call(`${urls.airtable}/v0/${path}`, { method, headers: { authorization: `Bearer ${token}`, "content-type": "application/json" }, body: body && JSON.stringify(body) }, urls.timeoutMs ?? 10_000, method === "POST", "Airtable");
+  if (res.status === 200) return res.body;
+  return recordFailure(res, "Airtable", method === "POST", 30_000);
+}
+
+/** A one-record read proves the token, base and table (the table may be an id or a name). */
+export async function airtableCheck(urls: ProviderUrls, token: string, baseId: string, tableId: string) {
+  await airtableCall(urls, token, "GET", `${enc(baseId)}/${enc(tableId)}?maxRecords=1`);
+  return { baseId, tableId };
+}
+
+/** typecast lets text fill number, date and select fields, so a template needs no per-type care. */
+export async function airtableAdd(urls: ProviderUrls, token: string, dest: { baseId: string; tableId: string }, fields: Record<string, string>) {
+  const rec = await airtableCall(urls, token, "POST", `${enc(dest.baseId)}/${enc(dest.tableId)}`, { fields, typecast: true });
+  return { recordId: String(rec.id) };
+}
+
+// Notion: about 3 requests a second, 429 and 529 carry Retry-After. Pinned to an API version whose database object lists its properties.
+const NOTION_VERSION = "2022-06-28";
+async function notionCall(urls: ProviderUrls, token: string, method: "GET" | "POST", path: string, body?: object) {
+  const res = await call(`${urls.notion}/v1/${path}`, { method, headers: { authorization: `Bearer ${token}`, "notion-version": NOTION_VERSION, "content-type": "application/json" }, body: body && JSON.stringify(body) }, urls.timeoutMs ?? 10_000, method === "POST", "Notion");
+  if (res.status === 200) return res.body;
+  if (res.status === 529) throw new ProviderError("Notion is limiting requests right now. Daloy will try again.", "quota", retryAfter(res.headers) ?? 10_000);
+  if (res.status === 503 && method === "POST" && typeof (res.body.additional_data as { committed_resource_id?: unknown } | undefined)?.committed_resource_id === "string") {
+    throw new ProviderError(`Notion answered 503 but may have saved the page ${(res.body.additional_data as { committed_resource_id: string }).committed_resource_id}.`, "ambiguous");
+  }
+  return recordFailure(res, "Notion", method === "POST", 10_000);
+}
+
+/** The database's name, and the name of its title property (every page needs one, and its name is the owner's). */
+export async function notionDatabase(urls: ProviderUrls, token: string, databaseId: string) {
+  const db = await notionCall(urls, token, "GET", `databases/${enc(databaseId)}`);
+  const props = (db.properties ?? {}) as Record<string, { type?: string }>;
+  const titleProperty = Object.keys(props).find((k) => props[k]?.type === "title");
+  if (!titleProperty) throw new ProviderError("That Notion object is not a database. Open a database page and copy its link.", "invalid");
+  const title = ((db.title ?? []) as { plain_text?: string }[]).map((t) => t.plain_text ?? "").join("") || databaseId;
+  return { databaseId, databaseTitle: title, titleProperty };
+}
+
+/** Every other field is a text property (rich_text) of that name. */
+export async function notionAddPage(urls: ProviderUrls, token: string, dest: { databaseId: string; titleProperty: string }, title: string, fields: Record<string, string>) {
+  const text = (content: string) => [{ text: { content } }];
+  const properties = { ...Object.fromEntries(Object.entries(fields).map(([k, v]) => [k, { rich_text: text(v) }])), [dest.titleProperty]: { title: text(title) } };
+  const page = await notionCall(urls, token, "POST", "pages", { parent: { database_id: dest.databaseId }, properties });
+  return { pageId: String(page.id) };
+}
+
+// Trello: 100 requests per 10 seconds per token. The key and token travel in the query string, as Trello's REST API expects.
+export type TrelloCredential = { key: string; token: string };
+async function trelloCall(urls: ProviderUrls, cred: TrelloCredential, method: "GET" | "POST", path: string, body?: object) {
+  const auth = `key=${enc(cred.key)}&token=${enc(cred.token)}`;
+  const res = await call(`${urls.trello}/1/${path}${path.includes("?") ? "&" : "?"}${auth}`, { method, headers: { "content-type": "application/json" }, body: body && JSON.stringify(body) }, urls.timeoutMs ?? 10_000, method === "POST", "Trello");
+  if (res.status === 200) return res.body;
+  return recordFailure(res, "Trello", method === "POST", 10_000);
+}
+
+export async function trelloIdentity(urls: ProviderUrls, cred: TrelloCredential) {
+  return { account: `@${String((await trelloCall(urls, cred, "GET", "members/me?fields=username")).username ?? "trello")}` };
+}
+
+export async function trelloList(urls: ProviderUrls, cred: TrelloCredential, listId: string) {
+  const list = await trelloCall(urls, cred, "GET", `lists/${enc(listId)}?fields=name`);
+  return { listId, listName: String(list.name ?? listId) };
+}
+
+export async function trelloAddCard(urls: ProviderUrls, cred: TrelloCredential, listId: string, name: string, desc: string) {
+  const card = await trelloCall(urls, cred, "POST", "cards", { idList: listId, name, desc });
+  return { cardId: String(card.id) };
 }
 
 // ---------------------------------------------------------------- Microsoft: Outlook through Graph, and Teams Workflows

@@ -793,3 +793,60 @@ describe("Telegram", () => {
     expect(await retryDelivery(db, ana, e.id)).toBe(false);
   });
 });
+
+describe("Airtable, Notion and Trello", () => {
+  const queue = async (provider: "airtable" | "notion" | "trello", payload: Record<string, unknown>, reference: string) =>
+    queueDelivery(db, { userId: ana, runId: await newRun(ana), stepId: `add_to_${provider}`, provider, reference, payload });
+  beforeEach(async () => {
+    Object.assign(fake.airtable, { token: "patFAKE.ana-airtable-token", revoked: false, records: [] });
+    Object.assign(fake.notion, { token: "secret_ana-notion-token", revoked: false, pages: [] });
+    Object.assign(fake.trello, { key: "ana-trello-key", token: "ana-trello-token", revoked: false, cards: [] });
+    await saveConnection(db, key, ana, "airtable", { account: fake.airtable.base, credential: fake.airtable.token, destination: { baseId: fake.airtable.base, tableId: fake.airtable.table } });
+    await saveConnection(db, key, ana, "notion", { account: "Office requests", credential: fake.notion.token, destination: { databaseId: fake.notion.database, databaseTitle: "Office requests", titleProperty: "Name" } });
+    await saveConnection(db, key, ana, "trello", { account: "@daloy_tester", credential: JSON.stringify({ key: fake.trello.key, token: fake.trello.token }), destination: { listId: fake.trello.list, listName: "To do" } });
+  });
+
+  it("adds a record, a page and a card to the saved targets", async () => {
+    const a = await queue("airtable", { fields: { Name: "Ana" } }, "REQ-3001");
+    const n = await queue("notion", { title: "Ana", fields: { Notes: "hello" } }, "REQ-3002");
+    const t = await queue("trello", { name: "Call Ana", desc: "REQ-3003" }, "REQ-3003");
+    await deliverDue();
+    expect(await state(a.id)).toMatchObject({ state: "delivered", result: { recordId: expect.any(String) } });
+    expect(await state(n.id)).toMatchObject({ state: "delivered", result: { pageId: expect.any(String) } });
+    expect(await state(t.id)).toMatchObject({ state: "delivered", result: { cardId: expect.any(String) } });
+    expect(fake.airtable.records.map((r) => r.fields)).toEqual([{ Name: "Ana" }]);
+    expect(fake.notion.pages).toHaveLength(1);
+    expect(fake.trello.cards).toMatchObject([{ name: "Call Ana", desc: "REQ-3003" }]);
+  });
+
+  it("holds for review when the target changed after queueing, and adds nothing", async () => {
+    const d = await queue("trello", { name: "Call Ana" }, "REQ-3004");
+    await saveConnection(db, key, ana, "trello", { account: "@daloy_tester", credential: JSON.stringify({ key: fake.trello.key, token: fake.trello.token }), destination: { listId: "other", listName: "Other" } });
+    await deliverDue();
+    expect(await state(d.id)).toMatchObject({ state: "needs_review", errorKind: "destination_changed" });
+    expect(fake.trello.cards).toHaveLength(0);
+  });
+
+  it("fails and marks the connection when a token is revoked", async () => {
+    const d = await queue("notion", { title: "Ana", fields: {} }, "REQ-3005");
+    fake.notion.revoked = true;
+    await deliverDue();
+    expect(await state(d.id)).toMatchObject({ state: "failed", errorKind: "auth" });
+  });
+
+  it("queues again after a rate limit, and holds for review when the add may have landed", async () => {
+    const a = await queue("airtable", { fields: { Name: "Ana" } }, "REQ-3006");
+    fake.once("/v0/", { status: 429, body: { error: { type: "RATE_LIMIT_REACHED" } }, headers: {} });
+    await deliverDue();
+    expect(await state(a.id)).toMatchObject({ state: "queued", errorKind: "quota" });
+    for (const [provider, payload] of [["airtable", { fields: { Name: "B" } }], ["notion", { title: "B", fields: {} }], ["trello", { name: "B" }]] as const) {
+      const d = await queue(provider, payload, `REQ-31-${provider}`);
+      fake.once(provider === "airtable" ? "/v0/" : provider === "notion" ? "/v1/pages" : "/1/cards", "hang-after");
+      await deliverDue();
+      const held = await state(d.id);
+      expect(held, provider).toMatchObject({ state: "needs_review", errorKind: "ambiguous" });
+      expect(held.lastError).toMatch(new RegExp(`${provider} (table|database|list)`, "i"));
+      expect(await retryDelivery(db, ana, d.id)).toBe(false);
+    }
+  });
+});

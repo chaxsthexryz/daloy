@@ -2,7 +2,7 @@ import { useLanguage } from "./Language";
 import { useState, type FormEvent } from "react";
 import { api } from "./api";
 
-export type Provider = "google_sheets" | "slack" | "outlook" | "teams" | "telegram";
+export type Provider = "google_sheets" | "slack" | "outlook" | "teams" | "telegram" | "airtable" | "notion" | "trello";
 export type Connection = { provider: Provider; status: "active" | "failed"; account: string; destination: Record<string, string> | null; lastError: string | null; lastTestedAt: string | null };
 type TestResult = { ok: true; range?: string; channel?: string } | { ok: false; error: string };
 export type OutlookSetup = { configured: boolean; adminConsentUrl?: string };
@@ -444,7 +444,7 @@ export type Delivery = {
   lastError: string | null;
 };
 
-const NAMES: Record<Provider, string> = { google_sheets: "Sheet row", slack: "Slack note", outlook: "Outlook email", teams: "Teams note", telegram: "Telegram message" };
+const NAMES: Record<Provider, string> = { google_sheets: "Sheet row", slack: "Slack note", outlook: "Outlook email", teams: "Teams note", telegram: "Telegram message", airtable: "Airtable record", notion: "Notion page", trello: "Trello card" };
 
 function describe(d: Delivery, t: ReturnType<typeof useLanguage>["t"]): string {
   switch (d.state) {
@@ -506,5 +506,135 @@ export function DeliveryList({ deliveries, onChange }: { deliveries: Delivery[];
         </li>
       )}
     </ul>
+  );
+}
+
+type RecordApp = {
+  name: string;
+  help: string;
+  helpUrl: string;
+  helpLink: string;
+  fields: { key: string; label: string; secret?: boolean; placeholder: string }[];
+  goesTo: (d: Record<string, string>) => string;
+  testButton: string;
+  testOk: string;
+};
+// Airtable, Notion and Trello add one record, page or card to the target saved here (decision 0044). Same shape, so one form.
+const RECORD_APPS: Record<"airtable" | "notion" | "trello", RecordApp> = {
+  airtable: {
+    name: "Airtable",
+    help: "Create a personal access token with the data.records:read and data.records:write scopes for your base. Paste it with the base id (app…) and the table id or name.",
+    helpUrl: "https://airtable.com/create/tokens",
+    helpLink: "Create an Airtable token",
+    fields: [
+      { key: "token", label: "Personal access token", secret: true, placeholder: "pat…" },
+      { key: "baseId", label: "Base id", placeholder: "app…" },
+      { key: "tableId", label: "Table id or name", placeholder: "tbl… or Requests" },
+    ],
+    goesTo: (d) => d.tableId ?? "",
+    testButton: "Check the connection",
+    testOk: "Airtable can read that table",
+  },
+  notion: {
+    name: "Notion",
+    help: "Create an internal integration, share your database with it, then paste its secret and the database link.",
+    helpUrl: "https://www.notion.so/profile/integrations",
+    helpLink: "Create a Notion integration",
+    fields: [
+      { key: "token", label: "Integration secret", secret: true, placeholder: "ntn_…" },
+      { key: "database", label: "Database link or id", placeholder: "https://www.notion.so/…" },
+    ],
+    goesTo: (d) => d.databaseTitle ?? "",
+    testButton: "Add a test page",
+    testOk: "Notion accepted a test page",
+  },
+  trello: {
+    name: "Trello",
+    help: "Get your API key and a token from the Trello Power-Up admin page, then paste them with the id of the list that should get the cards.",
+    helpUrl: "https://trello.com/power-ups/admin",
+    helpLink: "Get a Trello key and token",
+    fields: [
+      { key: "key", label: "API key", placeholder: "32 letters and digits" },
+      { key: "token", label: "Token", secret: true, placeholder: "ATTA…" },
+      { key: "listId", label: "List id", placeholder: "24 letters and digits" },
+    ],
+    goesTo: (d) => d.listName ?? "",
+    testButton: "Add a test card",
+    testOk: "Trello accepted a test card",
+  },
+};
+
+export function RecordConnection({ app, conn, onChange }: { app: keyof typeof RECORD_APPS; conn: Connection | null; onChange: () => Promise<unknown> }) {
+  const { t } = useLanguage();
+  const cfg = RECORD_APPS[app];
+  const { error, busy, act } = useAction(onChange);
+  const [editing, setEditing] = useState(false);
+  const [test, setTest] = useState<TestResult | null>(null);
+  const [form, setForm] = useState<Record<string, string>>({});
+  const save = (e: FormEvent) => {
+    e.preventDefault();
+    void act(async () => {
+      await api("PUT", `/settings/connections/${app}`, form);
+      setForm({});
+      setEditing(false);
+      setTest(null);
+    });
+  };
+
+  return (
+    <div className="connection" aria-labelledby={`${app}-h`}>
+      <h3 id={`${app}-h`}>{cfg.name}</h3>
+      {conn && <Status conn={conn} label={t("Account")} />}
+      {conn?.destination && (
+        <p>
+          {t("Entries are added to")} <strong>{cfg.goesTo(conn.destination)}</strong>.
+        </p>
+      )}
+      {conn && (
+        <div className="actions">
+          <button type="button" disabled={busy} onClick={() => void act(async () => setTest(await api<TestResult>("POST", `/settings/connections/${app}/test`)))}>
+            {t(cfg.testButton)}
+          </button>
+          {!editing && (
+            <button type="button" className="quiet" onClick={() => setEditing(true)}>
+              {t("Replace token or target")}
+            </button>
+          )}
+          <button type="button" className="quiet" disabled={busy} onClick={() => window.confirm(t("Disconnect {app}? Automations stop adding there until you reconnect.", { app: cfg.name })) && void act(() => api("DELETE", `/settings/connections/${app}`))}>
+            {t("Disconnect")}
+          </button>
+        </div>
+      )}
+      <Outcome test={test} what={t(cfg.testOk)} />
+      {(!conn || editing) && (
+        <form onSubmit={save}>
+          <p>
+            {t(cfg.help)}{" "}
+            <a href={cfg.helpUrl} target="_blank" rel="noreferrer">
+              {t(cfg.helpLink)}
+            </a>
+          </p>
+          {cfg.fields.map((f) => (
+            <div className="field" key={f.key}>
+              <label htmlFor={`${app}-${f.key}`}>{t(f.label)}</label>
+              <input id={`${app}-${f.key}`} type={f.secret ? "password" : "text"} value={form[f.key] ?? ""} onChange={(e) => setForm({ ...form, [f.key]: e.target.value })} required placeholder={f.placeholder} autoComplete="off" />
+            </div>
+          ))}
+          <div className="actions">
+            <button type="submit" className="primary" disabled={busy}>
+              {conn ? t("Save") : t("Connect {app}", { app: cfg.name })}
+            </button>
+            {conn && (
+              <button type="button" className="quiet" onClick={() => setEditing(false)}>
+                {t("Cancel")}
+              </button>
+            )}
+          </div>
+        </form>
+      )}
+      <p role="alert" className="message error" hidden={!error}>
+        {error}
+      </p>
+    </div>
   );
 }

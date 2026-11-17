@@ -40,3 +40,14 @@ Not run yet. The automated tests use a fake Bot API.
 4. Add a Telegram step to an automation, turn it on, and run it. Expect one message and a delivered state on the request.
 5. Remove the bot from the group and run again. Expect the delivery failed with "The bot cannot message that chat". Add it back, select Retry, expect one message.
 6. In BotFather send /revoke, then run again. Expect "Telegram no longer accepts the bot token" and the card showing Needs reconnecting.
+
+## Airtable, Notion and Trello (N15)
+
+Not run yet. The automated tests use fakes. Also confirm here what the docs left open: Notion's database read with version 2022-06-28 still works, Trello's key and token as query parameters still work, and each free plan allows the API.
+
+1. Airtable: create a token at airtable.com/create/tokens with data.records:read and data.records:write on one test base. In Apps, open Airtable, paste the token, the base id (app...) and the table, select Connect Airtable, then Check the connection. Expect it to pass.
+2. Notion: create an internal integration, share a test database with it (Connections menu on the database). In Apps, paste the secret and the database link, select Connect Notion, then Add a test page. Expect the page in the database.
+3. Trello: get the API key and a token at trello.com/power-ups/admin, and a list id (add .json to a card link, read idList). In Apps, paste them, select Connect Trello, then Add a test card. Expect it on the list.
+4. Add a step of each kind to an automation with field names that match your table and database, turn it on, and run it. Expect one record, page and card, and delivered on the request.
+5. Use a field name that does not exist. Expect a failed delivery with "refused the request" and no retry.
+6. Revoke each token, then run again. Expect "no longer accepts the saved token" and Needs reconnecting.

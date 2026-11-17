@@ -79,6 +79,7 @@ export const builderTranslations: Record<string, string> = {
   "Yes, the person named above": "Oo, ang taong pinili sa itaas",
   "Outlook or Teams": "Outlook o Teams",
   "Send to Telegram": "Magpadala sa Telegram",
+  "Add to Airtable": "Idagdag sa Airtable", "Add to Notion": "Idagdag sa Notion", "Add to Trello": "Idagdag sa Trello",
   "Condition": "Kondisyon",
   "HTTP request": "HTTP request",
   "Send email": "Magpadala ng email",

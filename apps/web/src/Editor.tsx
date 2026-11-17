@@ -451,7 +451,7 @@ function TriggerPanel({ trigger, wf, onChange }: { trigger: Trigger; wf: Loaded;
   );
 }
 
-const OUTSIDE = new Set(["http", "email", "approval", "sheets", "slack", "outlook", "teams", "telegram"]);
+const OUTSIDE = new Set(["http", "email", "approval", "sheets", "slack", "outlook", "teams", "telegram", "airtable", "notion", "trello"]);
 
 /** Per-step outcomes for a mocked or AI-only test run: a classify label, an approval decision, or a failure. */
 function TestChoices({ steps, choices, onChange }: { steps: Step[]; choices: Record<string, string>; onChange: (c: Record<string, string>) => void }) {

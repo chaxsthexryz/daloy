@@ -80,6 +80,13 @@ export const outlookConfigSchema = emailConfigSchema;
 export const teamsConfigSchema = slackConfigSchema;
 // A Telegram message goes to the one chat picked in Apps, as plain text (decision 0042). Queued like Slack.
 export const telegramConfigSchema = slackConfigSchema;
+// Airtable, Notion and Trello add one record, page or card to the target picked in Apps (decision 0044), queued like
+// Sheets. Field and property names are the owner's literals; values are templates. Notion fields are text properties.
+const fieldName = z.string().trim().min(1).max(100);
+const fieldMap = z.record(fieldName, template(2000)).refine((f) => Object.keys(f).length <= 20, "at most 20 fields");
+export const airtableConfigSchema = z.object({ fields: fieldMap.refine((f) => Object.keys(f).length >= 1, "add at least one field") });
+export const notionConfigSchema = z.object({ title: template(2000).min(1), fields: fieldMap.default({}) });
+export const trelloConfigSchema = z.object({ name: template(500).min(1), desc: template(10_000).optional() });
 export type SheetsConfig = z.infer<typeof sheetsConfigSchema>;
 export type SlackConfig = z.infer<typeof slackConfigSchema>;
 
@@ -120,6 +127,9 @@ const stepSchema = z.discriminatedUnion("type", [
   z.object({ id: stepId, type: z.literal("outlook"), config: outlookConfigSchema }),
   z.object({ id: stepId, type: z.literal("teams"), config: teamsConfigSchema }),
   z.object({ id: stepId, type: z.literal("telegram"), config: telegramConfigSchema }),
+  z.object({ id: stepId, type: z.literal("airtable"), config: airtableConfigSchema }),
+  z.object({ id: stepId, type: z.literal("notion"), config: notionConfigSchema }),
+  z.object({ id: stepId, type: z.literal("trello"), config: trelloConfigSchema }),
   z.object({ id: stepId, type: z.literal("booking"), config: bookingConfigSchema }),
 ]);
 export type Step = z.infer<typeof stepSchema>;
