@@ -257,7 +257,7 @@ describe("builder", () => {
     expect(res.schemas.http.properties.method.enum).toContain("POST");
     expect(res.branches.condition).toEqual(["true", "false", "invalid"]);
     const templates = (await agent.get("/templates").expect(200)).body;
-    expect(templates).toHaveLength(3);
+    expect(templates).toHaveLength(10);
     await request(server).get("/step-schemas").expect(401);
   });
 

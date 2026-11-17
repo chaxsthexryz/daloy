@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { workspaceLanguage, aiConnection, bookFromStep, checkRecipients, claimTimeout, claimUsage, createApproval, findApprover, queueCalendarEvent, queueDelivery, readSecrets, redactSecrets, secretForms, sendAs, type Db, type MailDeps, type Provider } from "@daloy/db";
+import { workspaceLanguage, aiConnection, bookFromStep, checkRecipients, claimTimeout, claimUsage, createApproval, findPaymentForStep, findApprover, queueCalendarEvent, queueDelivery, readSecrets, redactSecrets, secretForms, sendAs, type Db, type MailDeps, type Provider } from "@daloy/db";
 import { approvalEmailBody, bookingStartField, conditionBranch, parseZoned, type TestChoice, type Trigger, declaresJson, parseInstant, isRetryable, mockAiOutput, parseJsonTemplate, resolveJsonTemplate, resolveTemplate, StepError, usesSecrets, type ExpressionContext, type Step } from "@daloy/engine";
 import type { StepExecutor, StepResult } from "../advance";
 import { runAi } from "./ai";
@@ -91,6 +91,8 @@ function resolveInput(step: Step, ctx: ExpressionContext): Record<string, unknow
       return { text: text(step.config.text, ctx) } satisfies SlackInput;
     case "calendar":
       return { title: text(step.config.title, ctx), description: step.config.description === undefined ? "" : text(step.config.description, ctx) } satisfies CalendarInput;
+    case "payment_status":
+      return { link: step.config.link };
     case "paymongo_link": {
       const { amount, description, reference } = step.config;
       return { amount: text(amount, ctx), description: text(description, ctx), reference: text(reference, ctx) };
@@ -267,6 +269,13 @@ async function runStep(deps: FullDeps, step: Step, input: unknown, ctx: Expressi
       const provider: Provider = step.type === "sheets" ? "google_sheets" : step.type;
       const d = await queueDelivery(deps.db, { userId, runId, stepId: step.id, provider, reference, payload });
       return { output: { deliveryId: d.id, reference, state: d.state } };
+    }
+    case "payment_status": {
+      const cfg = input as { link: string };
+      if (mock) return { output: { mocked: true, status: "pending", paid: false } };
+      const p = await findPaymentForStep(deps.db, runId, cfg.link);
+      if (!p) throw new StepError(`Step ${cfg.link} made no payment link in this run.`, false);
+      return { output: { status: p.status, paid: p.status === "paid", reference: p.reference, amount: p.amountCentavos, url: p.url } };
     }
     case "paymongo_link": {
       const cfg = input as { amount: string; description: string; reference: string };

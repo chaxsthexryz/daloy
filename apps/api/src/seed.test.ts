@@ -38,7 +38,7 @@ it("seeds the published examples and a disconnected email-in draft, and is safe 
   await seed(baseUrl);
   const [user] = await db.select().from(users).where(eq(users.email, DEMO_EMAIL));
   const wfs = await db.select().from(workflows).where(eq(workflows.userId, user!.id));
-  expect(wfs.map((w) => w.slug).sort()).toEqual([...TEMPLATES.map((t) => t.slug), "office-requests", "website-inquiries", "website-inbox"].sort());
+  expect(wfs.map((w) => w.slug).sort()).toEqual([...TEMPLATES.slice(0, 3).map((t) => t.slug), "office-requests", "website-inquiries", "website-inbox"].sort());
   const versions = await db.select().from(workflowVersions);
   expect(versions.filter(v => v.published)).toHaveLength(5);
   const draft = versions.find(v => v.workflowId === wfs.find(w => w.slug === "website-inbox")!.id);

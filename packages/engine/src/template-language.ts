@@ -6,6 +6,7 @@ const LABELS: Record<string, string> = {
   "Your name": "Pangalan mo", "Your email": "Email mo", "Email": "Email", "How can we help?": "Paano kami makakatulong?",
   "What needs attention?": "Ano ang kailangang asikasuhin?", "Where is it?": "Saan ito?", "Anything else we should know?": "May iba pa ba kaming dapat malaman?",
   "What do you want to buy?": "Ano ang gusto mong bilhin?", "Estimated cost": "Tinatayang halaga", "Why is it needed?": "Bakit ito kailangan?",
+  "Service": "Serbisyo", "Appointment time": "Oras ng appointment", "Preferred time": "Gustong oras", "Who or what to book": "Sino o ano ang ibu-book", "What do you need?": "Ano ang kailangan mo?", "What do you want to order?": "Ano ang gusto mong i-order?", "Amount in pesos": "Halaga sa piso", "Deposit in pesos": "Deposito sa piso", "Invoice number": "Numero ng invoice", "Customer name": "Pangalan ng customer", "Customer email": "Email ng customer",
 };
 type Message = { subject?: string; text?: string; message?: string };
 
@@ -42,6 +43,25 @@ export function localizeGeneratedDefinition(definition: WorkflowDefinition, lang
     },
     "invoice-follow-up": { remind: { subject: "Paalala: invoice {{trigger.invoice_id}}", text: "Hi {{trigger.customer_name}}, hindi pa bayad ang invoice {{trigger.invoice_id}} na nagkakahalaga ng {{trigger.amount}}. Puwedeng magbayad dito: {{trigger.pay_url}}." } },
     "no-show-follow-up": { offer_rebook: { subject: "Hindi tayo nagkita sa booking mo", text: "Hi {{trigger.customer_name}}, hindi ka nakarating sa booking mo para sa {{trigger.service}}. Pumili ng bagong oras dito: {{trigger.rebook_url}}" } },
+    "appointment-reminder": { remind: { subject: "Paalala: ang {{trigger.service}} appointment mo", text: "Hi {{trigger.name}}, paalala ito sa {{trigger.service}} appointment mo sa {{trigger.appointment_at}}. Sumagot sa email na ito kung kailangan mong baguhin." } },
+    "request-to-sheets": { send_receipt: { subject: "Natanggap namin ang request mo", text: "Hi {{trigger.name}}, idinagdag na namin ang request mo sa listahan namin at babalikan ka namin agad:\n\n{{trigger.request}}" } },
+    "lead-to-booking": {
+      confirm: { subject: "Kumpirmado na ang {{trigger.service}} booking mo", text: "Hi {{trigger.name}}, naka-book ka na sa {{trigger.appointment_at}}. Kita tayo." },
+      tell_taken: { subject: "Hindi na available ang oras na iyon", text: "Hi {{trigger.name}}, may nag-book na sa {{trigger.appointment_at}}. Ipadala ulit ang form na may ibang oras." },
+      tell_owner: { subject: "May problema sa booking ni {{trigger.name}}", text: "Humiling si {{trigger.name}} ({{trigger.email}}) ng resource na hindi makita. Pakisagot siya." },
+    },
+    "order-to-sheets": { send_link: { subject: "Bayaran ang order mo: {{trigger.item}}", text: "Hi {{trigger.name}}, salamat sa order mo na {{trigger.item}} ({{trigger.amount}} piso). Magbayad dito: {{steps.pay_link.output.url}}" } },
+    "invoice-paymongo": {
+      send_invoice: { subject: "Invoice {{trigger.invoice_id}}", text: "Hi {{trigger.customer_name}}, handa na ang invoice {{trigger.invoice_id}} na {{trigger.amount}} piso. Magbayad dito: {{steps.pay_link.output.url}}" },
+      remind: { subject: "Paalala: invoice {{trigger.invoice_id}}", text: "Hi {{trigger.customer_name}}, bukas pa ang invoice {{trigger.invoice_id}} na {{trigger.amount}} piso. Magbayad dito: {{steps.pay_link.output.url}}" },
+      tell_owner: { subject: "Dalawang linggo nang lampas ang invoice {{trigger.invoice_id}}", text: "Hindi pa nagbabayad si {{trigger.customer_name}} ({{trigger.customer_email}}) sa invoice {{trigger.invoice_id}} ({{trigger.amount}} piso) matapos ang dalawang paalala." },
+    },
+    "quote-deposit": {
+      decide: { subject: "Quote request mula kay {{trigger.name}}", message: "Humihingi si {{trigger.name}} ({{trigger.email}}) ng:\n{{trigger.service}}\nDeposito: {{trigger.deposit}} piso" },
+      send_deposit: { subject: "Na-approve ang quote mo", text: "Hi {{trigger.name}}, kaya naming gawin. Pakibayaran ang {{trigger.deposit}} pisong deposito para makumpirma: {{steps.deposit_link.output.url}}" },
+      tell_declined: { subject: "Tungkol sa quote request mo", text: "Hi {{trigger.name}}, salamat sa pagtanong. Hindi pa namin ito matatanggap sa ngayon." },
+      tell_no_decision: { subject: "Naghihintay ang quote request ni {{trigger.name}}", text: "Walang sumagot sa quote request ni {{trigger.name}} ({{trigger.email}}) sa loob ng dalawang araw. Pakisagot siya." },
+    },
   };
   if (result.trigger.type === "form") {
     result.trigger.config.fields = result.trigger.config.fields.map((f) => ({ ...f, label: LABELS[f.label] ?? f.label }));
