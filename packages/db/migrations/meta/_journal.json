@@ -169,6 +169,13 @@
       "when": 1794928365235,
       "tag": "0023_telegram_provider",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1794931262798,
+      "tag": "0024_workspace_language",
+      "breakpoints": true
     }
   ]
 }

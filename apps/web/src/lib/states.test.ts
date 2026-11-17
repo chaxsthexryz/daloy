@@ -100,3 +100,9 @@ describe("runKind", () => {
     expect(runKind({ test: true, live: false, aiLive: true })).toBe("Preview with real AI, other calls mocked");
   });
 });
+
+
+it("localizes relative activity without changing request references", () => {
+  expect(lastEvent({ runId: "1", state: "succeeded", createdAt: at(120), needsReview: false, deliveryFailed: false, superseded: false, reference: "Settings-42" }, NOW, "tl")).toBe("Natanggap ang request Settings-42 2 minuto ang nakalipas");
+  expect(lastEvent(null, NOW, "tl")).toBe("Wala pang aktibidad");
+});

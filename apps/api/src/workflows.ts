@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { createKeyedRun, deliveries, emailSources, findApprover, listDeliveries, PLANS, PROVIDER_NAMES, type Provider, publishedVersion, readConnections, requests, runs, SCHEDULE_QUEUE, supersededSql, syncEmailSourceOnPublish, triggers, users, workflows, workflowVersions, type Db } from "@daloy/db";
-import { BRANCHES, choiceProblems, definitionSchema, testChoicesSchema, testModeSchema, guidedSetupInput, OFFICE_REQUEST, saveProblems, stepJsonSchemas, TEMPLATES, triggerFields, type Trigger, type WorkflowDefinition } from "@daloy/engine";
+import { BRANCHES, choiceProblems, definitionSchema, testChoicesSchema, testModeSchema, guidedSetupInput, OFFICE_REQUEST, saveProblems, stepJsonSchemas, templatesForLanguage, triggerFields, type Trigger, type WorkflowDefinition } from "@daloy/engine";
 import {
   BadRequestException,
   Body,
@@ -373,8 +373,8 @@ export class CatalogController {
   }
 
   @Get("templates")
-  templates() {
-    return TEMPLATES;
+  templates(@CurrentUser() user: SessionUser) {
+    return templatesForLanguage(user.language);
   }
 }
 

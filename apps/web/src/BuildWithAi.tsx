@@ -1,3 +1,4 @@
+import { useLanguage } from "./Language";
 import type { WorkflowDefinition } from "@daloy/engine";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { api } from "./api";
@@ -32,6 +33,7 @@ const SETUP_LABEL: Record<string, string> = { purchase: "Set up purchase request
 
 /** #/ai (owners): the Build with AI flow of docs/console-navigation-plan.md section 4. The draft stays in this page until Save as draft. */
 export function BuildWithAiPage({ email, ask = false }: { email: string; ask?: boolean }) {
+  const { t, language } = useLanguage();
   const [connected, setConnected] = useState<ReadonlySet<string>>(new Set());
   const [members, setMembers] = useState<Member[]>([]);
   const [ready, setReady] = useState(false);
@@ -76,7 +78,7 @@ export function BuildWithAiPage({ email, ask = false }: { email: string; ask?: b
     };
   }, []);
 
-  const qs = useMemo(() => questions(connected, members), [connected, members]);
+  const qs = useMemo(() => questions(connected, members, language), [connected, members, language]);
   const question = stage === "questions" ? qs.find((q) => !(q.id in answers)) : undefined;
   const picked = answers.who?.startsWith("member:") ? members[Number(answers.who.slice(7))] : undefined;
   const real = { owner: email, member1: picked?.email };
@@ -159,42 +161,42 @@ export function BuildWithAiPage({ email, ask = false }: { email: string; ask?: b
   }
 
   const recap = said.length > 0 && (
-    <ul className="list" aria-label="What you have said so far">
-      <li>You said: {description}</li>
+    <ul className="list" aria-label={t("What you have said so far")}>
+      <li>{t("You said: {text}", { text: description })}</li>
       {said.map((s, i) => (
-        <li key={i}>You said: {s}</li>
+        <li key={i}>{t("You said: {text}", { text: s })}</li>
       ))}
     </ul>
   );
 
   return (
     <main className="page">
-      <Header title="Build with AI" />
+      <Header title={t("Build with AI")} />
       <div className="ai-build">
         {ask && stage === "describe" && <AskRequest />}
         {stage === "describe" && (
           <form className="demo-card" onSubmit={next}>
             <h2 ref={heading} tabIndex={-1}>
-              Describe it
+              {t("Describe it")}
             </h2>
             <div className="field">
-              <label htmlFor="ai-description">What should happen?</label>
+              <label htmlFor="ai-description">{t("What should happen?")}</label>
               <textarea id="ai-description" rows={4} maxLength={1200} required value={description} onChange={(e) => setDescription(e.target.value)} />
             </div>
-            <p className="muted">Or start from an example:</p>
+            <p className="muted">{t("Or start from an example:")}</p>
             <ul className="demo-starters">
               {EXAMPLES.map((x) => (
-                <li key={x}>
-                  <button type="button" onClick={() => setDescription(x)}>
-                    {x}
+                <li key={t(x)}>
+                  <button type="button" onClick={() => setDescription(t(x))}>
+                    {t(x)}
                   </button>
                 </li>
               ))}
             </ul>
-            <p className="muted">The questions are asked by this page. Only your words, your tapped answers, and which apps are connected go to the AI. Nothing is saved until you choose Save as draft.</p>
+            <p className="muted">{t("The questions are asked by this page. Only your words, your tapped answers, and which apps are connected go to the AI. Nothing is saved until you choose Save as draft.")}</p>
             <div className="actions">
               <button className="primary" disabled={!ready}>
-                Next
+                {t("Next")}
               </button>
             </div>
           </form>
@@ -206,7 +208,7 @@ export function BuildWithAiPage({ email, ask = false }: { email: string; ask?: b
             <ChoiceQuestion key={question.id} text={question.text} position={qs.indexOf(question) + 1} total={qs.length} choices={question.choices} allowOther focus={heading} note="The page asks these, not a model." onPick={(v, l) => pick(question.id, v, l)} />
             <div className="actions">
               <button type="button" className="quiet" onClick={startOver}>
-                Start over
+                {t("Start over")}
               </button>
             </div>
           </>
@@ -217,7 +219,7 @@ export function BuildWithAiPage({ email, ask = false }: { email: string; ask?: b
             {recap}
             <div role="status">
               <h2 ref={heading} tabIndex={-1}>
-                Drafting...
+                {t("Drafting...")}
               </h2>
             </div>
           </>
@@ -226,34 +228,34 @@ export function BuildWithAiPage({ email, ask = false }: { email: string; ask?: b
         {stage === "review" && draft && (
           <section className="demo-card demo-review" aria-labelledby="review-title">
             <h2 id="review-title" ref={heading} tabIndex={-1}>
-              Check the draft: {draft.name}
+              {t("Check the draft: {name}", { name: draft.name })}
             </h2>
             <p>{draft.summary}</p>
-            <PlanList lead={plainDraft(draft.definition).when} steps={plainDraft(draft.definition).steps} warnings={draft.warnings} cleanNote="The checker found nothing to fix." />
-            <h3>Apps this needs</h3>
+            <PlanList lead={plainDraft(draft.definition, language).when} steps={plainDraft(draft.definition, language).steps} warnings={draft.warnings} cleanNote="The checker found nothing to fix." />
+            <h3>{t("Apps this needs")}</h3>
             {Object.keys(NEEDS).some((t) => draft.definition.steps.some((s) => s.type === t)) ? (
               <ul className="list">
                 {Object.entries(NEEDS)
                   .filter(([t]) => draft.definition.steps.some((s) => s.type === t))
-                  .map(([t, app]) => (
-                    <li key={t}>
-                      {app.label}: {connected.has(app.provider) ? "Connected" : <a href="#/apps">Connect in Apps</a>}
+                  .map(([kind, app]) => (
+                    <li key={kind}>
+                      {t(app.label)}: {connected.has(app.provider) ? t("Connected") : <a href="#/apps">{t("Connect in Apps")}</a>}
                     </li>
                   ))}
               </ul>
             ) : (
-              <p>No apps are needed.</p>
+              <p>{t("No apps are needed.")}</p>
             )}
-            <p>Nothing is saved yet.</p>
+            <p>{t("Nothing is saved yet.")}</p>
             <div className="actions">
               <button type="button" className="primary" disabled={saving} onClick={save}>
-                Save as draft
+                {t("Save as draft")}
               </button>
               <button type="button" aria-expanded={changing} aria-controls="ai-change" onClick={() => setChanging(!changing)}>
-                Change something
+                {t("Change something")}
               </button>
               <button type="button" className="quiet" onClick={startOver}>
-                Start over
+                {t("Start over")}
               </button>
             </div>
             <p role="alert" className="message error" hidden={!saveError}>
@@ -262,16 +264,16 @@ export function BuildWithAiPage({ email, ask = false }: { email: string; ask?: b
             {changing && (
               <form id="ai-change" onSubmit={send}>
                 <div className="field">
-                  <label htmlFor="ai-change-text">What should change?</label>
+                  <label htmlFor="ai-change-text">{t("What should change?")}</label>
                   <textarea id="ai-change-text" ref={changeBox} rows={3} maxLength={1200} required value={change} onChange={(e) => setChange(e.target.value)} />
                 </div>
                 <div className="actions">
                   <button className="primary" disabled={changeBusy || !change.trim()}>
-                    Send
+                    {t("Send")}
                   </button>
                 </div>
                 <p role="status" className="muted">
-                  {changeBusy ? "Changing the draft..." : ""}
+                  {changeBusy ? t("Changing the draft...") : ""}
                 </p>
                 <p role="alert" className="message error" hidden={!changeError}>
                   {changeError}
@@ -284,29 +286,29 @@ export function BuildWithAiPage({ email, ask = false }: { email: string; ask?: b
         {stage === "failed" && (
           <section className="demo-card" aria-labelledby="failed-title">
             <h2 id="failed-title" ref={heading} tabIndex={-1}>
-              The AI is not set up, or it did not answer.
+              {t("The AI is not set up, or it did not answer.")}
             </h2>
             <p>{failure}</p>
             <p>
-              <a href="#/settings/ai">Check the AI model</a>
+              <a href="#/settings/ai">{t("Check the AI model")}</a>
             </p>
             {(() => {
-              const t = closestTemplate(answers, description);
-              const kind = t.action ?? "link";
+              const template = closestTemplate(answers, description);
+              const kind = template.action ?? "link";
               return (
                 <>
-                  <h3>The closest ready-made automation: {t.label}</h3>
-                  <p>{WHY[t.slug]}</p>
+                  <h3>{t("The closest ready-made automation: {name}", { name: t(template.label) })}</h3>
+                  <p>{t(WHY[template.slug]!)}</p>
                   <div className="actions">
-                    {t.href ? (
-                      <a href={t.href}>{SETUP_LABEL[kind]}</a>
+                    {template.href ? (
+                      <a href={template.href}>{t(SETUP_LABEL[kind]!)}</a>
                     ) : (
-                      <button type="button" className="primary" onClick={() => (t.action === "purchase" ? startPurchaseSetup(email) : startOfficeSetup(email)).catch((e: Error) => setSetupError(e.message))}>
-                        {SETUP_LABEL[kind]}
+                      <button type="button" className="primary" onClick={() => (template.action === "purchase" ? startPurchaseSetup(email, language) : startOfficeSetup(email, language)).catch((e: Error) => setSetupError(e.message))}>
+                        {t(SETUP_LABEL[kind]!)}
                       </button>
                     )}
                     <button type="button" className="quiet" onClick={startOver}>
-                      Start over
+                      {t("Start over")}
                     </button>
                   </div>
                   <p role="alert" className="message error" hidden={!setupError}>

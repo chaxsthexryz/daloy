@@ -149,7 +149,7 @@ describe("POST /runs/:id/explanation/reword", () => {
     const wire = JSON.stringify(asked[0]);
     for (const s of ["Maria", "maria@example.com", "3pm", "api.example.com", "token", "s3cret", "send_to_maria", "maria-vip-clients"]) expect(wire).not.toContain(s);
     const user = JSON.parse(sent.find((m) => m.role === "user")!.content) as { facts: object };
-    expect(Object.keys(user).sort()).toEqual(["facts", "fixed"]);
+    expect(Object.keys(user).sort()).toEqual(["facts", "fixed", "language"]);
     expect(Object.keys(user.facts).sort()).toEqual(["deliveries", "lint", "preview", "runState", "step"]);
   });
   it("changes no run, step or delivery row", async () => {

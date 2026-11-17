@@ -1,3 +1,4 @@
+import { useLanguage } from "./Language";
 import { useEffect, useState } from "react";
 import { api, ApiError, type Run, type RunSummary, type Version, type Workflow } from "./api";
 import { DeliveryList, type Delivery } from "./Connections";
@@ -53,59 +54,61 @@ const json = (v: unknown) => JSON.stringify(v, null, 2);
 
 /** The owner-facing state of a run (Done, Waiting, Needs you, Problem, Working), with its note. The raw state stays in the technician block. */
 function StateLabel({ run }: { run: { state: string; createdAt: string; needsReview: boolean; superseded?: boolean } }) {
+  const { t } = useLanguage();
   const s = plainState(run);
   return (
     <>
-      <span className={`state ${s.key}`}>{s.label}</span>
-      {s.note && <span className="muted"> {s.note}</span>}
+      <span className={`state ${s.key}`}>{t(s.label)}</span>
+      {s.note && <span className="muted"> {t(s.note)}</span>}
     </>
   );
 }
 // A named approval's step output holds who answered and when (decision 0022).
-function decided(output: unknown): string | null {
+function decided(output: unknown, t: ReturnType<typeof useLanguage>["t"]): string | null {
   const o = output as { decidedBy?: unknown; decidedAt?: unknown } | null;
-  return typeof o?.decidedBy === "string" && typeof o.decidedAt === "string" ? `Decided by ${o.decidedBy} at ${new Date(o.decidedAt).toLocaleString()}` : null;
+  return typeof o?.decidedBy === "string" && typeof o.decidedAt === "string" ? t("Decided by {name} at {time}", { name: o.decidedBy, time: new Date(o.decidedAt).toLocaleString() }) : null;
 }
 
 // A delay whose time had passed and that has no late edge ends the run (decision 0031).
-const skipped = (output: unknown) => {
+const skipped = (output: unknown, t: ReturnType<typeof useLanguage>["t"]) => {
   const s = (output as { skipped?: unknown } | null)?.skipped;
-  return typeof s === "string" ? `Skipped: ${s}` : null;
+  return typeof s === "string" ? t("Skipped: {reason}", { reason: s }) : null;
 };
 
 /** One run's steps: state, branch, attempt, timing, and the input and output the worker stored (secrets masked by the API). */
 export function RunResult({ run }: { run: Run }) {
+  const { t } = useLanguage();
   return (
     <div className="run" aria-live="polite">
       <p>
-        <span className={`badge ${run.state}`}>{run.state}</span> {kind(run)}
+        <span className={`badge ${run.state}`}>{run.state}</span> {t(kind(run))}
       </p>
-      {run.superseded && <p className="message">{SUPERSEDED}</p>}
+      {run.superseded && <p className="message">{t(SUPERSEDED)}</p>}
       {run.error && <p className="message error">{run.error}</p>}
       <ol className="steps">
         {run.steps.map((s) => (
           <li key={s.id}>
             <span className={`badge ${s.state}`}>{s.state}</span> {s.stepId}
-            {s.attempt > 1 && <span className="muted"> attempt {s.attempt}</span>}
+            {s.attempt > 1 && <span className="muted"> {t("attempt {count}", { count: s.attempt })}</span>}
             {s.branch && <span className="muted"> → {s.branch}</span>}
-            <span className="muted"> · {duration(s.createdAt, s.finishedAt)}</span>
-            {s.inputTokens !== null && <span className="muted"> · {s.inputTokens} in, {s.outputTokens ?? 0} out tokens</span>}
+            <span className="muted"> · {t(duration(s.createdAt, s.finishedAt))}</span>
+            {s.inputTokens !== null && <span className="muted"> · {t("{input} in, {output} out tokens", { input: s.inputTokens, output: s.outputTokens ?? 0 })}</span>}
             {s.error && <p className="message error">{s.error}</p>}
-            {decided(s.output) && <p className="muted">{decided(s.output)}</p>}
-            {skipped(s.output) && <p className="muted">{skipped(s.output)}</p>}
-            {s.outcome && <p className="muted">Outcome: {s.outcome.replace("_", " ")}</p>}
+            {decided(s.output, t) && <p className="muted">{decided(s.output, t)}</p>}
+            {skipped(s.output, t) && <p className="muted">{skipped(s.output, t)}</p>}
+            {s.outcome && <p className="muted">{t("Outcome: {outcome}", { outcome: s.outcome.replace("_", " ") })}</p>}
             {s.resolvedBy && s.resolvedAt && (
               <p className="muted">
-                Answered by {s.resolvedBy} at {new Date(s.resolvedAt).toLocaleString()}
+                {t("Answered by {name} at {time}", { name: s.resolvedBy, time: new Date(s.resolvedAt).toLocaleString() })}
               </p>
             )}
             {s.input !== null && (
               <details>
-                <summary>Input</summary>
-                <pre aria-label={`Input of ${s.stepId}`}>{json(s.input)}</pre>
+                <summary>{t("Input")}</summary>
+                <pre aria-label={t("Input of {step}", { step: s.stepId })}>{json(s.input)}</pre>
               </details>
             )}
-            {s.output !== null && <pre aria-label={`Output of ${s.stepId}`}>{json(s.output)}</pre>}
+            {s.output !== null && <pre aria-label={t("Output of {step}", { step: s.stepId })}>{json(s.output)}</pre>}
           </li>
         ))}
       </ol>
@@ -117,6 +120,7 @@ const FILTERS = { all: "", live: "&test=false", test: "&test=true", review: "&re
 
 /** #/activity: the latest 50 runs of every automation, or #/w/<id>/runs: of one, under its tabs. */
 export function RunsPage({ workflowId }: { workflowId?: string }) {
+  const { t } = useLanguage();
   const [wf, setWf] = useState<(Workflow & { live: unknown }) | null>(null);
   const [filter, setFilter] = useState<keyof typeof FILTERS>("all");
   const [query, setQuery] = useState("");
@@ -143,65 +147,65 @@ export function RunsPage({ workflowId }: { workflowId?: string }) {
       {workflowId ? (
         <>
           <p>
-            <a href="#/">Automations</a>
+            <a href="#/">{t("Automations")}</a>
           </p>
-          <h1>{wf?.name ?? "Activity"}</h1>
+          <h1>{wf?.name ?? t("Activity")}</h1>
           <AutomationTabs id={workflowId} here="activity" overview={!!wf?.setup && !!wf.live} />
         </>
       ) : (
         <>
-          <Header title="Activity" />
+          <Header title={t("Activity")} />
           <div className="field">
-            <label htmlFor="run-find">Find a request or automation</label>
+            <label htmlFor="run-find">{t("Find a request or automation")}</label>
             <input id="run-find" type="search" value={query} maxLength={100} onChange={(e) => setQuery(e.target.value)} />
           </div>
         </>
       )}
       <div className="field inline">
-        <label htmlFor="run-filter">Show</label>
+        <label htmlFor="run-filter">{t("Show")}</label>
         <select id="run-filter" value={filter} onChange={(e) => setFilter(e.target.value as keyof typeof FILTERS)}>
-          <option value="all">Everything</option>
-          <option value="live">Real runs</option>
-          <option value="test">Previews</option>
-          <option value="review">Needs you</option>
-          <option value="problem">Problem</option>
-          <option value="waiting">Waiting</option>
+          <option value="all">{t("Everything")}</option>
+          <option value="live">{t("Real runs")}</option>
+          <option value="test">{t("Previews")}</option>
+          <option value="review">{t("Needs you")}</option>
+          <option value="problem">{t("Problem")}</option>
+          <option value="waiting">{t("Waiting")}</option>
         </select>
       </div>
       <p role="alert" className="message error" hidden={!error}>
         {error}
       </p>
       {list === null ? (
-        <p>Loading…</p>
+        <p>{t("Loading…")}</p>
       ) : list.length === 0 ? (
-        <p className="muted">{query.trim() ? "Nothing matches." : "Nothing has happened yet."}</p>
+        <p className="muted">{t(query.trim() ? "Nothing matches." : "Nothing has happened yet.")}</p>
       ) : (
         <div className="table-wrap">
           <table className="table cards">
-            <caption className="muted">{list.length === 1 ? "1 item" : `Latest ${list.length} items, newest first`}</caption>
+            <caption className="muted">{list.length === 1 ? t("1 item") : t("Latest {count} items, newest first", { count: list.length })}</caption>
             <thead>
               <tr>
-                <th scope="col">Started</th>
-                {!workflowId && <th scope="col">Automation</th>}
-                {!workflowId && <th scope="col">Request</th>}
-                <th scope="col">Result</th>
-                <th scope="col">Kind</th>
-                <th scope="col">Took</th>
+                <th scope="col">{t("Started")}</th>
+                {!workflowId && <th scope="col">{t("Automation")}</th>}
+                {!workflowId && <th scope="col">{t("Request")}</th>}
+                <th scope="col">{t("Result")}</th>
+                <th scope="col">{t("Kind")}</th>
+                <th scope="col">{t("Took")}</th>
               </tr>
             </thead>
             <tbody>
               {list.map((r) => (
                 <tr key={r.id}>
-                  <td data-label="Started">
+                  <td data-label={t("Started")}>
                     <a href={`#/runs/${r.id}`}>{new Date(r.createdAt).toLocaleString()}</a>
                   </td>
-                  {!workflowId && <td data-label="Automation">{r.workflowName}</td>}
-                  {!workflowId && <td data-label="Request">{r.reference ?? ""}</td>}
-                  <td data-label="Result">
+                  {!workflowId && <td data-label={t("Automation")}>{r.workflowName}</td>}
+                  {!workflowId && <td data-label={t("Request")}>{r.reference ?? ""}</td>}
+                  <td data-label={t("Result")}>
                     <StateLabel run={r} />
                   </td>
-                  <td data-label="Kind">{runKind(r)}</td>
-                  <td data-label="Took">{duration(r.createdAt, r.finishedAt)}</td>
+                  <td data-label={t("Kind")}>{t(runKind(r))}</td>
+                  <td data-label={t("Took")}>{t(duration(r.createdAt, r.finishedAt))}</td>
                 </tr>
               ))}
             </tbody>
@@ -214,6 +218,7 @@ export function RunsPage({ workflowId }: { workflowId?: string }) {
 
 /** #/runs/<id>: one run with its trigger payload and every step attempt. Polls until the run finishes. */
 export function RunPage({ runId, owner }: { runId: string; owner: boolean }) {
+  const { t } = useLanguage();
   const [reload, setReload] = useState(0);
   const { run, error } = useRun(runId, reload);
   if (!run) {
@@ -221,13 +226,13 @@ export function RunPage({ runId, owner }: { runId: string; owner: boolean }) {
       <main className="page">
         {error ? (
           <>
-            <p role="alert">Couldn't load this run. Trying again.</p>
+            <p role="alert">{t("Couldn't load this run. Trying again.")}</p>
             <button type="button" onClick={() => setReload((n) => n + 1)}>
-              Retry
+              {t("Retry")}
             </button>
           </>
         ) : (
-          "Loading…"
+          t("Loading…")
         )}
       </main>
     );
@@ -236,28 +241,28 @@ export function RunPage({ runId, owner }: { runId: string; owner: boolean }) {
   return (
     <main className="page">
       <header className="toolbar plain">
-        <a href={`#/w/${run.workflowId}/runs`}>Activity</a>
-        <h1>What happened</h1>
+        <a href={`#/w/${run.workflowId}/runs`}>{t("Activity")}</a>
+        <h1>{t("What happened")}</h1>
       </header>
-      {error && <p role="alert" className="message error">Couldn't refresh. Trying again.</p>}
-      {working && takingLonger(run.createdAt) && <p className="message">{TAKING_LONGER}</p>}
+      {error && <p role="alert" className="message error">{t("Couldn't refresh. Trying again.")}</p>}
+      {working && takingLonger(run.createdAt) && <p className="message">{t(TAKING_LONGER)}</p>}
       <p aria-live="polite">
-        <StateLabel run={run} /> <span className="muted">{runKind(run)} · started {new Date(run.createdAt).toLocaleString()} · {duration(run.createdAt, run.finishedAt)}</span>
+        <StateLabel run={run} /> <span className="muted">{t(runKind(run))} · {t("started {time}", { time: new Date(run.createdAt).toLocaleString() })} · {t(duration(run.createdAt, run.finishedAt))}</span>
       </p>
-      {run.superseded && <p className="message">{SUPERSEDED}</p>}
+      {run.superseded && <p className="message">{t(SUPERSEDED)}</p>}
       <RunWhy run={run} owner={owner} />
       <RunActions run={run} onDone={() => setReload((n) => n + 1)} />
       <RunDeliveries runId={runId} />
       <RunPath run={run} />
       <details className="technician">
-        <summary>Details for a technician</summary>
+        <summary>{t("Details for a technician")}</summary>
         <p className="muted">
-          Raw state: {run.state} · version v{run.version} · {kind(run)}
+          {t("Raw state: {state} · version v{version} · {kind}", { state: run.state, version: run.version, kind: t(kind(run)) })}
         </p>
-        {run.error && <pre aria-label="Full error">{run.error}</pre>}
-        <h2>Trigger data</h2>
-        <pre aria-label="Trigger data">{json(run.triggerPayload)}</pre>
-        <h2>Steps</h2>
+        {run.error && <pre aria-label={t("Full error")}>{run.error}</pre>}
+        <h2>{t("Trigger data")}</h2>
+        <pre aria-label={t("Trigger data")}>{json(run.triggerPayload)}</pre>
+        <h2>{t("Steps")}</h2>
         <RunResult run={run} />
       </details>
     </main>
@@ -268,6 +273,7 @@ type Explanation = { facts: unknown; fixed: { headline: string; lines: string[];
 
 /** Why a stopped run stopped: the server's fixed explanation (fetched once per state change), else the plain error. Owners can ask the AI model to reword it. */
 function RunWhy({ run, owner }: { run: Run; owner: boolean }) {
+  const { language, t } = useLanguage();
   const key = plainState(run).key;
   const stopped = key === "problem" || key === "needs_you";
   const [fixed, setFixed] = useState<Explanation["fixed"] | null>(null);
@@ -285,7 +291,7 @@ function RunWhy({ run, owner }: { run: Run; owner: boolean }) {
     return () => {
       live = false;
     };
-  }, [run.id, stopped, key]);
+  }, [run.id, stopped, key, language]);
   if (!fixed) return run.error ? <RunError error={run.error} owner={owner} /> : null;
   const ask = () => {
     setAsking(true);
@@ -295,7 +301,7 @@ function RunWhy({ run, owner }: { run: Run; owner: boolean }) {
       .finally(() => setAsking(false));
   };
   return (
-    <section aria-label="Why it stopped">
+    <section aria-label={t("Why it stopped")}>
       <p className={key === "problem" ? "message error" : "message"}>{fixed.headline}</p>
       {fixed.lines.map((l, i) => (
         <p key={i}>{l}</p>
@@ -307,19 +313,19 @@ function RunWhy({ run, owner }: { run: Run; owner: boolean }) {
       )}
       {owner && (
         <button type="button" disabled={asking} onClick={ask}>
-          {asking ? "Asking the AI model…" : "Explain in simpler words (uses 1 AI action)"}
+          {t(asking ? "Asking the AI model…" : "Explain in simpler words (uses 1 AI action)")}
         </button>
       )}
       {reply?.text !== undefined && (
         <>
-          <p className="muted">Written by the AI model. Check it against the details above.</p>
+          <p className="muted">{t("Written by the AI model. Check it against the details above.")}</p>
           <p>{reply.text}</p>
         </>
       )}
       {reply?.error && <p role="alert" className="message error">{reply.error}</p>}
       {reply?.modelFailed && (
         <p role="alert" className="message error">
-          The AI model could not answer. <a href="#/settings/ai">Check the AI model</a>
+          {t("The AI model could not answer.")} <a href="#/settings/ai">{t("Check the AI model")}</a>
         </p>
       )}
     </section>
@@ -328,6 +334,7 @@ function RunWhy({ run, owner }: { run: Run; owner: boolean }) {
 
 /** The run's error in the owner's words, with a link to the page that fixes it when the error says which (owners only). */
 function RunError({ error, owner }: { error: string; owner: boolean }) {
+  const { t } = useLanguage();
   const fix = owner ? fixFor(error) : null;
   return (
     <p className="message error">
@@ -335,7 +342,7 @@ function RunError({ error, owner }: { error: string; owner: boolean }) {
       {fix && (
         <>
           {" "}
-          <a href={fix.href}>{fix.label}</a>
+          <a href={fix.href}>{t(fix.label)}</a>
         </>
       )}
     </p>
@@ -344,6 +351,7 @@ function RunError({ error, owner }: { error: string; owner: boolean }) {
 
 /** The path this run took: the version's diagram, redrawn on every poll with the state of each step (read only). */
 function RunPath({ run }: { run: Run }) {
+  const { t } = useLanguage();
   const [draft, setDraft] = useState<Draft | null>(null);
   const [failed, setFailed] = useState(false);
   useEffect(() => {
@@ -354,11 +362,11 @@ function RunPath({ run }: { run: Run }) {
       () => setFailed(true),
     );
   }, [run.workflowId, run.version]);
-  if (failed) return <p className="muted">The diagram could not load. The steps are listed under Details for a technician.</p>;
+  if (failed) return <p className="muted">{t("The diagram could not load. The steps are listed under Details for a technician.")}</p>;
   if (!draft) return null;
   return (
-    <section className="run-path" aria-label="Path it took">
-      <h2>Path it took</h2>
+    <section className="run-path" aria-label={t("Path it took")}>
+      <h2>{t("Path it took")}</h2>
       <RunFlow draft={draft} run={run} />
     </section>
   );
@@ -366,6 +374,7 @@ function RunPath({ run }: { run: Run }) {
 
 /** Sheets rows and Slack notes this run queued. They are delivered apart from the run, so they have their own state. */
 function RunDeliveries({ runId }: { runId: string }) {
+  const { t } = useLanguage();
   const [list, setList] = useState<Delivery[]>([]);
   const [failed, setFailed] = useState(false);
   const load = () =>
@@ -377,11 +386,11 @@ function RunDeliveries({ runId }: { runId: string }) {
       () => setFailed(true),
     );
   useEffect(() => void load(), [runId]);
-  if (failed) return <p role="alert">Couldn't load deliveries. <button type="button" onClick={() => void load()}>Retry</button></p>;
+  if (failed) return <p role="alert">{t("Couldn't load deliveries.")} <button type="button" onClick={() => void load()}>{t("Retry")}</button></p>;
   if (list.length === 0) return null;
   return (
     <>
-      <h2>Where it was sent</h2>
+      <h2>{t("Where it was sent")}</h2>
       <DeliveryList deliveries={list} onChange={load} />
     </>
   );
@@ -392,12 +401,13 @@ function RunDeliveries({ runId }: { runId: string }) {
  * people click at the same time; the second one sees why nothing happened.
  */
 function RunActions({ run, onDone }: { run: Run; onDone: () => void }) {
+  const { t } = useLanguage();
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   if (run.state !== "needs_review" && run.state !== "failed") return null;
   const last = run.steps.at(-1);
   const act = async (path: string, body: object = {}) => {
-    if (body && (body as { action?: string }).action === "again" && !window.confirm("Send it once more? If it already arrived, they get it twice.")) return;
+    if (body && (body as { action?: string }).action === "again" && !window.confirm(t("Send it once more? If it already arrived, they get it twice."))) return;
     setBusy(true);
     setMessage("");
     try {
@@ -411,10 +421,10 @@ function RunActions({ run, onDone }: { run: Run; onDone: () => void }) {
   };
   if (run.state === "failed") {
     return (
-      <section aria-label="Retry">
-        <p>Retry runs the failed step again. Steps that already finished are not repeated.</p>
+      <section aria-label={t("Retry")}>
+        <p>{t("Retry runs the failed step again. Steps that already finished are not repeated.")}</p>
         <button type="button" disabled={busy} onClick={() => void act("retry")}>
-          Retry
+          {t("Retry")}
         </button>
         <p role="alert" className="message error" hidden={!message}>
           {message}
@@ -423,34 +433,34 @@ function RunActions({ run, onDone }: { run: Run; onDone: () => void }) {
     );
   }
   return (
-    <section aria-label="Needs you" className="review">
-      <h2>Needs you</h2>
-      <p>A message or delivery may or may not have reached its destination, and Daloy cannot tell. Check whether it arrived, then choose.</p>
+    <section aria-label={t("Needs you")} className="review">
+      <h2>{t("Needs you")}</h2>
+      <p>{t("A message or delivery may or may not have reached its destination, and Daloy cannot tell. Check whether it arrived, then choose.")}</p>
       {last?.error && <p className="message error">{last.error}</p>}
       {last?.input !== null && last?.input !== undefined && (
         <details>
-          <summary>What was sent</summary>
-          <pre aria-label="Request that may have gone through">{json(last.input)}</pre>
+          <summary>{t("What was sent")}</summary>
+          <pre aria-label={t("Request that may have gone through")}>{json(last.input)}</pre>
         </details>
       )}
       <ul className="choices">
         <li>
           <button type="button" disabled={busy} onClick={() => void act("resolve", { action: "delivered" })}>
-            It went through
+            {t("It went through")}
           </button>{" "}
-          I checked, it arrived.
+          {t("I checked, it arrived.")}
         </li>
         <li>
           <button type="button" disabled={busy} onClick={() => void act("resolve", { action: "again" })}>
-            Send again
+            {t("Send again")}
           </button>{" "}
-          Send it once more. If it already arrived, they get it twice.
+          {t("Send it once more. If it already arrived, they get it twice.")}
         </li>
         <li>
           <button type="button" disabled={busy} onClick={() => void act("resolve", { action: "stop" })}>
-            Stop
+            {t("Stop")}
           </button>{" "}
-          Do not send, close this.
+          {t("Do not send, close this.")}
         </li>
       </ul>
       <p role="alert" className="message error" hidden={!message}>

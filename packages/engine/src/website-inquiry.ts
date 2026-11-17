@@ -1,3 +1,5 @@
+import type { Language } from "./language";
+import { localizeGeneratedDefinition } from "./template-language";
 import * as z from "zod";
 import type { WorkflowDefinition } from "./definition";
 
@@ -37,8 +39,8 @@ export const gmailInput = z.strictObject({
     .pipe(z.string().regex(/^[A-Za-z]{16}$/, "use the 16-letter app password from your Google account, not your Gmail password")),
 });
 
-export function websiteInquiryDefinition({ businessName, inquiryEmail }: { businessName: string; inquiryEmail: string }): WorkflowDefinition {
-  return {
+export function websiteInquiryDefinition({ businessName, inquiryEmail }: { businessName: string; inquiryEmail: string }, language: Language = "en"): WorkflowDefinition {
+  return localizeGeneratedDefinition({
     trigger: {
       type: "form",
       config: {
@@ -70,5 +72,5 @@ export function websiteInquiryDefinition({ businessName, inquiryEmail }: { busin
       },
     ],
     edges: [{ from: "reply_to_customer", to: "notify_business" }],
-  };
+  }, language, WEBSITE_INQUIRY, { businessName });
 }

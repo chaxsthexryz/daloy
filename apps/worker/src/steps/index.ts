@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { aiConnection, bookFromStep, checkRecipients, claimTimeout, claimUsage, createApproval, findApprover, queueDelivery, readSecrets, redactSecrets, secretForms, sendAs, type Db, type MailDeps, type Provider } from "@daloy/db";
-import { bookingStartField, conditionBranch, parseZoned, type TestChoice, type Trigger, declaresJson, parseInstant, isRetryable, mockAiOutput, parseJsonTemplate, resolveJsonTemplate, resolveTemplate, StepError, usesSecrets, type ExpressionContext, type Step } from "@daloy/engine";
+import { workspaceLanguage, aiConnection, bookFromStep, checkRecipients, claimTimeout, claimUsage, createApproval, findApprover, queueDelivery, readSecrets, redactSecrets, secretForms, sendAs, type Db, type MailDeps, type Provider } from "@daloy/db";
+import { approvalEmailBody, bookingStartField, conditionBranch, parseZoned, type TestChoice, type Trigger, declaresJson, parseInstant, isRetryable, mockAiOutput, parseJsonTemplate, resolveJsonTemplate, resolveTemplate, StepError, usesSecrets, type ExpressionContext, type Step } from "@daloy/engine";
 import type { StepExecutor, StepResult } from "../advance";
 import { runAi } from "./ai";
 import { httpRequest } from "./http";
@@ -199,8 +199,8 @@ async function runStep(deps: FullDeps, step: Step, input: unknown, ctx: Expressi
       // A retry's link keeps the first link's deadline (decision 0009).
       const { token, expiresAt } = created;
       const link = `${deps.publicUrl}/approvals/${token}`;
-      const who = approver ? `To answer, sign in as ${approver.email}. ` : "";
-      const body = `${cfg.message}\n\nApprove or reject here:\n${link}\n\n${who}The link works once and expires at ${expiresAt.toISOString()}.`;
+      const language = await workspaceLanguage(deps.db, userId);
+      const body = approvalEmailBody(cfg.message, link, expiresAt.toISOString(), approver?.email, language);
       // A retry or re-run sends a new link (earlier ones still work), so it needs its own Message-ID, or a mail server
       // could drop it as a duplicate of the earlier message.
       await sendAs(deps.db, deps.secretsKey, deps.mail, userId, { to: approver?.email ?? cfg.to!, subject: cfg.subject, text: body }, `${idempotencyKey}:${randomUUID().slice(0, 8)}`).catch((err: unknown) => {

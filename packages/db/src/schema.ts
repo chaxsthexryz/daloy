@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { RUN_STATES, STEP_STATES } from "@daloy/engine";
+import { LANGUAGES, RUN_STATES, STEP_STATES } from "@daloy/engine";
 import { bigint, boolean, check, customType, date, index, integer, jsonb, pgEnum, pgSequence, pgTable, primaryKey, text, timestamp, unique, uuid, type AnyPgColumn } from "drizzle-orm/pg-core";
 
 const id = () => uuid("id").primaryKey().defaultRandom();
@@ -20,7 +20,11 @@ export const users = pgTable("users", {
   // The plan the operator set; null means none yet (no limits, and no shared AI key). plan_started_on anchors the monthly cycle.
   plan: text("plan"),
   planStartedOn: date("plan_started_on"),
-}, (t) => [check("users_plan", sql`${t.plan} in ('pilot', 'business', 'business_plus')`)]);
+  language: text("language", { enum: LANGUAGES }).notNull().default("en"),
+}, (t) => [
+  check("users_plan", sql`${t.plan} in ('pilot', 'business', 'business_plus')`),
+  check("users_language", sql`${t.language} in ('en', 'tl')`),
+]);
 
 /** Metered work per workspace, kind (ai, email, http) and period (a Manila day, or a monthly cycle start). */
 export const usageCounts = pgTable(

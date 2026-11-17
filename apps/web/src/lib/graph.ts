@@ -1,3 +1,4 @@
+import { translate, type Language } from "./locale";
 import { BRANCHES, type Step, type WorkflowDefinition } from "@daloy/engine";
 import type { Edge as FlowEdge, Node as FlowNode } from "@xyflow/react";
 import { STATUS, type EdgeState, type NodeState } from "./run-flow";
@@ -15,7 +16,8 @@ export type AddableType = (typeof ADDABLE)[number];
 
 export const blankDraft = (): Draft => ({ trigger: { type: "manual", config: {} }, steps: [], edges: [] });
 
-export function defaultConfig(type: AddableType): Step["config"] {
+export function defaultConfig(type: AddableType, language: Language = "en"): Step["config"] {
+  const t = (source: string) => translate(language, source);
   switch (type) {
     case "condition":
       return { condition: { left: "{{trigger.amount}}", op: "gt", right: 100 } };
@@ -23,19 +25,19 @@ export function defaultConfig(type: AddableType): Step["config"] {
       return { method: "POST", url: "https://example.com/hook", headers: {}, body: "{{trigger}}" };
     case "email":
     case "outlook":
-      return { to: "{{trigger.email}}", subject: "Hello", text: "Hi, thanks for getting in touch." };
+      return { to: "{{trigger.email}}", subject: t("Hello"), text: t("Hi, thanks for getting in touch.") };
     case "delay":
       return { seconds: 60 };
     case "ai":
-      return { task: "classify", input: "{{trigger.message}}", labels: { billing: "Invoices and payments", support: "Everything else" } };
+      return { task: "classify", input: "{{trigger.message}}", labels: { billing: t("Invoices and payments"), support: t("Everything else") } };
     case "approval":
-      return { to: "manager@example.com", subject: "Approval needed", message: "Please approve: {{trigger}}", timeoutSeconds: 86_400 };
+      return { to: "manager@example.com", subject: t("Approval needed"), message: t("Please approve: {{trigger}}"), timeoutSeconds: 86_400 };
     case "sheets":
       return { columns: ["{{trigger.name}}", "{{trigger.summary}}"] };
     case "slack":
     case "teams":
     case "telegram":
-      return { text: "New request {{trigger.reference}}: {{trigger.summary}}" };
+      return { text: t("New request {{trigger.reference}}: {{trigger.summary}}") };
     case "booking":
       // Needs a resource field and a datetime field with these names on the trigger before it saves.
       return { action: "create", resource: "{{trigger.therapist}}", start: "{{trigger.appointment_at}}", minutes: 60 };
@@ -59,9 +61,9 @@ export const edgeId = (e: Edge) => `${e.from}:${e.on ?? "next"}`;
  * Adds a step after `after.id` (on branch `after.on`, or the first free branch). If that slot already
  * leads somewhere, the new step is inserted in between. Without `after`, the step becomes the new entry.
  */
-export function addStep(draft: Draft, type: AddableType, after?: { id: string; on?: string }): { draft: Draft; id: string } {
+export function addStep(draft: Draft, type: AddableType, after?: { id: string; on?: string }, language: Language = "en"): { draft: Draft; id: string } {
   const id = newStepId(draft, type);
-  const step = { id, type, config: defaultConfig(type) } as Step;
+  const step = { id, type, config: defaultConfig(type, language) } as Step;
   const ownLabel = BRANCHES[type]?.[0];
   const edges = [...draft.edges];
 
@@ -120,21 +122,22 @@ export type RunEdgeData = { state: EdgeState };
 /** What a run says about the diagram (see runFlow). Without it the diagram is drawn plain, as in the editor with no run. */
 export type FlowState = { nodes: Record<string, NodeState>; edges: Record<string, EdgeState> };
 
-export function toFlow(draft: Draft, selected: string | null, state?: FlowState): { nodes: FlowNode<StepNodeData>[]; edges: FlowEdge[] } {
+export function toFlow(draft: Draft, selected: string | null, state?: FlowState, language: Language = "en"): { nodes: FlowNode<StepNodeData>[]; edges: FlowEdge[] } {
+  const t = (source: string, values?: Record<string, string | number>) => translate(language, source, values);
   const pos = layout(draft);
   // Screen readers get the state in words, as sighted users do on the node.
-  const said = (id: string) => (state ? `, ${STATUS[state.nodes[id] ?? "idle"].label}` : "");
+  const said = (id: string) => (state ? t(", {status}", { status: t(STATUS[state.nodes[id] ?? "idle"].label) }) : "");
   const edgeProps = (id: string) => (state ? { type: "run", data: { state: state.edges[id] ?? "idle" } satisfies RunEdgeData } : {});
   const at = (id: string) => ({ x: pos[id]!.x - NODE_W / 2, y: pos[id]!.y });
   const nodes: FlowNode<StepNodeData>[] = [
-    { id: "trigger", type: "trigger", ariaLabel: `Trigger: ${draft.trigger.type}${said("trigger")}`, position: at("trigger"), data: { trigger: draft.trigger, status: state?.nodes.trigger }, selected: selected === "trigger", deletable: false },
+    { id: "trigger", type: "trigger", ariaLabel: t("Trigger: {type}", { type: t(draft.trigger.type) }) + said("trigger"), position: at("trigger"), data: { trigger: draft.trigger, status: state?.nodes.trigger }, selected: selected === "trigger", deletable: false },
     ...draft.steps.map((step) => ({
       id: step.id,
       type: "step",
       // Screen readers announce the node by this name; branches say where each one leads.
-      ariaLabel: `${step.type} step ${step.id}${draft.edges
+      ariaLabel: `${t("{type} step {id}", { type: t(step.type), id: step.id })}${draft.edges
         .filter((e) => e.from === step.id)
-        .map((e) => `, ${e.on ? `on ${e.on} ` : ""}goes to ${e.to}`)
+        .map((e) => t(", {branch}goes to {id}", { branch: e.on ? `${t("on {branch}", { branch: t(e.on) })} ` : "", id: e.to }))
         .join("")}${said(step.id)}`,
       position: at(step.id),
       data: { step, branches: BRANCHES[step.type], status: state?.nodes[step.id] },
@@ -150,7 +153,7 @@ export function toFlow(draft: Draft, selected: string | null, state?: FlowState)
       target: e.to,
       deletable: false,
       ...edgeProps(edgeId(e)),
-      ...(e.on && { sourceHandle: e.on, label: e.on }),
+      ...(e.on && { sourceHandle: e.on, label: t(e.on) }),
     })),
   ];
   return { nodes, edges };

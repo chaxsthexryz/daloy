@@ -1,3 +1,4 @@
+import { useLanguage } from "./Language";
 import { useId } from "react";
 
 /**
@@ -45,13 +46,14 @@ export function SchemaForm({ schema, value, onChange }: { schema: JsonSchema; va
 }
 
 function Field({ name, schema, required, value, onChange }: { name: string; schema: JsonSchema; required: boolean; value: unknown; onChange: (v: unknown) => void }) {
+  const { t } = useLanguage();
   const id = useId();
   const text = (v: string) => onChange(v === "" && !required ? undefined : v);
 
   if (schema.type === "object" && schema.properties) {
     return (
       <fieldset>
-        <legend>{label(name)}</legend>
+        <legend>{t(label(name))}</legend>
         <SchemaForm schema={schema} value={(value as Obj) ?? {}} onChange={onChange} />
       </fieldset>
     );
@@ -65,7 +67,7 @@ function Field({ name, schema, required, value, onChange }: { name: string; sche
     input = (
       <select id={id} value={String(value ?? "")} onChange={(e) => onChange(e.target.value)}>
         {schema.enum.map((o) => (
-          <option key={o}>{o}</option>
+          <option key={o} value={o}>{t(o)}</option>
         ))}
       </select>
     );
@@ -93,33 +95,31 @@ function Field({ name, schema, required, value, onChange }: { name: string; sche
   return (
     <div className="field">
       <label htmlFor={id}>
-        {label(name)}
-        {!required && <span className="muted"> (optional)</span>}
+        {t(label(name))}
+        {!required && <span className="muted">{t(" (optional)")}</span>}
       </label>
       {input}
-      {schema.description && <p className="muted">{schema.description}</p>}
+      {schema.description && <p className="muted">{t(schema.description)}</p>}
     </div>
   );
 }
 
 function MapField({ name, value, onChange }: { name: string; value: Record<string, string>; onChange: (v: Record<string, string>) => void }) {
+  const { t } = useLanguage();
   const rows = Object.entries(value);
   const set = (next: [string, string][]) => onChange(Object.fromEntries(next));
   return (
     <fieldset>
-      <legend>{label(name)}</legend>
+      <legend>{t(label(name))}</legend>
       {rows.map(([k, v], i) => (
         <div className="row" key={i}>
-          <input aria-label={`${label(name)} ${i + 1} name`} value={k} onChange={(e) => set(rows.map((r, j) => (j === i ? [e.target.value, r[1]] : r)))} />
-          <input aria-label={`${label(name)} ${i + 1} value`} value={v} onChange={(e) => set(rows.map((r, j) => (j === i ? [r[0], e.target.value] : r)))} />
-          <button type="button" className="quiet" onClick={() => set(rows.filter((_, j) => j !== i))} aria-label={`Remove ${k || "row"}`}>
-            Remove
-          </button>
+          <input aria-label={t("{field} {number} name", { field: t(label(name)), number: i + 1 })} value={k} onChange={(e) => set(rows.map((r, j) => (j === i ? [e.target.value, r[1]] : r)))} />
+          <input aria-label={t("{field} {number} value", { field: t(label(name)), number: i + 1 })} value={v} onChange={(e) => set(rows.map((r, j) => (j === i ? [r[0], e.target.value] : r)))} />
+          <button type="button" className="quiet" onClick={() => set(rows.filter((_, j) => j !== i))} aria-label={t("Remove {name}", { name: k || t("row") })}>{t("Remove")}</button>
         </div>
       ))}
       {/* New names must already pass the schema: headers allow capitals and dashes, ai labels and fields only a-z, 0-9 and _. */}
-      <button type="button" className="quiet" onClick={() => set([...rows, [name === "headers" ? `X-Header-${rows.length + 1}` : `${name.replace(/s$/, "")}_${rows.length + 1}`, ""]])}>
-        Add {name === "headers" ? "header" : "entry"}
+      <button type="button" className="quiet" onClick={() => set([...rows, [name === "headers" ? `X-Header-${rows.length + 1}` : `${name.replace(/s$/, "")}_${rows.length + 1}`, ""]])}>{t(name === "headers" ? "Add header" : "Add entry")}
       </button>
     </fieldset>
   );

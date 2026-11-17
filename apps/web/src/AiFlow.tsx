@@ -1,3 +1,5 @@
+import { warningForLanguage } from "./lib/ai-build";
+import { useLanguage } from "./Language";
 import { useId, useState, type ReactNode, type Ref } from "react";
 
 type Choice = { value: string; label: string };
@@ -23,6 +25,7 @@ export function ChoiceQuestion({
   allowOther?: boolean;
   note?: string;
 }) {
+  const { t } = useLanguage();
   const [other, setOther] = useState<string | null>(null);
   const id = useId();
   const typed = other?.trim() ?? "";
@@ -34,7 +37,7 @@ export function ChoiceQuestion({
         </h2>
       </legend>
       <p className="muted">
-        Question {position} of {total}. {note}
+        {t("Question {position} of {total}. {note}", { position, total, note: t(note) })}
       </p>
       <div className="demo-choices">
         {choices.map((c) => (
@@ -44,17 +47,17 @@ export function ChoiceQuestion({
         ))}
         {allowOther && other === null && (
           <button type="button" onClick={() => setOther("")}>
-            Other
+            {t("Other")}
           </button>
         )}
       </div>
       {allowOther && other !== null && (
         <div className="field demo-other">
-          <label htmlFor={id}>Your own answer</label>
+          <label htmlFor={id}>{t("Your own answer")}</label>
           <input id={id} type="text" maxLength={200} value={other} onChange={(e) => setOther(e.target.value)} />
           <div className="actions">
             <button type="button" className="primary" disabled={!typed} onClick={() => onPick(`other:${typed}`, typed)}>
-              Use this answer
+              {t("Use this answer")}
             </button>
           </div>
         </div>
@@ -78,9 +81,10 @@ export function PlanList({
   stateOf?: (i: number) => ReactNode;
   cleanNote?: string;
 }) {
+  const { t, language } = useLanguage();
   return (
     <>
-      <p>{lead}, Daloy will:</p>
+      <p>{t("{lead}, Daloy will:", { lead })}</p>
       <ol className="numbered demo-plan">
         {steps.map((s, i) => (
           <li key={i}>
@@ -89,15 +93,15 @@ export function PlanList({
           </li>
         ))}
       </ol>
-      <h3>Check before turning on</h3>
+      <h3>{t("Check before turning on")}</h3>
       {warnings.length ? (
         <ul className="list">
           {warnings.map((w) => (
-            <li key={w}>{w}</li>
+            <li key={w}>{warningForLanguage(w, language)}</li>
           ))}
         </ul>
       ) : (
-        <p>{cleanNote}</p>
+        <p>{t(cleanNote)}</p>
       )}
     </>
   );

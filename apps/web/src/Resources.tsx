@@ -1,3 +1,4 @@
+import { Text, useLanguage } from "./Language";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { api } from "./api";
 
@@ -8,6 +9,7 @@ export type Resource = { id: string; name: string; active: boolean; createdAt: s
  * the forms but keep their id, so past runs still point at them.
  */
 export function ResourcesPage() {
+  const { t } = useLanguage();
   const [list, setList] = useState<Resource[] | null>(null);
   const [name, setName] = useState("");
   const [error, setError] = useState("");
@@ -40,42 +42,42 @@ export function ResourcesPage() {
     });
   };
   const rename = (r: Resource) => {
-    const next = prompt(`New name for ${r.name}. Runs already started keep the old name.`, r.name);
+    const next = prompt(t("New name for {name}. Runs already started keep the old name.", { name: r.name }), r.name);
     if (next && next !== r.name) return run(() => api("PATCH", `/resources/${r.id}`, { name: next }));
   };
 
   return (
     <main className="page">
       <header className="toolbar plain">
-        <a href="#/advanced">Advanced</a>
-        <h1>Resources</h1>
+        <a href="#/advanced">{t("Advanced")}</a>
+        <h1><Text>Resources</Text></h1>
       </header>
-      <p className="muted">People, rooms or tables a form can be booked for. Add a field of type resource to a form to let people choose one.</p>
+      <p className="muted">{t("People, rooms or tables a form can be booked for. Add a field of type resource to a form to let people choose one.")}</p>
       <form onSubmit={add} className="create">
         <div className="row">
           <div className="field">
-            <label htmlFor="resource-name">Name</label>
+            <label htmlFor="resource-name"><Text>Name</Text></label>
             <input id="resource-name" value={name} onChange={(e) => setName(e.target.value)} required maxLength={100} />
           </div>
-          <button className="primary">Add resource</button>
+          <button className="primary">{t("Add resource")}</button>
         </div>
         <p role="alert" className="message error" hidden={!error}>
           {error}
         </p>
       </form>
       {list === null ? (
-        <p>Loading…</p>
+        <p>{t("Loading…")}</p>
       ) : list.length === 0 ? (
-        <p>No resources yet.</p>
+        <p>{t("No resources yet.")}</p>
       ) : (
         <div className="table-wrap">
           <table className="table">
             <thead>
               <tr>
-                <th scope="col">Name</th>
-                <th scope="col">Status</th>
+                <th scope="col"><Text>Name</Text></th>
+                <th scope="col"><Text>Status</Text></th>
                 <th scope="col">
-                  <span className="sr-only">Actions</span>
+                  <span className="sr-only"><Text>Actions</Text></span>
                 </th>
               </tr>
             </thead>
@@ -83,13 +85,11 @@ export function ResourcesPage() {
               {list.map((r) => (
                 <tr key={r.id}>
                   <td>{r.name}</td>
-                  <td>{r.active ? "Active" : "Archived"}</td>
+                  <td>{r.active ? t("Active") : t("Archived")}</td>
                   <td>
-                    <button type="button" className="quiet" onClick={() => rename(r)}>
-                      Rename
-                    </button>
+                    <button type="button" className="quiet" onClick={() => rename(r)}>{t("Rename")}</button>
                     <button type="button" className="quiet" onClick={() => run(() => api("PATCH", `/resources/${r.id}`, { active: !r.active }))}>
-                      {r.active ? "Archive" : "Restore"}
+                      {r.active ? t("Archive") : t("Restore")}
                     </button>
                   </td>
                 </tr>

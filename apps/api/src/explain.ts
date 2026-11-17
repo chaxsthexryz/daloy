@@ -1,3 +1,4 @@
+import { explainFailureTl, answerAllTl } from "./explain-tl";
 import type { WorkflowDefinition } from "@daloy/engine";
 import { lintFindings, type LintRule } from "@daloy/engine";
 
@@ -168,7 +169,8 @@ function ofStep(s: NonNullable<Facts["step"]>): Explanation | null {
 }
 
 /** A fixed table, first match wins: deliveries, then the step, then one line per lint rule. No model involved. */
-export function explainFailure(facts: Facts): Explanation {
+export function explainFailure(facts: Facts, language: "en" | "tl" = "en"): Explanation {
+  if (language === "tl") return explainFailureTl(facts);
   const first = facts.deliveries.map(ofDelivery).find(Boolean) ?? (facts.step ? ofStep(facts.step) : null);
   const base = first ?? { headline: "Daloy could not tell why this stopped.", lines: ["The details for a technician below have the full record."], fix: null };
   return { ...base, lines: [...base.lines, ...facts.lint.map((l) => LINT_LINES[l.rule])] };
@@ -180,7 +182,8 @@ const HEADLINES = { "needs you": "This request needs you before it goes on.", do
 const OPEN_ACTIVITY = "Open the request in Activity to see every step.";
 
 /** The three fixed answers for the Ask panel. Every word is from a table above or a closed field. */
-export function answerAll(facts: AskFacts): { happened: Explanation; why: Explanation | null; next: Explanation } {
+export function answerAll(facts: AskFacts, language: "en" | "tl" = "en"): { happened: Explanation; why: Explanation | null; next: Explanation } {
+  if (language === "tl") return answerAllTl(facts);
   const n = facts.steps.length;
   const happened = [n ? `${n} ${n === 1 ? "step" : "steps"} ran.` : "No steps have run yet."];
   if (facts.step) happened.push(`It stopped at: ${TYPE_NAMES[facts.step.type] ?? "a step"}.`);
