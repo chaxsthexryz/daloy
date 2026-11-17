@@ -214,7 +214,7 @@ Order: N3, N4, V1, then V2 and W together, N5 with the pilot search P in paralle
 - [ ] N12. PayMongo payments (test keys first): a payment link step and a signed webhook trigger, so an order or invoice is marked paid only when PayMongo confirms it. A GCash screenshot is never proof. Live mode needs the owner's PayMongo business verification. (claimed: claude, branch n12-paymongo)
 - [ ] N13. Google Calendar: create, move and cancel events from a booking, and stop reminders for a cancelled event. (claimed: claude, branch n13-calendar)
 - [x] N14. Telegram messages: send a message from a bot (Telegram bot token; Viber is left out, its bot API costs about EUR 100 a month, decision 0042), as a delivery with needs_review on an unknown outcome.
-- [ ] N15. Airtable, Notion and Trello: add or update a record, page or card, as deliveries like Sheets. (claimed: claude, branch n15-records)
+- [x] N15. Airtable, Notion and Trello: add a record, page or card, as deliveries like Sheets (decision 0044). Update is left out.
 - [ ] N16. Facebook Messenger orders, last: only after pilots ask for it and Meta approves the app. Until then a link from the Page to the Daloy order form covers it.
 - [ ] N11. Real accounts: final security review at the release commit covering N6 to N10, a daily recipient cap on Gmail and Outlook receipts, a timestamp in the webhook signature, MCP token scopes and expiry, password change and reset, per-workflow pause and cancel of a pending run, read-side secret redaction on every surface, a purge policy for retired secrets.
 

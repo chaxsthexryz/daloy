@@ -3,7 +3,7 @@ import { backoffDelayMs, type RetryPolicy } from "@daloy/engine";
 import { and, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { connectionCredential, markConnectionFailed, PROVIDER_NAMES, rotateInto } from "./connections";
 import type { Db } from "./index";
-import { appendRowOnce, deleteSheetMarker, outlookSend, ProviderError, serviceAccountSchema, slackPost, teamsPost, telegramSend, type OutlookMessage, type ProviderErrorKind, type ProviderUrls, type SheetDestination } from "./providers";
+import { airtableAdd, appendRowOnce, notionAddPage, trelloAddCard, type TrelloCredential, deleteSheetMarker, outlookSend, ProviderError, serviceAccountSchema, slackPost, teamsPost, telegramSend, type OutlookMessage, type ProviderErrorKind, type ProviderUrls, type SheetDestination } from "./providers";
 import { bookingSuperseded, supersededSql } from "./bookings";
 import { connections, deliveries, runs, type Provider } from "./schema";
 
@@ -127,7 +127,12 @@ async function attempt(db: Db, key: Buffer, urls: ProviderUrls, d: Delivery): Pr
       const save = rotateInto(db, key, d.userId, "outlook", conn);
       return { state: "delivered", result: await outlookSend(urls, conn.credential, save, d.payload as OutlookMessage) };
     }
-    const text = (d.payload as { text: string }).text;
+    // Airtable, Notion and Trello add one record, page or card. None can be asked "did this land?", so an unknown outcome is a person's call.
+    const p = d.payload as { text: string; fields: Record<string, string>; title: string; name: string; desc?: string };
+    if (d.provider === "airtable") return { state: "delivered", result: await airtableAdd(urls, conn.credential, destination as { baseId: string; tableId: string }, p.fields) };
+    if (d.provider === "notion") return { state: "delivered", result: await notionAddPage(urls, conn.credential, destination as { databaseId: string; titleProperty: string }, p.title, p.fields) };
+    if (d.provider === "trello") return { state: "delivered", result: await trelloAddCard(urls, JSON.parse(conn.credential) as TrelloCredential, destination.listId!, p.name, p.desc ?? "") };
+    const text = p.text;
     if (d.provider === "teams") return { state: "delivered", result: await teamsPost(urls, conn.credential, text) };
     if (d.provider === "telegram") return { state: "delivered", result: await telegramSend(urls, conn.credential, destination.chatId!, text) };
     return { state: "delivered", result: await slackPost(urls, conn.credential, destination.channelId!, text) };
@@ -170,19 +175,21 @@ function describe(provider: Provider, dest: Record<string, string>) {
   if (provider === "slack") return `#${dest.channelName ?? dest.channelId}`;
   if (provider === "telegram") return `the Telegram chat ${dest.chatTitle ?? dest.chatId}`;
   if (provider === "outlook") return dest.mailbox ?? "the Outlook mailbox";
+  if (provider === "airtable") return `the Airtable table ${dest.tableId}`;
+  if (provider === "notion") return `the Notion database ${dest.databaseTitle ?? dest.databaseId}`;
+  if (provider === "trello") return `the Trello list ${dest.listName ?? dest.listId}`;
   return `the Teams channel ${dest.channelName ?? ""}`.trim();
 }
 
 /** Same place: the fields that pick where a delivery lands. Display names may change without moving anything. */
 function sameDestination(a: Record<string, string> | null, b: Record<string, string>) {
-  const where = (d: Record<string, string> | null) => JSON.stringify([d?.spreadsheetId, d?.tab, d?.channelId, d?.chatId, d?.mailbox, d?.channelName]);
+  const where = (d: Record<string, string> | null) => JSON.stringify([d?.spreadsheetId, d?.tab, d?.channelId, d?.chatId, d?.baseId, d?.tableId, d?.databaseId, d?.listId, d?.mailbox, d?.channelName]);
   return where(a) === where(b);
 }
 
 function reviewHint(provider: Provider, dest: Record<string, string>) {
   if (provider === "outlook") return `Look in Sent Items of ${dest.mailbox ?? "the mailbox"}, then choose Mark as sent or Send again.`;
-  if (provider === "telegram") return `Check the Telegram chat ${dest.chatTitle ?? dest.chatId}, then choose Mark as posted or Post again.`;
-  return `Check ${provider === "slack" ? `#${dest.channelName ?? dest.channelId}` : `the Teams channel ${dest.channelName ?? ""}`.trim()}, then choose Mark as posted or Post again.`;
+  return `Check ${describe(provider, dest)}, then choose Mark as posted or Post again.`;
 }
 
 /**

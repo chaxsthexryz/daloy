@@ -73,6 +73,12 @@ beforeAll(async () => {
   fake.microsoft.refreshTokens.add("ms-refresh-worker");
   await saveConnection(db, key, owner, "outlook", { account: "office@contoso.example", credential: "ms-refresh-worker", destination: { mailbox: "office@contoso.example" } });
   await saveConnection(db, key, owner, "teams", { account: "Purchasing", credential: fake.teamsUrl("flow-purchasing"), destination: { channelName: "Purchasing" } });
+  Object.assign(fake.airtable, { token: "patOFFICE.0123456789abcdef0123456789" });
+  Object.assign(fake.notion, { token: "ntn_office0123456789abcdefghijkl" });
+  Object.assign(fake.trello, { key: "office-key", token: "office-token" });
+  await saveConnection(db, key, owner, "airtable", { account: fake.airtable.base, credential: fake.airtable.token, destination: { baseId: fake.airtable.base, tableId: fake.airtable.table } });
+  await saveConnection(db, key, owner, "notion", { account: "Office requests", credential: fake.notion.token, destination: { databaseId: fake.notion.database, databaseTitle: "Office requests", titleProperty: "Name" } });
+  await saveConnection(db, key, owner, "trello", { account: "@office", credential: JSON.stringify({ key: "office-key", token: "office-token" }), destination: { listId: fake.trello.list, listName: "To do" } });
   await db.insert(secrets).values({ userId: owner, name: "door_code", ...encryptSecret(key, owner, "door_code", "4417") });
   worker = await startWorker({
     connectionString: url,
@@ -129,4 +135,25 @@ it("fails the step and queues nothing when the Outlook recipient is not an addre
   const runId = await startRun({ summary: "a desk lamp", email: "not-an-address", reference: "PUR-2002" }, {}, microsoftDefinition);
   expect(await until(() => runState(runId), (s) => s === "succeeded" || s === "failed")).toBe("failed");
   expect(await deliveriesOf(runId)).toEqual([]);
+});
+
+it("adds an Airtable record, a Notion page and a Trello card from run data, and queues nothing for a test run", async () => {
+  const def = {
+    trigger: definition.trigger,
+    steps: [
+      { id: "add_record", type: "airtable", config: { fields: { Summary: "{{trigger.summary}}", Ref: "{{trigger.reference}}" } } },
+      { id: "add_page", type: "notion", config: { title: "{{trigger.summary}}", fields: { Notes: "{{trigger.reference}}" } } },
+      { id: "add_card", type: "trello", config: { name: "{{trigger.summary}}", desc: "{{trigger.reference}}" } },
+    ],
+    edges: [{ from: "add_record", to: "add_page" }, { from: "add_page", to: "add_card" }],
+  };
+  const test = await startRun({ summary: "Fix door", reference: "REQ-4000" }, { test: true }, def);
+  expect(await until(() => runState(test), (s) => s === "succeeded" || s === "failed")).toBe("succeeded");
+  expect(await deliveriesOf(test)).toEqual([]);
+  const runId = await startRun({ summary: "Fix door", reference: "REQ-4001" }, {}, def);
+  expect(await until(() => runState(runId), (s) => s === "succeeded" || s === "failed")).toBe("succeeded");
+  await until(() => deliveriesOf(runId), (d) => d.length === 3 && d.every((x) => x.state === "delivered"));
+  expect(fake.airtable.records.map((r) => r.fields)).toEqual([{ Summary: "Fix door", Ref: "REQ-4001" }]);
+  expect(fake.notion.pages).toHaveLength(1);
+  expect(fake.trello.cards).toMatchObject([{ name: "Fix door", desc: "REQ-4001" }]);
 });

@@ -111,3 +111,11 @@ The demo page (`apps/web/demo`, published as `site/demo/` on Cloudflare Pages) a
 - The chat id is validated (a number or `@name`), and the chat is pinned to each delivery when it is queued, so editing the connection cannot redirect messages already queued.
 - Anyone in the chat can read what is sent. The same rule as Slack: keep private details out of the message text.
 - A bot token that leaks lets someone message the bot's chats. Replace it in BotFather (/revoke), then Replace token in Apps.
+
+## Airtable, Notion and Trello (decision 0044)
+
+- The Airtable token, Notion secret and Trello key and token are encrypted like the Slack token, bound to the owner and provider, and never returned or logged. Trello's key and token are in its request URL, so Daloy never prints a request URL or puts one in an error message.
+- The three addresses are fixed or set by the installation's env vars, never by a user.
+- Ids are validated at the boundary (a Notion link is reduced to its 32-character id), and the target is pinned to each delivery when it is queued, so editing the connection cannot redirect what is already queued.
+- Field values come from run data and go only to the owner's own base, database or list. Keep private details out of anything the whole board or workspace can read.
+- A leaked token lets someone write to what it was granted. Revoke it at the provider, then Replace token in Apps. Grant the narrowest scope: Airtable data.records read and write on one base, Notion access to one database.

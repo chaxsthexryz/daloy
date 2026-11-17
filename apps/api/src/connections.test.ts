@@ -112,6 +112,53 @@ describe("Telegram", () => {
   });
 });
 
+describe("Airtable, Notion and Trello", () => {
+  it("Airtable: checks the shape and the table, never returns the token, and re-checks on test", async () => {
+    const { agent } = await signedIn();
+    fake.airtable.token = "patTESTTOKEN12345.0123456789abcdef0123456789abcdef";
+    const good = { token: fake.airtable.token, baseId: fake.airtable.base, tableId: fake.airtable.table };
+    await agent.put("/settings/connections/airtable").send({ ...good, token: "nope" }).expect(400);
+    await agent.put("/settings/connections/airtable").send({ ...good, baseId: "base1" }).expect(400);
+    await agent.put("/settings/connections/airtable").send({ ...good, extra: 1 }).expect(400);
+    await agent.put("/settings/connections/airtable").send({ ...good, tableId: "tblOTHERTABLE0001" }).expect(400);
+    await agent.put("/settings/connections/airtable").send({ ...good, token: "patTESTTOKEN12345.ffffffffffffffffffffffffffff" }).expect(400);
+    const res = await agent.put("/settings/connections/airtable").send(good).expect(200);
+    expect(res.body.connections[0]).toMatchObject({ provider: "airtable", status: "active", destination: { baseId: good.baseId, tableId: good.tableId } });
+    expect(JSON.stringify(res.body)).not.toContain(good.token);
+    expect((await agent.post("/settings/connections/airtable/test").expect(200)).body).toMatchObject({ ok: true });
+    await agent.delete("/settings/connections/airtable").expect(204);
+  });
+
+  it("Notion: takes a database link, finds the title property, and adds a test page", async () => {
+    const { agent } = await signedIn();
+    fake.notion.token = "ntn_TESTTOKEN0123456789abcdefghijkl";
+    const link = `https://www.notion.so/workspace/Office-requests-${fake.notion.database}?v=abc`;
+    await agent.put("/settings/connections/notion").send({ token: fake.notion.token, database: "not a database" }).expect(400);
+    await agent.put("/settings/connections/notion").send({ token: fake.notion.token, database: "f".repeat(32) }).expect(400);
+    const res = await agent.put("/settings/connections/notion").send({ token: fake.notion.token, database: link }).expect(200);
+    expect(res.body.connections[0]).toMatchObject({ provider: "notion", account: "Office requests", destination: { databaseId: fake.notion.database, titleProperty: "Name" } });
+    expect(JSON.stringify(res.body)).not.toContain(fake.notion.token);
+    const before = fake.notion.pages.length;
+    expect((await agent.post("/settings/connections/notion/test").expect(200)).body).toMatchObject({ ok: true });
+    expect(fake.notion.pages.length).toBe(before + 1);
+  });
+
+  it("Trello: saves key and token as one secret and adds a test card", async () => {
+    const { agent } = await signedIn();
+    Object.assign(fake.trello, { key: "0123456789abcdef0123456789abcdef", token: "ATTAtesttoken0123456789abcdefghijklmnop" });
+    const good = { key: fake.trello.key, token: fake.trello.token, listId: fake.trello.list };
+    await agent.put("/settings/connections/trello").send({ ...good, key: "short" }).expect(400);
+    await agent.put("/settings/connections/trello").send({ ...good, listId: "ffffffffffffffffffffffff" }).expect(400);
+    await agent.put("/settings/connections/trello").send({ ...good, token: "ATTAwrongtoken0123456789abcdefghijklmn" }).expect(400);
+    const res = await agent.put("/settings/connections/trello").send(good).expect(200);
+    expect(res.body.connections[0]).toMatchObject({ provider: "trello", account: "@daloy_tester", destination: { listId: good.listId, listName: "To do" } });
+    expect(JSON.stringify(res.body)).not.toContain(good.token);
+    const before = fake.trello.cards.length;
+    expect((await agent.post("/settings/connections/trello/test").expect(200)).body).toMatchObject({ ok: true });
+    expect(fake.trello.cards.length).toBe(before + 1);
+  });
+});
+
 describe("Slack", () => {
   it("connects with a bot token, lists channels, saves the chosen one and posts a test message", async () => {
     const { agent } = await signedIn();
