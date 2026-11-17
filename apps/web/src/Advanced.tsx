@@ -3,7 +3,6 @@ import { useEffect, useState, type FormEvent } from "react";
 import { api, ApiError, type Workflow } from "./api";
 import { BuildWithAi } from "./AiDraft";
 import { Header } from "./Nav";
-import type { User } from "./Team";
 
 const slugify = (s: string) =>
   s
@@ -13,7 +12,7 @@ const slugify = (s: string) =>
     .slice(0, 63);
 
 /** #/advanced: everything for the person who runs the installation. The owner's home never needs it. */
-export function AdvancedPage({ user, onSignOut }: { user: User; onSignOut: () => void }) {
+export function AdvancedPage() {
   const [list, setList] = useState<Workflow[] | null>(null);
   const [listError, setListError] = useState(false);
   const [name, setName] = useState("");
@@ -44,7 +43,7 @@ export function AdvancedPage({ user, onSignOut }: { user: User; onSignOut: () =>
 
   return (
     <main className="page">
-      <Header title="Advanced" user={user} onSignOut={onSignOut} />
+      <Header title="Advanced" />
       <p className="muted">For the person who runs this installation. Owners do not need this page to run their automations.</p>
       <h2>Settings</h2>
       <ul className="list">
