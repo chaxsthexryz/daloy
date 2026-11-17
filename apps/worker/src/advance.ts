@@ -32,7 +32,7 @@ export type StepResult = { input?: unknown; output?: unknown; branch?: string; i
 export interface StepExecutor {
   // booking: what a booking step needs about its run: the test scope, the workflow and the trigger whose datetime field
   // sets the rules for start (decision 0032).
-  execute(input: { runId: string; stepRunId: string; userId: string; step: Step; attempt: number; idempotencyKey: string; ctx: ExpressionContext; mock?: boolean; aiLive?: boolean; choice?: TestChoice; claimSend?: () => Promise<() => void>; booking?: { test: boolean; workflowId: string; trigger: Trigger } }): Promise<StepResult>;
+  execute(input: { runId: string; stepRunId: string; userId: string; workflowId?: string; step: Step; attempt: number; idempotencyKey: string; ctx: ExpressionContext; mock?: boolean; aiLive?: boolean; choice?: TestChoice; claimSend?: () => Promise<() => void>; booking?: { test: boolean; workflowId: string; trigger: Trigger } }): Promise<StepResult>;
 }
 
 export type AdvanceDeps = {
@@ -236,6 +236,7 @@ async function runNext(deps: AdvanceDeps, run: Run): Promise<void> {
       runId: run.id,
       stepRunId,
       userId: version!.userId,
+      workflowId: version!.workflowId,
       step,
       attempt,
       idempotencyKey: idempotencyKey(run.id, step.id),

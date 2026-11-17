@@ -29,6 +29,8 @@ export type ProviderUrls = {
   sheets: string;
   slack: string;
   telegram: string;
+  /** PayMongo API base. Unset in test fakes: paymongo.ts falls back to the real one. */
+  paymongo?: string;
   microsoftLogin?: string;
   graph?: string;
   /** Host suffixes a Teams Workflows URL may use. 127.0.0.1 (tests only) is the one host allowed over http. */
@@ -43,6 +45,7 @@ export const providerUrls = (env: NodeJS.ProcessEnv = process.env): ProviderUrls
   sheets: trim(env.GOOGLE_SHEETS_URL ?? "https://sheets.googleapis.com"),
   slack: trim(env.SLACK_API_URL ?? "https://slack.com"),
   telegram: trim(env.TELEGRAM_API_URL ?? "https://api.telegram.org"),
+  paymongo: trim(env.PAYMONGO_API_URL ?? "https://api.paymongo.com"),
   microsoftLogin: trim(env.MICROSOFT_LOGIN_URL ?? "https://login.microsoftonline.com"),
   graph: trim(env.MICROSOFT_GRAPH_URL ?? "https://graph.microsoft.com"),
   teamsHosts: (env.TEAMS_WEBHOOK_HOSTS ?? "logic.azure.com,powerplatform.com").split(",").map((h) => h.trim().toLowerCase()).filter(Boolean),
@@ -52,13 +55,13 @@ export const providerUrls = (env: NodeJS.ProcessEnv = process.env): ProviderUrls
       : undefined,
 });
 
-type Reply = { status: number; headers: Headers; body: Record<string, unknown> };
+export type Reply = { status: number; headers: Headers; body: Record<string, unknown> };
 
 /**
  * One call with a timeout. For a write, a timeout or a dropped connection is ambiguous: the request may have arrived.
  * A refused connection or failed DNS lookup means it did not, so that is only "unavailable".
  */
-async function call(url: string, init: RequestInit, timeoutMs: number, write: boolean, what: string): Promise<Reply> {
+export async function call(url: string, init: RequestInit, timeoutMs: number, write: boolean, what: string): Promise<Reply> {
   try {
     const res = await fetch(url, { ...init, redirect: "error", signal: AbortSignal.timeout(timeoutMs) });
     const text = await res.text();
@@ -77,7 +80,7 @@ async function call(url: string, init: RequestInit, timeoutMs: number, write: bo
   }
 }
 
-const retryAfter = (headers: Headers) => {
+export const retryAfter = (headers: Headers) => {
   const s = Number(headers.get("retry-after"));
   return Number.isFinite(s) && s > 0 ? s * 1000 : undefined;
 };

@@ -80,6 +80,8 @@ export const outlookConfigSchema = emailConfigSchema;
 export const teamsConfigSchema = slackConfigSchema;
 // A Telegram message goes to the one chat picked in Apps, as plain text (decision 0042). Queued like Slack.
 export const telegramConfigSchema = slackConfigSchema;
+// A PayMongo checkout link for the amount in pesos (text, so a template works), sent on by a later step (decision 0043). Idempotent per run and step.
+export const paymongoLinkConfigSchema = z.object({ amount: template(100).min(1), description: template(200).min(1), reference: template(200).min(1) });
 export type SheetsConfig = z.infer<typeof sheetsConfigSchema>;
 export type SlackConfig = z.infer<typeof slackConfigSchema>;
 
@@ -121,6 +123,7 @@ const stepSchema = z.discriminatedUnion("type", [
   z.object({ id: stepId, type: z.literal("teams"), config: teamsConfigSchema }),
   z.object({ id: stepId, type: z.literal("telegram"), config: telegramConfigSchema }),
   z.object({ id: stepId, type: z.literal("booking"), config: bookingConfigSchema }),
+  z.object({ id: stepId, type: z.literal("paymongo_link"), config: paymongoLinkConfigSchema }),
 ]);
 export type Step = z.infer<typeof stepSchema>;
 
@@ -174,6 +177,8 @@ const triggerSchema = z.discriminatedUnion("type", [
   // pg-boss validates the expression fully when the schedule is saved.
   z.object({ type: z.literal("schedule"), config: z.object({ cron: z.string().regex(/^\S+( \S+){4,5}$/, "cron needs 5 or 6 fields") }) }),
   z.object({ type: z.literal("form"), config: z.object({ fields: fieldList }) }),
+  // Starts a run when PayMongo reports a payment (paid by default). The run gets the payment as its trigger payload.
+  z.object({ type: z.literal("payment"), config: z.object({ events: z.array(z.enum(["paid", "refunded"])).min(1).default(["paid"]) }).default({ events: ["paid"] }) }),
 ]);
 export type Trigger = z.infer<typeof triggerSchema>;
 

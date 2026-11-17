@@ -66,6 +66,20 @@ describe("definitionSchema", () => {
       expect(issues(withTrigger({ type: "webhook" }))).toEqual([]);
       expect(issues(withTrigger({ type: "webhook", config: { hmacSecret: "stripe_signing" } }))).toEqual([]);
     });
+
+    it("takes a payment trigger, paid by default, and refuses unknown events", () => {
+      expect(issues(withTrigger({ type: "payment" }))).toEqual([]);
+      expect(issues(withTrigger({ type: "payment", config: { events: ["paid", "refunded"] } }))).toEqual([]);
+      expect(issues(withTrigger({ type: "payment", config: { events: [] } }))).not.toEqual([]);
+      expect(issues(withTrigger({ type: "payment", config: { events: ["failed"] } }))).not.toEqual([]);
+      expect(definitionSchema.parse(withTrigger({ type: "payment" })).trigger).toEqual({ type: "payment", config: { events: ["paid"] } });
+    });
+
+    it("takes a paymongo_link step with amount, description and reference", () => {
+      const config = { amount: "{{trigger.total}}", description: "Order", reference: "ORD-1" };
+      expect(issues({ trigger: { type: "manual" }, steps: [step("pay", "paymongo_link", config)] })).toEqual([]);
+      expect(issues({ trigger: { type: "manual" }, steps: [step("pay", "paymongo_link", { amount: "5" })] })).not.toEqual([]);
+    });
   });
 
   it("accepts a single step with no edges", () => {

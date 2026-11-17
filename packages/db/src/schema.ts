@@ -461,7 +461,7 @@ export const mailSenders = pgTable("mail_senders", {
   updatedAt: ts("updated_at").notNull().defaultNow(),
 }, (t) => [check("mail_senders_status", sql`${t.status} in ('unverified', 'active', 'failed', 'disconnected')`)]);
 
-export const PROVIDERS = ["google_sheets", "slack", "outlook", "teams", "telegram"] as const;
+export const PROVIDERS = ["google_sheets", "slack", "outlook", "teams", "telegram", "paymongo"] as const;
 export type Provider = (typeof PROVIDERS)[number];
 
 /**
@@ -488,7 +488,7 @@ export const connections = pgTable(
   },
   (t) => [
     primaryKey({ columns: [t.userId, t.provider] }),
-    check("connections_provider", sql`${t.provider} in ('google_sheets', 'slack', 'outlook', 'teams', 'telegram')`),
+    check("connections_provider", sql`${t.provider} in ('google_sheets', 'slack', 'outlook', 'teams', 'telegram', 'paymongo')`),
     check("connections_status", sql`${t.status} in ('active', 'failed')`),
   ],
 );
@@ -542,6 +542,46 @@ export const deliveries = pgTable(
     // The worker polls for due deliveries every couple of seconds.
     index("deliveries_due").on(t.nextAttemptAt).where(sql`${t.state} in ('queued', 'sending')`),
     check("deliveries_state", sql`${t.state} in ('queued', 'sending', 'delivered', 'needs_review', 'failed')`),
-    check("deliveries_provider", sql`${t.provider} in ('google_sheets', 'slack', 'outlook', 'teams', 'telegram')`),
+    check("deliveries_provider", sql`${t.provider} in ('google_sheets', 'slack', 'outlook', 'teams', 'telegram', 'paymongo')`),
   ],
 );
+
+export const PAYMENT_STATES = ["pending", "paid", "refunded", "needs_review"] as const;
+export type PaymentState = (typeof PAYMENT_STATES)[number];
+
+/** One PayMongo checkout link a run created. Moves pending -> paid -> refunded, only forward; an amount mismatch parks it in needs_review. */
+export const payments = pgTable(
+  "payments",
+  {
+    id: id(),
+    userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    workflowId: uuid("workflow_id").notNull().references(() => workflows.id, { onDelete: "cascade" }),
+    runId: uuid("run_id").notNull().references(() => runs.id, { onDelete: "cascade" }),
+    stepId: text("step_id").notNull(),
+    reference: text("reference").notNull(),
+    amountCentavos: integer("amount_centavos").notNull(),
+    currency: text("currency").notNull().default("PHP"),
+    livemode: boolean("livemode").notNull(),
+    providerSessionId: text("provider_session_id").notNull().unique(),
+    url: text("url").notNull(),
+    status: text("status", { enum: PAYMENT_STATES }).notNull().default("pending"),
+    providerPaymentId: text("provider_payment_id"),
+    paidAt: ts("paid_at"),
+    createdAt: createdAt(),
+    updatedAt: ts("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    unique().on(t.runId, t.stepId),
+    index("payments_provider_payment").on(t.providerPaymentId),
+    check("payments_amount", sql`${t.amountCentavos} > 0`),
+    check("payments_status", sql`${t.status} in ('pending', 'paid', 'refunded', 'needs_review')`),
+  ],
+);
+
+/** PayMongo webhook events already handled, so a redelivered event does nothing twice. */
+export const paymongoEvents = pgTable("paymongo_events", {
+  eventId: text("event_id").primaryKey(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  type: text("type").notNull(),
+  receivedAt: ts("received_at").notNull().defaultNow(),
+});

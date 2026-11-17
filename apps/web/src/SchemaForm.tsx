@@ -19,7 +19,7 @@ export type JsonSchema = {
 };
 type Obj = Record<string, unknown>;
 
-const LABELS: Record<string, string> = { op: "Operator", url: "URL", to: "To (comma-separated)", text: "Message", left: "Value", right: "Compare with", timeoutSeconds: "Timeout (seconds)", seconds: "Wait (seconds)", offsetSeconds: "Offset (seconds)" };
+const LABELS: Record<string, string> = { amount: "Amount (pesos)", reference: "Order reference", op: "Operator", url: "URL", to: "To (comma-separated)", text: "Message", left: "Value", right: "Compare with", timeoutSeconds: "Timeout (seconds)", seconds: "Wait (seconds)", offsetSeconds: "Offset (seconds)" };
 const label = (key: string) => LABELS[key] ?? key.charAt(0).toUpperCase() + key.slice(1);
 
 export function SchemaForm({ schema, value, onChange }: { schema: JsonSchema; value: Obj; onChange: (v: Obj) => void }) {
