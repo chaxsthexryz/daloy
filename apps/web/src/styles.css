@@ -97,43 +97,45 @@
   --reveal-blur: 8px;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #0b1020;
-    --surface: #131a30;
-    --text: #eef2ff;
-    --muted: #a3aecb;
-    --border: #6b7799;
-    --accent: #8fb0ff;
-    --on-accent: #0b1020;
-    --danger: #f0a199;
-    --ok: #7fcfa3;
-    --warn: #e6c26a;
-    --focus: #8fb0ff;
-    --sunken: #0b1020;
-    --border-soft: #2a3558;
-    --accent-hover: #b3c8ff;
-    --accent-tint: #1c2a55;
+/* The theme is an attribute set before the first paint by public/theme.js: System follows the device, and Settings can
+   fix Light or Dark (lib/theme.ts). */
+:root[data-theme="light"] { color-scheme: light; }
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0b1020;
+  --surface: #131a30;
+  --text: #eef2ff;
+  --muted: #a3aecb;
+  --border: #6b7799;
+  --accent: #8fb0ff;
+  --on-accent: #0b1020;
+  --danger: #f0a199;
+  --ok: #7fcfa3;
+  --warn: #e6c26a;
+  --focus: #8fb0ff;
+  --sunken: #0b1020;
+  --border-soft: #2a3558;
+  --accent-hover: #b3c8ff;
+  --accent-tint: #1c2a55;
 
-    --done: #173323;
-    --on-done: #7fcfa3;
-    --waiting: #3a2f10;
-    --on-waiting: #e6c26a;
-    --needs-you: #8fb0ff;
-    --on-needs-you: #0b1020;
-    --problem: #401c18;
-    --on-problem: #f0a199;
-    --working: #232c4a;
-    --on-working: #eef2ff;
+  --done: #173323;
+  --on-done: #7fcfa3;
+  --waiting: #3a2f10;
+  --on-waiting: #e6c26a;
+  --needs-you: #8fb0ff;
+  --on-needs-you: #0b1020;
+  --problem: #401c18;
+  --on-problem: #f0a199;
+  --working: #232c4a;
+  --on-working: #eef2ff;
 
-    --run-path: #5fb98a;
-    --run-failed: #e08379;
-    --run-wait: #d1ab4f;
-    --run-working: #8fb0ff;
-    --run-idle: #6b7799;
+  --run-path: #5fb98a;
+  --run-failed: #e08379;
+  --run-wait: #d1ab4f;
+  --run-working: #8fb0ff;
+  --run-idle: #6b7799;
 
-    --shadow-overlay: 0 8px 24px rgb(0 0 0 / 0.5);
-  }
+  --shadow-overlay: 0 8px 24px rgb(0 0 0 / 0.5);
 }
 
 * { box-sizing: border-box; }
@@ -157,8 +159,14 @@ textarea { min-height: 9rem; resize: vertical; line-height: var(--leading-body);
 button { min-height: var(--target); padding: 0 var(--space-4); background: var(--surface); color: var(--accent); border: var(--border-width) solid var(--accent); border-radius: var(--radius-md); font-weight: var(--weight-medium); white-space: nowrap; cursor: pointer; transition: background-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease); }
 button:hover:not(:disabled) { background: var(--accent-tint); color: var(--accent); }
 button:disabled { border-color: var(--border-soft); color: var(--muted); cursor: not-allowed; }
-button.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
-button.primary:hover:not(:disabled) { background: var(--accent-hover); border-color: var(--accent-hover); color: var(--on-accent); }
+button.primary, a.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+button.primary:hover:not(:disabled), a.primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); color: var(--on-accent); }
+a.primary { display: inline-flex; align-items: center; min-height: var(--target); padding: 0 var(--space-4); border: var(--border-width) solid var(--accent); border-radius: var(--radius-md); font-weight: var(--weight-medium); text-decoration: none; white-space: nowrap; }
+.sidebar nav a.primary { margin-bottom: var(--space-2); background: var(--accent); color: var(--on-accent); }
+.sidebar nav a.primary:hover { background: var(--accent-hover); color: var(--on-accent); }
+.filters { display: flex; flex-wrap: wrap; align-items: end; gap: var(--space-2) var(--space-3); margin: 0 0 var(--space-4); }
+.filters .field { flex: 1 1 14rem; margin: 0; }
+.drafts { margin-top: var(--space-6); }
 button.danger { border-color: var(--danger); color: var(--danger); }
 button.danger:hover:not(:disabled) { background: var(--problem); color: var(--on-problem); }
 button.quiet { background: transparent; border-color: transparent; color: var(--text); }
@@ -202,7 +210,7 @@ fieldset { border: var(--border-width) solid var(--border-soft); border-radius: 
 .needs-you a { margin-left: auto; display: inline-flex; align-items: center; min-height: var(--target); padding: 0 var(--space-4); background: var(--surface); color: var(--accent); border-radius: var(--radius-md); font-size: var(--text-md); text-decoration: none; transition: background-color var(--dur-fast) var(--ease); }
 .needs-you a:hover { background: var(--accent-tint); color: var(--accent-hover); }
 .needs-you :focus-visible { outline-color: var(--on-needs-you); }
-.cards { list-style: none; margin: var(--space-4) 0 0; padding: 0; display: grid; gap: var(--space-4); }
+ul.cards { list-style: none; margin: var(--space-4) 0 0; padding: 0; display: grid; gap: var(--space-4); }
 .card { display: flex; flex-direction: column; padding: var(--space-4); background: var(--surface); border: var(--border-width) solid var(--border-soft); border-left: var(--edge-width) solid var(--border-soft); border-radius: var(--radius-md); }
 .card:has(.state.done) { border-left-color: var(--run-path); }
 .card:has(.state.waiting) { border-left-color: var(--run-wait); }
@@ -303,7 +311,7 @@ details summary::-webkit-details-marker { display: none; }
   .sidebar .who { margin-top: auto; }
   h1 { font-size: var(--text-2xl); }
   /* Two rows: name and account on top, the menu as a tab row under it with Sign out at the far end. */
-  .cards { grid-template-columns: 1fr 1fr; }
+  ul.cards { grid-template-columns: 1fr 1fr; }
   /* The three templates sit side by side. The markup is flat (h2, then h3, p, .actions three times), so the grid flows by column. */
   .create:has(> h3) { display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: auto auto 1fr auto; grid-auto-flow: column; column-gap: var(--space-6); padding: var(--space-1) var(--space-5) var(--space-5); }
   .create > h2 { grid-column: 1 / -1; }
@@ -323,6 +331,7 @@ details summary::-webkit-details-marker { display: none; }
 .row > button { margin-bottom: var(--space-3); }
 .check { display: flex; gap: var(--space-2); align-items: center; font-size: var(--text-sm); }
 .check input { width: auto; min-height: 0; }
+fieldset .check { min-height: var(--target); font-size: var(--text-md); }
 .page.narrow { max-width: 26rem; }
 .list { padding-left: var(--space-5); }
 .list li { margin-bottom: var(--space-1); }

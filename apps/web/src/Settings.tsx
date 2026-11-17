@@ -23,7 +23,7 @@ const KEY_LINKS: Record<string, { href: string; text: string }> = {
 };
 
 /** The AI model every AI step of this user's workflows runs with, and a live test on a sample inquiry. */
-export function SettingsPage() {
+export function AiModelPage() {
   const [presets, setPresets] = useState<Record<string, Preset> | null>(null);
   const [current, setCurrent] = useState<Current | null>(null);
   const [local, setLocal] = useState<LocalModels | null>(null);
@@ -107,7 +107,7 @@ export function SettingsPage() {
   return (
     <main className="page narrow">
       <header className="toolbar plain">
-        <a href="#/advanced">Advanced</a>
+        <a href="#/settings">Settings</a>
         <h1>AI model</h1>
       </header>
       <p>Every AI step in your workflows, and Build with AI, uses the model you pick here. You can switch at any time; saved keys are kept for each provider.</p>

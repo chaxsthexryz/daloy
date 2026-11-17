@@ -109,7 +109,7 @@ const css = readFileSync(new URL("../styles.css", import.meta.url), "utf8");
 const tokens = (block: string) => Object.fromEntries([...block.matchAll(/--([a-z-]+):\s*(#[0-9a-f]{6})/gi)].map((m) => [m[1]!, m[2]!]));
 const schemes = {
   light: tokens(/^:root \{([^}]*)\}/m.exec(css)![1]!),
-  dark: { ...tokens(/^:root \{([^}]*)\}/m.exec(css)![1]!), ...tokens(/prefers-color-scheme: dark\) \{\s*:root \{([^}]*)\}/.exec(css)![1]!) },
+  dark: { ...tokens(/^:root \{([^}]*)\}/m.exec(css)![1]!), ...tokens(/^:root\[data-theme="dark"\] \{([^}]*)\}/m.exec(css)![1]!) },
 };
 const lum = (hex: string) => {
   const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255).map((c) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));

@@ -135,9 +135,9 @@ export function Editor({ id }: { id: string }) {
   return (
     <div className="editor">
       <header className="toolbar">
-        <a href="#/advanced">Advanced</a>
+        <a href="#/">Automations</a>
         <h1>{wf.name}</h1>
-        <a href={`#/w/${id}/runs`}>Runs</a>
+        <a href={`#/w/${id}/runs`}>Activity</a>
         <a href={`#/w/${id}/versions`}>Versions</a>
         <span className="muted status" aria-live="polite">
           {status}

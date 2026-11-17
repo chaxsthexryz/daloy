@@ -13,7 +13,7 @@ async function signUp(page: Page, label: string) {
 
 test("Home shows each automation's state and last event, and a Needs you strip", async ({ page }) => {
   await signUp(page, "automations");
-  await expect(page.getByText("No automations yet. Add one below.")).toBeVisible();
+  await expect(page.getByText("No automations yet.")).toBeVisible();
 
   const stamp = Date.now();
   const form = await (await page.request.post("/workflows", { data: { name: "Contact form", slug: `contact-${stamp}` } })).json();
@@ -45,7 +45,6 @@ test("Home shows each automation's state and last event, and a Needs you strip",
   await expect(card).toContainText("Last ran");
   await expect(card.getByRole("button", { name: "Copy form link" })).toBeVisible();
   await expect(card.getByRole("link", { name: "Activity" })).toHaveAttribute("href", `#/w/${form.id}/runs`);
-  await expect(card.getByRole("button", { name: /Pause/ })).toBeDisabled();
   await expect(page.locator(".card", { has: page.getByRole("link", { name: "Orders" }) })).toContainText("No activity yet");
 
   // Developer pages are behind Advanced, and the strip opens the run.

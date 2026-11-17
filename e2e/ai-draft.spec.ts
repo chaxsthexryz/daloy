@@ -8,7 +8,7 @@ test("describe a workflow, get an unpublished draft, then ask the AI to change i
   await page.getByLabel("Password").fill("e2e test password 1");
   await page.getByRole("button", { name: "Create account" }).click();
 
-  await page.goto("/#/advanced");
+  await page.goto("/#/new");
   await page.getByLabel("Describe the workflow in your own words").fill("When someone fills my contact form, thank them by email.");
   await page.getByRole("button", { name: "Build draft" }).click();
 
@@ -33,7 +33,7 @@ test("the editor warns about an approval with no rejected or timeout branch", as
   await page.getByLabel("Password").fill("e2e test password 1");
   await page.getByRole("button", { name: "Create account" }).click();
 
-  await page.goto("/#/advanced");
+  await page.goto("/#/new");
   await page.getByLabel("Describe the workflow in your own words").fill("Ask my boss approval, then thank the sender.");
   await page.getByRole("button", { name: "Build draft" }).click();
 

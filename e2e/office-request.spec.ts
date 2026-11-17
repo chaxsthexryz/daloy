@@ -14,6 +14,7 @@ test("a beginner previews, sets up, turns on and receives one office request", a
   await page.getByRole("button", { name: "Create account" }).click();
 
   // Preview: worked out in the browser, so nothing is recorded or sent.
+  await page.getByRole("link", { name: "New automation" }).first().click();
   await page.getByRole("link", { name: "Try an example" }).click();
   await expect(page.getByRole("heading", { name: "Preview only", level: 1 })).toBeVisible();
   await page.getByRole("button", { name: "Try with sample details" }).click();
@@ -30,7 +31,8 @@ test("a beginner previews, sets up, turns on and receives one office request", a
   await page.getByRole("button", { name: "Next" }).click();
   await expect(page.getByRole("heading", { name: "Where requests and alerts go" })).toBeVisible();
   await page.getByRole("button", { name: "Save and finish later" }).click();
-  await page.getByRole("link", { name: "Draft: continue setup" }).click();
+  await page.locator("summary", { hasText: "Drafts (1)" }).click();
+  await page.getByRole("link", { name: "Office requests: continue setup" }).click();
   await expect(page.getByRole("heading", { name: "Where requests and alerts go" })).toBeVisible();
   await page.getByRole("button", { name: "Next" }).click();
   await expect(page.getByRole("heading", { name: "Review" })).toBeVisible();

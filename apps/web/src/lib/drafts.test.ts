@@ -13,7 +13,7 @@ describe("newestDraft", () => {
     expect(newestDraft([wf("a", "2026-11-01T00:00:00Z", "office-request", true), wf("b", "2026-11-02T00:00:00Z", null)], "office-request")).toBeUndefined();
     expect(newestDraft([], "office-request")).toBeUndefined();
   });
-  it("shares its draft rule with the Draft: continue setup tag", () => {
+  it("shares its draft rule with the Drafts group", () => {
     expect(isDraft(wf("a", "2026-11-01T00:00:00Z", "office-request"))).toBe(true);
     expect(isDraft(wf("a", "2026-11-01T00:00:00Z", "office-request", true))).toBe(false);
     expect(isDraft(wf("a", "2026-11-01T00:00:00Z", null))).toBe(false);

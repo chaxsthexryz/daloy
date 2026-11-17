@@ -31,7 +31,7 @@ test("an invited approver answers a named approval; the owner and a signed-out v
   await expect(page.getByRole("cell", { name: approver, exact: true })).toBeVisible();
 
   // An approval step named to them.
-  await page.goto("/#/advanced");
+  await page.goto("/#/new");
   await page.getByLabel("Name").fill("Named approval");
   await page.getByRole("button", { name: "Create" }).click();
   await page.getByLabel("Add a step as the first step").selectOption("approval");

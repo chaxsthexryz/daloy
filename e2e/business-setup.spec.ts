@@ -19,6 +19,7 @@ test("an owner sets up inquiry replies and a customer's inquiry reaches both inb
   await page.getByLabel("Password").fill("e2e test password 1");
   await page.getByRole("button", { name: "Create account" }).click();
 
+  await page.getByRole("link", { name: "New automation" }).first().click();
   await page.getByRole("link", { name: "Set up inquiry replies" }).click();
   await expect(page.getByRole("heading", { name: "Business and email", level: 1 })).toBeVisible();
   await expect(page.getByText("Save a business name and an inbox for new inquiries above first.")).toBeVisible();
