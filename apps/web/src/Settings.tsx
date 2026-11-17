@@ -16,11 +16,13 @@ const NOTES: Record<string, string> = {
   gemini: "Free tier with a key from Google AI Studio, no credit card. Google may use what you send to improve its products, so use test data.",
   openai: "Your own OpenAI key. Billed by OpenAI.",
   openrouter: "Your own OpenRouter key. One key for many hosted models.",
+  deepseek: "Your own key from the DeepSeek platform. Billed by DeepSeek per use.",
 };
 const KEY_LINKS: Record<string, { href: string; text: string }> = {
   gemini: { href: "https://aistudio.google.com/apikey", text: "Get a free key in Google AI Studio" },
   openai: { href: "https://platform.openai.com/api-keys", text: "Create a key on the OpenAI platform" },
   openrouter: { href: "https://openrouter.ai/keys", text: "Create a key on OpenRouter" },
+  deepseek: { href: "https://platform.deepseek.com/api_keys", text: "Create a key on the DeepSeek platform" },
 };
 
 /** The AI model every AI step of this user's workflows runs with, and a live test on a sample inquiry. */

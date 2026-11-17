@@ -26,6 +26,7 @@ export const PRESETS = {
   gemini: { label: "Gemini API", defaultModel: "gemini-3.8-flash", needsKey: true, baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai", models: GEMINI },
   openai: { label: "OpenAI", defaultModel: "", needsKey: true, baseUrl: "https://api.openai.com/v1", models: [] as Suggestion[] },
   openrouter: { label: "OpenRouter", defaultModel: "", needsKey: true, baseUrl: "https://openrouter.ai/api/v1", models: [] as Suggestion[] },
+  deepseek: { label: "DeepSeek", defaultModel: "deepseek-flash", needsKey: true, baseUrl: "https://api.deepseek.com", models: [{ id: "deepseek-flash", free: false, note: "DeepSeek V4.1 Flash. Fast and low cost, paid per use." }] as Suggestion[] },
 } as const;
 export type Preset = keyof typeof PRESETS;
 export const PRESET_IDS = Object.keys(PRESETS) as [Preset, ...Preset[]];
