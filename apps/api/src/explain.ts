@@ -86,7 +86,7 @@ export function askFacts(input: FactsInput): AskFacts {
   return { ...failureFacts(input), plainState, steps };
 }
 
-const APPS: Record<string, string> = { google_sheets: "Google Sheets", slack: "Slack", outlook: "Outlook", teams: "Microsoft Teams" };
+const APPS: Record<string, string> = { google_sheets: "Google Sheets", slack: "Slack", outlook: "Outlook", teams: "Microsoft Teams", google_calendar: "Google Calendar" };
 const APPS_FIX = { href: "#/apps", label: "Check the connection" };
 // Retry, Send again and Mark as posted are on the run page itself, so these need no link.
 const ACTIVITY_FIX = null;
@@ -98,6 +98,7 @@ const LINT_LINES: Record<LintRule, string> = {
   unreachable_step: "Part of this automation can never be reached, so it will not run.",
 };
 const PERMISSION: Record<string, string> = {
+  google_calendar: "Share the calendar with the Google service account you connected, choose Make changes to events, then press Retry.",
   google_sheets: "Share the sheet with the Google account you connected, then press Retry.",
   slack: "Invite the Daloy app to the channel, then press Retry.",
   outlook: "Check that the connected Outlook account may send email, then press Retry.",
@@ -107,7 +108,7 @@ const PERMISSION: Record<string, string> = {
 function ofDelivery(d: Facts["deliveries"][number]): Explanation | null {
   const app = APPS[d.provider] ?? "The other app";
   const outlook = d.provider === "outlook";
-  const where = d.provider === "google_sheets" ? "sheet" : "channel";
+  const where = d.provider === "google_sheets" ? "sheet" : d.provider === "google_calendar" ? "calendar" : "channel";
   const done = outlook ? "Mark as sent" : "Mark as posted";
   const again = outlook ? "Send again" : "Post again";
   const check = outlook ? "Check Sent Items" : `Check ${app}`;

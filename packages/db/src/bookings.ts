@@ -1,6 +1,7 @@
 import { randomInt } from "node:crypto";
 import { formatZoned } from "@daloy/engine";
 import { and, asc, desc, eq, sql } from "drizzle-orm";
+import { queueCalendarSync } from "./calendar";
 import type { Db } from "./index";
 import { bookingChanges, bookingResults, bookings, resources, runs } from "./schema";
 
@@ -134,6 +135,7 @@ export async function bookFromStep(db: Db, at: { workspaceId: string; test: bool
           await sp.update(bookings).set({ during: range(start, end) as unknown as string, status, version, updatedAt: new Date() }).where(and(eq(bookings.id, b.row.id), eq(bookings.version, b.row.version)));
           await sp.insert(bookingChanges).values({ bookingId: b.row.id, fromVersion: b.row.version, action: a.action, start: a.action === "reschedule" ? start : null, runId: at.runId, actor: `run:${at.runId}`, result: { version, booking: next } });
           await link(sp, b.row.id, version);
+          await queueCalendarSync(sp, b.row.id, version, at.runId);
         });
         result = free ? { branch: "done", output: next } : { branch: "taken", output: { reason: "That time is already booked for this resource." } };
       }
@@ -198,6 +200,7 @@ export async function staffChange(db: Db, req: StaffRequest, actor: string): Pro
         await sp.update(bookings).set({ runId }).where(eq(bookings.id, b.row.id));
       }
       await sp.insert(bookingChanges).values({ bookingId: b.row.id, fromVersion: b.row.version, action: req.action, start: req.action === "reschedule" ? start : null, runId, actor, result: { version, ...(runId ? { runId } : {}), booking: next } });
+      await queueCalendarSync(sp, b.row.id, version, runId ?? b.row.runId);
     });
     if (!free) return { result: "taken", booking: view(b) };
     return { result: "done", booking: next, runId };

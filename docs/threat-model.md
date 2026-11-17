@@ -7,7 +7,7 @@ Kept current with each phase. A mitigation marked "planned" does not exist in co
 - Stored secrets (API keys and SMTP credentials that workflows use)
 - Each owner's Gmail app password, and the right to send as their address
 - IMAP credentials, incoming message text and the saved position of each monitored folder
-- Each owner's Google service account key and Slack bot token, which can write to their shared sheets and post to their channels, and their Telegram bot token, which can message every chat the bot is in
+- Each owner's Google service account key and Slack bot token, which can write to their shared sheets and post to their channels, and their Telegram bot token, which can message every chat the bot is in. The Google Calendar connection uses the same kind of service account key, which can change every event on the calendars shared with it
 - Each owner's Microsoft refresh token, which can send email as their mailbox, and their Teams workflow link, which lets anyone holding it post to one channel
 - The installation's Microsoft Entra client secret (`MICROSOFT_CLIENT_SECRET`)
 - Console sessions and API tokens
@@ -111,3 +111,12 @@ The demo page (`apps/web/demo`, published as `site/demo/` on Cloudflare Pages) a
 - The chat id is validated (a number or `@name`), and the chat is pinned to each delivery when it is queued, so editing the connection cannot redirect messages already queued.
 - Anyone in the chat can read what is sent. The same rule as Slack: keep private details out of the message text.
 - A bot token that leaks lets someone message the bot's chats. Replace it in BotFather (/revoke), then Replace token in Apps.
+
+## Google Calendar (decision 0044)
+
+- The service account key is stored encrypted like Sheets, bound to the owner and provider, and never returned or logged. The scope is `calendar.events`. The account sees only calendars their owner shared with it, so a leaked key can read and change those calendars' events, nothing else.
+- The Calendar address is fixed or set by the installation's env var (`GOOGLE_CALENDAR_URL`), never by a user.
+- The calendar id is validated, and the calendar is pinned to each delivery when it is queued, so editing the connection cannot redirect a queued event. A changed calendar holds the delivery for review.
+- Event ids come from the booking id through sha256, so an id gives away nothing and a caller cannot choose another booking's event. A delivery reads the booking by id and workspace.
+- Event title and description are text from the workflow's templates and can hold guest details. Anyone with access to the calendar sees them: share the calendar only with the people who may see bookings.
+- No attendees are invited, so Daloy sends no Google invitation email to an address a guest supplied.

@@ -252,14 +252,14 @@ export class WorkflowsController {
 
   /** Turning on a workflow with Sheets, Slack, Outlook or Teams steps needs that connection working with a destination. Drafts do not. */
   private async checkConnections(userId: string, definition: WorkflowDefinition) {
-    const providers: Partial<Record<string, Provider>> = { sheets: "google_sheets", slack: "slack", outlook: "outlook", teams: "teams", telegram: "telegram" };
+    const providers: Partial<Record<string, Provider>> = { sheets: "google_sheets", slack: "slack", outlook: "outlook", teams: "teams", telegram: "telegram", calendar: "google_calendar" };
     const needed = new Set(definition.steps.flatMap((s) => providers[s.type] ?? []));
     if (needed.size === 0) return;
     const conns = await readConnections(this.db, userId);
     for (const provider of needed) {
       const c = conns.find((x) => x.provider === provider);
       const name = PROVIDER_NAMES[provider];
-      const where = provider === "slack" ? " and pick a channel" : provider === "telegram" ? " and choose a chat" : provider === "google_sheets" ? " and pick a sheet" : "";
+      const where = provider === "slack" ? " and pick a channel" : provider === "telegram" ? " and choose a chat" : provider === "google_sheets" ? " and pick a sheet" : provider === "google_calendar" ? " and choose a calendar" : "";
       if (!c || !c.destination) throw new BadRequestException(`Connect ${name}${where} in Apps before turning this on.`);
       if (c.status !== "active") throw new BadRequestException(`${name} needs to be connected again in Apps before turning this on.`);
     }

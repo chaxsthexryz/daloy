@@ -3,7 +3,7 @@ import { decryptSecret, encryptSecret } from "./crypto";
 import type { Db } from "./index";
 import { connections, type Provider } from "./schema";
 
-export const PROVIDER_NAMES: Record<Provider, string> = { google_sheets: "Google Sheets", slack: "Slack", outlook: "Outlook", teams: "Microsoft Teams", telegram: "Telegram" };
+export const PROVIDER_NAMES: Record<Provider, string> = { google_sheets: "Google Sheets", slack: "Slack", outlook: "Outlook", teams: "Microsoft Teams", telegram: "Telegram", google_calendar: "Google Calendar" };
 
 // The owner id is in the associated data (crypto.ts), so a credential copied to another owner's row does not decrypt.
 const secretName = (provider: Provider) => `connection:${provider}`;

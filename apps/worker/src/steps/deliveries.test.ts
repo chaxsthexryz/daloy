@@ -1,5 +1,5 @@
 import { generateKeyPairSync, randomBytes } from "node:crypto";
-import { deliveries, encryptSecret, retryDelivery, runs, saveConnection, secrets, smtpMailer, users, workflows, workflowVersions, type Db } from "@daloy/db";
+import { bookings, deliveries, encryptSecret, resources, retryDelivery, runs, saveConnection, secrets, smtpMailer, staffChange, users, workflows, workflowVersions, type Db } from "@daloy/db";
 import { eq } from "drizzle-orm";
 import type { Pool } from "pg";
 import { afterAll, beforeAll, expect, it } from "vitest";
@@ -129,4 +129,40 @@ it("fails the step and queues nothing when the Outlook recipient is not an addre
   const runId = await startRun({ summary: "a desk lamp", email: "not-an-address", reference: "PUR-2002" }, {}, microsoftDefinition);
   expect(await until(() => runState(runId), (s) => s === "succeeded" || s === "failed")).toBe("failed");
   expect(await deliveriesOf(runId)).toEqual([]);
+});
+
+it("puts a booking on the calendar from a calendar step, and removes the event when staff cancel the booking (decision 0043)", async () => {
+  const email = "calendar@office.iam.gserviceaccount.com";
+  const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
+  fake.addServiceAccount(email, publicKey.export({ type: "spki", format: "pem" }).toString());
+  const cal = fake.addCalendar("office@group.calendar.google.com", "Office", [email]);
+  await saveConnection(db, key, owner, "google_calendar", {
+    account: email,
+    credential: JSON.stringify({ client_email: email, private_key: privateKey.export({ type: "pkcs8", format: "pem" }).toString() }),
+    destination: { calendarId: "office@group.calendar.google.com", title: "Office" },
+  });
+  const [ana] = await db.insert(resources).values({ userId: owner, name: "Ana" }).returning();
+  const fields = [
+    { name: "who", label: "Therapist", type: "resource", required: true },
+    { name: "at", label: "Appointment", type: "datetime", required: true, timezone: "Asia/Manila", slotMinutes: 60 },
+  ];
+  const def = {
+    trigger: { type: "webhook", config: { fields } },
+    steps: [
+      { id: "book", type: "booking", config: { action: "create", resource: "{{trigger.who}}", start: "{{trigger.at}}", minutes: 60 } },
+      { id: "calendar", type: "calendar", config: { title: "Massage with {{steps.book.output.resource.name}}", description: "Booking {{steps.book.output.reference}}" } },
+    ],
+    edges: [{ from: "book", to: "calendar", on: "done" }],
+  };
+  const runId = await startRun({ who: ana!.id, at: `${new Date().getUTCFullYear() + 1}-01-20T14:00` }, {}, def);
+  expect(await until(() => runState(runId), (s) => s === "succeeded" || s === "failed")).toBe("succeeded");
+  await until(() => deliveriesOf(runId), (d) => d.length === 1 && d[0]!.state === "delivered");
+  const [event] = [...cal.events.values()];
+  expect(event).toMatchObject({ status: "confirmed", summary: "Massage with Ana", start: { timeZone: "Asia/Manila" } });
+  expect(event!.description).toMatch(/^Booking BK-/);
+
+  const [booking] = await db.select().from(bookings).where(eq(bookings.userId, owner));
+  expect((await staffChange(db, { workspaceId: owner, bookingId: booking!.id, version: 1, action: "cancel" }, "user:test")).result).toBe("done");
+  await until(async () => [...cal.events.values()][0]!.status, (st) => st === "cancelled");
+  expect(cal.events.size).toBe(1);
 });
