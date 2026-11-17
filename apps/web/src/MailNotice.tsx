@@ -15,7 +15,7 @@ export function MailNotice() {
   if (!text) return null;
   return (
     <p className="notice">
-      {text} <a href="#/settings/business">Business and email</a>
+      {text} <a href="#/apps">Apps</a>
     </p>
   );
 }

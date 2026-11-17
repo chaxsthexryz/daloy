@@ -75,13 +75,13 @@ export async function resolveSender(db: Db, key: Buffer, userId: string, { allow
   const extras = { fromName: profile?.businessName ?? undefined, replyTo: profile?.replyTo ?? undefined };
   const [row] = await db.select({ status: mailSenders.status }).from(mailSenders).where(eq(mailSenders.userId, userId));
   if (!row) return { kind: "installation", ...extras };
-  if (row.status === "disconnected") return { kind: "blocked", reason: "Gmail is disconnected. Reconnect Gmail in Settings, Business and email." };
+  if (row.status === "disconnected") return { kind: "blocked", reason: "Gmail is disconnected. Reconnect Gmail in Apps." };
   if (allowUnconfirmed) {
     const cred = (await gmailCredential(db, key, userId))!;
     return { kind: "gmail", address: cred.address, password: cred.password, ...extras };
   }
-  if (row.status === "unverified") return { kind: "blocked", reason: "Gmail is connected but not confirmed. Send the test email and confirm it in Settings, Business and email." };
-  if (row.status === "failed") return { kind: "blocked", reason: "Gmail could not send. Reconnect Gmail in Settings, Business and email." };
+  if (row.status === "unverified") return { kind: "blocked", reason: "Gmail is connected but not confirmed. Send the test email and confirm it in Apps." };
+  if (row.status === "failed") return { kind: "blocked", reason: "Gmail could not send. Reconnect Gmail in Apps." };
   const cred = (await gmailCredential(db, key, userId))!;
   return { kind: "gmail", address: cred.address, password: cred.password, ...extras };
 }

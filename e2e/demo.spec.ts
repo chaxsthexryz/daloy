@@ -23,7 +23,7 @@ test("sign in to the seeded demo and browse its workflows and runs", async ({ pa
   await shot(page, "editor");
 
   // Both seeded test runs finish: mocked email and AI steps, no outside calls.
-  await page.getByRole("link", { name: "Activity" }).click();
+  await page.getByRole("navigation", { name: "This automation" }).getByRole("link", { name: "Activity" }).click();
   await expect(async () => {
     await page.reload();
     await expect(page.getByRole("table").getByText("Done")).toHaveCount(2, { timeout: 1000 });

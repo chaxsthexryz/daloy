@@ -62,7 +62,7 @@ function asBadRequest(err: unknown): never {
 }
 
 /**
- * Business and email, Connections (roadmap phase 3, decision 0021). One Google Sheets and one Slack connection per owner,
+ * Apps (was Business and email), connections (roadmap phase 3, decision 0021). One Google Sheets and one Slack connection per owner,
  * each with its destination. Credentials are write-only: no response ever includes one.
  */
 @Controller("settings/connections")

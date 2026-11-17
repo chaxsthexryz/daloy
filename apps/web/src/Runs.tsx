@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, type Run, type RunSummary, type Version, type Workflow } from "./api";
 import { DeliveryList, type Delivery } from "./Connections";
+import { AutomationTabs, Header } from "./Nav";
 import { RunFlow } from "./FlowCanvas";
 import type { Draft } from "./lib/graph";
 import { pollDelay, takingLonger } from "./lib/poll";
@@ -112,28 +113,50 @@ export function RunResult({ run }: { run: Run }) {
   );
 }
 
-const FILTERS = { all: "", live: "&test=false", test: "&test=true", review: "&review=true" } as const;
+const FILTERS = { all: "", live: "&test=false", test: "&test=true", review: "&review=true", problem: "&state=problem", waiting: "&state=waiting" } as const;
 
-/** #/w/<id>/runs: the latest 50 runs of one workflow. */
-export function RunsPage({ workflowId }: { workflowId: string }) {
-  const [wf, setWf] = useState<Workflow | null>(null);
+/** #/activity: the latest 50 runs of every automation, or #/w/<id>/runs: of one, under its tabs. */
+export function RunsPage({ workflowId }: { workflowId?: string }) {
+  const [wf, setWf] = useState<(Workflow & { live: unknown }) | null>(null);
   const [filter, setFilter] = useState<keyof typeof FILTERS>("all");
+  const [query, setQuery] = useState("");
   const [list, setList] = useState<RunSummary[] | null>(null);
   const [error, setError] = useState("");
   useEffect(() => {
-    api<Workflow>("GET", `/workflows/${workflowId}`).then(setWf, (e: Error) => setError(e.message));
+    if (workflowId) api<Workflow & { live: unknown }>("GET", `/workflows/${workflowId}`).then(setWf, (e: Error) => setError(e.message));
   }, [workflowId]);
   useEffect(() => {
-    setList(null);
-    api<RunSummary[]>("GET", `/runs?workflowId=${workflowId}${FILTERS[filter]}`).then(setList, (e: Error) => setError(e.message));
-  }, [workflowId, filter]);
+    let current = true;
+    const scope = workflowId ? `workflowId=${workflowId}` : `q=${encodeURIComponent(query.trim())}`;
+    api<RunSummary[]>("GET", `/runs?${scope}${FILTERS[filter]}`).then(
+      // Only the newest answer counts, so a slow search for "RE" never replaces the one for "REQ-7".
+      (l) => current && setList(l),
+      (e: Error) => current && setError(e.message),
+    );
+    return () => {
+      current = false;
+    };
+  }, [workflowId, filter, query]);
 
   return (
     <main className="page">
-      <header className="toolbar plain">
-        <a href={`#/w/${workflowId}`}>{wf?.name ?? "Workflow"}</a>
-        <h1>Activity</h1>
-      </header>
+      {workflowId ? (
+        <>
+          <p>
+            <a href="#/">Automations</a>
+          </p>
+          <h1>{wf?.name ?? "Activity"}</h1>
+          <AutomationTabs id={workflowId} here="activity" overview={!!wf?.setup && !!wf.live} />
+        </>
+      ) : (
+        <>
+          <Header title="Activity" />
+          <div className="field">
+            <label htmlFor="run-find">Find a request or automation</label>
+            <input id="run-find" type="search" value={query} maxLength={100} onChange={(e) => setQuery(e.target.value)} />
+          </div>
+        </>
+      )}
       <div className="field inline">
         <label htmlFor="run-filter">Show</label>
         <select id="run-filter" value={filter} onChange={(e) => setFilter(e.target.value as keyof typeof FILTERS)}>
@@ -141,6 +164,8 @@ export function RunsPage({ workflowId }: { workflowId: string }) {
           <option value="live">Real runs</option>
           <option value="test">Previews</option>
           <option value="review">Needs you</option>
+          <option value="problem">Problem</option>
+          <option value="waiting">Waiting</option>
         </select>
       </div>
       <p role="alert" className="message error" hidden={!error}>
@@ -149,7 +174,7 @@ export function RunsPage({ workflowId }: { workflowId: string }) {
       {list === null ? (
         <p>Loading…</p>
       ) : list.length === 0 ? (
-        <p className="muted">Nothing has happened yet.</p>
+        <p className="muted">{query.trim() ? "Nothing matches." : "Nothing has happened yet."}</p>
       ) : (
         <div className="table-wrap">
           <table className="table cards">
@@ -157,6 +182,8 @@ export function RunsPage({ workflowId }: { workflowId: string }) {
             <thead>
               <tr>
                 <th scope="col">Started</th>
+                {!workflowId && <th scope="col">Automation</th>}
+                {!workflowId && <th scope="col">Request</th>}
                 <th scope="col">Result</th>
                 <th scope="col">Kind</th>
                 <th scope="col">Took</th>
@@ -168,6 +195,8 @@ export function RunsPage({ workflowId }: { workflowId: string }) {
                   <td data-label="Started">
                     <a href={`#/runs/${r.id}`}>{new Date(r.createdAt).toLocaleString()}</a>
                   </td>
+                  {!workflowId && <td data-label="Automation">{r.workflowName}</td>}
+                  {!workflowId && <td data-label="Request">{r.reference ?? ""}</td>}
                   <td data-label="Result">
                     <StateLabel run={r} />
                   </td>

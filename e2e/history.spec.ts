@@ -36,13 +36,13 @@ test("open the run history, diff two versions and roll back", async ({ page }) =
   await expect(page.locator(".run")).toContainText("condition_1 → true");
 
   // The run list links back to the same run.
-  await page.getByRole("link", { name: "Activity" }).click();
+  await page.getByRole("main").getByRole("link", { name: "Activity" }).click();
   await expect(page.getByRole("table")).toContainText("Real run");
   await page.getByLabel("Show").selectOption("test");
   await expect(page.getByText("Nothing has happened yet.")).toBeVisible();
 
   // Version 2 changes the operator.
-  await page.getByRole("link", { name: "History" }).click();
+  await page.getByRole("navigation", { name: "This automation" }).getByRole("link", { name: "Steps" }).click();
   await page.getByRole("button", { name: "condition_1" }).first().click();
   await page.getByLabel("Operator").selectOption("lt");
   await page.getByRole("button", { name: "Publish" }).click();

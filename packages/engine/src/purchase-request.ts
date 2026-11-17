@@ -41,7 +41,7 @@ export const SAMPLE_PURCHASE = {
 
 export function purchaseRequestDefinition(a: PurchaseRequestAnswers): WorkflowDefinition {
   // Every email except the approval request goes from the Outlook mailbox when the owner chose it. The approval request
-  // stays an approval step: it carries the single-use link and goes through the Business and email sender.
+  // stays an approval step: it carries the single-use link and goes through the email sender on Apps.
   const mail = (id: string, to: string, subject: string, text: string) => ({ id, type: a.outlook ? ("outlook" as const) : ("email" as const), config: { to, subject, text } });
   const toRequester = (id: string, subject: string, body: string) => mail(id, "{{trigger.email}}", subject, `Hi {{trigger.name}},\n\n${body}\n\nReference: {{trigger.reference}}`);
   const approved = [

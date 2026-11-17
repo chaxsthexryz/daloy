@@ -23,6 +23,7 @@ import { DeliveryList, type Delivery } from "./Connections";
 import { newestDraft } from "./lib/drafts";
 import { takingLonger } from "./lib/poll";
 import { MailNotice } from "./MailNotice";
+import { AutomationTabs } from "./Nav";
 import { TAKING_LONGER } from "./Runs";
 
 type Step = (typeof SETUP_STEPS)[number];
@@ -293,7 +294,7 @@ function SetupWizard({ wf, setup, onLive }: { wf: Detail; setup: Setup; onLive: 
                 <input type="checkbox" checked={answers.slack ?? false} onChange={(e) => setAnswers({ ...answers, slack: e.target.checked })} /> A short note in your Slack channel (reference and subject only)
               </label>
               <p className="muted">
-                Connect them and pick the sheet and channel in <a href="#/settings/business">Business and email</a>. Turning on checks that they are connected.
+                Connect them and pick the sheet and channel in <a href="#/apps">Apps</a>. Turning on checks that they are connected.
               </p>
             </fieldset>
           </>
@@ -391,7 +392,7 @@ function PurchaseWizard({ wf, setup, onLive }: { wf: Detail; setup: PurchaseSetu
               (reference and item only)
             </label>
             <p className="muted">
-              Connect them in <a href="#/settings/business">Business and email</a>. Turning on checks that they are connected. Your organization may need an administrator to
+              Connect them in <a href="#/apps">Apps</a>. Turning on checks that they are connected. Your organization may need an administrator to
               approve Outlook or the Teams Workflows app; that page says how.
             </p>
           </fieldset>
@@ -416,7 +417,7 @@ function PurchaseWizard({ wf, setup, onLive }: { wf: Detail; setup: PurchaseSetu
           <MailNotice />
           <p className="muted">
             {answers.outlook ? "Emails to the employee and to purchasing go out from your connected Outlook mailbox." : "Emails go out through the mail server in this installation's settings."} The
-            approval request carries a sign-in link and goes out through the Business and email sender. A Teams note never approves anything.
+            approval request carries a sign-in link and goes out through the email sender on Apps. A Teams note never approves anything.
           </p>
           <details>
             <summary>Example messages</summary>
@@ -468,6 +469,7 @@ function LivePage({ wf, formId }: { wf: Detail; formId: string }) {
     <main className="page">
       <p>{back}</p>
       <h1>{wf.name}</h1>
+      <AutomationTabs id={wf.id} here="overview" overview />
       <p role="status">
         <span className="tag ok">Accepting requests</span> {copied}
       </p>
@@ -483,14 +485,7 @@ function LivePage({ wf, formId }: { wf: Detail; formId: string }) {
         <a href={link} target="_blank" rel="noreferrer">
           Open form
         </a>
-        <a href={`#/w/${wf.id}/runs`}>View activity</a>
       </div>
-      <details className="extras">
-        <summary>Advanced</summary>
-        <p>
-          <a href={`#/w/${wf.id}`}>Open advanced editor</a>
-        </p>
-      </details>
       <h2>Requests</h2>
       <div className="actions">
         <button type="button" className="quiet" onClick={() => void load()}>

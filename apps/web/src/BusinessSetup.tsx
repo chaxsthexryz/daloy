@@ -1,15 +1,14 @@
 import { WEBSITE_INQUIRY_SLUG, websiteInquiryDefinition } from "@daloy/engine";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { api, ApiError, type Workflow } from "./api";
-import { ConnectionsSection } from "./Connections";
 
 type Profile = { businessName: string | null; website: string | null; inquiryEmail: string | null; replyTo: string | null };
 type Sender = { address: string; status: "unverified" | "active" | "failed" | "disconnected"; lastError: string | null; verifiedAt: string | null; lastTestedAt: string | null };
-type Settings = { profile: Profile | null; sender: Sender | null; installationFrom: string; installationAllowed: boolean; installationLocal: boolean; signInEmail: string };
+export type Settings = { profile: Profile | null; sender: Sender | null; installationFrom: string; installationAllowed: boolean; installationLocal: boolean; signInEmail: string };
 type TestResult = { ok: true; to: string; from: string; replyTo?: string; gmail: boolean; needsConfirmation: boolean } | { ok: false; error: string };
 
 const APP_PASSWORD_HELP = "https://support.google.com/accounts/answer/185833";
-const PILL: Record<Sender["status"], string> = { unverified: "Not confirmed", active: "Connected", failed: "Needs attention", disconnected: "Disconnected" };
+export const PILL: Record<Sender["status"], string> = { unverified: "Not confirmed", active: "Connected", failed: "Needs attention", disconnected: "Disconnected" };
 const STATUS: Record<Sender["status"], string> = {
   unverified: "Waiting for you to confirm the test email",
   active: "Sending from this address",
@@ -17,10 +16,10 @@ const STATUS: Record<Sender["status"], string> = {
   disconnected: "Disconnected",
 };
 
-const back = <a href="#/">Home</a>;
+const back = <a href="#/settings">Settings</a>;
 
-/** Business profile, the owner's own Gmail sender, Sheets, Slack, Outlook and Teams connections, and the website inquiry form (roadmap phases 2, 3 and 5). */
-export function BusinessSetupPage({ outlookOutcome }: { outlookOutcome?: string }) {
+/** #/settings/business: the business details and the website inquiry form that uses them (roadmap phase 2). Gmail and the other apps are on Apps. */
+export function BusinessSetupPage() {
   const [data, setData] = useState<Settings | null>(null);
   const [error, setError] = useState("");
   const load = () => api<Settings>("GET", "/settings/email").then(setData, (e: Error) => setError(e.message));
@@ -30,7 +29,7 @@ export function BusinessSetupPage({ outlookOutcome }: { outlookOutcome?: string 
     <main className="page narrow">
       <header className="toolbar plain">
         {back}
-        <h1>Business and email</h1>
+        <h1>Business</h1>
       </header>
       <p role="alert" className="message error" hidden={!error}>
         {error}
@@ -39,14 +38,8 @@ export function BusinessSetupPage({ outlookOutcome }: { outlookOutcome?: string 
         <p>Loading…</p>
       ) : (
         <>
-          <SenderSection data={data} onChange={load} />
           <ProfileForm profile={data.profile} onSaved={load} />
           <InquiryForm data={data} />
-          {/* Open when the Outlook consent callback lands here, so its result is not hidden. */}
-          <details className="extras" open={!!outlookOutcome}>
-            <summary>Optional extras: Sheets, Slack, Outlook and Teams (for your IT person)</summary>
-            <ConnectionsSection outlookOutcome={outlookOutcome} />
-          </details>
         </>
       )}
     </main>
@@ -113,7 +106,7 @@ function ProfileForm({ profile, onSaved }: { profile: Profile | null; onSaved: (
   );
 }
 
-function SenderSection({ data, onChange }: { data: Settings; onChange: () => Promise<void> }) {
+export function SenderSection({ data, onChange }: { data: Settings; onChange: () => Promise<void> }) {
   const { sender } = data;
   const [editing, setEditing] = useState(false);
   const [test, setTest] = useState<TestResult | null>(null);
@@ -415,7 +408,7 @@ export function VerifySenderPage({ token }: { token: string }) {
         </p>
       )}
       <p>
-        <a href="#/settings/business">Back to Business and email</a>
+        <a href="#/apps">Back to Apps</a>
       </p>
     </main>
   );

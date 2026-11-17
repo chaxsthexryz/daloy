@@ -179,7 +179,7 @@ const json = { "content-type": "application/json" };
 async function sheetIdOf(urls: ProviderUrls, sa: ServiceAccount, dest: SheetDestination): Promise<number> {
   const body = await sheets(urls, sa, `/v4/spreadsheets/${encodeURIComponent(dest.spreadsheetId)}?fields=sheets.properties(sheetId,title)`, {}, false);
   const tab = ((body.sheets as { properties: { sheetId: number; title: string } }[] | undefined) ?? []).find((s) => s.properties.title === dest.tab);
-  if (!tab) throw new ProviderError(`The tab "${dest.tab}" is no longer in the spreadsheet. Pick the tab again in Business and email, then retry.`, "invalid");
+  if (!tab) throw new ProviderError(`The tab "${dest.tab}" is no longer in the spreadsheet. Pick the tab again in Apps, then retry.`, "invalid");
   return tab.properties.sheetId;
 }
 
@@ -235,8 +235,8 @@ export async function deleteSheetMarker(urls: ProviderUrls, sa: ServiceAccount, 
 const SLACK_AUTH = new Set(["invalid_auth", "not_authed", "token_revoked", "token_expired", "account_inactive"]);
 const SLACK_HINTS: Record<string, string> = {
   not_in_channel: "The Slack app is not in that channel. Type /invite and the app's name in the channel, then retry.",
-  channel_not_found: "Slack could not find the channel. Pick the channel again in Business and email.",
-  is_archived: "The Slack channel is archived. Pick another channel in Business and email.",
+  channel_not_found: "Slack could not find the channel. Pick the channel again in Apps.",
+  is_archived: "The Slack channel is archived. Pick another channel in Apps.",
   restricted_action: "Slack workspace settings stop the app from posting in that channel. Ask a Slack admin.",
 };
 

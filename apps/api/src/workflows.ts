@@ -230,8 +230,8 @@ export class WorkflowsController {
       const c = conns.find((x) => x.provider === provider);
       const name = PROVIDER_NAMES[provider];
       const where = provider === "slack" ? " and pick a channel" : provider === "google_sheets" ? " and pick a sheet" : "";
-      if (!c || !c.destination) throw new BadRequestException(`Connect ${name}${where} in Settings, Business and email before turning this on.`);
-      if (c.status !== "active") throw new BadRequestException(`${name} needs to be connected again in Settings, Business and email before turning this on.`);
+      if (!c || !c.destination) throw new BadRequestException(`Connect ${name}${where} in Apps before turning this on.`);
+      if (c.status !== "active") throw new BadRequestException(`${name} needs to be connected again in Apps before turning this on.`);
     }
   }
 

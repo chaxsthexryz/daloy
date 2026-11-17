@@ -36,8 +36,8 @@ test("a purchase request goes from the form to the named approver, then to purch
 
   // Outlook: the administrator requirement is shown before leaving Daloy, and a blocked consent comes back explained.
   await page.getByRole("link", { name: "Automations" }).click();
-  await page.getByRole("link", { name: "Business and email" }).first().click();
-  await page.locator("summary", { hasText: "Optional extras" }).click();
+  await page.getByRole("link", { name: "Apps" }).first().click();
+  await page.getByRole("button", { name: "Connect Outlook" }).click();
   const panel = (name: string) => page.locator(".connection").filter({ has: page.getByRole("heading", { name, exact: true }) });
   const outlook = panel("Outlook");
   await expect(outlook).toContainText("Many organizations only let an administrator approve a new app.");
@@ -53,6 +53,7 @@ test("a purchase request goes from the form to the named approver, then to purch
   await expect(page.getByText(/Outlook accepted a test email/)).toBeVisible();
 
   // Teams: the workflow link from Teams and the channel's name.
+  await page.getByRole("button", { name: "Connect Microsoft Teams" }).click();
   await page.getByLabel("Workflow link").fill(process.env.E2E_TEAMS_URL!);
   await page.getByLabel("Teams channel name, to show in Daloy").fill("Purchasing");
   await page.getByRole("button", { name: "Connect Teams" }).click();

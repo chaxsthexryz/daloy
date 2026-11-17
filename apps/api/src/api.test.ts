@@ -1,5 +1,5 @@
 import { createHmac, randomBytes } from "node:crypto";
-import { apiTokens, runs, secrets, SCHEDULE_QUEUE, stepRuns, users, type Db } from "@daloy/db";
+import { apiTokens, requests, runs, secrets, SCHEDULE_QUEUE, stepRuns, users, type Db } from "@daloy/db";
 import type { INestApplication } from "@nestjs/common";
 import { eq } from "drizzle-orm";
 import type { Pool } from "pg";
@@ -189,6 +189,49 @@ describe("workflows", () => {
     });
     const listed = (await agent.get(`/runs?workflowId=${wf.id}&test=false`).expect(200)).body;
     expect(listed[0].triggerPayload.password).toBe("[secret]");
+  });
+
+  it("lists runs across automations with their name and request reference, by plain state and by search", async () => {
+    const { agent, email } = await signedIn();
+    const named = async (name: string) => {
+      const wf = await agent.post("/workflows").send({ name, slug: `wf-${++seq}` }).expect(201);
+      await agent.post(`/workflows/${wf.body.id}/versions`).send({ definition: twoSteps({ type: "manual" }), publish: true }).expect(201);
+      return wf.body.id as string;
+    };
+    const run = async (wf: string, state: "failed" | "waiting" | "succeeded") => {
+      const id = (await agent.post(`/workflows/${wf}/runs`).send({ payload: {} }).expect(202)).body.id as string;
+      await db.update(runs).set({ state }).where(eq(runs.id, id));
+      return id;
+    };
+    const orders = await named("Orders 100%");
+    const leads = await named("Leads");
+    const failed = await run(orders, "failed");
+    const waiting = await run(leads, "waiting");
+    const done = await run(leads, "succeeded");
+    const [owner] = await db.select().from(users).where(eq(users.email, email));
+    const reference = `REQ-Q${++seq}XYZ`;
+    await db.insert(requests).values({ userId: owner!.id, workflowId: leads, runId: done, reference, submissionKey: crypto.randomUUID(), subject: "Printer" });
+    // Another workspace's automation with the same name is never listed.
+    const other = await signedIn();
+    const theirs = await other.agent.post("/workflows").send({ name: "Orders 100%", slug: `wf-${++seq}` }).expect(201);
+    await other.agent.post(`/workflows/${theirs.body.id}/versions`).send({ definition: twoSteps({ type: "manual" }), publish: true }).expect(201);
+    await other.agent.post(`/workflows/${theirs.body.id}/runs`).send({ payload: {} }).expect(202);
+
+    const ids = async (q: string) => (await agent.get(`/runs?${q}`).expect(200)).body.map((r: { id: string }) => r.id).sort();
+    const all = (await agent.get("/runs").expect(200)).body as { id: string; workflowName: string; reference: string | null }[];
+    expect(all.find((r) => r.id === done)).toMatchObject({ workflowName: "Leads", reference });
+    expect(all.find((r) => r.id === failed)).toMatchObject({ workflowName: "Orders 100%", reference: null });
+    expect(await ids("state=problem")).toEqual([failed]);
+    expect(await ids("state=waiting")).toEqual([waiting]);
+    expect(await ids("state=done")).toEqual([done]);
+    expect(await ids("q=leads")).toEqual([waiting, done].sort());
+    expect(await ids("q=req-q")).toEqual([done]);
+    // % and _ are matched as text, not as patterns.
+    expect(await ids("q=100%25")).toEqual([failed]);
+    expect(await ids("q=%25")).toEqual([failed]);
+    expect(await ids("q=_")).toEqual([]);
+    await agent.get(`/runs?q=${"x".repeat(101)}`).expect(400);
+    await agent.get("/runs?state=broken").expect(400);
   });
 
   it("refuses a manual run before anything is published", async () => {

@@ -179,7 +179,7 @@ describe("purchase request template", () => {
 
     const definition = purchaseRequestDefinition(answers);
     const refused = await agent.post(`/workflows/${wf.id}/versions`).send({ definition, publish: true }).expect(400);
-    expect(refused.body.message).toMatch(/Connect (Outlook|Microsoft Teams) in Settings/);
+    expect(refused.body.message).toMatch(/Connect (Outlook|Microsoft Teams) in Apps/);
     await consent(agent);
     await agent.put("/settings/connections/teams").send({ url: fake.teamsUrl("flow-purchasing"), channelName: "Purchasing" }).expect(200);
     await agent.post(`/workflows/${wf.id}/versions`).send({ definition, publish: true }).expect(201);
