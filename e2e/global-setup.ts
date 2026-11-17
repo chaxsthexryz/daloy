@@ -107,6 +107,7 @@ export default async function setup() {
     TEAMS_WEBHOOK_HOSTS: "127.0.0.1",
     // Every spec signs up from 127.0.0.1.
     REGISTER_LIMIT_PER_HOUR: "1000",
+    AI_ASK: "on",
   };
   const api = start("api", env);
   await waitFor(`http://localhost:${E2E_PORT}/auth/me`, 60_000);

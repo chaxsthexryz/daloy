@@ -17,7 +17,7 @@ const boss = new PgBoss({ connectionString: url, migrate: ownsSchema });
 boss.on("error", (err) => console.error("pg-boss", err));
 await boss.start();
 
-const app = await createApp({ db, boss, secretsKey: Buffer.from(key, "base64"), ...deploy });
+const app = await createApp({ db, boss, secretsKey: Buffer.from(key, "base64"), ...deploy, ask: process.env.AI_ASK === "on" });
 app.enableShutdownHooks();
 // The built console (apps/web/dist). Served from the API's origin so the session cookie needs no CORS. It uses hash routes, so index.html at / is enough.
 if (process.env.WEB_DIST) app.useStaticAssets(process.env.WEB_DIST);

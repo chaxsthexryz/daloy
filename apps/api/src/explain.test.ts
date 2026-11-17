@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { explainFailure, failureFacts, type Facts, type Reason } from "./explain";
+import { answerAll, askFacts, explainFailure, failureFacts, type AskFacts, type Facts, type Reason } from "./explain";
 
 const def = {
   trigger: { type: "manual", config: {} },
@@ -173,5 +173,64 @@ describe("explainFailure", () => {
       const text = JSON.stringify(explainFailure(f));
       expect(text).not.toMatch(/—|–|workflow|\{\{/i);
     }
+  });
+});
+
+describe("askFacts", () => {
+  const at = (n: number) => new Date(2026, 0, 1, 0, 0, n);
+  it("lists one step per id with its latest attempt, its type and no ids", () => {
+    const f = askFacts({
+      ...run(),
+      steps: [
+        failed("HTTP 500 from a.test", { attempt: 1, createdAt: at(1) }),
+        failed("HTTP 500 from a.test", { attempt: 2, createdAt: at(2) }),
+        { stepId: "ask", attempt: 1, state: "succeeded", deadLetter: false, outcome: null, createdAt: at(3) },
+      ],
+    });
+    expect(f.steps).toEqual([
+      { type: "http", state: "failed", outcome: null, attempts: 2 },
+      { type: "approval", state: "succeeded", outcome: null, attempts: 1 },
+    ]);
+    expect(JSON.stringify(f)).not.toContain("send_to_maria");
+  });
+  it("maps raw states to the four plain ones", () => {
+    const state = (r: string, deliveryState?: string) => askFacts({ ...run({ state: r }), deliveries: deliveryState ? [{ provider: "slack", state: deliveryState, errorKind: null, attempts: 1 }] : [] }).plainState;
+    expect(state("succeeded")).toBe("done");
+    expect(state("cancelled")).toBe("done");
+    expect(state("failed")).toBe("problem");
+    expect(state("succeeded", "failed")).toBe("problem");
+    expect(state("waiting")).toBe("waiting");
+    expect(state("needs_review")).toBe("needs you");
+    expect(state("succeeded", "needs_review")).toBe("needs you");
+    expect(state("running")).toBe("in progress");
+  });
+});
+
+describe("answerAll", () => {
+  const asked = (over: Partial<AskFacts> = {}): AskFacts => ({ ...facts({ runState: "succeeded" }), plainState: "done", steps: [{ type: "http", state: "succeeded", outcome: null, attempts: 1 }], ...over });
+  it("a done run has no why and nothing to do", () => {
+    const a = answerAll(asked());
+    expect(a.happened.headline).toBe("This request is done.");
+    expect(a.happened.lines[0]).toBe("1 step ran.");
+    expect(a.why).toBeNull();
+    expect(a.next.lines[0]).toBe("Nothing needs to be done.");
+    expect(a.next.fix).toBeNull();
+    expect(a.next.lines.at(-1)).toBe("Open the request in Activity to see every step.");
+  });
+  it("a failed delivery explains why and passes its fix on", () => {
+    const f = asked({ ...delivery("slack", "auth"), plainState: "problem" });
+    const a = answerAll(f);
+    expect(a.why).toEqual(explainFailure(f));
+    expect(a.next.fix).toEqual(a.why!.fix);
+    expect(a.next.lines).toEqual([...a.why!.lines, "Open the request in Activity to see every step."]);
+  });
+  it("names the plain kind of the step it stopped at", () => {
+    const f = asked({ ...stepFacts({ statusCode: 404 }), plainState: "problem", steps: [{ type: "http", state: "failed", outcome: null, attempts: 2 }] });
+    expect(answerAll(f).happened.lines).toEqual(["1 step ran.", "It stopped at: HTTP request."]);
+  });
+  it("puts a lint finding in next even when nothing stopped", () => {
+    const a = answerAll(asked({ lint: [{ rule: "unreachable_step", count: 1 }] }));
+    expect(a.why).toBeNull();
+    expect(a.next.lines).toContain("Part of this automation can never be reached, so it will not run.");
   });
 });
