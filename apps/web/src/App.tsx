@@ -12,6 +12,7 @@ import { BusinessSetupPage, VerifySenderPage } from "./BusinessSetup";
 import { TokensPage } from "./Tokens";
 import { VersionsPage } from "./Versions";
 import { Demo } from "./Demo";
+import { Shell } from "./Nav";
 import { AcceptInvitePage, MyRequestsPage, TeamPage, type User } from "./Team";
 
 const ANSWER = /^#\/answer\/([A-Za-z0-9_-]{43})$/;
@@ -58,6 +59,14 @@ function Console({ hash }: { hash: string }) {
   if (!user) return <SignIn onDone={setUser} />;
   // Approvers and requesters have no console beyond their own requests; the API refuses the rest anyway.
   if (user.role === "approver" || user.role === "requester") return <MyRequestsPage user={user} onSignOut={signOut} />;
+  return (
+    <Shell user={user} hash={hash} onSignOut={signOut}>
+      <Route hash={hash} user={user} />
+    </Shell>
+  );
+}
+
+function Route({ hash, user }: { hash: string; user: User }) {
   const page = /^#\/w\/([0-9a-f-]{36})(?:\/(runs|versions))?$/.exec(hash);
   if (page?.[2] === "runs") return <RunsPage key={page[1]} workflowId={page[1]!} />;
   if (page?.[2] === "versions") return <VersionsPage key={page[1]} workflowId={page[1]!} />;
@@ -67,7 +76,7 @@ function Console({ hash }: { hash: string }) {
   const guided = /^#\/a\/([0-9a-f-]{36})$/.exec(hash);
   if (guided) return <OfficeRequestPage key={guided[1]} id={guided[1]!} />;
   if (hash === "#/try/office-request") return <TryOfficeRequest email={user.email} />;
-  if (hash === "#/advanced" && user.role === "owner") return <AdvancedPage user={user} onSignOut={signOut} />;
+  if (hash === "#/advanced" && user.role === "owner") return <AdvancedPage />;
   if (hash === "#/tokens") return <TokensPage />;
   if (hash === "#/settings") return <SettingsPage />;
   // #/settings/business/outlook-<outcome> is where the Outlook consent callback lands (decision 0023).
@@ -78,7 +87,7 @@ function Console({ hash }: { hash: string }) {
   if (hash === "#/bookings" && (user.role === "owner" || user.role === "operator")) return <BookingsPage />;
   const verify = /^#\/verify-sender\/([A-Za-z0-9_-]{43})$/.exec(hash);
   if (verify) return <VerifySenderPage key={verify[1]} token={verify[1]!} />;
-  return <Automations user={user} onSignOut={signOut} />;
+  return <Automations user={user} />;
 }
 
 function SignIn({ onDone }: { onDone: (u: User) => void }) {

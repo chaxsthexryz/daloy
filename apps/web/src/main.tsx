@@ -1,6 +1,5 @@
 import "@xyflow/react/dist/style.css";
 import "./styles.css";
-import "./reveal";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";

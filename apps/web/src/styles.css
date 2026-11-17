@@ -153,7 +153,7 @@ pre { background: var(--sunken); border-radius: var(--radius-sm); padding: var(-
 /* Controls */
 button, input, select, textarea { font: inherit; color: var(--text); }
 input, select, textarea { width: 100%; min-width: 0; min-height: var(--target); padding: 0 var(--space-3); background: var(--surface); border: var(--border-width) solid var(--border); border-radius: var(--radius-md); }
-textarea { padding: var(--space-2) var(--space-3); font-family: var(--font-mono); font-size: var(--text-sm); }
+textarea { min-height: 9rem; resize: vertical; line-height: var(--leading-body); padding: var(--space-2) var(--space-3); font-family: var(--font-mono); font-size: var(--text-sm); }
 button { min-height: var(--target); padding: 0 var(--space-4); background: var(--surface); color: var(--accent); border: var(--border-width) solid var(--accent); border-radius: var(--radius-md); font-weight: var(--weight-medium); white-space: nowrap; cursor: pointer; transition: background-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease); }
 button:hover:not(:disabled) { background: var(--accent-tint); color: var(--accent); }
 button:disabled { border-color: var(--border-soft); color: var(--muted); cursor: not-allowed; }
@@ -166,7 +166,7 @@ button.quiet:hover:not(:disabled) { background: var(--sunken); color: var(--text
 button[aria-pressed="true"] { background: var(--accent-tint); border-color: var(--accent); box-shadow: inset 3px 0 0 var(--accent); }
 .field { display: flex; flex-direction: column; gap: var(--space-1); margin-bottom: var(--space-3); }
 .field label, legend { font-size: var(--text-sm); font-weight: var(--weight-bold); }
-.row { display: flex; gap: var(--space-2); align-items: flex-end; }
+.row { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: flex-end; }
 fieldset { border: var(--border-width) solid var(--border-soft); border-radius: var(--radius-md); margin: 0 0 var(--space-3); padding: var(--space-2) var(--space-3) var(--space-3); }
 .actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-4); margin-top: var(--space-2); }
 .actions a { display: inline-flex; align-items: center; min-height: var(--target); }
@@ -176,20 +176,25 @@ fieldset { border: var(--border-width) solid var(--border-soft); border-radius: 
 .notice { margin: 0 0 var(--space-3); padding: var(--space-3) var(--space-4); border-radius: var(--radius-md); background: var(--waiting); border-left: var(--edge-width) solid var(--run-wait); }
 
 /* Page and header */
+.shell { display: flex; flex-direction: column; min-height: 100vh; }
+.shell-main { flex: 1; min-width: 0; }
+.sidebar { background: var(--surface); border-bottom: var(--border-width) solid var(--border-soft); padding: var(--space-2) var(--space-4); }
+.sidebar-top { display: flex; align-items: center; gap: var(--space-3); min-height: var(--target); }
+.sidebar-name { font-weight: var(--weight-bold); font-size: var(--text-lg); letter-spacing: var(--tracking-heading); }
+.menu-button { margin-left: auto; }
+.sidebar nav { display: none; flex-direction: column; padding-bottom: var(--space-2); }
+.sidebar nav.open { display: flex; }
+.sidebar nav a { display: flex; align-items: center; min-height: var(--target); padding: 0 var(--space-3); color: var(--text); text-decoration: none; border-radius: var(--radius-md); }
+.sidebar nav a:hover { background: var(--sunken); color: var(--text); }
+.sidebar nav a[aria-current="page"] { background: var(--accent-tint); color: var(--accent); box-shadow: inset 3px 0 0 var(--accent); }
+.sidebar .who { font-size: var(--text-sm); overflow-wrap: anywhere; padding: var(--space-3) var(--space-3) var(--space-1); }
+.sidebar nav button { justify-content: flex-start; text-align: left; }
 .page { max-width: 64rem; margin: 0 auto; padding: var(--space-4); }
 .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3) var(--space-4); min-height: 64px; padding: var(--space-1) var(--space-4); background: var(--surface); border-bottom: var(--border-width) solid var(--border-soft); }
 .toolbar.plain { padding: 0 0 var(--space-2); margin-bottom: var(--space-4); background: transparent; }
 .toolbar .actions { margin: 0 0 0 auto; }
 .toolbar a { display: inline-flex; align-items: center; min-height: var(--target); }
 .status { font-size: var(--text-sm); }
-.console-header img { width: 36px; height: 36px; }
-.console-header .who { display: none; font-size: var(--text-sm); }
-.menu-button { margin-left: auto; }
-.console-header nav { display: none; flex-basis: 100%; flex-direction: column; }
-.console-header nav.open { display: flex; }
-.console-header nav a { color: var(--text); text-decoration: none; }
-.console-header nav a:hover { color: var(--accent); }
-.console-header nav a[aria-current="page"] { color: var(--accent); box-shadow: inset 0 -2px 0 var(--accent); }
 
 /* Automations home */
 .needs-you { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); margin: 0; padding: var(--space-3) var(--space-4); background: var(--needs-you); color: var(--on-needs-you); border-radius: var(--radius-md); font-size: var(--text-lg); font-weight: var(--weight-medium); }
@@ -269,9 +274,6 @@ details summary::-webkit-details-marker { display: none; }
   .node.run-working { animation: node-pulse var(--dur-pulse) ease-in-out infinite; }
 }
 
-/* Scroll reveal. reveal.js sets data-reveal on the top-level blocks of .page and on each card; see DESIGN.md, Motion. */
-[data-reveal="pending"], [data-reveal="in"] { transition: opacity var(--dur-reveal) var(--ease), transform var(--dur-reveal) var(--ease), filter var(--dur-reveal) var(--ease); }
-[data-reveal="pending"] { opacity: 0; filter: blur(var(--reveal-blur)); transform: translateY(var(--reveal-shift)); }
 
 /* Editor */
 .editor { height: 100vh; display: flex; flex-direction: column; }
@@ -293,16 +295,17 @@ details summary::-webkit-details-marker { display: none; }
   .run-path { display: none; } /* unchanged from N4c: the diagram is hidden on a phone */
 }
 @media (min-width: 800px) {
+  .shell { flex-direction: row; }
+  .sidebar { position: sticky; top: 0; align-self: flex-start; width: 15rem; flex-shrink: 0; height: 100vh; overflow-y: auto; border-bottom: 0; border-right: var(--border-width) solid var(--border-soft); padding: var(--space-4) var(--space-3); }
+  .sidebar-top { padding: 0 var(--space-3) var(--space-4); }
+  .menu-button { display: none; }
+  .sidebar nav { display: flex; height: calc(100% - 4.5rem); gap: var(--space-1); }
+  .sidebar .who { margin-top: auto; }
   h1 { font-size: var(--text-2xl); }
   /* Two rows: name and account on top, the menu as a tab row under it with Sign out at the far end. */
-  .console-header .who { display: inline; margin-left: auto; }
-  .menu-button { display: none; }
-  .console-header nav { display: flex; flex-direction: row; align-items: center; gap: var(--space-5); }
-  .console-header nav a { display: inline-flex; align-items: center; min-height: var(--target); }
-  .console-header nav button { margin-left: auto; }
   .cards { grid-template-columns: 1fr 1fr; }
   /* The three templates sit side by side. The markup is flat (h2, then h3, p, .actions three times), so the grid flows by column. */
-  .create { display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: auto auto 1fr auto; grid-auto-flow: column; column-gap: var(--space-6); padding: var(--space-1) var(--space-5) var(--space-5); }
+  .create:has(> h3) { display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: auto auto 1fr auto; grid-auto-flow: column; column-gap: var(--space-6); padding: var(--space-1) var(--space-5) var(--space-5); }
   .create > h2 { grid-column: 1 / -1; }
   .create > h3, .create > h2 + h3 { margin: 0 0 var(--space-1); padding-top: var(--space-3); border-top: var(--border-width) solid var(--border-soft); }
   .create > .actions { align-self: start; }
@@ -312,12 +315,11 @@ details summary::-webkit-details-marker { display: none; }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition-duration: 0s !important; animation: none !important; scroll-behavior: auto !important; }
-  [data-reveal] { opacity: 1; filter: none; transform: none; }
 }
 
 /* Parts the mockups do not show. Same recipe: --surface fill, --border-width line, --radius-md, token sizes. */
 .brand { display: flex; align-items: center; gap: var(--space-2); }
-.row .field { flex: 1; }
+.row .field { flex: 1 1 12rem; }
 .row > button { margin-bottom: var(--space-3); }
 .check { display: flex; gap: var(--space-2); align-items: center; font-size: var(--text-sm); }
 .check input { width: auto; min-height: 0; }

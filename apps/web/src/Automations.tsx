@@ -7,7 +7,7 @@ import { startOfficeSetup, startPurchaseSetup } from "./OfficeRequests";
 import type { User } from "./Team";
 
 /** Home: one card per automation with its state, last event and the few things an owner does with it. */
-export function Automations({ user, onSignOut }: { user: User; onSignOut: () => void }) {
+export function Automations({ user }: { user: User }) {
   const owner = user.role === "owner";
   const [list, setList] = useState<Workflow[] | null>(null);
   const [listError, setListError] = useState(false);
@@ -37,7 +37,7 @@ export function Automations({ user, onSignOut }: { user: User; onSignOut: () => 
 
   return (
     <main className="page">
-      <Header title="Automations" user={user} onSignOut={onSignOut} />
+      <Header title="Automations" />
       {review.length > 0 && (
         <p role="status" className="needs-you">
           <strong>{review.length >= 50 ? "50 or more" : review.length}</strong> {review.length === 1 ? "request needs" : "requests need"} you.{" "}

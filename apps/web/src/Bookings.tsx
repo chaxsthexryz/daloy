@@ -65,7 +65,6 @@ export function BookingsPage() {
   return (
     <main className="page">
       <header className="toolbar plain">
-        <a href="#/">Automations</a>
         <h1>Bookings</h1>
       </header>
       <p role="status" className="message ok" hidden={!note}>
