@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { definitionSchema } from "./definition";
-import { lintDefinition } from "./lint";
+import { lintDefinition, lintFindings } from "./lint";
 import { defaultAnswers, officeRequestDefinition } from "./office-request";
 import { defaultPurchaseAnswers, purchaseRequestDefinition } from "./purchase-request";
 import { TEMPLATES } from "./templates";
@@ -222,5 +222,46 @@ describe("shipped definitions", () => {
     expect(lint(officeRequestDefinition(defaultAnswers("owner@example.com")))).toEqual([]);
     expect(lint(purchaseRequestDefinition({ ...defaultPurchaseAnswers("owner@example.com"), approver: "boss@example.com" }))).toEqual([]);
     expect(lint(websiteInquiryDefinition({ businessName: "Acme", inquiryEmail: "owner@example.com" }))).toEqual([]);
+  });
+});
+
+describe("rule ids", () => {
+  const rules = (def: unknown) => lintFindings(definitionSchema.parse(def)).map((f) => f.rule);
+  const manual = { type: "manual", config: {} };
+
+  it("names the rule of each finding, with the same messages as lintDefinition", () => {
+    const approval = { id: "ask", type: "approval", config: { approver: "boss@example.com", subject: "s", message: "m", timeoutSeconds: 3600 } };
+    const approvalDef = { trigger: manual, steps: [approval, mail("yes")], edges: [{ from: "ask", to: "yes", on: "approved" }] };
+    expect(rules(approvalDef)).toEqual(["approval_no_edge", "approval_no_edge"]);
+    expect(lintFindings(definitionSchema.parse(approvalDef)).map((f) => f.message)).toEqual(lint(approvalDef));
+
+    const classify = { id: "sort", type: "ai", config: { task: "classify", input: "{{trigger.note}}", labels: { urgent: "u", other: "o" } } };
+    const isUrgent = gate("is_urgent", "{{steps.sort.output.label}}", "eq", "urgent");
+    const edges = [
+      { from: "sort", to: "is_urgent" },
+      { from: "is_urgent", to: "page", on: "true" },
+    ];
+    expect(rules({ trigger: manual, steps: [classify, isUrgent, mail("page")], edges })).toEqual(["classify_dead_end"]);
+
+    expect(
+      rules({
+        trigger: { type: "form", config: { fields: [{ name: "dry_run", label: "Dry run", type: "text" }] } },
+        steps: [gate("is_dry", "{{trigger.dry_run}}", "eq", "true"), mail("real"), mail("fake")],
+        edges: [
+          { from: "is_dry", to: "fake", on: "true" },
+          { from: "is_dry", to: "real", on: "false" },
+        ],
+      }),
+    ).toEqual(["test_switch"]);
+
+    const big = [
+      { from: "big", to: "a", on: "true" },
+      { from: "big", to: "b", on: "false" },
+    ];
+    expect(rules({ trigger: { type: "webhook", config: {} }, steps: [gate("big", "{{trigger.budget}}", "gte", 30000), mail("a"), mail("b")], edges: big })).toEqual(["number_no_invalid"]);
+
+    expect(
+      rules({ trigger: budgetForm(), steps: [gate("big", "{{trigger.budget}}", "gte", 30000), mail("a"), mail("b"), mail("manual_check")], edges: [...big, { from: "big", to: "manual_check", on: "invalid" }] }),
+    ).toEqual(["unreachable_step"]);
   });
 });

@@ -1,0 +1,1 @@
+ALTER TABLE "deliveries" ADD COLUMN "error_kind" text;

@@ -13,8 +13,13 @@ const PLACEHOLDER = /\{\{\s*([^{}]*?)\s*\}\}/g;
 const TRIGGER_REF = /^\{\{\s*trigger\.([a-z][a-z0-9_]*)\s*\}\}$/;
 const LABEL_REF = /^\{\{\s*steps\.([a-z][a-z0-9_]*)\.output\.label\s*\}\}$/;
 
-export function lintDefinition(def: WorkflowDefinition): string[] {
-  const warnings: string[] = [];
+export type LintRule = "approval_no_edge" | "classify_dead_end" | "test_switch" | "number_no_invalid" | "unreachable_step";
+
+export const lintDefinition = (def: WorkflowDefinition): string[] => lintFindings(def).map((f) => f.message);
+
+export function lintFindings(def: WorkflowDefinition): { rule: LintRule; message: string }[] {
+  const warnings: { rule: LintRule; message: string }[] = [];
+  const warn = (rule: LintRule, message: string) => warnings.push({ rule, message });
   const byId = new Map(def.steps.map((s) => [s.id, s]));
   const edgeTo = (from: string, on?: string) => def.edges.find((e) => e.from === from && e.on === on)?.to;
   const conditions = def.steps.flatMap((s) => (s.type === "condition" ? [{ id: s.id, cond: s.config.condition }] : []));
@@ -23,7 +28,7 @@ export function lintDefinition(def: WorkflowDefinition): string[] {
   for (const s of def.steps) {
     if (s.type !== "approval") continue;
     for (const branch of ["rejected", "timeout"]) {
-      if (!edgeTo(s.id, branch)) warnings.push(`Approval step "${s.id}" has no "${branch}" edge, so the run ends there and nobody is told.`);
+      if (!edgeTo(s.id, branch)) warn("approval_no_edge", `Approval step "${s.id}" has no "${branch}" edge, so the run ends there and nobody is told.`);
     }
   }
 
@@ -46,7 +51,7 @@ export function lintDefinition(def: WorkflowDefinition): string[] {
         const branch = safeBranch(step.config.condition, ctx);
         const next = branch && edgeTo(step.id, branch);
         if (!next) {
-          warnings.push(`Classify label "${label}" of "${s.id}" reaches condition "${step.id}" and takes its "${branch ?? "unknown"}" branch, which has no edge, so the run ends there.`);
+          warn("classify_dead_end", `Classify label "${label}" of "${s.id}" reaches condition "${step.id}" and takes its "${branch ?? "unknown"}" branch, which has no edge, so the run ends there.`);
           break;
         }
         at = next;
@@ -65,7 +70,7 @@ export function lintDefinition(def: WorkflowDefinition): string[] {
       }
     }
   }
-  for (const name of names) warnings.push(`"${name}" looks like a switch for testing. Mock test runs already send nothing, but a Live run or a real event follows the branch and can send, so remove it and its branch and test with Mock mode.`);
+  for (const name of names) warn("test_switch", `"${name}" looks like a switch for testing. Mock test runs already send nothing, but a Live run or a real event follows the branch and can send, so remove it and its branch and test with Mock mode.`);
 
   // A number comparison on a value that may be missing or text needs an "invalid" edge, or bad data fails the run (decision 0027).
   const required = new Set((triggerFields(def.trigger) ?? []).filter((f) => f.type === "number" && f.required).map((f) => f.name));
@@ -74,7 +79,7 @@ export function lintDefinition(def: WorkflowDefinition): string[] {
   const neverInvalid = ({ op, left, right }: Condition) => !NUMERIC_OPS.includes(op) || (certain(left) && certain(right));
   for (const { id, cond } of conditions) {
     if (NUMERIC_OPS.includes(cond.op) && !neverInvalid(cond) && !edgeTo(id, "invalid")) {
-      warnings.push(`Condition "${id}" compares numbers but has no "invalid" edge, so a missing or non-number value fails the run.`);
+      warn("number_no_invalid", `Condition "${id}" compares numbers but has no "invalid" edge, so a missing or non-number value fails the run.`);
     }
   }
 
@@ -89,7 +94,7 @@ export function lintDefinition(def: WorkflowDefinition): string[] {
     for (const e of def.edges) if (e.from === id && !(e.on === "invalid" && never.has(id))) queue.push(e.to);
   }
   for (const s of def.steps) {
-    if (!reached.has(s.id)) warnings.push(`Step "${s.id}" can never run: only an "invalid" edge that cannot be taken leads to it.`);
+    if (!reached.has(s.id)) warn("unreachable_step", `Step "${s.id}" can never run: only an "invalid" edge that cannot be taken leads to it.`);
   }
 
   return warnings;

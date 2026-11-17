@@ -1,0 +1,152 @@
+import type { WorkflowDefinition } from "@daloy/engine";
+import { lintFindings, type LintRule } from "@daloy/engine";
+
+/**
+ * Plain-language explanations of failed runs (phase N10a). failureFacts keeps only closed-set or numeric fields, so the
+ * facts can go to a model without any error text, step id, label, URL, address or payload.
+ */
+export type Reason = "mail_sender" | "ai_model" | "quota" | "booking_changed" | "worker_stopped" | "preview_choice";
+export type Facts = {
+  runState: string;
+  preview: boolean;
+  step: { type: string; outcome: string | null; attempts: number; deadLetter: boolean; statusCode: number | null; reason: Reason | null } | null;
+  deliveries: { provider: string; state: string; errorKind: string | null; attempts: number }[];
+  lint: { rule: LintRule; count: number }[];
+};
+export type Explanation = { headline: string; lines: string[]; fix: { href: string; label: string } | null };
+type FactsInput = {
+  run: { state: string; test: boolean; error?: string | null };
+  steps: { stepId: string; attempt: number; state: string; error?: string | null; deadLetter: boolean; outcome: string | null; createdAt?: Date | string | null }[];
+  deliveries: { provider: string; state: string; errorKind: string | null; attempts: number }[];
+  definition: unknown;
+};
+
+// First match wins. Each pattern is the real message text the API, worker or db writes.
+const REASONS: [Reason, RegExp][] = [
+  ["mail_sender", /gmail|mail server/i],
+  ["ai_model", /api key|ai model/i],
+  ["quota", /AI actions for this month|limit of \d+ (email recipients|web requests)/i],
+  ["booking_changed", /booking was rescheduled or cancelled/i],
+  ["worker_stopped", /worker stopped while sending/i],
+  ["preview_choice", /^Test run: this step was set to fail/],
+];
+
+export function failureFacts({ run, steps, deliveries, definition }: FactsInput): Facts {
+  const def = definition as Partial<WorkflowDefinition> | null;
+  const time = (s: FactsInput["steps"][number]) => (s.createdAt ? new Date(s.createdAt).getTime() : 0);
+  const failed = steps.filter((s) => s.state === "failed" || s.state === "needs_review").sort((a, b) => time(b) - time(a) || b.attempt - a.attempt)[0];
+  const text = failed?.error ?? run.error ?? "";
+  const reason = REASONS.find(([, re]) => re.test(text))?.[0] ?? null;
+  let lint: Facts["lint"] = [];
+  try {
+    const counts = new Map<LintRule, number>();
+    for (const f of lintFindings(definition as WorkflowDefinition)) counts.set(f.rule, (counts.get(f.rule) ?? 0) + 1);
+    lint = [...counts].map(([rule, count]) => ({ rule, count }));
+  } catch {
+    // A definition that cannot be checked has no findings.
+  }
+  return {
+    runState: run.state,
+    preview: run.test,
+    step: failed
+      ? {
+          type: def?.steps?.find((s) => s.id === failed.stepId)?.type ?? "unknown",
+          outcome: failed.outcome,
+          attempts: Math.max(...steps.filter((s) => s.stepId === failed.stepId).map((s) => s.attempt)),
+          deadLetter: failed.deadLetter,
+          statusCode: Number(/^(?:step [^:]*: )?HTTP (\d{3}) from /.exec(failed.error ?? "")?.[1]) || null,
+          reason,
+        }
+      : null,
+    deliveries: deliveries.filter((d) => d.state === "failed" || d.state === "needs_review" || (d.state === "queued" && d.errorKind)).map((d) => ({ provider: d.provider, state: d.state, errorKind: d.errorKind, attempts: d.attempts })),
+    lint,
+  };
+}
+
+const APPS: Record<string, string> = { google_sheets: "Google Sheets", slack: "Slack", outlook: "Outlook", teams: "Microsoft Teams" };
+const APPS_FIX = { href: "#/apps", label: "Check the connection" };
+// Retry, Send again and Mark as posted are on the run page itself, so these need no link.
+const ACTIVITY_FIX = null;
+const LINT_LINES: Record<LintRule, string> = {
+  approval_no_edge: "An approval in this automation has no path for one of its answers, so the automation ends there.",
+  classify_dead_end: "An AI sort in this automation can give an answer that leads nowhere, so the automation ends there.",
+  test_switch: "This automation has a switch that looks like a test setting. Check that it is set the way you want.",
+  number_no_invalid: "A number check in this automation has no path for a value that is not a number, so the automation ends there.",
+  unreachable_step: "Part of this automation can never be reached, so it will not run.",
+};
+const PERMISSION: Record<string, string> = {
+  google_sheets: "Share the sheet with the Google account you connected, then press Retry.",
+  slack: "Invite the Daloy app to the channel, then press Retry.",
+  outlook: "Check that the connected Outlook account may send email, then press Retry.",
+  teams: "Add the connected account to the team and channel, then press Retry.",
+};
+
+function ofDelivery(d: Facts["deliveries"][number]): Explanation | null {
+  const app = APPS[d.provider] ?? "The other app";
+  const outlook = d.provider === "outlook";
+  const where = d.provider === "google_sheets" ? "sheet" : "channel";
+  const done = outlook ? "Mark as sent" : "Mark as posted";
+  const again = outlook ? "Send again" : "Post again";
+  const check = outlook ? "Check Sent Items" : `Check ${app}`;
+  const review = (why: string) => ({ headline: "This needs you before it goes on.", lines: [why, `${check}. If it is there, press ${done}. If not, press ${again}.`], fix: ACTIVITY_FIX });
+  switch (d.errorKind) {
+    case "auth":
+    case "reconnect":
+      return { headline: `${app} needs to be connected again.`, lines: [`${app} no longer accepts Daloy's access. Reconnect it in Apps, then press Retry.`], fix: APPS_FIX };
+    case "not_connected":
+      return { headline: `${app} is not connected.`, lines: [`Connect ${app} in Apps, then press Retry.`], fix: { href: "#/apps", label: `Connect ${app}` } };
+    case "permission":
+      return { headline: `${app} refused Daloy.`, lines: [PERMISSION[d.provider] ?? "Give the connected account access, then press Retry."], fix: APPS_FIX };
+    case "no_destination":
+      return { headline: `No ${where} is chosen for ${app}.`, lines: [`Pick a ${where} in Apps, then press Retry.`], fix: { href: "#/apps", label: `Pick a ${where}` } };
+    case "quota":
+    case "unavailable":
+      return { headline: `${app} is busy or limiting requests.`, lines: [`Daloy will try again on its own. Nothing needs to be done now (${d.attempts} ${d.attempts === 1 ? "try" : "tries"} so far).`], fix: null };
+    case "ambiguous":
+    case "review":
+      return review(`${app} did not say clearly whether this went through.`);
+    case "destination_changed":
+      return review(`The ${where} for ${app} was changed after this was queued, so Daloy did not send it.`);
+    case "queued_before_pin":
+      return review(`This was queued before Daloy recorded which ${where} to use, so Daloy did not send it.`);
+    case "invalid":
+      return { headline: `${app} rejected this.`, lines: [`${app} did not accept what Daloy sent. Check this step's settings in the automation.`], fix: null };
+    case "booking_changed":
+      return { headline: "This was closed because the booking changed.", lines: ["The booking was rescheduled or cancelled, so nothing more is sent."], fix: null };
+    default:
+      return null;
+  }
+}
+
+function ofStep(s: NonNullable<Facts["step"]>): Explanation | null {
+  switch (s.reason) {
+    case "mail_sender":
+      return { headline: "The email could not be sent.", lines: ["Daloy could not use the connected email account. Connect Gmail again, then press Retry."], fix: { href: "#/apps", label: "Connect Gmail" } };
+    case "ai_model":
+      return { headline: "The AI model did not answer.", lines: ["Daloy could not reach the AI model, or its key was refused. Check the AI model, then press Retry."], fix: { href: "#/settings/ai", label: "Check the AI model" } };
+    case "quota":
+      return { headline: "The plan limit was reached.", lines: ["This office used up what its plan allows for now. Press Retry when the limit resets."], fix: { href: "#/settings", label: "See usage" } };
+    case "booking_changed":
+      return { headline: "This was closed because the booking changed.", lines: ["The booking was rescheduled or cancelled, so nothing more is sent."], fix: null };
+    case "worker_stopped":
+      return { headline: "Daloy stopped while sending.", lines: ["This may have gone through. Check with the receiver, then choose It went through, Send again or Stop."], fix: ACTIVITY_FIX };
+    case "preview_choice":
+      return { headline: "This preview was set to fail on purpose.", lines: ["Nothing was sent. Change the preview choice to see the automation go on."], fix: null };
+  }
+  const code = s.statusCode;
+  const http = code === 401 || code === 403 ? "the other service refused Daloy's access" : code === 404 ? "the address was not found" : code === 429 ? "the other service asked Daloy to slow down" : code && code >= 500 ? "the other service had a problem" : null;
+  if (http) return { headline: `A request failed: ${http}.`, lines: [`The other service answered ${code}. ${s.deadLetter ? `Daloy tried ${s.attempts} times. ` : ""}Check the request settings, then press Retry.`], fix: ACTIVITY_FIX };
+  if (s.deadLetter) return { headline: "Daloy gave up after trying again.", lines: [`The step failed ${s.attempts} times, so Daloy stopped trying. Press Retry when the cause is fixed.`], fix: ACTIVITY_FIX };
+  if (s.outcome === "unknown") return { headline: "It is not clear whether this went through.", lines: ["Check with the receiver, then choose It went through, Send again or Stop."], fix: ACTIVITY_FIX };
+  if (s.outcome === "not_sent") return { headline: "Nothing was sent.", lines: ["Daloy stopped before the request left. Press Retry to try again."], fix: ACTIVITY_FIX };
+  if (s.outcome === "rejected") return { headline: "The other service rejected the request.", lines: ["Check the step's settings in the automation, then press Retry."], fix: null };
+  if (s.outcome === "throttled") return { headline: "The other service asked Daloy to slow down.", lines: ["Press Retry in a few minutes."], fix: null };
+  return null;
+}
+
+/** A fixed table, first match wins: deliveries, then the step, then one line per lint rule. No model involved. */
+export function explainFailure(facts: Facts): Explanation {
+  const first = facts.deliveries.map(ofDelivery).find(Boolean) ?? (facts.step ? ofStep(facts.step) : null);
+  const base = first ?? { headline: "Daloy could not tell why this stopped.", lines: ["The details for a technician below have the full record."], fix: null };
+  return { ...base, lines: [...base.lines, ...facts.lint.map((l) => LINT_LINES[l.rule])] };
+}
