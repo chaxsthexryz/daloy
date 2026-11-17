@@ -5,7 +5,7 @@ import type { Usage } from "../api";
 import { createElement, type ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { LanguageContext } from "../Language";
-import { DeliveryList, SheetsConnection, type Delivery } from "../Connections";
+import { CalendarConnection, DeliveryList, PaymongoConnection, SheetsConnection, type Delivery } from "../Connections";
 import { SchemaForm } from "../SchemaForm";
 import { FormEmbed } from "../FormEmbed";
 
@@ -53,5 +53,13 @@ describe("management interface language", () => {
     expect(html).toContain("Ikonekta ang Google Sheets");
     expect(html).toContain("Paano gumawa ng service account");
     expect(render(createElement(FormEmbed, { link: "https://example.test/forms/customer" }), "tl")).toContain("Kopyahin ang embed code");
+  });
+  it("translates the calendar and payment connection cards", () => {
+    const calendar = render(createElement(CalendarConnection, { conn: null, onChange: async () => undefined }), "tl");
+    expect(calendar).toContain("Ikonekta ang Google Calendar");
+    const payment = render(createElement(PaymongoConnection, { conn: null, webhookBase: "https://example.test", onChange: async () => undefined }), "tl");
+    expect(payment).toContain("Ikonekta ang PayMongo");
+    expect(payment).toContain("I-paste ang PayMongo secret key");
+    expect(render(createElement(PaymongoConnection, { conn: null, webhookBase: "https://example.test", onChange: async () => undefined }), "en")).toContain("Connect PayMongo");
   });
 });

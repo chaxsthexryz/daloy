@@ -365,7 +365,7 @@ function TriggerPanel({ trigger, wf, onChange }: { trigger: Trigger; wf: Loaded;
       </div>
       {trigger.type === "payment" && (
         <fieldset>
-          <legend>Run when a payment is</legend>
+          <legend>{t("Run when a payment is")}</legend>
           {(["paid", "refunded"] as const).map((e) => (
             <label key={e}>
               <input
@@ -376,7 +376,7 @@ function TriggerPanel({ trigger, wf, onChange }: { trigger: Trigger; wf: Loaded;
                   if (events.length) onChange({ type: "payment", config: { events } });
                 }}
               />{" "}
-              {e === "paid" ? "paid" : "refunded"}
+              {t(e)}
             </label>
           ))}
         </fieldset>

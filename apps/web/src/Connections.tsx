@@ -145,6 +145,7 @@ export function SheetsConnection({ conn, onChange }: { conn: Connection | null; 
 }
 
 export function CalendarConnection({ conn, onChange }: { conn: Connection | null; onChange: () => Promise<unknown> }) {
+  const { t } = useLanguage();
   const { error, busy, act } = useAction(onChange);
   const [editing, setEditing] = useState(false);
   const [test, setTest] = useState<TestResult | null>(null);
@@ -173,54 +174,53 @@ export function CalendarConnection({ conn, onChange }: { conn: Connection | null
       {conn && <Status conn={conn} label="Service account" />}
       {conn?.destination && (
         <p>
-          Events go to <strong>{conn.destination.title}</strong>. An event follows its booking: moved when the booking is rescheduled, deleted when it is cancelled.
+          {t("Events go to ")}<strong>{conn.destination.title}</strong>{t(". An event follows its booking: moved when the booking is rescheduled, deleted when it is cancelled.")}
         </p>
       )}
       {conn && (
         <div className="actions">
           <button type="button" disabled={busy} onClick={() => void act(async () => setTest(await api<TestResult>("POST", "/settings/connections/google-calendar/test")))}>
-            Add a test event
+            {t("Add a test event")}
           </button>
           {!editing && (
             <button type="button" className="quiet" onClick={() => setEditing(true)}>
-              Change calendar or key
+              {t("Change calendar or key")}
             </button>
           )}
-          <button type="button" className="quiet" disabled={busy} onClick={() => window.confirm("Disconnect Google Calendar? Events stop following their bookings until you reconnect.") && void act(() => api("DELETE", "/settings/connections/google-calendar"))}>
-            Disconnect
+          <button type="button" className="quiet" disabled={busy} onClick={() => window.confirm(t("Disconnect Google Calendar? Events stop following their bookings until you reconnect.")) && void act(() => api("DELETE", "/settings/connections/google-calendar"))}>
+            {t("Disconnect")}
           </button>
         </div>
       )}
-      <Outcome test={test} what="Google Calendar accepted a test event" />
+      <Outcome test={test} what={t("Google Calendar accepted a test event")} />
       {showForm && (
         <form onSubmit={save}>
           <p>
-            Daloy writes as a Google Cloud service account, so no personal Google sign-in is stored. Create a service account in a Google Cloud project with the Google Calendar API
-            turned on, add a JSON key, then share your calendar with the account's email and choose Make changes to events.{" "}
+            {t("Daloy writes as a Google Cloud service account, so no personal Google sign-in is stored. Create a service account in a Google Cloud project with the Google Calendar API turned on, add a JSON key, then share your calendar with the account's email and choose Make changes to events.")}{" "}
             <a href={SERVICE_ACCOUNT_HELP} target="_blank" rel="noreferrer">
-              How to create a service account
+              {t("How to create a service account")}
             </a>
           </p>
           <div className="field">
-            <label htmlFor="c-key">Service account key file (JSON)</label>
+            <label htmlFor="c-key">{t("Service account key file (JSON)")}</label>
             <textarea id="c-key" rows={4} value={form.serviceAccount} onChange={(e) => setForm({ ...form, serviceAccount: e.target.value })} required autoComplete="off" spellCheck={false} />
           </div>
           {shareWith && (
             <p className="muted">
-              Share the calendar with <code>{shareWith}</code> and choose Make changes to events.
+              {t("Share the calendar with ")}<code>{shareWith}</code>{t(" and choose Make changes to events.")}
             </p>
           )}
           <div className="field">
-            <label htmlFor="c-id">Calendar id</label>
+            <label htmlFor="c-id">{t("Calendar id")}</label>
             <input id="c-id" value={form.calendar} onChange={(e) => setForm({ ...form, calendar: e.target.value })} required placeholder="abc123@group.calendar.google.com" />
           </div>
           <div className="actions">
             <button type="submit" className="primary" disabled={busy}>
-              {conn ? "Save calendar" : "Connect Google Calendar"}
+              {conn ? t("Save calendar") : t("Connect Google Calendar")}
             </button>
             {conn && (
               <button type="button" className="quiet" onClick={() => setEditing(false)}>
-                Cancel
+                {t("Cancel")}
               </button>
             )}
           </div>
@@ -330,6 +330,7 @@ export function SlackConnection({ conn, onChange }: { conn: Connection | null; o
 }
 
 export function PaymongoConnection({ conn, webhookBase, onChange }: { conn: Connection | null; webhookBase: string; onChange: () => Promise<unknown> }) {
+  const { t } = useLanguage();
   const { error, busy, act } = useAction(onChange);
   const [editing, setEditing] = useState(false);
   const [test, setTest] = useState<TestResult | null>(null);
@@ -351,15 +352,15 @@ export function PaymongoConnection({ conn, webhookBase, onChange }: { conn: Conn
       {conn?.destination && (
         <>
           <p>
-            <strong>{conn.destination.mode === "live" ? "Live mode" : "Test mode"}</strong>
+            <strong>{conn.destination.mode === "live" ? t("Live mode") : t("Test mode")}</strong>
           </p>
           <p>
-            In PayMongo → Developers → Webhooks, add this URL with the events checkout_session.payment.paid and payment.refunded, then paste the webhook secret here.
+            {t("In PayMongo → Developers → Webhooks, add this URL with the events checkout_session.payment.paid and payment.refunded, then paste the webhook secret here.")}
           </p>
           <p>
             <code>{`${webhookBase}/${conn.destination.webhookPath}`}</code>{" "}
             <button type="button" className="quiet" onClick={() => void navigator.clipboard?.writeText(`${webhookBase}/${conn.destination!.webhookPath}`)}>
-              Copy
+              {t("Copy")}
             </button>
           </p>
         </>
@@ -367,37 +368,37 @@ export function PaymongoConnection({ conn, webhookBase, onChange }: { conn: Conn
       {conn && (
         <div className="actions">
           <button type="button" disabled={busy} onClick={() => void act(async () => setTest(await api<TestResult>("POST", "/settings/connections/paymongo/test")))}>
-            Test
+            {t("Test")}
           </button>
           {!editing && (
             <button type="button" className="quiet" onClick={() => setEditing(true)}>
-              Replace key or secret
+              {t("Replace key or secret")}
             </button>
           )}
-          <button type="button" className="quiet" disabled={busy} onClick={() => window.confirm("Disconnect PayMongo? Payment links stop working and payments are no longer recorded until you reconnect.") && void act(() => api("DELETE", "/settings/connections/paymongo"))}>
-            Disconnect
+          <button type="button" className="quiet" disabled={busy} onClick={() => window.confirm(t("Disconnect PayMongo? Payment links stop working and payments are no longer recorded until you reconnect.")) && void act(() => api("DELETE", "/settings/connections/paymongo"))}>
+            {t("Disconnect")}
           </button>
         </div>
       )}
-      <Outcome test={test} what="PayMongo accepted the key" />
+      <Outcome test={test} what={t("PayMongo accepted the key")} />
       {(!conn || editing) && (
         <form onSubmit={save}>
-          <p>Paste your PayMongo secret key and the webhook secret. Both are stored encrypted and never shown again.</p>
+          <p>{t("Paste your PayMongo secret key and the webhook secret. Both are stored encrypted and never shown again.")}</p>
           <div className="field">
-            <label htmlFor="pm-key">Secret key</label>
+            <label htmlFor="pm-key">{t("Secret key")}</label>
             <input id="pm-key" type="password" value={form.secretKey} onChange={(e) => setForm({ ...form, secretKey: e.target.value })} required placeholder="sk_test_…" autoComplete="off" />
           </div>
           <div className="field">
-            <label htmlFor="pm-whsk">Webhook secret</label>
+            <label htmlFor="pm-whsk">{t("Webhook secret")}</label>
             <input id="pm-whsk" type="password" value={form.webhookSecret} onChange={(e) => setForm({ ...form, webhookSecret: e.target.value })} required placeholder="whsk_…" autoComplete="off" />
           </div>
           <div className="actions">
             <button type="submit" className="primary" disabled={busy}>
-              {conn ? "Save" : "Connect PayMongo"}
+              {conn ? t("Save") : t("Connect PayMongo")}
             </button>
             {conn && (
               <button type="button" className="quiet" onClick={() => setEditing(false)}>
-                Cancel
+                {t("Cancel")}
               </button>
             )}
           </div>

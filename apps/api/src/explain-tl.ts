@@ -8,7 +8,7 @@ const lint: Record<LintRule, string> = {
   number_no_invalid: "May number check na walang kasunod na hakbang kapag hindi numero ang halaga, kaya doon matatapos ang automation.",
   unreachable_step: "May bahagi ng automation na hindi maaabot, kaya hindi ito tatakbo.",
 };
-const apps: Record<string, string> = { google_sheets: "Google Sheets", slack: "Slack", outlook: "Outlook", teams: "Microsoft Teams" };
+const apps: Record<string, string> = { google_sheets: "Google Sheets", slack: "Slack", outlook: "Outlook", teams: "Microsoft Teams", google_calendar: "Google Calendar", airtable: "Airtable", notion: "Notion", trello: "Trello" };
 const appsFix = { href: "#/apps", label: "Tingnan ang koneksyon" };
 const booking: Explanation = { headline: "Isinara ito dahil nagbago ang booking.", lines: ["Na-reschedule o nakansela ang booking, kaya wala nang ipapadala."], fix: null };
 const permission: Record<string, string> = {
@@ -16,11 +16,15 @@ const permission: Record<string, string> = {
   slack: "Imbitahan ang Daloy app sa channel, saka pindutin ang Subukan ulit.",
   outlook: "Tingnan kung puwedeng magpadala ng email ang nakakonektang Outlook account, saka pindutin ang Subukan ulit.",
   teams: "Idagdag ang nakakonektang account sa team at channel, saka pindutin ang Subukan ulit.",
+  google_calendar: "I-share ang calendar sa Google service account na ikinonekta mo, piliin ang Make changes to events, saka pindutin ang Subukan ulit.",
+  airtable: "Bigyan ng access ang Airtable token sa base at table na iyon, saka pindutin ang Subukan ulit.",
+  notion: "I-share ang database sa Notion integration, saka pindutin ang Subukan ulit.",
+  trello: "Tiyaking puwedeng mag-edit ang Trello token sa board na iyon, saka pindutin ang Subukan ulit.",
 };
 function delivery(d: Facts["deliveries"][number]): Explanation | null {
   const app = apps[d.provider] ?? "Ang kabilang app";
   const outlook = d.provider === "outlook";
-  const where = d.provider === "google_sheets" ? "sheet" : "channel";
+  const where = d.provider === "google_sheets" ? "sheet" : d.provider === "google_calendar" ? "calendar" : "channel";
   const done = outlook ? "Markahang naipadala" : "Markahang nai-post";
   const again = outlook ? "Ipadala ulit" : "I-post ulit";
   const check = outlook ? "Tingnan ang Sent Items" : `Tingnan ang ${app}`;
@@ -62,7 +66,7 @@ export function explainFailureTl(facts: Facts): Explanation {
   const base = facts.deliveries.map(delivery).find(Boolean) ?? (facts.step ? step(facts.step) : null) ?? { headline: "Hindi matukoy ng Daloy kung bakit ito huminto.", lines: ["Nasa detalye para sa technician sa ibaba ang buong tala."], fix: null };
   return { ...base, lines: [...base.lines, ...facts.lint.map((l) => lint[l.rule])] };
 }
-const types: Record<string, string> = { condition: "Kondisyon", http: "HTTP request", email: "Magpadala ng email", delay: "Paghihintay", ai: "AI task", approval: "Pag-apruba", sheets: "Idagdag sa Google Sheets", slack: "I-post sa Slack", outlook: "Ipadala mula sa Outlook", teams: "I-post sa Teams", booking: "Booking" };
+const types: Record<string, string> = { condition: "Kondisyon", http: "HTTP request", email: "Magpadala ng email", delay: "Paghihintay", ai: "AI task", approval: "Pag-apruba", sheets: "Idagdag sa Google Sheets", slack: "I-post sa Slack", outlook: "Ipadala mula sa Outlook", teams: "I-post sa Teams", calendar: "Idagdag sa Google Calendar", paymongo_link: "Gumawa ng payment link", airtable: "Idagdag sa Airtable", notion: "Idagdag sa Notion", trello: "Idagdag sa Trello", booking: "Booking" };
 const headlines = { "needs you": "Kailangan mong tingnan ang request na ito bago magpatuloy.", done: "Tapos na ang request na ito.", problem: "Huminto ang request na ito dahil may problema.", waiting: "Naghihintay ang request na ito.", "in progress": "Tumatakbo pa ang request na ito." };
 export function answerAllTl(facts: AskFacts): { happened: Explanation; why: Explanation | null; next: Explanation } {
   const happened = [facts.steps.length ? `${facts.steps.length} hakbang ang tumakbo.` : "Wala pang tumatakbong hakbang."];
