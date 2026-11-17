@@ -208,7 +208,7 @@ Order: N3, N4, V1, then V2 and W together, N5 with the pilot search P in paralle
 - [ ] N8. Tagalog: string tables for the console and emails, Taglish copy, the owner picks the language.
 - [ ] N9. Email-in trigger (IMAP) and an embeddable form snippet. Covers Wix, WordPress, Shopify and home-made forms without an integration. (claimed: codex, branch n9-email-in)
 - [ ] N10. AI helper (Workflow Doctor), after N6.
-  - [ ] N10a. Explain failures from run records, provider error kinds and lint rules in plain language: fixed rules first, then DeepSeek through OpenRouter for the wording. Only structured error data goes to the model, never form text or booking details.
+  - [ ] N10a. Explain failures from run records, provider error kinds and lint rules in plain language: fixed rules first, then DeepSeek through OpenRouter for the wording. Only structured error data goes to the model, never form text or booking details. (claimed: claude, branch n10a-explain)
   - [ ] N10b. Extend the Build with AI tab (N4f) to answer "what happened to request X". Measured on twenty real failure explanations in English and Tagalog before it is on by default. A suggestion never approves a run.
   - Voice through the browser's Web Speech API and an avatar only if a user asks.
 - [ ] N11. Real accounts: final security review at the release commit covering N6 to N10, a daily recipient cap on Gmail and Outlook receipts, a timestamp in the webhook signature, MCP token scopes and expiry, password change and reset, per-workflow pause and cancel of a pending run, read-side secret redaction on every surface, a purge policy for retired secrets.
