@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { api } from "./api";
 
 export type Role = "owner" | "operator" | "approver" | "requester";
-export type User = { id: string; email: string; workspaceId: string; role: Role };
+export type User = { id: string; email: string; workspaceId: string; role: Role; ask?: boolean };
 type Member = { userId: string; email: string; role: Role; createdAt: string };
 
 const ROLE_HELP: Record<Exclude<Role, "owner">, string> = {

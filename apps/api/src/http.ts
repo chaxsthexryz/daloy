@@ -23,7 +23,7 @@ export const CONFIG = Symbol("config");
  * mail and publicUrl are for the test email and its confirmation link; createApp fills them from the env vars when left out.
  * trustProxy is the number of proxies in front of the API (Express "trust proxy"), so req.ip is the real client.
  */
-export type ApiConfig = { secretsKey: Buffer; secureCookies: boolean; trustProxy?: number; mail?: MailDeps; publicUrl?: string; providers?: ProviderUrls };
+export type ApiConfig = { secretsKey: Buffer; secureCookies: boolean; trustProxy?: number; mail?: MailDeps; publicUrl?: string; providers?: ProviderUrls; ask?: boolean };
 
 /**
  * TRUST_PROXY and SECURE_COOKIES from the env (docs/deployment.md). A value that cannot be read stops the boot, so a
