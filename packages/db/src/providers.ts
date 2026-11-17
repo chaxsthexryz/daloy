@@ -28,6 +28,7 @@ export type ProviderUrls = {
   googleToken: string;
   sheets: string;
   slack: string;
+  telegram: string;
   microsoftLogin?: string;
   graph?: string;
   /** Host suffixes a Teams Workflows URL may use. 127.0.0.1 (tests only) is the one host allowed over http. */
@@ -41,6 +42,7 @@ export const providerUrls = (env: NodeJS.ProcessEnv = process.env): ProviderUrls
   googleToken: env.GOOGLE_TOKEN_URL ?? "https://oauth2.googleapis.com/token",
   sheets: trim(env.GOOGLE_SHEETS_URL ?? "https://sheets.googleapis.com"),
   slack: trim(env.SLACK_API_URL ?? "https://slack.com"),
+  telegram: trim(env.TELEGRAM_API_URL ?? "https://api.telegram.org"),
   microsoftLogin: trim(env.MICROSOFT_LOGIN_URL ?? "https://login.microsoftonline.com"),
   graph: trim(env.MICROSOFT_GRAPH_URL ?? "https://graph.microsoft.com"),
   teamsHosts: (env.TEAMS_WEBHOOK_HOSTS ?? "logic.azure.com,powerplatform.com").split(",").map((h) => h.trim().toLowerCase()).filter(Boolean),
@@ -270,6 +272,42 @@ export async function slackChannels(urls: ProviderUrls, token: string) {
 export async function slackPost(urls: ProviderUrls, token: string, channel: string, text: string) {
   const body = await slackCall(urls, token, "chat.postMessage", { channel, text, unfurl_links: "false" }, true);
   return { channel: String(body.channel), ts: String(body.ts) };
+}
+
+// ---------------------------------------------------------------- Telegram
+
+/** Telegram's Bot API answers { ok, result } with an HTTP status that matches (401, 403, 400, 429). The token sits in the URL path, so no error here may echo the URL. */
+async function telegramCall(urls: ProviderUrls, token: string, method: string, params: Record<string, string>, write = false) {
+  const res = await call(`${urls.telegram}/bot${token}/${method}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(params) }, urls.timeoutMs ?? 10_000, write, "Telegram");
+  if (res.status === 429) {
+    const s = Number((res.body.parameters as { retry_after?: unknown } | undefined)?.retry_after);
+    throw new ProviderError("Telegram is limiting requests right now. Daloy will try again.", "quota", Number.isFinite(s) && s > 0 ? s * 1000 : retryAfter(res.headers));
+  }
+  if (res.status >= 500) throw new ProviderError(`Telegram answered ${res.status}.`, write ? "ambiguous" : "unavailable");
+  if (res.body.ok === true) return res.body.result as Record<string, unknown>;
+  const text = String(res.body.description ?? "").toLowerCase();
+  if (res.status === 401 || res.status === 404) throw new ProviderError("Telegram no longer accepts the bot token. Connect Telegram again.", "auth");
+  if (res.status === 403) throw new ProviderError("The bot cannot message that chat. Open the chat, add the bot, press Start if it is a private chat, then retry.", "permission");
+  if (text.includes("chat not found")) throw new ProviderError("Telegram could not find that chat. Send the bot a message first, then check the chat id.", "permission");
+  throw new ProviderError("Telegram refused the message.", "invalid");
+}
+
+/** getMe: proves the token works and names the bot. */
+export async function telegramIdentity(urls: ProviderUrls, token: string) {
+  const bot = await telegramCall(urls, token, "getMe", {});
+  return { bot: `@${String(bot.username ?? "bot")}` };
+}
+
+/** getChat: proves the bot can see the chat and gives it a name for the Apps page. */
+export async function telegramChat(urls: ProviderUrls, token: string, chatId: string) {
+  const chat = await telegramCall(urls, token, "getChat", { chat_id: chatId });
+  return { chatId: String(chat.id ?? chatId), chatTitle: String(chat.title ?? chat.username ?? chat.first_name ?? chatId) };
+}
+
+/** sendMessage as plain text (no parse_mode, so run data cannot break formatting). */
+export async function telegramSend(urls: ProviderUrls, token: string, chatId: string, text: string) {
+  const msg = await telegramCall(urls, token, "sendMessage", { chat_id: chatId, text, disable_web_page_preview: "true" }, true);
+  return { chatId, messageId: String(msg.message_id) };
 }
 
 // ---------------------------------------------------------------- Microsoft: Outlook through Graph, and Teams Workflows

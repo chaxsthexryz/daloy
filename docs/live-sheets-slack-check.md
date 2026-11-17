@@ -29,3 +29,14 @@ Status: not run yet. Record the date, the Daloy commit and what you saw at the e
 ## Results
 
 None recorded yet.
+
+## Telegram (N14)
+
+Not run yet. The automated tests use a fake Bot API.
+
+1. In Telegram, message @BotFather, send /newbot, and copy the token. Add the bot to a test group and send any message there.
+2. Find the chat id: open `https://api.telegram.org/bot<token>/getUpdates` in a browser and read `chat.id` (a group's is negative). Do not share that address: it contains the token.
+3. In Apps, open Telegram, paste the token and chat id, select Connect Telegram. Expect the bot name and the group name. Select Send a test message. Expect it in the group.
+4. Add a Telegram step to an automation, turn it on, and run it. Expect one message and a delivered state on the request.
+5. Remove the bot from the group and run again. Expect the delivery failed with "The bot cannot message that chat". Add it back, select Retry, expect one message.
+6. In BotFather send /revoke, then run again. Expect "Telegram no longer accepts the bot token" and the card showing Needs reconnecting.

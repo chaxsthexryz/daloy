@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { toFlow, type Draft, type RunEdgeData, type StepNodeData } from "./lib/graph";
 import { runFlow, STATUS, type FlowRun } from "./lib/run-flow";
 
-export const TYPE_NAMES: Record<string, string> = { condition: "Condition", http: "HTTP request", email: "Send email", delay: "Delay", ai: "AI task", approval: "Approval", sheets: "Add to Google Sheets", slack: "Post to Slack", outlook: "Send from Outlook", teams: "Post to Teams" };
+export const TYPE_NAMES: Record<string, string> = { condition: "Condition", http: "HTTP request", email: "Send email", delay: "Delay", ai: "AI task", approval: "Approval", sheets: "Add to Google Sheets", slack: "Post to Slack", outlook: "Send from Outlook", teams: "Post to Teams", telegram: "Send to Telegram" };
 
 export function summary(step: Step): string {
   switch (step.type) {
@@ -28,6 +28,7 @@ export function summary(step: Step): string {
       return `${step.config.columns.length + 2} columns, reference first`;
     case "slack":
     case "teams":
+    case "telegram":
       return step.config.text.slice(0, 60);
     case "booking":
       return step.config.action === "create" ? `book ${step.config.resource} at ${step.config.start}, ${step.config.minutes} min` : `${step.config.action} ${step.config.booking}`;

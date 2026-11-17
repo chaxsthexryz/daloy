@@ -162,6 +162,13 @@
       "when": 1794909296807,
       "tag": "0022_email_sources",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1794928365235,
+      "tag": "0023_telegram_provider",
+      "breakpoints": true
     }
   ]
 }
