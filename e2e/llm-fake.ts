@@ -32,6 +32,9 @@ export function startLlmFake(port: number) {
       if (req.method === "GET" && req.url === "/api/tags") return res.end(JSON.stringify({ models: [{ name: "fake-model" }] }));
       if (req.method !== "POST") return res.writeHead(404).end("{}");
       const body = JSON.parse(raw) as { messages: { content: string }[] };
+      // The run explainer (N10a) asks for plain text, not a workflow draft.
+      if (body.messages.some((m) => m.content.startsWith("You explain why a Daloy automation stopped")))
+        return res.end(JSON.stringify({ message: { content: "The automation stopped because a step was set to fail in this preview. Nothing was sent." }, prompt_eval_count: 1, eval_count: 1 }));
       const change = body.messages.some((m) => m.content.startsWith("Change this workflow"));
       const reply = body.messages.some((m) => m.content.includes("boss approval")) ? warned : change ? changed : built;
       res.end(JSON.stringify({ message: { content: JSON.stringify(reply) }, prompt_eval_count: 1, eval_count: 1 }));

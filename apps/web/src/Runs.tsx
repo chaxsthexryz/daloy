@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, type Run, type RunSummary, type Version, type Workflow } from "./api";
+import { api, ApiError, type Run, type RunSummary, type Version, type Workflow } from "./api";
 import { DeliveryList, type Delivery } from "./Connections";
 import { AutomationTabs, Header } from "./Nav";
 import { RunFlow } from "./FlowCanvas";
@@ -245,7 +245,7 @@ export function RunPage({ runId, owner }: { runId: string; owner: boolean }) {
         <StateLabel run={run} /> <span className="muted">{runKind(run)} · started {new Date(run.createdAt).toLocaleString()} · {duration(run.createdAt, run.finishedAt)}</span>
       </p>
       {run.superseded && <p className="message">{SUPERSEDED}</p>}
-      {run.error && <RunError error={run.error} owner={owner} />}
+      <RunWhy run={run} owner={owner} />
       <RunActions run={run} onDone={() => setReload((n) => n + 1)} />
       <RunDeliveries runId={runId} />
       <RunPath run={run} />
@@ -261,6 +261,68 @@ export function RunPage({ runId, owner }: { runId: string; owner: boolean }) {
         <RunResult run={run} />
       </details>
     </main>
+  );
+}
+
+type Explanation = { facts: unknown; fixed: { headline: string; lines: string[]; fix: { href: string; label: string } | null } };
+
+/** Why a stopped run stopped: the server's fixed explanation (fetched once per state change), else the plain error. Owners can ask the AI model to reword it. */
+function RunWhy({ run, owner }: { run: Run; owner: boolean }) {
+  const key = plainState(run).key;
+  const stopped = key === "problem" || key === "needs_you";
+  const [fixed, setFixed] = useState<Explanation["fixed"] | null>(null);
+  const [reply, setReply] = useState<{ text?: string; error?: string; modelFailed?: boolean } | null>(null);
+  const [asking, setAsking] = useState(false);
+  useEffect(() => {
+    setFixed(null);
+    setReply(null);
+    if (!stopped) return;
+    let live = true;
+    api<Explanation | null>("GET", `/runs/${run.id}/explanation`).then(
+      (e) => live && setFixed(e?.fixed ?? null),
+      () => {},
+    );
+    return () => {
+      live = false;
+    };
+  }, [run.id, stopped, key]);
+  if (!fixed) return run.error ? <RunError error={run.error} owner={owner} /> : null;
+  const ask = () => {
+    setAsking(true);
+    api<{ text: string }>("POST", `/runs/${run.id}/explanation/reword`, {})
+      .then((r) => setReply({ text: r.text }))
+      .catch((e) => setReply(e instanceof ApiError && e.status === 429 ? { error: e.message } : { modelFailed: true }))
+      .finally(() => setAsking(false));
+  };
+  return (
+    <section aria-label="Why it stopped">
+      <p className={key === "problem" ? "message error" : "message"}>{fixed.headline}</p>
+      {fixed.lines.map((l, i) => (
+        <p key={i}>{l}</p>
+      ))}
+      {owner && fixed.fix && (
+        <p>
+          <a href={fixed.fix.href}>{fixed.fix.label}</a>
+        </p>
+      )}
+      {owner && (
+        <button type="button" disabled={asking} onClick={ask}>
+          {asking ? "Asking the AI model…" : "Explain in simpler words (uses 1 AI action)"}
+        </button>
+      )}
+      {reply?.text !== undefined && (
+        <>
+          <p className="muted">Written by the AI model. Check it against the details above.</p>
+          <p>{reply.text}</p>
+        </>
+      )}
+      {reply?.error && <p role="alert" className="message error">{reply.error}</p>}
+      {reply?.modelFailed && (
+        <p role="alert" className="message error">
+          The AI model could not answer. <a href="#/settings/ai">Check the AI model</a>
+        </p>
+      )}
+    </section>
   );
 }
 
