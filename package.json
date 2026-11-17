@@ -11,6 +11,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "e2e": "playwright test",
+    "demo:site": "pnpm --filter @daloy/web build:site",
     "seed": "pnpm --filter @daloy/api exec tsx src/seed.ts",
     "reliability:load": "pnpm --filter @daloy/worker exec tsx reliability/load.ts",
     "reliability:chaos": "pnpm --filter @daloy/worker exec tsx reliability/chaos.ts"

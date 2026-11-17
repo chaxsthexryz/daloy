@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Daloy mockup: Automations</title>
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="console.css">
+</head>
+<body>
+<!-- Markup copied from apps/web/src/Automations.tsx and Nav.tsx. Only the styles are new. -->
+<main class="page">
+  <header class="toolbar plain console-header">
+    <img src="logo.svg" alt="Daloy" width="28" height="28">
+    <h1>Automations</h1>
+    <span class="muted who">demo@daloy.local</span>
+    <button type="button" class="quiet menu-button" aria-expanded="false" aria-controls="main-menu">Menu</button>
+    <nav id="main-menu" aria-label="Main">
+      <a href="#" aria-current="page">Automations</a>
+      <a href="#">Bookings</a>
+      <a href="#">Team</a>
+      <a href="#">Business and email</a>
+      <a href="#">Advanced</a>
+      <button type="button" class="quiet">Sign out</button>
+    </nav>
+  </header>
+
+  <p role="status" class="needs-you"><strong>2</strong> requests need you. <a href="#">Open the oldest</a></p>
+
+  <ul class="cards">
+    <li class="card">
+      <div class="card-head">
+        <h2><a href="#">Office requests</a></h2>
+        <span class="tag ok">On</span>
+        <span class="state done">Done</span>
+      </div>
+      <p class="muted">Request REQ-V7E6FW received 2 hours ago</p>
+      <div class="actions">
+        <button type="button">Copy form link</button>
+        <a href="#">Activity</a>
+        <button type="button" disabled title="Pausing an automation is coming">Pause (coming)</button>
+      </div>
+    </li>
+    <li class="card">
+      <div class="card-head">
+        <h2><a href="#">Purchase requests</a></h2>
+        <span class="tag ok">On</span>
+        <span class="state waiting">Waiting</span>
+      </div>
+      <p class="muted">Request REQ-K3M9TA received 35 minutes ago. Waiting for a time or an approval</p>
+      <div class="actions">
+        <button type="button">Copy form link</button>
+        <a href="#">Activity</a>
+        <button type="button" disabled title="Pausing an automation is coming">Pause (coming)</button>
+      </div>
+    </li>
+    <li class="card">
+      <div class="card-head">
+        <h2><a href="#">Inquiry triage</a></h2>
+        <span class="tag ok">On</span>
+        <span class="state problem">Problem</span>
+      </div>
+      <p class="muted">Last ran 3 hours ago</p>
+      <div class="actions">
+        <button type="button">Copy form link</button>
+        <a href="#">Activity</a>
+        <button type="button" disabled title="Pausing an automation is coming">Pause (coming)</button>
+      </div>
+    </li>
+    <li class="card">
+      <div class="card-head">
+        <h2><a href="#">Booking confirmation</a></h2>
+        <span class="tag ok">On</span>
+        <span class="state needs_you">Needs you</span>
+      </div>
+      <p class="muted">Last ran 1 day ago</p>
+      <div class="actions">
+        <button type="button">Copy form link</button>
+        <a href="#">Activity</a>
+        <button type="button" disabled title="Pausing an automation is coming">Pause (coming)</button>
+      </div>
+    </li>
+    <li class="card">
+      <div class="card-head">
+        <h2><a href="#">Office requests 2</a></h2>
+        <span class="tag">Draft</span>
+      </div>
+      <p><a class="tag" href="#">Draft: continue setup</a></p>
+      <div class="actions">
+        <a href="#">Activity</a>
+        <button type="button" disabled title="Pausing an automation is coming">Pause (coming)</button>
+      </div>
+    </li>
+  </ul>
+
+  <section class="create" aria-labelledby="automate">
+    <h2 id="automate">Add an automation</h2>
+    <h3>Track an office request</h3>
+    <p>Staff fill in a form. Each request gets a reference. Your office receives a notification.</p>
+    <div class="actions">
+      <a href="#">Try an example</a>
+      <button type="button" class="primary">Set up for my office</button>
+    </div>
+    <h3>Purchase request with a named approver</h3>
+    <p>Staff ask to buy something and get a reference. The person you name approves or rejects it in Daloy. Approved requests go to purchasing, from Outlook and with a Teams note if you connect them.</p>
+    <div class="actions">
+      <button type="button" class="primary">Set up purchase requests</button>
+    </div>
+    <h3>Reply to a website inquiry</h3>
+    <p>Visitors fill in your inquiry form. They get a reply from your own email address, and your inbox gets the inquiry.</p>
+    <div class="actions">
+      <a href="#">Set up inquiry replies</a>
+    </div>
+    <p role="alert" class="message error" hidden></p>
+  </section>
+</main>
+<script src="reveal.js"></script>
+</body>
+</html>

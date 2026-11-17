@@ -85,6 +85,6 @@ Kept current with each phase. A mitigation marked "planned" does not exist in co
 | Test runs used to reach internal hosts or send mail | Test runs mock HTTP and email unless "live calls" is ticked; live test runs use the same SSRF guard and recipient cap as real runs | Done, phase 5 |
 | Script injection in the console | React escapes all rendered values, including step outputs and trigger data; no `dangerouslySetInnerHTML`; helmet's CSP blocks inline scripts on the served console | Done, phase 5 |
 
-## Astra Daloy demo boundary
+## Public demo boundary
 
-The visitor route `/#/demo` accepts sample request text and email addresses. It renders them as React text, keeps them in browser memory, and calls the shared template preview locally. No account, database or mail service receives the form. The route runs on the same origin as the console, so shipping this page alone does not isolate a publicly exposed console. The offline browser test in `e2e/portfolio-demo.spec.ts` checks submission and reset without API calls.
+The demo page (`apps/web/demo`, published as `site/demo/` on Cloudflare Pages) accepts a free-text request and sample form values. It renders them as React text, keeps them in browser memory, and never sends them anywhere: there is no model call, no API call and no storage. On daloyapp.pages.dev it is a static site with no console behind it. The API also serves it at `/demo/` on an installation, on the console's origin, where it makes no requests either. `e2e/portfolio-demo.spec.ts` runs the whole flow offline and checks that no request was made.
