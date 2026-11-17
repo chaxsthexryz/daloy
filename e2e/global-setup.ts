@@ -79,6 +79,8 @@ export default async function setup() {
   const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
   providers.addServiceAccount(saEmail, publicKey.export({ type: "spki", format: "pem" }).toString());
   providers.addSheet("e2e-sheet-0000000001", "Office requests", "Requests", [saEmail]);
+  providers.addCalendar("e2e-clinic@group.calendar.google.com", "Clinic bookings", [saEmail]);
+  process.env.E2E_CALENDAR_ID = "e2e-clinic@group.calendar.google.com";
   providers.slack.token = "xoxb-e2e-0000000000-abcdefabcdef";
   providers.telegram.token = "100000001:E2E-telegram-token-aaaaaaaaaaaaaaaaaa";
   process.env.E2E_TELEGRAM_TOKEN = providers.telegram.token;
@@ -101,6 +103,7 @@ export default async function setup() {
     LLM_BASE_URL: `http://127.0.0.1:${LLM_PORT}`,
     GOOGLE_TOKEN_URL: providers.urls.googleToken,
     GOOGLE_SHEETS_URL: providers.urls.sheets,
+    GOOGLE_CALENDAR_URL: providers.urls.calendar,
     SLACK_API_URL: providers.urls.slack,
     TELEGRAM_API_URL: providers.urls.telegram,
     MICROSOFT_CLIENT_ID: providers.microsoft.clientId,

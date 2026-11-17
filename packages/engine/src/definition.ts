@@ -80,6 +80,8 @@ export const outlookConfigSchema = emailConfigSchema;
 export const teamsConfigSchema = slackConfigSchema;
 // A Telegram message goes to the one chat picked in Apps, as plain text (decision 0042). Queued like Slack.
 export const telegramConfigSchema = slackConfigSchema;
+// A calendar event for the run's booking, in the one calendar picked in Apps (decision 0043). It follows the booking: moved when it is rescheduled, deleted when it is cancelled.
+export const calendarConfigSchema = z.object({ title: template(300).min(1), description: template(3000).optional() });
 export type SheetsConfig = z.infer<typeof sheetsConfigSchema>;
 export type SlackConfig = z.infer<typeof slackConfigSchema>;
 
@@ -120,6 +122,7 @@ const stepSchema = z.discriminatedUnion("type", [
   z.object({ id: stepId, type: z.literal("outlook"), config: outlookConfigSchema }),
   z.object({ id: stepId, type: z.literal("teams"), config: teamsConfigSchema }),
   z.object({ id: stepId, type: z.literal("telegram"), config: telegramConfigSchema }),
+  z.object({ id: stepId, type: z.literal("calendar"), config: calendarConfigSchema }),
   z.object({ id: stepId, type: z.literal("booking"), config: bookingConfigSchema }),
 ]);
 export type Step = z.infer<typeof stepSchema>;

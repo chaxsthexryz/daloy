@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { workspaceLanguage, aiConnection, bookFromStep, checkRecipients, claimTimeout, claimUsage, createApproval, findApprover, queueDelivery, readSecrets, redactSecrets, secretForms, sendAs, type Db, type MailDeps, type Provider } from "@daloy/db";
+import { workspaceLanguage, aiConnection, bookFromStep, checkRecipients, claimTimeout, claimUsage, createApproval, findApprover, queueCalendarEvent, queueDelivery, readSecrets, redactSecrets, secretForms, sendAs, type Db, type MailDeps, type Provider } from "@daloy/db";
 import { approvalEmailBody, bookingStartField, conditionBranch, parseZoned, type TestChoice, type Trigger, declaresJson, parseInstant, isRetryable, mockAiOutput, parseJsonTemplate, resolveJsonTemplate, resolveTemplate, StepError, usesSecrets, type ExpressionContext, type Step } from "@daloy/engine";
 import type { StepExecutor, StepResult } from "../advance";
 import { runAi } from "./ai";
@@ -44,6 +44,7 @@ type AiInput = { input: string };
 type ApprovalInput = { to?: string; approver?: string; subject: string; message: string; timeoutSeconds: number };
 type SheetsInput = { columns: string[] };
 type SlackInput = { text: string };
+type CalendarInput = { title: string; description: string };
 
 /**
  * The config a step runs with, its templates resolved. The executor stores it (redacted) on the step run,
@@ -86,6 +87,8 @@ function resolveInput(step: Step, ctx: ExpressionContext): Record<string, unknow
     case "teams":
     case "telegram":
       return { text: text(step.config.text, ctx) } satisfies SlackInput;
+    case "calendar":
+      return { title: text(step.config.title, ctx), description: step.config.description === undefined ? "" : text(step.config.description, ctx) } satisfies CalendarInput;
     case "booking": {
       const { action, resource, booking, start, minutes } = step.config;
       // A resource field stores { id, name }; the step books by id.
@@ -136,6 +139,15 @@ async function runStep(deps: FullDeps, step: Step, input: unknown, ctx: Expressi
       } else if (!cfg.booking?.trim()) return found("No booking reference was given.");
       else r = await bookFromStep(deps.db, at, cfg.action === "cancel" ? { action: "cancel", reference: cfg.booking.trim() } : { action: "reschedule", reference: cfg.booking.trim(), start: start!, minutes: cfg.minutes });
       return { branch: r.branch, output: r.output };
+    }
+    case "calendar": {
+      const cfg = input as CalendarInput;
+      // A test run, and a booking made by one, never reach a real calendar.
+      if (mock || booking?.test) return { output: { mocked: true, ...cfg } };
+      // Queued, not sent: the worker syncs it apart from the run, and later booking changes keep it in line (decision 0043).
+      const d = await queueCalendarEvent(deps.db, { userId, runId, stepId: step.id, ...cfg });
+      if (!d) throw new StepError("A calendar step needs a booking step before it in the same run.", false);
+      return { output: { deliveryId: d.id, reference: d.reference, state: d.state } };
     }
     case "delay": {
       const cfg = input as { seconds?: number; until?: string; offsetSeconds?: number };
