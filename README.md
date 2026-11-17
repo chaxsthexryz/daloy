@@ -63,7 +63,7 @@ To work on the console with hot reload, run the API and worker (`pnpm --filter @
 
 ## Demo login
 
-For a visitor walkthrough, open [Astra Daloy](http://localhost:3000/#/demo) after starting Compose. This unofficial demo needs no account. Edit the sample office request, submit it, and read both messages in the simulated inbox. Refresh the page or choose Start again to clear it.
+For a visitor walkthrough, open the [public demo](http://localhost:3000/demo/) after starting Compose (or https://daloyapp.pages.dev/demo/). It needs no account and makes no requests: describe a task or pick one of three examples, answer the scripted helper's questions, approve the draft and send a sample through it. The AI replies are scripted examples, not a model. `pnpm demo:site` rebuilds the copy in `site/demo/`.
 
 After the seed: `demo@daloy.local`, password `daloy-demo-2026`. The account has the three starter templates (inquiry triage, invoice follow-up, booking no-show follow-up) as published workflows, and five mocked test runs in their run history. It also has **Office requests** ("Track an office request"), turned on and empty: open its form and send a request to see the receipt in Mailpit. Under **Business and email** it has a profile for "Daloy Demo Office" and **Website inquiries** turned on, sending through Mailpit: open the inquiry form, send a message, and find the customer's reply and the office's notification in Mailpit. A new account can try the same template from the home screen: **Try an example** shows a preview that sends nothing, and **Set up for my office** walks through four steps and turns the form on. These are demo credentials for a local install; change or delete the account anywhere else.
 

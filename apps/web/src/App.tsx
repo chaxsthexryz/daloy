@@ -13,7 +13,6 @@ import { SettingsPage } from "./AppSettings";
 import { BusinessSetupPage, VerifySenderPage } from "./BusinessSetup";
 import { TokensPage } from "./Tokens";
 import { VersionsPage } from "./Versions";
-import { Demo } from "./Demo";
 import { Shell } from "./Nav";
 import { AcceptInvitePage, MyRequestsPage, TeamPage, type User } from "./Team";
 
@@ -39,7 +38,6 @@ function useHash() {
 
 export function App() {
   const hash = useHash();
-  if (hash === "#/demo") return <Demo />;
   return <Console hash={hash} />;
 }
 

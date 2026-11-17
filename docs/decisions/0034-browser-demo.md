@@ -1,4 +1,6 @@
-# 0034: Run the Astra Daloy demo in the browser
+# 0034: Run the visitor demo in the browser
+
+Superseded by [0037](0037-public-ai-demo.md): the office-request demo and `/#/demo` are gone.
 
 ## Context
 
@@ -10,7 +12,7 @@ Use a shared demo account on the running installation, or render the existing te
 
 ## Decision
 
-Serve Astra Daloy at `/#/demo` before the console checks for a session. Use the template's form fields, validation and email previews. Keep the submission in component state.
+Serve the visitor demo at `/#/demo` before the console checks for a session. Use the template's form fields, validation and email previews. Keep the submission in component state.
 
 ## Consequences
 

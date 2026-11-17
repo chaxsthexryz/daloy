@@ -1,0 +1,103 @@
+/*
+ * Daloy design tokens (phase V1). DESIGN.md explains each one. The mockups in this folder use only these.
+ * V2: copy this file's :root blocks into apps/web/src/styles.css, copy fonts/ to apps/web/public/fonts/
+ * and change the two url() paths to /fonts/....
+ */
+@font-face { font-family: "Geist"; src: url("fonts/geist.woff2") format("woff2"); font-weight: 100 900; font-style: normal; font-display: swap; }
+@font-face { font-family: "IBM Plex Mono"; src: url("fonts/ibm-plex-mono-400.woff2") format("woff2"); font-weight: 400; font-style: normal; font-display: swap; }
+@font-face { font-family: "IBM Plex Mono"; src: url("fonts/ibm-plex-mono-500.woff2") format("woff2"); font-weight: 500; font-style: normal; font-display: swap; }
+
+:root {
+  color-scheme: light;
+
+  /* Colour: surfaces and text. The first eleven names already exist in styles.css. */
+  --bg: #f2f5fc;
+  --surface: #ffffff;
+  --text: #0f1e45;
+  --muted: #4a5878;
+  --border: #7c88a6;
+  --accent: #1b45c9;
+  --on-accent: #ffffff;
+  --danger: #a3261c;
+  --ok: #17643a;
+  --warn: #7a4b00;
+  --focus: #1b45c9;
+  /* New names. */
+  --sunken: #e6ebf8;
+  --border-soft: #c9d3ee;
+  --accent-hover: #14349a;
+  --accent-tint: #dbe4ff;
+
+  /* Colour: the plain states. Soft fills with darker text of the same hue; only Needs you is solid, in the main blue. */
+  --done: #dff1e6;
+  --on-done: #17643a;
+  --waiting: #fbefc9;
+  --on-waiting: #7a4b00;
+  --needs-you: #1b45c9;
+  --on-needs-you: #ffffff;
+  --problem: #fbe3e0;
+  --on-problem: #a3261c;
+  --working: #e6ebf8;
+  --on-working: #0f1e45;
+
+  /* Colour: lines for the run animation, node borders and the state edge on cards. Each meets 3:1 on --surface and --bg. */
+  --run-path: #2f8a57;
+  --run-failed: #c2483e;
+  --run-wait: #b0791f;
+  --run-working: #1b45c9;
+  --run-idle: #7c88a6;
+
+  /* Type */
+  --font-sans: "Geist", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "IBM Plex Mono", "Cascadia Mono", Consolas, monospace;
+  --text-xs: 0.8125rem;   /* 13 px: tags, states, table labels */
+  --text-sm: 0.9375rem;   /* 15 px: hints, secondary lines, code */
+  --text-md: 1rem;        /* 16 px: body, buttons, inputs */
+  --text-lg: 1.125rem;    /* 18 px: h3, lead text */
+  --text-xl: 1.375rem;    /* 22 px: card titles, h2, console h1 on a phone */
+  --text-2xl: 1.75rem;    /* 28 px: console h1 on desktop, landing h2 on a phone */
+  --text-3xl: 2.25rem;    /* 36 px: landing h2, landing h1 on a phone */
+  --text-4xl: 3.75rem;    /* 60 px: landing h1 on desktop */
+  --leading-tight: 1.1;
+  --leading-snug: 1.3;
+  --leading-body: 1.5;
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-bold: 600;
+  --tracking-display: -0.04em; /* 3xl and 4xl */
+  --tracking-heading: -0.02em; /* xl and 2xl */
+  --tracking-caps: 0.04em;     /* uppercase xs labels */
+
+  /* Spacing, on a 4 px base */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2rem;
+  --space-7: 3rem;
+  --space-8: 4rem;
+  --space-9: 6rem;
+
+  /* Shape */
+  --radius-sm: 4px;   /* tags, states, code */
+  --radius-md: 8px;   /* buttons, inputs, cards, nodes */
+  --radius-lg: 16px;  /* landing page frames */
+  --border-width: 1px;
+  --edge-width: 6px; /* the state line on a card's left edge */
+  --target: 44px;     /* smallest touch target */
+
+  /* Shadow: the design is flat. One shadow, for things that float over the page. */
+  --shadow-overlay: 0 8px 24px rgb(15 30 69 / 0.18);
+
+  /* Motion */
+  --ease: cubic-bezier(0.32, 0.72, 0, 1); /* fast start, long settle, no overshoot */
+  --dur-fast: 100ms;    /* hover and pressed colour changes */
+  --dur-base: 200ms;    /* menu, details, dialogs */
+  --dur-reveal: 900ms;  /* scroll reveal, landing page and console */
+  --dur-flow: 1200ms;   /* the dot travelling one edge */
+  --dur-pulse: 1600ms;  /* the Working node's ring */
+  --reveal-shift: 64px;
+  --reveal-blur: 8px;
+}
+
