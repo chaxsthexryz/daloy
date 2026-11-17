@@ -4,6 +4,7 @@ import { approvalEmailBody, bookingStartField, conditionBranch, parseZoned, type
 import type { StepExecutor, StepResult } from "../advance";
 import { runAi } from "./ai";
 import { httpRequest } from "./http";
+import { paymongoLink } from "./paymongo";
 import { defaultGuard, type SsrfGuard } from "./ssrf";
 
 /**
@@ -89,6 +90,10 @@ function resolveInput(step: Step, ctx: ExpressionContext): Record<string, unknow
       return { text: text(step.config.text, ctx) } satisfies SlackInput;
     case "calendar":
       return { title: text(step.config.title, ctx), description: step.config.description === undefined ? "" : text(step.config.description, ctx) } satisfies CalendarInput;
+    case "paymongo_link": {
+      const { amount, description, reference } = step.config;
+      return { amount: text(amount, ctx), description: text(description, ctx), reference: text(reference, ctx) };
+    }
     case "booking": {
       const { action, resource, booking, start, minutes } = step.config;
       // A resource field stores { id, name }; the step books by id.
@@ -102,9 +107,9 @@ function resolveInput(step: Step, ctx: ExpressionContext): Record<string, unknow
 type BookingInput = { action: "create" | "reschedule" | "cancel"; resource?: string; booking?: string; start?: string; minutes?: number };
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-type Attempt = { runId: string; idempotencyKey: string; attempt: number; stepRunId: string; userId: string; mock: boolean; aiLive?: boolean; choice?: TestChoice; claimSend?: () => Promise<() => void>; booking?: { test: boolean; workflowId: string; trigger: Trigger } };
+type Attempt = { runId: string; idempotencyKey: string; attempt: number; stepRunId: string; userId: string; workflowId?: string; mock: boolean; aiLive?: boolean; choice?: TestChoice; claimSend?: () => Promise<() => void>; booking?: { test: boolean; workflowId: string; trigger: Trigger } };
 
-async function runStep(deps: FullDeps, step: Step, input: unknown, ctx: ExpressionContext, { runId, idempotencyKey, attempt, stepRunId, userId, mock, aiLive, choice, claimSend, booking }: Attempt): Promise<StepResult> {
+async function runStep(deps: FullDeps, step: Step, input: unknown, ctx: ExpressionContext, { runId, idempotencyKey, attempt, stepRunId, userId, workflowId, mock, aiLive, choice, claimSend, booking }: Attempt): Promise<StepResult> {
   // The API only accepts a fail choice on a step a faked run fakes (choiceProblems).
   // "unknown" fails only the first attempt, so Send again in review shows the step going through. Nothing is sent.
   if (mock && choice && "fail" in choice && (choice.fail !== "unknown" || attempt === 1)) {
@@ -245,6 +250,12 @@ async function runStep(deps: FullDeps, step: Step, input: unknown, ctx: Expressi
       const d = await queueDelivery(deps.db, { userId, runId, stepId: step.id, provider, reference, payload });
       return { output: { deliveryId: d.id, reference, state: d.state } };
     }
+    case "paymongo_link": {
+      const cfg = input as { amount: string; description: string; reference: string };
+      if (mock) return { output: { mocked: true, reference: cfg.reference, amount: cfg.amount } };
+      // Counted under the step key, like an HTTP call, and only once PayMongo is really going to be called.
+      return { output: await paymongoLink(deps.db, deps.secretsKey, { userId, workflowId: workflowId!, runId, stepId: step.id, idempotencyKey }, cfg, () => claim("http")) };
+    }
   }
 }
 
@@ -261,7 +272,7 @@ export function createExecutor(deps: ExecutorDeps): StepExecutor {
     publicUrl: (deps.publicUrl ?? "http://localhost:3000").replace(/\/+$/, ""),
   };
   return {
-    async execute({ runId, step, userId, idempotencyKey, attempt, stepRunId, ctx, mock = false, aiLive, choice, claimSend, booking }) {
+    async execute({ runId, step, userId, workflowId, idempotencyKey, attempt, stepRunId, ctx, mock = false, aiLive, choice, claimSend, booking }) {
       const secrets = await readSecrets(deps.db, deps.secretsKey, userId);
       const forms = secretForms(Object.values(secrets));
       // Only an HTTP step sees secrets. Every other step resolves without them, so an email, AI prompt or condition can't carry one.
@@ -278,7 +289,7 @@ export function createExecutor(deps: ExecutorDeps): StepExecutor {
             throw new StepError("A request that uses a secret must go to a fixed address: trigger or step data changed its host. Move that data into the path or query.", false);
           }
         }
-        const result = await runStep(full, step, input, real, { runId, idempotencyKey, attempt, stepRunId, userId, mock, aiLive, choice, claimSend, booking });
+        const result = await runStep(full, step, input, real, { runId, idempotencyKey, attempt, stepRunId, userId, workflowId, mock, aiLive, choice, claimSend, booking });
         return { ...result, input: preview, output: redactSecrets(result.output, forms) };
       } catch (err) {
         const message = redactSecrets(err instanceof Error ? err.message : String(err), forms) as string;

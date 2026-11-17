@@ -5,7 +5,7 @@ describe("stepJsonSchemas", () => {
   const schemas = stepJsonSchemas();
 
   it("covers every step type", () => {
-    expect(Object.keys(schemas).sort()).toEqual(["ai", "approval", "booking", "calendar", "condition", "delay", "email", "http", "outlook", "sheets", "slack", "teams", "telegram"]);
+    expect(Object.keys(schemas).sort()).toEqual(["ai", "approval", "booking", "calendar", "condition", "delay", "email", "http", "outlook", "paymongo_link", "sheets", "slack", "teams", "telegram"]);
   });
 
   it("describes http as an object with a method enum and required url", () => {

@@ -1,6 +1,6 @@
 import { publicCopy } from "./public-copy";
 import { createHmac, randomInt, randomUUID, timingSafeEqual } from "node:crypto";
-import { workspaceLanguage, businessProfiles, createKeyedRun, createRun, publishedVersion, readSecret, requests, runs, triggers, workflows, type Db } from "@daloy/db";
+import { workspaceLanguage, businessProfiles, connectionCredential, connections, createKeyedRun, createRun, eventSeen, markPaymentPaid, markPaymentRefunded, paymongoMode, publishedVersion, readSecret, recordEvent, requests, runs, triggers, verifyPaymongoSignature, workflows, type Db, type Payment } from "@daloy/db";
 import { definitionSchema, OFFICE_REQUEST, parsePayload, PURCHASE_REQUEST, type FormField, type Resource } from "@daloy/engine";
 import {
   BadRequestException,
@@ -19,7 +19,7 @@ import {
   UseGuards,
   type RawBodyRequest,
 } from "@nestjs/common";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import type { Request } from "express";
 import type { PgBoss } from "pg-boss";
 import * as z from "zod";
@@ -80,6 +80,79 @@ export class HooksController {
     const { runId, duplicate } = await createKeyedRun(this.db, row.trigger.workflowId, version.id, payload, eventKey(trigger, payload, idempotencyKey));
     if (!duplicate) await enqueueRun(this.boss, runId);
     return duplicate ? { runId, duplicate } : { runId };
+  }
+}
+
+/**
+ * PayMongo's webhook. The URL path is the secret that finds the owner's connection; the signature then proves PayMongo sent it.
+ * PayMongo disables a webhook that keeps failing, so only a bad signature, an unknown path or a server error is not a 2xx.
+ * The event is recorded last: a crash before that is retried, and the state changes and keyed runs are safe to repeat.
+ */
+@Controller("hooks/paymongo")
+@UseGuards(RateLimit(60))
+export class PaymongoHooksController {
+  constructor(
+    @Inject(DB) private readonly db: Db,
+    @Inject(BOSS) private readonly boss: PgBoss,
+    @Inject(CONFIG) private readonly config: ApiConfig,
+  ) {}
+
+  @Post(":path")
+  @HttpCode(200)
+  async receive(@Param("path") path: string, @Req() req: RawBodyRequest<Request>, @Headers("paymongo-signature") signature: string | undefined) {
+    const [owner] = await this.db
+      .select({ userId: connections.userId })
+      .from(connections)
+      .where(and(eq(connections.provider, "paymongo"), sql`${connections.destination}->>'webhookPath' = ${path}`));
+    const conn = owner && (await connectionCredential(this.db, this.config.secretsKey, owner.userId, "paymongo"));
+    if (!owner || !conn) throw new NotFoundException();
+    const { secretKey, webhookSecret } = JSON.parse(conn.credential) as { secretKey: string; webhookSecret: string };
+    const mode = paymongoMode(secretKey);
+    const rawBody = req.rawBody ?? Buffer.alloc(0);
+    if (!signature || !verifyPaymongoSignature({ header: signature, rawBody, secret: webhookSecret, mode, nowSeconds: Math.floor(Date.now() / 1000) })) throw new UnauthorizedException();
+
+    const data = (req.body as { data?: { id?: unknown; attributes?: { type?: unknown; livemode?: unknown; data?: { id?: unknown; attributes?: { payments?: { id?: unknown; attributes?: { amount?: unknown; currency?: unknown; status?: unknown } }[] } } } } } | undefined)?.data;
+    const eventId = data?.id;
+    const type = data?.attributes?.type;
+    if (!data || typeof eventId !== "string" || typeof type !== "string") throw new BadRequestException();
+    if ((data.attributes?.livemode === true) !== (mode === "live")) throw new BadRequestException("event mode does not match the connection");
+    if (await eventSeen(this.db, eventId)) return { duplicate: true };
+
+    const resource = data.attributes?.data;
+    let started: { payment: Payment; status: "paid" | "refunded" } | undefined;
+    if (type === "checkout_session.payment.paid" && typeof resource?.id === "string") {
+      const paid = resource.attributes?.payments?.find((p) => p.attributes?.status === "paid");
+      const { amount, currency } = paid?.attributes ?? {};
+      if (typeof paid?.id === "string" && typeof amount === "number" && typeof currency === "string") {
+        const r = await markPaymentPaid(this.db, { userId: owner.userId, sessionId: resource.id, paymentId: paid.id, amount, currency });
+        if (r.payment?.status === "paid") started = { payment: r.payment, status: "paid" };
+      }
+    } else if (type === "payment.refunded" && typeof resource?.id === "string") {
+      const r = await markPaymentRefunded(this.db, { userId: owner.userId, providerPaymentId: resource.id });
+      if (r.payment?.status === "refunded") started = { payment: r.payment, status: "refunded" };
+    }
+    // Started on the payment's state, not on whether this call changed it: a crash after the update but before the runs
+    // is retried by PayMongo and still starts them. The key is payment + status, so a replay or a second event starts nothing.
+    if (started) await this.startRuns(owner.userId, started.payment, started.status);
+    await recordEvent(this.db, { eventId, userId: owner.userId, type });
+    return { ok: true };
+  }
+
+  /** One run for each published workflow of the owner that listens for this status. */
+  private async startRuns(userId: string, p: Payment, status: "paid" | "refunded") {
+    const listeners = await this.db
+      .select({ workflowId: triggers.workflowId, config: triggers.config })
+      .from(triggers)
+      .innerJoin(workflows, eq(workflows.id, triggers.workflowId))
+      .where(and(eq(workflows.userId, userId), eq(triggers.type, "payment")));
+    const payload = { status, reference: p.reference, amount: p.amountCentavos, currency: p.currency, paymentId: p.id, sourceRunId: p.runId, providerPaymentId: p.providerPaymentId };
+    for (const l of listeners) {
+      if (!((l.config as { events?: string[] }).events ?? ["paid"]).includes(status)) continue;
+      const version = await publishedVersion(this.db, l.workflowId);
+      if (!version) continue;
+      const { runId, duplicate } = await createKeyedRun(this.db, l.workflowId, version.id, payload, `paymongo:${p.id}:${status}`);
+      if (!duplicate) await enqueueRun(this.boss, runId);
+    }
   }
 }
 

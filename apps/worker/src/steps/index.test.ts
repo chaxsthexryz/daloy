@@ -1,7 +1,7 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { approvals, bookings, encryptSecret, hashToken, joinWorkspace, recordDecision, resources, runs, saveAiSettings, secrets, stepRuns, users, workflows, workflowVersions, type Db } from "@daloy/db";
+import { approvals, bookings, encryptSecret, hashToken, joinWorkspace, payments, recordDecision, resources, runs, saveAiSettings, saveConnection, secrets, stepRuns, usageClaims, users, workflows, workflowVersions, type Db } from "@daloy/db";
 import type { Step } from "@daloy/engine";
 import { eq } from "drizzle-orm";
 import nodemailer, { type SendMailOptions, type Transporter } from "nodemailer";
@@ -441,4 +441,86 @@ it("runs an AI step with the model its owner picked in the console", async () =>
     vi.unstubAllEnvs();
     llm.close();
   }
+});
+
+describe("paymongo_link step", () => {
+  const calls: { auth: string; idem: string; body: { data: { attributes: { line_items: { amount: number }[]; metadata: Record<string, string> } } } }[] = [];
+  let fake: Server;
+  let status = 200;
+  let sessions = 0;
+  const step = (amount: string): Step => ({ id: "pay", type: "paymongo_link", config: { amount, description: "Deposit", reference: "INV-1" } });
+  beforeAll(async () => {
+    fake = createServer((req, res) => {
+      let raw = "";
+      req.on("data", (c: Buffer) => (raw += c.toString()));
+      req.on("end", () => {
+        calls.push({ auth: req.headers.authorization ?? "", idem: String(req.headers["idempotency-key"]), body: JSON.parse(raw) });
+        res.writeHead(status, { "content-type": "application/json" });
+        res.end(JSON.stringify(status === 200 ? { data: { id: `cs_${++sessions}`, attributes: { checkout_url: `https://pay.test/cs_${sessions}`, livemode: false } } } : { errors: [{ detail: "no" }] }));
+      });
+    });
+    await new Promise<void>((r) => fake.listen(0, "127.0.0.1", r));
+    vi.stubEnv("PAYMONGO_API_URL", `http://127.0.0.1:${(fake.address() as AddressInfo).port}`);
+  });
+  afterAll(() => {
+    vi.unstubAllEnvs();
+    fake.close();
+  });
+  async function setup(connect = true) {
+    const [u] = await db.insert(users).values({ email: `pay-${randomUUID()}@test.local`, passwordHash: "x" }).returning();
+    if (connect) await saveConnection(db, key, u!.id, "paymongo", { account: "Test", credential: JSON.stringify({ secretKey: "sk_test_abc", webhookSecret: "whsk_x" }) });
+    const [wf] = await db.insert(workflows).values({ userId: u!.id, name: "Pay", slug: `pay-${randomUUID().slice(0, 8)}` }).returning();
+    const [v] = await db.insert(workflowVersions).values({ workflowId: wf!.id, version: 1, definition: {} }).returning();
+    const [r] = await db.insert(runs).values({ workflowVersionId: v!.id }).returning();
+    const exec = (amount: string) =>
+      createExecutor({ db, secretsKey: key, mail: {} as never }).execute({ runId: r!.id, stepRunId: NO_STEP_RUN, userId: u!.id, step: step(amount), attempt: 1, idempotencyKey: `${r!.id}:pay`, ctx: { trigger: {}, steps: {} }, workflowId: wf!.id });
+    return { runId: r!.id, userId: u!.id, exec };
+  }
+
+  it("creates one checkout session with the step key and Basic auth, and stores one payment", async () => {
+    calls.length = 0;
+    const s = await setup();
+    const out = await s.exec("150.50");
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.idem).toBe(`${s.runId}:pay`);
+    expect(calls[0]!.auth).toBe(`Basic ${Buffer.from("sk_test_abc:").toString("base64")}`);
+    expect(calls[0]!.body.data.attributes.line_items[0]!.amount).toBe(15050);
+    expect(calls[0]!.body.data.attributes.metadata).toEqual({ daloy_run: s.runId, daloy_step: "pay", reference: "INV-1" });
+    expect(out.output).toMatchObject({ url: expect.stringContaining("https://pay.test/cs_"), reference: "INV-1", amount: 15050, status: "pending" });
+    expect(await db.select().from(payments).where(eq(payments.runId, s.runId))).toHaveLength(1);
+    expect(await db.select().from(usageClaims).where(eq(usageClaims.key, `${s.runId}:pay`))).toMatchObject([{ kind: "http" }]);
+  });
+
+  it("makes no second PayMongo call when the step runs again", async () => {
+    calls.length = 0;
+    const s = await setup();
+    const first = await s.exec("150");
+    const again = await s.exec("150");
+    expect(calls).toHaveLength(1);
+    expect(again.output).toEqual(first.output);
+  });
+
+  it("rejects an amount with a comma without calling PayMongo", async () => {
+    calls.length = 0;
+    const s = await setup();
+    await expect(s.exec("1,500")).rejects.toMatchObject({ retryable: false, message: expect.stringContaining("1,500") });
+    expect(calls).toHaveLength(0);
+  });
+
+  it("says to connect PayMongo first when there is no connection", async () => {
+    calls.length = 0;
+    const s = await setup(false);
+    await expect(s.exec("150")).rejects.toMatchObject({ retryable: false, message: "Connect PayMongo first." });
+    expect(calls).toHaveLength(0);
+  });
+
+  it("does not retry a refused request", async () => {
+    const s = await setup();
+    status = 400;
+    try {
+      await expect(s.exec("150")).rejects.toMatchObject({ retryable: false, outcome: "rejected" });
+    } finally {
+      status = 200;
+    }
+  });
 });
