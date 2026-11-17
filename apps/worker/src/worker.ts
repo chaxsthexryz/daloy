@@ -5,6 +5,8 @@ import type { RetryPolicy } from "@daloy/engine";
 import { and, eq, gt, inArray, isNull, lt, lte, or, sql } from "drizzle-orm";
 import { PgBoss } from "pg-boss";
 import { advance, type AdvanceDeps, type StepExecutor } from "./advance";
+import { pollEmailSources, type ImapAdapter } from "./email-in";
+import { connectImap } from "./imap";
 
 export type WorkerOptions = {
   connectionString: string;
@@ -18,6 +20,7 @@ export type WorkerOptions = {
   migrate?: boolean;
   /** Delivers queued Sheets rows and Slack messages. Left out, deliveries wait in the table. */
   deliveries?: { secretsKey: Buffer; urls: ProviderUrls };
+  emailIn?: { secretsKey: Buffer; adapter?: ImapAdapter; intervalMs?: number };
 };
 export type Worker = Awaited<ReturnType<typeof startWorker>>;
 
@@ -113,14 +116,26 @@ export async function startWorker(opts: WorkerOptions) {
       }, (opts.pollingIntervalSeconds ?? 2) * 1000)
     : undefined;
 
+  let readingMail: Promise<void> | undefined;
+  const emailStop = new AbortController();
+  const emailTimer = opts.emailIn ? setInterval(() => {
+    if (readingMail) return;
+    readingMail = pollEmailSources({ db, ...opts.emailIn!, adapter: opts.emailIn!.adapter ?? connectImap, enqueue: deps.enqueue, signal: emailStop.signal })
+      .catch(() => console.error("email intake poll failed"))
+      .finally(() => { readingMail = undefined; });
+  }, Math.min(2_000, opts.emailIn.intervalMs ?? 2_000)) : undefined;
+
   return {
     enqueue: deps.enqueue,
     /** Stops taking jobs and waits for the ones in progress, so their leases are released cleanly. */
     async stop() {
       clearInterval(sweepTimer);
       clearInterval(deliveryTimer);
+      clearInterval(emailTimer);
+      emailStop.abort();
       await boss.stop({ graceful: true, timeout: 30_000 });
       await delivering;
+      await readingMail;
     },
   };
 }

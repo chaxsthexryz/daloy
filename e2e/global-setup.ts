@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import EmbeddedPostgres from "embedded-postgres";
 import { startFakeProviders } from "../test/fake-providers";
+import { startFakeImap } from "../test/fake-imap";
 import { startLlmFake } from "./llm-fake";
 import { startSmtpSink } from "./smtp-sink";
 
@@ -67,6 +68,10 @@ export default async function setup() {
   writeFileSync(mailFile, "");
   process.env.E2E_MAIL_FILE = mailFile;
   const smtp = await startSmtpSink(SMTP_PORT, mailFile);
+  const inboxFile = join(mkdtempSync(join(tmpdir(), "daloy-imap-")), "messages.jsonl");
+  writeFileSync(inboxFile, "");
+  process.env.E2E_IMAP_MAIL_FILE = inboxFile;
+  const inbox = await startFakeImap(inboxFile);
   const llm = startLlmFake(LLM_PORT);
   // Fake Google Sheets, Slack and Microsoft. Tests read the key file and token from these env vars and the fake's /__control.
   const providers = await startFakeProviders(PROVIDERS_PORT);
@@ -106,12 +111,13 @@ export default async function setup() {
   const api = start("api", env);
   await waitFor(`http://localhost:${E2E_PORT}/auth/me`, 60_000);
   // The worker starts after the API has run the migrations.
-  const worker = start("worker", env);
+  const worker = start("worker", { ...env, NODE_ENV: "test", DALOY_TEST_IMAP_ENDPOINT: inbox.url });
 
   return async () => {
     stop(worker);
     stop(api);
     smtp.close();
+    await inbox.close();
     llm.close();
     await providers.close();
     await pg?.stop();

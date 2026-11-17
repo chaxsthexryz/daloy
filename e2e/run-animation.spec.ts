@@ -70,7 +70,7 @@ for (const reduced of [false, true]) {
     const res = await page.request.post(`/workflows/${id}/test-runs`, { data: { definition, payload: {} } });
     const runId = (await res.json()).id as string;
     await page.emulateMedia({ reducedMotion: reduced ? "reduce" : "no-preference" });
-    await page.route(new RegExp(`/runs/${runId}$`), async (route) => {
+    await page.route(`**/runs/${runId}`, async (route) => {
       const real = await (await route.fetch()).json();
       const post = real.steps.find((s: { stepId: string }) => s.stepId === "post");
       await route.fulfill({ json: { ...real, state: "running", finishedAt: null, steps: [{ ...post, state: "running", finishedAt: null, output: null }] } });

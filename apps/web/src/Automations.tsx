@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, type RunSummary, type Workflow } from "./api";
 import { Header } from "./Nav";
+import { FormEmbed } from "./FormEmbed";
 import { arrange, type Filter } from "./lib/automations";
 import { lastEvent, plainState } from "./lib/states";
 import type { User } from "./Team";
@@ -144,9 +145,10 @@ function Card({ w, onCopy }: { w: Workflow; onCopy: (id: string, formId: string)
       </p>
       <div className="actions">
         {w.live && w.formId && (
-          <button type="button" onClick={() => onCopy(w.id, w.formId!)}>
-            Copy form link
-          </button>
+          <>
+            <button type="button" onClick={() => onCopy(w.id, w.formId!)}>Copy form link</button>
+            <FormEmbed link={`${location.origin}/forms/${w.formId}`} />
+          </>
         )}
         <a href={`#/w/${w.id}/runs`}>Activity</a>
       </div>

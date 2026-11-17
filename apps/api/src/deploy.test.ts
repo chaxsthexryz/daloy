@@ -52,6 +52,13 @@ const exhaustLogin = async (server: Parameters<typeof request>[0], xff?: string)
 };
 
 describe("rate limits behind one proxy hop", () => {
+  it("counts embedded and standalone form submissions in the same ten-post limit", async () => {
+    const form = "/forms/4039ded1-2916-43ae-b6fe-60d4ab2fa748";
+    const post = (path: string) => request(behindProxy).post(path).set("X-Forwarded-For", "203.0.113.49");
+    for (let i = 0; i < 10; i++) await post(i % 2 ? form : `${form}/embed`).expect(404);
+    await post(`${form}/embed`).expect(429);
+  });
+
   it("keeps a bucket per real client", async () => {
     await exhaustLogin(behindProxy, "203.0.113.1");
     expect((await login(behindProxy, "203.0.113.2")).status).toBe(401);
