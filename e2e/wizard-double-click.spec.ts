@@ -10,14 +10,15 @@ test("a double click on Next and Turn on acts once, setup resumes the draft, and
   await page.getByRole("button", { name: "Create account" }).click();
   await expect(page.getByRole("heading", { name: "Automations", exact: true })).toBeVisible();
 
-  // Two clicks on Set up for my office make one workflow; going Home and starting again reopens it.
+  // Two clicks on Set up for my office make one workflow; starting again later reopens it.
+  await page.getByRole("link", { name: "New automation" }).first().click();
   await page.getByRole("link", { name: "Try an example" }).click();
   const setUp = page.getByRole("button", { name: "Set up for my office" });
   await setUp.dblclick();
   await expect(page.getByLabel("Automation name")).toBeVisible();
   const workflows = async () => (await (await page.request.get("/workflows")).json()) as { id: string }[];
   expect(await workflows()).toHaveLength(1);
-  await page.getByRole("link", { name: "Home" }).click();
+  await page.getByRole("link", { name: "New automation" }).first().click();
   await page.getByRole("link", { name: "Try an example" }).click();
   await setUp.click();
   await expect(page.getByLabel("Automation name")).toBeVisible();

@@ -38,7 +38,7 @@ test("an owner connects Sheets and Slack, and retries only the Slack note that f
   await expect(page.getByText(/Slack accepted a test message/)).toBeVisible();
 
   // An office request that also goes to both.
-  await page.getByRole("link", { name: "Home" }).click();
+  await page.getByRole("link", { name: "New automation" }).first().click();
   await page.getByRole("link", { name: "Try an example" }).click();
   await page.getByRole("button", { name: "Set up for my office" }).click();
   await page.getByRole("button", { name: "Next" }).click();

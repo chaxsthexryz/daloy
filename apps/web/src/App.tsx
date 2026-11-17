@@ -4,10 +4,12 @@ import { Editor } from "./Editor";
 import { RunPage, RunsPage } from "./Runs";
 import { AdvancedPage } from "./Advanced";
 import { Automations } from "./Automations";
+import { NewAutomationPage } from "./NewAutomation";
 import { OfficeRequestPage, TryOfficeRequest } from "./OfficeRequests";
 import { BookingsPage } from "./Bookings";
 import { ResourcesPage } from "./Resources";
-import { SettingsPage } from "./Settings";
+import { AiModelPage } from "./Settings";
+import { SettingsPage } from "./AppSettings";
 import { BusinessSetupPage, VerifySenderPage } from "./BusinessSetup";
 import { TokensPage } from "./Tokens";
 import { VersionsPage } from "./Versions";
@@ -72,13 +74,15 @@ function Route({ hash, user }: { hash: string; user: User }) {
   if (page?.[2] === "versions") return <VersionsPage key={page[1]} workflowId={page[1]!} />;
   if (page) return <Editor key={page[1]} id={page[1]!} />;
   const run = /^#\/runs\/([0-9a-f-]{36})$/.exec(hash);
-  if (run) return <RunPage key={run[1]} runId={run[1]!} />;
+  if (run) return <RunPage key={run[1]} runId={run[1]!} owner={user.role === "owner"} />;
   const guided = /^#\/a\/([0-9a-f-]{36})$/.exec(hash);
   if (guided) return <OfficeRequestPage key={guided[1]} id={guided[1]!} />;
   if (hash === "#/try/office-request") return <TryOfficeRequest email={user.email} />;
   if (hash === "#/advanced" && user.role === "owner") return <AdvancedPage />;
+  if (hash === "#/new" && user.role === "owner") return <NewAutomationPage email={user.email} />;
   if (hash === "#/tokens") return <TokensPage />;
-  if (hash === "#/settings") return <SettingsPage />;
+  if (hash === "#/settings") return <SettingsPage user={user} />;
+  if (hash === "#/settings/ai") return <AiModelPage />;
   // #/settings/business/outlook-<outcome> is where the Outlook consent callback lands (decision 0023).
   const business = /^#\/settings\/business(?:\/outlook-([a-z_]+))?$/.exec(hash);
   if (business) return <BusinessSetupPage outlookOutcome={business[1]} />;
@@ -108,7 +112,7 @@ function SignIn({ onDone }: { onDone: (u: User) => void }) {
         <img src="/logo.svg" alt="" width="32" height="32" />
         Daloy
       </h1>
-      <p className="muted">Build workflows from a trigger and a series of steps.</p>
+      <p className="muted">Automate the routine work of your office.</p>
       <form onSubmit={submit}>
         <h2>{mode === "login" ? "Sign in" : "Create an account"}</h2>
         <div className="field">

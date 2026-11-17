@@ -9,7 +9,7 @@ test("open the run history, diff two versions and roll back", async ({ page }) =
   await page.getByLabel("Email").fill(`history-${Date.now()}@test.local`);
   await page.getByLabel("Password").fill("e2e test password 1");
   await page.getByRole("button", { name: "Create account" }).click();
-  await page.goto("/#/advanced");
+  await page.goto("/#/new");
   await page.getByLabel("Name").fill("History");
   await page.getByRole("button", { name: "Create" }).click();
 

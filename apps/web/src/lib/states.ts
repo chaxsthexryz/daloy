@@ -48,3 +48,14 @@ export const lastEvent = (last: LastRun | null, now = Date.now()) =>
 /** Owner wording for a run's kind. The old labels ("test run, mocked calls") stay in the technician block. */
 export const runKind = (r: { test: boolean; live: boolean; aiLive?: boolean }) =>
   r.test ? (r.live ? "Preview with real calls" : r.aiLive ? "Preview with real AI, other calls mocked" : "Preview (nothing sent)") : "Real run";
+
+/** A run error as the owner sees it: the worker's "step <id>: " prefix stays in the technician details. */
+export const ownerError = (error: string) => error.replace(/^step [^:]+: /, "");
+
+/** The page that fixes a failed run, read from the error text the steps and providers write (null when it cannot tell). */
+export function fixFor(error: string): { href: string; label: string } | null {
+  if (/gmail|mail server/i.test(error)) return { href: "#/settings/business", label: "Connect Gmail" };
+  if (/google sheets|service account|slack|outlook|teams|microsoft/i.test(error)) return { href: "#/settings/business", label: "Check the connection" };
+  if (/api key|ai model/i.test(error)) return { href: "#/settings/ai", label: "Check the AI model" };
+  return null;
+}

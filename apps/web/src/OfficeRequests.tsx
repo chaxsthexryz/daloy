@@ -59,7 +59,7 @@ async function createOrResume(slug: string, setup: Start) {
   throw new Error("Rename one of your automations of this kind and try again.");
 }
 
-const back = <a href="#/">Home</a>;
+const back = <a href="#/">Automations</a>;
 
 /** The sample run with no side effects: everything below is worked out in the browser. */
 export function TryOfficeRequest({ email }: { email: string }) {

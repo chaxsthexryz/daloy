@@ -4,7 +4,7 @@ import { DeliveryList, type Delivery } from "./Connections";
 import { RunFlow } from "./FlowCanvas";
 import type { Draft } from "./lib/graph";
 import { pollDelay, takingLonger } from "./lib/poll";
-import { plainState, runKind } from "./lib/states";
+import { fixFor, ownerError, plainState, runKind } from "./lib/states";
 
 /**
  * Polls a run until it finishes, so the page shows each step as the worker records it: every second while work moves,
@@ -184,7 +184,7 @@ export function RunsPage({ workflowId }: { workflowId: string }) {
 }
 
 /** #/runs/<id>: one run with its trigger payload and every step attempt. Polls until the run finishes. */
-export function RunPage({ runId }: { runId: string }) {
+export function RunPage({ runId, owner }: { runId: string; owner: boolean }) {
   const [reload, setReload] = useState(0);
   const { run, error } = useRun(runId, reload);
   if (!run) {
@@ -216,7 +216,7 @@ export function RunPage({ runId }: { runId: string }) {
         <StateLabel run={run} /> <span className="muted">{runKind(run)} · started {new Date(run.createdAt).toLocaleString()} · {duration(run.createdAt, run.finishedAt)}</span>
       </p>
       {run.superseded && <p className="message">{SUPERSEDED}</p>}
-      {run.error && <p className="message error">{run.error}</p>}
+      {run.error && <RunError error={run.error} owner={owner} />}
       <RunActions run={run} onDone={() => setReload((n) => n + 1)} />
       <RunDeliveries runId={runId} />
       <RunPath run={run} />
@@ -225,12 +225,29 @@ export function RunPage({ runId }: { runId: string }) {
         <p className="muted">
           Raw state: {run.state} · version v{run.version} · {kind(run)}
         </p>
+        {run.error && <pre aria-label="Full error">{run.error}</pre>}
         <h2>Trigger data</h2>
         <pre aria-label="Trigger data">{json(run.triggerPayload)}</pre>
         <h2>Steps</h2>
         <RunResult run={run} />
       </details>
     </main>
+  );
+}
+
+/** The run's error in the owner's words, with a link to the page that fixes it when the error says which (owners only). */
+function RunError({ error, owner }: { error: string; owner: boolean }) {
+  const fix = owner ? fixFor(error) : null;
+  return (
+    <p className="message error">
+      {ownerError(error)}
+      {fix && (
+        <>
+          {" "}
+          <a href={fix.href}>{fix.label}</a>
+        </>
+      )}
+    </p>
   );
 }
 
@@ -304,7 +321,7 @@ function RunActions({ run, onDone }: { run: Run; onDone: () => void }) {
   if (run.state === "failed") {
     return (
       <section aria-label="Retry">
-        <p>Something went wrong at one step. Retry runs that step once more, with the same request key, so a receiver that checks it does not act twice.</p>
+        <p>Retry runs the failed step again. Steps that already finished are not repeated.</p>
         <button type="button" disabled={busy} onClick={() => void act("retry")}>
           Retry
         </button>

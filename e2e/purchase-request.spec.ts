@@ -60,7 +60,7 @@ test("a purchase request goes from the form to the named approver, then to purch
   await expect(page.getByText(/Teams accepted the test message/)).toBeVisible();
 
   // Guided setup: the approver, purchasing, Outlook and Teams.
-  await page.getByRole("link", { name: "Home" }).click();
+  await page.getByRole("link", { name: "New automation" }).first().click();
   await page.getByRole("button", { name: "Set up purchase requests" }).click();
   await page.getByRole("button", { name: "Next" }).click();
   await expect(page.getByLabel("Who approves purchases")).toBeVisible();
