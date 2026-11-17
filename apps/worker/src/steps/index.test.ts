@@ -524,3 +524,29 @@ describe("paymongo_link step", () => {
     }
   });
 });
+
+describe("payment_status step", () => {
+  async function setup() {
+    const [u] = await db.insert(users).values({ email: `ps-${randomUUID()}@test.local`, passwordHash: "x" }).returning();
+    const [wf] = await db.insert(workflows).values({ userId: u!.id, name: "Pay", slug: `ps-${randomUUID().slice(0, 8)}` }).returning();
+    const [v] = await db.insert(workflowVersions).values({ workflowId: wf!.id, version: 1, definition: {} }).returning();
+    const [r] = await db.insert(runs).values({ workflowVersionId: v!.id }).returning();
+    const exec = (link: string, mock = false) =>
+      createExecutor({ db, secretsKey: key, mail: {} as never }).execute({ runId: r!.id, stepRunId: NO_STEP_RUN, userId: u!.id, step: { id: "check", type: "payment_status", config: { link } }, attempt: 1, idempotencyKey: `${r!.id}:check`, ctx: { trigger: {}, steps: {} }, workflowId: wf!.id, mock });
+    return { runId: r!.id, userId: u!.id, workflowId: wf!.id, exec };
+  }
+
+  it("reports the stored payment's current status, pending then paid, without calling PayMongo", async () => {
+    const s = await setup();
+    await db.insert(payments).values({ userId: s.userId, workflowId: s.workflowId, runId: s.runId, stepId: "pay", reference: "INV-9", amountCentavos: 5000, livemode: false, providerSessionId: `cs_${randomUUID()}`, url: "https://pay.test/x" });
+    expect((await s.exec("pay")).output).toMatchObject({ status: "pending", paid: false, reference: "INV-9" });
+    await db.update(payments).set({ status: "paid" }).where(eq(payments.runId, s.runId));
+    expect((await s.exec("pay")).output).toMatchObject({ status: "paid", paid: true });
+  });
+
+  it("fails without retry when the run made no link, and answers pending in a test run", async () => {
+    const s = await setup();
+    await expect(s.exec("pay")).rejects.toMatchObject({ retryable: false });
+    expect((await s.exec("pay", true)).output).toMatchObject({ mocked: true, status: "pending" });
+  });
+});

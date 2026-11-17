@@ -5,7 +5,8 @@ export const DEMO_EMAIL = "demo@daloy.local";
 export const DEMO_PASSWORD = "daloy-demo-2026";
 
 // Realistic trigger payloads for the test runs that fill the run history.
-const SAMPLES: Record<(typeof TEMPLATES)[number]["slug"], Record<string, unknown>[]> = {
+// Only templates that need no connected app are seeded; the others (Sheets, Calendar, PayMongo) stay in "New from template".
+const SAMPLES: Record<string, Record<string, unknown>[]> = {
   "inquiry-triage": [
     { name: "Maria Santos", email: "maria.santos@example.com", message: "I was charged twice for my March invoice. Can you refund one of them?" },
     { name: "Jun Reyes", email: "jun.reyes@example.com", message: "Do you deliver to Cebu, and how long does it usually take?" },
@@ -36,10 +37,10 @@ export async function seed(baseUrl: string) {
   if (!(await call("POST", "/auth/register", { email: DEMO_EMAIL, password: DEMO_PASSWORD }))) await call("POST", "/auth/login", { email: DEMO_EMAIL, password: DEMO_PASSWORD });
   const existing = new Set(((await call("GET", "/workflows")) as unknown as { slug: string }[]).map((w) => w.slug));
   for (const t of TEMPLATES) {
-    if (existing.has(t.slug)) continue;
+    if (existing.has(t.slug) || !SAMPLES[t.slug]) continue;
     const wf = (await call("POST", "/workflows", { name: t.name, slug: t.slug }))!;
     await call("POST", `/workflows/${wf.id}/versions`, { definition: t.definition, publish: true });
-    for (const payload of SAMPLES[t.slug]) await call("POST", `/workflows/${wf.id}/test-runs`, { definition: t.definition, payload });
+    for (const payload of SAMPLES[t.slug]!) await call("POST", `/workflows/${wf.id}/test-runs`, { definition: t.definition, payload });
   }
 
   // "Track an office request", set up and turned on. No requests are seeded: a form submission sends live email, and .env may point SMTP at a real mailbox.

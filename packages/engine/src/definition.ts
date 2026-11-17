@@ -91,6 +91,8 @@ const fieldMap = z.record(fieldName, template(2000)).refine((f) => Object.keys(f
 export const airtableConfigSchema = z.object({ fields: fieldMap.refine((f) => Object.keys(f).length >= 1, "add at least one field") });
 export const notionConfigSchema = z.object({ title: template(2000).min(1), fields: fieldMap.default({}) });
 export const trelloConfigSchema = z.object({ name: template(500).min(1), desc: template(10_000).optional() });
+// link is the id of the paymongo_link step to check. The current status of its payment in this run: pending, paid, needs_review or refunded. Read-only, never calls PayMongo.
+export const paymentStatusConfigSchema = z.object({ link: stepId });
 export type SheetsConfig = z.infer<typeof sheetsConfigSchema>;
 export type SlackConfig = z.infer<typeof slackConfigSchema>;
 
@@ -137,6 +139,7 @@ const stepSchema = z.discriminatedUnion("type", [
   z.object({ id: stepId, type: z.literal("trello"), config: trelloConfigSchema }),
   z.object({ id: stepId, type: z.literal("booking"), config: bookingConfigSchema }),
   z.object({ id: stepId, type: z.literal("paymongo_link"), config: paymongoLinkConfigSchema }),
+  z.object({ id: stepId, type: z.literal("payment_status"), config: paymentStatusConfigSchema }),
 ]);
 export type Step = z.infer<typeof stepSchema>;
 
@@ -288,6 +291,7 @@ export const definitionSchema = z
     for (const s of def.steps) {
       if (byId.has(s.id)) fail(`duplicate step id "${s.id}"`);
       byId.set(s.id, s);
+      if (s.type === "payment_status" && !def.steps.some((o) => o.id === s.config.link && o.type === "paymongo_link")) fail(`payment_status step "${s.id}" needs link to be the id of a paymongo_link step`);
       if (s.type !== "booking") continue;
       if (s.config.start !== undefined && !bookingStartField(def.trigger, s.config)) fail(`booking step "${s.id}" needs start to be {{trigger.<field>}} for a datetime field of the trigger`);
       // Changing a booking is for staff (the Run button), MCP (its own tools) and signed webhooks, never a public form.
