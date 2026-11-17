@@ -2,7 +2,7 @@ import { Text, useLanguage } from "./Language";
 import { useEffect, useState, type ReactNode } from "react";
 import { api } from "./api";
 import { PILL, SenderSection, type Settings } from "./BusinessSetup";
-import { OutlookConnection, SheetsConnection, SlackConnection, TeamsConnection, TelegramConnection, type Connection, type OutlookSetup, type Provider } from "./Connections";
+import { CalendarConnection, OutlookConnection, SheetsConnection, SlackConnection, TeamsConnection, TelegramConnection, type Connection, type OutlookSetup, type Provider } from "./Connections";
 import { Header } from "./Nav";
 
 type Key = "gmail" | Provider;
@@ -14,6 +14,7 @@ const APPS: { key: Key; name: string; line: string }[] = [
   { key: "slack", name: "Slack", line: "Post a short note to a channel." },
   { key: "teams", name: "Microsoft Teams", line: "Post a note to a Teams channel." },
   { key: "telegram", name: "Telegram", line: "Send a message to a Telegram chat." },
+  { key: "google_calendar", name: "Google Calendar", line: "Put a booking on a calendar, and move or remove it with the booking." },
 ];
 
 /**
@@ -62,6 +63,7 @@ export function AppsPage({ outlookOutcome }: { outlookOutcome?: string }) {
     outlook: () => <OutlookConnection conn={conn("outlook")} setup={conns.outlook} outcome={outlookOutcome} onChange={load} />,
     teams: () => <TeamsConnection conn={conn("teams")} onChange={load} />,
     telegram: () => <TelegramConnection conn={conn("telegram")} onChange={load} />,
+    google_calendar: () => <CalendarConnection conn={conn("google_calendar")} onChange={load} />,
   };
   const card = (a: (typeof APPS)[number]) => {
     const s = state(a.key);

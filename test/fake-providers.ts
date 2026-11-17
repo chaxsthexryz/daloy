@@ -41,6 +41,9 @@ export async function startFakeProviders(port = 0) {
     accessTokens: new Set<string>(),
     sent: [] as { to: string; subject: string; text: string }[],
   };
+  // Google Calendar: events by calendar id then event id. Like Google, a deleted event stays as "cancelled" and its id cannot be inserted again.
+  type CalendarEvent = { id: string; status: "confirmed" | "cancelled"; summary?: string; description?: string; start?: { dateTime: string; timeZone?: string }; end?: { dateTime: string; timeZone?: string } };
+  const calendars = new Map<string, { title: string; editors: Set<string>; events: Map<string, CalendarEvent> }>();
   const teams = { flows: new Set(["flow-purchasing"]), posts: [] as { flow: string; text: string }[] };
   const pending: { path: string; behaviour: Behaviour }[] = [];
   const calls: string[] = [];
@@ -95,6 +98,7 @@ export async function startFakeProviders(port = 0) {
         if (c.microsoftConsent) microsoft.consent = c.microsoftConsent;
       }
       return json(res, 200, {
+        calendarEvents: [...calendars.values()].flatMap((c) => [...c.events.values()]),
         sheetRows: [...sheets.values()].flatMap((s) => [...s.tabs.values()].flat()).length,
         slackMessages: slack.messages.map((m) => m.text),
         outlookMessages: microsoft.sent,
@@ -187,6 +191,37 @@ export async function startFakeProviders(port = 0) {
       const token = `ya29.fake-${++seq}`;
       tokens.set(token, email);
       return json(res, 200, { access_token: token, expires_in: 3599, token_type: "Bearer" });
+    }
+
+    // Google Calendar API v3: events list, insert (with a client-chosen id), patch and delete.
+    const calPath = /^\/calendar\/v3\/calendars\/([^/]+)\/events(?:\/([^/]+))?$/.exec(path);
+    if (calPath) {
+      const email = tokens.get((req.headers.authorization ?? "").replace(/^Bearer /, ""));
+      if (!email) return googleError(res, 401, "UNAUTHENTICATED", "Invalid Credentials");
+      const cal = calendars.get(calPath[1]!);
+      if (!cal || !cal.editors.has(email)) return googleError(res, 404, "NOT_FOUND", "Not Found");
+      const eventId = calPath[2];
+      const sent = raw ? (JSON.parse(raw) as Partial<CalendarEvent>) : {};
+      if (!eventId && req.method === "GET") return answer(200, { summary: cal.title, items: [...cal.events.values()].filter((e) => e.status === "confirmed") });
+      if (!eventId && req.method === "POST") {
+        if (!sent.id || !/^[a-v0-9]{5,1024}$/.test(sent.id)) return googleError(res, 400, "INVALID_ARGUMENT", "Invalid resource id value.");
+        if (cal.events.has(sent.id)) return googleError(res, 409, "ALREADY_EXISTS", "The requested identifier already exists.");
+        const event: CalendarEvent = { ...sent, id: sent.id, status: "confirmed" };
+        cal.events.set(sent.id, event);
+        return answer(200, event);
+      }
+      const event = cal.events.get(eventId ?? "");
+      if (req.method === "PATCH") {
+        if (!event) return googleError(res, 404, "NOT_FOUND", "Not Found");
+        Object.assign(event, sent, { id: event.id });
+        return answer(200, event);
+      }
+      if (req.method === "DELETE") {
+        if (!event) return googleError(res, 404, "NOT_FOUND", "Not Found");
+        if (event.status === "cancelled") return googleError(res, 410, "GONE", "Resource has been deleted");
+        event.status = "cancelled";
+        return answer(204, {});
+      }
     }
 
     // Google Sheets API v4: batchUpdate (developer metadata and appendCells) and reading one metadata entry by id.
@@ -295,7 +330,7 @@ export async function startFakeProviders(port = 0) {
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 
   return {
-    urls: { googleToken: `${base}/token`, sheets: base, slack: base, telegram: base, microsoftLogin: `${base}/ms`, graph: `${base}/graph`, teamsHosts: ["127.0.0.1"] },
+    urls: { googleToken: `${base}/token`, sheets: base, calendar: base, slack: base, telegram: base, microsoftLogin: `${base}/ms`, graph: `${base}/graph`, teamsHosts: ["127.0.0.1"] },
     calls,
     slack,
     telegram,
@@ -314,6 +349,11 @@ export async function startFakeProviders(port = 0) {
       const s = { title, tabs: new Map([[tab, [] as string[][]]]), editors: new Set(editors), metadata: new Map<number, SheetMeta>() };
       sheets.set(id, s);
       return s;
+    },
+    addCalendar: (id: string, title: string, editors: string[]) => {
+      const c = { title, editors: new Set(editors), events: new Map<string, CalendarEvent>() };
+      calendars.set(id, c);
+      return c;
     },
     once: (path: string, behaviour: Behaviour) => pending.push({ path, behaviour }),
     async close() {

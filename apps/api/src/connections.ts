@@ -2,6 +2,9 @@ import { builtInEmailCopy } from "@daloy/engine";
 import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import {
   appendRow,
+  calendarIdFrom,
+  calendarInfo,
+  calendarWriteTest,
   consentOutcome,
   confirmDelivery,
   connectionCredential,
@@ -58,9 +61,10 @@ const telegramInput = z.strictObject({
   token: z.string().trim().regex(/^\d{6,12}:[A-Za-z0-9_-]{30,50}$/, "Paste the bot token from BotFather, like 123456789:AA..."),
   chatId: z.string().trim().regex(/^(-?\d{1,20}|@[A-Za-z][A-Za-z0-9_]{4,31})$/, "Enter the chat id (a number) or the public @name"),
 });
+const calendarInput = z.strictObject({ serviceAccount: z.string().min(2).max(10_000), calendar: z.string().trim().min(3).max(300) });
 const retryInput = z.strictObject({ postAgain: z.boolean().default(false) });
 const teamsInput = z.strictObject({ url: z.string().trim().min(10).max(2000), channelName: z.string().trim().min(1).max(100) });
-const SLUGS: Record<string, Provider> = { "google-sheets": "google_sheets", slack: "slack", outlook: "outlook", teams: "teams", telegram: "telegram" };
+const SLUGS: Record<string, Provider> = { "google-sheets": "google_sheets", slack: "slack", outlook: "outlook", teams: "teams", telegram: "telegram", "google-calendar": "google_calendar" };
 const providerSlug = new ZodPipe(z.enum(Object.keys(SLUGS) as [string, ...string[]]).transform((s) => SLUGS[s]!));
 const uuid = new ZodPipe(z.uuid());
 
@@ -135,6 +139,32 @@ export class ConnectionsController {
     return this.test(user.workspaceId, "google_sheets", conn, () =>
       appendRow(this.urls, JSON.parse(conn.credential) as ServiceAccount, conn.destination as SheetDestination, [`TEST-${stamp}`, stamp, "Test row from Daloy. You can delete this row."]),
     );
+  }
+
+  /** Connect or Reconnect Google Calendar: the same kind of service account key as Sheets, and a calendar shared with that account. Only the email and key are kept. */
+  @Put("google-calendar")
+  @UseGuards(RateLimit(10))
+  async putCalendar(@CurrentUser() user: SessionUser, @Body(new ZodPipe(calendarInput)) body: z.output<typeof calendarInput>) {
+    let sa: ServiceAccount;
+    try {
+      sa = serviceAccountSchema.parse(JSON.parse(body.serviceAccount));
+    } catch {
+      throw new BadRequestException("That is not a service account key file. In Google Cloud, create a key for the service account as JSON and paste the whole file.");
+    }
+    const calendarId = calendarIdFrom(body.calendar);
+    if (!calendarId) throw new BadRequestException("Paste the calendar's id from its settings (Integrate calendar), like abc123@group.calendar.google.com.");
+    const { title } = await calendarInfo(this.urls, sa, calendarId).catch(asBadRequest);
+    await saveConnection(this.db, this.config.secretsKey, user.workspaceId, "google_calendar", { account: sa.client_email, credential: JSON.stringify({ client_email: sa.client_email, private_key: sa.private_key }), destination: { calendarId, title } });
+    return this.get(user);
+  }
+
+  /** Makes and removes a test event, which proves Daloy can write. */
+  @Post("google-calendar/test")
+  @HttpCode(200)
+  @UseGuards(RateLimit(5))
+  async testCalendar(@CurrentUser() user: SessionUser) {
+    const conn = await this.connection(user.workspaceId, "google_calendar");
+    return this.test(user.workspaceId, "google_calendar", conn, () => calendarWriteTest(this.urls, JSON.parse(conn.credential) as ServiceAccount, conn.destination!.calendarId!));
   }
 
   /** Connect or Reconnect Slack with the app's bot token. A reconnect keeps the chosen channel. */

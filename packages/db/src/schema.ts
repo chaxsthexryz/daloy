@@ -465,7 +465,7 @@ export const mailSenders = pgTable("mail_senders", {
   updatedAt: ts("updated_at").notNull().defaultNow(),
 }, (t) => [check("mail_senders_status", sql`${t.status} in ('unverified', 'active', 'failed', 'disconnected')`)]);
 
-export const PROVIDERS = ["google_sheets", "slack", "outlook", "teams", "telegram"] as const;
+export const PROVIDERS = ["google_sheets", "slack", "outlook", "teams", "telegram", "google_calendar"] as const;
 export type Provider = (typeof PROVIDERS)[number];
 
 /**
@@ -492,7 +492,7 @@ export const connections = pgTable(
   },
   (t) => [
     primaryKey({ columns: [t.userId, t.provider] }),
-    check("connections_provider", sql`${t.provider} in ('google_sheets', 'slack', 'outlook', 'teams', 'telegram')`),
+    check("connections_provider", sql`${t.provider} in ('google_sheets', 'slack', 'outlook', 'teams', 'telegram', 'google_calendar')`),
     check("connections_status", sql`${t.status} in ('active', 'failed')`),
   ],
 );
@@ -517,7 +517,7 @@ export const deliveries = pgTable(
     stepId: text("step_id").notNull(),
     provider: text("provider", { enum: PROVIDERS }).notNull(),
     reference: text("reference").notNull(),
-    payload: jsonb("payload").$type<{ row: string[] } | { text: string } | { to: string; subject: string; text: string }>().notNull(),
+    payload: jsonb("payload").$type<{ row: string[] } | { bookingId: string } | { text: string } | { to: string; subject: string; text: string }>().notNull(),
     state: text("state", { enum: DELIVERY_STATES }).notNull().default("queued"),
     checkFirst: boolean("check_first").notNull().default(false),
     attempts: integer("attempts").notNull().default(0),
@@ -546,6 +546,19 @@ export const deliveries = pgTable(
     // The worker polls for due deliveries every couple of seconds.
     index("deliveries_due").on(t.nextAttemptAt).where(sql`${t.state} in ('queued', 'sending')`),
     check("deliveries_state", sql`${t.state} in ('queued', 'sending', 'delivered', 'needs_review', 'failed')`),
-    check("deliveries_provider", sql`${t.provider} in ('google_sheets', 'slack', 'outlook', 'teams', 'telegram')`),
+    check("deliveries_provider", sql`${t.provider} in ('google_sheets', 'slack', 'outlook', 'teams', 'telegram', 'google_calendar')`),
   ],
 );
+
+/**
+ * A booking that has a Google Calendar event (decision 0043). The calendar step writes it with the event's title and
+ * description; from then on every change to the booking queues a sync delivery. The event id is derived from booking_id,
+ * so no id is stored.
+ */
+export const calendarEvents = pgTable("calendar_events", {
+  bookingId: uuid("booking_id").primaryKey().references(() => bookings.id, { onDelete: "cascade" }),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  title: text("title").notNull(),
+  description: text("description").notNull().default(""),
+  updatedAt: ts("updated_at").notNull().defaultNow(),
+});

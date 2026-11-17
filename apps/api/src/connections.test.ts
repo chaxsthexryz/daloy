@@ -112,6 +112,36 @@ describe("Telegram", () => {
   });
 });
 
+describe("Google Calendar", () => {
+  it("connects with a key file and a calendar id, never returns the key, and makes and removes a test event", async () => {
+    const { agent, userId } = await signedIn();
+    const email = `cal${seq}@office.iam.gserviceaccount.com`;
+    const id = `clinic${seq}@group.calendar.google.com`;
+    const cal = fake.addCalendar(id, "Clinic bookings", [email]);
+    const key = keyFile(email);
+    await agent.put("/settings/connections/google-calendar").send({ serviceAccount: "{not json", calendar: id }).expect(400);
+    await agent.put("/settings/connections/google-calendar").send({ serviceAccount: key.json, calendar: "https://calendar.google.com/x" }).expect(400);
+    await agent.put("/settings/connections/google-calendar").send({ serviceAccount: key.json, calendar: id, extra: 1 }).expect(400);
+    const res = await agent.put("/settings/connections/google-calendar").send({ serviceAccount: key.json, calendar: id }).expect(200);
+    expect(res.body.connections[0]).toMatchObject({ provider: "google_calendar", status: "active", account: email, destination: { calendarId: id, title: "Clinic bookings" } });
+    expect(JSON.stringify(res.body)).not.toContain("PRIVATE KEY");
+    const [row] = await db.select().from(connections).where(eq(connections.userId, userId));
+    expect(JSON.stringify(row)).not.toContain(key.pem.slice(40, 80));
+    expect((await agent.post("/settings/connections/google-calendar/test").expect(200)).body).toMatchObject({ ok: true });
+    // The test event is removed again: Google keeps it as cancelled, and nothing is left confirmed.
+    expect([...cal.events.values()].map((e) => e.status)).toEqual(["cancelled"]);
+    await agent.delete("/settings/connections/google-calendar").expect(204);
+  });
+
+  it("says to share the calendar when the service account cannot see it", async () => {
+    const { agent } = await signedIn();
+    const email = `calno${seq}@office.iam.gserviceaccount.com`;
+    fake.addCalendar(`private${seq}@group.calendar.google.com`, "Private", []);
+    const res = await agent.put("/settings/connections/google-calendar").send({ serviceAccount: keyFile(email).json, calendar: `private${seq}@group.calendar.google.com` }).expect(400);
+    expect(res.body.message).toContain(email);
+  });
+});
+
 describe("Slack", () => {
   it("connects with a bot token, lists channels, saves the chosen one and posts a test message", async () => {
     const { agent } = await signedIn();
