@@ -1,11 +1,14 @@
-import { deliveries, redactSecrets, requests, resolveRun, runs, secretForms, supersededSql, secretValuesToHide, stepRuns, workflows, workflowVersions, type Db, type RunAction } from "@daloy/db";
-import { Body, ConflictException, Controller, Get, HttpCode, Inject, NotFoundException, Param, Post, Query, UseGuards } from "@nestjs/common";
+import { aiConnection, claimUsage, deliveries, listDeliveries, QuotaError, redactSecrets, requests, resolveRun, runs, secretForms, supersededSql, secretValuesToHide, stepRuns, workflows, workflowVersions, type Db, type RunAction } from "@daloy/db";
+import { generate } from "@daloy/llm-ts";
+import { Body, ConflictException, Controller, Get, HttpCode, HttpException, HttpStatus, Inject, NotFoundException, Param, Post, Query, UseGuards } from "@nestjs/common";
 import { and, asc, desc, eq, ilike, or, sql } from "drizzle-orm";
 import type { PgBoss } from "pg-boss";
 import * as z from "zod";
 import { SessionGuard } from "./auth";
-import { Allow, BOSS, CONFIG, CurrentUser, DB, enqueueRun, RateLimit, ZodPipe, type ApiConfig, type SessionUser, OPERATE } from "./http";
+import { explainFailure, failureFacts } from "./explain";
+import { Allow, BOSS, CONFIG, CurrentUser, DB, enqueueRun, RateLimit, ZodPipe, type ApiConfig, type SessionUser, MANAGE, OPERATE } from "./http";
 import { maskSecrets } from "./mask";
+import { explain } from "./settings";
 
 const testFlag = new ZodPipe(z.enum(["true", "false"]).optional());
 const resolveInput = z.object({ action: z.enum(["delivered", "again", "stop"]) });
@@ -22,6 +25,9 @@ const STATES = {
 const reference = sql<string | null>`(select ${requests.reference} from ${requests} where ${requests.runId} = ${runs.id})`;
 // Text to find, with LIKE's wildcards matched as themselves.
 const like = (q: string) => `%${q.replace(/[\\%_]/g, (c) => "\\" + c)}%`;
+
+const REWORD_SYSTEM =
+  "You explain why a Daloy automation stopped, for a small office owner. You get JSON with facts and a fixed explanation. Write 2 to 4 short, plain sentences. Keep the fix from the fixed explanation. Use the words automation, Apps and Activity. Never give links or addresses. Never guess causes that are not in the facts. Reply with the text only.";
 
 /**
  * Run history, plus the operator's answers to a run in review (decision 0030). On the way out, every payload, step input, output and error first has every form of the
@@ -84,6 +90,55 @@ export class RunsController {
       error: hide(run.error),
       steps: steps.map((s) => ({ ...s, input: hide(s.input), output: hide(s.output), error: hide(s.error) })),
     };
+  }
+
+  /** Why a failed run stopped, in plain words, from a fixed table. No model, no usage. null when nothing failed. */
+  @Get(":id/explanation")
+  async explanation(@CurrentUser() user: SessionUser, @Param("id", uuid) id: string) {
+    return this.explained(user.workspaceId, id);
+  }
+
+  /**
+   * The same explanation reworded by the workspace's AI model. The model gets only the closed-set facts and the fixed
+   * text, never an error, id, address or payload. Writes nothing; costs one AI action.
+   */
+  @Post(":id/explanation/reword")
+  @HttpCode(200)
+  @UseGuards(Allow(MANAGE), RateLimit(10))
+  async reword(@CurrentUser() user: SessionUser, @Param("id", uuid) id: string) {
+    const input = await this.explained(user.workspaceId, id);
+    if (!input) throw new ConflictException("There is nothing to explain for this run.");
+    // The connection first, as in /ai/draft: a missing key costs no AI action.
+    const { model, ...connection } = await aiConnection(this.db, this.config.secretsKey, user.workspaceId).catch((err: unknown) => {
+      throw new HttpException({ message: explain(err) }, HttpStatus.BAD_GATEWAY);
+    });
+    await claimUsage(this.db, user.workspaceId, "ai").catch((err: unknown) => {
+      throw err instanceof QuotaError ? new HttpException({ message: err.message }, HttpStatus.TOO_MANY_REQUESTS) : err;
+    });
+    let text: string;
+    try {
+      ({ text } = await generate({ system: REWORD_SYSTEM, messages: [{ role: "user", content: JSON.stringify(input) }], model, connection, temperature: 0.2, maxTokens: 300, timeoutMs: 30_000 }));
+    } catch (err) {
+      throw new HttpException({ message: explain(err) }, HttpStatus.BAD_GATEWAY);
+    }
+    text = text.trim().slice(0, 600);
+    if (!text || /https?:\/\/|www\./i.test(text)) throw new HttpException({ message: "The AI model could not answer." }, HttpStatus.BAD_GATEWAY);
+    return { text };
+  }
+
+  private async explained(workspaceId: string, id: string) {
+    const [run] = await this.db
+      .select({ state: runs.state, test: runs.test, error: runs.error, definition: workflowVersions.definition })
+      .from(runs)
+      .innerJoin(workflowVersions, eq(workflowVersions.id, runs.workflowVersionId))
+      .innerJoin(workflows, eq(workflows.id, workflowVersions.workflowId))
+      .where(and(eq(workflows.userId, workspaceId), eq(runs.id, id)));
+    if (!run) throw new NotFoundException();
+    const [steps, sent] = await Promise.all([this.db.select().from(stepRuns).where(eq(stepRuns.runId, id)), listDeliveries(this.db, workspaceId, [id])]);
+    const stuck = (s: string) => s === "failed" || s === "needs_review";
+    if (!stuck(run.state) && !sent.some((d) => stuck(d.state))) return null;
+    const facts = failureFacts({ run, steps, deliveries: sent, definition: run.definition });
+    return { facts, fixed: explainFailure(facts) };
   }
 
   /** It went through, Send again or Stop, for a run in review. Of two operators acting at once, the second gets a 409. */
