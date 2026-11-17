@@ -146,3 +146,59 @@ it("rejects an empty or oversized request", async () => {
   await agent.post("/ai/draft").send({ request: " " }).expect(400);
   await agent.post("/ai/draft").send({ request: "x".repeat(2001) }).expect(400);
 });
+
+// What the model is sent holds only what the browser wrote: no form text, run data, team address, secret or business profile.
+const REAL = { submission: "SENSITIVE-SUBMISSION-TEXT-91", secret: "sk_live_SECRET-VALUE-77", business: "Acme Private Dental", inbox: "inbox@acme-private.test" };
+
+async function ownerWithPrivateData() {
+  const owner = request.agent(server);
+  const email = `real.owner${++seq}@acme-private.test`;
+  await owner.post("/auth/register").send({ email, password: "correct horse battery" }).expect(201);
+  const member = `real.member${seq}@acme-private.test`;
+  const invite = await owner.post("/workspace/invites").send({ email: member, role: "approver" }).expect(201);
+  await request(server).post(`/auth/invites/${/#\/invite\/(\S+)$/.exec(invite.body.link)![1]}/accept`).send({ password: "correct horse battery" }).expect(200);
+  await owner.put("/settings/email/profile").send({ businessName: REAL.business, website: "https://acme-private.test", inquiryEmail: REAL.inbox, replyTo: REAL.inbox }).expect(204);
+  await owner.put("/secrets/crm_key").send({ value: REAL.secret }).expect(204);
+  const fields = [{ name: "message", label: "Message", type: "text", required: true }];
+  const wf = await owner.post("/workflows").send({ name: "Inquiries", slug: `inq-${seq}` }).expect(201);
+  const definition = { trigger: { type: "form", config: { fields } }, steps: [{ id: "wait", type: "delay", config: { seconds: 1 } }], edges: [] };
+  await owner.post(`/workflows/${wf.body.id}/versions`).send({ definition, publish: true }).expect(201);
+  const detail = (await owner.get(`/workflows/${wf.body.id}`).expect(200)).body;
+  await request(server).post(`/forms/${detail.trigger.id}`).type("form").send({ message: REAL.submission, _website: "" }).expect(200);
+  return { owner, emails: [email, member] };
+}
+
+const requestText = ["Thank people who fill my form.", "Tell the owner (owner@people.invalid).", "Tell approver member1@people.invalid.", "Apps connected: google_sheets, slack."].join("\n");
+
+function expectNothingReal(emails: string[]) {
+  const sent = JSON.stringify(asked);
+  for (const real of [...Object.values(REAL), ...emails]) expect(sent).not.toContain(real);
+}
+
+it("sends the model no private workspace data, only the labels in the request", async () => {
+  const { owner, emails } = await ownerWithPrivateData();
+  replies = [valid];
+  await owner.post("/ai/draft").send({ request: requestText }).expect(200);
+  expect(asked).toHaveLength(1);
+  expectNothingReal(emails);
+  expect(JSON.stringify(asked)).toContain("owner@people.invalid");
+  expect(JSON.stringify(asked)).toContain("member1@people.invalid");
+});
+
+it("sends a change request with the placeholders from the current draft and still no private data", async () => {
+  const { owner, emails } = await ownerWithPrivateData();
+  replies = [valid];
+  const current = { trigger: { type: "manual", config: {} }, steps: [{ id: "tell", type: "email", config: { to: "owner@people.invalid", subject: "Hi", text: "ok" } }], edges: [] };
+  await owner.post("/ai/draft").send({ request: requestText, current }).expect(200);
+  expectNothingReal(emails);
+  expect(asked[0]!.messages.at(-1)!.content).toContain(JSON.stringify(current));
+});
+
+it("sends no private data when the model fails twice either", async () => {
+  const { owner, emails } = await ownerWithPrivateData();
+  replies = ["", ""];
+  const res = await owner.post("/ai/draft").send({ request: requestText }).expect(422);
+  expect(asked).toHaveLength(2);
+  expectNothingReal(emails);
+  expect(JSON.stringify(res.body)).not.toContain("acme-private");
+});

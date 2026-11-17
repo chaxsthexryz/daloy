@@ -13,66 +13,24 @@ const slugify = (s: string) =>
     .replace(/^-+|-+$/g, "")
     .slice(0, 60) || "workflow";
 
-/** Workflow list: describe a workflow, get an unpublished draft in the editor. */
-export function BuildWithAi() {
-  const [request, setRequest] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-
-  const build = async (e: FormEvent) => {
-    e.preventDefault();
-    setError("");
-    setBusy(true);
+/** Creates the workflow and its unpublished first version from a reviewed draft. Nothing is saved before this is called. */
+export async function saveDraft(name: string, definition: Draft, summary: string): Promise<Workflow> {
+  // A slug that is taken gets -2, -3 and so on.
+  let wf: Workflow | undefined;
+  for (let n = 1; !wf; n++) {
     try {
-      const draft = await api<DraftReply>("POST", "/ai/draft", { request });
-      // A slug that is taken gets -2, -3 and so on.
-      let wf: Workflow | undefined;
-      for (let n = 1; !wf; n++) {
-        try {
-          wf = await api<Workflow>("POST", "/workflows", { name: draft.name, slug: n === 1 ? slugify(draft.name) : `${slugify(draft.name)}-${n}` });
-        } catch (err) {
-          if (!(err instanceof ApiError && err.status === 409) || n >= 20) throw err;
-        }
-      }
-      await api("POST", `/workflows/${wf.id}/versions`, { definition: draft.definition, publish: false });
-      try {
-        sessionStorage.setItem(noteKey(wf.id), draft.summary);
-      } catch {
-        // Only the note in the editor's chat is lost.
-      }
-      location.hash = `#/w/${wf.id}`;
+      wf = await api<Workflow>("POST", "/workflows", { name, slug: n === 1 ? slugify(name) : `${slugify(name)}-${n}` });
     } catch (err) {
-      setError((err as Error).message);
-      setBusy(false);
+      if (!(err instanceof ApiError && err.status === 409) || n >= 20) throw err;
     }
-  };
-
-  return (
-    <form onSubmit={build} className="create">
-      <h2>Build with AI</h2>
-      <div className="field">
-        <label htmlFor="ai-request">Describe the workflow in your own words</label>
-        <textarea
-          id="ai-request"
-          rows={3}
-          value={request}
-          onChange={(e) => setRequest(e.target.value)}
-          required
-          maxLength={2000}
-          placeholder="When someone fills my contact form, thank them by email, then send billing questions to billing@mydomain.com and everything else to help@mydomain.com."
-        />
-      </div>
-      <div className="actions">
-        <button className="primary" disabled={busy}>
-          {busy ? "Building the draft…" : "Build draft"}
-        </button>
-        <span className="muted">Uses the model on the AI model page. You review the draft before anything runs.</span>
-      </div>
-      <p role="alert" className="message error" hidden={!error}>
-        {error}
-      </p>
-    </form>
-  );
+  }
+  await api("POST", `/workflows/${wf.id}/versions`, { definition, publish: false });
+  try {
+    sessionStorage.setItem(noteKey(wf.id), summary);
+  } catch {
+    // Only the note in the editor's chat is lost.
+  }
+  return wf;
 }
 
 /** Editor: a short chat that rewrites the current draft. Nothing is saved until the user presses Save or Publish. */

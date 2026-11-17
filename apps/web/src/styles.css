@@ -369,6 +369,17 @@ fieldset .check { min-height: var(--target); font-size: var(--text-md); }
 .chat { list-style: none; padding: 0; margin: 0 0 var(--space-2); display: flex; flex-direction: column; gap: var(--space-2); }
 .chat li { padding: var(--space-2) var(--space-3); border-radius: var(--radius-md); background: var(--surface); border: var(--border-width) solid var(--border-soft); }
 .chat .chat-error { color: var(--danger); }
+
+.demo-question { margin: var(--space-4) 0 0; padding: var(--space-4); background: var(--surface); border: var(--border-width) solid var(--border-soft); border-radius: var(--radius-md); }
+.demo-question legend { padding: 0; float: left; width: 100%; }
+.demo-question legend h2 { margin: 0; font-size: var(--text-lg); }
+.demo-question .muted { clear: both; margin: var(--space-2) 0 var(--space-3); }
+.demo-choices { display: flex; flex-direction: column; gap: var(--space-2); }
+.demo-choices button { justify-content: flex-start; text-align: left; white-space: normal; height: auto; }
+.demo-plan li { margin-bottom: var(--space-2); }
+.demo-plan .state { margin-left: var(--space-2); vertical-align: middle; }
+.demo-question h2:focus { outline: none; }
+.demo-other { margin-top: var(--space-3); }
 .token { overflow-wrap: anywhere; white-space: pre-wrap; background: var(--sunken); border-radius: var(--radius-sm); padding: var(--space-2) var(--space-3); font-family: var(--font-mono); font-size: var(--text-sm); }
 .in-use { background: var(--surface); border: var(--border-width) solid var(--border-soft); border-radius: var(--radius-md); padding: var(--space-3) var(--space-4); }
 .connection { border-top: var(--border-width) solid var(--border-soft); padding-top: var(--space-3); margin-top: var(--space-3); }
@@ -406,3 +417,12 @@ fieldset .check { min-height: var(--target); font-size: var(--text-md); }
   .table.cards td { border: 0; padding: var(--space-1) 0; }
   .table.cards td::before { content: attr(data-label); display: block; font-size: var(--text-xs); color: var(--muted); }
 }
+
+/* Shared by the public demo and Build with AI. */
+.demo-card { padding: var(--space-4); background: var(--surface); border: var(--border-width) solid var(--border-soft); border-radius: var(--radius-md); }
+.demo-card h2 { font-size: var(--text-lg); margin: 0 0 var(--space-2); }
+.demo-card h3 { font-size: var(--text-md); margin: var(--space-4) 0 var(--space-1); }
+.demo-starters { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: var(--space-2); }
+.demo-starters button { width: 100%; color: var(--text); font-weight: var(--weight-regular); display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-2); padding: var(--space-3); text-align: left; white-space: normal; height: auto; }
+.ai-build { max-width: 40rem; }
+.ai-build > * + * { margin-top: var(--space-4); }
