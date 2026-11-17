@@ -6,31 +6,16 @@
 .demo-grid { display: grid; gap: var(--space-5); align-items: start; }
 .demo-grid:not(.split) .demo-chat { max-width: 40rem; }
 .demo-chat > * + * { margin-top: var(--space-4); }
-.demo-card { padding: var(--space-4); background: var(--surface); border: var(--border-width) solid var(--border-soft); border-radius: var(--radius-md); }
-.demo-card h2 { font-size: var(--text-lg); margin: 0 0 var(--space-2); }
-.demo-card h3 { font-size: var(--text-md); margin: var(--space-4) 0 var(--space-1); }
 .demo-label { font-size: var(--text-sm); margin: var(--space-4) 0 var(--space-2); }
-
-.demo-starters { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: var(--space-2); }
-.demo-starters button { width: 100%; color: var(--text); font-weight: var(--weight-regular); display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-2); padding: var(--space-3); text-align: left; white-space: normal; height: auto; }
 
 .demo-lines li { display: flex; flex-direction: column; gap: var(--space-1); }
 .demo-lines .demo-you { align-self: flex-end; max-width: 85%; background: var(--accent-tint); border-color: transparent; }
 .demo-lines .demo-helper { max-width: 92%; }
 .demo-who { font-size: var(--text-xs); font-weight: var(--weight-bold); color: var(--muted); }
 
-.demo-question { margin: var(--space-4) 0 0; padding: var(--space-4); background: var(--surface); border: var(--border-width) solid var(--border-soft); border-radius: var(--radius-md); }
-.demo-question legend { padding: 0; float: left; width: 100%; }
-.demo-question legend h2 { margin: 0; font-size: var(--text-lg); }
-.demo-question .muted { clear: both; margin: var(--space-2) 0 var(--space-3); }
-.demo-choices { display: flex; flex-direction: column; gap: var(--space-2); }
-.demo-choices button { justify-content: flex-start; text-align: left; white-space: normal; height: auto; }
-
-.demo-plan li { margin-bottom: var(--space-2); }
-.demo-plan .state { margin-left: var(--space-2); vertical-align: middle; }
 .demo-status:empty { display: none; }
 .demo-status { margin: var(--space-3) 0 0; font-weight: var(--weight-medium); }
-.demo-review h2:focus, .demo-test h2:focus, .demo-question h2:focus { outline: none; }
+.demo-review h2:focus, .demo-test h2:focus { outline: none; }
 
 .demo-side { display: flex; flex-direction: column; gap: var(--space-4); min-width: 0; }
 .demo-canvas { display: none; }

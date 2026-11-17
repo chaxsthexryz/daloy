@@ -1,16 +1,23 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 
-// Build a workflow by describing it, then change it in the editor's chat. The e2e stack answers with a fake model.
-test("describe a workflow, get an unpublished draft, then ask the AI to change it", async ({ page }) => {
+// Build a draft in the Build with AI tab (#/ai), save it, then change it in the editor's chat. The e2e stack answers with a fake model.
+async function buildDraft(page: Page, prefix: string, description: string, review: string) {
   await page.goto("/");
   await page.getByRole("button", { name: "Create an account instead" }).click();
-  await page.getByLabel("Email").fill(`ai-draft-${Date.now()}@test.local`);
+  await page.getByLabel("Email").fill(`${prefix}-${Date.now()}@test.local`);
   await page.getByLabel("Password").fill("e2e test password 1");
   await page.getByRole("button", { name: "Create account" }).click();
 
-  await page.goto("/#/new");
-  await page.getByLabel("Describe the workflow in your own words").fill("When someone fills my contact form, thank them by email.");
-  await page.getByRole("button", { name: "Build draft" }).click();
+  await page.goto("/#/ai");
+  await page.getByLabel("What should happen?").fill(description);
+  await page.getByRole("button", { name: "Next" }).click();
+  for (const label of ["Someone fills a form", "Me", "Email", "No"]) await page.getByRole("button", { name: label, exact: true }).click();
+  await expect(page.getByRole("heading", { name: `Check the draft: ${review}` })).toBeVisible();
+  await page.getByRole("button", { name: "Save as draft" }).click();
+}
+
+test("describe a workflow, save the draft, then ask the AI to change it", async ({ page }) => {
+  await buildDraft(page, "ai-draft", "When someone fills my contact form, thank them by email.", "Contact thanks");
 
   // The editor opens on the draft: trigger plus one step, nothing published yet.
   await expect(page.getByRole("heading", { name: "Contact thanks" })).toBeVisible();
@@ -27,15 +34,7 @@ test("describe a workflow, get an unpublished draft, then ask the AI to change i
 
 // The draft is valid but its approval ends the run in silence on reject and timeout, so the editor lists both.
 test("the editor warns about an approval with no rejected or timeout branch", async ({ page }) => {
-  await page.goto("/");
-  await page.getByRole("button", { name: "Create an account instead" }).click();
-  await page.getByLabel("Email").fill(`ai-lint-${Date.now()}@test.local`);
-  await page.getByLabel("Password").fill("e2e test password 1");
-  await page.getByRole("button", { name: "Create account" }).click();
-
-  await page.goto("/#/new");
-  await page.getByLabel("Describe the workflow in your own words").fill("Ask my boss approval, then thank the sender.");
-  await page.getByRole("button", { name: "Build draft" }).click();
+  await buildDraft(page, "ai-lint", "Ask my boss approval, then thank the sender.", "Boss approval");
 
   const checks = page.getByRole("region", { name: "Check before publishing" });
   await expect(checks).toContainText('Approval step "ask" has no "rejected" edge');
