@@ -225,6 +225,13 @@
       "when": 1794979213708,
       "tag": "0031_accounts",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1794980935937,
+      "tag": "0032_sending_and_run_controls",
+      "breakpoints": true
     }
   ]
 }

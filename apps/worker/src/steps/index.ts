@@ -135,7 +135,7 @@ async function runStep(deps: FullDeps, step: Step, input: unknown, ctx: Expressi
   }
   // Counted right before the outside call, under the step key, so a retried attempt is not counted twice. A QuotaError
   // is not retryable and not sent, so the run fails with its plain message.
-  const claim = (kind: "ai" | "email" | "http", n = 1) => claimUsage(deps.db, userId, kind, { n, key: idempotencyKey });
+  const claim = (kind: "ai" | "email" | "http" | "mailbox", n = 1) => claimUsage(deps.db, userId, kind, { n, key: idempotencyKey });
   switch (step.type) {
     case "condition":
       return { branch: conditionBranch(step.config.condition, ctx) };
@@ -201,7 +201,7 @@ async function runStep(deps: FullDeps, step: Step, input: unknown, ctx: Expressi
       await claim("email", checkRecipients(mail.to).length);
       // The Message-ID stays per attempt; the step key is the same on every attempt.
       // An email may not be sent twice on its own: sendAs claims the send once the sender is known.
-      const sent = await sendAs(deps.db, deps.secretsKey, deps.mail, userId, mail, `${idempotencyKey}:${attempt}`, { claim: claimSend });
+      const sent = await sendAs(deps.db, deps.secretsKey, deps.mail, userId, mail, `${idempotencyKey}:${attempt}`, { claim: claimSend, capKey: idempotencyKey });
       return { output: { messageId: sent.messageId, to: sent.to, from: sent.from } };
     }
     case "ai": {
@@ -243,7 +243,7 @@ async function runStep(deps: FullDeps, step: Step, input: unknown, ctx: Expressi
       const body = approvalEmailBody(cfg.message, link, expiresAt.toISOString(), approver?.email, language);
       // A retry or re-run sends a new link (earlier ones still work), so it needs its own Message-ID, or a mail server
       // could drop it as a duplicate of the earlier message.
-      await sendAs(deps.db, deps.secretsKey, deps.mail, userId, { to: approver?.email ?? cfg.to!, subject: cfg.subject, text: body }, `${idempotencyKey}:${randomUUID().slice(0, 8)}`).catch((err: unknown) => {
+      await sendAs(deps.db, deps.secretsKey, deps.mail, userId, { to: approver?.email ?? cfg.to!, subject: cfg.subject, text: body }, `${idempotencyKey}:${randomUUID().slice(0, 8)}`, { capKey: idempotencyKey }).catch((err: unknown) => {
         // Each attempt sends its own working link and decisions carry across attempts, so a link email that may have
         // arrived is safe to send again: retry it instead of asking for review.
         throw err instanceof StepError && err.outcome === "unknown" ? new StepError(err.message, true, { cause: err, outcome: "unknown" }) : err;
@@ -282,7 +282,11 @@ async function runStep(deps: FullDeps, step: Step, input: unknown, ctx: Expressi
               ? (input as RecordInput)
               : { text: (input as SlackInput).text };
       if (mock) return { output: { mocked: true, reference, ...payload } };
-      if (step.type === "outlook") await claim("email", (payload as { to: string }).to.split(",").length);
+      if (step.type === "outlook") {
+        const n = (payload as { to: string }).to.split(",").length;
+        await claim("email", n);
+        await claim("mailbox", n);
+      }
       // Queued, not sent: the worker delivers it apart from the run, so one provider's trouble never holds up the other
       // (decision 0021). A re-run of this step gets the first delivery back, with its original payload.
       const provider: Provider = step.type === "sheets" ? "google_sheets" : step.type;
@@ -340,7 +344,7 @@ export function createExecutor(deps: ExecutorDeps): StepExecutor {
       } catch (err) {
         const message = redactSecrets(err instanceof Error ? err.message : String(err), forms) as string;
         const e = err instanceof StepError ? err : undefined;
-        throw new StepError(message, isRetryable(err), { input: preview, usage: e?.usage, outcome: e?.outcome, retryAfterMs: e?.retryAfterMs });
+        throw new StepError(message, isRetryable(err), { input: preview, usage: e?.usage, outcome: e?.outcome, retryAfterMs: e?.retryAfterMs, review: e?.review });
       }
     },
   };

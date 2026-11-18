@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 import type { Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { freshDatabase } from "../../../test/db";
-import { cycleStart, manilaDay, nextCycleStart, claimUsage, planOf, PLANS, QuotaError, UPLOADS_WITHOUT_PLAN, usageSummary } from "./usage";
+import { cycleStart, mailboxCap, manilaDay, nextCycleStart, claimUsage, planOf, PLANS, QuotaError, UPLOADS_WITHOUT_PLAN, usageSummary } from "./usage";
 import { usageClaims, usageCounts, users, workflows, workflowVersions } from "./schema";
 import type { Db } from "./index";
 
@@ -175,5 +175,67 @@ describe("usage", () => {
     });
     const none = await newUser(null);
     expect(await usageSummary(db, none, noon)).toMatchObject({ plan: null, label: null, limits: null, ai: { used: 0, limit: null }, automations: { live: 0, limit: null }, minScheduleMinutes: null });
+  });
+});
+
+describe("mailbox cap (N11b)", () => {
+  let db: Db;
+  let pool: Pool;
+  let seq = 0;
+  const noon = new Date("2026-11-17T04:00:00Z");
+  const newUser = async (plan: keyof typeof PLANS | null) => (await db.insert(users).values({ email: `m${++seq}@test.local`, passwordHash: "x", plan }).returning())[0]!.id;
+  const used = async (userId: string, kind: string) => (await db.select().from(usageCounts).where(eq(usageCounts.userId, userId))).filter((r) => r.kind === kind).map((r) => `${r.period}:${r.used}`);
+
+  beforeAll(async () => {
+    ({ db, pool } = await freshDatabase());
+  }, 120_000);
+  afterAll(async () => {
+    await pool?.end();
+  });
+
+  it("is the same for every plan and for a workspace with no plan, and defaults to 400", async () => {
+    expect(mailboxCap({})).toBe(400);
+    expect(mailboxCap({ MAILBOX_DAILY_CAP: "50" })).toBe(50);
+    expect(mailboxCap({ MAILBOX_DAILY_CAP: "nonsense" })).toBe(400);
+    for (const plan of ["pilot", "business_plus", null] as const) {
+      const u = await newUser(plan);
+      await claimUsage(db, u, "mailbox", { n: 400, now: noon });
+      await expect(claimUsage(db, u, "mailbox", { now: noon })).rejects.toBeInstanceOf(QuotaError);
+    }
+  });
+
+  it("sends the run to review with a plain reason, never silently", async () => {
+    const u = await newUser("business");
+    await claimUsage(db, u, "mailbox", { n: 399, now: noon });
+    await claimUsage(db, u, "mailbox", { now: noon });
+    const err = await claimUsage(db, u, "mailbox", { now: noon }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(QuotaError);
+    expect(err).toMatchObject({ retryable: false, outcome: "not_sent", review: true, kind: "mailbox" });
+    expect((err as Error).message).toBe("This office reached today's limit of 400 recipients through its Gmail or Outlook. Nothing was sent. Choose Send again after it resets (tomorrow, Manila time), or Stop.");
+    expect(await used(u, "mailbox")).toEqual(["2026-11-17:400"]);
+  });
+
+  it("does not use up the plan's email counter, and the plan's email limit does not use the mailbox counter", async () => {
+    const u = await newUser("pilot");
+    await claimUsage(db, u, "mailbox", { n: 10, now: noon });
+    expect(await used(u, "email")).toEqual([]);
+    await claimUsage(db, u, "email", { n: 100, now: noon });
+    expect(await used(u, "mailbox")).toEqual(["2026-11-17:10"]);
+  });
+
+  it("counts a step key once, so a retried send is not counted twice", async () => {
+    const u = await newUser("business");
+    await claimUsage(db, u, "mailbox", { n: 400, key: "run:step", now: noon });
+    await claimUsage(db, u, "mailbox", { n: 400, key: "run:step", now: noon });
+    expect(await used(u, "mailbox")).toEqual(["2026-11-17:400"]);
+  });
+
+  it("starts again on the next Manila day", async () => {
+    const u = await newUser("business");
+    await claimUsage(db, u, "mailbox", { n: 400, now: noon });
+    // 16:00 UTC is midnight in Manila.
+    await expect(claimUsage(db, u, "mailbox", { now: new Date("2026-11-17T15:59:00Z") })).rejects.toBeInstanceOf(QuotaError);
+    await claimUsage(db, u, "mailbox", { now: new Date("2026-11-17T16:00:00Z") });
+    expect(await used(u, "mailbox")).toEqual(["2026-11-17:400", "2026-11-18:1"]);
   });
 });

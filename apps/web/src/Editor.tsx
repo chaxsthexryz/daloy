@@ -15,7 +15,7 @@ import { SchemaForm, type JsonSchema } from "./SchemaForm";
 import { EmailSource } from "./EmailSource";
 
 type Catalog = { schemas: Record<string, JsonSchema>; branches: Record<string, string[]> };
-type Loaded = Workflow & { trigger: { id: string; type: string; webhookPath: string | null } | null; live: Version | null; latest: Version | null };
+type Loaded = Workflow & { trigger: { id: string; type: string; webhookPath: string | null; legacySignatureAt?: string | null } | null; live: Version | null; latest: Version | null };
 
 // Tomorrow at 10:00 in the field's own zone, which is on any slot grid that divides the hours evenly.
 const tomorrowAtTen = () => `${new Date(Date.now() + 86_400_000).toISOString().slice(0, 10)}T10:00`;
@@ -421,8 +421,24 @@ function TriggerPanel({ trigger, wf, onChange }: { trigger: Trigger; wf: Loaded;
             <label htmlFor={`${id}-hmac`}>
               {t("Signing secret name")} <span className="muted">{t("(optional)")}</span>
             </label>
-            <input id={`${id}-hmac`} value={trigger.config.hmacSecret ?? ""} onChange={(e) => onChange({ type: "webhook", config: { ...trigger.config, hmacSecret: e.target.value || undefined } })} />
+            <input id={`${id}-hmac`} value={trigger.config.hmacSecret ?? ""} onChange={(e) => onChange({ type: "webhook", config: { ...trigger.config, hmacSecret: e.target.value || undefined, requireTimestamp: e.target.value ? (trigger.config.hmacSecret ? trigger.config.requireTimestamp : true) : undefined } })} />
           </div>
+          {trigger.config.hmacSecret && (
+            <div className="field">
+              <label>
+                <input type="checkbox" checked={trigger.config.requireTimestamp === true} onChange={(e) => onChange({ type: "webhook", config: { ...trigger.config, requireTimestamp: e.target.checked || undefined } })} />{" "}
+                {t("Require the timestamp (recommended)")}
+              </label>
+              <p className="muted hint">
+                {t("The caller sends X-Daloy-Timestamp (unix seconds) and signs the timestamp, a dot and the body: X-Daloy-Signature: sha256=HMAC-SHA256 of \"timestamp.body\". Calls more than 5 minutes off are refused, so a captured call cannot be replayed later.")}
+              </p>
+              {wf.trigger?.legacySignatureAt && !trigger.config.requireTimestamp && (
+                <p role="status" className="message error">
+                  {t("A call signed without a timestamp was accepted on {date}. Update the caller, then turn this on.", { date: new Date(wf.trigger.legacySignatureAt).toLocaleString() })}
+                </p>
+              )}
+            </div>
+          )}
           <div className="field">
             <label htmlFor={`${id}-event-key`}>
               {t("Event key")} <span className="muted">{t("(optional, e.g. {example}: a repeated event starts no second run)", { example: "{{trigger.event_id}}" })}</span>

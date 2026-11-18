@@ -5,6 +5,7 @@ import {
   emailSourcePassword,
   emailSources,
   publishedVersion,
+  WorkflowPausedError,
   triggers,
   workflows,
   type Db,
@@ -171,14 +172,18 @@ export async function pollEmailSources({ db, secretsKey, adapter, enqueue, inter
       let warning: string | undefined;
       for (const message of batch.messages) {
         if (message.payload) {
+          // Paused (N11b): the message is skipped, and the checkpoint below still moves past it, so a resume does not replay a burst.
           const result = await createKeyedRun(
             tx,
             current.workflowId,
             version.id,
             message.payload,
             `imap:${current.mailboxId}:${session!.uidValidity}:${message.uid}`,
-          );
-          if (!result.duplicate) ids.push(result.runId);
+          ).catch((err: unknown) => {
+            if (err instanceof WorkflowPausedError) return null;
+            throw err;
+          });
+          if (result && !result.duplicate) ids.push(result.runId);
         } else if (message.warning) warning = message.warning;
       }
       await tx

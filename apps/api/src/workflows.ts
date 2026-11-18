@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { createKeyedRun, deliveries, emailSources, findApprover, listDeliveries, PLANS, PROVIDER_NAMES, type Provider, publishedVersion, readConnections, requests, runs, SCHEDULE_QUEUE, supersededSql, syncEmailSourceOnPublish, triggers, users, workflows, workflowVersions, type Db } from "@daloy/db";
+import { createKeyedRun, deliveries, emailSources, findApprover, listDeliveries, PLANS, PROVIDER_NAMES, type Provider, publishedVersion, readConnections, requests, runs, SCHEDULE_QUEUE, setPaused, supersededSql, syncEmailSourceOnPublish, triggers, users, workflows, workflowVersions, type Db } from "@daloy/db";
 import { BRANCHES, choiceProblems, definitionSchema, testChoicesSchema, testModeSchema, guidedSetupInput, OFFICE_REQUEST, saveProblems, stepJsonSchemas, templatesForLanguage, triggerFields, type Trigger, type WorkflowDefinition } from "@daloy/engine";
 import {
   BadRequestException,
@@ -145,6 +145,21 @@ export class WorkflowsController {
       .limit(200);
     const all = await listDeliveries(this.db, user.workspaceId, rows.map((r) => r.runId));
     return rows.map((r) => ({ ...r, deliveries: all.filter((d) => d.runId === r.runId) }));
+  }
+
+  /** Pause: no trigger starts a new run until Resume. Runs already started finish. Repeating either call changes nothing (decision 0054). */
+  @Post(":id/pause")
+  @UseGuards(Allow(MANAGE))
+  @HttpCode(204)
+  async pause(@CurrentUser() user: SessionUser, @Param("id", workflowId) id: string) {
+    if (!(await setPaused(this.db, user.workspaceId, id, true))) throw new NotFoundException();
+  }
+
+  @Post(":id/resume")
+  @UseGuards(Allow(MANAGE))
+  @HttpCode(204)
+  async resume(@CurrentUser() user: SessionUser, @Param("id", workflowId) id: string) {
+    if (!(await setPaused(this.db, user.workspaceId, id, false))) throw new NotFoundException();
   }
 
   /** Deletes the workflow with its versions, trigger and run history. */

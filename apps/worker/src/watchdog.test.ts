@@ -145,3 +145,38 @@ describe("schedule watchdog", () => {
     expect(sent(w.email)).toHaveLength(1);
   });
 });
+
+describe("schedule watchdog and pause (N11b)", () => {
+  const pause = (id: string, when?: string) => db.update(workflows).set({ pausedAt: when ? at(when) : new Date() }).where(eq(workflows.id, id));
+
+  it("does not flag or email a paused schedule, even though it ran nothing", async () => {
+    const w = await scheduled();
+    await pause(w.id);
+    await tick(at("2026-11-18T09:20:00"));
+    expect(await flag(w.id)).toBeNull();
+    expect(sent(w.email)).toHaveLength(0);
+  });
+
+  it("clears the flag of a schedule that is paused after it was flagged", async () => {
+    const w = await scheduled();
+    await tick(at("2026-11-18T09:20:00"));
+    expect(await flag(w.id)).not.toBeNull();
+    await pause(w.id);
+    await tick(at("2026-11-18T09:25:00"));
+    expect(await flag(w.id)).toBeNull();
+  });
+
+  it("does not call the fires skipped during the pause missed once it is resumed, but watches the next one", async () => {
+    const w = await scheduled();
+    await pause(w.id, "2026-11-17T12:00:00");
+    // Resumed at 10:00 on the 18th, after the 09:00 fire that the pause skipped.
+    await db.update(workflows).set({ pausedAt: null, resumedAt: at("2026-11-18T10:00:00") }).where(eq(workflows.id, w.id));
+    await tick(at("2026-11-18T10:30:00"));
+    expect(await flag(w.id)).toBeNull();
+    expect(sent(w.email)).toHaveLength(0);
+    // The next fire, on the 19th, does not happen: that one is missed.
+    await tick(at("2026-11-19T09:20:00"));
+    expect(await flag(w.id)).not.toBeNull();
+    expect(sent(w.email)).toHaveLength(1);
+  });
+});

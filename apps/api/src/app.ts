@@ -1,7 +1,7 @@
 import "reflect-metadata";
 import { mailDeps, providerUrls, RUN_QUEUE, RUN_QUEUE_OPTIONS, SCHEDULE_QUEUE, type Db } from "@daloy/db";
 import { Module } from "@nestjs/common";
-import { APP_GUARD, NestFactory } from "@nestjs/core";
+import { APP_FILTER, APP_GUARD, NestFactory } from "@nestjs/core";
 import type { NestExpressApplication } from "@nestjs/platform-express";
 import cookieParser from "cookie-parser";
 import type { RequestHandler } from "express";
@@ -18,6 +18,7 @@ import { BOSS, CONFIG, DB, RateLimit, type ApiConfig } from "./http";
 import { McpController } from "./mcp";
 import { LanguageController } from "./language";
 import { MembersController, MyRequestsController } from "./members";
+import { PausedFilter } from "./paused";
 import { FormsController, HooksController, isFormEmbed, PaymongoHooksController } from "./public";
 import { RunsController } from "./runs";
 import { BrandController, BrandLogoController } from "./brand";
@@ -45,6 +46,7 @@ export async function createApp({ db, boss, ...config }: AppOptions) {
       { provide: CONFIG, useValue: { ...config, mail: config.mail ?? mailDeps(), providers: config.providers ?? providerUrls(), publicUrl: (config.publicUrl ?? process.env.PUBLIC_URL ?? "http://localhost:3000").replace(/\/+$/, "") } },
       // Default limit for every route; login, forms, webhooks and approvals add stricter ones.
       { provide: APP_GUARD, useClass: RateLimit(120) },
+      { provide: APP_FILTER, useClass: PausedFilter },
       SessionGuard,
     ],
   })

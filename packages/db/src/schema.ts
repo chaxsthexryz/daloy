@@ -123,6 +123,10 @@ export const workflows = pgTable(
     // The alert time stays after the flag clears, so one automation emails at most once a day.
     scheduleMissedAt: timestamp("schedule_missed_at", { withTimezone: true }),
     scheduleAlertAt: timestamp("schedule_alert_at", { withTimezone: true }),
+    // Pause (N11b): while pausedAt is set no trigger starts a run. resumedAt is the last resume, so the schedule watchdog
+    // does not call the fires skipped during a pause missed.
+    pausedAt: timestamp("paused_at", { withTimezone: true }),
+    resumedAt: timestamp("resumed_at", { withTimezone: true }),
     createdAt: createdAt(),
   },
   (t) => [unique().on(t.userId, t.slug)],
@@ -149,6 +153,8 @@ export const triggers = pgTable("triggers", {
   config: jsonb("config").notNull().default({}),
   // Random 32-byte path for webhook triggers, null for the others.
   webhookPath: text("webhook_path").unique(),
+  // The last time a call signed without a timestamp was accepted (N11b), so the owner can see a caller still on the old format.
+  legacySignatureAt: timestamp("legacy_signature_at", { withTimezone: true }),
   createdAt: createdAt(),
 });
 

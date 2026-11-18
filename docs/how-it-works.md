@@ -243,7 +243,7 @@ Limits: rate limit counters live in process memory, so each API instance counts 
 - Field checks: a form trigger's fields, and a webhook trigger's optional `fields`, are checked by `parsePayload` (packages/engine/src/definition.ts) wherever a payload comes in: the hosted form, a webhook call, a builder test run, the console Run button and MCP. A number field can set `min`, `max` and `integer`; number text must be plain decimal, so "45,000", "0x10" and "Infinity" are refused. Empty text and null count as not given. A refusal is a 400 with one message per field, such as `amount: must be at least 0.01` or `order_id: is required`. For webhooks, test runs and console runs, declared fields are stored parsed and other keys pass through unchanged; the hosted form keeps only its fields. Saving refuses `min` above `max` and number limits on a non-number field (decision 0027). `datetime` and `resource` fields are described under "Zoned times, reminders and resources".
 - PayMongo payment: `POST /hooks/paymongo/:path`, one random path per connection. The `Paymongo-Signature` header (`t`, `te`, `li`; HMAC-SHA256 of `t.rawBody`) is checked in constant time for the connection's mode, and `t` must be within 72 hours (5 minutes ahead). Only an exact amount and currency match marks a payment paid (otherwise needs_review). Each published workflow with the trigger "When a PayMongo payment is confirmed" gets one run per payment and status (`paid` or `refunded`), keyed `paymongo:<paymentId>:<status>`. A seen event id answers 200 `duplicate`. Payload: `status`, `reference`, `amount` (centavos), `currency`, `paymentId`, `sourceRunId`, `providerPaymentId`. Not handled: failed payments, expiry, partial refunds. See [decision 0045](decisions/0045-paymongo-payments.md) and [live-paymongo-check.md](live-paymongo-check.md).
 - Manual: `POST /workflows/:id/runs` from the console runs the live version with a JSON payload, whatever its trigger type.
-- Webhook: `POST /hooks/:path`, where the path is 32 random bytes made at the first publish and kept across later publishes. If the trigger names a secret (`hmacSecret`), the request must carry `X-Daloy-Signature: sha256=<hex HMAC of the raw body>`, compared in constant time. A named secret that no longer exists rejects every call. The signature is checked before the fields. A webhook can set `eventKey`, a template such as `{{trigger.event_id}}`; without one, the caller's `Idempotency-Key` header is the key. A second call with the same key gets `{ runId: <first run>, duplicate: true }` and starts nothing. A key that comes out empty, or longer than 200 characters, is a 400 (decision 0029).
+- Webhook: `POST /hooks/:path`, where the path is 32 random bytes made at the first publish and kept across later publishes. If the trigger names a secret (`hmacSecret`), the request must carry `X-Daloy-Timestamp` and `X-Daloy-Signature` (see Webhook signatures below), compared in constant time. A named secret that no longer exists rejects every call. The signature is checked before the fields. A webhook can set `eventKey`, a template such as `{{trigger.event_id}}`; without one, the caller's `Idempotency-Key` header is the key. A second call with the same key gets `{ runId: <first run>, duplicate: true }` and starts nothing. A key that comes out empty, or longer than 200 characters, is a 400 (decision 0029).
 - Form: `GET /forms/:triggerId` renders an HTML form from the field list in the definition, with labels escaped. `POST` validates the fields and starts a run. Number inputs carry the field's `min`, `max` and `step` so the browser warns early; the server checks the same limits. A hidden honeypot field (`_website`, a name no form field can have) catches bots: if it is filled, the API answers as if it worked and starts nothing. A form of an office request automation also records a request (see "Track an office request").
 - Schedule: publishing registers a pg-boss cron schedule keyed by workflow id. pg-boss sends a job to `schedule-trigger` at each tick, and the worker starts a run of the live version. Publishing a version with another trigger type removes the schedule.
 
@@ -631,3 +631,56 @@ Edge cases: Postgres `jsonb` stores object keys shortest first, so a mocked clas
 Tests: `apps/api/src/scenarios.test.ts`, 113 tests: 9 fixture checks, 1 setup step and 103 acceptance cases. At P1, 43 cases held and 44 were confirmed gaps. After P2, 29 gaps; after P3, 17; after P4, 89 hold and 14 are gaps. After P5 and the fixes from its review the file has 125 tests: 9 fixture checks, 1 setup step and 115 acceptance cases, 105 holding and 10 gaps (P6a 6, P6b 3, P7 1). After P6a: 128 tests, 118 acceptance cases, 114 holding and 4 gaps (P6b 3, P7 1). After P6b: 117 hold and 1 gap (P7); QA-02 books the therapist first, and a second booking for the same time takes the `taken` branch. P6a flipped its 6 gaps and added QA-02 cases for an off-slot time, a therapist given by name, and a reminder whose time has passed. P5 flipped its 4 gaps and added QA-08 cases for review, Send again, It went through, Stop, 429 with Retry-After, a hanging receiver, concurrent answers and Retry. AI-only cases use the harness's local stand-in for the model. Each gap test's name carries `[gap <phase>: <reason>]`. P7 flipped the last gap (drafts are linted) and added a test that every fixture lints clean except the saved QA-06 and QA-07 approvals: 129 tests, 119 acceptance cases, all holding, 0 gaps.
 
 Tagalog (N8): the owner picks English or Taglish in Settings. The choice is `users.language` on the owner's row (migration 0024), so it is one setting for the whole workspace (decision 0043). The console (`apps/web/src/lib/locale*.ts`, `useLanguage().t`) looks each string up by its English text and falls back to English when no Tagalog entry exists; `<html lang>` follows it. Emails, the public pages and the AI explanations read the workspace language on the server (`apps/api/src/language.ts`, `packages/engine/src/email-copy.ts`), so a test email arrives in Taglish when the workspace is Taglish. Terms come from the N4 vocabulary table. Tests: `locale.test.ts`, `management-locale.test.ts`, `language-pages.test.ts`, `email-language.test.ts`, `e2e/language.spec.ts`.
+
+## Sending and run controls (packages/db/src/usage.ts, runs.ts, mail.ts, apps/api/src/public.ts, paused.ts, workflows.ts, runs.ts, apps/worker/src/advance.ts, watchdog.ts)
+
+What it does: four controls for a real office. A daily cap on recipients through the owner's own Gmail or Outlook, a timestamp in the webhook signature, a per-automation Pause, and Cancel for a run that has not started or is waiting. See [decision 0054](decisions/0054-sending-and-run-controls.md).
+
+### Daily recipient cap on Gmail and Outlook
+
+What the owner sees: when a workspace has sent `MAILBOX_DAILY_CAP` recipients (default 400, Manila day) through its Gmail or Outlook, the next email or Outlook step does not send. The run goes to "Needs you" with "This office reached today's limit of 400 recipients through its Gmail or Outlook. Nothing was sent. Choose Send again after it resets (tomorrow, Manila time), or Stop." Send again works after the reset. "It went through" is not offered, because nothing was sent.
+
+Why it is built that way: it reuses the usage counters (one upsert under the row lock, keyed by the step key, so a retry is not counted twice and two workers cannot both take the last unit). It goes to review, not failed, so the send is never silently dropped and a person decides. Mail through the installation server keeps its own cap, and the watchdog's alert and the test email are not counted.
+
+Tests: `packages/db/src/usage.test.ts` (boundary, plan independence, key idempotence, next Manila day), `packages/engine/src/retry.test.ts` (the review flag), `apps/worker/src/steps/senders.test.ts` (Gmail through the real step, per workspace, retries), `apps/worker/src/steps/deliveries.test.ts` (Outlook), `apps/worker/src/quota.test.ts` (no "It went through" for an unsent run).
+
+### Webhook signatures
+
+The caller sends two headers. `X-Daloy-Timestamp` is the time in unix seconds. `X-Daloy-Signature` is `sha256=` and the hex HMAC-SHA256, with the signing secret as the key, of the timestamp, a dot and the exact request body:
+
+```js
+const t = Math.floor(Date.now() / 1000);
+const body = JSON.stringify({ order: 42 });
+const signature = "sha256=" + createHmac("sha256", secret).update(`${t}.${body}`).digest("hex");
+await fetch(url, { method: "POST", headers: { "Content-Type": "application/json", "X-Daloy-Timestamp": String(t), "X-Daloy-Signature": signature }, body });
+```
+
+```bash
+t=$(date +%s); body='{"order":42}'
+sig=$(printf '%s.%s' "$t" "$body" | openssl dgst -sha256 -hmac "$SECRET" -hex | sed 's/^.* //')
+curl -X POST "$URL" -H "Content-Type: application/json" -H "X-Daloy-Timestamp: $t" -H "X-Daloy-Signature: sha256=$sig" -d "$body"
+```
+
+Calls more than 300 seconds from the server clock, either way, get 401 with a message that names the window. A captured call cannot be replayed later. Inside the window an identical call (same timestamp and body) returns the first run with `duplicate: true` and starts nothing, unless the caller sends an `Idempotency-Key` or the trigger has an `eventKey`, which then decide. Two different events sent in the same second with identical bodies would be seen as one, so put an id in the body.
+
+For callers written before this: a call with no `X-Daloy-Timestamp` and the old signature (HMAC of the body alone) is still accepted until the owner ticks "Require the timestamp" on the webhook trigger. Each such call answers with `Daloy-Signature-Warning: timestamp-missing` and the editor shows the date of the last one. A call that has the timestamp header is never read as the old format. The box is ticked by default when a signing secret is first added.
+
+Tests: `apps/api/src/public.test.ts` (the check: window to the second, timestamp not covered, old format), `apps/api/src/api.test.ts` (through the route: replay, Idempotency-Key, the warning header and the recorded date, required).
+
+### Pause
+
+What the owner sees: a Pause button on an automation's card. A paused automation shows "Paused" and starts no new run from a webhook, a form, an email, a schedule, a PayMongo event, MCP, the Run button or a staff reschedule. Runs already started finish. Resume starts everything again.
+
+How: `workflows.paused_at`. `assertNotPaused` runs in the transaction that inserts a run and reads the workflow row under a share lock, so a pause waits for runs being created and none starts after it commits. A webhook, the Run button and MCP get 409 with a plain message. A public form shows "This form is paused". A PayMongo event gets a 2xx and no run, so PayMongo does not disable the webhook. A schedule fire is skipped and logged. Email-in skips the message but moves its checkpoint, so a resume does not replay a burst. Builder test runs are not blocked.
+
+The schedule watchdog leaves paused automations out and clears an old flag. After a resume it only expects fires after `resumed_at`, so the fires the pause skipped are not reported as missed.
+
+Tests: `packages/db/src/pause.test.ts` (refusal, test runs, resume, repeat, workspace scope, a pause racing run creation), `apps/api/src/run-controls.test.ts` (each route and the roles), `apps/api/src/bookings.test.ts` (reschedule, MCP), `apps/worker/src/worker.test.ts` (schedule), `apps/worker/src/email-in.test.ts`, `apps/worker/src/watchdog.test.ts`, `apps/web/src/lib/automations.test.ts`, `e2e/run-controls.spec.ts`.
+
+### Cancel a pending run
+
+What the owner sees: "Cancel run" on a run that is pending or waiting on a delay or an approval, with a confirmation. It stops before its next step. Anything already sent stays sent. A run that is running right now cannot be cancelled (it stops at its next wait), and a run in review has Stop.
+
+How: `cancelRun` is one guarded UPDATE. It also closes the waiting step as not sent and expires the run's open approval links, so an approval email already sent cannot confirm anything. If a worker wakes the run at the same moment, exactly one of the two writes wins; the worker stands down without an error.
+
+Tests: `packages/db/src/cancel.test.ts`, `apps/worker/src/cancel.test.ts` (the later wake-up, the race), `apps/api/src/run-controls.test.ts` (roles, 409 messages), `e2e/run-controls.spec.ts`.

@@ -1,6 +1,6 @@
 import { publicCopy } from "./public-copy";
 import { createHmac, randomInt, randomUUID, timingSafeEqual } from "node:crypto";
-import { claimUsage, QuotaError, readBrand, saveUploads, workspaceLanguage, businessProfiles, connectionCredential, connections, createKeyedRun, createRun, eventSeen, markPaymentPaid, markPaymentRefunded, paymongoMode, publishedVersion, readSecret, recordEvent, requests, runs, triggers, verifyPaymongoSignature, workflows, type Db, type NewUpload, type Payment } from "@daloy/db";
+import { assertNotPaused, claimUsage, QuotaError, readBrand, saveUploads, workspaceLanguage, businessProfiles, connectionCredential, connections, createKeyedRun, createRun, eventSeen, markPaymentPaid, markPaymentRefunded, paymongoMode, publishedVersion, readSecret, recordEvent, requests, runs, triggers, verifyPaymongoSignature, WorkflowPausedError, workflows, type Db, type NewUpload, type Payment } from "@daloy/db";
 import { definitionSchema, FILE_MAX_BYTES, FILES_PER_FIELD, FILES_PER_SUBMISSION, fileType, OFFICE_REQUEST, parsePayload, PURCHASE_REQUEST, safeFileName, type FileRef, type FormField, type Resource } from "@daloy/engine";
 import {
   BadRequestException,
@@ -17,6 +17,7 @@ import {
   Param,
   Post,
   Req,
+  Res,
   UnauthorizedException,
   UploadedFiles,
   UseGuards,
@@ -25,7 +26,7 @@ import {
 } from "@nestjs/common";
 import { AnyFilesInterceptor } from "@nestjs/platform-express";
 import { and, eq, sql } from "drizzle-orm";
-import type { Request } from "express";
+import type { Request, Response } from "express";
 import type { PgBoss } from "pg-boss";
 import * as z from "zod";
 import { BOSS, CONFIG, DB, enqueueRun, eventKey, isUniqueViolation, RateLimit, replayedRun, validPayload, ZodPipe, type ApiConfig } from "./http";
@@ -63,7 +64,9 @@ export class HooksController {
   async receive(
     @Param("path", new ZodPipe(z.string().regex(/^[A-Za-z0-9_-]{43}$/))) path: string,
     @Req() req: RawBodyRequest<Request>,
+    @Res({ passthrough: true }) res: Response,
     @Headers("x-daloy-signature") signature: string | undefined,
+    @Headers("x-daloy-timestamp") timestamp: string | undefined,
     @Headers("idempotency-key") idempotencyKey: string | undefined,
   ) {
     const [row] = await this.db
@@ -74,20 +77,32 @@ export class HooksController {
     const version = row && (await publishedVersion(this.db, row.trigger.workflowId));
     if (!row || !version) throw new NotFoundException();
 
-    const secretName = (row.trigger.config as { hmacSecret?: string }).hmacSecret;
+    const { hmacSecret: secretName, requireTimestamp } = row.trigger.config as { hmacSecret?: string; requireTimestamp?: boolean };
+    // The signature of a timestamped call names the call exactly, so a replay in the window gets the first run back (decision 0054).
+    let replayKey: string | undefined;
     if (secretName) {
       // Fails closed: a missing secret rejects every call instead of accepting unsigned ones.
       const key = await readSecret(this.db, this.config.secretsKey, row.userId, secretName);
-      if (!key || !validSignature(req.rawBody ?? Buffer.alloc(0), signature, key)) throw new UnauthorizedException("bad signature");
+      const checked = key
+        ? checkSignature({ body: req.rawBody ?? Buffer.alloc(0), signature, timestamp, key, requireTimestamp: requireTimestamp === true, nowSeconds: Math.floor(Date.now() / 1000) })
+        : ({ ok: false, reason: "bad signature" } as const);
+      if (!checked.ok) throw new UnauthorizedException(checked.reason);
+      replayKey = checked.replayKey === undefined ? undefined : `sig:${checked.replayKey}`;
+      if (checked.legacy) {
+        // Not a failure: the owner sees the date in the editor and the caller sees the header, then they move to the timestamp (decision 0054).
+        res.setHeader("Daloy-Signature-Warning", "timestamp-missing");
+        await this.db.update(triggers).set({ legacySignatureAt: new Date() }).where(and(eq(triggers.id, row.trigger.id), sql`(${triggers.legacySignatureAt} is null or ${triggers.legacySignatureAt} < now() - interval '1 hour')`));
+      }
     }
 
     const { trigger } = definitionSchema.parse(version.definition);
-    const first = await replayedRun(this.db, row.trigger.workflowId, trigger, req.body, idempotencyKey);
+    const callerKey = idempotencyKey ?? replayKey;
+    const first = await replayedRun(this.db, row.trigger.workflowId, trigger, req.body, callerKey);
     if (first) return { runId: first, duplicate: true };
     const fields = (row.trigger.config as { fields?: FormField[] }).fields;
     const payload = validPayload(fields, req.body ?? {}, await resourcesFor(this.db, row.userId, fields));
     // A repeated event gets the first run back and starts nothing (decision 0029).
-    const { runId, duplicate } = await createKeyedRun(this.db, row.trigger.workflowId, version.id, payload, eventKey(trigger, payload, idempotencyKey));
+    const { runId, duplicate } = await createKeyedRun(this.db, row.trigger.workflowId, version.id, payload, eventKey(trigger, payload, callerKey));
     if (!duplicate) await enqueueRun(this.boss, runId);
     return duplicate ? { runId, duplicate } : { runId };
   }
@@ -160,18 +175,52 @@ export class PaymongoHooksController {
       if (!((l.config as { events?: string[] }).events ?? ["paid"]).includes(status)) continue;
       const version = await publishedVersion(this.db, l.workflowId);
       if (!version) continue;
-      const { runId, duplicate } = await createKeyedRun(this.db, l.workflowId, version.id, payload, `paymongo:${p.id}:${status}`);
-      if (!duplicate) await enqueueRun(this.boss, runId);
+      // Paused (N11b): acknowledged with 2xx and no run, so PayMongo does not disable its webhook.
+      const started = await createKeyedRun(this.db, l.workflowId, version.id, payload, `paymongo:${p.id}:${status}`).catch((err: unknown) => {
+        if (err instanceof WorkflowPausedError) return null;
+        throw err;
+      });
+      if (started && !started.duplicate) await enqueueRun(this.boss, started.runId);
     }
   }
 }
 
-/** X-Daloy-Signature: sha256=<hex HMAC of the raw body>, compared in constant time. */
+/** How far a timestamped call may be from the server clock, either way (decision 0054). */
+export const REPLAY_WINDOW_SECONDS = 300;
+const NO_TIMESTAMP = "This webhook requires the X-Daloy-Timestamp header. See how-it-works.md, webhook signatures.";
+const OUTSIDE_WINDOW = "The timestamp is outside the 5 minute window. Check the clock of the sender.";
+
+export type SignatureCheck = { ok: true; legacy: boolean; replayKey: string | undefined } | { ok: false; reason: string };
+
+/**
+ * X-Daloy-Signature with X-Daloy-Timestamp: sha256=<hex HMAC of "<timestamp>.<raw body>">, and the timestamp (unix seconds)
+ * within the replay window. Without the timestamp header the old format, sha256=<hex HMAC of the raw body>, is accepted
+ * only while the trigger does not require a timestamp. A call that has the header is never read as the old format.
+ * replayKey is the signature of a timestamped call: an identical replay has the same one.
+ */
+export function checkSignature(c: { body: Buffer; signature: string | undefined; timestamp: string | undefined; key: string; requireTimestamp: boolean; nowSeconds: number }): SignatureCheck {
+  if (c.timestamp === undefined) {
+    if (c.requireTimestamp) return { ok: false, reason: NO_TIMESTAMP };
+    return validSignature(c.body, c.signature, c.key) ? { ok: true, legacy: true, replayKey: undefined } : { ok: false, reason: "bad signature" };
+  }
+  const expected = createHmac("sha256", c.key).update(`${c.timestamp}.`).update(c.body).digest("hex");
+  if (!c.signature || !sameText(c.signature, `sha256=${expected}`)) return { ok: false, reason: "bad signature" };
+  // Only now, so a caller that cannot sign is told nothing about the window.
+  if (!/^\d{1,12}$/.test(c.timestamp)) return { ok: false, reason: "bad signature" };
+  if (Math.abs(c.nowSeconds - Number(c.timestamp)) > REPLAY_WINDOW_SECONDS) return { ok: false, reason: OUTSIDE_WINDOW };
+  return { ok: true, legacy: false, replayKey: expected };
+}
+
+const sameText = (a: string, b: string) => {
+  const given = Buffer.from(a);
+  const want = Buffer.from(b);
+  return given.length === want.length && timingSafeEqual(given, want);
+};
+
+/** The old format: X-Daloy-Signature: sha256=<hex HMAC of the raw body>, compared in constant time. */
 export function validSignature(body: Buffer, header: string | undefined, key: string): boolean {
   if (!header) return false;
-  const expected = Buffer.from(`sha256=${createHmac("sha256", key).update(body).digest("hex")}`);
-  const given = Buffer.from(header);
-  return given.length === expected.length && timingSafeEqual(given, expected);
+  return sameText(header, `sha256=${createHmac("sha256", key).update(body).digest("hex")}`);
 }
 
 @Controller("forms")
@@ -187,6 +236,7 @@ export class FormsController {
   @Header("Cache-Control", "no-store")
   async page(@Param("id", new ZodPipe(z.uuid())) id: string) {
     const { fields, tracked, businessName, workflow } = await this.form(id);
+    if (workflow.pausedAt) return this.pausedPage(workflow.userId);
     return renderForm(fields, await resourcesFor(this.db, workflow.userId, fields), tracked ? randomUUID() : undefined, businessName ?? undefined, await workspaceLanguage(this.db, workflow.userId), await pageBrand(this.db, workflow.userId));
   }
 
@@ -197,8 +247,13 @@ export class FormsController {
   // No storage option: multer keeps the files in memory, which is all the 5 MB limit allows.
   @UseInterceptors(AnyFilesInterceptor({ limits: { fileSize: FILE_MAX_BYTES, files: FILES_PER_SUBMISSION, fields: 50, fieldSize: 64 * 1024, parts: 60 } }))
   @Header("Content-Type", "text/html; charset=utf-8")
-  async submit(@Param("id", new ZodPipe(z.uuid())) id: string, @Body() body: Record<string, unknown> | undefined, @Req() req: Request, @UploadedFiles() parts: Part[] | undefined) {
+  async submit(@Param("id", new ZodPipe(z.uuid())) id: string, @Body() body: Record<string, unknown> | undefined, @Req() req: Request, @Res({ passthrough: true }) res: Response, @UploadedFiles() parts: Part[] | undefined) {
     const { fields, versionId, workflow, tracked } = await this.form(id);
+    // Paused (N11b): nothing is stored and the visitor is told, so they can try later or phone the business.
+    if (workflow.pausedAt) {
+      res.status(HttpStatus.CONFLICT);
+      return this.pausedPage(workflow.userId);
+    }
     const language = await workspaceLanguage(this.db, workflow.userId);
     const copy = publicCopy[language];
     const brand = await pageBrand(this.db, workflow.userId);
@@ -235,9 +290,15 @@ export class FormsController {
     );
   }
 
+  private async pausedPage(workspaceId: string) {
+    const language = await workspaceLanguage(this.db, workspaceId);
+    const copy = publicCopy[language];
+    return page(`<h1>${copy.paused}</h1><p>${copy.pausedNote}</p>`, copy.paused, language, await pageBrand(this.db, workspaceId));
+  }
+
   private async form(id: string) {
     const [row] = await this.db
-      .select({ trigger: triggers, workflow: { id: workflows.id, userId: workflows.userId, setup: workflows.setup }, businessName: businessProfiles.businessName })
+      .select({ trigger: triggers, workflow: { id: workflows.id, userId: workflows.userId, setup: workflows.setup, pausedAt: workflows.pausedAt }, businessName: businessProfiles.businessName })
       .from(triggers)
       .innerJoin(workflows, eq(workflows.id, triggers.workflowId))
       .leftJoin(businessProfiles, eq(businessProfiles.userId, workflows.userId))
@@ -293,6 +354,7 @@ export async function recordRequest(db: Db, workflow: { id: string; userId: stri
   const reference = newReference();
   try {
     const runId = await db.transaction(async (tx) => {
+      await assertNotPaused(tx, versionId);
       const [run] = await tx.insert(runs).values({ workflowVersionId: versionId, triggerPayload: { ...data, reference } }).returning({ id: runs.id });
       await tx.insert(requests).values({ userId: workflow.userId, workflowId: workflow.id, runId: run!.id, reference, submissionKey, subject: String(data.summary ?? ""), requestedBy });
       await saveUploads(tx, { userId: workflow.userId, runId: run!.id, files });

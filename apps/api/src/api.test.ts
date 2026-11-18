@@ -397,3 +397,70 @@ describe("rate limits", () => {
     expect(statuses).toContain(429);
   });
 });
+
+describe("webhook signature with a timestamp (N11b)", () => {
+  const stamp = (t: number, key: string, body: string) => `sha256=${createHmac("sha256", key).update(`${t}.${body}`).digest("hex")}`;
+  const legacy = (key: string, body: string) => `sha256=${createHmac("sha256", key).update(body).digest("hex")}`;
+  async function signedHook(config: object = {}) {
+    const { agent } = await signedIn();
+    await agent.put("/secrets/hook_key").send({ value: "whsec_test" }).expect(204);
+    const wf = await publishedWorkflow(agent, { type: "webhook", config: { hmacSecret: "hook_key", ...config } });
+    const post = (body: string) => request(server).post(`/hooks/${wf.trigger.webhookPath}`).set("Content-Type", "application/json").send(body);
+    return { agent, wf, post };
+  }
+
+  it("accepts a fresh timestamped call, refuses a stale or future one and one the signature does not cover", async () => {
+    const { post } = await signedHook();
+    const body = JSON.stringify({ order: 1 });
+    const now = Math.floor(Date.now() / 1000);
+    await post(body).set("X-Daloy-Timestamp", String(now)).set("X-Daloy-Signature", stamp(now, "whsec_test", body)).expect(202);
+    const stale = await post(body).set("X-Daloy-Timestamp", String(now - 400)).set("X-Daloy-Signature", stamp(now - 400, "whsec_test", body)).expect(401);
+    expect(stale.body.message).toBe("The timestamp is outside the 5 minute window. Check the clock of the sender.");
+    await post(body).set("X-Daloy-Timestamp", String(now + 400)).set("X-Daloy-Signature", stamp(now + 400, "whsec_test", body)).expect(401);
+    // Someone replaying an old signature under a new timestamp.
+    await post(body).set("X-Daloy-Timestamp", String(now)).set("X-Daloy-Signature", stamp(now - 5, "whsec_test", body)).expect(401);
+    await post(body).set("X-Daloy-Timestamp", "soon").set("X-Daloy-Signature", stamp(now, "whsec_test", body)).expect(401);
+  });
+
+  it("starts one run for an exact replay, and a new run for a call with a new timestamp", async () => {
+    const { post } = await signedHook();
+    const body = JSON.stringify({ order: 2 });
+    const now = Math.floor(Date.now() / 1000);
+    const call = (t: number) => post(body).set("X-Daloy-Timestamp", String(t)).set("X-Daloy-Signature", stamp(t, "whsec_test", body));
+    const first = (await call(now).expect(202)).body;
+    const replay = (await call(now).expect(202)).body;
+    expect(replay).toEqual({ runId: first.runId, duplicate: true });
+    expect((await call(now - 1).expect(202)).body.runId).not.toBe(first.runId);
+  });
+
+  it("lets the caller's Idempotency-Key decide instead of the signature", async () => {
+    const { post } = await signedHook();
+    const body = JSON.stringify({ order: 3 });
+    const now = Math.floor(Date.now() / 1000);
+    const call = (t: number) => post(body).set("Idempotency-Key", "order-3").set("X-Daloy-Timestamp", String(t)).set("X-Daloy-Signature", stamp(t, "whsec_test", body));
+    const first = (await call(now).expect(202)).body;
+    expect((await call(now - 2).expect(202)).body).toEqual({ runId: first.runId, duplicate: true });
+  });
+
+  it("still accepts the old signature, says so in a header and records it, until the owner requires the timestamp", async () => {
+    const { agent, wf, post } = await signedHook();
+    const body = JSON.stringify({ order: 4 });
+    const res = await post(body).set("X-Daloy-Signature", legacy("whsec_test", body)).expect(202);
+    expect(res.headers["daloy-signature-warning"]).toBe("timestamp-missing");
+    const seen = (await agent.get(`/workflows/${wf.id}`).expect(200)).body.trigger.legacySignatureAt;
+    expect(typeof seen).toBe("string");
+    // A timestamped call carries no warning.
+    const now = Math.floor(Date.now() / 1000);
+    const fresh = await post(body).set("X-Daloy-Timestamp", String(now)).set("X-Daloy-Signature", stamp(now, "whsec_test", body)).expect(202);
+    expect(fresh.headers["daloy-signature-warning"]).toBeUndefined();
+  });
+
+  it("refuses the old signature once the trigger requires the timestamp, naming the header", async () => {
+    const { post } = await signedHook({ requireTimestamp: true });
+    const body = JSON.stringify({ order: 5 });
+    const res = await post(body).set("X-Daloy-Signature", legacy("whsec_test", body)).expect(401);
+    expect(res.body.message).toContain("X-Daloy-Timestamp");
+    const now = Math.floor(Date.now() / 1000);
+    await post(body).set("X-Daloy-Timestamp", String(now)).set("X-Daloy-Signature", stamp(now, "whsec_test", body)).expect(202);
+  });
+});
