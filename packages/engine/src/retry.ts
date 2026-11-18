@@ -19,17 +19,20 @@ export class StepError extends Error {
   /** Tokens a failed AI attempt still spent, so the step run records them. */
   readonly usage?: { inputTokens: number; outputTokens: number };
   readonly outcome?: Outcome;
+  /** A person decides before anything more is sent, even though nothing was (a daily send cap, N11b). */
+  readonly review?: boolean;
   /** From the receiver's Retry-After: the earliest the next attempt may go. */
   readonly retryAfterMs?: number;
   constructor(
     message: string,
     readonly retryable: boolean,
-    options?: { cause?: unknown; input?: unknown; usage?: { inputTokens: number; outputTokens: number }; outcome?: Outcome; retryAfterMs?: number },
+    options?: { cause?: unknown; input?: unknown; usage?: { inputTokens: number; outputTokens: number }; outcome?: Outcome; retryAfterMs?: number; review?: boolean },
   ) {
     super(message, options);
     this.input = options?.input ?? null;
     this.usage = options?.usage;
     this.outcome = options?.outcome;
+    this.review = options?.review;
     this.retryAfterMs = options?.retryAfterMs;
   }
 }
@@ -56,7 +59,7 @@ export function decideRetry(
   policy: RetryPolicy = DEFAULT_RETRY_POLICY,
   random = Math.random,
 ): RetryDecision {
-  if (!isRetryable(err)) return err instanceof StepError && err.outcome === "unknown" ? { kind: "review" } : { kind: "fail" };
+  if (!isRetryable(err)) return err instanceof StepError && (err.outcome === "unknown" || err.review) ? { kind: "review" } : { kind: "fail" };
   const retryAfterMs = err instanceof StepError ? (err.retryAfterMs ?? 0) : 0;
   if (attempt >= policy.maxAttempts || retryAfterMs > MAX_RETRY_AFTER_MS) return { kind: "dead_letter" };
   return { kind: "retry", nextAttempt: attempt + 1, delayMs: Math.max(retryAfterMs, backoffDelayMs(attempt, policy, random)) };

@@ -86,3 +86,11 @@ describe("decideRetry with outcomes (P5)", () => {
     expect(decideRetry(far, 1, policy)).toEqual({ kind: "dead_letter" });
   });
 });
+
+describe("decideRetry with a review flag (N11b)", () => {
+  it("sends an error marked for review to review even though nothing was sent", () => {
+    const capped = new StepError("Daily limit reached", false, { outcome: "not_sent", review: true });
+    expect(decideRetry(capped, 1, policy)).toEqual({ kind: "review" });
+    expect(decideRetry(new StepError("Daily limit reached", false, { outcome: "not_sent" }), 1, policy)).toEqual({ kind: "fail" });
+  });
+});

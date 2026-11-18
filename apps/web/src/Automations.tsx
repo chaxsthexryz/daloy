@@ -47,6 +47,16 @@ export function Automations({ user }: { user: User }) {
     );
   };
 
+  const setPaused = async (w: Workflow, paused: boolean) => {
+    setError("");
+    try {
+      await api("POST", `/workflows/${w.id}/${paused ? "pause" : "resume"}`);
+      load();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  };
+
   const remove = async (w: Workflow) => {
     if (!window.confirm(t("Delete the draft {name}? This cannot be undone.", { name: `"${w.name}"` }))) return;
     setError("");
@@ -103,7 +113,7 @@ export function Automations({ user }: { user: User }) {
           ) : (
             <ul className="cards">
               {shown.map((w) => (
-                <Card key={w.id} w={w} onCopy={copy} />
+                <Card key={w.id} w={w} onCopy={copy} owner={owner} onPause={setPaused} />
               ))}
             </ul>
           )}
@@ -130,7 +140,7 @@ export function Automations({ user }: { user: User }) {
   );
 }
 
-function Card({ w, onCopy }: { w: Workflow; onCopy: (id: string, formId: string) => void }) {
+function Card({ w, onCopy, owner, onPause }: { w: Workflow; onCopy: (id: string, formId: string) => void; owner: boolean; onPause: (w: Workflow, paused: boolean) => void }) {
   const { t, language } = useLanguage();
   const state = w.last ? plainState(w.last) : null;
   return (
@@ -139,7 +149,7 @@ function Card({ w, onCopy }: { w: Workflow; onCopy: (id: string, formId: string)
         <h2>
           <a href={w.setup ? `#/a/${w.id}` : `#/w/${w.id}`}>{w.name}</a>
         </h2>
-        <span className={`tag${w.live ? " ok" : ""}`}>{t(w.live ? "On" : "Off")}</span>
+        {w.pausedAt ? <span className="tag">{t("Paused")}</span> : <span className={`tag${w.live ? " ok" : ""}`}>{t(w.live ? "On" : "Off")}</span>}
         {state && <span className={`state ${state.key}`}>{t(state.label)}</span>}
         {w.scheduleMissedAt && <span className="state problem">{t("Missed its schedule")}</span>}
       </div>
@@ -147,6 +157,7 @@ function Card({ w, onCopy }: { w: Workflow; onCopy: (id: string, formId: string)
         {lastEvent(w.last ?? null, Date.now(), language)}
         {state?.note ? `. ${t(state.note)}` : ""}
       </p>
+      {w.pausedAt && <p className="muted">{t("Paused: it starts no new runs from a form, link, email or schedule. Runs already started finish.")}</p>}
       <div className="actions">
         {w.live && w.formId && (
           <>
@@ -155,6 +166,11 @@ function Card({ w, onCopy }: { w: Workflow; onCopy: (id: string, formId: string)
           </>
         )}
         <a href={`#/w/${w.id}/runs`}><Text>Activity</Text></a>
+        {owner && w.live && (
+          <button type="button" className="quiet" onClick={() => onPause(w, !w.pausedAt)}>
+            {t(w.pausedAt ? "Resume" : "Pause")}
+          </button>
+        )}
       </div>
     </li>
   );

@@ -27,17 +27,19 @@ export async function checkSchedules(deps: WatchdogDeps) {
   const { db } = deps;
   const now = deps.now ?? new Date();
   const live = await db
-    .select({ id: workflows.id, name: workflows.name, userId: workflows.userId, flagged: workflows.scheduleMissedAt, definition: workflowVersions.definition, publishedAt: workflowVersions.createdAt })
+    .select({ id: workflows.id, name: workflows.name, userId: workflows.userId, flagged: workflows.scheduleMissedAt, definition: workflowVersions.definition, publishedAt: workflowVersions.createdAt, resumedAt: workflows.resumedAt })
     .from(workflows)
-    .innerJoin(workflowVersions, and(eq(workflowVersions.workflowId, workflows.id), eq(workflowVersions.published, true)));
+    .innerJoin(workflowVersions, and(eq(workflowVersions.workflowId, workflows.id), eq(workflowVersions.published, true)))
+    // A paused automation starts nothing on purpose, so it is not watched (N11b); the clean-up below clears an old flag.
+    .where(isNull(workflows.pausedAt));
   const scheduled = new Set<string>();
   for (const w of live) {
     const trigger = (w.definition as { trigger?: { type?: string; config?: { cron?: unknown } } }).trigger;
     if (trigger?.type !== "schedule" || typeof trigger.config?.cron !== "string") continue;
     scheduled.add(w.id);
     const due = lastDue(trigger.config.cron, now);
-    // A version published after the due time was never expected to run for it.
-    const expected = due !== null && due > w.publishedAt;
+    // A version published after the due time was never expected to run for it, nor was a fire the pause skipped before the resume.
+    const expected = due !== null && due > w.publishedAt && (!w.resumedAt || due > w.resumedAt);
     const covered = !expected || (await hasScheduledRun(db, w.id, due!));
     if (covered) {
       if (w.flagged) await db.update(workflows).set({ scheduleMissedAt: null }).where(eq(workflows.id, w.id));
@@ -46,7 +48,7 @@ export async function checkSchedules(deps: WatchdogDeps) {
     if (!w.flagged) await db.update(workflows).set({ scheduleMissedAt: now }).where(and(eq(workflows.id, w.id), isNull(workflows.scheduleMissedAt)));
     await alertOwner(deps, w, now);
   }
-  // Turned off, or no longer on a schedule: nothing is expected, so nothing is missed.
+  // Turned off, paused, or no longer on a schedule: nothing is expected, so nothing is missed.
   const stale = (await db.select({ id: workflows.id }).from(workflows).where(isNotNull(workflows.scheduleMissedAt))).filter((w) => !scheduled.has(w.id));
   for (const w of stale) await db.update(workflows).set({ scheduleMissedAt: null }).where(eq(workflows.id, w.id));
 }

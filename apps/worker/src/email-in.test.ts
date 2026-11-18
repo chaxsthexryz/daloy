@@ -284,3 +284,23 @@ describe("email intake checkpoint", () => {
     expect(all.at(-1)!.triggerPayload).toMatchObject({ subject: "current" });
   });
 });
+
+describe("email intake and pause (N11b)", () => {
+  it("starts no run from mail that arrives while paused, moves the checkpoint past it, and imports only later mail after the resume", async () => {
+    const own = await setup();
+    await poll(mailbox({ uidNext: 5 }));
+    await db.update(workflows).set({ pausedAt: new Date() }).where(eq(workflows.id, own.workflowId));
+    await due();
+    await poll(mailbox({ uidNext: 6, messages: [{ uid: 5, payload }] }));
+    const ofOwn = async () => (await db.select({ id: runs.id, payload: runs.triggerPayload }).from(runs).innerJoin(workflowVersions, eq(workflowVersions.id, runs.workflowVersionId)).where(eq(workflowVersions.workflowId, own.workflowId)));
+    expect(await ofOwn()).toHaveLength(0);
+    expect(await readEmailSource(db, own.workflowId)).toMatchObject({ status: "active" });
+    await db.update(workflows).set({ pausedAt: null, resumedAt: new Date() }).where(eq(workflows.id, own.workflowId));
+    await due();
+    // The mail of the pause is not replayed; mail that arrives after the resume is.
+    await poll(mailbox({ uidNext: 7, messages: [{ uid: 5, payload }, { uid: 6, payload: { ...payload, messageId: "<two@example.com>" } }] }));
+    const made = await ofOwn();
+    expect(made).toHaveLength(1);
+    expect(made[0]!.payload).toMatchObject({ messageId: "<two@example.com>" });
+  });
+});

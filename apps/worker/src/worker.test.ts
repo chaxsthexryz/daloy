@@ -341,6 +341,17 @@ describe("schedule guard (plan minimum interval)", () => {
     await fire(free);
     expect(await runsOf(free)).toHaveLength(2);
   }, 30_000);
+
+  it("starts no run of a paused automation, and starts them again after the resume (N11b)", async () => {
+    const wf = await scheduled(null);
+    await db.update(workflows).set({ pausedAt: new Date() }).where(eq(workflows.id, wf));
+    await fire(wf);
+    await fire(wf);
+    expect(await runsOf(wf)).toHaveLength(0);
+    await db.update(workflows).set({ pausedAt: null, resumedAt: new Date() }).where(eq(workflows.id, wf));
+    await fire(wf);
+    expect(await runsOf(wf)).toHaveLength(1);
+  }, 30_000);
 });
 
 describe("booking versions (decision 0032)", () => {

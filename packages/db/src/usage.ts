@@ -12,14 +12,20 @@ export const PLANS = {
 export type Plan = keyof typeof PLANS;
 /** Files a hosted form takes a day when the operator has set no plan. Other kinds stay unlimited without a plan. */
 export const UPLOADS_WITHOUT_PLAN = 20;
-export type UsageKind = "ai" | "email" | "http" | "upload";
-const limitFor = (plan: Plan | null, kind: UsageKind) => (plan ? PLANS[plan][kind] : kind === "upload" ? UPLOADS_WITHOUT_PLAN : null);
+/** "mailbox": recipients of mail sent through the owner's own Gmail or Outlook, a cap that does not depend on the plan (N11b). */
+export type UsageKind = "ai" | "email" | "http" | "upload" | "mailbox";
+/** Per workspace per Manila day. Under Gmail's own daily limit, so a busy automation cannot get the owner's mailbox suspended. */
+export const mailboxCap = (env: NodeJS.ProcessEnv = process.env) => {
+  const n = Number(env.MAILBOX_DAILY_CAP);
+  return Number.isInteger(n) && n > 0 ? n : 400;
+};
+const limitFor = (plan: Plan | null, kind: UsageKind) => (kind === "mailbox" ? mailboxCap() : plan ? PLANS[plan][kind] : kind === "upload" ? UPLOADS_WITHOUT_PLAN : null);
 
-/** Thrown when a plan's limit is reached. The API maps it to HTTP 429. */
+/** Thrown when a limit is reached. The API maps it to HTTP 429. A mailbox cap sends the run to review: nothing was sent and a person decides. */
 export class QuotaError extends StepError {
   override name = "QuotaError";
   constructor(message: string, readonly kind: UsageKind) {
-    super(message, false, { outcome: "not_sent" });
+    super(message, false, { outcome: "not_sent", review: kind === "mailbox" });
   }
 }
 
@@ -64,6 +70,7 @@ const resetsOn = (kind: UsageKind, startedOn: string | null, today: string) => (
 
 function quotaMessage(kind: UsageKind, limit: number, reset: string) {
   if (kind === "ai") return `This office used its ${limit} AI actions for this month. They come back on ${longDate(reset)}, Manila time. To get more now, ask Daloy to move you to a larger plan.`;
+  if (kind === "mailbox") return `This office reached today's limit of ${limit} recipients through its Gmail or Outlook. Nothing was sent. Choose Send again after it resets (tomorrow, Manila time), or Stop.`;
   if (kind === "email") return `This office reached today's limit of ${limit} email recipients. Sending starts again tomorrow, Manila time. Press Retry on this run then.`;
   if (kind === "upload") return `This office reached today's limit of ${limit} files. Forms take files again tomorrow, Manila time.`;
   return `This office reached today's limit of ${limit} web requests. They start again tomorrow, Manila time. Press Retry on this run then.`;

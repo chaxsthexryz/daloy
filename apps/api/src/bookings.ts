@@ -1,4 +1,4 @@
-import { bookingById, bookingByReference, bookingChanges, bookingResults, listBookings, publishedVersion, runs, staffChange, staffReplay, stepRuns, type BookingView, type Db, type StaffResult } from "@daloy/db";
+import { assertNotPaused, bookingById, bookingByReference, bookingChanges, bookingResults, listBookings, publishedVersion, runs, staffChange, staffReplay, stepRuns, type BookingView, type Db, type StaffResult } from "@daloy/db";
 import { bookingStartField, definitionSchema, parseZoned, type WorkflowDefinition } from "@daloy/engine";
 import { BadRequestException, Body, ConflictException, Controller, Get, Header, HttpCode, Inject, NotFoundException, Param, Post, UseGuards } from "@nestjs/common";
 import { and, asc, eq } from "drizzle-orm";
@@ -93,6 +93,8 @@ export async function rescheduleBooking(db: Db, boss: PgBoss, workspaceId: strin
       // In the change's transaction: the run, and its booking step as done with the booking's new times, so later
       // steps read {{steps.<booking step>.output}} as if the step had just booked.
       newRun: async (tx, moved) => {
+        // A paused automation starts no run, so the move waits for the resume (decision 0054).
+        await assertNotPaused(tx, plan.versionId);
         const [run] = await tx.insert(runs).values({ workflowVersionId: plan.versionId, triggerPayload: { ...plan.payload, [plan.field]: plan.value } }).returning({ id: runs.id });
         await tx.insert(stepRuns).values({ runId: run!.id, stepId: plan.stepId, attempt: 1, state: "succeeded", branch: "done", input: { action: "reschedule", by: actor }, output: moved, finishedAt: new Date() });
         return run!.id;

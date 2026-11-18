@@ -444,4 +444,32 @@ describe("MCP booking tools", () => {
     expect((await call("cancel_booking", { reference: ref, version: 2 })).structuredContent).toMatchObject({ booking: { status: "cancelled", version: 3 } });
     await client.close();
   });
+
+  it("refuses a reschedule tool call while the automation is paused (N11b)", async () => {
+    const s = await setup();
+    await s.book();
+    const token = (await s.agent.post("/tokens").send({ name: "claude", scopes: ["read", "run", "manage"] }).expect(201)).body.token as string;
+    const client = new Client({ name: "bookings-test", version: "1.0.0" });
+    await client.connect(new StreamableHTTPClientTransport(new URL(`${base}/mcp`), { requestInit: { headers: { Authorization: `Bearer ${token}` } } }));
+    const ref = ((await client.callTool({ name: "list_bookings", arguments: {} })).structuredContent as { bookings: { reference: string }[] }).bookings[0]!.reference;
+    await s.agent.post(`/workflows/${s.wf.id}/pause`).expect(204);
+    const refused = await client.callTool({ name: "reschedule_booking", arguments: { reference: ref, version: 1, start: at("16:00") } }).catch((err: unknown) => ({ isError: true, content: String(err) }));
+    expect(refused.isError).toBe(true);
+    expect(JSON.stringify(refused.content)).toContain("paused");
+    await client.close();
+  });
+});
+
+describe("pause and staff changes (N11b)", () => {
+  it("refuses a reschedule while the automation is paused, changes nothing, and works again after the resume", async () => {
+    const s = await setup();
+    await s.book();
+    const [b] = await s.listed();
+    await s.agent.post(`/workflows/${s.wf.id}/pause`).expect(204);
+    const refused = await s.agent.post(`/bookings/${b!.id}/reschedule`).send({ version: 1, start: at("16:00") }).expect(409);
+    expect(refused.body.message).toContain("paused");
+    expect((await s.listed())[0]).toMatchObject({ version: 1, start: `${at("14:00")}:00+08:00` });
+    await s.agent.post(`/workflows/${s.wf.id}/resume`).expect(204);
+    await s.agent.post(`/bookings/${b!.id}/reschedule`).send({ version: 1, start: at("16:00") }).expect(200);
+  });
 });

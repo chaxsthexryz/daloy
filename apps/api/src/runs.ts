@@ -1,4 +1,4 @@
-import { aiConnection, claimUsage, readUpload, deliveries, listDeliveries, QuotaError, redactSecrets, requests, resolveRun, runs, secretForms, supersededSql, secretValuesToHide, stepRuns, workflows, workflowVersions, type Db, type RunAction } from "@daloy/db";
+import { aiConnection, cancelRun, claimUsage, readUpload, deliveries, listDeliveries, QuotaError, redactSecrets, requests, resolveRun, runs, secretForms, supersededSql, secretValuesToHide, stepRuns, workflows, workflowVersions, type Db, type RunAction } from "@daloy/db";
 import { FILE_MIME, safeFileName } from "@daloy/engine";
 import { generate } from "@daloy/llm-ts";
 import { Body, ConflictException, Controller, Get, Header, HttpCode, HttpException, HttpStatus, Inject, NotFoundException, Param, Post, Query, Res, StreamableFile, UseGuards } from "@nestjs/common";
@@ -234,6 +234,22 @@ export class RunsController {
     await this.act(user, id, body.action);
   }
 
+  /**
+   * Cancels a run that has not started or is waiting on a delay or an approval. A run that is running or in review
+   * is refused: review has Stop. Of two people cancelling at once, the second gets a 409 (decision 0054).
+   */
+  @Post(":id/cancel")
+  @HttpCode(204)
+  @UseGuards(RateLimit(30))
+  async cancel(@CurrentUser() user: SessionUser, @Param("id", uuid) id: string) {
+    if (await cancelRun(this.db, user.workspaceId, id, user.email)) return;
+    const [run] = await this.owned().where(and(eq(workflows.userId, user.workspaceId), eq(runs.id, id)));
+    if (!run) throw new NotFoundException();
+    if (run.state === "needs_review") throw new ConflictException("This run is in review, so use Stop.");
+    if (run.state === "running") throw new ConflictException("This run is running right now, so it cannot be cancelled. It stops at its next wait.");
+    throw new ConflictException(`This run is ${run.state}, so it cannot be cancelled.`);
+  }
+
   /** One more attempt of the step a failed run stopped at, with the same step key. */
   @Post(":id/retry")
   @HttpCode(204)
@@ -250,6 +266,7 @@ export class RunsController {
     // Someone else's run and an unknown id look the same. Your own one in another state is a 409 that names the state.
     const [run] = await this.owned().where(and(eq(workflows.userId, user.workspaceId), eq(runs.id, id)));
     if (!run) throw new NotFoundException();
+    if (action === "delivered" && run.state === "needs_review") throw new ConflictException("Nothing was sent for this run, so it cannot be marked as sent. Choose Send again or Stop.");
     throw new ConflictException(`This run is ${run.state.replace("_", " ")}, so there is nothing to do.`);
   }
 
