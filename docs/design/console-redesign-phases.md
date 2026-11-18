@@ -19,6 +19,13 @@ Open one chat per phase. State the phase number, worktree and latest commit. Pha
 
 At handoff, record the phase status, commit, checks actually run, anything unverified and the next phase here. Claude can resume from the first unfinished row after checking Git status and log. The owner reviews and merges the branch.
 
+## Final review before Docker
+
+The owner requested a full walkthrough or sample HTML after all six phases, before putting the finished redesign into Docker. Deliver a local browser preview with a walkthrough. The owner must be able to inspect the final design with Docker stopped.
+
+Use clearly labelled synthetic data. Cover the homepage, activity and run details, bookings and resources, creation and editor, workspace settings, and requester/approver and sign-in flows. Include desktop and phone layouts, role differences and an empty or error state. Explain how to open the preview, what to click, which interactions are simulated, and which checks actually ran. Link the preview and walkthrough here and in the final handoff. The owner reviews them before authorizing a final Docker rollout. Until then, verify new work outside the running Docker stack.
+
 ## Progress
 
-- Phases 1 and 2 approved to run in parallel. Phases 3 through 6 planned.
+- Phase 1 committed at `9e0ea63`. Shared navigation passed 23 focused tests. Astra verified the combined web build, full TypeScript check, and five routes at desktop and phone widths with synthetic data.
+- Phase 2 in final verification. Phases 3 and 4 approved and running in separate parallel chats. Phases 5 and 6 queued.
