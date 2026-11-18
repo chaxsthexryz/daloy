@@ -4,7 +4,7 @@ import { lintDefinition } from "./lint";
 import { templatesForLanguage } from "./template-language";
 import { TEMPLATES } from "./templates";
 
-const SLUGS = ["inquiry-triage", "invoice-follow-up", "no-show-follow-up", "appointment-reminder", "request-to-sheets", "lead-to-booking", "order-to-sheets", "order-paid", "invoice-paymongo", "quote-deposit"];
+const SLUGS = ["inquiry-triage", "invoice-follow-up", "no-show-follow-up", "appointment-reminder", "request-to-sheets", "lead-to-booking", "order-to-sheets", "order-paid", "invoice-paymongo", "quote-deposit", "renewal-reminders", "store-orders"];
 const parse = (slug: string) => definitionSchema.parse(TEMPLATES.find((t) => t.slug === slug)!.definition);
 
 describe("starter templates", () => {
@@ -29,7 +29,7 @@ describe("starter templates", () => {
     const tl = templatesForLanguage("tl");
     for (const t of TEMPLATES.slice(3)) {
       const tt = tl.find((x) => x.slug === t.slug)!;
-      for (const s of t.definition.steps) if (s.type === "email" || s.type === "approval") expect(JSON.stringify(tt.definition.steps.find((x) => x.id === s.id)), `${t.slug}.${s.id}`).not.toEqual(JSON.stringify(s));
+      for (const s of t.definition.steps) if (s.type === "email" || s.type === "approval" || s.type === "slack") expect(JSON.stringify(tt.definition.steps.find((x) => x.id === s.id)), `${t.slug}.${s.id}`).not.toEqual(JSON.stringify(s));
     }
   });
 
@@ -56,5 +56,19 @@ describe("starter templates", () => {
     const checks = def.steps.filter((s) => s.type === "payment_status");
     expect(checks).toHaveLength(2);
     for (const c of def.steps.filter((s) => s.type === "condition")) expect(c.config).toMatchObject({ condition: { op: "eq", right: "pending" } });
+  });
+
+  it("renewal-reminders logs the item, waits until 30 days before it expires, then emails", () => {
+    const def = parse("renewal-reminders");
+    expect(def.trigger.type).toBe("form");
+    expect(def.steps.map((s) => s.type)).toEqual(["sheets", "delay", "email"]);
+    expect(def.steps.find((s) => s.id === "wait_until_30_days_before")!.config).toEqual({ until: "{{trigger.expires_at}}", offsetSeconds: -2_592_000 });
+  });
+
+  it("store-orders is a webhook recipe that logs, receipts the customer and tells the owner without private details", () => {
+    const def = parse("store-orders");
+    expect(def.trigger.type).toBe("webhook");
+    expect(def.steps.map((s) => s.type)).toEqual(["sheets", "email", "slack"]);
+    expect(JSON.stringify(def.steps.find((s) => s.type === "slack"))).not.toContain("customer_email");
   });
 });

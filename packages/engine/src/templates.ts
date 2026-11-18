@@ -352,4 +352,66 @@ export const TEMPLATES = [
       ],
     },
   },
+  // N20: two more starters, existing steps only. The Sheet is a register Daloy appends to; no step reads a sheet, so the 30-day wait runs per item from its expiry date.
+  {
+    slug: "renewal-reminders",
+    name: "Renewal reminders",
+    description: "Add each domain, hosting plan, SSL certificate, permit or insurance policy on a form. Daloy lists it in your Google Sheet and emails you 30 days before it expires.",
+    definition: {
+      trigger: {
+        type: "form",
+        config: {
+          fields: [
+            { name: "item", label: "What renews? (domain, hosting, SSL, permit, insurance)", type: "text", required: true },
+            { name: "expires_at", label: "Expires on", type: "datetime", timezone: "Asia/Manila", required: true },
+            { name: "email", label: "Send the reminder to", type: "email", required: true },
+          ],
+        },
+      },
+      steps: [
+        { id: "log_item", type: "sheets", config: { columns: ["{{trigger.item}}", "{{trigger.expires_at}}", "{{trigger.email}}"] } },
+        { id: "wait_until_30_days_before", type: "delay", config: { until: "{{trigger.expires_at}}", offsetSeconds: -2_592_000 } },
+        {
+          id: "remind",
+          type: "email",
+          config: { to: "{{trigger.email}}", subject: "Renewal due in 30 days: {{trigger.item}}", text: "{{trigger.item}} expires on {{trigger.expires_at}}. Renew it now so it does not lapse." },
+        },
+      ],
+      edges: [
+        { from: "log_item", to: "wait_until_30_days_before" },
+        { from: "wait_until_30_days_before", to: "remind" },
+      ],
+    },
+  },
+  {
+    slug: "store-orders",
+    name: "Shopify or WooCommerce orders",
+    description: "Point a Shopify or WooCommerce order webhook (or a small relay that sends these four fields) at this automation. Each order is added to your Google Sheet, the customer gets a receipt and the owner gets a Slack note.",
+    definition: {
+      trigger: {
+        type: "webhook",
+        config: {
+          fields: [
+            { name: "order_id", label: "Order number", type: "text", required: true },
+            { name: "customer_name", label: "Customer name", type: "text", required: true },
+            { name: "customer_email", label: "Customer email", type: "email", required: true },
+            { name: "total", label: "Total in pesos", type: "number", required: true, min: 0 },
+          ],
+        },
+      },
+      steps: [
+        { id: "log_order", type: "sheets", config: { columns: ["{{trigger.order_id}}", "{{trigger.customer_name}}", "{{trigger.total}}"] } },
+        {
+          id: "send_receipt",
+          type: "email",
+          config: { to: "{{trigger.customer_email}}", subject: "We got your order {{trigger.order_id}}", text: "Hi {{trigger.customer_name}}, thanks for your order {{trigger.order_id}} ({{trigger.total}} pesos). We will email you when it ships." },
+        },
+        { id: "tell_owner", type: "slack", config: { text: "New order {{trigger.order_id}}: {{trigger.total}} pesos. Details are in your sheet." } },
+      ],
+      edges: [
+        { from: "log_order", to: "send_receipt" },
+        { from: "send_receipt", to: "tell_owner" },
+      ],
+    },
+  },
 ] as const;
