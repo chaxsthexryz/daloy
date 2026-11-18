@@ -15,6 +15,7 @@ import { AiModelPage } from "./Settings";
 import { SettingsPage } from "./AppSettings";
 import { BusinessSetupPage, VerifySenderPage } from "./BusinessSetup";
 import { AppsPage } from "./Apps";
+import { SecretsPage } from "./Secrets";
 import { TokensPage } from "./Tokens";
 import { VersionsPage } from "./Versions";
 import { Shell } from "./Nav";
@@ -26,7 +27,7 @@ const RESET = /^#\/reset-password\/([A-Za-z0-9_-]{43})$/;
 const INVITE = /^#\/invite\/([A-Za-z0-9_-]{43})$/;
 
 /**
- * Hash routes (#/ is Automations, #/advanced the developer menu, #/w/<id>, #/w/<id>/runs, #/w/<id>/versions, #/runs/<id> (and #/runs/<id>/ask), #/tokens, #/settings, #/settings/ai, #/settings/business, #/apps, #/activity, #/new, #/ai (Build with AI), #/resources, #/bookings,
+ * Hash routes (#/ is Automations, #/advanced the developer menu, #/w/<id>, #/w/<id>/runs, #/w/<id>/versions, #/runs/<id> (and #/runs/<id>/ask), #/tokens, #/secrets, #/settings, #/settings/ai, #/settings/business, #/apps, #/activity, #/new, #/ai (Build with AI), #/resources, #/bookings,
  * #/verify-sender/<token> for the Gmail confirmation link, #/team, #/invite/<token> for an invite link,
  * #/forgot-password and #/reset-password/<token> before sign-in, #/account to change the password,
  * #/answer/<token> to sign in before a named approval (decision 0022),
@@ -98,6 +99,7 @@ function Route({ hash, user }: { hash: string; user: User }) {
   if (hash === "#/advanced" && user.role === "owner") return <AdvancedPage />;
   if (hash === "#/new" && user.role === "owner") return <NewAutomationPage email={user.email} />;
   if (hash === "#/ai" && user.role === "owner") return <BuildWithAiPage email={user.email} />;
+  if (hash === "#/secrets" && user.role === "owner") return <SecretsPage />;
   if (hash === "#/tokens") return <TokensPage />;
   if (hash === "#/settings") return <SettingsPage user={user} />;
   if (hash === "#/account") return <AccountPage />;

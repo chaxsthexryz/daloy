@@ -154,13 +154,7 @@ Open New automation and set up each of these once. Change the text to suit you, 
 
 Features: webhook trigger, signing secret, `X-Daloy-Timestamp`, the 5-minute replay window, "Require the timestamp", HTTP step, failure explanations.
 
-1. Save a signing secret. The console has no secrets page yet (finding to note), so while signed in, press F12, open Console, and paste this with a long random value of your own:
-
-   ```js
-   await fetch("/secrets/shop_hook", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ value: "PASTE_A_LONG_RANDOM_VALUE" }) })
-   ```
-
-   A `204` answer means it is saved. It can never be read back, so keep your copy for step 3.
+1. Save a signing secret. Open Advanced, then Secrets. Name it `shop_hook`, paste a long random value of your own into Value and press "Save secret". The field clears at once and the value can never be read back, so keep your copy for step 3. (Replace changes it later; Delete asks first.)
 2. New automation with a webhook trigger. Set "Signing secret name" to `shop_hook` and copy its URL.
 3. Add an AI step: "From this message, return the customer name, item and quantity." Then an HTTP step that posts to `https://example.invalid/orders` (this address never works, on purpose), then an email to yourself.
 4. Turn it on. Send a signed order from Git Bash (put in your URL and secret):

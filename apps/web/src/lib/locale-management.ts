@@ -1,5 +1,13 @@
 /** Literal console copy only. Interpolated account names and provider data stay unchanged. */
 export const managementTranslations: Record<string, string> = {
+  "Secrets": "Mga secret", "Your secrets": "Mga secret mo", "Save a secret": "Mag-save ng secret", "Save secret": "I-save ang secret", "Replace": "Palitan", "Delete": "Burahin", "Actions": "Mga aksyon",
+  "Replace {name}": "Palitan ang {name}", "Delete {name}": "Burahin ang {name}",
+  "Delete the secret {name}? Anything that uses it stops working.": "Burahin ang secret na {name}? Titigil sa paggana ang anumang gumagamit nito.",
+  "Saved {name}. The value is not shown again.": "Na-save ang {name}. Hindi na ito ipapakita ulit.",
+  "Use a-z, 0-9 and _, starting with a letter (up to 100 characters).": "Gumamit ng a-z, 0-9 at _, simula sa letra (hanggang 100 character).",
+  "Named values that automations use: a webhook's signing secret, or a key an HTTP step sends. A value is saved once and can never be read back, not even here. To change one, save it again under the same name.": "Mga pinangalanang halaga na ginagamit ng mga automation: signing secret ng webhook, o key na ipinapadala ng HTTP step. Isang beses lang sine-save ang halaga at hindi na ito mababasa ulit, kahit dito. Para palitan, i-save ulit sa parehong pangalan.",
+  "Name: a-z, 0-9 and _ only. In an HTTP step, write it as ": "Pangalan: a-z, 0-9 at _ lang. Sa HTTP step, isulat ito bilang ",
+  "Manage secrets": "Pamahalaan ang mga secret", "for webhook signing and HTTP step keys": "para sa signing ng webhook at mga key ng HTTP step",
   " and": " at",
   "Send a message to a Telegram chat.": "Magpadala ng mensahe sa Telegram chat.",
   "Add a record to a table for every request.": "Magdagdag ng record sa table para sa bawat request.",
