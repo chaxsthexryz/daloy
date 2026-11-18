@@ -1,4 +1,5 @@
 import { managementTranslations } from "./locale-management";
+import { brandTranslations } from "./locale-brand";
 import { builderTranslations } from "./locale-builder";
 import { guidedTranslations } from "./locale-guided";
 import { viewTranslations } from "./locale-views";
@@ -9,6 +10,7 @@ const tagalog: Record<string, string> = {
   ...builderTranslations,
   ...guidedTranslations,
   ...viewTranslations,
+  ...brandTranslations,
   "Plan: {plan}": "Plan: {plan}",
   "{used}, no limit": "{used}, walang limit",
   "{used} of {limit}": "{used} sa {limit}",
