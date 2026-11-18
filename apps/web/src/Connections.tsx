@@ -1,6 +1,7 @@
 import { useLanguage } from "./Language";
 import { useState, type FormEvent } from "react";
 import { api } from "./api";
+import { ConnectPanel, Status, useAction } from "./ConnectPanel";
 
 export type Provider = "google_sheets" | "slack" | "outlook" | "teams" | "telegram" | "google_calendar" | "google_drive" | "paymongo" | "airtable" | "notion" | "trello";
 export type Connection = { provider: Provider; status: "active" | "failed"; account: string; destination: Record<string, string> | null; lastError: string | null; lastTestedAt: string | null };
@@ -14,7 +15,7 @@ const TELEGRAM_BOT_HELP = "https://core.telegram.org/bots/tutorial";
 const TEAMS_WORKFLOWS_HELP = "https://support.microsoft.com/en-us/workflows/send-messages-in-teams-using-incoming-webhooks";
 const MICROSOFT_CONSENT_HELP = "https://learn.microsoft.com/en-us/entra/identity/enterprise-apps/configure-user-consent";
 
-/** What the Outlook consent callback reported, by the code in #/settings/business/outlook-<code>. */
+/** What the Outlook consent callback reported, by the code in #/settings/business/outlook-<code> or #/apps/outlook-<code>. */
 const OUTLOOK_OUTCOMES: Record<string, { ok: boolean; text: string }> = {
   connected: { ok: true, text: "Outlook is connected. Send a test email to check it." },
   admin_approved: { ok: true, text: "An administrator approved Daloy for your organization. Connect Outlook now." },
@@ -23,35 +24,6 @@ const OUTLOOK_OUTCOMES: Record<string, { ok: boolean; text: string }> = {
   expired: { ok: false, text: "That sign-in took too long or was started by someone else. Start again with Connect Outlook." },
   failed: { ok: false, text: "Microsoft did not finish connecting. Start again with Connect Outlook." },
 };
-
-function useAction(onChange: () => Promise<unknown>) {
-  const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
-  const act = async (fn: () => Promise<unknown>) => {
-    setError("");
-    setBusy(true);
-    try {
-      await fn();
-      await onChange();
-    } catch (err) {
-      setError((err as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  };
-  return { error, busy, act };
-}
-
-function Status({ conn, label }: { conn: Connection; label: string }) {
-  const { t } = useLanguage();
-  return (
-    <p className="in-use">
-      {t(label)} <strong>{conn.account}</strong>
-      <span className={`tag${conn.status === "active" ? " ok" : ""}`}>{conn.status === "active" ? t("Connected") : t("Needs reconnecting")}</span>
-      {conn.lastError && <span className="message error"> {conn.lastError}</span>}
-    </p>
-  );
-}
 
 function Outcome({ test, what }: { test: TestResult | null; what: string }) {
   const { t } = useLanguage();
@@ -574,49 +546,45 @@ export function OutlookConnection({ conn, setup, outcome, onChange }: { conn: Co
   const { t } = useLanguage();
   const { error, busy, act } = useAction(onChange);
   const [test, setTest] = useState<TestResult | null>(null);
-  const shown = outcome && setup.configured ? OUTLOOK_OUTCOMES[outcome] : undefined;
-  // A full page visit to Microsoft. The callback brings the browser back here with the outcome in the address.
-  const connect = () => act(async () => location.assign((await api<{ url: string }>("POST", "/settings/connections/outlook/start")).url));
 
+  // Outlook is on the shared OAuth core (decision 0058); it has no paste form, so without a client only the note shows.
   return (
-    <div className="connection" aria-labelledby="outlook-h">
-      <h3 id="outlook-h">Outlook</h3>
-      {shown && (
-        <p role={shown.ok ? "status" : "alert"} className={shown.ok ? "" : "message error"}>
-          {t(shown.text)}
+    <ConnectPanel
+      slug="outlook"
+      name="Outlook"
+      configured={setup.configured}
+      conn={conn}
+      label="Mailbox"
+      outcome={outcome}
+      outcomes={OUTLOOK_OUTCOMES}
+      onChange={onChange}
+      removeHint="Daloy deleted its access to the mailbox. Microsoft has no way for Daloy to withdraw the permission itself, so also remove Daloy from the apps your Microsoft account allows."
+      unavailable={<p className="muted">{t("Outlook is not set up on this installation. The person who runs Daloy registers a free Microsoft Entra app and sets MICROSOFT_CLIENT_ID and MICROSOFT_CLIENT_SECRET (see the README). Email keeps going through the mail server in this installation's settings.")}</p>}
+      intro={
+        <p>{t("Microsoft will ask you to let Daloy send email as you (Mail.Send), keep that access without asking each time, and read your name and address. Many organizations only let an administrator approve a new app. If Microsoft says you need admin approval, send your administrator")}{" "}
+          {setup.adminConsentUrl && (
+            <a href={setup.adminConsentUrl} target="_blank" rel="noreferrer">{t("this approval link")}</a>
+          )}{t(", then connect again.")}{" "}
+          <a href={MICROSOFT_CONSENT_HELP} target="_blank" rel="noreferrer">{t("How organizations control app consent")}</a>
         </p>
-      )}
-      {!setup.configured ? (
-        <p className="muted">{t("Outlook is not set up on this installation. The person who runs Daloy registers a free Microsoft Entra app and sets MICROSOFT_CLIENT_ID and MICROSOFT_CLIENT_SECRET (see the README). Email keeps going through the mail server in this installation's settings.")}</p>
-      ) : (
+      }
+      actions={
+        conn && (
+          <button type="button" disabled={busy} onClick={() => void act(async () => setTest(await api<TestResult>("POST", "/settings/connections/outlook/test")))}>{t("Send a test email to {email}", { email: conn.account })}
+          </button>
+        )
+      }
+      after={
         <>
-          {conn && <Status conn={conn} label={t("Mailbox")} />}
-          {conn && <p>{t("Purchase request emails go out from this mailbox, with a copy in its Sent Items.")}</p>}
-          <p>{t("Microsoft will ask you to let Daloy send email as you (Mail.Send), keep that access without asking each time, and read your name and address. Many organizations only let an administrator approve a new app. If Microsoft says you need admin approval, send your administrator")}{" "}
-            {setup.adminConsentUrl && (
-              <a href={setup.adminConsentUrl} target="_blank" rel="noreferrer">{t("this approval link")}</a>
-            )}{t(", then connect again.")}{" "}
-            <a href={MICROSOFT_CONSENT_HELP} target="_blank" rel="noreferrer">{t("How organizations control app consent")}</a>
-          </p>
-          <div className="actions">
-            <button type="button" className={conn ? "" : "primary"} disabled={busy} onClick={() => void connect()}>
-              {conn ? t("Reconnect Outlook") : t("Connect Outlook")}
-            </button>
-            {conn && (
-              <>
-                <button type="button" disabled={busy} onClick={() => void act(async () => setTest(await api<TestResult>("POST", "/settings/connections/outlook/test")))}>{t("Send a test email to {email}", { email: conn.account })}
-                </button>
-                <button type="button" className="quiet" disabled={busy} onClick={() => window.confirm(t("Disconnect Outlook? Automations stop sending there until you reconnect.")) && void act(() => api("DELETE", "/settings/connections/outlook"))}>{t("Disconnect")}</button>
-              </>
-            )}
-          </div>
           <Outcome test={test} what={t("Outlook accepted a test email to the mailbox itself")} />
+          <p role="alert" className="message error" hidden={!error}>
+            {error}
+          </p>
         </>
-      )}
-      <p role="alert" className="message error" hidden={!error}>
-        {error}
-      </p>
-    </div>
+      }
+    >
+      {conn && <p>{t("Purchase request emails go out from this mailbox, with a copy in its Sent Items.")}</p>}
+    </ConnectPanel>
   );
 }
 

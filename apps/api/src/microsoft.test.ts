@@ -1,8 +1,8 @@
 import { randomBytes } from "node:crypto";
-import { connectionCredential, connections, users, type Db } from "@daloy/db";
+import { connectionCredential, connections, oauthFlows, users, type Db } from "@daloy/db";
 import { defaultPurchaseAnswers, purchaseRequestDefinition } from "@daloy/engine";
 import type { INestApplication } from "@nestjs/common";
-import { eq } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import type { Pool } from "pg";
 import { PgBoss } from "pg-boss";
 import request from "supertest";
@@ -10,7 +10,6 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { freshDatabase } from "../../../test/db";
 import { startFakeProviders, type FakeProviders } from "../../../test/fake-providers";
 import { createApp } from "./app";
-import { signState } from "./connections";
 
 // Roadmap phase 5 (decision 0023): Outlook consent, Teams workflow links, and the purchase request template. Fakes only.
 let app: INestApplication;
@@ -102,9 +101,11 @@ describe("Outlook", () => {
     const back = new URL((await fetch(body.url as string, { redirect: "manual" })).headers.get("location")!);
     expect((await ben.agent.get(back.pathname + back.search).expect(302)).headers.location).toBe("/#/settings/business/outlook-expired");
     expect((await request(server).get(back.pathname + back.search).expect(302)).headers.location).toBe("/#/settings/business/outlook-expired");
-    const old = signState(secretsKey, { w: ana.userId, m: ana.userId, e: Date.now() - 1, n: "x" });
+    // Decision 0058: the state is a one-time flow row, so an expired one is a flow past its ten minutes.
+    const old = new URL((await ana.agent.post("/settings/connections/outlook/start").expect(200)).body.url as string).searchParams.get("state")!;
+    await db.update(oauthFlows).set({ expiresAt: sql`now() - interval '1 second'` }).where(and(eq(oauthFlows.workspaceId, ana.userId), isNull(oauthFlows.consumedAt)));
     expect((await ana.agent.get(`/settings/connections/outlook/callback?code=abc&state=${old}`).expect(302)).headers.location).toBe("/#/settings/business/outlook-expired");
-    const forged = `${old.split(".")[0]}.${"A".repeat(43)}`;
+    const forged = randomBytes(32).toString("base64url");
     expect((await ana.agent.get(`/settings/connections/outlook/callback?code=abc&state=${forged}`).expect(302)).headers.location).toBe("/#/settings/business/outlook-expired");
     expect(await db.select().from(connections).where(eq(connections.userId, ana.userId))).toEqual([]);
   });

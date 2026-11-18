@@ -7,7 +7,8 @@ import { startFakeProviders, type FakeProviders } from "../../../test/fake-provi
 import { connectionCredential, readConnections, saveConnection } from "./connections";
 import { confirmDelivery, queueDelivery, retryDelivery, runDueDeliveries } from "./deliveries";
 import type { Db } from "./index";
-import { consentOutcome, outlookAuthorizeUrl, outlookCodeTokens, teamsWebhookUrl, type ProviderUrls } from "./providers";
+import { authorizeUrl, codeTokens, outlook } from "./oauth";
+import { consentOutcome, teamsWebhookUrl, type ProviderUrls } from "./providers";
 import { connections, deliveries, runs, users, workflows, workflowVersions } from "./schema";
 
 // Roadmap phase 5 (decision 0023): Outlook mail and Teams notes are deliveries like Sheets and Slack. Expired access is
@@ -38,9 +39,9 @@ async function consent(): Promise<string> {
   const { createHash } = await import("node:crypto");
   const challenge = createHash("sha256").update(verifier).digest("base64url");
   const redirectUri = "http://localhost:3000/settings/connections/outlook/callback";
-  const res = await fetch(outlookAuthorizeUrl(urls, { redirectUri, state: "s", codeChallenge: challenge }), { redirect: "manual" });
+  const res = await fetch(authorizeUrl(outlook, urls, { redirectUri, state: "s", codeChallenge: challenge }), { redirect: "manual" });
   const code = new URL(res.headers.get("location")!).searchParams.get("code")!;
-  return (await outlookCodeTokens(urls, code, verifier, redirectUri)).refreshToken;
+  return (await codeTokens(outlook, urls, code, verifier, redirectUri)).refreshToken!;
 }
 
 beforeAll(async () => {

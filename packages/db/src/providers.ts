@@ -576,38 +576,6 @@ export async function trelloAddCard(urls: ProviderUrls, cred: TrelloCredential, 
 
 // ---------------------------------------------------------------- Microsoft: Outlook through Graph, and Teams Workflows
 
-/** Delegated permissions for Outlook: send as the signed-in mailbox, keep access without a sign-in each time, read the address. */
-export const OUTLOOK_SCOPES = "offline_access https://graph.microsoft.com/Mail.Send https://graph.microsoft.com/User.Read";
-
-function microsoftApp(urls: ProviderUrls) {
-  if (!urls.microsoft || !urls.microsoftLogin) throw new ProviderError("Outlook is not set up on this installation. Set MICROSOFT_CLIENT_ID and MICROSOFT_CLIENT_SECRET.", "invalid");
-  return { ...urls.microsoft, base: `${urls.microsoftLogin}/${encodeURIComponent(urls.microsoft.tenant)}` };
-}
-
-/** The Microsoft sign-in and consent page, with PKCE (S256). */
-export function outlookAuthorizeUrl(urls: ProviderUrls, o: { redirectUri: string; state: string; codeChallenge: string }) {
-  const app = microsoftApp(urls);
-  const q = new URLSearchParams({
-    client_id: app.clientId,
-    response_type: "code",
-    redirect_uri: o.redirectUri,
-    response_mode: "query",
-    scope: OUTLOOK_SCOPES,
-    state: o.state,
-    code_challenge: o.codeChallenge,
-    code_challenge_method: "S256",
-    prompt: "select_account",
-  });
-  return `${app.base}/oauth2/v2.0/authorize?${q}`;
-}
-
-/** The page an administrator opens to approve Daloy for the whole organization. */
-export function outlookAdminConsentUrl(urls: ProviderUrls, redirectUri: string) {
-  const app = microsoftApp(urls);
-  const q = new URLSearchParams({ client_id: app.clientId, redirect_uri: redirectUri, scope: "https://graph.microsoft.com/Mail.Send https://graph.microsoft.com/User.Read" });
-  return `${app.base}/v2.0/adminconsent?${q}`;
-}
-
 /**
  * What a consent error on the way back means. Microsoft answers access_denied both when the person said no and when
  * tenant policy blocks user consent, so the AADSTS code in the description decides.
@@ -617,35 +585,6 @@ export function consentOutcome(error: string, description = ""): "admin_required
   if (error === "access_denied" || error === "consent_required" || /AADSTS65004/.test(description)) return "declined";
   return "failed";
 }
-
-type MsTokens = { accessToken: string; refreshToken: string; expiresIn: number };
-
-/** The token endpoint, for the authorization code and for refresh. invalid_grant and friends mean the owner must reconnect. */
-async function microsoftToken(urls: ProviderUrls, params: Record<string, string>): Promise<MsTokens> {
-  const app = microsoftApp(urls);
-  const body = new URLSearchParams({ client_id: app.clientId, client_secret: app.clientSecret, scope: OUTLOOK_SCOPES, ...params });
-  const res = await call(`${app.base}/oauth2/v2.0/token`, { method: "POST", body }, urls.timeoutMs ?? 10_000, false, "Microsoft sign-in");
-  if (res.status === 200 && typeof res.body.access_token === "string" && typeof res.body.refresh_token === "string") {
-    return { accessToken: res.body.access_token, refreshToken: res.body.refresh_token, expiresIn: typeof res.body.expires_in === "number" ? res.body.expires_in : 3600 };
-  }
-  const error = String(res.body.error ?? "");
-  const description = String(res.body.error_description ?? "");
-  if (res.status === 429) throw new ProviderError("Microsoft sign-in is limiting requests right now. Daloy will try again.", "quota", retryAfter(res.headers));
-  if (res.status >= 500) throw new ProviderError(`Microsoft sign-in answered ${res.status}. Daloy will try again.`, "unavailable");
-  if (error === "invalid_client") throw new ProviderError("Microsoft rejected this installation's app settings (MICROSOFT_CLIENT_ID or MICROSOFT_CLIENT_SECRET).", "invalid");
-  if (consentOutcome(error, description) === "admin_required") {
-    throw new ProviderError("Your organization now requires an administrator to approve Daloy. Ask them to approve it, then reconnect Outlook.", "auth");
-  }
-  // invalid_grant (expired or revoked), interaction_required (password changed, policy), consent withdrawn.
-  throw new ProviderError("Microsoft no longer accepts Daloy's access to this mailbox. It may have been revoked or expired. Reconnect Outlook.", "auth");
-}
-
-export const outlookCodeTokens = (urls: ProviderUrls, code: string, codeVerifier: string, redirectUri: string) =>
-  microsoftToken(urls, { grant_type: "authorization_code", code, code_verifier: codeVerifier, redirect_uri: redirectUri });
-
-// Access tokens by refresh token hash, in memory, so a burst of deliveries signs in once. shortcut: per process.
-const msTokenCache = new Map<string, { token: string; expiresAt: number }>();
-const hash = (s: string) => createHash("sha256").update(s).digest("hex");
 
 function graphFailure(res: Reply, write: boolean): ProviderError {
   const err = (res.body.error ?? {}) as { code?: unknown; message?: unknown };
@@ -660,46 +599,23 @@ function graphFailure(res: Reply, write: boolean): ProviderError {
   return new ProviderError(`Outlook rejected the message${said || ` (${res.status})`}.`, "invalid");
 }
 
-/**
- * A Graph call as the connected mailbox. Signs in with the stored refresh token, saves the new one Microsoft hands
- * back (saveRefreshToken), and after a 401 (an access token that expired early) signs in once more.
- */
-async function graph(urls: ProviderUrls, refreshToken: string, saveRefreshToken: (t: string) => Promise<void>, path: string, init: RequestInit, write: boolean): Promise<Reply> {
-  let current = refreshToken;
-  for (let tries = 0; ; tries++) {
-    let cached = msTokenCache.get(hash(current));
-    if (!cached || cached.expiresAt < Date.now() + 60_000) {
-      const t = await microsoftToken(urls, { grant_type: "refresh_token", refresh_token: current });
-      cached = { token: t.accessToken, expiresAt: Date.now() + t.expiresIn * 1000 };
-      if (t.refreshToken !== current) {
-        await saveRefreshToken(t.refreshToken);
-        current = t.refreshToken;
-      }
-      msTokenCache.set(hash(current), cached);
-    }
-    const res = await call(`${urls.graph}${path}`, { ...init, headers: { ...init.headers, authorization: `Bearer ${cached.token}` } }, urls.timeoutMs ?? 10_000, write, "Outlook");
-    if (res.status === 200 || res.status === 202) return res;
-    if (res.status === 401 && tries === 0) {
-      msTokenCache.delete(hash(current));
-      continue;
-    }
-    throw graphFailure(res, write);
-  }
-}
-
-/** The mailbox the owner consented with: its address is what the connection shows and where the test email goes. */
+/** The mailbox the owner consented with: its address is what the connection shows, its id the account Daloy pins. */
 export async function outlookMailbox(urls: ProviderUrls, accessToken: string) {
-  const res = await call(`${urls.graph}/v1.0/me?$select=mail,userPrincipalName,displayName`, { headers: { authorization: `Bearer ${accessToken}` } }, urls.timeoutMs ?? 10_000, false, "Outlook");
+  const res = await call(`${urls.graph}/v1.0/me?$select=id,mail,userPrincipalName`, { headers: { authorization: `Bearer ${accessToken}` } }, urls.timeoutMs ?? 10_000, false, "Outlook");
   if (res.status !== 200) throw graphFailure(res, false);
-  return String(res.body.mail || res.body.userPrincipalName || "");
+  return { id: String(res.body.id ?? ""), mailbox: String(res.body.mail || res.body.userPrincipalName || "") };
 }
 
 export type OutlookMessage = { to: string; subject: string; text: string };
 
-/** sendMail answers 202 with no body and no message id, so there is nothing to look up afterwards. A copy goes to Sent Items. */
-export async function outlookSend(urls: ProviderUrls, refreshToken: string, saveRefreshToken: (t: string) => Promise<void>, m: OutlookMessage) {
+/**
+ * sendMail answers 202 with no body and no message id, so there is nothing to look up afterwards. A copy goes to Sent
+ * Items. A 401 is an auth refusal: withFreshToken refreshes once and calls this again (decision 0058).
+ */
+export async function outlookSend(urls: ProviderUrls, accessToken: string, m: OutlookMessage) {
   const message = { subject: m.subject, body: { contentType: "Text", content: m.text }, toRecipients: m.to.split(",").map((a) => ({ emailAddress: { address: a.trim() } })) };
-  await graph(urls, refreshToken, saveRefreshToken, "/v1.0/me/sendMail", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ message, saveToSentItems: true }) }, true);
+  const res = await call(`${urls.graph}/v1.0/me/sendMail`, { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${accessToken}` }, body: JSON.stringify({ message, saveToSentItems: true }) }, urls.timeoutMs ?? 10_000, true, "Outlook");
+  if (res.status !== 202 && res.status !== 200) throw graphFailure(res, true);
   return { to: m.to, sent: true };
 }
 

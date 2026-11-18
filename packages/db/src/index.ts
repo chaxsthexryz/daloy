@@ -17,6 +17,7 @@ export * from "./language";
 export * from "./mail";
 export * from "./mail-senders";
 export * from "./members";
+export * from "./oauth";
 export * from "./paymongo";
 export * from "./providers";
 export * from "./runs";

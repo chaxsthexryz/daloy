@@ -20,6 +20,38 @@ import type { AddressInfo } from "node:net";
  * Sheets developer metadata follows Google: a spreadsheets.batchUpdate is all or nothing, and creating metadata with an
  * id that already exists in the spreadsheet fails the whole batch with 400.
  */
+/**
+ * A generic OAuth 2.0 app at /oauth/<name>/{authorize,token,revoke,userinfo}, for the shared OAuth core (decision 0058).
+ * Later phases add an app with oauthApp("<name>", { ...overrides }) in the `oauth` list below and point their provider
+ * definition at fake.oauthUrls("<name>"). The fields are the knobs a test turns:
+ * - consent: what the authorize page answers. "narrow" grants only grantScopes.
+ * - rotation: "none" keeps the refresh token, "rotate" hands out a new one and keeps the old working, "strict" hands out
+ *   a new one and refuses the old (reuse), unless keepPrevious lets the previous one through once more.
+ * - expiresIn: access token lifetime in seconds (undefined: never expires). refresh: whether refresh tokens exist.
+ * 429, 5xx and slow answers come from once("/oauth/<name>/token", ...), like every other fake endpoint.
+ */
+function oauthApp(name: string, o: { expiresIn?: number; rotation?: "none" | "rotate" | "strict"; refresh?: boolean } = {}) {
+  return {
+    name,
+    clientId: `${name}-client-id`,
+    clientSecret: `${name}-client-secret`,
+    user: { id: `${name}-user-1`, email: `ana@${name}.example` },
+    consent: "grant" as "grant" | "declined" | "admin_required" | "narrow",
+    grantScopes: [] as string[],
+    rotation: o.rotation ?? "strict",
+    keepPrevious: false,
+    expiresIn: "expiresIn" in o ? o.expiresIn : 3600,
+    refresh: o.refresh ?? true,
+    revokeStatus: 200,
+    codes: new Map<string, { challenge: string; redirectUri: string; scope: string; user: { id: string; email: string } }>(),
+    refreshTokens: new Map<string, { scope: string; user: { id: string; email: string } }>(),
+    previous: new Map<string, { scope: string; user: { id: string; email: string } }>(),
+    accessTokens: new Map<string, { id: string; email: string }>(),
+    revoked: [] as string[],
+    tokenCalls: 0,
+  };
+}
+
 type Behaviour = { status: number; body: unknown; headers?: Record<string, string> } | "hang" | "hang-after" | { late: number } | { heldUntil: Promise<unknown>; status?: number; body?: unknown };
 type SheetMeta = { metadataId: number; metadataKey: string; metadataValue?: string; location: { sheetId: number }; visibility: string };
 
@@ -41,7 +73,7 @@ export async function startFakeProviders(port = 0) {
   const microsoft = {
     clientId: "fake-client-id",
     clientSecret: "fake-client-secret",
-    user: { mail: "ana@contoso.example", displayName: "Ana Lim" },
+    user: { id: "ms-user-ana", mail: "ana@contoso.example", displayName: "Ana Lim" },
     consent: "grant" as "grant" | "admin_required" | "declined",
     mailboxEnabled: true,
     codes: new Map<string, { challenge: string; redirectUri: string; scope: string }>(),
@@ -57,6 +89,7 @@ export async function startFakeProviders(port = 0) {
   const driveFiles: { id: string; name: string; parent: string; mimeType: string; size: number; sha256: string }[] = [];
   const paymongo = { sessions: [] as { id: string; amount: number }[], keys: new Map<string, unknown>() }; // keys: Idempotency-Key -> stored response
   const teams = { flows: new Set(["flow-purchasing"]), posts: [] as { flow: string; text: string }[] };
+  const oauth: Record<string, ReturnType<typeof oauthApp>> = { test: oauthApp("test") };
   const pending: { path: string; behaviour: Behaviour; skip: number }[] = [];
   const calls: string[] = [];
   const hanging = new Set<ServerResponse>();
@@ -125,6 +158,74 @@ export async function startFakeProviders(port = 0) {
       });
     }
 
+    // Generic OAuth apps (see oauthApp above).
+    const oa = /^\/oauth\/([\w-]+)\/(authorize|token|revoke|userinfo)$/.exec(path);
+    const app = oa && oauth[oa[1]!];
+    if (oa && app) {
+      const endpoint = oa[2];
+      if (endpoint === "authorize") {
+        const q = url.searchParams;
+        const back = new URL(q.get("redirect_uri") ?? "http://invalid");
+        back.searchParams.set("state", q.get("state") ?? "");
+        if (q.get("client_id") !== app.clientId) back.searchParams.set("error", "invalid_client");
+        else if (app.consent === "declined") back.searchParams.set("error", "access_denied");
+        else if (app.consent === "admin_required") {
+          back.searchParams.set("error", "access_denied");
+          back.searchParams.set("error_description", "admin approval required");
+        } else {
+          const code = `${app.name}-code-${++seq}`;
+          const scope = app.consent === "narrow" ? app.grantScopes.join(" ") : (q.get("scope") ?? "");
+          app.codes.set(code, { challenge: q.get("code_challenge") ?? "", redirectUri: q.get("redirect_uri") ?? "", scope, user: { ...app.user } });
+          back.searchParams.set("code", code);
+        }
+        res.writeHead(302, { location: back.toString() }).end();
+        return;
+      }
+      const form = new URLSearchParams(raw);
+      if (endpoint === "userinfo") {
+        const who = app.accessTokens.get((req.headers.authorization ?? "").replace(/^Bearer /, ""));
+        return who ? json(res, 200, { sub: who.id, email: who.email }) : json(res, 401, { error: "invalid_token" });
+      }
+      if (form.get("client_id") !== app.clientId || form.get("client_secret") !== app.clientSecret) return json(res, 401, { error: "invalid_client" });
+      if (endpoint === "revoke") {
+        const token = form.get("token") ?? "";
+        app.revoked.push(token);
+        if (app.revokeStatus !== 200) return json(res, app.revokeStatus, { error: "server_error" });
+        app.refreshTokens.delete(token);
+        app.accessTokens.delete(token);
+        return json(res, 200, {});
+      }
+      app.tokenCalls++;
+      const invalidGrant = () => json(res, 400, { error: "invalid_grant", error_description: "The grant is invalid, expired, revoked or was used before." });
+      let grant: { scope: string; user: { id: string; email: string } };
+      let refreshToken: string | undefined;
+      if (form.get("grant_type") === "authorization_code") {
+        const c = app.codes.get(form.get("code") ?? "");
+        app.codes.delete(form.get("code") ?? "");
+        const pkceOk = !c?.challenge || createHash("sha256").update(form.get("code_verifier") ?? "").digest("base64url") === c.challenge;
+        if (!c || c.redirectUri !== form.get("redirect_uri") || !pkceOk) return invalidGrant();
+        grant = c;
+        if (app.refresh) refreshToken = `${app.name}-refresh-${++seq}`;
+      } else if (form.get("grant_type") === "refresh_token") {
+        const old = form.get("refresh_token") ?? "";
+        const live = app.refreshTokens.get(old) ?? (app.keepPrevious ? app.previous.get(old) : undefined);
+        if (!live) return invalidGrant();
+        grant = live;
+        if (app.rotation !== "none") {
+          refreshToken = `${app.name}-refresh-${++seq}`;
+          if (app.rotation === "strict") {
+            app.refreshTokens.delete(old);
+            app.previous.clear();
+            if (app.keepPrevious) app.previous.set(old, live);
+          }
+        }
+      } else return json(res, 400, { error: "unsupported_grant_type" });
+      const access = `${app.name}-access-${++seq}`;
+      app.accessTokens.set(access, grant.user);
+      if (refreshToken) app.refreshTokens.set(refreshToken, grant);
+      return answer(200, { token_type: "Bearer", access_token: access, ...(refreshToken ? { refresh_token: refreshToken } : {}), ...(app.expiresIn === undefined ? {} : { expires_in: app.expiresIn }), scope: grant.scope });
+    }
+
     // Microsoft identity platform v2.0, for any tenant: authorize (consents at once, or answers like a blocked
     // tenant), token (authorization code with PKCE, and refresh), and the admin consent page.
     const msPath = /^\/ms\/[^/]+\/(v2\.0\/adminconsent|oauth2\/v2\.0\/authorize|oauth2\/v2\.0\/token)$/.exec(path)?.[1];
@@ -179,7 +280,7 @@ export async function startFakeProviders(port = 0) {
       if (!microsoft.accessTokens.has((req.headers.authorization ?? "").replace(/^Bearer /, ""))) {
         return json(res, 401, { error: { code: "InvalidAuthenticationToken", message: "Access token has expired or is not yet valid." } });
       }
-      if (req.method === "GET") return json(res, 200, { displayName: microsoft.user.displayName, mail: microsoft.user.mail, userPrincipalName: microsoft.user.mail });
+      if (req.method === "GET") return json(res, 200, { id: microsoft.user.id, displayName: microsoft.user.displayName, mail: microsoft.user.mail, userPrincipalName: microsoft.user.mail });
       if (!microsoft.mailboxEnabled) return json(res, 403, { error: { code: "ErrorAccessDenied", message: "Access is denied. Check credentials and try again." } });
       const { message } = JSON.parse(raw) as { message: { subject: string; body: { content: string }; toRecipients: { emailAddress: { address: string } }[] } };
       microsoft.sent.push({ to: message.toRecipients.map((r) => r.emailAddress.address).join(","), subject: message.subject, text: message.body.content });
@@ -443,6 +544,10 @@ export async function startFakeProviders(port = 0) {
     trello,
     microsoft,
     teams,
+    oauth,
+    /** Adds another generic OAuth app, for a provider phase or a test that needs a second one. */
+    addOAuthApp: (name: string, o?: Parameters<typeof oauthApp>[1]) => (oauth[name] = oauthApp(name, o)),
+    oauthUrls: (name: string) => ({ authorize: `${base}/oauth/${name}/authorize`, token: `${base}/oauth/${name}/token`, revoke: `${base}/oauth/${name}/revoke`, userinfo: `${base}/oauth/${name}/userinfo` }),
     teamsUrl: (flowId: string) => `${base}/teams/workflows/${flowId}`,
     /** Registers a service account key with Google. */
     addServiceAccount: (email: string, publicKeyPem: string) => {
