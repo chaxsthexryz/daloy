@@ -29,7 +29,7 @@ The owner approved this signed-in homepage on 18 November 2026. Use commit `c92d
 - At 1100 px and below, Recent activity spans the row beneath the first two panels. Below 800 px, use the bottom navigation and Menu button. At 650 px and below, stack the panels. Check at 390 px for horizontal overflow.
 - Switch the browser to dark mode and confirm the cards still render white. With sample workspace data, select Problem, narrow the results by name and open a recent run. Check the empty-workspace view as well.
 
-Keep homepage styling scoped to `.automation-home` and its shell. The responsive layout and tab colours live in [automation-home.css](apps/web/src/automation-home.css). The homepage light-mode rule lives in [styles.css](apps/web/src/styles.css).
+Keep homepage cards and filters scoped to `.automation-home` in [automation-home.css](apps/web/src/automation-home.css). Shared navigation, the inset charcoal current tab and the responsive shell live in [console-shell.css](apps/web/src/console-shell.css). Operations, creation and administration each have a scoped stylesheet. Compare desktop and phone layouts in the [offline design walkthrough](docs/design/console-review.html).
 
 ## Direction
 

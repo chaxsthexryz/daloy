@@ -28,4 +28,8 @@ Use clearly labelled synthetic data. Cover the homepage, activity and run detail
 ## Progress
 
 - Phase 1 committed at `9e0ea63`. Shared navigation passed 23 focused tests. Astra verified the combined web build, full TypeScript check, and five routes at desktop and phone widths with synthetic data.
-- Phase 2 in final verification. Phases 3 and 4 approved and running in separate parallel chats. Phases 5 and 6 queued.
+- Phase 2 implemented in `51b3c03`. The operations checks passed (37 tests). The run colour checks also passed (33 tests, selector update in `39e7d73`).
+- Phase 3 creation and Phase 4 administration share commit `78fd743`. Phase 3 typography is in `6283bb4`. Creation passed 48 focused tests. Administration passed checks on nine desktop and phone routes, including secret replacement with synthetic data.
+- [Open the interim walkthrough](console-review.html) in a browser. Use Screen to choose a page, Layout to compare desktop and phone, and Next to follow the tour. All 36 images across 18 screens were opened offline. The browser checks also exercised booking and resource actions and three restricted roles against local fixtures.
+- Phase 5 is next. Phase 6 must update this HTML with the remaining routes and record final checks. The owner reviews the finished walkthrough before deciding on Docker. Full release CI and clean-stack verification remain pending.
+- The combined web build and web-only TypeScript check passed. The final repository-wide TypeScript check failed, including a payment test type mismatch in `apps/api/src/paymongo.test.ts`. Verify this in a clean checkout with matching workspace dependencies before release.
