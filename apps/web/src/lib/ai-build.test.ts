@@ -87,6 +87,9 @@ describe("plainDraft", () => {
     const sloppy = { id: "a", type: "email", config: {} } as unknown as WorkflowDefinition["steps"][number];
     expect(one(sloppy)).toEqual(["Email someone"]);
   });
+  it("names the form sender in words", () => {
+    expect(one({ id: "a", type: "email", config: { to: "{{trigger.email}}", subject: "Thanks", text: "Hi" } })).toEqual(["Email the person who filled the form (subject: Thanks)"]);
+  });
   it("follows the edges in order, then the other branches with a plain prefix", () => {
     const d: WorkflowDefinition = {
       trigger: { type: "manual", config: {} },
