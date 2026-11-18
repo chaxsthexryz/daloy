@@ -1,4 +1,4 @@
-import { assertNotPaused, bookingById, bookingByReference, bookingChanges, bookingResults, listBookings, publishedVersion, runs, staffChange, staffReplay, stepRuns, type BookingView, type Db, type StaffResult } from "@daloy/db";
+import { assertNotPaused, bookingById, createKeyedRun, workflows, bookingByReference, bookingChanges, bookingResults, listBookings, publishedVersion, runs, staffChange, staffReplay, stepRuns, type BookingView, type Db, type StaffResult } from "@daloy/db";
 import { bookingStartField, definitionSchema, parseZoned, type WorkflowDefinition } from "@daloy/engine";
 import { BadRequestException, Body, ConflictException, Controller, Get, Header, HttpCode, Inject, NotFoundException, Param, Post, UseGuards } from "@nestjs/common";
 import { and, asc, eq } from "drizzle-orm";
@@ -20,6 +20,8 @@ function answer(r: StaffResult): Change {
   if (r.result === "not_found") throw new NotFoundException("booking not found");
   if (r.result === "conflict") throw new ConflictException(CHANGED);
   if (r.result === "taken") throw new ConflictException("That time is taken.");
+  if (r.result === "not_yet") throw new ConflictException("This booking has not happened yet, so it cannot be a no-show.");
+  if (r.result === "started") throw new ConflictException("The follow-up has already started or sent, so this can no longer be undone.");
   return { booking: r.booking, ...(r.runId && { runId: r.runId }), ...(r.result === "duplicate" && { duplicate: true }) };
 }
 
@@ -111,6 +113,59 @@ export async function cancelBooking(db: Db, workspaceId: string, bookingId: stri
   return answer(await staffChange(db, { workspaceId, bookingId, version, action: "cancel" }, actor));
 }
 
+/**
+ * The workspace's no-show follow-up: a published workflow whose first step checks {{trigger.status}} against "no_show"
+ * (the Booking no-show follow-up template, or an edit of it), found by its definition because the owner names and
+ * slugs it. Several: the oldest. shortcut: reads every published workflow of the workspace, fine at this size.
+ */
+async function noShowFollowUp(db: Db, workspaceId: string) {
+  for (const w of await db.select({ id: workflows.id }).from(workflows).where(eq(workflows.userId, workspaceId)).orderBy(asc(workflows.createdAt))) {
+    const version = await publishedVersion(db, w.id);
+    const first = version && definitionSchema.parse(version.definition).steps[0];
+    if (version && first?.type === "condition" && JSON.stringify(first.config).includes("{{trigger.status}}") && JSON.stringify(first.config).includes('"no_show"')) return { id: w.id, version: version.id };
+  }
+}
+
+/** Marks a past booking as a no-show and starts the follow-up for the guest who booked, in one transaction (N27). */
+export async function markNoShow(db: Db, boss: PgBoss, workspaceId: string, bookingId: string, version: number, actor: string): Promise<Change> {
+  const booking = await bookingById(db, workspaceId, bookingId);
+  if (!booking) throw new NotFoundException("booking not found");
+  const replay = await staffReplay(db, { workspaceId, bookingId, version, action: "no_show" });
+  if (replay) return answer(replay);
+  const follow = await noShowFollowUp(db, workspaceId);
+  if (!follow) throw new ConflictException("Set up the Booking no-show follow-up automation and publish it first.");
+  // The guest's details are in the payload of the run that made the booking (its change from version 0), as for a reschedule.
+  const [made] = await db
+    .select({ payload: runs.triggerPayload })
+    .from(bookingChanges)
+    .innerJoin(runs, eq(runs.id, bookingChanges.runId))
+    .where(and(eq(bookingChanges.bookingId, bookingId), eq(bookingChanges.fromVersion, 0)));
+  const p = (made?.payload ?? {}) as Record<string, unknown>;
+  const text = (...keys: string[]) => keys.map((k) => p[k]).find((v): v is string => typeof v === "string" && v.trim() !== "");
+  const customerEmail = text("customer_email", "email");
+  if (!customerEmail) throw new ConflictException("This booking has no guest email, so there is nobody to follow up with.");
+  const payload = { status: "no_show", customer_email: customerEmail, customer_name: text("customer_name", "name") ?? "", service: text("service") ?? booking.resource.name, reference: booking.reference };
+  const r = await staffChange(
+    db,
+    {
+      workspaceId,
+      bookingId,
+      version,
+      action: "no_show",
+      // One follow-up per marking: the key holds the version, so an undo and a new marking start a new one.
+      newRun: async (tx) => (await createKeyedRun(tx, follow.id, follow.version, payload, `no_show:${bookingId}:${version}`)).runId,
+    },
+    actor,
+  );
+  const result = answer(r);
+  if (r.result === "done" && r.runId) await enqueueRun(boss, r.runId);
+  return result;
+}
+
+export async function undoNoShow(db: Db, workspaceId: string, bookingId: string, version: number, actor: string): Promise<Change> {
+  return answer(await staffChange(db, { workspaceId, bookingId, version, action: "undo_no_show" }, actor));
+}
+
 /** Live bookings for staff (decision 0032). Test bookings from the builder are never listed. */
 @Controller("bookings")
 @UseGuards(SessionGuard, Allow(OPERATE))
@@ -138,6 +193,18 @@ export class BookingsController {
   @HttpCode(200)
   cancel(@CurrentUser() user: SessionUser, @Param("id", new ZodPipe(z.uuid())) id: string, @Body(new ZodPipe(cancelInput)) body: z.output<typeof cancelInput>) {
     return cancelBooking(this.db, user.workspaceId, id, body.version, `user:${user.id}`);
+  }
+
+  @Post(":id/no-show")
+  @HttpCode(200)
+  noShow(@CurrentUser() user: SessionUser, @Param("id", new ZodPipe(z.uuid())) id: string, @Body(new ZodPipe(cancelInput)) body: z.output<typeof cancelInput>) {
+    return markNoShow(this.db, this.boss, user.workspaceId, id, body.version, `user:${user.id}`);
+  }
+
+  @Post(":id/undo-no-show")
+  @HttpCode(200)
+  undoNoShow(@CurrentUser() user: SessionUser, @Param("id", new ZodPipe(z.uuid())) id: string, @Body(new ZodPipe(cancelInput)) body: z.output<typeof cancelInput>) {
+    return undoNoShow(this.db, user.workspaceId, id, body.version, `user:${user.id}`);
   }
 
   @Post(":id/reschedule")
