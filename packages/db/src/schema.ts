@@ -119,6 +119,10 @@ export const workflows = pgTable(
     slug: text("slug").notNull(),
     // Guided setup progress ({ template, step, answers }) for workflows made from a guided template. Null for the others.
     setup: jsonb("setup"),
+    // Schedule watchdog (N17): when a scheduled run was found missing (null: on time), and when the owner was last emailed about it.
+    // The alert time stays after the flag clears, so one automation emails at most once a day.
+    scheduleMissedAt: timestamp("schedule_missed_at", { withTimezone: true }),
+    scheduleAlertAt: timestamp("schedule_alert_at", { withTimezone: true }),
     createdAt: createdAt(),
   },
   (t) => [unique().on(t.userId, t.slug)],

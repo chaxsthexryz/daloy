@@ -2,9 +2,13 @@ import { isDraft } from "./drafts";
 import { plainState, type LastRun } from "./states";
 
 export type Filter = "all" | "needs_you" | "problem" | "waiting" | "off";
-type Listed = { id: string; name: string; createdAt: string; live?: boolean; setup?: unknown; last?: LastRun | null };
+type Listed = { id: string; name: string; createdAt: string; live?: boolean; setup?: unknown; last?: LastRun | null; scheduleMissedAt?: string | null };
 
-const key = (w: Listed) => (w.last ? plainState(w.last).key : null);
+/** A missed schedule counts as a problem, unless the last run already needs the owner. */
+const key = (w: Listed) => {
+  const k = w.last ? plainState(w.last).key : null;
+  return w.scheduleMissedAt && k !== "needs_you" ? "problem" : k;
+};
 const rank = (w: Listed) => ({ needs_you: 0, problem: 1 })[key(w) as string] ?? 2;
 
 /**

@@ -160,6 +160,9 @@ importers:
       '@daloy/llm-ts':
         specifier: workspace:*
         version: link:../../packages/llm-ts
+      cron-parser:
+        specifier: 5.10.4
+        version: 5.10.4
       drizzle-orm:
         specifier: ^0.45.4
         version: 0.45.4(@opentelemetry/api@1.10.0)(@types/pg@8.23.1)(pg@8.23.1)
