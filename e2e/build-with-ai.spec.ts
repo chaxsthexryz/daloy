@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 
-// The Build with AI tab (#/ai): the page asks the questions, the fake model drafts, nothing is saved until Save as draft.
+// Build with AI as a chat (#/ai): the model asks, the person answers, the draft stays on the page until Save as draft.
 async function signUp(page: Page) {
   const email = `bwa-${Date.now()}-${Math.floor(Math.random() * 1e6)}@test.local`;
   await page.goto("/");
@@ -14,85 +14,83 @@ async function signUp(page: Page) {
 
 const count = async (page: Page) => ((await (await page.request.get("/workflows")).json()) as unknown[]).length;
 
-/** Opens #/ai, types the description, and records every POST the page makes. */
-async function start(page: Page, description: string) {
-  const drafts: string[] = [];
+/** Opens #/ai, sends the first message, and records every chat call and every workflow write. */
+async function start(page: Page, message: string) {
+  const chats: string[] = [];
   const posts: string[] = [];
   page.on("request", (r) => {
     if (r.method() !== "POST") return;
     const path = new URL(r.url()).pathname;
-    if (path === "/ai/draft") drafts.push(r.postData() ?? "");
+    if (path === "/ai/chat") chats.push(r.postData() ?? "");
     if (path === "/workflows") posts.push(path);
   });
   await page.goto("/#/ai");
   await expect(page.getByRole("heading", { name: "Build with AI", level: 1 })).toBeVisible();
-  await page.getByLabel("What should happen?").fill(description);
-  await page.getByRole("button", { name: "Next" }).click();
-  return { drafts, posts };
+  await page.getByLabel("What should happen?").fill(message);
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  return { chats, posts };
 }
 
-const answer = (page: Page, ...labels: string[]) => labels.reduce((p, l) => p.then(() => page.getByRole("button", { name: l, exact: true }).click()), Promise.resolve());
-
-test("answers the questions, reviews the draft in plain words, and saves nothing until Save as draft", async ({ page }) => {
+test("asks a question with chips, then turns the automation on by itself", async ({ page }) => {
   const email = await signUp(page);
   const before = await count(page);
-  const { drafts, posts } = await start(page, "When someone fills my contact form, thank them by email.");
+  const { chats } = await start(page, "Please ask me a question first: thanks after my contact form.");
 
-  await expect(page.getByRole("heading", { name: "What starts it?" })).toBeVisible();
-  await answer(page, "Someone fills a form", "Me", "Email", "No");
+  const answer = page.getByRole("button", { name: "Someone fills a form", exact: true });
+  await expect(answer).toBeVisible();
+  await expect(page.getByText("What starts it?")).toBeVisible();
+  await answer.click();
 
-  await expect(page.getByRole("heading", { name: "Check the draft: Contact thanks" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Check before turning on" })).toBeVisible();
-  await expect(page.getByRole("listitem").filter({ hasText: /^Email / })).toHaveCount(1);
-  await expect(page.getByText("Nothing is saved yet.")).toBeVisible();
-  expect(await count(page)).toBe(before);
-  expect(posts).toHaveLength(0);
-
-  // The model gets the owner label and the connected apps, never the real address.
-  expect(drafts).toHaveLength(1);
-  const first = JSON.parse(drafts[0]!) as { request: string; current?: unknown };
-  expect(first.request).toContain("owner@people.invalid");
-  expect(first.request).toContain("Apps connected");
-  expect(drafts[0]).not.toContain(email);
-
-  // A change goes with the current draft; the review updates and the address still stays out.
-  await page.getByRole("button", { name: "Change something" }).click();
-  await page.getByLabel("What should change?").fill("Wait one day before the email.");
-  await page.getByRole("button", { name: "Send", exact: true }).click();
-  await expect(page.getByText("Wait 1 day")).toBeVisible();
-  await expect(page.locator("ol.numbered > li")).toHaveCount(2);
-  expect(drafts).toHaveLength(2);
-  const second = JSON.parse(drafts[1]!) as { request: string; current?: unknown };
-  expect(second.current).toBeTruthy();
-  expect(drafts[1]).not.toContain(email);
-  expect(await count(page)).toBe(before);
-  expect(posts).toHaveLength(0);
-
-  await page.getByRole("button", { name: "Save as draft" }).click();
+  // A draft the checker finds nothing wrong with is created and turned on without another press.
   await expect(page).toHaveURL(/#\/w\/[^/]+$/);
-  await expect(page.getByText("Version 1, draft")).toBeVisible();
+  await expect(page.getByText("Version 1 (live)")).toBeVisible();
   expect(await count(page)).toBe(before + 1);
+
+  // The first message carries the words and the connected app kinds, and never the real address.
+  const first = JSON.parse(chats[0]!) as { messages: { role: string; content: string }[]; apps?: string[] };
+  expect(first.messages.map((m) => m.role)).toEqual(["user"]);
+  expect(first.messages[0]!.content).toContain("thanks after my contact form");
+  expect(Array.isArray(first.apps)).toBe(true);
+  expect(chats.join(" ")).not.toContain(email);
 });
 
-test("warnings appear under Check before turning on", async ({ page }) => {
+test("a typed answer is sent as typed, not forced to a chip", async ({ page }) => {
   await signUp(page);
-  await start(page, "Ask my boss approval, then thank the sender.");
-  await answer(page, "Someone fills a form", "Me", "Email", "Yes, the person named above");
+  const { chats } = await start(page, "Please ask me a question first: thanks after my contact form.");
+  await expect(page.getByRole("button", { name: "On a schedule", exact: true })).toBeVisible();
+  await page.getByLabel("What should happen?").fill("Someone fills the form on my website");
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(page).toHaveURL(/#\/w\/[^/]+$/);
+  expect(chats).toHaveLength(2);
+  expect(chats[1]).toContain("Someone fills the form on my website");
+});
+
+test("a draft with warnings waits, and a change carries it", async ({ page }) => {
+  await signUp(page);
+  const before = await count(page);
+  const { chats } = await start(page, "Ask my boss approval, then thank the sender.");
 
   await expect(page.getByRole("heading", { name: "Check the draft: Boss approval" })).toBeVisible();
   const review = page.getByRole("region", { name: /Check the draft/ });
   await expect(review.getByRole("heading", { name: "Check before turning on" })).toBeVisible();
   await expect(review).toContainText('Approval step "ask" has no "rejected" edge');
   await expect(review).toContainText('Approval step "ask" has no "timeout" edge');
+  // A warning holds it here: nothing is created yet.
+  expect(await count(page)).toBe(before);
+
+  await page.getByLabel("What should change?").fill("Wait one day before the email.");
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(page).toHaveURL(/#\/w\/[^/]+$/);
+  expect(chats.at(-1)).toContain('"current"');
+  expect(await count(page)).toBe(before + 1);
 });
 
 test("with no model the template suggestion appears", async ({ page }) => {
   await signUp(page);
   const before = await count(page);
-  await page.route("**/ai/draft", (r) => r.fulfill({ status: 502, contentType: "application/json", body: JSON.stringify({ message: "No AI model is set up." }) }));
+  await page.route("**/ai/chat", (r) => r.fulfill({ status: 502, contentType: "application/json", body: JSON.stringify({ message: "No AI model is set up." }) }));
 
-  await start(page, "Ask for purchases and tell me.");
-  await answer(page, "Someone fills a form", "Me", "Email", "Yes, the person named above");
+  await start(page, "Ask for approvals on purchases and tell me.");
   await expect(page.getByRole("heading", { name: "The AI is not set up, or it did not answer." })).toBeVisible();
   await expect(page.getByText("No AI model is set up.")).toBeVisible();
   await expect(page.getByRole("link", { name: "Check the AI model" })).toHaveAttribute("href", "#/settings/ai");
@@ -101,22 +99,9 @@ test("with no model the template suggestion appears", async ({ page }) => {
 
   await page.getByRole("button", { name: "Start over" }).click();
   await page.getByLabel("What should happen?").fill("Track requests from the people in my office.");
-  await page.getByRole("button", { name: "Next" }).click();
-  await answer(page, "Someone fills a form", "Me", "Email", "No");
+  await page.getByRole("button", { name: "Send", exact: true }).click();
   await expect(page.getByRole("heading", { name: /Track an office request/ })).toBeVisible();
   expect(await count(page)).toBe(before);
-});
-
-test("an Other answer is sent as typed", async ({ page }) => {
-  await signUp(page);
-  const { drafts } = await start(page, "When someone fills my contact form, thank them by email.");
-  await answer(page, "Someone fills a form", "Me");
-  await page.getByRole("button", { name: "Other", exact: true }).click();
-  await page.getByLabel("Your own answer").fill("A shared folder");
-  await page.getByRole("button", { name: "Use this answer" }).click();
-  await answer(page, "No");
-  await expect(page.getByRole("heading", { name: "Check the draft: Contact thanks" })).toBeVisible();
-  expect(drafts[0]).toContain("A shared folder");
 });
 
 test("owners see Build with AI in the menu, and an AI link in the phone bottom bar", async ({ page }) => {

@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import type { Pool } from "pg";
 import { afterAll, afterEach, beforeAll, expect, it, vi } from "vitest";
 import { freshDatabase } from "../../../test/db";
-import { aiConnection, readAiSettings, saveAiSettings } from "./ai-settings";
+import { aiConnection, presetConnection, readAiSettings, saveAiSettings } from "./ai-settings";
 import { eq } from "drizzle-orm";
 import { aiKeys, aiSettings, users } from "./schema";
 import type { Db } from "./index";
@@ -109,6 +109,16 @@ it("refuses a hosted preset without a key", async () => {
   await expect(saveAiSettings(db, key, await newUser(), { preset: "gemini", model: "gemini-3.8-flash" })).rejects.toThrow(/API key/);
 });
 
+it("builds a preset's connection before the choice is saved, from the typed key or the saved one", async () => {
+  const userId = await newUser();
+  // A key typed on the page but not saved yet, so the page can ask the provider which models it serves.
+  expect(await presetConnection(db, key, userId, "deepseek", "sk-typed")).toMatchObject({ provider: "openai", baseUrl: "https://api.deepseek.com", apiKey: "sk-typed" });
+  // Nothing typed and nothing saved.
+  await expect(presetConnection(db, key, userId, "deepseek")).rejects.toThrow(/API key/);
+  await saveAiSettings(db, key, userId, { preset: "deepseek", model: "deepseek-flash", apiKey: "sk-saved" });
+  expect((await presetConnection(db, key, userId, "deepseek")).apiKey).toBe("sk-saved");
+});
+
 it("turns off thinking only for a local OpenAI-compatible server", async () => {
   vi.stubEnv("LLM_PROVIDER", "openai");
   vi.stubEnv("LLM_BASE_URL", "http://host.docker.internal:18434/v1");
@@ -142,7 +152,7 @@ it("asks Gemini for low thinking and leaves room for it, from the preset or the 
 it("connects the DeepSeek preset to DeepSeek's own API with the saved key and thinking off", async () => {
   const user = await newUser();
   await saveAiSettings(db, key, user, { preset: "deepseek", model: "deepseek-flash", apiKey: "sk-test-deepseek" });
-  expect(await aiConnection(db, key, user)).toMatchObject({ baseUrl: "https://api.deepseek.com", apiKey: "sk-test-deepseek", model: "deepseek-flash", extraBody: { thinking: { type: "disabled" } } });
+  expect(await aiConnection(db, key, user)).toMatchObject({ baseUrl: "https://api.deepseek.com", apiKey: "sk-test-deepseek", model: "deepseek-flash", extraBody: { thinking: { type: "disabled" } }, jsonMode: "object" });
 });
 
 // Daloy's AI jobs (label, summary, short draft, rewording) do not need thinking; off is faster and cheaper.
