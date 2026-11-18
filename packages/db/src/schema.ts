@@ -22,7 +22,7 @@ export const users = pgTable("users", {
   planStartedOn: date("plan_started_on"),
   language: text("language", { enum: LANGUAGES }).notNull().default("en"),
 }, (t) => [
-  check("users_plan", sql`${t.plan} in ('pilot', 'business', 'business_plus')`),
+  check("users_plan", sql`${t.plan} in ('preview', 'pilot', 'business', 'business_plus')`),
   check("users_language", sql`${t.language} in ('en', 'tl')`),
 ]);
 

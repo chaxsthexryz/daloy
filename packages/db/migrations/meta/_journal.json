@@ -253,6 +253,13 @@
       "when": 1795011181615,
       "tag": "0035_payment_events_per_workspace",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1795011930341,
+      "tag": "0036_preview_plan",
+      "breakpoints": true
     }
   ]
 }

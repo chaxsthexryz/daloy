@@ -5,6 +5,7 @@ import { usageClaims, usageCounts, users, workflows, workflowVersions } from "./
 
 /** What each plan allows. ai counts per monthly cycle; email recipients, http requests and uploaded files per Manila day. */
 export const PLANS = {
+  preview: { label: "Preview", automations: 1, ai: 20, email: 20, http: 50, upload: 20, minScheduleMinutes: 60 },
   pilot: { label: "Pilot", automations: 1, ai: 100, email: 100, http: 200, upload: 100, minScheduleMinutes: 60 },
   business: { label: "Business", automations: 5, ai: 500, email: 300, http: 1000, upload: 500, minScheduleMinutes: 15 },
   business_plus: { label: "Business Plus", automations: 15, ai: 2000, email: 1000, http: 5000, upload: 2000, minScheduleMinutes: 5 },
@@ -58,7 +59,7 @@ export const nextCycleStart = (startedOn: string, today: string) => cycle(starte
 export const manilaDay = (now = new Date()) => new Date(now.getTime() + 8 * 3600_000).toISOString().slice(0, 10);
 const tomorrow = (day: string) => new Date(Date.parse(day) + 86_400_000).toISOString().slice(0, 10);
 
-export async function planOf(db: Db, userId: string) {
+export async function planOf(db: Pick<Db, "select">, userId: string) {
   const [row] = await db.select({ plan: users.plan, startedOn: users.planStartedOn }).from(users).where(eq(users.id, userId));
   return { plan: (row?.plan ?? null) as Plan | null, startedOn: row?.startedOn ?? null };
 }
@@ -81,7 +82,7 @@ function quotaMessage(kind: UsageKind, limit: number, reset: string) {
  * counted twice, then one upsert under the row lock holds the limit exactly across API and worker processes. Over the
  * limit it throws a QuotaError and rolls the key back. A workspace with no plan is counted without a limit, except for uploads (UPLOADS_WITHOUT_PLAN).
  */
-export async function claimUsage(db: Db, userId: string, kind: UsageKind, opts: { n?: number; key?: string; now?: Date } = {}) {
+export async function claimUsage(db: Pick<Db, "select" | "transaction">, userId: string, kind: UsageKind, opts: { n?: number; key?: string; now?: Date } = {}) {
   const n = opts.n ?? 1;
   const today = manilaDay(opts.now);
   const { plan, startedOn } = await planOf(db, userId);

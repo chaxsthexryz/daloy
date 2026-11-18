@@ -116,6 +116,8 @@ services:
       SECURE_COOKIES: ${SECURE_COOKIES:-false}
       # Sign-ups per client IP per hour.
       REGISTER_LIMIT_PER_HOUR: ${REGISTER_LIMIT_PER_HOUR:-10}
+      # none: new sign-ups have no plan and no limits. Empty: the preview plan (docs/decisions/0057-public-intake-fixes.md).
+      SIGNUP_PLAN: ${SIGNUP_PLAN:-}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:

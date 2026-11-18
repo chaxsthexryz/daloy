@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { claimInvite, joinWorkspace, membershipOf, passwordResets, sessions, users, workspaceLanguage, workspaceMembers, type Db } from "@daloy/db";
+import { claimInvite, joinWorkspace, manilaDay, membershipOf, passwordResets, sessions, users, workspaceLanguage, workspaceMembers, type Db } from "@daloy/db";
 import { builtInEmailCopy } from "@daloy/engine";
 import {
   BadRequestException,
@@ -77,6 +77,9 @@ export class SessionGuard implements CanActivate {
   }
 }
 
+// New accounts start on the preview plan until the operator sets a real one; SIGNUP_PLAN=none keeps them unlimited (decision 0057).
+const signupPlan = () => (process.env.SIGNUP_PLAN === "none" ? {} : { plan: "preview", planStartedOn: manilaDay() });
+
 // Checked when the email is unknown, so a missing account takes as long to reject as a wrong password.
 let dummyHash: Promise<string> | undefined;
 
@@ -94,7 +97,7 @@ export class AuthController {
     try {
       // A new account owns a new workspace, identified by its own id (decision 0022).
       const user = await this.db.transaction(async (tx) => {
-        const [u] = await tx.insert(users).values({ email: body.email, passwordHash }).returning();
+        const [u] = await tx.insert(users).values({ email: body.email, passwordHash, ...signupPlan() }).returning();
         await joinWorkspace(tx, u!.id, u!.id, "owner");
         return u!;
       });

@@ -129,6 +129,8 @@ export default async function setup() {
     TEAMS_WEBHOOK_HOSTS: "127.0.0.1",
     // Every spec signs up from 127.0.0.1.
     REGISTER_LIMIT_PER_HOUR: "1000",
+    // Specs publish several automations on one account.
+    SIGNUP_PLAN: "none",
     AI_ASK: "on",
   };
   const api = start("api", env);
