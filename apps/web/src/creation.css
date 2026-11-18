@@ -72,6 +72,7 @@ main.page.creation-page {
 .creation-chat .ai-empty { min-height: 0; gap: 24px; }
 .creation-chat .composer { border: 1px solid var(--border-soft); background: var(--surface); border-radius: 20px; padding: 24px; }
 .creation-chat .composer-label { display: block; font-size: 1.25rem; font-weight: 500; margin-bottom: 16px; }
+.creation-chat .composer textarea, .creation-editor-panel #ask-ai { font-family: var(--font-sans); }
 .creation-chat .composer textarea { background: var(--surface); border-radius: 12px; resize: vertical; }
 .creation-chat .ai-empty .composer { max-width: none; }
 .creation-chat .ai-build:not(.ai-empty) .composer { background: var(--surface); bottom: 16px; padding: 20px; z-index: 2; }
