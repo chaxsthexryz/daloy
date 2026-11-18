@@ -113,7 +113,10 @@ export async function saveAiSettings(db: Db, secretsKey: Buffer, userId: string,
 /** Where the AI step of this user's workflows sends its requests. */
 export async function aiConnection(db: Db, secretsKey: Buffer, userId: string): Promise<AiConnection> {
   const [row] = await db.select().from(aiSettings).where(eq(aiSettings.userId, userId));
-  const shared = async () => env(((await db.select({ plan: users.plan }).from(users).where(eq(users.id, userId)))[0]?.plan ?? null) !== null);
+  const shared = async () => {
+    const plan = (await db.select({ plan: users.plan }).from(users).where(eq(users.id, userId)))[0]?.plan ?? null;
+    return env(plan !== null && plan !== "preview"); // a preview workspace is not approved yet: no shared key
+  };
   if (!row) return shared();
   if (row.preset === "local") return { ...(await shared()), model: row.model };
   const preset = PRESETS[row.preset as Exclude<Preset, "local">];

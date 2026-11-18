@@ -67,6 +67,10 @@ describe("definitionSchema", () => {
       expect(issues(withTrigger({ type: "webhook", config: { hmacSecret: "stripe_signing" } }))).toEqual([]);
     });
 
+    it("refuses a blank or malformed HMAC secret name", () => {
+      for (const hmacSecret of ["", "Has Caps", "1abc", "a".repeat(101)]) expect(issues(withTrigger({ type: "webhook", config: { hmacSecret } }))).not.toEqual([]);
+    });
+
     it("takes a payment trigger, paid by default, and refuses unknown events", () => {
       expect(issues(withTrigger({ type: "payment" }))).toEqual([]);
       expect(issues(withTrigger({ type: "payment", config: { events: ["paid", "refunded"] } }))).toEqual([]);

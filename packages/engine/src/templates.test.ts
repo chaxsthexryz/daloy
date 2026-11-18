@@ -39,8 +39,40 @@ describe("starter templates", () => {
     expect(def.steps.find((s) => s.id === "is_billing")!.config).toEqual({ condition: { left: "{{steps.classify.output.label}}", op: "eq", right: "billing" } });
   });
 
-  it("lead-to-booking books first, adds the event on done and offers another time when taken", () => {
+  // Steps reachable from a start step without crossing an approval step (an approval step itself counts as reached).
+  const reachBeforeApproval = (def: ReturnType<typeof parse>) => {
+    const hasIncoming = new Set(def.edges.map((e) => e.to));
+    const seen = new Set<string>();
+    const walk = (id: string) => {
+      if (seen.has(id)) return;
+      seen.add(id);
+      if (def.steps.find((s) => s.id === id)?.type === "approval") return;
+      for (const e of def.edges) if (e.from === id) walk(e.to);
+    };
+    for (const s of def.steps) if (!hasIncoming.has(s.id)) walk(s.id);
+    return def.steps.filter((s) => seen.has(s.id));
+  };
+  const formStarters = TEMPLATES.filter((t) => t.definition.trigger.type === "form").map((t) => [t.slug, parse(t.slug)] as const);
+
+  // Not part of N11c-2: order-to-sheets belongs to another branch; the two reminders are wanted copies of the form's own details.
+  const REMINDER_EXEMPT = ["order-to-sheets", "appointment-reminder", "renewal-reminders"];
+  it.each(formStarters.filter(([slug]) => !REMINDER_EXEMPT.includes(slug)))("%s sends no submitted text to the form's address before an approval", (_slug, def) => {
+    for (const s of reachBeforeApproval(def)) {
+      if (s.type !== "email" || !/\{\{\s*trigger\./.test(String(s.config.to))) continue;
+      expect(`${s.config.subject}\n${s.config.text}`, s.id).not.toMatch(/\{\{\s*trigger\./);
+    }
+  });
+
+  it.each(formStarters)("%s creates a booking only after an approval", (_slug, def) => {
+    const open = reachBeforeApproval(def);
+    expect(open.filter((s) => s.type === "booking" && s.config.action === "create").map((s) => s.id)).toEqual([]);
+  });
+
+  it("lead-to-booking asks staff first, then books, adds the event on done and offers another time when taken", () => {
     const def = parse("lead-to-booking");
+    expect(def.edges).toContainEqual({ from: "decide", to: "book", on: "approved" });
+    expect(def.edges.some((e) => e.from === "decide" && e.on === "rejected")).toBe(true);
+    expect(TEMPLATES.find((t) => t.slug === "lead-to-booking")!.description).toMatch(/Staff approve before anything is booked/);
     expect(def.edges).toContainEqual({ from: "book", to: "add_to_calendar", on: "done" });
     expect(def.edges).toContainEqual({ from: "book", to: "tell_taken", on: "taken" });
     expect(def.edges.some((e) => e.from === "book" && e.on === "not_found")).toBe(true);

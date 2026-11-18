@@ -234,7 +234,7 @@ Order: N3, N4, V1, then V2 and W together, N5 with the pilot search P in paralle
   - [x] N11b. Sending and runs: a daily recipient cap on Gmail and Outlook receipts, a timestamp in the webhook signature with a replay window, per-workflow pause, and cancel of a pending run. (claimed: claude, branch n11b-controls)
   - [ ] N11c. Final security review at the release commit (Codex GPT-6.2 Astra, branch n11-review), then fixes for what it finds, including read-side secret redaction on every surface and a purge policy for retired secrets.
     - [x] N11c-1. Payment fixes from [the review](docs/security-review-2026-11-19.md): H1, H2, M2, M3, M4, M5. (claimed: claude, branch n11c-payments)
-    - [ ] N11c-2. Public intake fixes: H3, M1, M6, M10, M14, M15, M17. (claimed: claude, branch n11c-intake)
+    - [x] N11c-2. Public intake fixes: H3, M1, M6, M10, M14, M15, M17. ([decision 0057](docs/decisions/0057-public-intake-fixes.md)). (claimed: claude, branch n11c-intake)
     - [x] N11c-3. Apps and mail fixes: M7, M8, M9, M11, M12, M13, M16 ([decision 0055](docs/decisions/0055-apps-and-mail-fixes.md)). (claimed: claude, branch n11c-apps)
 
 Model and effort per open phase. One coordinator session (Opus 5.5) coordinates: it picks the model for each phase session, checks results, merges and pushes. Phase sessions run on Opus or Sonnet; the lead plans and reviews, and hands file-by-file edits and test runs to Sonnet subagents. Claude Code or ChatGPT Codex can take a phase; `AGENTS.md` has the shared rules and the claim step.

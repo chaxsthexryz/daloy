@@ -195,7 +195,7 @@ const triggerSchema = z.discriminatedUnion("type", [
   // hmacSecret names a stored secret; the API checks X-Daloy-Signature against it. fields, when set, are checked like a form's.
   // eventKey is a template such as {{trigger.event_id}}: a second event with the same key gets the first run (decision 0029).
   // requireTimestamp (N11b): refuse a call signed without X-Daloy-Timestamp. Off by default, so callers written before it keep working.
-  z.object({ type: z.literal("webhook"), config: z.object({ hmacSecret: z.string().max(100).optional(), requireTimestamp: z.boolean().optional(), fields: fieldList.optional(), eventKey: z.string().min(1).max(500).optional() }).default({}) }),
+  z.object({ type: z.literal("webhook"), config: z.object({ hmacSecret: z.string().regex(/^[a-z][a-z0-9_]{0,99}$/, "use a-z, 0-9 and _").optional(), requireTimestamp: z.boolean().optional(), fields: fieldList.optional(), eventKey: z.string().min(1).max(500).optional() }).default({}) }),
   // pg-boss validates the expression fully when the schedule is saved.
   z.object({ type: z.literal("schedule"), config: z.object({ cron: z.string().regex(/^\S+( \S+){4,5}$/, "cron needs 5 or 6 fields") }) }),
   z.object({ type: z.literal("form"), config: z.object({ fields: fieldList }) }),

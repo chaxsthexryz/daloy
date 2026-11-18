@@ -509,6 +509,7 @@ describe("QA-06 high-traffic e-commerce events", () => {
     expect((await runRow((res.body as { runId: string }).runId)).triggerPayload).toEqual({ event_id: "evt_extra", type: "order.created", amount: 15_000, shop: "north" });
   });
   it("an unsigned call to a signed webhook is refused", async () => {
+    await owner.put("/secrets/shop_signing_key").send({ value: "shop-key" }).expect(204);
     const id = await workflow({ ...intake, trigger: { type: "webhook", config: { hmacSecret: "shop_signing_key" } } }, { publish: true });
     const path = ((await owner.get(`/workflows/${id}`).expect(200)).body as { trigger: { webhookPath: string } }).trigger.webhookPath;
     await request(app.getHttpServer()).post(`/hooks/${path}`).send({ event_id: "evt_x" }).expect(401);

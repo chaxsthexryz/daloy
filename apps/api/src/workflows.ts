@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { createKeyedRun, deliveries, emailSources, findApprover, listDeliveries, PLANS, PROVIDER_NAMES, type Provider, publishedVersion, readConnections, requests, runs, SCHEDULE_QUEUE, setPaused, supersededSql, syncEmailSourceOnPublish, triggers, users, workflows, workflowVersions, type Db } from "@daloy/db";
+import { createKeyedRun, deliveries, emailSources, findApprover, listDeliveries, PLANS, PROVIDER_NAMES, type Provider, publishedVersion, readConnections, requests, runs, SCHEDULE_QUEUE, secrets, setPaused, supersededSql, syncEmailSourceOnPublish, triggers, users, workflows, workflowVersions, type Db } from "@daloy/db";
 import { BRANCHES, choiceProblems, definitionSchema, testChoicesSchema, testModeSchema, guidedSetupInput, OFFICE_REQUEST, saveProblems, stepJsonSchemas, templatesForLanguage, triggerFields, type Trigger, type WorkflowDefinition } from "@daloy/engine";
 import {
   BadRequestException,
@@ -219,6 +219,7 @@ export class WorkflowsController {
 
     if (body.publish) await this.checkConnections(user.workspaceId, definition);
     if (body.publish) await this.checkApprovers(user.workspaceId, definition);
+    if (body.publish) await this.checkSigningSecret(user.workspaceId, definition);
     if (!body.publish) return this.saveVersion(id, definition, false);
     // The owner's row is locked from the plan check to the save, so two publishes cannot both take the last live slot.
     return this.db.transaction(async (tx) => {
@@ -297,6 +298,14 @@ export class WorkflowsController {
   }
 
   /** A named approver must be a member who may approve when the workflow is turned on; the worker and the approval page check again later. */
+  /** A signed webhook needs its secret to exist, or every call would be refused (decision 0057). */
+  private async checkSigningSecret(workspaceId: string, definition: WorkflowDefinition) {
+    const name = definition.trigger.type === "webhook" ? definition.trigger.config.hmacSecret : undefined;
+    if (name === undefined) return;
+    const [found] = await this.db.select({ id: secrets.id }).from(secrets).where(and(eq(secrets.userId, workspaceId), eq(secrets.name, name)));
+    if (!found) throw new BadRequestException(`Add a secret named ${name} on the Secrets page first, so calls to this webhook can be checked against it.`);
+  }
+
   private async checkApprovers(workspaceId: string, definition: WorkflowDefinition) {
     for (const step of definition.steps) {
       if (step.type !== "approval" || !step.config.approver) continue;
