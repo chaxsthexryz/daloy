@@ -1,7 +1,6 @@
 /* The overview uses the reference's blue surround and warm dark rail. */
 .home-nav-label { padding: .9rem .75rem .2rem; font-size: .72rem; font-weight: 500; color: var(--muted); }
 .shell:has(.automation-home) { --bg: #f1f1ef; --surface: #fff; --text: #201916; --muted: #635c58; --border-soft: #e2e0dd; --accent: #244f7a; --accent-hover: #143852; --radius-md: 12px; background: var(--bg); color: var(--text); }
-[data-theme=dark] .shell:has(.automation-home) { --bg:#24201f; --surface:#302b29; --text:#f7f3ee; --muted:#c5bcb6; --border-soft:#49413d; --accent:#a3d6ff; --accent-hover:#d7edff; }
 main.page.automation-home { max-width: 100%; width: 100%; margin:0; padding:clamp(16px,2.6vw,42px); box-sizing:border-box; }
 .automation-home .toolbar { border:0; padding:0; margin:0 0 1.2rem; }
 .automation-home .toolbar h1 { font-weight:500; font-size:clamp(1.85rem,3.1vw,3rem); letter-spacing:-.065em; line-height:1.12; }

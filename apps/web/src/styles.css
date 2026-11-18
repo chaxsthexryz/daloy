@@ -99,8 +99,8 @@
 
 /* The theme is an attribute set before the first paint by public/theme.js: System follows the device, and Settings can
    fix Light or Dark (lib/theme.ts). */
-:root[data-theme="light"] { color-scheme: light; }
-:root[data-theme="dark"] {
+:root[data-theme="light"], :root:has(.automation-home) { color-scheme: only light; }
+:root[data-theme="dark"]:not(:has(.automation-home)) {
   color-scheme: dark;
   --bg: #0b1020;
   --surface: #131a30;
