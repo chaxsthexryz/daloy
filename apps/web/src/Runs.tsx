@@ -4,7 +4,9 @@ import { api, ApiError, type Run, type RunSummary, type Version, type Workflow }
 import { DeliveryList, type Delivery } from "./Connections";
 import { AutomationTabs, Header } from "./Nav";
 import { AskRequest } from "./AskRequest";
-import { RunFlow } from "./FlowCanvas";
+import { RunFlow, TYPE_NAMES } from "./FlowCanvas";
+import { runFlow, STATUS } from "./lib/run-flow";
+import "./operations.css";
 import type { Draft } from "./lib/graph";
 import { pollDelay, takingLonger } from "./lib/poll";
 import { fileRefs, fileSize } from "./lib/run-files";
@@ -145,7 +147,7 @@ export function RunsPage({ workflowId, ask }: { workflowId?: string; ask?: boole
   }, [workflowId, filter, query]);
 
   return (
-    <main className="page">
+    <main className="page operations-page activity-page">
       {workflowId ? (
         <>
           <p>
@@ -154,38 +156,40 @@ export function RunsPage({ workflowId, ask }: { workflowId?: string; ask?: boole
           <h1>{wf?.name ?? t("Activity")}</h1>
           <AutomationTabs id={workflowId} here="activity" overview={!!wf?.setup && !!wf.live} />
           <p>
-            <a href={`/runs/export.csv?workflowId=${workflowId}`} download>{t("Download CSV")}</a>
+            <a className="operations-export" href={`/runs/export.csv?workflowId=${workflowId}`} download>{t("Download CSV")}</a>
           </p>
         </>
       ) : (
-        <>
-          <Header title={t("Activity")} />
-          <div className="field">
+        <Header title={t("Activity")} />
+      )}
+      <div className="operations-filters">
+        {!workflowId && (
+          <div className="field operations-search">
             <label htmlFor="run-find">{t("Find a request or automation")}</label>
             <input id="run-find" type="search" value={query} maxLength={100} onChange={(e) => setQuery(e.target.value)} />
           </div>
-        </>
-      )}
-      <div className="field inline">
-        <label htmlFor="run-filter">{t("Show")}</label>
-        <select id="run-filter" value={filter} onChange={(e) => setFilter(e.target.value as keyof typeof FILTERS)}>
-          <option value="all">{t("Everything")}</option>
-          <option value="live">{t("Real runs")}</option>
-          <option value="test">{t("Previews")}</option>
-          <option value="review">{t("Needs you")}</option>
-          <option value="problem">{t("Problem")}</option>
-          <option value="waiting">{t("Waiting")}</option>
-        </select>
+        )}
+        <div className="field inline">
+          <label htmlFor="run-filter">{t("Show")}</label>
+          <select id="run-filter" value={filter} onChange={(e) => setFilter(e.target.value as keyof typeof FILTERS)}>
+            <option value="all">{t("Everything")}</option>
+            <option value="live">{t("Real runs")}</option>
+            <option value="test">{t("Previews")}</option>
+            <option value="review">{t("Needs you")}</option>
+            <option value="problem">{t("Problem")}</option>
+            <option value="waiting">{t("Waiting")}</option>
+          </select>
+        </div>
       </div>
       <p role="alert" className="message error" hidden={!error}>
         {error}
       </p>
       {list === null ? (
-        <p>{t("Loading…")}</p>
+        <p className="operations-empty" role="status">{t("Loading…")}</p>
       ) : list.length === 0 ? (
-        <p className="muted">{t(query.trim() ? "Nothing matches." : "Nothing has happened yet.")}</p>
+        <p className="muted operations-empty">{t(query.trim() ? "Nothing matches." : "Nothing has happened yet.")}</p>
       ) : (
-        <div className="table-wrap">
+        <div className="table-wrap operations-table">
           <table className="table cards">
             <caption className="muted">{list.length === 1 ? t("1 item") : t("Latest {count} items, newest first", { count: list.length })}</caption>
             <thead>
@@ -206,7 +210,7 @@ export function RunsPage({ workflowId, ask }: { workflowId?: string; ask?: boole
                     <a href={`#/runs/${r.id}`}>{new Date(r.createdAt).toLocaleString()}</a>
                   </td>
                   {!workflowId && <td data-label={t("Automation")}>{r.workflowName}</td>}
-                  {!workflowId && <td data-label={t("Request")}>{r.reference ?? ""}</td>}
+                  {!workflowId && <td className="operations-reference" data-label={t("Request")}>{r.reference ?? ""}</td>}
                   <td data-label={t("Result")}>
                     <StateLabel run={r} />
                   </td>
@@ -231,7 +235,7 @@ export function RunPage({ runId, owner, ask, openAsk }: { runId: string; owner: 
   const { run, error } = useRun(runId, reload);
   if (!run) {
     return (
-      <main className="page">
+      <main className="page operations-page run-detail">
         {error ? (
           <>
             <p role="alert">{t("Couldn't load this run. Trying again.")}</p>
@@ -247,14 +251,14 @@ export function RunPage({ runId, owner, ask, openAsk }: { runId: string; owner: 
   }
   const working = run.state === "pending" || run.state === "running" || run.state === "queued";
   return (
-    <main className="page">
+    <main className="page operations-page run-detail">
       <header className="toolbar plain">
         <a href={`#/w/${run.workflowId}/runs`}>{t("Activity")}</a>
         <h1>{t("What happened")}</h1>
       </header>
       {error && <p role="alert" className="message error">{t("Couldn't refresh. Trying again.")}</p>}
       {working && takingLonger(run.createdAt) && <p className="message">{t(TAKING_LONGER)}</p>}
-      <p aria-live="polite">
+      <p className="operations-run-status" aria-live="polite">
         <StateLabel run={run} /> <span className="muted">{t(runKind(run))} · {t("started {time}", { time: new Date(run.createdAt).toLocaleString() })} · {t(duration(run.createdAt, run.finishedAt))}</span>
       </p>
       {run.superseded && <p className="message">{t(SUPERSEDED)}</p>}
@@ -405,10 +409,19 @@ function RunPath({ run }: { run: Run }) {
   }, [run.workflowId, run.version]);
   if (failed) return <p className="muted">{t("The diagram could not load. The steps are listed under Details for a technician.")}</p>;
   if (!draft) return null;
+  const states = runFlow(draft, run).nodes;
   return (
     <section className="run-path" aria-label={t("Path it took")}>
       <h2>{t("Path it took")}</h2>
       <RunFlow draft={draft} run={run} />
+      <ol className="operations-path-list">
+        {draft.steps.map((step) => (
+          <li key={step.id}>
+            <span className={`state ${states[step.id] ?? "idle"}`}>{t(STATUS[states[step.id] ?? "idle"].label)}</span>
+            <span>{t(TYPE_NAMES[step.type] ?? step.type)} <span className="muted">({step.id})</span></span>
+          </li>
+        ))}
+      </ol>
     </section>
   );
 }

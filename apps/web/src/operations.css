@@ -1,0 +1,134 @@
+/* Operations share the approved homepage palette without depending on the shell. */
+main.page.operations-page {
+  color-scheme: light;
+  --bg: #f1f1ef;
+  --surface: #ffffff;
+  --text: #201916;
+  --muted: #635c58;
+  --border: #8b8580;
+  --border-soft: #e2e0dd;
+  --sunken: #f5f4f2;
+  --accent: #244f7a;
+  --accent-hover: #143852;
+  --accent-tint: #e3eef8;
+  --on-accent: #ffffff;
+  --focus: #244f7a;
+  --danger: #a3261c;
+  --ok: #17643a;
+  --warn: #7a4b00;
+  --done: #dff1e6;
+  --on-done: #17643a;
+  --waiting: #fbefc9;
+  --on-waiting: #7a4b00;
+  --needs-you: #244f7a;
+  --on-needs-you: #ffffff;
+  --problem: #fbe3e0;
+  --on-problem: #a3261c;
+  --working: #e3eef8;
+  --on-working: #244f7a;
+  --run-path: #2f8a57;
+  --run-failed: #c2483e;
+  --run-wait: #b0791f;
+  --run-working: #244f7a;
+  --run-idle: #7c736e;
+  --radius-md: 12px;
+  width: 100%;
+  max-width: 100%;
+  min-height: 100%;
+  margin: 0;
+  padding: clamp(16px, 2.6vw, 42px);
+  box-sizing: border-box;
+  background: var(--bg);
+  color: var(--text);
+  overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
+  scrollbar-color: var(--border) var(--bg);
+}
+.operations-page ::selection { background: var(--accent-tint); color: var(--text); }
+.operations-page :is(input, textarea) { caret-color: var(--accent); }
+.operations-page > .toolbar { padding: 0; margin: 0 0 24px; border: 0; gap: 8px 20px; }
+.operations-page h1 { font-size: clamp(1.75rem, 3vw, 2.75rem); font-weight: 500; letter-spacing: -.04em; line-height: 1.15; }
+.operations-page h2 { font-size: 1.125rem; font-weight: 500; letter-spacing: -.02em; }
+.operations-page a { text-underline-offset: .2em; }
+.operations-page :is(button, input, select, summary) { min-height: 44px; }
+.operations-page button { font-size: .875rem; font-weight: 500; }
+.operations-page button:disabled { color: var(--muted); border-color: var(--border-soft); }
+.operations-page .message { border: 1px solid var(--border-soft); border-radius: 12px; }
+.operations-page .message.error { border-color: #d4aaa4; }
+.operations-page .message.ok { border-color: #a6c7b3; }
+.operations-filters { display: flex; flex-wrap: wrap; align-items: end; gap: 16px; margin: 24px 0; }
+.operations-filters .field { margin: 0; }
+.operations-filters .operations-search { flex: 1 1 260px; max-width: 40rem; }
+.operations-filters .field.inline { flex-direction: column; align-items: stretch; gap: 4px; }
+.operations-filters .field.inline select { width: 100%; }
+.operations-page .field label { font-size: .8125rem; font-weight: 500; }
+.operations-page .tabs { overflow-x: auto; margin-bottom: 20px; }
+.operations-export { display: inline-flex; align-items: center; min-height: 44px; font-size: .875rem; }
+.operations-empty { background: var(--surface); border-radius: 17px; padding: 32px 24px; color: var(--muted); margin: 24px 0; }
+.operations-table { background: var(--surface); border-radius: 17px; padding: 8px 18px; }
+.operations-page .table { line-height: 1.5; }
+.operations-page .table caption { padding: 12px 10px; font-size: .8125rem; }
+.operations-page .table th { text-transform: none; letter-spacing: 0; font-weight: 500; padding-block: 14px; }
+.operations-page .table td { padding: 16px 10px; vertical-align: top; }
+.operations-page .table tbody tr:last-child td { border-bottom: 0; }
+.operations-page .table tbody tr:hover { background: var(--sunken); }
+.operations-page .table td a { display: inline-flex; align-items: center; min-height: 44px; }
+.operations-page .table .state { margin: 4px 0; }
+.operations-page .table .state + .muted { display: block; margin-top: 4px; font-size: .8125rem; }
+.operations-reference { font-family: var(--font-mono); font-size: .8125rem; }
+.operations-row-actions { min-width: 180px; }
+.operations-row-actions button { margin: 0 4px 4px 0; }
+.operations-page .badge { margin: 4px 4px 4px 0; }
+.bookings-page .badge { border: 0; font-family: var(--font-sans); border-radius: 6px; padding: 5px 9px; }
+.bookings-page .badge.succeeded { background: var(--done); color: var(--on-done); }
+.bookings-page .badge.cancelled { background: var(--sunken); color: var(--muted); }
+.bookings-page .badge.failed { background: var(--problem); color: var(--on-problem); }
+.operations-reschedule { max-width: 24rem; gap: 8px; }
+.operations-reschedule label { flex-basis: 100%; font-size: .8125rem; }
+.operations-reschedule input { flex: 1 1 100%; }
+.operations-resource-state { display: inline-block; border-radius: 6px; padding: 4px 9px; font-size: .8125rem; font-weight: 500; }
+.operations-resource-state.active { background: var(--done); color: var(--on-done); }
+.operations-resource-state.archived { background: var(--sunken); color: var(--muted); }
+.operations-page .operations-create { display: block; background: var(--surface); border: 0; border-radius: 17px; padding: 18px; margin: 24px 0; }
+.operations-create .row { gap: 12px; }
+.operations-create .field { flex: 1 1 240px; max-width: 36rem; margin: 0; }
+.operations-create .message:not([hidden]) { margin-top: 16px; }
+.operations-run-status { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; padding: 18px; background: var(--surface); border-radius: 17px; }
+.operations-run-status > .muted { font-size: .875rem; }
+.operations-page.run-detail > section { margin: 20px 0; padding: 20px; background: var(--surface); border-radius: 17px; }
+.operations-page.run-detail > section > :first-child { margin-top: 0; }
+.operations-page.run-detail .choices { display: grid; gap: 12px; }
+.operations-page.run-detail .choices li { line-height: 1.6; }
+.operations-page .technician { border: 0; border-radius: 17px; padding: 4px 20px 16px; margin-top: 24px; }
+.operations-page pre { max-width: 100%; box-sizing: border-box; }
+.operations-page .run .steps > li { padding-block: 16px; }
+.operations-path-list { display: none; }
+
+/* Keep booking actions beside their own item before the desktop columns get cramped. */
+@media (max-width: 1100px) {
+  .bookings-page .table.cards thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .bookings-page .table.cards, .bookings-page .table.cards :is(tbody, tr, td) { display: block; }
+  .bookings-page .table.cards tr { padding: 16px 0; border-bottom: 1px solid var(--border-soft); }
+  .bookings-page .table.cards tr:last-child { border-bottom: 0; }
+  .bookings-page .table.cards td { border: 0; padding: 6px 0; }
+  .bookings-page .table.cards td::before { content: attr(data-label); display: block; font-size: .8125rem; color: var(--muted); }
+}
+@media (max-width: 599px) {
+  .operations-page > .toolbar { margin-bottom: 20px; }
+  .operations-filters { gap: 12px; }
+  .operations-filters > .field { flex-basis: 100%; }
+  .operations-table { background: transparent; padding: 0; border-radius: 0; overflow: visible; }
+  .operations-page .table.cards tr { padding: 16px 18px; margin: 0 0 12px; background: var(--surface); border: 0; border-radius: 17px; }
+  .operations-page .table.cards td { padding: 6px 0; }
+  .operations-page .table.cards caption { padding: 0 0 12px; }
+  .operations-page .table.cards td::before { margin-bottom: 2px; }
+  .operations-create .field { max-width: none; flex-basis: 100%; }
+  .operations-page.run-detail > section { padding: 18px; }
+  .operations-page .run-path { display: block; }
+  .operations-page .run-path .run-canvas { display: none; }
+  .operations-path-list { display: grid; list-style: none; padding: 0; margin: 0; }
+  .operations-path-list li { display: grid; gap: 8px; padding: 14px 0; border-bottom: 1px solid var(--border-soft); }
+  .operations-path-list li:last-child { border-bottom: 0; padding-bottom: 0; }
+  .operations-path-list .state { justify-self: start; }
+  .operations-path-list .state.idle { background: var(--sunken); color: var(--muted); }
+}
