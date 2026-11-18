@@ -227,8 +227,9 @@ async function runStep(deps: FullDeps, step: Step, input: unknown, ctx: Expressi
       // A named approver must still be a member who may approve; the API checks again when they answer (decision 0022).
       const approver = cfg.approver ? await findApprover(deps.db, userId, cfg.approver) : null;
       if (cfg.approver && !approver) throw new StepError(`The approver ${cfg.approver} is not a member of this workspace who can approve.`, false);
-      // The link email counts once: a retry sends a new link under the same step key.
-      await claim("email");
+      // Each recipient counts, once per step key: a retry sends a new link under the same key.
+      const to = approver?.email ?? cfg.to!;
+      await claim("email", checkRecipients(to).length);
       const created = await createApproval(deps.db, stepRunId, new Date(Date.now() + cfg.timeoutSeconds * 1000), approver?.id);
       if (!created) {
         // A retry or re-run, and the approver already answered an earlier link: take that answer, ask nobody again.
@@ -243,7 +244,7 @@ async function runStep(deps: FullDeps, step: Step, input: unknown, ctx: Expressi
       const body = approvalEmailBody(cfg.message, link, expiresAt.toISOString(), approver?.email, language);
       // A retry or re-run sends a new link (earlier ones still work), so it needs its own Message-ID, or a mail server
       // could drop it as a duplicate of the earlier message.
-      await sendAs(deps.db, deps.secretsKey, deps.mail, userId, { to: approver?.email ?? cfg.to!, subject: cfg.subject, text: body }, `${idempotencyKey}:${randomUUID().slice(0, 8)}`, { capKey: idempotencyKey }).catch((err: unknown) => {
+      await sendAs(deps.db, deps.secretsKey, deps.mail, userId, { to, subject: cfg.subject, text: body }, `${idempotencyKey}:${randomUUID().slice(0, 8)}`, { capKey: idempotencyKey }).catch((err: unknown) => {
         // Each attempt sends its own working link and decisions carry across attempts, so a link email that may have
         // arrived is safe to send again: retry it instead of asking for review.
         throw err instanceof StepError && err.outcome === "unknown" ? new StepError(err.message, true, { cause: err, outcome: "unknown" }) : err;

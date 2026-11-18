@@ -264,17 +264,16 @@ export function calendarIdFrom(input: string): string | null {
 export const calendarEventId = (bookingId: string) => `dl${createHash("sha256").update(bookingId).digest("hex").slice(0, 40)}`;
 
 function calendarFailure(res: Reply, sa: ServiceAccount, write: boolean): ProviderError {
-  const error = (res.body.error ?? {}) as { message?: unknown; errors?: { reason?: unknown }[] };
-  const message = String(error.message ?? "");
+  const error = (res.body.error ?? {}) as { errors?: { reason?: unknown }[] };
   const share = `Share the calendar with ${sa.client_email} and choose "Make changes to events".`;
   if (res.status === 401) return new ProviderError("Google did not accept Daloy's access. Connect Google Calendar again.", "auth");
   if (res.status === 429 || (res.status === 403 && /rateLimitExceeded|quotaExceeded/i.test(String(error.errors?.[0]?.reason ?? "")))) {
     return new ProviderError("Google Calendar is limiting requests right now. Daloy will try again.", "quota", retryAfter(res.headers));
   }
-  if (res.status === 403) return new ProviderError(`Google Calendar refused access. ${share}${message ? ` Google said: ${message}` : ""}`, "permission");
+  if (res.status === 403) return new ProviderError(`Google Calendar refused access. ${share}`, "permission");
   if (res.status === 404) return new ProviderError(`The calendar or event was not found. Check the calendar id, and ${share.charAt(0).toLowerCase()}${share.slice(1)}`, "permission");
   if (res.status >= 500) return new ProviderError(`Google Calendar answered ${res.status}.`, write ? "ambiguous" : "unavailable");
-  return new ProviderError(`Google Calendar rejected the request${message ? `: ${message}` : ` (${res.status})`}.`, "invalid");
+  return new ProviderError(`Google Calendar rejected the request (${res.status}).`, "invalid");
 }
 
 /** A Calendar API call with the cached token. Statuses in `accept` come back to the caller instead of failing. */

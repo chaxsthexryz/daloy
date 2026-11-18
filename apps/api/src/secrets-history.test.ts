@@ -1,5 +1,7 @@
-import { randomBytes } from "node:crypto";
-import { encryptSecret, retireSecret, runs, secrets, smtpMailer, stepRuns, users, workflows, workflowVersions, type Db, type MailDeps } from "@daloy/db";
+import { randomBytes, randomUUID } from "node:crypto";
+import type { AddressInfo } from "node:net";
+import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
+import { deliveries, encryptSecret, requests, retireSecret, runs, secrets, smtpMailer, stepRuns, users, workflows, workflowVersions, type Db, type MailDeps } from "@daloy/db";
 import type { INestApplication } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
 import type { Pool } from "pg";
@@ -65,8 +67,22 @@ describe("run history and secrets", () => {
       error: `failed with ${V1}`,
     });
 
+    await db.insert(deliveries).values({ userId, runId: r!.id, stepId: "send", provider: "slack", reference: `HIST-${seq}`, payload: { text: "x" }, state: "failed", errorKind: "permission", lastError: `refused ${V1}` });
+    await db.insert(requests).values({ userId, workflowId: wf!.id, runId: r!.id, reference: `HIST-${seq}`, submissionKey: randomUUID(), subject: "Old" });
+    await app.listen(0, "127.0.0.1");
+    const token = ((await agent.post("/tokens").send({ name: "claude", scopes: ["read"] }).expect(201)).body as { token: string }).token;
+    const client = new Client({ name: "history-test", version: "1.0.0" });
+    await client.connect(new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${(app.getHttpServer().address() as AddressInfo).port}/mcp`), { requestInit: { headers: { Authorization: `Bearer ${token}` } } }));
     const leaked = async () => {
-      const text = JSON.stringify([(await agent.get(`/runs/${r!.id}`).expect(200)).body, (await agent.get("/runs").expect(200)).body]);
+      const status = await client.callTool({ name: "get_run_status", arguments: { runId: r!.id } });
+      const bodies = [
+        (await agent.get(`/runs/${r!.id}`).expect(200)).body,
+        (await agent.get("/runs").expect(200)).body,
+        (await agent.get(`/workflows/${wf!.id}/requests`).expect(200)).body,
+        (await agent.get(`/deliveries?runId=${r!.id}`).expect(200)).body,
+        status.structuredContent ?? status.content,
+      ];
+      const text = JSON.stringify(bodies);
       return forms(V1).filter((f) => text.includes(f) || text.includes(JSON.stringify(f).slice(1, -1)));
     };
     expect(await leaked()).toEqual([]);
