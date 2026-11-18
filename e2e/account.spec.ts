@@ -40,6 +40,8 @@ test("forgot password: the emailed link sets a new password and the old one stop
   await page.getByRole("button", { name: "Sign out" }).click();
 
   await page.getByRole("link", { name: "Forgot your password?" }).click();
+  // Wait for the page to switch, or the email lands in the sign-in form and Send link submits an empty field.
+  await expect(page.getByRole("heading", { name: "Forgot your password?" })).toBeVisible();
   await page.getByLabel("Email").fill(email);
   await page.getByRole("button", { name: "Send link" }).click();
   await expect(page.getByRole("status")).toContainText("If an account exists for that email, we sent a link");
