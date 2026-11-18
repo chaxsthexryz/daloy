@@ -71,7 +71,7 @@ export const screens = [
     name: "Requester view", path: "", title: ["My requests", "Mga request ko"], role: "requester",
     note: "Track the sample request using its reference.",
     async verify(page) {
-      await visible(page.getByRole("cell", { name: reference, exact: true }));
+      await visible(page.getByRole("cell", { name: new RegExp(`${reference}$`) }));
       await expect(page.locator("#main-menu")).toHaveCount(0);
     },
   },

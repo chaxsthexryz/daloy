@@ -83,7 +83,7 @@ test("Settings in the menu sets light or dark on this device, and System follows
   const surface = page.getByRole("main");
   const background = () => surface.evaluate((el) => getComputedStyle(el).backgroundColor);
   expect(await theme()).toBe("light");
-  const homeLight = await background();
+  await expect(page.locator(".shell-main")).toHaveCSS("background-color", "rgb(241, 241, 239)");
 
   await page.getByRole("link", { name: "Settings", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Settings", level: 1 })).toBeVisible();
@@ -105,7 +105,7 @@ test("Settings in the menu sets light or dark on this device, and System follows
   await page.getByRole("link", { name: "Automations", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Automations", exact: true })).toBeVisible();
   expect(await theme()).toBe("dark");
-  await expect.poll(background).toBe(homeLight);
+  await expect(page.locator(".shell-main")).toHaveCSS("background-color", "rgb(241, 241, 239)");
   await page.getByRole("link", { name: "Settings", exact: true }).click();
   await expect(page.getByLabel("Dark")).toBeChecked();
   await expect.poll(background).not.toBe(light);
