@@ -1,4 +1,4 @@
-# 0052: Accounts and token scopes
+# 0053: Accounts and token scopes
 
 ## Context
 
@@ -41,7 +41,6 @@ Register by scope, answer first, count in Postgres, keep tokens, and give old to
 - Mail: through the installation's SMTP server in the workspace language. It skips the shared-mail approval, because it is a system message to the account's own address, and an owner who is not approved for shared mail still has to be able to recover the account.
 - Scopes: `read` (`get_run_status`, `list_bookings`), `run` (one tool per published form workflow), `manage` (`resolve_run`, `cancel_booking`, `reschedule_booking`). No MCP tool edits workflows, so `manage` covers changing runs and bookings. Tools outside the scopes are absent from `tools/list`, and a call is an unknown tool. The expiry is optional, 1 to 365 days. The console defaults to read and run, no manage, 90 days. Expired tokens get 401 like revoked ones and do not update `last_used_at`.
 - Migration 0031 adds `password_resets` and, on `api_tokens`, `scopes` (default `{read,run,manage}`) and a nullable `expires_at`. The token hash is unchanged. `accounts-upgrade.test.ts` migrates a database at 0030 with a session and a token and checks both still work.
-- Migration 0031 and this decision may be renumbered at merge if N22 or N11b take the same numbers.
 
 ## Consequences
 
