@@ -218,6 +218,9 @@ Order: N3, N4, V1, then V2 and W together, N5 with the pilot search P in paralle
 - [x] N15. Airtable, Notion and Trello: add a record, page or card, as deliveries like Sheets (decision 0046). Update is left out.
 - [ ] N16. Facebook Messenger orders, last: only after pilots ask for it and Meta approves the app. Until then a link from the Page to the Daloy order form covers it.
 - [x] T1. Ready-made templates: Lead-to-Booking, Order-to-Sheets with PayMongo, Invoice follow-up with PayMongo link (stops reminders when paid), plus simple-to-complex business starters. Done: seven ready-made templates and a `payment_status` step (docs/how-it-works.md).
+- [ ] N17. Schedule watchdog: when a scheduled automation misses its run (worker down, a queue job lost, or no run within its expected window plus a grace period), the owner sees "Missed its schedule" on Automations and gets one email, at most one per automation per day. Exit: a test stops the schedule, the watchdog flags it once and clears it after the next good run.
+- [ ] N18. Brand kit: the owner sets a business name, logo and one accent colour in Settings, used on public forms, booking pages and outgoing emails. Logo size and type are checked; nothing is fetched from another site. Exit: a form and an email show the brand, and the defaults stay when none is set.
+- [ ] N19. CSV export: download an automation's Activity (requests, state, dates, form fields) and Bookings as CSV, owner and operator only, with cells that start with = + - @ escaped so a spreadsheet does not run them. Exit: an API test checks the columns, the escaping and the role rules.
 - [ ] N11. Real accounts: final security review at the release commit covering N6 to N10, a daily recipient cap on Gmail and Outlook receipts, a timestamp in the webhook signature, MCP token scopes and expiry, password change and reset, per-workflow pause and cancel of a pending run, read-side secret redaction on every surface, a purge policy for retired secrets.
 
 Model and effort per open phase. One coordinator session (Opus 5.5) coordinates: it picks the model for each phase session, checks results, merges and pushes. Phase sessions run on Opus or Sonnet; the lead plans and reviews, and hands file-by-file edits and test runs to Sonnet subagents. Claude Code or ChatGPT Codex can take a phase; `AGENTS.md` has the shared rules and the claim step.
@@ -237,6 +240,9 @@ Model and effort per open phase. One coordinator session (Opus 5.5) coordinates:
 | N14 Telegram and Viber | Sonnet 5.5, medium | GPT-6.1 Sol, Medium |
 | N15 Airtable, Notion, Trello | Sonnet 5.5, medium | GPT-6.1 Sol, Medium |
 | N16 Messenger | Opus 5.5, high | GPT-6.1 Sol, High |
+| N17 schedule watchdog | Sonnet 5.5, high | GPT-6.1 Sol, Medium |
+| N18 brand kit | Sonnet 5.5, medium | GPT-6.1 Sol, Medium |
+| N19 CSV export | Sonnet 5.5, medium | GPT-6.1 Sol, Medium |
 | Read-only checks and retests | Sonnet 5.5, medium | GPT-6.1 Terra |
 
 Hygiene, any time (done 16 November 2026): add a LICENSE (MIT), the README "How AI was used" section CLAUDE.md asks for, and fix by hand the four statements in docs/how-it-works.md that the code contradicts (steps never reach `skipped`, the table has 85 cases not 72, `failed` can go back to `running`, not every change goes through `assertTransition`).
