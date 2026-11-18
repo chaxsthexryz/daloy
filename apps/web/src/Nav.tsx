@@ -24,6 +24,7 @@ export function Shell({ user, hash, onSignOut, children }: { user: User; hash: s
   const [open, setOpen] = useState(false);
   const owner = user.role === "owner";
   const here = section(hash);
+  const home = !hash || hash === "#/" || hash === "#";
   // The phone menu closes on any page change, the browser's Back button included.
   useEffect(() => setOpen(false), [hash]);
   // `name` is the section the link marks, when its text differs from it (the bottom bar says "AI").
@@ -45,13 +46,17 @@ export function Shell({ user, hash, onSignOut, children }: { user: User; hash: s
           )}
         </div>
         <nav id="main-menu" aria-label={t("Main")} className={open ? "open" : undefined}>
-          {owner && link("#/new", "New automation", "primary")}
+          {home && <span className="home-nav-label">{t("Work")}</span>}
+          {!home && owner && link("#/new", "New automation", "primary")}
           {link("#/", "Automations")}
           {(owner || user.role === "operator") && link("#/activity", "Activity")}
-          {owner && link("#/ai", "Build with AI")}
           {(owner || user.role === "operator") && link("#/bookings", "Bookings")}
           {owner && (
             <>
+              {home && <span className="home-nav-label">{t("Build")}</span>}
+              {home && link("#/new", "New automation")}
+              {link("#/ai", "Build with AI")}
+              {home && <span className="home-nav-label">{t("Workspace")}</span>}
               {link("#/team", "Team")}
               {link("#/apps", "Apps")}
               {link("#/settings/business", "Business")}

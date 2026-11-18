@@ -1,5 +1,13 @@
 /** Brand kit section of Business settings. */
 export const brandTranslations: Record<string, string> = {
+  "Workflow lifecycle": "Daloy ng automation",
+  "Work queue": "Mga dapat asikasuhin",
+  "Check": "Suriin",
+  "Act": "Kumilos",
+  "Log": "Itala",
+  "Work": "Trabaho",
+  "Build": "Bumuo",
+  "Workspace": "Lugar ng trabaho",
   "Logo and colour": "Logo at kulay",
   "Shown on your public forms and in the emails Daloy sends for you. Leave both empty to keep the default look.": "Ipinapakita sa mga public form mo at sa mga email na ipinapadala ng Daloy para sa iyo. Iwanang walang laman ang dalawa para manatili ang default na itsura.",
   "Logo (PNG, JPEG or WebP, up to 100 KB)": "Logo (PNG, JPEG o WebP, hanggang 100 KB)",

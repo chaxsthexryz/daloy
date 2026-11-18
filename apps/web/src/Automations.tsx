@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { api, type RunSummary, type Workflow } from "./api";
 import { Header } from "./Nav";
 import { FormEmbed } from "./FormEmbed";
+import "./automation-home.css";
 import { arrange, type Filter } from "./lib/automations";
 import { lastEvent, plainState } from "./lib/states";
 import type { User } from "./Team";
@@ -70,8 +71,31 @@ export function Automations({ user }: { user: User }) {
   const { shown, drafts } = arrange(list ?? [], query, filter);
 
   return (
-    <main className="page">
+    <main className="page automation-home">
       <Header title={t("Automations")} action={owner && <a className="primary" href="#/new"><Text>New automation</Text></a>} />
+      {list && !listError && (
+        <div className="home-overview">
+          <section className="home-flow">
+            <div className="home-panel-title"><h2>{t("Workflow lifecycle")}</h2><a href="#/activity">{t("Activity")} ↗</a></div>
+            <div className="home-ribbon">
+              <svg viewBox="0 0 600 110" preserveAspectRatio="none" aria-hidden="true">
+                <path fill="#b9e6f7" d="M0 1C80 1 97 20 160 20S265 33 320 33s104 10 160 10 84 7 120 7v10c-36 0-64 7-120 7s-105 10-160 10-97 13-160 13S80 109 0 109Z"/>
+                <path fill="#75baf1" d="M0 14c80 0 97 16 160 16s102 11 160 11 104 7 160 7 84 4 120 4v6c-36 0-64 4-120 4s-102 7-160 7-97 11-160 11S80 96 0 96Z"/>
+                <path fill="#398fe2" d="M0 28c80 0 97 12 160 12s102 7 160 7 104 5 160 5 84 2 120 2v2c-36 0-64 2-120 2s-102 5-160 5-97 7-160 7S80 82 0 82Z"/>
+              </svg>
+              <ol>{["Trigger","Check","Act","Log"].map(label => <li key={label}><span>{t(label)}</span></li>)}</ol>
+            </div>
+            <p className="home-caption">{t("On")} <b>{list.filter(w => w.live && !w.pausedAt).length}</b><span>·</span>{t("Paused")} <b>{list.filter(w => w.pausedAt).length}</b></p>
+          </section>
+          <section className="home-attention"><h2>{t("Work queue")}</h2>
+            {(["needs_you", "problem", "waiting"] as const).map(key => (
+              <button key={key} type="button" aria-pressed={filter === key} onClick={() => {setQuery(""); setFilter(key); document.getElementById("find")?.focus();}}>
+                <span>{t(FILTERS.find(([value]) => value === key)![1])}</span><b>{arrange(list, "", key).shown.length}</b>
+              </button>
+            ))}
+          </section>
+        </div>
+      )}
       {review.length > 0 && (
         <p role="status" className="needs-you">
           <strong>{review.length >= 50 ? t("50 or more") : review.length}</strong> {t(review.length === 1 ? "request needs you." : "requests need you.")}{" "}
