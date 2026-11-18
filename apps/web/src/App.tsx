@@ -18,14 +18,17 @@ import { AppsPage } from "./Apps";
 import { TokensPage } from "./Tokens";
 import { VersionsPage } from "./Versions";
 import { Shell } from "./Nav";
+import { AccountPage, ForgotPasswordPage, ResetPasswordPage } from "./Account";
 import { AcceptInvitePage, MyRequestsPage, TeamPage, type User } from "./Team";
 
 const ANSWER = /^#\/answer\/([A-Za-z0-9_-]{43})$/;
+const RESET = /^#\/reset-password\/([A-Za-z0-9_-]{43})$/;
 const INVITE = /^#\/invite\/([A-Za-z0-9_-]{43})$/;
 
 /**
  * Hash routes (#/ is Automations, #/advanced the developer menu, #/w/<id>, #/w/<id>/runs, #/w/<id>/versions, #/runs/<id> (and #/runs/<id>/ask), #/tokens, #/settings, #/settings/ai, #/settings/business, #/apps, #/activity, #/new, #/ai (Build with AI), #/resources, #/bookings,
  * #/verify-sender/<token> for the Gmail confirmation link, #/team, #/invite/<token> for an invite link,
+ * #/forgot-password and #/reset-password/<token> before sign-in, #/account to change the password,
  * #/answer/<token> to sign in before a named approval (decision 0022),
  * #/try/office-request for the preview and #/a/<id> for a guided automation),
  * so no path of the console can clash with an API route on the same origin.
@@ -65,11 +68,13 @@ function Console({ hash }: { hash: string }) {
   if (user === undefined || (user && answer)) return <main className="page" />;
   const invite = INVITE.exec(hash);
   if (invite) return <AcceptInvitePage key={invite[1]} token={invite[1]!} onDone={setUser} />;
-  if (!user) return <SignIn onDone={setUser} />;
+  const reset = RESET.exec(hash);
+  if (reset) return <ResetPasswordPage key={reset[1]} token={reset[1]!} />;
+  if (!user) return hash === "#/forgot-password" ? <ForgotPasswordPage /> : <SignIn onDone={setUser} />;
   // Approvers and requesters have no console beyond their own requests; the API refuses the rest anyway.
   return (
     <LanguageContext.Provider value={{ language, setLanguage }}>
-      {user.role === "approver" || user.role === "requester" ? <MyRequestsPage user={user} onSignOut={signOut} /> : (
+      {user.role === "approver" || user.role === "requester" ? (hash === "#/account" ? <AccountPage backToRequests /> : <MyRequestsPage user={user} onSignOut={signOut} />) : (
         <Shell user={user} hash={hash} onSignOut={signOut}>
           <Route hash={hash} user={user} />
         </Shell>
@@ -95,6 +100,7 @@ function Route({ hash, user }: { hash: string; user: User }) {
   if (hash === "#/ai" && user.role === "owner") return <BuildWithAiPage email={user.email} />;
   if (hash === "#/tokens") return <TokensPage />;
   if (hash === "#/settings") return <SettingsPage user={user} />;
+  if (hash === "#/account") return <AccountPage />;
   if (hash === "#/settings/ai") return <AiModelPage />;
   if (hash === "#/apps") return <AppsPage />;
   // #/settings/business/outlook-<outcome> is where the Outlook consent callback lands (decision 0023); Outlook is on Apps now.
@@ -147,6 +153,7 @@ function SignIn({ onDone }: { onDone: (u: User) => void }) {
             {mode === "login" ? "Create an account instead" : "I have an account"}
           </button>
         </div>
+        {mode === "login" && <p><a href="#/forgot-password">Forgot your password?</a></p>}
       </form>
     </main>
   );

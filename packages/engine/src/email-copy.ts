@@ -8,6 +8,8 @@ const EMAIL_COPY = {
     verifyExpiry: "The link works once and expires in 30 minutes.",
     outlookSubject: "Test email from Daloy",
     outlookBody: "Daloy can send from this mailbox. Approved purchase requests will go out from here.",
+    resetSubject: "Reset your Daloy password",
+    resetBody: "Someone asked to reset the password for your Daloy account. To choose a new one, open this link. It works once and expires in 30 minutes. If this was not you, ignore this email and your password stays the same.",
   },
   tl: {
     testSubject: "Test email ng Daloy",
@@ -16,6 +18,8 @@ const EMAIL_COPY = {
     verifyExpiry: "Isang beses lang magagamit ang link at mag-e-expire ito sa loob ng 30 minuto.",
     outlookSubject: "Test email mula sa Daloy",
     outlookBody: "Makakapagpadala ang Daloy mula sa mailbox na ito. Dito ipapadala ang mga na-approve na purchase request.",
+    resetSubject: "I-reset ang password mo sa Daloy",
+    resetBody: "May humiling na i-reset ang password ng iyong Daloy account. Para pumili ng bago, buksan ang link na ito. Isang beses lang magagamit ang link at mag-e-expire ito sa loob ng 30 minuto. Kung hindi ikaw ito, huwag pansinin ang email na ito at hindi magbabago ang iyong password.",
   },
 } as const;
 

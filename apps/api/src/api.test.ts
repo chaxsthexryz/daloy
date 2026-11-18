@@ -306,8 +306,9 @@ describe("secrets and API tokens", () => {
 
   it("shows an API token once and stores only its hash", async () => {
     const { agent } = await signedIn();
-    const created = (await agent.post("/tokens").send({ name: "claude" }).expect(201)).body;
+    const created = (await agent.post("/tokens").send({ name: "claude", scopes: ["read", "run", "manage"] }).expect(201)).body;
     expect(created.token).toMatch(/^dly_/);
+    expect(created).toMatchObject({ scopes: ["read", "run", "manage"], expiresAt: null });
     const list = (await agent.get("/tokens").expect(200)).body;
     expect(JSON.stringify(list)).not.toContain(created.token);
     const [row] = await db.select().from(apiTokens).where(eq(apiTokens.id, created.id));

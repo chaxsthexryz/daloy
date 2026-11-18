@@ -1,12 +1,16 @@
 import { randomBytes } from "node:crypto";
-import { apiTokens, type Db } from "@daloy/db";
+import { apiTokens, TOKEN_SCOPES, type Db } from "@daloy/db";
 import { Body, Controller, Delete, Get, HttpCode, Inject, NotFoundException, Param, Post, UseGuards } from "@nestjs/common";
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import * as z from "zod";
 import { SessionGuard } from "./auth";
 import { Allow, CurrentUser, DB, sha256, ZodPipe, type SessionUser, MANAGE } from "./http";
 
-const tokenInput = z.object({ name: z.string().trim().min(1).max(100) });
+const tokenInput = z.object({
+  name: z.string().trim().min(1).max(100),
+  scopes: z.array(z.enum(TOKEN_SCOPES)).min(1).refine((s) => new Set(s).size === s.length, "each scope once"),
+  expiresInDays: z.number().int().min(1).max(365).optional(),
+});
 
 /** Bearer tokens for MCP clients (phase 8). The token is shown once; only its SHA-256 is stored. */
 @Controller("tokens")
@@ -17,14 +21,18 @@ export class TokensController {
   @Post()
   async create(@CurrentUser() user: SessionUser, @Body(new ZodPipe(tokenInput)) body: z.output<typeof tokenInput>) {
     const token = `dly_${randomBytes(32).toString("base64url")}`;
-    const [row] = await this.db.insert(apiTokens).values({ userId: user.workspaceId, name: body.name, tokenHash: sha256(token) }).returning({ id: apiTokens.id });
-    return { id: row!.id, name: body.name, token };
+    const expiresAt = body.expiresInDays ? new Date(Date.now() + body.expiresInDays * 86_400_000) : null;
+    const [row] = await this.db
+      .insert(apiTokens)
+      .values({ userId: user.workspaceId, name: body.name, tokenHash: sha256(token), scopes: body.scopes, expiresAt })
+      .returning({ id: apiTokens.id });
+    return { id: row!.id, name: body.name, token, scopes: body.scopes, expiresAt };
   }
 
   @Get()
   list(@CurrentUser() user: SessionUser) {
-    const { id, name, createdAt, lastUsedAt, revokedAt } = apiTokens;
-    return this.db.select({ id, name, createdAt, lastUsedAt, revokedAt }).from(apiTokens).where(eq(apiTokens.userId, user.workspaceId)).orderBy(desc(createdAt));
+    const { id, name, scopes, expiresAt, createdAt, lastUsedAt, revokedAt } = apiTokens;
+    return this.db.select({ id, name, scopes, expiresAt, createdAt, lastUsedAt, revokedAt }).from(apiTokens).where(eq(apiTokens.userId, user.workspaceId)).orderBy(desc(createdAt));
   }
 
   @Delete(":id")

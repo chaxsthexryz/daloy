@@ -191,6 +191,7 @@ export function MyRequestsPage({ user, onSignOut }: { user: User; onSignOut: () 
         <span className="muted">
           {user.email} ({t(user.role)})
         </span>
+        <a href="#/account">{t("Account")}</a>
         <button type="button" className="quiet" onClick={onSignOut}>{t("Sign out")}</button>
       </header>
       {user.role === "approver" && <p>{t("Approval requests come to your email. Open the link while signed in as {email} to answer.", { email: user.email })}</p>}

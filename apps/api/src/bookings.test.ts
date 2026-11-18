@@ -420,7 +420,7 @@ describe("MCP booking tools", () => {
     const s = await setup();
     await s.book();
     await s.agent.post(`/workflows/${s.wf.id}/test-runs`).send({ definition: spa(), payload: { email: "mia@example.com", who: s.ana.id, at: at("15:00") } }).expect(202);
-    const token = (await s.agent.post("/tokens").send({ name: "claude" }).expect(201)).body.token as string;
+    const token = (await s.agent.post("/tokens").send({ name: "claude", scopes: ["read", "run", "manage"] }).expect(201)).body.token as string;
     const client = new Client({ name: "bookings-test", version: "1.0.0" });
     await client.connect(new StreamableHTTPClientTransport(new URL(`${base}/mcp`), { requestInit: { headers: { Authorization: `Bearer ${token}` } } }));
     const call = async (name: string, args: Record<string, unknown>): Promise<{ isError?: boolean; content?: unknown; structuredContent?: unknown }> => {
