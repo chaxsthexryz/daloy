@@ -211,3 +211,20 @@ describe("plan quotas at the outside call", () => {
     expect(await usedOf(userId, "email")).toBe(5001);
   });
 });
+
+describe("a run held because nothing was sent (N11b)", () => {
+  it("cannot be marked as delivered, but can be sent again or stopped", async () => {
+    const userId = await newUser();
+    const runId = await newRun(userId, flow(emailStep()), { state: "needs_review", error: "step send: nothing was sent" });
+    await db.insert(stepRuns).values({ runId, stepId: "send", attempt: 1, state: "failed", outcome: "not_sent", error: "nothing was sent" });
+    expect(await resolveRun(db, userId, runId, "delivered", "ops@test.local")).toBe(false);
+    expect((await state(runId)).state).toBe("needs_review");
+    expect(await resolveRun(db, userId, runId, "again", "ops@test.local")).toBe(true);
+    expect((await state(runId)).state).toBe("running");
+
+    // A lost answer (unknown) still allows "It went through".
+    const lost = await newRun(userId, flow(emailStep()), { state: "needs_review" });
+    await db.insert(stepRuns).values({ runId: lost, stepId: "send", attempt: 1, state: "failed", outcome: "unknown" });
+    expect(await resolveRun(db, userId, lost, "delivered", "ops@test.local")).toBe(true);
+  });
+});

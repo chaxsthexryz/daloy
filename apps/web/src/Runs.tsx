@@ -445,10 +445,13 @@ function RunActions({ run, onDone }: { run: Run; onDone: () => void }) {
   const { t } = useLanguage();
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
-  if (run.state !== "needs_review" && run.state !== "failed") return null;
+  const cancellable = run.state === "pending" || run.state === "waiting";
+  if (run.state !== "needs_review" && run.state !== "failed" && !cancellable) return null;
   const last = run.steps.at(-1);
+  const notSent = last?.outcome === "not_sent";
   const act = async (path: string, body: object = {}) => {
     if (body && (body as { action?: string }).action === "again" && !window.confirm(t("Send it once more? If it already arrived, they get it twice."))) return;
+    if (path === "cancel" && !window.confirm(t("Cancel this run? It stops before its next step and cannot be started again."))) return;
     setBusy(true);
     setMessage("");
     try {
@@ -460,6 +463,19 @@ function RunActions({ run, onDone }: { run: Run; onDone: () => void }) {
       setBusy(false);
     }
   };
+  if (cancellable) {
+    return (
+      <section aria-label={t("Cancel run")}>
+        <p>{t("Cancel stops this run before its next step. Anything already sent stays sent.")}</p>
+        <button type="button" disabled={busy} onClick={() => void act("cancel")}>
+          {t("Cancel run")}
+        </button>
+        <p role="alert" className="message error" hidden={!message}>
+          {message}
+        </p>
+      </section>
+    );
+  }
   if (run.state === "failed") {
     return (
       <section aria-label={t("Retry")}>
@@ -476,7 +492,8 @@ function RunActions({ run, onDone }: { run: Run; onDone: () => void }) {
   return (
     <section aria-label={t("Needs you")} className="review">
       <h2>{t("Needs you")}</h2>
-      <p>{t("A message or delivery may or may not have reached its destination, and Daloy cannot tell. Check whether it arrived, then choose.")}</p>
+      {/* Nothing was sent (a daily send cap): there is nothing to confirm, so "It went through" is not offered. */}
+      <p>{notSent ? t("Nothing was sent. Choose what to do.") : t("A message or delivery may or may not have reached its destination, and Daloy cannot tell. Check whether it arrived, then choose.")}</p>
       {last?.error && <p className="message error">{last.error}</p>}
       {last?.input !== null && last?.input !== undefined && (
         <details>
@@ -485,12 +502,14 @@ function RunActions({ run, onDone }: { run: Run; onDone: () => void }) {
         </details>
       )}
       <ul className="choices">
-        <li>
-          <button type="button" disabled={busy} onClick={() => void act("resolve", { action: "delivered" })}>
-            {t("It went through")}
-          </button>{" "}
-          {t("I checked, it arrived.")}
-        </li>
+        {!notSent && (
+          <li>
+            <button type="button" disabled={busy} onClick={() => void act("resolve", { action: "delivered" })}>
+              {t("It went through")}
+            </button>{" "}
+            {t("I checked, it arrived.")}
+          </li>
+        )}
         <li>
           <button type="button" disabled={busy} onClick={() => void act("resolve", { action: "again" })}>
             {t("Send again")}

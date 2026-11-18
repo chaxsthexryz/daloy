@@ -19,3 +19,10 @@ it("localizes generated template copy without changing saved English templates",
   expect(tagalog[0]?.definition).not.toEqual(english[0]?.definition);
   expect(templatesForLanguage("en")).toEqual(TEMPLATES);
 });
+
+it("translates the pause, cancel and webhook timestamp text (N11b)", () => {
+  expect(translate("tl", "Cancel run")).toBe("Kanselahin ang run");
+  expect(translate("tl", "Paused")).toBe("Naka-pause");
+  expect(translate("tl", "A call signed without a timestamp was accepted on {date}. Update the caller, then turn this on.", { date: "18/11/2026" })).toContain("18/11/2026");
+  expect(translate("en", "Nothing was sent. Choose what to do.")).toBe("Nothing was sent. Choose what to do.");
+});

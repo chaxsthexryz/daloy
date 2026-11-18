@@ -25,6 +25,15 @@ describe("arrange", () => {
     expect(ids(arrange(LIST, "", "waiting").shown)).toEqual(["wait"]);
     expect(ids(arrange(LIST, "", "off").shown)).toEqual(["off"]);
   });
+  it("lists a paused automation under Off, not under the state of its last run (N11b)", () => {
+    const list = [...LIST, { id: "paused", name: "Weekly summary", createdAt: "10", live: true, pausedAt: "2026-11-18T01:00:00Z", last: last("failed") }];
+    expect(ids(arrange(list, "", "off").shown)).toEqual(["off", "paused"]);
+    expect(ids(arrange(list, "", "problem").shown)).toEqual(["problem"]);
+    expect(ids(arrange(list, "", "all").shown)).toContain("paused");
+    // A run in review is still waiting for a person, paused or not.
+    const held = [{ id: "held", name: "Orders", createdAt: "11", live: true, pausedAt: "2026-11-18T01:00:00Z", last: last("running", true) }];
+    expect(ids(arrange(held, "", "needs_you").shown)).toEqual(["held"]);
+  });
   it("treats a missed schedule as a problem, unless the last run needs a person", () => {
     const list = [
       { id: "missed", name: "Morning report", createdAt: "7", live: true, scheduleMissedAt: MISSED, last: last("succeeded") },

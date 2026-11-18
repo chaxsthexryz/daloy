@@ -193,3 +193,25 @@ it("adds an Airtable record, a Notion page and a Trello card from run data, and 
   expect(fake.notion.pages).toHaveLength(1);
   expect(fake.trello.cards).toMatchObject([{ name: "Fix door", desc: "REQ-4001" }]);
 });
+
+it("counts Outlook recipients against the daily cap and sends the run to review instead of queueing the mail (N11b)", async () => {
+  const [{ n }] = (await pool.query("select coalesce(sum(used), 0)::int as n from usage_counts where user_id = $1 and kind = 'mailbox'", [owner])).rows as [{ n: number }];
+  const before = process.env.MAILBOX_DAILY_CAP;
+  process.env.MAILBOX_DAILY_CAP = String(n + 1);
+  try {
+    const outlookOnly = { trigger: definition.trigger, steps: [microsoftDefinition.steps[0]!], edges: [] };
+    const sentBefore = fake.microsoft.sent.length;
+    const ok = await startRun({ summary: "a chair", email: "buy@contoso.example", reference: "PUR-3001" }, {}, outlookOnly);
+    expect(await until(() => runState(ok), (s) => s === "succeeded" || s === "failed" || s === "needs_review")).toBe("succeeded");
+    const capped = await startRun({ summary: "a desk", email: "buy@contoso.example", reference: "PUR-3002" }, {}, outlookOnly);
+    expect(await until(() => runState(capped), (s) => s === "succeeded" || s === "failed" || s === "needs_review")).toBe("needs_review");
+    const [run] = await db.select().from(runs).where(eq(runs.id, capped));
+    expect(run!.error).toContain("limit of");
+    expect(run!.error).toContain("Nothing was sent.");
+    expect(await deliveriesOf(capped)).toEqual([]);
+    await until(async () => fake.microsoft.sent.length, (c) => c === sentBefore + 1);
+  } finally {
+    if (before === undefined) delete process.env.MAILBOX_DAILY_CAP;
+    else process.env.MAILBOX_DAILY_CAP = before;
+  }
+});

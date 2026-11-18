@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { hostname } from "node:os";
-import { clearSheetWriteKeys, createRun, planOf, PLANS, publishedVersion, purgeUploads, runDueDeliveries, RUN_QUEUE, RUN_QUEUE_OPTIONS, runs, SCHEDULE_QUEUE, workflows, workflowVersions, type Db, type MailDeps, type ProviderUrls } from "@daloy/db";
+import { clearSheetWriteKeys, createRun, planOf, PLANS, publishedVersion, purgeUploads, runDueDeliveries, RUN_QUEUE, RUN_QUEUE_OPTIONS, runs, SCHEDULE_QUEUE, WorkflowPausedError, workflows, workflowVersions, type Db, type MailDeps, type ProviderUrls } from "@daloy/db";
 import type { RetryPolicy } from "@daloy/engine";
 import { and, eq, gt, inArray, isNull, lt, lte, or, sql } from "drizzle-orm";
 import { PgBoss } from "pg-boss";
@@ -78,7 +78,14 @@ export async function startWorker(opts: WorkerOptions) {
         continue;
       }
       const version = await publishedVersion(db, job.data.workflowId);
-      if (version) await deps.enqueue(await createRun(db, version.id, { firedAt: new Date().toISOString() }));
+      if (!version) continue;
+      try {
+        await deps.enqueue(await createRun(db, version.id, { firedAt: new Date().toISOString() }));
+      } catch (err) {
+        // Paused (N11b): the schedule stays registered, so a resume starts firing again without touching pg-boss.
+        if (!(err instanceof WorkflowPausedError)) throw err;
+        console.log(`schedule: skipped ${job.data.workflowId}, the automation is paused`);
+      }
     }
   });
 
