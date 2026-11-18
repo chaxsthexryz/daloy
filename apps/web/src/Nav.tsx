@@ -4,7 +4,7 @@ import type { User } from "./Team";
 
 /** Which menu entry a hash route belongs to, so the same menu shows on every page and marks where you are. */
 function section(hash: string) {
-  if (hash === "#/settings" || hash === "#/settings/ai") return "Settings";
+  if (hash === "#/settings" || hash === "#/settings/ai" || hash === "#/account") return "Settings";
   if (hash === "#/activity") return "Activity";
   if (hash === "#/ai") return "Build with AI";
   if (hash.startsWith("#/bookings")) return "Bookings";
@@ -60,6 +60,7 @@ export function Shell({ user, hash, onSignOut, children }: { user: User; hash: s
           )}
           {link("#/settings", "Settings")}
           <span className="muted who">{user.email}</span>
+          {link("#/account", "Account")}
           <button type="button" className="quiet" onClick={onSignOut}>
             {t("Sign out")}
           </button>
