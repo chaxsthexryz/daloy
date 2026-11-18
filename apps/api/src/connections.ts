@@ -60,6 +60,7 @@ import * as z from "zod";
 import type { Request, Response } from "express";
 import { SessionGuard, sessionUser } from "./auth";
 import { Allow, CONFIG, CurrentUser, DB, RateLimit, ZodPipe, type ApiConfig, type SessionUser, MANAGE, OPERATE } from "./http";
+import { historyHider } from "./mask";
 
 const sheetsInput = z.strictObject({ serviceAccount: z.string().min(2).max(10_000), sheet: z.string().trim().min(1).max(500), tab: z.string().trim().min(1).max(100) });
 const destinationInput = sheetsInput.omit({ serviceAccount: true });
@@ -81,7 +82,7 @@ const paymongoInput = z.strictObject({
 const airtableInput = z.strictObject({
   token: z.string().trim().regex(/^pat[A-Za-z0-9]+\.[A-Za-z0-9]{20,100}$/, "Paste the personal access token, which starts with pat"),
   baseId: z.string().trim().regex(/^app[A-Za-z0-9]{10,30}$/, "The base id starts with app"),
-  tableId: z.string().trim().regex(/^[^/?#\\]{1,100}$/, "Enter the table id (tbl...) or the table name"),
+  tableId: z.string().trim().regex(/^tbl[A-Za-z0-9]{14}$/, "Enter the table id, which starts with tbl (it is in the table's link)"),
 });
 const notionInput = z.strictObject({
   token: z.string().trim().regex(/^(secret_|ntn_)[A-Za-z0-9]{20,100}$/, "Paste the internal integration secret, which starts with ntn_ or secret_"),
@@ -485,11 +486,15 @@ export class OutlookCallbackController {
 @Controller("deliveries")
 @UseGuards(SessionGuard, Allow(OPERATE))
 export class DeliveriesController {
-  constructor(@Inject(DB) private readonly db: Db) {}
+  constructor(
+    @Inject(DB) private readonly db: Db,
+    @Inject(CONFIG) private readonly config: Required<ApiConfig>,
+  ) {}
 
   @Get()
   async list(@CurrentUser() user: SessionUser, @Query("runId", uuid) runId: string) {
-    return listDeliveries(this.db, user.workspaceId, [runId]);
+    const hide = await historyHider(this.db, this.config.secretsKey, user.workspaceId);
+    return (await listDeliveries(this.db, user.workspaceId, [runId])).map((d) => ({ ...d, lastError: hide(d.lastError), result: hide(d.result) }));
   }
 
   /** Queues a failed delivery again (the worker sends it within seconds). postAgain repeats a Slack post that may be in the channel already. */

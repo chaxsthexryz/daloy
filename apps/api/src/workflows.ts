@@ -22,7 +22,8 @@ import { CronExpressionParser } from "cron-parser";
 import type { PgBoss } from "pg-boss";
 import * as z from "zod";
 import { SessionGuard } from "./auth";
-import { Allow, BOSS, CurrentUser, DB, enqueueRun, eventKey, isUniqueViolation, replayedRun, validPayload, ZodPipe, type SessionUser, MANAGE, OPERATE } from "./http";
+import { Allow, BOSS, CONFIG, CurrentUser, DB, enqueueRun, eventKey, isUniqueViolation, replayedRun, validPayload, ZodPipe, type ApiConfig, type SessionUser, MANAGE, OPERATE } from "./http";
+import { historyHider } from "./mask";
 import { resourcesFor } from "./resources";
 
 const workflowInput = z.object({
@@ -45,6 +46,7 @@ export class WorkflowsController {
   constructor(
     @Inject(DB) private readonly db: Db,
     @Inject(BOSS) private readonly boss: PgBoss,
+    @Inject(CONFIG) private readonly config: Required<ApiConfig>,
   ) {}
 
   /**
@@ -144,7 +146,8 @@ export class WorkflowsController {
       .orderBy(desc(createdAt))
       .limit(200);
     const all = await listDeliveries(this.db, user.workspaceId, rows.map((r) => r.runId));
-    return rows.map((r) => ({ ...r, deliveries: all.filter((d) => d.runId === r.runId) }));
+    const hide = await historyHider(this.db, this.config.secretsKey, user.workspaceId);
+    return rows.map((r) => ({ ...r, runError: hide(r.runError), deliveries: all.filter((d) => d.runId === r.runId).map((d) => ({ ...d, lastError: hide(d.lastError), result: hide(d.result) })) }));
   }
 
   /** Pause: no trigger starts a new run until Resume. Runs already started finish. Repeating either call changes nothing (decision 0054). */

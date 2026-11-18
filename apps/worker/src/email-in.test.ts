@@ -33,7 +33,7 @@ const payload = {
   messageId: "<one@example.com>",
   receivedAt: "2026-11-17T10:00:00.000Z",
 };
-async function setup() {
+async function setup(source = input) {
   const user = (
     await db
       .insert(users)
@@ -50,7 +50,7 @@ async function setup() {
       published: true,
     });
   await db.insert(triggers).values({ workflowId: wf.id, type: "email", config: {} });
-  await saveEmailSource(db, key, user.id, wf.id, input);
+  await saveEmailSource(db, key, user.id, wf.id, source);
   return { userId: user.id, workflowId: wf.id };
 }
 function mailbox(
@@ -282,6 +282,43 @@ describe("email intake checkpoint", () => {
     const all = await db.select().from(runs);
     expect(all).toHaveLength(before + 1);
     expect(all.at(-1)!.triggerPayload).toMatchObject({ subject: "current" });
+  });
+});
+
+describe("email intake fairness (M13)", () => {
+  it("polls another workspace's live mailbox before earlier-due failing drafts", async () => {
+    const live = await setup();
+    await poll(mailbox());
+    for (let i = 0; i < 3; i++) {
+      const draft = await setup({ ...input, username: `draft${i}@example.com` });
+      await db.delete(triggers).where(eq(triggers.workflowId, draft.workflowId));
+    }
+    await db.update(emailSources).set({ nextPollAt: new Date(0) }).where(sql`${emailSources.workflowId} <> ${live.workflowId}`);
+    await db.update(emailSources).set({ nextPollAt: new Date() }).where(eq(emailSources.workflowId, live.workflowId));
+    const adapter: ImapAdapter = (s, signal) =>
+      s.username.startsWith("draft")
+        ? Promise.reject(new Error("slow failure"))
+        : mailbox({ uidNext: 6, messages: [{ uid: 5, payload }] })(s, signal);
+    const before = (await db.select().from(runs)).length;
+    await poll(adapter);
+    expect(await db.select().from(runs)).toHaveLength(before + 1);
+  });
+  it("backs a failing source off further each time and resets after a read", async () => {
+    const own = await setup();
+    const check = async (adapter: ImapAdapter) => {
+      await pollEmailSources({ db, secretsKey: key, adapter, intervalMs: 1000, enqueue: async () => {} });
+      const [row] = await db.select().from(emailSources).where(eq(emailSources.workflowId, own.workflowId));
+      return { failures: row!.failures, wait: row!.nextPollAt.getTime() - Date.now() };
+    };
+    const first = await check(mailbox({ fail: true }));
+    await due();
+    const second = await check(mailbox({ fail: true }));
+    await due();
+    const ok = await check(mailbox());
+    expect(first.failures).toBe(1);
+    expect(second.failures).toBe(2);
+    expect(second.wait).toBeGreaterThan(first.wait + 500);
+    expect(ok.failures).toBe(0);
   });
 });
 

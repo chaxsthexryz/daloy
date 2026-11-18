@@ -1,3 +1,5 @@
+import { redactSecrets, secretForms, secretValuesToHide, type Db } from "@daloy/db";
+
 /** Key names whose values are never shown in run history. Matching is by substring, so "client_secret" and "X-Api-Key" count. */
 const SECRET_KEY = /secret|token|passw(or)?d|authorization|api[-_]?key|cookie/i;
 
@@ -12,4 +14,10 @@ export function maskSecrets(value: unknown): unknown {
     return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, SECRET_KEY.test(k) && v !== null ? "[secret]" : maskSecrets(v)]));
   }
   return value;
+}
+
+/** One reader for stored history: hides every current and retired secret value, then secret-looking keys (decision 0025). */
+export async function historyHider(db: Db, secretsKey: Buffer, workspaceId: string) {
+  const forms = secretForms(await secretValuesToHide(db, secretsKey, workspaceId));
+  return (v: unknown) => maskSecrets(redactSecrets(v, forms));
 }

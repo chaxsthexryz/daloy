@@ -179,6 +179,18 @@ it("tests the saved model live on a sample inquiry", async () => {
   expect(asked.at(-1)!.model).toBe("test-model");
 });
 
+it("refuses the sample once the monthly AI actions are used up, without calling the model", async () => {
+  vi.stubEnv("LLM_BASE_URL", llmUrl);
+  const agent = await signedIn();
+  await agent.put("/settings/ai").send({ preset: "local", model: "test-model" }).expect(204);
+  const email = `ai${seq}@test.local`;
+  await pool.query("update users set plan = 'pilot', plan_started_on = '2026-01-01' where email = $1", [email]);
+  await pool.query("insert into usage_counts (user_id, kind, period, used) select id, 'ai', to_char(now() at time zone 'Asia/Manila', 'YYYY-MM-01'), 100 from users where email = $1", [email]);
+  const before = asked.length;
+  expect((await agent.post("/settings/ai/test").expect(429)).body.message).toMatch(/AI actions/);
+  expect(asked).toHaveLength(before);
+});
+
 it("explains a model it cannot reach", async () => {
   vi.stubEnv("LLM_BASE_URL", "http://127.0.0.1:9");
   const { body } = await (await signedIn()).post("/settings/ai/test").expect(200);

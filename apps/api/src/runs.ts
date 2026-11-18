@@ -1,4 +1,4 @@
-import { aiConnection, cancelRun, claimUsage, readUpload, deliveries, listDeliveries, QuotaError, redactSecrets, requests, resolveRun, runs, secretForms, supersededSql, secretValuesToHide, stepRuns, workflows, workflowVersions, type Db, type RunAction } from "@daloy/db";
+import { aiConnection, cancelRun, claimUsage, readUpload, deliveries, listDeliveries, QuotaError, requests, resolveRun, runs, supersededSql, stepRuns, workflows, workflowVersions, type Db, type RunAction } from "@daloy/db";
 import { FILE_MIME, safeFileName } from "@daloy/engine";
 import { generate } from "@daloy/llm-ts";
 import { Body, ConflictException, Controller, Get, Header, HttpCode, HttpException, HttpStatus, Inject, NotFoundException, Param, Post, Query, Res, StreamableFile, UseGuards } from "@nestjs/common";
@@ -10,7 +10,7 @@ import { SessionGuard } from "./auth";
 import { toCsv } from "./csv";
 import { answerAll, askFacts, explainFailure, failureFacts } from "./explain";
 import { Allow, BOSS, CONFIG, CurrentUser, DB, enqueueRun, RateLimit, ZodPipe, type ApiConfig, type SessionUser, MANAGE, OPERATE } from "./http";
-import { maskSecrets } from "./mask";
+import { historyHider } from "./mask";
 import { explain } from "./settings";
 
 const testFlag = new ZodPipe(z.enum(["true", "false"]).optional());
@@ -51,11 +51,6 @@ export class RunsController {
     @Inject(BOSS) private readonly boss: PgBoss,
   ) {}
 
-  private async hide(workspaceId: string) {
-    const forms = secretForms(await secretValuesToHide(this.db, this.config.secretsKey, workspaceId));
-    return (v: unknown) => maskSecrets(redactSecrets(v, forms));
-  }
-
   /**
    * The latest 50 runs, newest first. test=true lists builder test runs only, test=false the others. review=true lists runs
    * waiting for a person, state one plain state, and q runs whose automation name or request reference contains the text.
@@ -82,7 +77,7 @@ export class RunsController {
       )
       .orderBy(desc(runs.createdAt))
       .limit(50);
-    const hide = await this.hide(user.workspaceId);
+    const hide = await historyHider(this.db, this.config.secretsKey, user.workspaceId);
     return rows.map((r) => ({ ...r, triggerPayload: hide(r.triggerPayload), error: hide(r.error) as string | null }));
   }
 
@@ -111,7 +106,7 @@ export class RunsController {
   @Header("Content-Disposition", 'attachment; filename="activity.csv"')
   async exportCsv(@CurrentUser() user: SessionUser, @Query("workflowId", uuid) workflowId: string) {
     const rows = await this.owned().where(and(eq(workflows.userId, user.workspaceId), eq(workflows.id, workflowId))).orderBy(desc(runs.createdAt)).limit(5000);
-    const hide = await this.hide(user.workspaceId);
+    const hide = await historyHider(this.db, this.config.secretsKey, user.workspaceId);
     const fields = rows.map((r) => {
       const p = hide(r.triggerPayload);
       return p !== null && typeof p === "object" && !Array.isArray(p) ? (p as Record<string, unknown>) : {};
@@ -144,7 +139,7 @@ export class RunsController {
     const [run] = await this.owned().where(and(eq(workflows.userId, user.workspaceId), eq(runs.id, id)));
     if (!run) throw new NotFoundException();
     const steps = await this.db.select().from(stepRuns).where(eq(stepRuns.runId, id)).orderBy(asc(stepRuns.createdAt), asc(stepRuns.attempt));
-    const hide = await this.hide(user.workspaceId);
+    const hide = await historyHider(this.db, this.config.secretsKey, user.workspaceId);
     return {
       ...run,
       triggerPayload: hide(run.triggerPayload),

@@ -8,7 +8,8 @@ import { and, desc, eq, gt, isNull, or, sql } from "drizzle-orm";
 import type { Request, Response } from "express";
 import type { PgBoss } from "pg-boss";
 import * as z from "zod";
-import { BOSS, DB, enqueueRun, RateLimit, sha256 } from "./http";
+import { BOSS, CONFIG, DB, enqueueRun, RateLimit, sha256, type ApiConfig } from "./http";
+import { historyHider } from "./mask";
 import { isTracked, recordRequest } from "./public";
 import { bookingIdOf, cancelBooking, cancelInput, rescheduleBooking, rescheduleInput } from "./bookings";
 import { resourcesFor } from "./resources";
@@ -84,6 +85,7 @@ export class McpController {
   constructor(
     @Inject(DB) private readonly db: Db,
     @Inject(BOSS) private readonly boss: PgBoss,
+    @Inject(CONFIG) private readonly config: Required<ApiConfig>,
   ) {
     this.handle = toNodeHandler(
       createMcpHandler(({ authInfo }) => this.server(String(authInfo?.extra?.userId), authInfo?.scopes ?? []), { onerror: (err) => console.error("mcp", err.message) }),
@@ -136,7 +138,7 @@ export class McpController {
             .where(eq(stepRuns.runId, runId))
             .orderBy(desc(stepRuns.createdAt), desc(stepRuns.attempt))
             .limit(1);
-          return result({ runId, status: runStatus(run.state, last, run.definition), error: run.error, finishedAt: run.finishedAt?.toISOString() ?? null });
+          return result({ runId, status: runStatus(run.state, last, run.definition), error: (await historyHider(this.db, this.config.secretsKey, userId))(run.error), finishedAt: run.finishedAt?.toISOString() ?? null });
         },
       );
     }

@@ -779,13 +779,13 @@ type RecordApp = {
 const RECORD_APPS: Record<"airtable" | "notion" | "trello", RecordApp> = {
   airtable: {
     name: "Airtable",
-    help: "Create a personal access token with the data.records:read and data.records:write scopes for your base. Paste it with the base id (app…) and the table id or name.",
+    help: "Create a personal access token with the data.records:read and data.records:write scopes for your base. Paste it with the base id (app…) and the table id (tbl…, in the table's link).",
     helpUrl: "https://airtable.com/create/tokens",
     helpLink: "Create an Airtable token",
     fields: [
       { key: "token", label: "Personal access token", secret: true, placeholder: "pat…" },
       { key: "baseId", label: "Base id", placeholder: "app…" },
-      { key: "tableId", label: "Table id or name", placeholder: "tbl… or Requests" },
+      { key: "tableId", label: "Table id", placeholder: "tbl…" },
     ],
     goesTo: (d) => d.tableId ?? "",
     testButton: "Check the connection",

@@ -827,6 +827,17 @@ describe("Airtable, Notion and Trello", () => {
     expect(fake.trello.cards).toHaveLength(0);
   });
 
+  it("does not send to an Airtable connection saved by table name, which a rename could point at another table", async () => {
+    const id = fake.airtable.table;
+    fake.airtable.table = "Requests";
+    await saveConnection(db, key, ana, "airtable", { account: fake.airtable.base, credential: fake.airtable.token, destination: { baseId: fake.airtable.base, tableId: "Requests" } });
+    const d = await queue("airtable", { fields: { Name: "Ana" } }, "REQ-3010");
+    await deliverDue();
+    fake.airtable.table = id;
+    expect(await state(d.id)).toMatchObject({ state: "failed", errorKind: "reconnect" });
+    expect(fake.airtable.records).toHaveLength(0);
+  });
+
   it("fails and marks the connection when a token is revoked", async () => {
     const d = await queue("notion", { title: "Ana", fields: {} }, "REQ-3005");
     fake.notion.revoked = true;
