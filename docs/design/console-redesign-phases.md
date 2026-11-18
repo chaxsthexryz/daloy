@@ -1,0 +1,24 @@
+# Daloy console redesign handoff
+
+Work in C:/dev/balitos-portfolio/daloy-homepage on branch `ui/automation-home`. Read PROJECT.md, AGENTS.md and the Automations homepage section of DESIGN.md before editing. The approved reference is `c92ddc7`. Current main through `9e03c03` has been integrated on the design branch. The target is the signed-in console, including its role-specific views. Preserve routes, permissions, localization, keyboard access and working actions. Use real state for metrics.
+
+## Phase ledger
+
+| Phase | Scope and file ownership | Acceptance |
+| --- | --- | --- |
+| 1. Shared shell | Nav.tsx, shared shell styles and theme scoping. Carry the approved logo, inset charcoal current tab, grouped navigation, light workspace and responsive menu across signed-in staff pages. | Current location and role-appropriate navigation work at desktop and phone widths. Existing Secrets and Bookings routes survive. |
+| 2. Operations | Runs.tsx, Bookings.tsx, Resources.tsx and a dedicated operations stylesheet. Apply the approved type, spacing, surfaces and status treatments to activity, run details, booking and resource management. | Filters, review and recovery, details, no-show, booking changes and resource actions remain accessible. Long lists and empty states work on a phone. |
+| 3. Creation and editor | NewAutomation, BuildWithAi, Editor, Versions and their child panels. | Guided and custom creation, AI draft review, canvas/list editing, testing, save and publish remain usable. |
+| 4. Workspace administration | Apps, Connections, BusinessSetup, Settings, AI, Team, Account, Advanced, Secrets and Tokens. | Owner/operator restrictions, connection states, billing and usage notices, language selection and secret handling are preserved. |
+| 5. Requests and sign-in | Guided office/purchase requests, requester and approver views, invitations, sign-in and recovery. | A requester can submit and track a request, an approver can decide, and authentication and recovery paths stay usable. |
+| 6. Console QA and close-out | Route inventory, English and Tagalog, roles, accessibility, desktop and mobile regression checks, design notes and final handoff. | Record executed checks and blockers per route, and give the owner the review branch and preview. |
+
+## Resume in a fresh chat
+
+Open one chat per phase. State the phase number, worktree and latest commit. Phases 1 and 2 may run together with the ownership above. For concurrent work, stage only files owned by that phase. Coordinate edits to shared CSS, translations and documentation with Astra. Use isolated fixtures and fake providers; the running Docker account holds user data.
+
+At handoff, record the phase status, commit, checks actually run, anything unverified and the next phase here. Claude can resume from the first unfinished row after checking Git status and log. The owner reviews and merges the branch.
+
+## Progress
+
+- Phases 1 and 2 approved to run in parallel. Phases 3 through 6 planned.
