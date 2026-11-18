@@ -19,7 +19,8 @@ export type GenerateInput<T> = {
  * reasoningTokens: added to max_tokens for providers whose hidden thinking counts against it, so maxTokens stays the
  * budget for the answer itself.
  */
-export type Connection = { provider: string; baseUrl: string; apiKey?: string; extraBody?: Record<string, unknown>; reasoningTokens?: number };
+// jsonMode "object": the provider rejects json_schema (DeepSeek), so ask for a JSON object and put the schema in the system message.
+export type Connection = { provider: string; baseUrl: string; apiKey?: string; extraBody?: Record<string, unknown>; reasoningTokens?: number; jsonMode?: "schema" | "object" };
 
 export type GenerateResult<T> = {
   text: string;
@@ -71,8 +72,13 @@ function jsonSchema(schema: z.ZodType): Record<string, unknown> {
  * /chat/completions API, such as Gemini, LM Studio, llama.cpp, vLLM or OpenRouter). LLM_API_KEY, if set, is sent as a
  * bearer token. All three env vars are read on every call, so a gateway can be put in front without code changes.
  */
-function request<T>(input: GenerateInput<T>, provider: string, baseUrl: string, extraBody?: Record<string, unknown>, reasoningTokens = 0) {
-  const messages = [{ role: "system", content: input.system }, ...input.messages];
+function request<T>(input: GenerateInput<T>, provider: string, baseUrl: string, extraBody?: Record<string, unknown>, reasoningTokens = 0, jsonMode: "schema" | "object" = "schema") {
+  const asObject = provider === "openai" && jsonMode === "object" && input.schema;
+  const system = asObject ? `${input.system}
+
+Reply with only a JSON object that matches this JSON schema:
+${JSON.stringify(jsonSchema(input.schema!))}` : input.system;
+  const messages = [{ role: "system", content: system }, ...input.messages];
   if (provider === "ollama") {
     return {
       url: `${baseUrl}/api/chat`,
@@ -89,7 +95,7 @@ function request<T>(input: GenerateInput<T>, provider: string, baseUrl: string, 
         messages,
         temperature: input.temperature,
         max_tokens: input.maxTokens + reasoningTokens,
-        response_format: input.schema && { type: "json_schema", json_schema: { name: "output", schema: jsonSchema(input.schema) } },
+        response_format: asObject ? { type: "json_object" } : input.schema && { type: "json_schema", json_schema: { name: "output", schema: jsonSchema(input.schema) } },
       },
       read: (b: OpenAiChatResponse) => ({
         text: b.choices?.[0]?.message?.content ?? "",
@@ -109,7 +115,7 @@ export async function generate<T = unknown>(input: GenerateInput<T>): Promise<Ge
     apiKey: process.env.LLM_API_KEY,
   };
   const apiKey = conn.apiKey;
-  const req = request(input, conn.provider, conn.baseUrl.replace(/\/+$/, ""), conn.extraBody, conn.reasoningTokens);
+  const req = request(input, conn.provider, conn.baseUrl.replace(/\/+$/, ""), conn.extraBody, conn.reasoningTokens, conn.jsonMode);
 
   let res: Response;
   try {

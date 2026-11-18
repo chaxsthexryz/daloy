@@ -1,5 +1,6 @@
 export * from "./ai";
 export * from "./ai-draft";
+export * from "./ai-chat";
 export * from "./definition";
 export * from "./expressions";
 export * from "./graph";

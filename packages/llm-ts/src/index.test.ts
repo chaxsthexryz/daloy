@@ -93,11 +93,12 @@ describe("generate", () => {
   });
 });
 
+// A reply an OpenAI-compatible server would send, used inside and outside the describe below.
+const okOpenAi = (content: string) =>
+  new Response(JSON.stringify({ choices: [{ message: { role: "assistant", content } }], usage: { prompt_tokens: 30, completion_tokens: 4 } }));
+
 // LLM_PROVIDER=openai: any OpenAI-compatible chat API (Gemini, LM Studio, llama.cpp, vLLM, OpenRouter).
 describe("generate with LLM_PROVIDER=openai", () => {
-  const okOpenAi = (content: string) =>
-    new Response(JSON.stringify({ choices: [{ message: { role: "assistant", content } }], usage: { prompt_tokens: 30, completion_tokens: 4 } }));
-
   it("posts to LLM_BASE_URL/chat/completions with the API key as a bearer token", async () => {
     vi.stubEnv("LLM_PROVIDER", "openai");
     vi.stubEnv("LLM_BASE_URL", "https://generativelanguage.googleapis.com/v1beta/openai/");
@@ -196,6 +197,19 @@ it("sends no key with an explicit connection that has none, even if LLM_API_KEY 
   const [url, init] = fetch.mock.calls[0] as unknown as [string, RequestInit];
   expect(url).toBe("http://ollama.local:11434/api/chat");
   expect(new Headers(init.headers).has("authorization")).toBe(false);
+});
+
+// DeepSeek answers 400 to json_schema ("This response_format type is unavailable now") but accepts json_object.
+it("uses JSON object mode with the schema in the system message when the connection asks for it, and still validates", async () => {
+  const fetch = mockFetch(okOpenAi('{"label":"billing"}'));
+  const schema = z.object({ label: z.enum(["billing", "support"]) });
+  const result = await generate({ ...base, schema, connection: { provider: "openai", baseUrl: "https://api.deepseek.com", jsonMode: "object" } });
+  const body = JSON.parse(String((fetch.mock.calls[0] as unknown as [string, RequestInit])[1].body));
+  expect(body.response_format).toEqual({ type: "json_object" });
+  expect(body.messages[0].role).toBe("system");
+  expect(body.messages[0].content).toContain("JSON");
+  expect(body.messages[0].content).toContain('"billing"');
+  expect(result.data).toEqual({ label: "billing" });
 });
 
 it("adds a connection's extra body fields to an OpenAI-compatible request", async () => {

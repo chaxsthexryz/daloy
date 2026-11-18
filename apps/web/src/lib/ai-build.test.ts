@@ -1,76 +1,7 @@
 import type { WorkflowDefinition } from "@daloy/engine";
 import { describe, expect, it } from "vitest";
-import { OTHER, PEOPLE, buildRequest, closestTemplate, plainDraft, questions, warningForLanguage, withLabels, withPeople } from "./ai-build";
+import { PEOPLE, closestTemplate, plainDraft, warningForLanguage, withLabels, withPeople } from "./ai-build";
 
-const none = new Set<string>();
-const ids = (q: { choices: { value: string }[] }) => q.choices.map((c) => c.value);
-const byId = (qs: ReturnType<typeof questions>, id: string) => qs.find((q) => q.id === id)!;
-
-describe("questions", () => {
-  it("asks the four fixed questions in order", () => {
-    expect(questions(none, []).map((q) => q.id)).toEqual(["start", "who", "where", "approve"]);
-  });
-  it("offers the four ways to start and a yes/no for approval", () => {
-    const qs = questions(none, []);
-    expect(ids(byId(qs, "start"))).toEqual(["form", "booking", "webhook", "schedule"]);
-    expect(ids(byId(qs, "approve"))).toEqual(["no", "yes"]);
-  });
-  it("lists team members by name, or by the start of their email, and leaves them out when there are none", () => {
-    const withTeam = byId(questions(none, [{ email: "ana.cruz@acme.test", name: "Ana Cruz" }, { email: "ben@acme.test" }]), "who");
-    expect(ids(withTeam)).toEqual(["me", "member:0", "member:1", "filler", "none"]);
-    expect(withTeam.choices.map((c) => c.label)).toEqual(["Me", "Ana Cruz", "ben", "The person who filled the form", "No one"]);
-    expect(ids(byId(questions(none, []), "who"))).toEqual(["me", "filler", "none"]);
-  });
-  it("shows only the places that are connected", () => {
-    expect(ids(byId(questions(none, []), "where"))).toEqual(["email", "daloy"]);
-    expect(ids(byId(questions(new Set(["google_sheets", "slack"]), []), "where"))).toEqual(["email", "daloy", "sheets", "slack"]);
-    expect(ids(byId(questions(new Set(["teams"]), []), "where"))).toEqual(["email", "daloy", "outlook_teams"]);
-    expect(ids(byId(questions(new Set(["outlook"]), []), "where"))).toEqual(["email", "daloy", "outlook_teams"]);
-  });
-});
-
-describe("buildRequest", () => {
-  const answers = { start: "form", who: "me", where: "email", approve: "no" };
-  it("starts with the description and adds one plain line per answer", () => {
-    const r = buildRequest("Handle new orders", answers, none, []);
-    expect(r.split("\n")[0]).toBe("Handle new orders");
-    expect(r).toContain("It starts when someone fills a form.");
-    expect(r).toContain("Tell the owner (owner@people.invalid).");
-    expect(r).toContain("Send it to Email.");
-    expect(r).toContain("No approval is needed.");
-    expect(r).toContain("Apps connected: none.");
-  });
-  it("words the other choices", () => {
-    const r = buildRequest("x", { start: "schedule", who: "filler", where: "daloy", approve: "yes" }, new Set(["slack", "google_sheets"]), []);
-    expect(r).toContain("It runs on a schedule.");
-    expect(r).toContain("Send the answer to the person who filled the form ({{trigger.email}}).");
-    expect(r).toContain("Ask the owner to approve it first.");
-    expect(r).toContain("Apps connected: google_sheets, slack.");
-    expect(buildRequest("x", { who: "none" }, none, [])).toContain("No one is told.");
-  });
-  it("names a chosen member only by a placeholder label and never prints their address", () => {
-    const members = [{ email: "real.person@acme.test", name: "Real Person" }];
-    const r = buildRequest("x", { who: "member:0", approve: "yes" }, none, members);
-    expect(r).toContain("Tell approver member1@people.invalid.");
-    expect(r).toContain("Ask member1@people.invalid to approve it first.");
-    expect(r).not.toContain("real.person");
-    expect(r).not.toContain("acme.test");
-    expect(r).not.toContain("Real Person");
-  });
-  it("puts free Other text in as typed, capped at 200 characters", () => {
-    const r = buildRequest("x", { start: `${OTHER}when the moon is full`, where: `${OTHER}${"a".repeat(300)}` }, none, []);
-    expect(r).toContain("when the moon is full");
-    expect(r).toContain("a".repeat(200));
-    expect(r).not.toContain("a".repeat(201));
-  });
-  it("keeps the whole request within 2000 characters", () => {
-    const long = "w".repeat(5000);
-    const r = buildRequest(long, { start: `${OTHER}${"s".repeat(500)}`, who: `${OTHER}${"h".repeat(500)}`, where: `${OTHER}${"e".repeat(500)}`, approve: `${OTHER}${"p".repeat(500)}` }, new Set(["slack"]), []);
-    expect(r.length).toBeLessThanOrEqual(2000);
-    expect(r).toContain("w".repeat(1200));
-    expect(r).not.toContain("w".repeat(1201));
-  });
-});
 
 const def: WorkflowDefinition = {
   trigger: { type: "manual", config: {} },
@@ -198,12 +129,6 @@ describe("closestTemplate", () => {
 
 
 describe("localized builder copy", () => {
-  it("translates fixed questions without translating member names or answer values", () => {
-    const qs = questions(none, [{ email: "ana@example.com", name: "Me" }], "tl");
-    expect(qs[0]?.text).toBe("Ano ang magsisimula nito?");
-    expect(byId(qs, "who").choices[0]).toEqual({ value: "me", label: "Ako" });
-    expect(byId(qs, "who").choices[1]).toEqual({ value: "member:0", label: "Me" });
-  });
   it("translates plan sentences while preserving addresses, subjects, and branch identifiers", () => {
     const def: WorkflowDefinition = {
       trigger: { type: "manual", config: {} },

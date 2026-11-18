@@ -7,6 +7,7 @@ import cookieParser from "cookie-parser";
 import type { RequestHandler } from "express";
 import helmet from "helmet";
 import type { PgBoss } from "pg-boss";
+import { AiChatController } from "./ai-chat";
 import { AiDraftController } from "./ai-draft";
 import { ApprovalsController } from "./approvals";
 import { AuthController, SessionGuard } from "./auth";
@@ -36,7 +37,7 @@ export async function createApp({ db, boss, ...config }: AppOptions) {
   await boss.createQueue(SCHEDULE_QUEUE);
 
   @Module({
-    controllers: [AuthController, WorkflowsController, CatalogController, SecretsController, ResourcesController, BookingsController, TokensController, RunsController, HooksController, PaymongoHooksController, FormsController, ApprovalsController, McpController, SettingsController, LanguageController, EmailSettingsController, EmailSourceController, ConnectionsController, OutlookCallbackController, DeliveriesController, AiDraftController, MembersController, MyRequestsController, UsageController],
+    controllers: [AuthController, WorkflowsController, CatalogController, SecretsController, ResourcesController, BookingsController, TokensController, RunsController, HooksController, PaymongoHooksController, FormsController, ApprovalsController, McpController, SettingsController, LanguageController, EmailSettingsController, EmailSourceController, ConnectionsController, OutlookCallbackController, DeliveriesController, AiDraftController, AiChatController, MembersController, MyRequestsController, UsageController],
     providers: [
       { provide: DB, useValue: db },
       { provide: BOSS, useValue: boss },

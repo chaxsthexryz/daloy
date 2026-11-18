@@ -14,8 +14,11 @@ const slugify = (s: string) =>
     .replace(/^-+|-+$/g, "")
     .slice(0, 60) || "workflow";
 
-/** Creates the workflow and its unpublished first version from a reviewed draft. Nothing is saved before this is called. */
-export async function saveDraft(name: string, definition: Draft, summary: string): Promise<Workflow> {
+/**
+ * Creates the workflow and its first version from a draft. Nothing is saved before this is called. `publish` turns it
+ * on in the same step, which Build with AI does for a draft the checker found nothing to fix in.
+ */
+export async function saveDraft(name: string, definition: Draft, summary: string, publish = false): Promise<Workflow> {
   // A slug that is taken gets -2, -3 and so on.
   let wf: Workflow | undefined;
   for (let n = 1; !wf; n++) {
@@ -25,7 +28,7 @@ export async function saveDraft(name: string, definition: Draft, summary: string
       if (!(err instanceof ApiError && err.status === 409) || n >= 20) throw err;
     }
   }
-  await api("POST", `/workflows/${wf.id}/versions`, { definition, publish: false });
+  await api("POST", `/workflows/${wf.id}/versions`, { definition, publish });
   try {
     sessionStorage.setItem(noteKey(wf.id), summary);
   } catch {

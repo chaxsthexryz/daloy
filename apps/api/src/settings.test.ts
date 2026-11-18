@@ -6,7 +6,7 @@ import type { Pool } from "pg";
 import { PgBoss } from "pg-boss";
 import request from "supertest";
 import { LlmError } from "@daloy/llm-ts";
-import { afterAll, beforeAll, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, expect, it, vi } from "vitest";
 import { freshDatabase } from "../../../test/db";
 import { createApp } from "./app";
 import { explain } from "./settings";
@@ -51,6 +51,14 @@ afterAll(async () => {
   await pool?.end();
 });
 
+afterEach(() => vi.unstubAllGlobals());
+
+/** A provider that serves these model names, so a hosted save never needs the network. */
+function stubOffers(models: string[]) {
+  vi.stubGlobal("fetch", async (url: string | URL) =>
+    String(url).endsWith("/models") ? new Response(JSON.stringify({ data: models.map((id) => ({ id })) })) : new Response("{}", { status: 400 }));
+}
+
 let seq = 0;
 async function signedIn() {
   const agent = request.agent(server);
@@ -72,6 +80,8 @@ it("lists the choices and starts on the local model", async () => {
 });
 
 it("saves a hosted choice with a key and never sends the key back", async () => {
+  // The provider's model list is remembered for the key below, so no request leaves the machine.
+  stubOffers(["gemini-3.8-flash"]);
   const agent = await signedIn();
   await agent.put("/settings/ai").send({ preset: "gemini", model: "gemini-3.8-flash", apiKey: "AIza-secret-test" }).expect(204);
   const res = await agent.get("/settings/ai").expect(200);
@@ -109,6 +119,56 @@ it("rejects a hosted choice without a key, unknown choices and blank models", as
   await agent.put("/settings/ai").send({ preset: "local", model: " " }).expect(400);
 });
 
+it("refuses a model name the provider does not serve, and names the ones it does", async () => {
+  // What DeepSeek's own dashboard calls "DeepSeek-V4.1-Flash" is the id "deepseek-flash" over the API.
+  stubOffers(["deepseek-flash", "deepseek-v4-pro"]);
+  const agent = await signedIn();
+  const refused = await agent.put("/settings/ai").send({ preset: "deepseek", model: "DeepSeek-V4.1-Flash-1017", apiKey: "sk-display-name" }).expect(400);
+  expect(refused.body.message).toContain("deepseek-flash");
+  expect(refused.body.message).toContain("deepseek-v4-pro");
+  // Nothing was saved, so the page keeps showing the previous choice.
+  expect((await agent.get("/settings/ai")).body.current.saved).toBe(false);
+  // The id the provider serves is accepted.
+  await agent.put("/settings/ai").send({ preset: "deepseek", model: "deepseek-flash", apiKey: "sk-display-name" }).expect(204);
+  expect((await agent.get("/settings/ai")).body.current).toMatchObject({ preset: "deepseek", model: "deepseek-flash", saved: true });
+});
+
+it("saves when the provider cannot be reached, so an outage does not block the page", async () => {
+  vi.stubGlobal("fetch", async () => {
+    throw new TypeError("fetch failed");
+  });
+  const agent = await signedIn();
+  await agent.put("/settings/ai").send({ preset: "openai", model: "gpt-they-typed", apiKey: "sk-offline" }).expect(204);
+  expect((await agent.get("/settings/ai")).body.current).toMatchObject({ preset: "openai", model: "gpt-they-typed", saved: true });
+});
+
+it("offers the model names a provider serves, before anything is saved", async () => {
+  stubOffers(["deepseek-flash", "deepseek-v4-pro"]);
+  const agent = await signedIn();
+  const { body } = await agent.post("/settings/ai/models").send({ preset: "deepseek", apiKey: "sk-list" }).expect(200);
+  expect(body).toEqual({ ok: true, models: ["deepseek-flash", "deepseek-v4-pro"] });
+  await request(server).post("/settings/ai/models").send({ preset: "deepseek", apiKey: "sk-list" }).expect(401);
+});
+
+it("names the models the provider serves when the test call is refused", async () => {
+  // The first list request fails, so the save goes through with the name as typed; the test then says what is served.
+  let lists = 0;
+  vi.stubGlobal("fetch", async (url: string | URL) => {
+    if (String(url).endsWith("/models")) {
+      lists += 1;
+      if (lists === 1) return new Response("busy", { status: 503 });
+      return new Response(JSON.stringify({ data: [{ id: "deepseek-flash" }, { id: "deepseek-v4-pro" }] }));
+    }
+    return new Response(JSON.stringify({ error: { message: "The supported API model names are deepseek-flash, deepseek-v4-pro" } }), { status: 400 });
+  });
+  const agent = await signedIn();
+  await agent.put("/settings/ai").send({ preset: "deepseek", model: "DeepSeek-V4.1-Flash", apiKey: "sk-refused-test" }).expect(204);
+  const { body } = await agent.post("/settings/ai/test").expect(200);
+  expect(body).toMatchObject({ ok: false, model: "DeepSeek-V4.1-Flash" });
+  expect(body.error).toContain("deepseek-flash");
+  expect(body.error).toContain("deepseek-v4-pro");
+});
+
 it("tests the saved model live on a sample inquiry", async () => {
   vi.stubEnv("LLM_BASE_URL", llmUrl);
   const agent = await signedIn();
@@ -132,8 +192,19 @@ it.each([
   [new LlmError("LLM returned HTTP 503", true), /busy or down/],
   [new LlmError("LLM returned HTTP 500", true), /busy or down/],
   [new LlmError("LLM returned HTTP 401", false), /rejected the API key/],
+  [new LlmError("LLM returned HTTP 400", false), /model name may be wrong/],
+  [new LlmError("LLM returned HTTP 404", false), /does not know this model name/],
   [new LlmError("LLM returned HTTP 429", true), /rate limit/],
   [new LlmError("the model used up its token limit before answering (thinking counts toward it)", false, { invalidOutput: true }), /thinking/],
 ])("explains %s in plain words", (err, reason) => {
   expect(explain(err)).toMatch(reason);
+});
+
+it("names the models the provider serves when it refuses the name", () => {
+  expect(explain(new LlmError("LLM returned HTTP 400", false), ["deepseek-flash", "deepseek-v4-pro"])).toBe(
+    "The provider does not offer this model name (HTTP 400). It offers: deepseek-flash, deepseek-v4-pro.",
+  );
+  // A long list stays readable.
+  const many = Array.from({ length: 20 }, (_, i) => `model-${i}`);
+  expect(explain(new LlmError("LLM returned HTTP 400", false), many)).toContain("model-11 and 8 more");
 });

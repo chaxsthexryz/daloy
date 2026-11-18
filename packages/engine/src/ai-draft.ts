@@ -13,10 +13,11 @@ export type DraftResult = { ok: true; name: string; summary: string; definition:
 
 const example = TEMPLATES[0]!;
 
-const SYSTEM = [
-  "You build workflow definitions for Daloy, a workflow automation tool. Reply with one JSON object and nothing else:",
-  '{"name": "<short workflow name>", "summary": "<one sentence on what the workflow does, or what you changed>", "definition": <definition>}',
-  "",
+/**
+ * The part of the prompt that describes a definition: trigger, steps, edges and the rules a draft has to follow.
+ * Exported so the chat prompt (ai-chat.ts) describes workflows in exactly the same words.
+ */
+const SPEC = [
   "A definition is {trigger, steps, edges}.",
   'trigger is one of: {"type":"manual","config":{}}, {"type":"webhook","config":{}}, {"type":"schedule","config":{"cron":"0 9 * * 1"}},',
   '{"type":"form","config":{"fields":[{"name":"email","label":"Email","type":"email","required":true}]}} (field types: text, email, number, textarea, datetime, resource).',
@@ -37,10 +38,24 @@ const SYSTEM = [
   'Give an approval step an edge for each of "approved", "rejected" and "timeout", so the requester is told either way, and make sure every label of a classify step reaches a step.',
   "Use real-looking placeholders such as you@example.com when the request gives no address. Keep steps to what was asked.",
   "Mock test runs in Daloy fake every email, HTTP call, approval and connected app, and the tester can pick AI labels and approval outcomes, so never add dry-run flags, test fields or branches for testing.",
+];
+
+const EXAMPLE = JSON.stringify({ name: example.name, summary: example.description, definition: example.definition });
+
+const SYSTEM = [
+  "You build workflow definitions for Daloy, a workflow automation tool. Reply with one JSON object and nothing else:",
+  '{"name": "<short workflow name>", "summary": "<one sentence on what the workflow does, or what you changed>", "definition": <definition>}',
+  "",
+  ...SPEC,
   "",
   `Example, for "${example.description}":`,
-  JSON.stringify({ name: example.name, summary: example.description, definition: example.definition }),
+  EXAMPLE,
 ].join("\n");
+
+/** The definition rules, for a prompt that answers in another shape (the chat in ai-chat.ts). */
+export const definitionSpec = () => SPEC.join("\n");
+/** A full worked example, so a small model copies the shape instead of inventing one. */
+export const definitionExample = () => `Example, for "${example.description}":\n${EXAMPLE}`;
 
 /** The request, and the current draft when changing one, go in the user message, never in the system prompt. */
 export function draftPrompt(input: { request: string; current?: unknown }) {
@@ -51,7 +66,7 @@ export function draftPrompt(input: { request: string; current?: unknown }) {
 }
 
 // The outermost {...} in the reply, so text or a code fence around the JSON does not matter.
-function extractJson(text: string): unknown {
+export function extractJson(text: string): unknown {
   const start = text.indexOf("{");
   const end = text.lastIndexOf("}");
   if (start < 0 || end <= start) return undefined;

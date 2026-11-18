@@ -256,3 +256,23 @@ Hygiene, any time (done 16 November 2026): add a LICENSE (MIT), the README "How 
 - Offer a test email to the owner's own inbox. Show the sender, reply address and inquiry destination before the owner turns on customer emails. Keep Mailpit available for the local demo.
 - Give the owner a shareable inquiry form link they can put behind their website's contact button. Explain that saving the website address alone does not connect an existing form.
 - Acceptance check: from the setup screen, the owner can test Gmail, activate inquiry replies and submit a sample inquiry as a customer. The reply reaches that customer's address and the notification reaches the business inbox, without opening the workflow editor.
+
+
+## Planned backlog: integrations and the built-in table (not scheduled, not built)
+
+Recorded from a planning conversation on 2026-11-18. None of this exists in code yet.
+
+Verdicts, sizes, sprint order and open questions: `docs/roadmap-review-2026-11-18.md`. Written by DeepSeek (deepseek-flash), awaiting a second opinion from Claude.
+
+- **Daloy table**, built in: rows in Postgres, a page to see them, an "Add a row" and "Find rows" step, "new row in a table" as a trigger, typed columns, and export to `.xlsx` and `.csv` (import too, so a sheet can move in). Lets an office keep orders, leads or requests without Google Sheets.
+- **WhatsApp Cloud API** delivery, with approved message templates. The channel most customers here read first.
+- **Google Drive** step: save the files and photos a form receives into a folder. The existing service account covers it.
+- **Renewal reminders** starter template: schedule plus table, for domains, hosting, SSL, permits and insurance, mailed 30 days ahead.
+- **Receipt photo to expense row**: file into Drive, AI extracts the shop and amount, a table row and an approval step follow.
+- **Invoice PDF and chase**: form to PDF by email, then a reminder when it is still unpaid after a set number of days.
+- **E-signature** through Dropbox Sign (free tier) for service agreements, with the signed copy recorded.
+- **GitHub and deploy alerts**: push, failed build or failed deploy to Slack, Telegram or the client.
+- **Shopify and WooCommerce order** starter template: a webhook recipe, no new API to build.
+- **Stripe** payments next to PayMongo, **SMS** through Semaphore or Twilio, and "payment received" as a trigger.
+- **Google Sheets through OAuth** ("bring your own Google client", like Outlook), with the service account kept as the fallback. Needs the operator's own Google Cloud app; a verified public consent screen is out of scope.
+- **AI with vision or PDF input**: the AI step reads text only today, so a scanned receipt or an attached PDF cannot be read.
