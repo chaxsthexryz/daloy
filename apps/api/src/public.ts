@@ -1,6 +1,6 @@
 import { publicCopy } from "./public-copy";
 import { createHmac, randomInt, randomUUID, timingSafeEqual } from "node:crypto";
-import { assertNotPaused, claimUsage, QuotaError, readBrand, saveUploads, workspaceLanguage, businessProfiles, connectionCredential, connections, createKeyedRun, createRun, eventSeen, finishEvent, keptEvent, markPaymentPaid, markPaymentRefunded, centavosToPesos, paymongoMode, publishedVersion, readSecret, recordEvent, requests, runs, triggers, verifyPaymongoSignature, WorkflowPausedError, workflows, type Db, type NewUpload, type Payment } from "@daloy/db";
+import { assertNotPaused, claimUsage, QuotaError, readBrand, saveUploads, workspaceLanguage, businessProfiles, connectionCredential, connections, createKeyedRun, createRun, eventSeen, finishEvent, keptEvent, markPaymentPaid, markPaymentRefunded, centavosToPesos, paymongoMode, readSecret, recordEvent, requests, runs, triggers, verifyPaymongoSignature, WorkflowPausedError, workflows, workflowVersions, type Db, type NewUpload, type Payment } from "@daloy/db";
 import { definitionSchema, FILE_MAX_BYTES, FILES_PER_FIELD, FILES_PER_SUBMISSION, fileType, OFFICE_REQUEST, parsePayload, PURCHASE_REQUEST, safeFileName, type FileRef, type FormField, type Resource } from "@daloy/engine";
 import {
   BadRequestException,
@@ -36,6 +36,18 @@ import { resourcesFor } from "./resources";
 // Starts with "_", which no field name can (definition.ts), so a real "website" field is never mistaken for it.
 const HONEYPOT = "_website";
 
+/**
+ * Join condition for a trigger's latest published version. With the trigger row in the same statement, the row and the
+ * version come from one snapshot, so a republish cannot land between two reads (decision 0057).
+ */
+const latestPublished = and(eq(workflowVersions.workflowId, triggers.workflowId), eq(workflowVersions.published, true), sql`${workflowVersions.version} = (select max(v.version) from workflow_versions v where v.workflow_id = ${triggers.workflowId} and v.published)`);
+
+/** The trigger as that version saved it, or undefined when its type is another one: the row can be newer than the version. */
+const savedTrigger = (definition: unknown, type: string) => {
+  const t = (definition as { trigger?: { type?: unknown; config?: Record<string, unknown> } } | null)?.trigger;
+  return t?.type === type ? (t.config ?? {}) : undefined;
+};
+
 /** Both guided templates record a request with a reference, from the form and from MCP; a custom form only starts a run. */
 export const isTracked = (setup: unknown) => [OFFICE_REQUEST, PURCHASE_REQUEST].includes((setup as { template?: string } | null)?.template ?? "");
 const SUBMISSION_KEY = "submission_key";
@@ -70,19 +82,22 @@ export class HooksController {
     @Headers("idempotency-key") idempotencyKey: string | undefined,
   ) {
     const [row] = await this.db
-      .select({ trigger: triggers, userId: workflows.userId })
+      .select({ trigger: triggers, userId: workflows.userId, version: workflowVersions })
       .from(triggers)
       .innerJoin(workflows, eq(workflows.id, triggers.workflowId))
+      .innerJoin(workflowVersions, latestPublished)
       .where(eq(triggers.webhookPath, path));
-    const version = row && (await publishedVersion(this.db, row.trigger.workflowId));
-    if (!row || !version) throw new NotFoundException();
+    const config = row && savedTrigger(row.version.definition, "webhook");
+    if (!row || !config) throw new NotFoundException();
+    const version = row.version;
 
-    const { hmacSecret: secretName, requireTimestamp } = row.trigger.config as { hmacSecret?: string; requireTimestamp?: boolean };
+    const { hmacSecret: secretName, requireTimestamp } = config as { hmacSecret?: string; requireTimestamp?: boolean };
     // The signature of a timestamped call names the call exactly, so a replay in the window gets the first run back. The signature wins over the Idempotency-Key header, which it does not cover (decisions 0054, 0056).
     let replayKey: string | undefined;
-    if (secretName) {
+    // A key that is present, blank included, means the call must be signed: an old blank name fails closed (M1).
+    if ("hmacSecret" in config) {
       // Fails closed: a missing secret rejects every call instead of accepting unsigned ones.
-      const key = await readSecret(this.db, this.config.secretsKey, row.userId, secretName);
+      const key = typeof secretName !== "string" ? null : await readSecret(this.db, this.config.secretsKey, row.userId, secretName);
       const checked = key
         ? checkSignature({ body: req.rawBody ?? Buffer.alloc(0), signature, timestamp, key, requireTimestamp: requireTimestamp === true, nowSeconds: Math.floor(Date.now() / 1000) })
         : ({ ok: false, reason: "bad signature" } as const);
@@ -99,7 +114,7 @@ export class HooksController {
     const callerKey = replayKey ?? idempotencyKey;
     const first = await replayedRun(this.db, row.trigger.workflowId, trigger, req.body, callerKey);
     if (first) return { runId: first, duplicate: true };
-    const fields = (row.trigger.config as { fields?: FormField[] }).fields;
+    const fields = (config as { fields?: FormField[] }).fields;
     const payload = validPayload(fields, req.body ?? {}, await resourcesFor(this.db, row.userId, fields));
     // A repeated event gets the first run back and starts nothing (decision 0029).
     const { runId, duplicate } = await createKeyedRun(this.db, row.trigger.workflowId, version.id, payload, eventKey(trigger, payload, callerKey));
@@ -180,18 +195,19 @@ export class PaymongoHooksController {
   /** One run for each published workflow of the owner that listens for this status. */
   private async startRuns(userId: string, p: Payment, status: "paid" | "refunded") {
     const listeners = await this.db
-      .select({ workflowId: triggers.workflowId, config: triggers.config })
+      .select({ workflowId: triggers.workflowId, version: workflowVersions })
       .from(triggers)
       .innerJoin(workflows, eq(workflows.id, triggers.workflowId))
+      .innerJoin(workflowVersions, latestPublished)
       .where(and(eq(workflows.userId, userId), eq(triggers.type, "payment")));
     const payload = { status, reference: p.reference, amount: p.amountCentavos, amountPesos: centavosToPesos(p.amountCentavos), livemode: p.livemode, currency: p.currency, paymentId: p.id, sourceRunId: p.runId, providerPaymentId: p.providerPaymentId };
     // A sandbox payment, or one the builder's test run made, starts test runs, which the worker mocks (decision 0056).
     const [source] = await this.db.select({ test: runs.test }).from(runs).where(eq(runs.id, p.runId));
     const test = !p.livemode || source?.test === true;
     for (const l of listeners) {
-      if (!((l.config as { events?: string[] }).events ?? ["paid"]).includes(status)) continue;
-      const version = await publishedVersion(this.db, l.workflowId);
-      if (!version) continue;
+      const config = savedTrigger(l.version.definition, "payment") as { events?: string[] } | undefined;
+      if (!config || !(config.events ?? ["paid"]).includes(status)) continue;
+      const version = l.version;
       // Paused (N11b): acknowledged with 2xx and no run, so PayMongo does not disable its webhook.
       // A test run skips createRun's pause check, so check it here.
       const started = await Promise.resolve(test && assertNotPaused(this.db, version.id)).then(() => createKeyedRun(this.db, l.workflowId, version.id, payload, `paymongo:${p.id}:${status}`, { test })).catch((err: unknown) => {
@@ -246,6 +262,7 @@ export class FormsController {
   constructor(
     @Inject(DB) private readonly db: Db,
     @Inject(BOSS) private readonly boss: PgBoss,
+    @Inject(CONFIG) private readonly config: ApiConfig,
   ) {}
 
   @Get(FORM_PATHS)
@@ -283,11 +300,11 @@ export class FormsController {
     if (!parsed.ok) throw new BadRequestException(parsed.errors);
     const key = z.uuid().safeParse(body?.[SUBMISSION_KEY]);
     if (tracked && !key.success) throw new BadRequestException(`${SUBMISSION_KEY}: reload the form and send it again`);
-    if (stored.files.length > 0) {
-      await claimUsage(this.db, workflow.userId, "upload", { n: stored.files.length }).catch((err: unknown) => {
-        throw err instanceof QuotaError ? new HttpException({ message: OVER_QUOTA }, HttpStatus.TOO_MANY_REQUESTS) : err;
-      });
-    }
+    // A tracked form claims inside recordRequest, after its key check, so a repeat costs nothing (decision 0057).
+    const overQuota = (err: unknown): never => {
+      throw err instanceof QuotaError ? new HttpException({ message: OVER_QUOTA }, HttpStatus.TOO_MANY_REQUESTS) : err;
+    };
+    if (!tracked && stored.files.length > 0) await claimUsage(this.db, workflow.userId, "upload", { n: stored.files.length }).catch(overQuota);
     if (!tracked) {
       const runId = await createRun(this.db, versionId, parsed.data, stored.files.length > 0 ? { uploads: { userId: workflow.userId, files: stored.files } } : {});
       await enqueueRun(this.boss, runId);
@@ -295,10 +312,11 @@ export class FormsController {
     }
 
     // A member of this workspace who is signed in is recorded as the requester, for My requests (decision 0022).
-    // The session cookie is SameSite=Lax, so another site can't post the form as them.
-    const member = isFormEmbed(req.path) ? undefined : await sessionUser(this.db, req);
+    // SameSite=Lax stops other sites but not a sibling origin of the same site, so only this installation's own origin counts (decision 0057).
+    const sameOrigin = req.get("origin") === new URL(this.config.publicUrl!).origin;
+    const member = isFormEmbed(req.path) || !sameOrigin ? undefined : await sessionUser(this.db, req);
     const requestedBy = member?.workspaceId === workflow.userId ? member.id : undefined;
-    const { reference, runId } = await recordRequest(this.db, workflow, versionId, key.success ? key.data : "", parsed.data, requestedBy, stored.files);
+    const { reference, runId } = await recordRequest(this.db, workflow, versionId, key.success ? key.data : "", parsed.data, requestedBy, stored.files).catch(overQuota);
     if (runId) await enqueueRun(this.boss, runId);
     return page(
       `<h1>${copy.received}</h1><p>${copy.reference} <strong>${reference}</strong>. ${copy.receipt}</p><p><a href="">${copy.another}</a></p>`,
@@ -316,15 +334,16 @@ export class FormsController {
 
   private async form(id: string) {
     const [row] = await this.db
-      .select({ trigger: triggers, workflow: { id: workflows.id, userId: workflows.userId, setup: workflows.setup, pausedAt: workflows.pausedAt }, businessName: businessProfiles.businessName })
+      .select({ trigger: triggers, version: workflowVersions, workflow: { id: workflows.id, userId: workflows.userId, setup: workflows.setup, pausedAt: workflows.pausedAt }, businessName: businessProfiles.businessName })
       .from(triggers)
       .innerJoin(workflows, eq(workflows.id, triggers.workflowId))
+      .innerJoin(workflowVersions, latestPublished)
       .leftJoin(businessProfiles, eq(businessProfiles.userId, workflows.userId))
       .where(and(eq(triggers.id, id), eq(triggers.type, "form")));
-    const version = row && (await publishedVersion(this.db, row.trigger.workflowId));
-    if (!row || !version) throw new NotFoundException();
+    const config = row && savedTrigger(row.version.definition, "form");
+    if (!row || !config) throw new NotFoundException();
     const tracked = isTracked(row.workflow.setup);
-    return { fields: (row.trigger.config as { fields: FormField[] }).fields, versionId: version.id, workflow: row.workflow, tracked, businessName: row.businessName };
+    return { fields: (config as { fields: FormField[] }).fields, versionId: row.version.id, workflow: row.workflow, tracked, businessName: row.businessName };
   }
 }
 
@@ -359,6 +378,7 @@ export const newReference = () => `REQ-${Array.from({ length: 6 }, () => REFEREN
 /**
  * Saves the request and its pending run in one transaction. The unique (workflow, submission key) index makes a
  * double-click or a retried post return the first request's reference; runId is set only when this call created it.
+ * The upload allowance is claimed in the same transaction, so a repeat or a losing duplicate spends nothing.
  */
 export async function recordRequest(db: Db, workflow: { id: string; userId: string }, versionId: string, submissionKey: string, data: Record<string, unknown>, requestedBy?: string, files: NewUpload[] = []) {
   const find = () =>
@@ -373,6 +393,7 @@ export async function recordRequest(db: Db, workflow: { id: string; userId: stri
   try {
     const runId = await db.transaction(async (tx) => {
       await assertNotPaused(tx, versionId);
+      if (files.length > 0) await claimUsage(tx, workflow.userId, "upload", { n: files.length });
       const [run] = await tx.insert(runs).values({ workflowVersionId: versionId, triggerPayload: { ...data, reference } }).returning({ id: runs.id });
       await tx.insert(requests).values({ userId: workflow.userId, workflowId: workflow.id, runId: run!.id, reference, submissionKey, subject: String(data.summary ?? ""), requestedBy });
       await saveUploads(tx, { userId: workflow.userId, runId: run!.id, files });

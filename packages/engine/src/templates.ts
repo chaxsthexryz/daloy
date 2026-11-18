@@ -22,7 +22,7 @@ export const TEMPLATES = [
         {
           id: "acknowledge",
           type: "email",
-          config: { to: "{{trigger.email}}", subject: "We got your message", text: "Hi {{trigger.name}}, thanks for writing. We reply within one working day." },
+          config: { to: "{{trigger.email}}", subject: "We got your message", text: "Thanks for writing. We reply within one working day." },
         },
         {
           id: "classify",
@@ -161,7 +161,7 @@ export const TEMPLATES = [
         {
           id: "send_receipt",
           type: "email",
-          config: { to: "{{trigger.email}}", subject: "We got your request", text: "Hi {{trigger.name}}, we added your request to our list and will get back to you soon:\n\n{{trigger.request}}" },
+          config: { to: "{{trigger.email}}", subject: "We got your request", text: "Thanks, we added your request to our list and will get back to you soon." },
         },
       ],
       edges: [{ from: "log_request", to: "send_receipt" }],
@@ -170,7 +170,7 @@ export const TEMPLATES = [
   {
     slug: "lead-to-booking",
     name: "Lead to booking",
-    description: "A lead picks a time on a form. Daloy books it, adds it to Google Calendar and confirms by email, or offers another time if the slot is taken.",
+    description: "A lead picks a time on a form. Staff approve before anything is booked. Then Daloy books it, adds it to Google Calendar and confirms by email, or offers another time if the slot is taken.",
     definition: {
       trigger: {
         type: "form",
@@ -185,6 +185,11 @@ export const TEMPLATES = [
         },
       },
       steps: [
+        {
+          id: "decide",
+          type: "approval",
+          config: { to: "owner@example.com", subject: "Booking request from {{trigger.name}}", message: "{{trigger.name}} ({{trigger.email}}) asks for {{trigger.service}} at {{trigger.appointment_at}}.", timeoutSeconds: 172_800 },
+        },
         { id: "book", type: "booking", config: { action: "create", resource: "{{trigger.resource}}", start: "{{trigger.appointment_at}}", minutes: 60 } },
         { id: "add_to_calendar", type: "calendar", config: { title: "{{trigger.service}}: {{trigger.name}}", description: "Booked by {{trigger.name}} ({{trigger.email}})" } },
         {
@@ -202,8 +207,21 @@ export const TEMPLATES = [
           type: "email",
           config: { to: "owner@example.com", subject: "Booking problem for {{trigger.name}}", text: "{{trigger.name}} ({{trigger.email}}) asked for a resource that could not be found. Please reply to them." },
         },
+        {
+          id: "tell_declined",
+          type: "email",
+          config: { to: "{{trigger.email}}", subject: "About your booking request", text: "Hi {{trigger.name}}, thank you for asking. We cannot take that booking right now." },
+        },
+        {
+          id: "tell_no_decision",
+          type: "email",
+          config: { to: "owner@example.com", subject: "Booking request from {{trigger.name}} is waiting", text: "Nobody answered the booking request from {{trigger.name}} ({{trigger.email}}) in two days. Please reply to them." },
+        },
       ],
       edges: [
+        { from: "decide", to: "book", on: "approved" },
+        { from: "decide", to: "tell_declined", on: "rejected" },
+        { from: "decide", to: "tell_no_decision", on: "timeout" },
         { from: "book", to: "add_to_calendar", on: "done" },
         { from: "add_to_calendar", to: "confirm" },
         { from: "book", to: "tell_taken", on: "taken" },

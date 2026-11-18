@@ -9,6 +9,7 @@ import { PgBoss } from "pg-boss";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { freshDatabase } from "../../../test/db";
+import { spyDb } from "../../../test/spy-db";
 import { startFakeProviders, type FakeProviders } from "../../../test/fake-providers";
 import { createApp } from "./app";
 
@@ -22,6 +23,7 @@ let pool: Pool;
 let server: Parameters<typeof request>[0];
 let fake: FakeProviders;
 let stub: Server;
+let spy: ReturnType<typeof spyDb>;
 let seq = 0;
 const secretsKey = randomBytes(32);
 
@@ -37,7 +39,8 @@ beforeAll(async () => {
   });
   await new Promise<void>((r) => stub.listen(0, "127.0.0.1", r));
   const paymongo = `http://127.0.0.1:${(stub.address() as AddressInfo).port}`;
-  app = await createApp({ db, boss, secretsKey, secureCookies: false, publicUrl: "https://daloy.test", providers: { ...fake.urls, paymongo, timeoutMs: 2000 } });
+  spy = spyDb(db);
+  app = await createApp({ db: spy.db, boss, secretsKey, secureCookies: false, publicUrl: "https://daloy.test", providers: { ...fake.urls, paymongo, timeoutMs: 2000 } });
   await app.init();
   server = app.getHttpServer();
 }, 120_000);
@@ -133,6 +136,21 @@ describe("PayMongo connection", () => {
 });
 
 describe("PayMongo webhook", () => {
+  it("starts the version its listener was read with when the owner republishes in between", async () => {
+    const { agent, userId } = await owner();
+    const path = await connect(agent, userId);
+    const wf = await listener(agent, ["paid"]);
+    const { sessionId } = await payment(userId);
+    // After the trigger read, the owner replaces the payment listener with a manual workflow.
+    spy.afterFirstRead("triggers", async () => {
+      const definition = { trigger: { type: "manual" }, steps: [{ id: "a", type: "delay", config: { seconds: 1 } }], edges: [] };
+      await agent.post(`/workflows/${wf}/versions`).send({ definition, publish: true }).expect(201);
+    });
+    await post(path, paidEvent("evt_race", sessionId)).expect(200);
+    const [v1] = await db.select().from(workflowVersions).where(and(eq(workflowVersions.workflowId, wf), eq(workflowVersions.version, 1)));
+    expect((await runsOf(wf)).every((r) => r.workflowVersionId === v1!.id)).toBe(true);
+  });
+
   it("marks a payment paid and starts one run per listening workflow, once", async () => {
     const { agent, userId } = await owner();
     const path = await connect(agent, userId);

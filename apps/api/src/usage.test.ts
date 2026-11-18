@@ -1,7 +1,7 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { claimUsage, joinWorkspace, requests, runs, SCHEDULE_QUEUE, sessions, users, type Db } from "@daloy/db";
+import { claimUsage, joinWorkspace, manilaDay, planOf, requests, runs, SCHEDULE_QUEUE, sessions, users, type Db } from "@daloy/db";
 import { defaultAnswers, officeRequestDefinition, TEMPLATES } from "@daloy/engine";
 import { hash } from "@node-rs/argon2";
 import type { INestApplication } from "@nestjs/common";
@@ -215,5 +215,31 @@ describe("forms and webhooks are never blocked", () => {
     expect(await db.select().from(requests).where(eq(requests.workflowId, form.body.id))).toHaveLength(1);
     const res = await request(server).post(`/hooks/${path}`).send({ order: 1 }).expect(202);
     expect((await db.select().from(runs).where(eq(runs.id, res.body.runId))).length).toBe(1);
+  });
+});
+
+describe("a fresh public sign-up (M6)", () => {
+  const signUp = async () => {
+    const agent = request.agent(server);
+    const res = await agent.post("/auth/register").send({ email: `fresh${++seq}@test.local`, password: "correct horse battery" }).expect(201);
+    return { agent, id: res.body.id as string };
+  };
+
+  it("gets the preview plan: one live automation, nothing faster than hourly, finite limits", async () => {
+    vi.stubEnv("SIGNUP_PLAN", "preview");
+    const { agent, id } = await signUp();
+    expect(await planOf(db, id)).toMatchObject({ plan: "preview", startedOn: manilaDay() });
+    await publish(agent, await newWorkflow(agent)).expect(201);
+    await publish(agent, await newWorkflow(agent)).expect(403);
+    await publish(agent, await newWorkflow(agent), scheduled("*/5 * * * *")).expect(400);
+    expect((await agent.get("/usage").expect(200)).body).toMatchObject({ plan: "preview", label: "Preview", ai: { limit: 20 }, email: { limit: 20 }, http: { limit: 50 }, automations: { live: 1, limit: 1 }, minScheduleMinutes: 60 });
+    vi.unstubAllEnvs();
+  });
+
+  it("keeps the old unlimited behaviour when the installation sets SIGNUP_PLAN=none", async () => {
+    vi.stubEnv("SIGNUP_PLAN", "none");
+    const { id } = await signUp();
+    expect(await planOf(db, id)).toEqual({ plan: null, startedOn: null });
+    vi.unstubAllEnvs();
   });
 });

@@ -297,10 +297,10 @@ describe("my requests", () => {
     const rosa = await member(o.agent, "requester");
     const other = await member(o.agent, "requester");
     const stranger = await owner();
-    await rosa.agent.post(`/forms/${formId}`).type("form").send({ ...submission, submission_key: randomUUID() }).expect(200);
+    await rosa.agent.post(`/forms/${formId}`).set("Origin", "https://daloy.example.com").type("form").send({ ...submission, submission_key: randomUUID() }).expect(200);
     // Signed out, and signed in to another workspace: recorded without a requester.
     await request(server).post(`/forms/${formId}`).type("form").send({ ...submission, submission_key: randomUUID() }).expect(200);
-    await stranger.agent.post(`/forms/${formId}`).type("form").send({ ...submission, submission_key: randomUUID() }).expect(200);
+    await stranger.agent.post(`/forms/${formId}`).set("Origin", "https://daloy.example.com").type("form").send({ ...submission, submission_key: randomUUID() }).expect(200);
 
     const embedded = `/forms/${formId}/embed`;
     const shown = await rosa.agent.get(embedded).expect(200);

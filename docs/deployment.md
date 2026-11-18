@@ -44,6 +44,8 @@ SECURE_COOKIES=true
 SHARED_MAIL=approved
 # Accounts bring their own AI key. With open, only workspaces with a plan can use LLM_API_KEY.
 SHARED_LLM_KEY=off
+# Plan a new sign-up starts on. Empty means preview (limited, no shared AI key). none means no limits.
+SIGNUP_PLAN=
 # For the public demo: the only hosts HTTP steps may call.
 HTTP_ALLOWED_HOSTS=<comma list>
 ```

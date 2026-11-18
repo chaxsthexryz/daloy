@@ -11,7 +11,7 @@ let db: Db;
 let pool: Pool;
 const key = randomBytes(32);
 let seq = 0;
-const newUser = async (plan: "pilot" | null = "pilot") => (await db.insert(users).values({ email: `ai${++seq}@test.local`, passwordHash: "x", plan }).returning())[0]!.id;
+const newUser = async (plan: "pilot" | "preview" | null = "pilot") => (await db.insert(users).values({ email: `ai${++seq}@test.local`, passwordHash: "x", plan }).returning())[0]!.id;
 
 beforeAll(async () => {
   ({ db, pool } = await freshDatabase());
@@ -58,6 +58,12 @@ it("keeps the operator's key from a workspace without a plan, and leaves its own
   await db.update(users).set({ plan: "pilot" }).where(eq(users.id, userId));
   await saveAiSettings(db, key, userId, { preset: "local", model: "llama3.2" });
   expect((await aiConnection(db, key, userId)).apiKey).toBe("env-key");
+});
+
+it("keeps the operator's key from a preview workspace", async () => {
+  vi.stubEnv("LLM_API_KEY", "env-key");
+  vi.stubEnv("SHARED_LLM_KEY", "open");
+  expect((await aiConnection(db, key, await newUser("preview"))).apiKey).toBeUndefined();
 });
 
 it("uses the fixed Gemini URL and the saved, encrypted key", async () => {

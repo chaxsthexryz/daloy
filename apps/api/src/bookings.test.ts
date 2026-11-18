@@ -324,6 +324,7 @@ describe("staff changes", () => {
       { name: "when", label: "New time", type: "datetime", required: true, timezone: "Asia/Manila", slotMinutes: 60 },
     ];
     const move = { id: "move", type: "booking", config: { action: "reschedule", booking: "{{trigger.ref}}", start: "{{trigger.when}}" } };
+    await s.agent.put("/secrets/desk_signing").send({ value: "desk-key" }).expect(204);
     await s.agent.post(`/workflows/${desk.id}/versions`).send({ definition: { trigger: { type: "webhook", config: { fields: deskFields, hmacSecret: "desk_signing" } }, steps: [move, email("noted", "Moved {{steps.move.output.reference}}", "x")], edges: [{ from: "move", to: "noted", on: "done" }] }, publish: true }).expect(201);
     const deskRun = (await s.agent.post(`/workflows/${desk.id}/runs`).send({ payload: { email: "desk@example.com", ref: b!.reference, when: at("15:00") } }).expect(202)).body.id as string;
     const sent = mailSent.length;
