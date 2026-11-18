@@ -1,4 +1,5 @@
 import { and, eq } from "drizzle-orm";
+import type { FileKind } from "@daloy/engine";
 import { decryptSecret, encryptSecret } from "./crypto";
 import type { Db } from "./index";
 import { aiKeys, aiSettings, users } from "./schema";
@@ -31,7 +32,14 @@ export const PRESETS = {
 export type Preset = keyof typeof PRESETS;
 export const PRESET_IDS = Object.keys(PRESETS) as [Preset, ...Preset[]];
 
-export type AiConnection = { provider: string; baseUrl: string; apiKey?: string; model: string; extraBody?: Record<string, unknown>; reasoningTokens?: number; jsonMode?: "schema" | "object" };
+// The file types a preset's model reads as images. Gemini reads HEIC natively; OpenAI does not. DeepSeek reads none.
+const IMAGE_TYPES: Partial<Record<Preset, FileKind[]>> = {
+  gemini: ["jpeg", "png", "webp", "heic"],
+  openai: ["jpeg", "png", "webp"],
+  openrouter: ["jpeg", "png", "webp"],
+};
+
+export type AiConnection = { imageTypes?: FileKind[]; provider: string; baseUrl: string; apiKey?: string; model: string; extraBody?: Record<string, unknown>; reasoningTokens?: number; jsonMode?: "schema" | "object" };
 
 /**
  * Thinking models write hidden reasoning that counts against max_tokens, so a short budget can come back empty.
@@ -64,7 +72,10 @@ const env = (hasPlan = false): AiConnection => {
   const provider = process.env.LLM_PROVIDER || "ollama";
   const baseUrl = process.env.LLM_BASE_URL ?? "http://localhost:11434";
   const apiKey = hasPlan && process.env.SHARED_LLM_KEY === "open" ? process.env.LLM_API_KEY || undefined : undefined;
-  return { provider, baseUrl, apiKey, model: process.env.LLM_MODEL || "llama3.2", ...thinkingControl(provider, baseUrl) };
+  return { provider, baseUrl, apiKey, model: process.env.LLM_MODEL || "llama3.2", ...thinkingControl(provider, baseUrl),
+    // A local model may be text only, so the operator opts in to images.
+    imageTypes: process.env.LLM_VISION === "on" ? ["jpeg", "png", "webp"] : undefined,
+  };
 };
 
 // The preset is part of the associated data, so a key saved for one provider never decrypts as another's.
@@ -109,7 +120,7 @@ export async function aiConnection(db: Db, secretsKey: Buffer, userId: string): 
   const key = await savedKey(db, userId, row.preset);
   if (!key) throw new Error(`${preset.label} has no saved API key`);
   const apiKey = decryptSecret(secretsKey, userId, keyName(row.preset), { ciphertext: key.keyCiphertext, iv: key.keyIv, authTag: key.keyAuthTag });
-  return { provider: "openai", baseUrl: preset.baseUrl, apiKey, model: row.model, ...thinkingControl("openai", preset.baseUrl) };
+  return { provider: "openai", baseUrl: preset.baseUrl, apiKey, model: row.model, imageTypes: IMAGE_TYPES[row.preset as Preset], ...thinkingControl("openai", preset.baseUrl) };
 }
 
 /**

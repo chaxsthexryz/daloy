@@ -25,6 +25,9 @@ describe("draftPrompt", () => {
   it("asks for an edge on every approval branch and classify label", () => {
     expect(draftPrompt({ request: "x" }).system).toMatch(/"approved", "rejected" and "timeout".*every label of a classify step/);
   });
+  it("does not tell the model about the ai step's files setting, which only the owner adds", () => {
+    expect(draftPrompt({ request: "x" }).system).not.toContain('"files"');
+  });
   it("stays small enough for a local model's default context", () => {
     const { system, messages } = draftPrompt({ request: "x", current: triage });
     // About 4 characters a token; Ollama's default context is 4,096 tokens and the reply needs room too.

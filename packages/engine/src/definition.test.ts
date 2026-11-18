@@ -302,3 +302,19 @@ describe("booking step", () => {
     expect(errs(def({ type: "schedule", config: { cron: "0 9 * * 1" } }, cancel))).toEqual([who]);
   });
 });
+
+describe("ai step files", () => {
+  const form = (fields: unknown[], files: string[]) => ({
+    trigger: { type: "form", config: { fields } },
+    steps: [step("read", "ai", { task: "summarize", input: "x", files })],
+    edges: [],
+  });
+  const file = { name: "receipt", label: "Receipt", type: "file", required: true };
+  const bad = (n: string) => `ai step "read" reads "${n}", which is not a file field of the form`;
+  it("accepts a file field of the form and rejects anything else", () => {
+    expect(issues(form([file], ["receipt"]))).toEqual([]);
+    expect(issues(form([file], ["nope"]))).toContain(bad("nope"));
+    expect(issues(form([{ name: "note", label: "Note", type: "text", required: false }], ["note"]))).toContain(bad("note"));
+    expect(issues({ ...form([file], ["receipt"]), trigger: { type: "manual", config: {} } })).toContain(bad("receipt"));
+  });
+});

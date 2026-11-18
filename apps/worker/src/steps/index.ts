@@ -3,6 +3,7 @@ import { workspaceLanguage, aiConnection, bookFromStep, checkRecipients, claimTi
 import { approvalEmailBody, type FileRef, bookingStartField, conditionBranch, parseZoned, type TestChoice, type Trigger, declaresJson, parseInstant, isRetryable, mockAiOutput, parseJsonTemplate, resolveJsonTemplate, resolveTemplate, StepError, usesSecrets, type ExpressionContext, type Step } from "@daloy/engine";
 import type { StepExecutor, StepResult } from "../advance";
 import { runAi } from "./ai";
+import { loadAiFiles } from "./ai-files";
 import { httpRequest } from "./http";
 import { paymongoLink } from "./paymongo";
 import { defaultGuard, type SsrfGuard } from "./ssrf";
@@ -206,10 +207,15 @@ async function runStep(deps: FullDeps, step: Step, input: unknown, ctx: Expressi
     case "ai": {
       if (mock && choice && "label" in choice) return { output: { label: choice.label } };
       if (mock && !aiLive) return { output: mockAiOutput(step.config) };
-      await claim("ai");
       // The model the workflow owner picked in the console, or the env vars if they picked none.
-      const { model, ...connection } = await aiConnection(deps.db, deps.secretsKey, userId);
-      return runAi(step.config, (input as AiInput).input, { connection, model, attempt });
+      const { model, imageTypes, ...connection } = await aiConnection(deps.db, deps.secretsKey, userId);
+      const trigger = (ctx.trigger ?? {}) as Record<string, unknown>;
+      const refs = (fileFields ?? []).flatMap((name) => (Array.isArray(trigger[name]) ? (trigger[name] as FileRef[]) : []));
+      const files = refs.length ? await loadAiFiles(deps.db, { userId, runId, refs, imageTypes }) : undefined;
+      // Each file is one more AI action. The claim key is the step key, so a retry is not counted twice; the checks
+      // and the PDF reading happen before, so a refused file costs nothing.
+      await claim("ai", 1 + refs.length);
+      return runAi(step.config, (input as AiInput).input, { connection, model, attempt, files });
     }
     case "approval": {
       // A mocked test run decides straight away (approved unless the tester chose otherwise), without an email.
