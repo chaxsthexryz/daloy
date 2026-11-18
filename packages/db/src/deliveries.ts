@@ -1,12 +1,13 @@
 import { randomBytes } from "node:crypto";
-import { backoffDelayMs, type RetryPolicy } from "@daloy/engine";
+import { backoffDelayMs, FILE_MIME, type FileRef, type RetryPolicy } from "@daloy/engine";
 import { and, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { connectionCredential, markConnectionFailed, PROVIDER_NAMES, rotateInto } from "./connections";
 import type { Db } from "./index";
-import { airtableAdd, appendRowOnce, notionAddPage, trelloAddCard, type TrelloCredential, deleteSheetMarker, outlookSend, ProviderError, serviceAccountSchema, slackPost, syncCalendarEvent, teamsPost, telegramSend, type CalendarDestination, type OutlookMessage, type ProviderErrorKind, type ProviderUrls, type SheetDestination } from "./providers";
+import { airtableAdd, appendRowOnce, driveUpload, type DriveDestination, notionAddPage, trelloAddCard, type TrelloCredential, deleteSheetMarker, outlookSend, ProviderError, serviceAccountSchema, slackPost, syncCalendarEvent, teamsPost, telegramSend, type CalendarDestination, type OutlookMessage, type ProviderErrorKind, type ProviderUrls, type SheetDestination } from "./providers";
 import { bookingSuperseded, supersededSql } from "./bookings";
 import { bookingForCalendar } from "./calendar";
 import { connections, deliveries, runs, type Provider } from "./schema";
+import { readUpload } from "./uploads";
 
 /**
  * Sheets rows, Slack and Teams notes and Outlook emails, delivered by the worker apart from the run that asked for them
@@ -86,7 +87,7 @@ export async function claimDueDeliveries(db: Db, limit = 10): Promise<Delivery[]
 }
 
 type Outcome =
-  | { state: "delivered"; result: Record<string, string | boolean> }
+  | { state: "delivered"; result: NonNullable<Delivery["result"]> }
   | { state: "failed" | "needs_review"; error: string; kind: DeliveryErrorKind }
   | { state: "queued"; error: string; kind: DeliveryErrorKind; retryAfterMs?: number; checkFirst?: boolean };
 
@@ -99,7 +100,7 @@ async function attempt(db: Db, key: Buffer, urls: ProviderUrls, d: Delivery): Pr
   const conn = await connectionCredential(db, key, d.userId, d.provider);
   if (!conn) return { state: "failed", error: `${name} is not connected. Connect it in Apps, then retry.`, kind: "not_connected" };
   if (conn.status === "failed") return { state: "failed", error: `${name} needs to be connected again (${conn.account}). Reconnect it in Apps, then retry.`, kind: "reconnect" };
-  if (!conn.destination) return { state: "failed", error: `No ${d.provider === "google_sheets" ? "sheet" : d.provider === "google_calendar" ? "calendar" : d.provider === "telegram" ? "chat" : "channel"} is chosen for ${name}. Pick one in Apps, then retry.`, kind: "no_destination" };
+  if (!conn.destination) return { state: "failed", error: `No ${d.provider === "google_sheets" ? "sheet" : d.provider === "google_calendar" ? "calendar" : d.provider === "google_drive" ? "folder" : d.provider === "telegram" ? "chat" : "channel"} is chosen for ${name}. Pick one in Apps, then retry.`, kind: "no_destination" };
   if (d.pinnedAccount === null) {
     return { state: "needs_review", error: `This was queued before Daloy recorded where deliveries go, so it cannot confirm the ${name} destination. Choose Post again to send it to ${describe(d.provider, conn.destination)}, or Mark as posted.`, kind: "queued_before_pin" };
   }
@@ -117,10 +118,11 @@ async function attempt(db: Db, key: Buffer, urls: ProviderUrls, d: Delivery): Pr
   }
   // Slack, Teams and Outlook have no read access to check with, so after a call that may have arrived a person decides.
   if (d.checkFirst && !repeatable(d.provider)) {
-    return { state: "needs_review", error: `${name} may have ${d.provider === "outlook" ? "sent" : "posted"} this before the connection dropped. ${reviewHint(d.provider, conn.destination)}`, kind: "ambiguous" };
+    return { state: "needs_review", error: `${name} may have ${verb(d.provider)} this before the connection dropped. ${reviewHint(d.provider, conn.destination)}`, kind: "ambiguous" };
   }
   const destination = conn.destination;
-  const send = async (): Promise<Outcome> => {
+  // null: the claim was lost partway through a Drive save, so the new holder owns what happens next.
+  const send = async (): Promise<Outcome | null> => {
     if (d.provider === "google_sheets") {
       const sa = serviceAccountSchema.parse(JSON.parse(conn.credential));
       // Retrying the same marked write is safe: Google adds the row at most once (decision 0021).
@@ -133,6 +135,23 @@ async function attempt(db: Db, key: Buffer, urls: ProviderUrls, d: Delivery): Pr
       if (!b) return { state: "failed", error: "The booking or its calendar event details are gone, so nothing was sent.", kind: "invalid" };
       const out = await syncCalendarEvent(urls, serviceAccountSchema.parse(JSON.parse(conn.credential)), (conn.destination as CalendarDestination).calendarId, bookingId, b, b);
       return { state: "delivered", result: { event: out.event, eventId: out.eventId } };
+    }
+    if (d.provider === "google_drive") {
+      const sa = serviceAccountSchema.parse(JSON.parse(conn.credential));
+      const { folderId, title } = destination as DriveDestination;
+      const files = (d.payload as { files: FileRef[] }).files;
+      // Files already saved by an earlier attempt (or before a Post again) are not saved twice.
+      const saved: Record<string, string> = { ...((d.result as { saved?: Record<string, string> } | null)?.saved ?? {}) };
+      for (const f of files) {
+        if (saved[f.id]) continue;
+        const up = await readUpload(db, { userId: d.userId, runId: d.runId, id: f.id });
+        if (!up) return { state: "failed", error: `The file ${f.name} was removed after 7 days, so it cannot be saved now.`, kind: "invalid" };
+        saved[f.id] = (await driveUpload(urls, sa, folderId, { name: `${d.reference} ${up.name}`, mimeType: FILE_MIME[up.type], data: up.data })).id;
+        // Written through db, not the transaction this runs in, so what is saved survives a later throw or rollback.
+        const held = await db.update(deliveries).set({ result: { saved }, updatedAt: sql`now()` }).where(heldBy(d)).returning({ id: deliveries.id });
+        if (held.length === 0) return null;
+      }
+      return { state: "delivered", result: { folder: title, saved, count: files.length } };
     }
     if (d.provider === "outlook") {
       const save = rotateInto(db, key, d.userId, "outlook", conn);
@@ -171,7 +190,7 @@ async function attempt(db: Db, key: Buffer, urls: ProviderUrls, d: Delivery): Pr
       case "review":
         return { state: "needs_review", error: e.message, kind: e.kind };
       case "ambiguous":
-        if (!repeatable(d.provider)) return { state: "needs_review", error: `${e.message} ${name} may have ${d.provider === "outlook" ? "sent" : "posted"} it. ${reviewHint(d.provider, conn.destination)}`, kind: e.kind };
+        if (!repeatable(d.provider)) return { state: "needs_review", error: `${e.message} ${name} may have ${verb(d.provider)} it. ${reviewHint(d.provider, conn.destination)}`, kind: e.kind };
         return { state: "queued", error: e.message, kind: e.kind, checkFirst: true };
       case "quota":
       case "unavailable":
@@ -180,10 +199,13 @@ async function attempt(db: Db, key: Buffer, urls: ProviderUrls, d: Delivery): Pr
   }
 }
 
+const verb = (p: Provider) => (p === "outlook" ? "sent" : p === "google_drive" ? "saved" : "posted");
+
 /** The destination as a person would name it, for review messages. */
 function describe(provider: Provider, dest: Record<string, string>) {
   if (provider === "google_sheets") return `the sheet "${dest.title ?? dest.spreadsheetId}", tab "${dest.tab}"`;
   if (provider === "google_calendar") return `the calendar "${dest.title ?? dest.calendarId}"`;
+  if (provider === "google_drive") return `the Drive folder "${dest.title ?? dest.folderId}"`;
   if (provider === "slack") return `#${dest.channelName ?? dest.channelId}`;
   if (provider === "telegram") return `the Telegram chat ${dest.chatTitle ?? dest.chatId}`;
   if (provider === "outlook") return dest.mailbox ?? "the Outlook mailbox";
@@ -195,7 +217,7 @@ function describe(provider: Provider, dest: Record<string, string>) {
 
 /** Same place: the fields that pick where a delivery lands. Display names may change without moving anything. */
 function sameDestination(a: Record<string, string> | null, b: Record<string, string>) {
-  const where = (d: Record<string, string> | null) => JSON.stringify([d?.spreadsheetId, d?.calendarId, d?.tab, d?.channelId, d?.chatId, d?.baseId, d?.tableId, d?.databaseId, d?.listId, d?.mailbox, d?.channelName]);
+  const where = (d: Record<string, string> | null) => JSON.stringify([d?.spreadsheetId, d?.calendarId, d?.folderId, d?.tab, d?.channelId, d?.chatId, d?.baseId, d?.tableId, d?.databaseId, d?.listId, d?.mailbox, d?.channelName]);
   return where(a) === where(b);
 }
 

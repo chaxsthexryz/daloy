@@ -2,6 +2,7 @@ import { assertTransition } from "@daloy/engine";
 import { and, desc, eq, sql } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import { runKeys, runs, stepRuns, workflows, workflowVersions } from "./schema";
+import { saveUploads, type NewUpload } from "./uploads";
 
 /** pg-boss queue the worker takes runs from. Jobs carry { runId } and use the run id as singletonKey. */
 export const RUN_QUEUE = "advance-run";
@@ -37,7 +38,9 @@ export async function createKeyedRun(db: AnyDb, workflowId: string, workflowVers
   const test = opts.test ?? false;
   try {
     return await db.transaction(async (tx) => {
-      const runId = await createRun(tx, workflowVersionId, triggerPayload, opts);
+      const { uploads, ...runOpts } = opts;
+      const runId = await createRun(tx, workflowVersionId, triggerPayload, runOpts);
+      if (uploads) await saveUploads(tx, { userId: uploads.userId, runId, files: uploads.files });
       const claimed = await tx.insert(runKeys).values({ workflowId, test, key, runId }).onConflictDoNothing().returning({ runId: runKeys.runId });
       if (claimed.length === 0) throw new Duplicate();
       return { runId };
@@ -54,12 +57,18 @@ export async function keyedRun(db: AnyDb, workflowId: string, key: string, test 
   return first?.runId;
 }
 
-type RunOpts = { test?: boolean; live?: boolean; aiLive?: boolean; testChoices?: unknown };
+/** uploads: the files of a hosted form submission, stored in the same transaction as the run. */
+type RunOpts = { test?: boolean; live?: boolean; aiLive?: boolean; testChoices?: unknown; uploads?: { userId: string; files: NewUpload[] } };
 
 /** Inserts a pending run. The caller queues it; if that fails, the worker's sweep picks it up. */
 export async function createRun(db: AnyDb, workflowVersionId: string, triggerPayload: unknown, opts: RunOpts = {}): Promise<string> {
-  const [run] = await db.insert(runs).values({ workflowVersionId, triggerPayload, ...opts }).returning({ id: runs.id });
-  return run!.id;
+  const { uploads, ...runOpts } = opts;
+  const insert = async (d: AnyDb) => {
+    const [run] = await d.insert(runs).values({ workflowVersionId, triggerPayload, ...runOpts }).returning({ id: runs.id });
+    if (uploads) await saveUploads(d, { userId: uploads.userId, runId: run!.id, files: uploads.files });
+    return run!.id;
+  };
+  return uploads ? db.transaction(insert) : insert(db);
 }
 
 /**

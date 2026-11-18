@@ -2,7 +2,7 @@ import { Text, useLanguage } from "./Language";
 import { useEffect, useState, type ReactNode } from "react";
 import { api } from "./api";
 import { PILL, SenderSection, type Settings } from "./BusinessSetup";
-import { CalendarConnection, OutlookConnection, RecordConnection, PaymongoConnection, SheetsConnection, SlackConnection, TeamsConnection, TelegramConnection, type Connection, type OutlookSetup, type Provider } from "./Connections";
+import { CalendarConnection, DriveConnection,OutlookConnection, RecordConnection, PaymongoConnection, SheetsConnection, SlackConnection, TeamsConnection, TelegramConnection, type Connection, type OutlookSetup, type Provider } from "./Connections";
 import { Header } from "./Nav";
 
 type Key = "gmail" | Provider;
@@ -15,6 +15,7 @@ const APPS: { key: Key; name: string; line: string }[] = [
   { key: "teams", name: "Microsoft Teams", line: "Post a note to a Teams channel." },
   { key: "telegram", name: "Telegram", line: "Send a message to a Telegram chat." },
   { key: "google_calendar", name: "Google Calendar", line: "Put a booking on a calendar, and move or remove it with the booking." },
+  { key: "google_drive", name: "Google Drive", line: "Save the files people attach to a form into a shared drive folder." },
   { key: "paymongo", name: "PayMongo", line: "Take payments and start automations when they are paid." },
   { key: "airtable", name: "Airtable", line: "Add a record to a table for every request." },
   { key: "notion", name: "Notion", line: "Add a page to a database for every request." },
@@ -68,6 +69,7 @@ export function AppsPage({ outlookOutcome }: { outlookOutcome?: string }) {
     teams: () => <TeamsConnection conn={conn("teams")} onChange={load} />,
     telegram: () => <TelegramConnection conn={conn("telegram")} onChange={load} />,
     google_calendar: () => <CalendarConnection conn={conn("google_calendar")} onChange={load} />,
+    google_drive: () => <DriveConnection conn={conn("google_drive")} onChange={load} />,
     paymongo: () => <PaymongoConnection conn={conn("paymongo")} webhookBase={conns.paymongoWebhookBase} onChange={load} />,
     airtable: () => <RecordConnection app="airtable" conn={conn("airtable")} onChange={load} />,
     notion: () => <RecordConnection app="notion" conn={conn("notion")} onChange={load} />,

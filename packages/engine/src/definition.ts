@@ -1,5 +1,6 @@
 import * as z from "zod";
 import { aiConfigSchema } from "./ai";
+import { FILES_PER_FIELD, type FileRef } from "./file-type";
 import { isTimeZone, parseZoned } from "./zoned";
 
 // Ids end up inside expression paths ({{steps.<id>.output}}), so keep them to a safe charset.
@@ -93,6 +94,9 @@ export const notionConfigSchema = z.object({ title: template(2000).min(1), field
 export const trelloConfigSchema = z.object({ name: template(500).min(1), desc: template(10_000).optional() });
 // link is the id of the paymongo_link step to check. The current status of its payment in this run: pending, paid, needs_review or refunded. Read-only, never calls PayMongo.
 export const paymentStatusConfigSchema = z.object({ link: stepId });
+// Saves the files a form collected into the Google Drive folder picked in Apps. It takes no settings: the files are
+// the form's file fields. Queued like Sheets.
+export const driveConfigSchema = z.object({}).default({});
 export type SheetsConfig = z.infer<typeof sheetsConfigSchema>;
 export type SlackConfig = z.infer<typeof slackConfigSchema>;
 
@@ -129,6 +133,7 @@ const stepSchema = z.discriminatedUnion("type", [
   z.object({ id: stepId, type: z.literal("ai"), config: aiConfigSchema }),
   z.object({ id: stepId, type: z.literal("approval"), config: approvalConfigSchema }),
   z.object({ id: stepId, type: z.literal("sheets"), config: sheetsConfigSchema }),
+  z.object({ id: stepId, type: z.literal("drive"), config: driveConfigSchema }),
   z.object({ id: stepId, type: z.literal("slack"), config: slackConfigSchema }),
   z.object({ id: stepId, type: z.literal("outlook"), config: outlookConfigSchema }),
   z.object({ id: stepId, type: z.literal("teams"), config: teamsConfigSchema }),
@@ -159,7 +164,7 @@ export const formFieldSchema = z
   .object({
     name: stepId,
     label: z.string().min(1).max(200),
-    type: z.enum(["text", "email", "textarea", "number", "datetime", "resource"]),
+    type: z.enum(["text", "email", "textarea", "number", "datetime", "resource", "file"]),
     required: z.boolean().default(false),
     min: z.number().optional(),
     max: z.number().optional(),
@@ -219,11 +224,23 @@ const required = (fallback: string) => ({ error: (iss: { input: unknown }) => (i
  */
 export type Resource = { id: string; name: string };
 /** resources: the workspace's active resources, the only ids a resource field accepts. now: for "in the future". */
-export type PayloadContext = { resources?: Resource[]; now?: number };
+/**
+ * files: what the hosted form stored for each file field. Without it (a webhook, MCP, a test run, the Run button)
+ * file fields are not part of the payload at all. With it, a file field's value is only ever what is listed here,
+ * never what the client sent.
+ */
+export type PayloadContext = { resources?: Resource[]; now?: number; files?: Record<string, FileRef[]> };
 
-export function payloadSchema(fields: FormField[], { resources = [], now }: PayloadContext = {}) {
+export function payloadSchema(fields: FormField[], { resources = [], now, files }: PayloadContext = {}) {
   const shape: Record<string, z.ZodType> = {};
   for (const f of fields) {
+    if (f.type === "file") {
+      if (!files) continue;
+      const given = files[f.name] ?? [];
+      const list = z.array(z.custom<FileRef>(), required("must be files")).max(FILES_PER_FIELD, `must be at most ${FILES_PER_FIELD} files`);
+      shape[f.name] = z.preprocess(() => (given.length === 0 ? undefined : given), f.required ? list : list.optional());
+      continue;
+    }
     let base: z.ZodType;
     if (f.type === "datetime") {
       base = z.string(required("must be a date and time like 2027-01-20T14:00")).transform((v, ctx) => {
@@ -264,7 +281,9 @@ export function payloadSchema(fields: FormField[], { resources = [], now }: Payl
 
 /** Checks a payload against its fields. Errors read "<field>: <problem>", one per field, in field order. */
 export function parsePayload(fields: FormField[], data: unknown, context?: PayloadContext): { ok: true; data: Record<string, unknown> } | { ok: false; errors: string[] } {
-  const r = payloadSchema(fields, context).safeParse(data ?? {});
+  // zod skips an absent key, so file fields get a key here and their preprocess reads context.files.
+  const files = context?.files ? Object.fromEntries(fields.filter((f) => f.type === "file").map((f) => [f.name, null])) : {};
+  const r = payloadSchema(fields, context).safeParse({ ...((data ?? {}) as Record<string, unknown>), ...files });
   if (r.success) return { ok: true, data: r.data };
   return { ok: false, errors: r.error.issues.map((i) => `${i.path.join(".") || "payload"}: ${i.message}`) };
 }
@@ -279,6 +298,7 @@ export const definitionSchema = z
     const fail = (message: string) => ctx.addIssue({ code: "custom", message });
 
     const fields = triggerFields(def.trigger);
+    if (def.trigger.type === "webhook" && def.trigger.config.fields?.some((f) => f.type === "file")) fail("file fields are for forms; a webhook cannot take files");
     if (fields) {
       const names = new Set<string>();
       for (const f of fields) {
@@ -291,6 +311,7 @@ export const definitionSchema = z
     for (const s of def.steps) {
       if (byId.has(s.id)) fail(`duplicate step id "${s.id}"`);
       byId.set(s.id, s);
+      if (s.type === "drive" && !(def.trigger.type === "form" && def.trigger.config.fields.some((f) => f.type === "file"))) fail(`drive step "${s.id}" needs a form trigger with at least one file field`);
       if (s.type === "payment_status" && !def.steps.some((o) => o.id === s.config.link && o.type === "paymongo_link")) fail(`payment_status step "${s.id}" needs link to be the id of a paymongo_link step`);
       if (s.type !== "booking") continue;
       if (s.config.start !== undefined && !bookingStartField(def.trigger, s.config)) fail(`booking step "${s.id}" needs start to be {{trigger.<field>}} for a datetime field of the trigger`);
