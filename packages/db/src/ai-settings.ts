@@ -31,7 +31,7 @@ export const PRESETS = {
 export type Preset = keyof typeof PRESETS;
 export const PRESET_IDS = Object.keys(PRESETS) as [Preset, ...Preset[]];
 
-export type AiConnection = { provider: string; baseUrl: string; apiKey?: string; model: string; extraBody?: Record<string, unknown>; reasoningTokens?: number };
+export type AiConnection = { provider: string; baseUrl: string; apiKey?: string; model: string; extraBody?: Record<string, unknown>; reasoningTokens?: number; jsonMode?: "schema" | "object" };
 
 /**
  * Thinking models write hidden reasoning that counts against max_tokens, so a short budget can come back empty.
@@ -41,7 +41,7 @@ export type AiConnection = { provider: string; baseUrl: string; apiKey?: string;
  *   and allow 2,048 extra tokens for it on top of each caller's answer budget.
  */
 const LOCAL_HOST = /^(localhost|127\.\d+\.\d+\.\d+|\[::1\]|host\.docker\.internal)$/;
-function thinkingControl(provider: string, baseUrl: string): Pick<AiConnection, "extraBody" | "reasoningTokens"> {
+function thinkingControl(provider: string, baseUrl: string): Pick<AiConnection, "extraBody" | "reasoningTokens" | "jsonMode"> {
   let host: string;
   try {
     host = new URL(baseUrl).hostname;
@@ -51,7 +51,7 @@ function thinkingControl(provider: string, baseUrl: string): Pick<AiConnection, 
   if (provider !== "openai") return {};
   if (LOCAL_HOST.test(host)) return { extraBody: { chat_template_kwargs: { enable_thinking: false } } };
   if (host === "generativelanguage.googleapis.com") return { extraBody: { reasoning_effort: "low" }, reasoningTokens: 2048 };
-  if (host === "api.deepseek.com") return { extraBody: { thinking: { type: "disabled" } } };
+  if (host === "api.deepseek.com") return { extraBody: { thinking: { type: "disabled" } }, jsonMode: "object" };
   return {};
 }
 
@@ -110,4 +110,19 @@ export async function aiConnection(db: Db, secretsKey: Buffer, userId: string): 
   if (!key) throw new Error(`${preset.label} has no saved API key`);
   const apiKey = decryptSecret(secretsKey, userId, keyName(row.preset), { ciphertext: key.keyCiphertext, iv: key.keyIv, authTag: key.keyAuthTag });
   return { provider: "openai", baseUrl: preset.baseUrl, apiKey, model: row.model, ...thinkingControl("openai", preset.baseUrl) };
+}
+
+/**
+ * A preset's connection before anything is saved: the key just typed, or the one already saved for that preset. The
+ * console uses it to ask the provider which model names it offers, and to check a name before it is saved.
+ */
+export async function presetConnection(db: Db, secretsKey: Buffer, userId: string, preset: Exclude<Preset, "local">, apiKey?: string): Promise<AiConnection> {
+  const p = PRESETS[preset];
+  let key = apiKey;
+  if (!key) {
+    const row = await savedKey(db, userId, preset);
+    if (!row) throw new Error(`${p.label} has no saved API key`);
+    key = decryptSecret(secretsKey, userId, keyName(preset), { ciphertext: row.keyCiphertext, iv: row.keyIv, authTag: row.keyAuthTag });
+  }
+  return { provider: "openai", baseUrl: p.baseUrl, apiKey: key, model: "", ...thinkingControl("openai", p.baseUrl) };
 }

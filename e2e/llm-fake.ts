@@ -31,13 +31,23 @@ export function startLlmFake(port: number) {
       // The AI model page lists the local server's models.
       if (req.method === "GET" && req.url === "/api/tags") return res.end(JSON.stringify({ models: [{ name: "fake-model" }] }));
       if (req.method !== "POST") return res.writeHead(404).end("{}");
-      const body = JSON.parse(raw) as { messages: { content: string }[] };
+      const body = JSON.parse(raw) as { messages: { role?: string; content: string }[] };
       // The run explainer (N10a) asks for plain text, not a workflow draft.
       if (body.messages.some((m) => m.content.startsWith("You explain why a Daloy automation stopped")))
         return res.end(JSON.stringify({ message: { content: "The automation stopped because a step was set to fail in this preview. Nothing was sent." }, prompt_eval_count: 1, eval_count: 1 }));
       const change = body.messages.some((m) => m.content.startsWith("Change this workflow"));
-      const reply = body.messages.some((m) => m.content.includes("boss approval")) ? warned : change ? changed : built;
-      res.end(JSON.stringify({ message: { content: JSON.stringify(reply) }, prompt_eval_count: 1, eval_count: 1 }));
+      const payload = body.messages.some((m) => m.content.includes("boss approval")) ? warned : change ? changed : built;
+      // The chat (#/ai, decision 0048) asks for a question or a draft: the first message alone gets the question.
+      if (body.messages[0]?.content.startsWith("You help someone build an automation")) {
+        const said = body.messages.filter((m) => m.role === "user" && !m.content.startsWith("The current draft is:"));
+        const hasCurrent = body.messages.some((m) => m.content.startsWith("The current draft is:"));
+        const reply =
+          said.length === 1 && said[0]!.content.includes("ask me a question first")
+            ? { kind: "question", text: "What starts it?", choices: ["Someone fills a form", "On a schedule"] }
+            : { kind: "draft", ...(hasCurrent ? changed : payload) };
+        return res.end(JSON.stringify({ message: { content: JSON.stringify(reply) }, prompt_eval_count: 1, eval_count: 1 }));
+      }
+      res.end(JSON.stringify({ message: { content: JSON.stringify(payload) }, prompt_eval_count: 1, eval_count: 1 }));
     });
   });
   server.listen(port, "127.0.0.1");

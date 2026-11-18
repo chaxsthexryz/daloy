@@ -65,5 +65,6 @@ export const viewTranslations: Record<string, string> = {
   "Preview with real calls": "Preview na may totoong tawag",
   "Preview with real AI, other calls mocked": "Preview na may totoong AI at kunwaring ibang tawag",
   "Preview (nothing sent)": "Preview (walang ipinadala)",
-  "Real run": "Totoong run"
+  "Real run": "Totoong run",
+  "Ask what happened": "Itanong kung ano ang nangyari"
 };

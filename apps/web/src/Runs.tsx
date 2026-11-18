@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { api, ApiError, type Run, type RunSummary, type Version, type Workflow } from "./api";
 import { DeliveryList, type Delivery } from "./Connections";
 import { AutomationTabs, Header } from "./Nav";
+import { AskRequest } from "./AskRequest";
 import { RunFlow } from "./FlowCanvas";
 import type { Draft } from "./lib/graph";
 import { pollDelay, takingLonger } from "./lib/poll";
@@ -119,7 +120,7 @@ export function RunResult({ run }: { run: Run }) {
 const FILTERS = { all: "", live: "&test=false", test: "&test=true", review: "&review=true", problem: "&state=problem", waiting: "&state=waiting" } as const;
 
 /** #/activity: the latest 50 runs of every automation, or #/w/<id>/runs: of one, under its tabs. */
-export function RunsPage({ workflowId }: { workflowId?: string }) {
+export function RunsPage({ workflowId, ask }: { workflowId?: string; ask?: boolean }) {
   const { t } = useLanguage();
   const [wf, setWf] = useState<(Workflow & { live: unknown }) | null>(null);
   const [filter, setFilter] = useState<keyof typeof FILTERS>("all");
@@ -191,6 +192,7 @@ export function RunsPage({ workflowId }: { workflowId?: string }) {
                 <th scope="col">{t("Result")}</th>
                 <th scope="col">{t("Kind")}</th>
                 <th scope="col">{t("Took")}</th>
+                {ask && <th scope="col">{t("Ask")}</th>}
               </tr>
             </thead>
             <tbody>
@@ -206,6 +208,7 @@ export function RunsPage({ workflowId }: { workflowId?: string }) {
                   </td>
                   <td data-label={t("Kind")}>{t(runKind(r))}</td>
                   <td data-label={t("Took")}>{t(duration(r.createdAt, r.finishedAt))}</td>
+                  {ask && <td data-label={t("Ask")}>{r.reference && <a href={`#/runs/${r.id}/ask`}>{t("Ask what happened")}</a>}</td>}
                 </tr>
               ))}
             </tbody>
@@ -217,8 +220,9 @@ export function RunsPage({ workflowId }: { workflowId?: string }) {
 }
 
 /** #/runs/<id>: one run with its trigger payload and every step attempt. Polls until the run finishes. */
-export function RunPage({ runId, owner }: { runId: string; owner: boolean }) {
+export function RunPage({ runId, owner, ask, openAsk }: { runId: string; owner: boolean; ask?: boolean; openAsk?: boolean }) {
   const { t } = useLanguage();
+  const [asking, setAsking] = useState(!!openAsk);
   const [reload, setReload] = useState(0);
   const { run, error } = useRun(runId, reload);
   if (!run) {
@@ -251,6 +255,16 @@ export function RunPage({ runId, owner }: { runId: string; owner: boolean }) {
       </p>
       {run.superseded && <p className="message">{t(SUPERSEDED)}</p>}
       <RunWhy run={run} owner={owner} />
+      {ask && run.reference && (
+        <>
+          <p>
+            <button type="button" aria-expanded={asking} onClick={() => setAsking(!asking)}>
+              {t("Ask what happened")}
+            </button>
+          </p>
+          {asking && <AskRequest reference={run.reference} />}
+        </>
+      )}
       <RunActions run={run} onDone={() => setReload((n) => n + 1)} />
       <RunDeliveries runId={runId} />
       <RunPath run={run} />

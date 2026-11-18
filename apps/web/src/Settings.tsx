@@ -38,13 +38,22 @@ export function AiModelPage() {
   const [error, setError] = useState("");
   const [test, setTest] = useState<TestResult | null>(null);
   const [busy, setBusy] = useState(false);
+  // The model names the chosen provider says it serves, for the preset they were read for.
+  const [offered, setOffered] = useState<{ preset: string; ids: string[] } | null>(null);
 
+  const loadOffered = async (id: string, key?: string) => {
+    if (id === "local") return setOffered(null);
+    const res = await api<{ ok: boolean; models: string[] }>("POST", "/settings/ai/models", { preset: id, apiKey: key || undefined }).catch(() => null);
+    setOffered(res?.ok && res.models.length ? { preset: id, ids: res.models } : null);
+  };
   const load = async () => {
     const data = await api<{ current: Current; presets: Record<string, Preset> }>("GET", "/settings/ai");
     setPresets(data.presets);
     setCurrent(data.current);
     setPreset(data.current.preset);
     setModel(data.current.model);
+    // The provider's own list, so the picker holds ids it will actually accept.
+    void loadOffered(data.current.preset);
   };
   const checkLocal = async () => {
     setLocal(null);
@@ -61,10 +70,19 @@ export function AiModelPage() {
     setApiKey("");
     setTest(null);
     setStatus("");
+    setOffered(null);
+    void loadOffered(id);
   };
   const keySaved = current?.keys.includes(preset) ?? false;
-  // The local server's own list when it answers, otherwise the suggestions.
-  const models: Suggestion[] = preset === "local" && local?.ok && local.models.length ? local.models.map((id) => ({ id, free: true, note: "" })) : (presets?.[preset]?.models ?? []);
+  // The provider's own model names once they are known, with the notes from the suggestions where they match.
+  const known = presets?.[preset]?.models ?? [];
+  const offeredIds = offered?.preset === preset ? offered.ids : null;
+  const models: Suggestion[] =
+    preset === "local" && local?.ok && local.models.length
+      ? local.models.map((id) => ({ id, free: true, note: "" }))
+      : preset !== "local" && offeredIds
+        ? offeredIds.map((id) => known.find((k) => k.id === id) ?? { id, free: false, note: "" })
+        : known;
   // A model name that is not in the list (or blank, right after picking "Other") gets a text box.
   const suggestion = models.find((m) => m.id === model);
   const otherModel = models.length > 0 && !suggestion;
@@ -180,7 +198,7 @@ export function AiModelPage() {
           {presets[preset]?.needsKey && (
             <div className="field">
               <label htmlFor="ai-key">{t("API key ")}{keySaved && <span className="muted">{t("(saved; leave empty to keep it)")}</span>}</label>
-              <input id="ai-key" type="password" autoComplete="off" value={apiKey} onChange={(e) => setApiKey(e.target.value)} required={!keySaved} maxLength={500} />
+              <input id="ai-key" type="password" autoComplete="off" value={apiKey} onChange={(e) => setApiKey(e.target.value)} onBlur={() => apiKey && void loadOffered(preset, apiKey)} required={!keySaved} maxLength={500} />
               {KEY_LINKS[preset] && (
                 <span className="muted hint">
                   <a href={KEY_LINKS[preset].href} target="_blank" rel="noreferrer">
