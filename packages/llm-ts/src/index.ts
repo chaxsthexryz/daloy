@@ -1,6 +1,6 @@
 import * as z from "zod";
 
-export type Message = { role: "user" | "assistant"; content: string };
+export type Message = { role: "user" | "assistant"; content: string; images?: { type: string; base64: string }[] };
 
 export type GenerateInput<T> = {
   system: string;
@@ -78,7 +78,12 @@ function request<T>(input: GenerateInput<T>, provider: string, baseUrl: string, 
 
 Reply with only a JSON object that matches this JSON schema:
 ${JSON.stringify(jsonSchema(input.schema!))}` : input.system;
-  const messages = [{ role: "system", content: system }, ...input.messages];
+  const wire = (m: Message) => {
+    if (!m.images?.length) return { role: m.role, content: m.content };
+    if (provider === "ollama") return { role: m.role, content: m.content, images: m.images.map((i) => i.base64) };
+    return { role: m.role, content: [{ type: "text", text: m.content }, ...m.images.map((i) => ({ type: "image_url", image_url: { url: `data:${i.type};base64,${i.base64}` } }))] };
+  };
+  const messages = [{ role: "system", content: system }, ...input.messages.map(wire)];
   if (provider === "ollama") {
     return {
       url: `${baseUrl}/api/chat`,
@@ -132,6 +137,9 @@ export async function generate<T = unknown>(input: GenerateInput<T>): Promise<Ge
 
   // Only the status: a provider's error body can echo the request, key included.
   if (!res.ok) {
+    if ([400, 404, 413, 415, 422].includes(res.status) && input.messages.some((m) => m.images?.length)) {
+      throw new LlmError(`The AI model refused the file (HTTP ${res.status}). Pick a model that reads images on the AI model page.`, false);
+    }
     throw new LlmError(`LLM returned HTTP ${res.status}`, res.status === 429 || res.status >= 500);
   }
 
