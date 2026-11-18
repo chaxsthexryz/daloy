@@ -69,6 +69,7 @@ export async function saveEmailSource(db: Db, key: Buffer, workspaceId: string, 
       claimId: null,
       claimUntil: null,
       nextPollAt: new Date(),
+      failures: 0,
       lastError: null,
       ...(!sameMailbox ? { mailboxId: randomUUID(), listening: false, uidValidity: null, lastUid: null, lastCheckedAt: null } : {}),
     };
@@ -122,6 +123,7 @@ export async function requestEmailSourceCheck(db: Db, workflowId: string) {
         claimId: null,
         claimUntil: null,
         nextPollAt: new Date(),
+        failures: 0,
         lastError: null,
         ...(reset ? { uidValidity: null, lastUid: null, listening: false } : {}),
       })

@@ -150,6 +150,10 @@ describe("Airtable, Notion and Trello", () => {
     await agent.put("/settings/connections/airtable").send({ ...good, token: "nope" }).expect(400);
     await agent.put("/settings/connections/airtable").send({ ...good, baseId: "base1" }).expect(400);
     await agent.put("/settings/connections/airtable").send({ ...good, extra: 1 }).expect(400);
+    // A name the table answers to is still refused: a renamed table could be replaced by another with that name.
+    fake.airtable.table = "Requests";
+    await agent.put("/settings/connections/airtable").send({ ...good, tableId: "Requests" }).expect(400);
+    fake.airtable.table = good.tableId;
     await agent.put("/settings/connections/airtable").send({ ...good, tableId: "tblOTHERTABLE0001" }).expect(400);
     await agent.put("/settings/connections/airtable").send({ ...good, token: "patTESTTOKEN12345.ffffffffffffffffffffffffffff" }).expect(400);
     const res = await agent.put("/settings/connections/airtable").send(good).expect(200);

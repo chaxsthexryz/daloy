@@ -45,12 +45,20 @@ export type EmailPollOptions = {
 const READ_FAILED = "Could not read this mailbox. Check its address, app password and folder, then check again.";
 const RETRYING = "Could not reach the mailbox. Daloy will try again shortly.";
 const CLAIM_MS = 45_000;
+const MAX_BACKOFF_MS = 3_600_000;
+// A workspace is the owner of the source's workflow.
+const workspaceOf = sql`(select user_id from workflows where id = ${emailSources.workflowId})`;
 
 /** A short, bounded poll. Each result is fenced by both credential revision and claim, including late errors. */
 export async function pollEmailSources({ db, secretsKey, adapter, enqueue, intervalMs = 60_000, signal }: EmailPollOptions) {
   if (signal?.aborted) return;
   const claim = await db.transaction(async (tx) => {
+    // Serializes claims so the one-poller-per-workspace check below cannot race.
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended('email-claim', 0))`);
     const now = new Date();
+    // Live: a published email trigger. A live source back to pending after a transient failure keeps its priority.
+    const published = sql`exists (select 1 from triggers where workflow_id = ${emailSources.workflowId} and type = 'email')`;
+    const live = sql`(${emailSources.status} = 'active' and ${published})`;
     const [row] = await tx
       .select()
       .from(emailSources)
@@ -58,16 +66,18 @@ export async function pollEmailSources({ db, secretsKey, adapter, enqueue, inter
         and(
           or(
             eq(emailSources.status, "pending"),
-            and(
-              eq(emailSources.status, "active"),
-              sql`exists (select 1 from triggers where workflow_id = ${emailSources.workflowId} and type = 'email')`,
-            ),
+            live,
           ),
+          sql`not exists (select 1 from email_sources o join workflows ow on ow.id = o.workflow_id where ow.user_id = ${workspaceOf} and o.id <> ${emailSources.id} and o.claim_until > ${now})`,
           lte(emailSources.nextPollAt, now),
           or(isNull(emailSources.claimUntil), lte(emailSources.claimUntil, now)),
         ),
       )
-      .orderBy(emailSources.nextPollAt)
+      .orderBy(
+        sql`${published} desc`,
+        sql`(select max(es.last_checked_at) from email_sources es join workflows ew on ew.id = es.workflow_id where ew.user_id = ${workspaceOf}) asc nulls first`,
+        emailSources.nextPollAt,
+      )
       .limit(1)
       .for("update", { skipLocked: true });
     if (!row) return null;
@@ -94,6 +104,7 @@ export async function pollEmailSources({ db, secretsKey, adapter, enqueue, inter
       signal,
     );
     signal?.throwIfAborted();
+    await db.update(emailSources).set({ failures: 0 }).where(fence);
     if (
       !/^[1-9]\d{0,9}$/.test(session.uidValidity) ||
       Number(session.uidValidity) > 4_294_967_295 ||
@@ -203,7 +214,8 @@ export async function pollEmailSources({ db, secretsKey, adapter, enqueue, inter
         status: permanent ? "failed" : "pending",
         lastCheckedAt: new Date(),
         lastError: permanent ? READ_FAILED : RETRYING,
-        nextPollAt: new Date(Date.now() + Math.max(intervalMs, 500)),
+        failures: sql`${emailSources.failures} + 1`,
+        nextPollAt: new Date(Date.now() + Math.min(Math.max(intervalMs * 2 ** claim.failures, 500), MAX_BACKOFF_MS)),
       })
       .where(fence);
   } finally {

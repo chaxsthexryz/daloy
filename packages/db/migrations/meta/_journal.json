@@ -239,6 +239,13 @@
       "when": 1795067335937,
       "tag": "0033_booking_no_show",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1795067336937,
+      "tag": "0034_apps_and_mail_fixes",
+      "breakpoints": true
     }
   ]
 }

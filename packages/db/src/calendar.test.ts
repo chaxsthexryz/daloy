@@ -1,3 +1,5 @@
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { generateKeyPairSync, randomBytes } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import type { Pool } from "pg";
@@ -9,8 +11,8 @@ import { queueCalendarEvent } from "./calendar";
 import { saveConnection } from "./connections";
 import { deliveryBookingMoved, retryDelivery, runDueDeliveries } from "./deliveries";
 import type { Db } from "./index";
-import { calendarEventId, calendarIdFrom, type ProviderUrls } from "./providers";
-import { bookings, deliveries, resources, runs, users, workflows, workflowVersions } from "./schema";
+import { calendarEventId, calendarIdFrom, calendarInfo, type ProviderUrls } from "./providers";
+import { bookings, calendarEvents, connections, deliveries, resources, runs, users, workflows, workflowVersions } from "./schema";
 
 // Decision 0044: one Google Calendar event per booking, with an id derived from the booking, kept equal to the booking
 // by sync deliveries that can be repeated without harm.
@@ -174,6 +176,101 @@ describe("create, update and cancel", () => {
     const d = (await db.select().from(deliveries).where(eq(deliveries.id, b.delivery.id)))[0]!;
     expect(d).toMatchObject({ state: "failed", errorKind: "permission" });
     expect(d.lastError).toContain("daloy@project.iam.gserviceaccount.com");
+    expect(d.lastError).not.toContain("Google said");
     cal.editors.add("daloy@project.iam.gserviceaccount.com");
+  });
+});
+
+describe("a Calendar refusal", () => {
+  it.each([403, 400])("never repeats Google's own words (HTTP %i)", async (status) => {
+    const email = `refuse${status}@project.iam.gserviceaccount.com`;
+    const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
+    fake.addServiceAccount(email, publicKey.export({ type: "spki", format: "pem" }).toString());
+    const google = createServer((_req, res) => res.writeHead(status, { "content-type": "application/json" }).end(JSON.stringify({ error: { message: "GOOGLE-PROSE-9f2", errors: [{ reason: "forbidden" }] } })));
+    await new Promise<void>((r) => google.listen(0, "127.0.0.1", r));
+    try {
+      const sa = { client_email: email, private_key: privateKey.export({ type: "pkcs8", format: "pem" }).toString() };
+      const err = await calendarInfo({ ...urls, calendar: `http://127.0.0.1:${(google.address() as AddressInfo).port}` }, sa, CAL).catch((e: unknown) => e);
+      expect((err as Error).message).toContain(status === 403 ? "refused access" : `(${status})`);
+      expect((err as Error).message).not.toContain("GOOGLE-PROSE-9f2");
+    } finally {
+      google.close();
+    }
+  });
+});
+
+describe("a booking's event stays tied to the calendar it was written to", () => {
+  const CAL_B = "other@group.calendar.google.com";
+  const email = "daloy@project.iam.gserviceaccount.com";
+  let calB: ReturnType<FakeProviders["addCalendar"]>;
+  const connect = async (calendarId: string, title: string) => {
+    await db.update(connections).set({ destination: { calendarId, title } }).where(and(eq(connections.userId, userId), eq(connections.provider, "google_calendar")));
+  };
+  const latest = async (reference: string, stepId: string) => (await db.select().from(deliveries).where(and(eq(deliveries.reference, reference), eq(deliveries.stepId, stepId))))[0]!;
+
+  beforeAll(() => {
+    calB = fake.addCalendar(CAL_B, "Other", [email]);
+  });
+
+  it.each(["cancel", "reschedule"] as const)("does not %s through a calendar the owner switched to since, and says the event is still in the old one", async (action) => {
+    const day = action === "cancel" ? 10 : 11;
+    const b = await bookedWithEvent(day);
+    await deliver();
+    const id = calendarEventId(b.id);
+    expect(cal.events.get(id)!.status).toBe("confirmed");
+    await connect(CAL_B, "Other");
+    try {
+      if (action === "cancel") await staffChange(db, { workspaceId: userId, bookingId: b.id, version: 1, action: "cancel" }, "user:test");
+      else await book({ action: "reschedule", reference: b.reference, start: hour(8, day) });
+      await deliver();
+      expect(await latest(b.reference, "calendar:v2")).toMatchObject({ state: "needs_review", errorKind: "destination_changed" });
+      expect((await latest(b.reference, "calendar:v2")).lastError).toContain("still in");
+      expect([...calB.events.values()]).toHaveLength(0);
+      expect(cal.events.get(id)!.status).toBe("confirmed");
+      expect(cal.events.get(id)!.start).toMatchObject({ dateTime: `2031-01-${day}T06:00:00.000Z` });
+    } finally {
+      await connect(CAL, "Clinic");
+    }
+  });
+
+  it("binds the event to the new calendar when the owner posts again", async () => {
+    const b = await bookedWithEvent(12);
+    await deliver();
+    await connect(CAL_B, "Other");
+    try {
+      await book({ action: "reschedule", reference: b.reference, start: hour(8, 12) });
+      await deliver();
+      const held = await latest(b.reference, "calendar:v2");
+      expect(held.state).toBe("needs_review");
+      await retryDelivery(db, userId, held.id, { postAgain: true });
+      await deliver();
+      expect([...calB.events.values()]).toHaveLength(1);
+      expect((await db.select().from(calendarEvents).where(eq(calendarEvents.bookingId, b.id)))[0]).toMatchObject({ account: email, calendarId: CAL_B });
+    } finally {
+      await connect(CAL, "Clinic");
+    }
+  });
+});
+
+describe("a calendar write in flight holds off a cancel", () => {
+  it("leaves the event cancelled when the cancel comes while an older update is still being written", async () => {
+    const slow: ProviderUrls = { ...urls, timeoutMs: 2500 };
+    const b = await bookedWithEvent(13);
+    await deliver();
+    const id = calendarEventId(b.id);
+    await book({ action: "reschedule", reference: b.reference, start: hour(8, 13) });
+    // Google takes the update 700 ms after it arrives and the answer is lost, so the write lands late.
+    fake.once(`/events/${id}`, { late: 700 });
+    const before = fake.calls.length;
+    const update = runDueDeliveries(db, key, slow);
+    while (!fake.calls.slice(before).some((c) => c.startsWith("PATCH"))) await new Promise((r) => setTimeout(r, 20));
+    let updateDone = false;
+    void update.then(() => (updateDone = true));
+    const cancelled = await staffChange(db, { workspaceId: userId, bookingId: b.id, version: 2, action: "cancel" }, "user:test");
+    expect(cancelled.result).toBe("done");
+    expect(updateDone).toBe(true);
+    await runDueDeliveries(db, key, urls);
+    await update;
+    expect(cal.events.get(id)!.status).toBe("cancelled");
   });
 });
