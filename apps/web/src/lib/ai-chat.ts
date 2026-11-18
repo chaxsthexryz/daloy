@@ -26,3 +26,36 @@ export function connectedApps(connected: ReadonlySet<string>): string[] {
 export function approvalWanted(turns: Turn[]): boolean {
   return turns.some((turn) => turn.role === "user" && /approv|sign.?off/i.test(turn.text));
 }
+
+export type ChatPhase = "idle" | "thinking" | "asking" | "summary" | "turning-on" | "on" | "error";
+export type ChatState = { phase: ChatPhase; turns: Turn[]; draft: Draft | null; error: string };
+export type ChatReply = { kind: "question"; text: string; choices: string[] } | ({ kind: "draft" } & Draft);
+export type ChatEvent =
+  | { type: "send"; text: string }
+  | { type: "reply"; reply: ChatReply }
+  | { type: "turnOn" }
+  | { type: "turnedOn" }
+  | { type: "failed"; message: string }
+  | { type: "reset" };
+
+/** Nothing here turns an automation on by itself: a draft always lands in "summary", and only turnOn leaves it. */
+export function chatStep(s: ChatState, e: ChatEvent): ChatState {
+  const busy = s.phase === "thinking" || s.phase === "turning-on";
+  switch (e.type) {
+    case "send":
+      return busy ? s : { ...s, phase: "thinking", turns: [...s.turns, { role: "user", text: e.text }], error: "" };
+    case "reply":
+      if (s.phase !== "thinking") return s;
+      if (e.reply.kind === "question") return { ...s, phase: "asking", turns: [...s.turns, { role: "assistant", text: e.reply.text, choices: e.reply.choices }] };
+      return { ...s, phase: "summary", draft: { name: e.reply.name, summary: e.reply.summary, definition: e.reply.definition, warnings: e.reply.warnings }, turns: [...s.turns, { role: "assistant", text: e.reply.summary }] };
+    case "turnOn":
+      return s.phase === "summary" && s.draft ? { ...s, phase: "turning-on", error: "" } : s;
+    case "turnedOn":
+      return s.phase === "turning-on" ? { ...s, phase: "on" } : s;
+    case "failed":
+      if (s.phase === "turning-on") return { ...s, phase: "summary", error: e.message };
+      return s.phase === "thinking" ? { ...s, phase: "error", error: e.message } : s;
+    case "reset":
+      return { phase: "idle", turns: [], draft: null, error: "" };
+  }
+}

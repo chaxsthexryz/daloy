@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 
-// Build with AI as a chat (#/ai): the model asks, the person answers, the draft stays on the page until Save as draft.
+// Build with AI as a chat (#/ai): the model asks, the person answers, the draft stays on the page until Turn it on or Save as draft (decision 0049).
 async function signUp(page: Page) {
   const email = `bwa-${Date.now()}-${Math.floor(Math.random() * 1e6)}@test.local`;
   await page.goto("/");
@@ -13,6 +13,17 @@ async function signUp(page: Page) {
 }
 
 const count = async (page: Page) => ((await (await page.request.get("/workflows")).json()) as unknown[]).length;
+
+/** The summary card is the last bubble; nothing exists until Turn it on. */
+async function summaryThenTurnOn(page: Page, before: number) {
+  await expect(page.getByRole("button", { name: "Turn it on", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Change something", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Save as draft", exact: true })).toBeVisible();
+  await expect(page).toHaveURL(/#\/ai$/);
+  expect(await count(page)).toBe(before);
+  await page.getByRole("button", { name: "Turn it on", exact: true }).click();
+  await expect(page).toHaveURL(/#\/w\/[^/]+$/);
+}
 
 /** Opens #/ai, sends the first message, and records every chat call and every workflow write. */
 async function start(page: Page, message: string) {
@@ -31,7 +42,7 @@ async function start(page: Page, message: string) {
   return { chats, posts };
 }
 
-test("asks a question with chips, then turns the automation on by itself", async ({ page }) => {
+test("asks a question with chips, then waits for Turn it on", async ({ page }) => {
   const email = await signUp(page);
   const before = await count(page);
   const { chats } = await start(page, "Please ask me a question first: thanks after my contact form.");
@@ -41,8 +52,8 @@ test("asks a question with chips, then turns the automation on by itself", async
   await expect(page.getByText("What starts it?")).toBeVisible();
   await answer.click();
 
-  // A draft the checker finds nothing wrong with is created and turned on without another press.
-  await expect(page).toHaveURL(/#\/w\/[^/]+$/);
+  // A clean draft still waits: the summary card shows, nothing is created, until the owner presses Turn it on.
+  await summaryThenTurnOn(page, before);
   await expect(page.getByText("Version 1 (live)")).toBeVisible();
   expect(await count(page)).toBe(before + 1);
 
@@ -56,11 +67,12 @@ test("asks a question with chips, then turns the automation on by itself", async
 
 test("a typed answer is sent as typed, not forced to a chip", async ({ page }) => {
   await signUp(page);
+  const before = await count(page);
   const { chats } = await start(page, "Please ask me a question first: thanks after my contact form.");
   await expect(page.getByRole("button", { name: "On a schedule", exact: true })).toBeVisible();
   await page.getByLabel("What should happen?").fill("Someone fills the form on my website");
   await page.getByRole("button", { name: "Send", exact: true }).click();
-  await expect(page).toHaveURL(/#\/w\/[^/]+$/);
+  await summaryThenTurnOn(page, before);
   expect(chats).toHaveLength(2);
   expect(chats[1]).toContain("Someone fills the form on my website");
 });
@@ -80,8 +92,9 @@ test("a draft with warnings waits, and a change carries it", async ({ page }) =>
 
   await page.getByLabel("What should change?").fill("Wait one day before the email.");
   await page.getByRole("button", { name: "Send", exact: true }).click();
-  await expect(page).toHaveURL(/#\/w\/[^/]+$/);
+  await expect(page.getByRole("button", { name: "Turn it on", exact: true })).toBeVisible();
   expect(chats.at(-1)).toContain('"current"');
+  await summaryThenTurnOn(page, before);
   expect(await count(page)).toBe(before + 1);
 });
 
@@ -113,4 +126,36 @@ test("owners see Build with AI in the menu, and an AI link in the phone bottom b
   await expect(ai).toHaveAttribute("href", "#/ai");
   await ai.click();
   await expect(page.getByRole("heading", { name: "Build with AI", level: 1 })).toBeVisible();
+});
+
+test("Enter sends, Shift+Enter is a newline", async ({ page }) => {
+  await signUp(page);
+  const chats: string[] = [];
+  page.on("request", (r) => {
+    if (r.method() === "POST" && new URL(r.url()).pathname === "/ai/chat") chats.push(r.postData() ?? "");
+  });
+  await page.goto("/#/ai");
+  const box = page.getByLabel("What should happen?");
+  await box.fill("Please ask me a question first: thanks after my contact form.");
+  await box.press("Shift+Enter");
+  await expect(box).toHaveValue(/form\.\n$/);
+  expect(chats).toHaveLength(0);
+  await box.press("Enter");
+  await expect(page.getByText("What starts it?")).toBeVisible();
+  expect(chats).toHaveLength(1);
+});
+
+test("a starter chip fills the box and sends nothing", async ({ page }) => {
+  await signUp(page);
+  const chats: string[] = [];
+  page.on("request", (r) => {
+    if (r.method() === "POST" && new URL(r.url()).pathname === "/ai/chat") chats.push(r.postData() ?? "");
+  });
+  await page.goto("/#/ai");
+  await expect(page.getByText("Nothing goes live until you press Turn it on.")).toBeVisible();
+  for (const role of ["Freelancer", "Small shop", "Salon", "Virtual assistant"]) await expect(page.getByRole("button", { name: new RegExp(`^${role}`) })).toBeVisible();
+  await page.getByRole("button", { name: /^Freelancer/ }).click();
+  await expect(page.getByLabel("What should happen?")).not.toHaveValue("");
+  await expect(page.getByRole("log", { name: "Conversation" })).toHaveCount(0);
+  expect(chats).toHaveLength(0);
 });

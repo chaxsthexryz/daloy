@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { approvalWanted, askedCount, connectedApps, MAX_MESSAGES, wire, type Turn } from "./ai-chat";
+import { approvalWanted, askedCount, chatStep, connectedApps, MAX_MESSAGES, wire, type ChatState, type Draft, type Turn } from "./ai-chat";
 
 const turn = (role: "user" | "assistant", text: string): Turn => ({ role, text });
 
@@ -42,5 +42,43 @@ describe("approvalWanted", () => {
     expect(approvalWanted([turn("user", "I sign off on every purchase")])).toBe(true);
     // Only the person's words count, not the model's question.
     expect(approvalWanted([turn("assistant", "Does someone approve this?")])).toBe(false);
+  });
+});
+
+describe("chatStep", () => {
+  const draft = { name: "Thank-you", summary: "Emails a thank-you.", definition: { steps: [] }, warnings: [] } as unknown as Draft;
+  const start: ChatState = { phase: "idle", turns: [], draft: null, error: "" };
+  const drafted = (warnings: string[] = []) => chatStep(chatStep(start, { type: "send", text: "thank people" }), { type: "reply", reply: { kind: "draft", ...draft, warnings } });
+
+  it("a draft with zero warnings still stops at the summary, never turning on", () => {
+    const s = drafted([]);
+    expect(s.phase).toBe("summary");
+    expect(s.draft).toEqual(draft);
+    expect(s.turns.at(-1)!.role).toBe("assistant");
+  });
+
+  it("only turnOn reaches turning-on, and only from the summary", () => {
+    expect(chatStep(drafted(), { type: "turnOn" }).phase).toBe("turning-on");
+    const asking = chatStep(chatStep(start, { type: "send", text: "x" }), { type: "reply", reply: { kind: "question", text: "When?", choices: ["A"] } });
+    for (const s of [start, chatStep(start, { type: "send", text: "x" }), asking]) expect(chatStep(s, { type: "turnOn" })).toBe(s);
+    expect(chatStep(drafted(), { type: "turnedOn" }).phase).toBe("summary");
+    expect(chatStep(chatStep(drafted(), { type: "turnOn" }), { type: "turnedOn" }).phase).toBe("on");
+  });
+
+  it("goes asking, send, thinking, draft, summary", () => {
+    const asking = chatStep(chatStep(start, { type: "send", text: "x" }), { type: "reply", reply: { kind: "question", text: "When?", choices: ["A form"] } });
+    expect(asking.phase).toBe("asking");
+    expect(asking.turns.at(-1)).toEqual({ role: "assistant", text: "When?", choices: ["A form"] });
+    const thinking = chatStep(asking, { type: "send", text: "A form" });
+    expect(thinking.phase).toBe("thinking");
+    expect(chatStep(thinking, { type: "reply", reply: { kind: "draft", ...draft } }).phase).toBe("summary");
+  });
+
+  it("a failed turn-on goes back to the summary with the draft and the error", () => {
+    const s = chatStep(chatStep(drafted(), { type: "turnOn" }), { type: "failed", message: "Slack is not connected" });
+    expect(s).toMatchObject({ phase: "summary", error: "Slack is not connected" });
+    expect(s.draft).toEqual(draft);
+    expect(chatStep(chatStep(start, { type: "send", text: "x" }), { type: "failed", message: "down" }).phase).toBe("error");
+    expect(chatStep(s, { type: "reset" })).toEqual(start);
   });
 });

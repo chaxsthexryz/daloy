@@ -367,7 +367,7 @@ fieldset .check { min-height: var(--target); font-size: var(--text-md); }
 .choice input { width: auto; min-height: 0; margin-top: var(--space-1); }
 .choice label { display: flex; flex-direction: column; gap: var(--space-1); }
 .chat { list-style: none; padding: 0; margin: 0 0 var(--space-2); display: flex; flex-direction: column; gap: var(--space-2); }
-.chat li { padding: var(--space-2) var(--space-3); border-radius: var(--radius-md); background: var(--surface); border: var(--border-width) solid var(--border-soft); }
+.chat > li { padding: var(--space-2) var(--space-3); border-radius: var(--radius-md); background: var(--surface); border: var(--border-width) solid var(--border-soft); }
 .chat .chat-error { color: var(--danger); }
 
 .demo-question { margin: var(--space-4) 0 0; padding: var(--space-4); background: var(--surface); border: var(--border-width) solid var(--border-soft); border-radius: var(--radius-md); }
@@ -446,6 +446,12 @@ fieldset .check { min-height: var(--target); font-size: var(--text-md); }
   .chat-dots i:nth-child(3) { animation-delay: 0.3s; }
 }
 .chat-input textarea { width: 100%; }
+.chat-line { overflow-wrap: anywhere; }
+.chat-line.chat-draft { max-width: 100%; }
+.chat-draft h2 { margin-top: 0; }
+.ai-build:not(.ai-empty) .composer { position: sticky; bottom: 0; background: var(--bg); padding-block: var(--space-3); }
+.ai-build:not(.ai-empty) .composer textarea { min-height: 4.5rem; }
+.ai-starters strong { font-weight: var(--weight-medium); }
 /* The empty Build with AI page is one centered composer, with the conversation growing above it. */
 .ai-empty { display: flex; flex-direction: column; justify-content: center; min-height: 62vh; }
 .composer textarea { width: 100%; font-size: var(--text-md); }

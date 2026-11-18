@@ -13,8 +13,8 @@ const QUESTIONS: { key: Which; label: string }[] = [
   { key: "next", label: "What do I do now?" },
 ];
 
-/** #/ai with AI_ASK on (decision 0041): pick a request by reference and read Daloy's fixed answers. Links only; the optional reword costs one AI action and changes no run. */
-export function AskRequest() {
+/** AI_ASK (decision 0041): read Daloy's fixed answers for a request. With `reference` (from a run) nothing is typed; without it you pick one. Links only; the optional reword costs one AI action and changes no run. */
+export function AskRequest({ reference }: { reference?: string } = {}) {
   const { t, language: workspaceLanguage } = useLanguage();
   const [recent, setRecent] = useState<Recent[]>([]);
   const [text, setText] = useState("");
@@ -26,11 +26,12 @@ export function AskRequest() {
   const [wording, setWording] = useState<{ busy: boolean; text: string; error: string }>({ busy: false, text: "", error: "" });
 
   useEffect(() => {
+    if (reference) return void load(reference);
     api<Recent[]>("GET", "/runs?state=problem").then(
       (list) => setRecent(list.filter((r) => r.reference).slice(0, 5)),
       () => setRecent([]),
     );
-  }, []);
+  }, [reference]);
 
   async function load(reference: string) {
     const ref = reference.trim();
@@ -75,7 +76,8 @@ export function AskRequest() {
   const shown = reply ? (reply.answers[which] ?? reply.answers.happened) : null;
   return (
     <section className="demo-card" aria-labelledby="ask-title">
-      <h2 id="ask-title">{t("Ask about a request")}</h2>
+      <h2 id="ask-title">{reference ? t("Ask what happened") : t("Ask about a request")}</h2>
+      {!reference && (
       <form onSubmit={submit}>
         <div className="field">
           <label htmlFor="ask-reference">{t("Request reference")}</label>
@@ -101,6 +103,7 @@ export function AskRequest() {
           </button>
         </div>
       </form>
+      )}
       <p role="status" className="muted">
         {busy ? t("Looking up the request...") : ""}
       </p>

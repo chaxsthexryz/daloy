@@ -54,13 +54,15 @@ function duration(seconds: number, language: Language): string {
 function sentence(step: WorkflowDefinition["steps"][number], language: Language): string {
   const t = (source: string, values?: Record<string, string | number>) => translate(language, source, values);
   const c = (step.config ?? {}) as Record<string, unknown>;
+  // The form sender's address is a template; say who it is in words.
+  const who = (v: unknown) => text(v, t("someone")).replace(/{{s*trigger.emails*}}/g, t("the person who filled the form"));
   switch (step.type) {
     case "email": {
       const subject = text(c.subject, "");
-      return t("Email {recipient}{subject}", { recipient: text(c.to, t("someone")), subject: subject ? t(" (subject: {subject})", { subject }) : "" });
+      return t("Email {recipient}{subject}", { recipient: who(c.to), subject: subject ? t(" (subject: {subject})", { subject }) : "" });
     }
     case "outlook":
-      return t("Email {recipient} from Outlook", { recipient: text(c.to, t("someone")) });
+      return t("Email {recipient} from Outlook", { recipient: who(c.to) });
     case "approval":
       return t("Ask {person} to approve: {subject}", { person: text(c.approver, text(c.to, t("someone"))), subject: text(c.subject, t("this")) });
     case "sheets":
