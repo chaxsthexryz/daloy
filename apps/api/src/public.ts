@@ -1,6 +1,6 @@
 import { publicCopy } from "./public-copy";
 import { createHmac, randomInt, randomUUID, timingSafeEqual } from "node:crypto";
-import { workspaceLanguage, businessProfiles, connectionCredential, connections, createKeyedRun, createRun, eventSeen, markPaymentPaid, markPaymentRefunded, paymongoMode, publishedVersion, readSecret, recordEvent, requests, runs, triggers, verifyPaymongoSignature, workflows, type Db, type Payment } from "@daloy/db";
+import { readBrand, workspaceLanguage, businessProfiles, connectionCredential, connections, createKeyedRun, createRun, eventSeen, markPaymentPaid, markPaymentRefunded, paymongoMode, publishedVersion, readSecret, recordEvent, requests, runs, triggers, verifyPaymongoSignature, workflows, type Db, type Payment } from "@daloy/db";
 import { definitionSchema, OFFICE_REQUEST, parsePayload, PURCHASE_REQUEST, type FormField, type Resource } from "@daloy/engine";
 import {
   BadRequestException,
@@ -177,7 +177,7 @@ export class FormsController {
   @Header("Cache-Control", "no-store")
   async page(@Param("id", new ZodPipe(z.uuid())) id: string) {
     const { fields, tracked, businessName, workflow } = await this.form(id);
-    return renderForm(fields, await resourcesFor(this.db, workflow.userId, fields), tracked ? randomUUID() : undefined, businessName ?? undefined, await workspaceLanguage(this.db, workflow.userId));
+    return renderForm(fields, await resourcesFor(this.db, workflow.userId, fields), tracked ? randomUUID() : undefined, businessName ?? undefined, await workspaceLanguage(this.db, workflow.userId), await pageBrand(this.db, workflow.userId));
   }
 
   @Post(FORM_PATHS)
@@ -188,14 +188,15 @@ export class FormsController {
     const { fields, versionId, workflow, tracked } = await this.form(id);
     const language = await workspaceLanguage(this.db, workflow.userId);
     const copy = publicCopy[language];
+    const brand = await pageBrand(this.db, workflow.userId);
     // Bots fill every field. Answer as if it worked so they learn nothing.
-    if (body?.[HONEYPOT]) return page(copy.thanks, copy.form, language);
+    if (body?.[HONEYPOT]) return page(copy.thanks, copy.form, language, brand);
     const parsed = parsePayload(fields, body ?? {}, { resources: await resourcesFor(this.db, workflow.userId, fields) });
     if (!parsed.ok) throw new BadRequestException(parsed.errors);
     if (!tracked) {
       const runId = await createRun(this.db, versionId, parsed.data);
       await enqueueRun(this.boss, runId);
-      return page(copy.thanks, copy.form, language);
+      return page(copy.thanks, copy.form, language, brand);
     }
 
     const key = z.uuid().safeParse(body?.[SUBMISSION_KEY]);
@@ -210,6 +211,7 @@ export class FormsController {
       `<h1>${copy.received}</h1><p>${copy.reference} <strong>${reference}</strong>. ${copy.receipt}</p><p><a href="">${copy.another}</a></p>`,
       copy.received,
       language,
+      brand,
     );
   }
 
@@ -264,11 +266,23 @@ export async function recordRequest(db: Db, workflow: { id: string; userId: stri
 const ENTITIES: Record<string, string> = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
 export const escapeHtml = (s: string) => s.replace(/[&<>"']/g, (c) => ENTITIES[c]!);
 
-export const page = (body: string, title = "Form", language: "en" | "tl" = "en") =>
-  `<!doctype html><html lang="${language}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${title}</title></head><body><main>${body}</main></body></html>`;
+/** What the owner's brand adds to a public page. accent is a checked #rrggbb and ink the readable text colour on it. */
+export type PageBrand = { id: string; name: string | null; accent: string | null; ink: string | null; logo: boolean };
+
+export async function pageBrand(db: Db, workspaceId: string): Promise<PageBrand | undefined> {
+  const brand = await readBrand(db, workspaceId);
+  return brand ? { id: workspaceId, name: brand.name, accent: brand.accent, ink: brand.ink, logo: !!brand.logo } : undefined;
+}
+
+const brandHead = (b: PageBrand) =>
+  `<style>header img{max-height:64px;max-width:240px}${b.accent ? `h1{border-bottom:4px solid ${b.accent};padding-bottom:.3em}button{background:${b.accent};color:${b.ink};border:0;padding:.6em 1.2em;border-radius:4px;font:inherit;cursor:pointer}` : ""}</style>`;
+const brandLogo = (b: PageBrand) => (b.logo ? `<header><img src="/brand/logo/${b.id}" alt="${escapeHtml(b.name ?? "")}"></header>` : "");
+
+export const page = (body: string, title = "Form", language: "en" | "tl" = "en", brand?: PageBrand) =>
+  `<!doctype html><html lang="${language}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${title}</title>${brand ? brandHead(brand) : ""}</head><body>${brand ? brandLogo(brand) : ""}<main>${body}</main></body></html>`;
 
 /** businessName comes from the owner's profile, so a form behind a website's contact button says whose form it is. */
-export function renderForm(fields: FormField[], resources: Resource[], submissionKey?: string, businessName?: string, language: "en" | "tl" = "en") {
+export function renderForm(fields: FormField[], resources: Resource[], submissionKey?: string, businessName?: string, language: "en" | "tl" = "en", brand?: PageBrand) {
   const copy = publicCopy[language];
   const inputs = fields
     .map((f) => {
@@ -289,5 +303,5 @@ export function renderForm(fields: FormField[], resources: Resource[], submissio
   const honeypot = `<div aria-hidden="true" style="position:absolute;left:-9999px"><label for="${HONEYPOT}">Website</label><input id="${HONEYPOT}" name="${HONEYPOT}" tabindex="-1" autocomplete="off"></div>`;
   const key = submissionKey ? `<input type="hidden" name="${SUBMISSION_KEY}" value="${submissionKey}">` : "";
   const heading = businessName ? `<h1>${escapeHtml(businessName)}</h1>` : "";
-  return page(`${heading}<form method="post">${inputs}${honeypot}${key}<button type="submit">${copy.send}</button></form>`, businessName ? escapeHtml(businessName) : copy.form, language);
+  return page(`${heading}<form method="post">${inputs}${honeypot}${key}<button type="submit">${copy.send}</button></form>`, businessName ? escapeHtml(businessName) : copy.form, language, brand);
 }
