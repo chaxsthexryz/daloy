@@ -1,7 +1,7 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { approvals, bookings, deliveries, encryptSecret, hashToken, joinWorkspace, payments, recordDecision, resources, runs, saveAiSettings, saveConnection, secrets, stepRuns, usageClaims, users, workflows, workflowVersions, type Db } from "@daloy/db";
+import { approvals, bookings, deliveries, encryptSecret, hashToken, joinWorkspace, payments, recordDecision, resources, runs, saveAiSettings, saveConnection, secrets, stepRuns, usageClaims, usageCounts, manilaDay, users, workflows, workflowVersions, type Db } from "@daloy/db";
 import type { Step } from "@daloy/engine";
 import { eq } from "drizzle-orm";
 import nodemailer, { type SendMailOptions, type Transporter } from "nodemailer";
@@ -372,6 +372,18 @@ describe("step executor", () => {
     const [sr] = await db.insert(stepRuns).values({ runId: r!.id, stepId: "ask", attempt: 1, state: "running" }).returning();
     return { runId: r!.id, stepRunId: sr!.id };
   }
+
+  it("counts every recipient of an approval email, so one unit left refuses two recipients", async () => {
+    const [u] = await db.insert(users).values({ email: "capped@test.local", passwordHash: "x", plan: "pilot" }).returning();
+    await db.insert(usageCounts).values({ userId: u!.id, kind: "email", period: manilaDay(), used: 99 });
+    const { runId, stepRunId } = await waitingApprovalStep();
+    const step: Step = { id: "ask", type: "approval", config: { to: "a@example.com, b@example.com", subject: "Buy?", message: "A printer", timeoutSeconds: 3600 } };
+    const mails = sent.length;
+    const err = await executor().execute({ runId, stepRunId, userId: u!.id, step, attempt: 1, idempotencyKey: `${runId}:ask:1`, ctx: { trigger: {}, steps: {} } }).catch((e: unknown) => e);
+    expect(err).toMatchObject({ message: expect.stringMatching(/limit of 100 email recipients/) });
+    expect(sent).toHaveLength(mails);
+    expect(await db.select().from(approvals).where(eq(approvals.stepRunId, stepRunId))).toHaveLength(0);
+  });
 
   it("sends a named approval to the approver's sign-in email and stores who may decide (decision 0022)", async () => {
     const [maria] = await db.insert(users).values({ email: "maria@test.local", passwordHash: "x" }).returning();

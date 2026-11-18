@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
-import { aiConnection, localConnection, presetConnection, PRESET_IDS, PRESETS, readAiSettings, saveAiSettings, type AiConnection, type Db } from "@daloy/db";
+import { aiConnection, claimUsage, localConnection, presetConnection, PRESET_IDS, PRESETS, QuotaError, readAiSettings, saveAiSettings, type AiConnection, type Db } from "@daloy/db";
 import { aiConfigSchema, aiOutputSchema, buildPrompt, TEMPLATES } from "@daloy/engine";
 import { generate, listModels, LlmError } from "@daloy/llm-ts";
-import { BadRequestException, Body, Controller, Get, HttpCode, Inject, Post, Put, UseGuards } from "@nestjs/common";
+import { BadRequestException, Body, Controller, Get, HttpCode, HttpException, HttpStatus, Inject, Post, Put, UseGuards } from "@nestjs/common";
 import * as z from "zod";
 import { SessionGuard } from "./auth";
 import { Allow, CONFIG, CurrentUser, DB, RateLimit, ZodPipe, type ApiConfig, type SessionUser, MANAGE } from "./http";
@@ -145,6 +145,9 @@ export class SettingsController {
   @UseGuards(RateLimit(10))
   async test(@CurrentUser() user: SessionUser) {
     const { model, ...connection } = await aiConnection(this.db, this.config.secretsKey, user.workspaceId);
+    await claimUsage(this.db, user.workspaceId, "ai").catch((err: unknown) => {
+      throw err instanceof QuotaError ? new HttpException({ message: err.message }, HttpStatus.TOO_MANY_REQUESTS) : err;
+    });
     const started = Date.now();
     try {
       const { data, usage } = await generate({ ...buildPrompt(classify, SAMPLE), schema: aiOutputSchema(classify), model, connection, temperature: 0, maxTokens: 256, timeoutMs: 30_000 });

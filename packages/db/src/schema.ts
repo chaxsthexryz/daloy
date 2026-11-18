@@ -180,6 +180,8 @@ export const emailSources = pgTable("email_sources", {
   nextPollAt: ts("next_poll_at").notNull().defaultNow(),
   lastCheckedAt: ts("last_checked_at"),
   lastError: text("last_error"),
+  // Transient read failures in a row: the next poll waits longer after each one (security review M13).
+  failures: integer("failures").notNull().default(0),
   createdAt: createdAt(),
 }, (t) => [check("email_sources_status", sql`${t.status} in ('pending', 'active', 'failed', 'disconnected')`)]);
 
@@ -625,6 +627,9 @@ export const calendarEvents = pgTable("calendar_events", {
   userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   title: text("title").notNull(),
   description: text("description").notNull().default(""),
+  // Where the event was last written. Later syncs of this booking go there, never to a calendar chosen since (security review M11).
+  account: text("account"),
+  calendarId: text("calendar_id"),
   updatedAt: ts("updated_at").notNull().defaultNow(),
 });
 

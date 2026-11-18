@@ -6,7 +6,7 @@ import type { Db } from "./index";
 import { airtableAdd, appendRowOnce, driveUpload, type DriveDestination, notionAddPage, trelloAddCard, type TrelloCredential, deleteSheetMarker, outlookSend, ProviderError, serviceAccountSchema, slackPost, syncCalendarEvent, teamsPost, telegramSend, type CalendarDestination, type OutlookMessage, type ProviderErrorKind, type ProviderUrls, type SheetDestination } from "./providers";
 import { bookingSuperseded, supersededSql } from "./bookings";
 import { bookingForCalendar } from "./calendar";
-import { connections, deliveries, runs, type Provider } from "./schema";
+import { bookings, calendarEvents, connections, deliveries, runs, type Provider } from "./schema";
 import { readUpload } from "./uploads";
 
 /**
@@ -112,9 +112,15 @@ async function attempt(db: Db, key: Buffer, urls: ProviderUrls, d: Delivery): Pr
   } else if (d.pinnedAccount !== conn.account || !sameDestination(d.pinnedDestination, conn.destination)) {
     return {
       state: "needs_review",
-      error: `The ${name} connection changed since this was queued (it was for ${describe(d.provider, d.pinnedDestination ?? {})}, now ${describe(d.provider, conn.destination)}). Nothing was sent to the new one. Choose Post again to send it there, or Mark as posted.`,
+      error: d.provider === "google_calendar"
+        ? `The calendar connection changed since this event was created: it is still in ${describe(d.provider, d.pinnedDestination ?? {})}, and ${describe(d.provider, conn.destination)} is chosen now. Nothing was written to the new one. Choose Post again to write this change to the new calendar, or Mark as posted.`
+        : `The ${name} connection changed since this was queued (it was for ${describe(d.provider, d.pinnedDestination ?? {})}, now ${describe(d.provider, conn.destination)}). Nothing was sent to the new one. Choose Post again to send it there, or Mark as posted.`,
       kind: "destination_changed",
     };
+  }
+  // A table name can be renamed and reused by a collaborator, so only a table id is trusted.
+  if (d.provider === "airtable" && !conn.destination.tableId?.startsWith("tbl")) {
+    return { state: "failed", kind: "reconnect", error: "Airtable is connected by table name, which can point to another table after a rename. Reconnect Airtable with the table id (it starts with tbl), then retry." };
   }
   // Slack, Teams and Outlook have no read access to check with, so after a call that may have arrived a person decides.
   if (d.checkFirst && !repeatable(d.provider)) {
@@ -122,7 +128,7 @@ async function attempt(db: Db, key: Buffer, urls: ProviderUrls, d: Delivery): Pr
   }
   const destination = conn.destination;
   // null: the claim was lost partway through a Drive save, so the new holder owns what happens next.
-  const send = async (): Promise<Outcome | null> => {
+  const send = async (tx: Pick<Db, "select" | "update">): Promise<Outcome | null> => {
     if (d.provider === "google_sheets") {
       const sa = serviceAccountSchema.parse(JSON.parse(conn.credential));
       // Retrying the same marked write is safe: Google adds the row at most once (decision 0021).
@@ -131,9 +137,11 @@ async function attempt(db: Db, key: Buffer, urls: ProviderUrls, d: Delivery): Pr
     }
     if (d.provider === "google_calendar") {
       const { bookingId } = d.payload as { bookingId: string };
-      const b = await bookingForCalendar(db, d.userId, bookingId);
+      const b = await bookingForCalendar(tx, d.userId, bookingId);
       if (!b) return { state: "failed", error: "The booking or its calendar event details are gone, so nothing was sent.", kind: "invalid" };
-      const out = await syncCalendarEvent(urls, serviceAccountSchema.parse(JSON.parse(conn.credential)), (conn.destination as CalendarDestination).calendarId, bookingId, b, b);
+      const calendarId = (conn.destination as CalendarDestination).calendarId;
+      const out = await syncCalendarEvent(urls, serviceAccountSchema.parse(JSON.parse(conn.credential)), calendarId, bookingId, b, b);
+      await tx.update(calendarEvents).set({ account: conn.account, calendarId }).where(eq(calendarEvents.bookingId, bookingId));
       return { state: "delivered", result: { event: out.event, eventId: out.eventId } };
     }
     if (d.provider === "google_drive") {
@@ -176,7 +184,9 @@ async function attempt(db: Db, key: Buffer, urls: ProviderUrls, d: Delivery): Pr
       if (run && d.provider !== "google_calendar" && (await bookingSuperseded(tx, run, true))) {
         return { state: "failed", error: d.checkFirst ? `${BOOKING_CHANGED} An earlier attempt may have reached ${name}.` : BOOKING_CHANGED, kind: "booking_changed" } as const;
       }
-      return send();
+      // Shared lock on the booking until Google answers, so a cancel cannot commit under an older write (decision 0055).
+      if (d.provider === "google_calendar") await tx.execute(sql`select 1 from ${bookings} where ${bookings.id} = ${(d.payload as { bookingId: string }).bookingId} for share`);
+      return send(tx);
     });
   } catch (err) {
     const e = err instanceof ProviderError ? err : new ProviderError(err instanceof Error ? err.message : String(err), "unavailable");

@@ -12,9 +12,12 @@ type Q = Pick<Db, "select" | "insert">;
 /** Queues a delivery pinned to the calendar connection as it is now (empty pin: nothing connected yet, pinned on first send). */
 async function queueSync(q: Q, d: { userId: string; runId: string; stepId: string; reference: string; bookingId: string }) {
   const [conn] = await q.select({ account: connections.account, destination: connections.destination }).from(connections).where(and(eq(connections.userId, d.userId), eq(connections.provider, "google_calendar")));
+  // An event already written stays tied to that calendar, so a later switch cannot move a guest's booking elsewhere.
+  const [ev] = await q.select({ account: calendarEvents.account, calendarId: calendarEvents.calendarId }).from(calendarEvents).where(eq(calendarEvents.bookingId, d.bookingId));
+  const bound = ev?.account && ev.calendarId ? { account: ev.account, destination: { calendarId: ev.calendarId } } : conn;
   await q
     .insert(deliveries)
-    .values({ userId: d.userId, runId: d.runId, stepId: d.stepId, provider: "google_calendar", reference: d.reference, payload: { bookingId: d.bookingId }, pinnedAccount: conn?.account ?? "", pinnedDestination: conn?.destination ?? null })
+    .values({ userId: d.userId, runId: d.runId, stepId: d.stepId, provider: "google_calendar", reference: d.reference, payload: { bookingId: d.bookingId }, pinnedAccount: bound?.account ?? "", pinnedDestination: bound?.destination ?? null })
     .onConflictDoNothing({ target: [deliveries.runId, deliveries.stepId] });
   const [row] = await q.select().from(deliveries).where(and(eq(deliveries.runId, d.runId), eq(deliveries.stepId, d.stepId)));
   return row!;
@@ -52,7 +55,7 @@ export async function queueCalendarSync(q: Q, bookingId: string, version: number
 }
 
 /** The booking as the calendar should show it, with its event text. Undefined: no such booking of this workspace, or no event recorded. */
-export async function bookingForCalendar(db: Db, userId: string, bookingId: string) {
+export async function bookingForCalendar(db: Pick<Db, "select">, userId: string, bookingId: string) {
   const [r] = await db
     .select({
       status: bookings.status,
