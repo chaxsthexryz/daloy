@@ -2,6 +2,35 @@
 
 This file fixes the look of the Daloy console and its public landing page (phase V1). Phase V2 applies it to the console and phase W builds the landing page. Both should be able to work from this file and the mockups in `docs/design/` without making design decisions.
 
+## Automations homepage
+
+The owner approved this signed-in homepage on 18 November 2026. Use commit `c92ddc7` on `ui/automation-home` as the visual reference for `#/`. This section takes precedence over the earlier console mockup and palette for this page.
+
+### Recreate the layout
+
+1. Place the Daloy logo and wordmark at the top of the desktop sidebar. Group Automations, Activity and Bookings under **Work**. Group New automation and Build with AI under **Build**. Put Team, Apps, Business, Advanced and Settings under **Workspace**, with account controls at the bottom. Preserve the existing owner and operator permissions. [Navigation](apps/web/src/Nav.tsx) · [Logo](apps/web/public/logo.svg)
+2. Put **Automations** at the top of the page. For owners, place the Build with AI link beside the New automation button. Use Geist, with a medium-weight title and compact labels.
+3. Below the title, show **Automation status**, **Work queue** and **Recent activity**. Size the status bar segments from the actual On, Paused, Off and Draft counts. Queue counts filter the workflow list. Recent activity links to up to three runs, using the latest run per automation and sorting newest first.
+4. Place search and state filters immediately above the workflow cards. Keep each workflow’s name, state, last event and applicable actions together. Group unfinished guided setups under Drafts. Use the existing workspace data, translations and permissions. [Homepage component](apps/web/src/Automations.tsx)
+
+### Match the selected tab and page colours
+
+| Element | Approved treatment |
+| --- | --- |
+| Desktop surround and sidebar | Pale blue surround `#AED5F0`, warm black sidebar `#1A120F`, 14 px sidebar padding on each side |
+| Selected Automations tab | Soft charcoal fill `#353332`, light text `#F5F3F2`, 8 px corners, no shadow. Keep the full 14 px gap between the tab and the page. Use `aria-current="page"` and retain the keyboard focus indicator. |
+| Main surface and cards | Warm light gray page `#F1F1EF`, white cards `#FFFFFF`, main text `#201916`, secondary text `#635C58`. The homepage uses light mode even when the browser prefers dark mode. |
+| Spacing and shape | 22 px desktop page corners, 20 px overview panel corners, 17 px workflow card corners, 18 px card padding and 12 px gaps between cards |
+| Mobile selected tab | Light gray `#F3F3F3` with dark text `#1A120F` in the bottom navigation |
+
+### Check a future redesign
+
+- At 1180 px wide, check the three overview panels and the charcoal sidebar selection. Hover and keyboard-focus Automations. Its label should remain readable and the sidebar gap should stay visible.
+- At 1100 px and below, Recent activity spans the row beneath the first two panels. Below 800 px, use the bottom navigation and Menu button. At 650 px and below, stack the panels. Check at 390 px for horizontal overflow.
+- Switch the browser to dark mode and confirm the cards still render white. With sample workspace data, select Problem, narrow the results by name and open a recent run. Check the empty-workspace view as well.
+
+Keep homepage styling scoped to `.automation-home` and its shell. The responsive layout and tab colours live in [automation-home.css](apps/web/src/automation-home.css). The homepage light-mode rule lives in [styles.css](apps/web/src/styles.css).
+
 ## Direction
 
 The owner picked direction B, "Karatula" (a painted shop sign), over a quieter paper-and-ink direction, then adjusted it in review: the fonts and scroll animation of lettrim.com, thinner borders, blue as the main colour, softer state colours, and the scroll animation in the console as well as on the landing page.
