@@ -1,12 +1,13 @@
 import { randomUUID } from "node:crypto";
 import { hostname } from "node:os";
-import { clearSheetWriteKeys, createRun, planOf, PLANS, publishedVersion, runDueDeliveries, RUN_QUEUE, RUN_QUEUE_OPTIONS, runs, SCHEDULE_QUEUE, workflows, workflowVersions, type Db, type ProviderUrls } from "@daloy/db";
+import { clearSheetWriteKeys, createRun, planOf, PLANS, publishedVersion, runDueDeliveries, RUN_QUEUE, RUN_QUEUE_OPTIONS, runs, SCHEDULE_QUEUE, workflows, workflowVersions, type Db, type MailDeps, type ProviderUrls } from "@daloy/db";
 import type { RetryPolicy } from "@daloy/engine";
 import { and, eq, gt, inArray, isNull, lt, lte, or, sql } from "drizzle-orm";
 import { PgBoss } from "pg-boss";
 import { advance, type AdvanceDeps, type StepExecutor } from "./advance";
 import { pollEmailSources, type ImapAdapter } from "./email-in";
 import { connectImap } from "./imap";
+import { checkSchedules } from "./watchdog";
 
 export type WorkerOptions = {
   connectionString: string;
@@ -20,6 +21,8 @@ export type WorkerOptions = {
   migrate?: boolean;
   /** Delivers queued Sheets rows and Slack messages. Left out, deliveries wait in the table. */
   deliveries?: { secretsKey: Buffer; urls: ProviderUrls };
+  /** Flags scheduled automations that missed a run and emails their owner (N17). Left out, nothing is checked. */
+  watchdog?: { secretsKey: Buffer; mail: MailDeps; publicUrl?: string; intervalMs?: number };
   emailIn?: { secretsKey: Buffer; adapter?: ImapAdapter; intervalMs?: number };
 };
 export type Worker = Awaited<ReturnType<typeof startWorker>>;
@@ -116,6 +119,14 @@ export async function startWorker(opts: WorkerOptions) {
       }, (opts.pollingIntervalSeconds ?? 2) * 1000)
     : undefined;
 
+  let checking: Promise<void> | undefined;
+  const watchdogTimer = opts.watchdog ? setInterval(() => {
+    if (checking) return;
+    checking = checkSchedules({ db, ...opts.watchdog! })
+      .catch((err: unknown) => console.error("schedule watchdog failed", err))
+      .finally(() => { checking = undefined; });
+  }, opts.watchdog.intervalMs ?? 60_000) : undefined;
+
   let readingMail: Promise<void> | undefined;
   const emailStop = new AbortController();
   const emailTimer = opts.emailIn ? setInterval(() => {
@@ -132,10 +143,12 @@ export async function startWorker(opts: WorkerOptions) {
       clearInterval(sweepTimer);
       clearInterval(deliveryTimer);
       clearInterval(emailTimer);
+      clearInterval(watchdogTimer);
       emailStop.abort();
       await boss.stop({ graceful: true, timeout: 30_000 });
       await delivering;
       await readingMail;
+      await checking;
     },
   };
 }

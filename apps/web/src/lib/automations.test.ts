@@ -10,6 +10,7 @@ const LIST = [
   { id: "review", name: "Orders", createdAt: "5", live: true, last: last("running", true) },
   { id: "wait", name: "Booking reminder", createdAt: "6", live: true, last: last("waiting") },
 ];
+const MISSED = "2026-11-17T09:20:00Z";
 const ids = (l: { id: string }[]) => l.map((w) => w.id);
 
 describe("arrange", () => {
@@ -23,6 +24,15 @@ describe("arrange", () => {
     expect(ids(arrange(LIST, "", "problem").shown)).toEqual(["problem"]);
     expect(ids(arrange(LIST, "", "waiting").shown)).toEqual(["wait"]);
     expect(ids(arrange(LIST, "", "off").shown)).toEqual(["off"]);
+  });
+  it("treats a missed schedule as a problem, unless the last run needs a person", () => {
+    const list = [
+      { id: "missed", name: "Morning report", createdAt: "7", live: true, scheduleMissedAt: MISSED, last: last("succeeded") },
+      { id: "missed_review", name: "Orders by hand", createdAt: "8", live: true, scheduleMissedAt: MISSED, last: last("running", true) },
+      { id: "fine", name: "Weekly summary", createdAt: "9", live: true, scheduleMissedAt: null, last: last("succeeded") },
+    ];
+    expect(ids(arrange(list, "", "all").shown)).toEqual(["missed_review", "missed", "fine"]);
+    expect(ids(arrange(list, "", "problem").shown)).toEqual(["missed"]);
   });
   it("searches names, ignoring case and spaces around, in the list and the drafts", () => {
     expect(ids(arrange(LIST, "  ORDER ", "all").shown)).toEqual(["review"]);
