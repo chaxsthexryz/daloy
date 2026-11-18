@@ -65,7 +65,7 @@ async function owner() {
   const agent = request.agent(app.getHttpServer());
   const email = `mcp${++seq}@test.local`;
   await agent.post("/auth/register").send({ email, password: "correct horse battery" }).expect(201);
-  const token = (await agent.post("/tokens").send({ name: "claude" }).expect(201)).body as { id: string; token: string };
+  const token = (await agent.post("/tokens").send({ name: "claude", scopes: ["read", "run", "manage"] }).expect(201)).body as { id: string; token: string };
   const [user] = await db.select().from(users).where(eq(users.email, email));
   return { agent, token: token.token, tokenId: token.id, userId: user!.id };
 }
