@@ -10,8 +10,7 @@ async function buildDraft(page: Page, prefix: string, description: string, revie
 
   await page.goto("/#/ai");
   await page.getByLabel("What should happen?").fill(description);
-  await page.getByRole("button", { name: "Next" }).click();
-  for (const label of ["Someone fills a form", "Me", "Email", "No"]) await page.getByRole("button", { name: label, exact: true }).click();
+  await page.getByRole("button", { name: "Send", exact: true }).click();
   await expect(page.getByRole("heading", { name: `Check the draft: ${review}` })).toBeVisible();
   await page.getByRole("button", { name: "Save as draft" }).click();
 }

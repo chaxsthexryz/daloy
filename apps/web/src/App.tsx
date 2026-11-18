@@ -24,7 +24,7 @@ const ANSWER = /^#\/answer\/([A-Za-z0-9_-]{43})$/;
 const INVITE = /^#\/invite\/([A-Za-z0-9_-]{43})$/;
 
 /**
- * Hash routes (#/ is Automations, #/advanced the developer menu, #/w/<id>, #/w/<id>/runs, #/w/<id>/versions, #/runs/<id>, #/tokens, #/settings, #/settings/ai, #/settings/business, #/apps, #/activity, #/new, #/ai (Build with AI), #/resources, #/bookings,
+ * Hash routes (#/ is Automations, #/advanced the developer menu, #/w/<id>, #/w/<id>/runs, #/w/<id>/versions, #/runs/<id> (and #/runs/<id>/ask), #/tokens, #/settings, #/settings/ai, #/settings/business, #/apps, #/activity, #/new, #/ai (Build with AI), #/resources, #/bookings,
  * #/verify-sender/<token> for the Gmail confirmation link, #/team, #/invite/<token> for an invite link,
  * #/answer/<token> to sign in before a named approval (decision 0022),
  * #/try/office-request for the preview and #/a/<id> for a guided automation),
@@ -79,19 +79,20 @@ function Console({ hash }: { hash: string }) {
 }
 
 function Route({ hash, user }: { hash: string; user: User }) {
+  const canAsk = user.ask === true && (user.role === "owner" || user.role === "operator");
   const page = /^#\/w\/([0-9a-f-]{36})(?:\/(runs|versions))?$/.exec(hash);
-  if (page?.[2] === "runs") return <RunsPage key={page[1]} workflowId={page[1]!} />;
+  if (page?.[2] === "runs") return <RunsPage key={page[1]} workflowId={page[1]!} ask={canAsk} />;
   if (page?.[2] === "versions") return <VersionsPage key={page[1]} workflowId={page[1]!} />;
   if (page) return <Editor key={page[1]} id={page[1]!} />;
-  const run = /^#\/runs\/([0-9a-f-]{36})$/.exec(hash);
-  if (run) return <RunPage key={run[1]} runId={run[1]!} owner={user.role === "owner"} />;
+  const run = /^#\/runs\/([0-9a-f-]{36})(\/ask)?$/.exec(hash);
+  if (run) return <RunPage key={run[1]} runId={run[1]!} owner={user.role === "owner"} ask={canAsk} openAsk={!!run[2]} />;
   const guided = /^#\/a\/([0-9a-f-]{36})$/.exec(hash);
   if (guided) return <OfficeRequestPage key={guided[1]} id={guided[1]!} />;
-  if (hash === "#/activity" && (user.role === "owner" || user.role === "operator")) return <RunsPage />;
+  if (hash === "#/activity" && (user.role === "owner" || user.role === "operator")) return <RunsPage ask={canAsk} />;
   if (hash === "#/try/office-request") return <TryOfficeRequest email={user.email} />;
   if (hash === "#/advanced" && user.role === "owner") return <AdvancedPage />;
   if (hash === "#/new" && user.role === "owner") return <NewAutomationPage email={user.email} />;
-  if (hash === "#/ai" && user.role === "owner") return <BuildWithAiPage email={user.email} ask={user.ask === true} />;
+  if (hash === "#/ai" && user.role === "owner") return <BuildWithAiPage email={user.email} />;
   if (hash === "#/tokens") return <TokensPage />;
   if (hash === "#/settings") return <SettingsPage user={user} />;
   if (hash === "#/settings/ai") return <AiModelPage />;

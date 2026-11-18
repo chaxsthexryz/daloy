@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 
 const control = (slackMember: boolean) => fetch(`${process.env.E2E_PROVIDERS_URL}/__control`, { method: "POST", body: JSON.stringify({ slackMember }) });
 
-// N10b: Ask about a request. A request whose Slack note fails is the cheapest problem request with a reference.
+// N10b: Ask what happened, on the run page (N4g moved it off #/ai). A request whose Slack note fails is the cheapest problem request with a reference.
 test("an owner asks why a request stopped and only reads, nothing in the card changes the request", async ({ page, context }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Create an account instead" }).click();
@@ -47,9 +47,11 @@ test("an owner asks why a request stopped and only reads, nothing in the card ch
       await expect(row).toContainText("Slack note: The Slack app is not in that channel", { timeout: 1000 });
     }).toPass({ timeout: 30_000 });
 
-    await page.goto("/#/ai");
-    const card = page.getByRole("region", { name: "Ask about a request" });
-    await card.getByRole("button", { name: new RegExp(reference) }).click();
+    // Activity row link, then the run page region (decision 0049): no typing, the run's reference is loaded.
+    await page.goto("/#/activity");
+    await page.getByRole("row", { name: new RegExp(reference) }).getByRole("link", { name: "Ask what happened" }).click();
+    await expect(page).toHaveURL(/#\/runs\/[0-9a-f-]{36}\/ask$/);
+    const card = page.getByRole("region", { name: "Ask what happened" });
     await card.getByRole("button", { name: "Why did it stop?" }).click();
     await expect(card.locator("strong").first()).not.toHaveText("");
     await expect(card.getByRole("link", { name: "Open this request" })).toHaveAttribute("href", /#\/runs\/[0-9a-f-]{36}$/);

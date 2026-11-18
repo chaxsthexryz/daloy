@@ -82,6 +82,6 @@ test("a beginner previews, sets up, turns on and receives one office request", a
   const found = page.locator("tbody tr");
   await expect(found).toHaveCount(1);
   await expect(found).toContainText(reference);
-  await found.getByRole("link").click();
+  await found.getByRole("link").first().click();
   await expect(page.getByRole("heading", { name: "What happened" })).toBeVisible();
 });
