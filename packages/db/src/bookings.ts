@@ -3,6 +3,7 @@ import { formatZoned } from "@daloy/engine";
 import { and, asc, desc, eq, sql } from "drizzle-orm";
 import { queueCalendarSync } from "./calendar";
 import type { Db } from "./index";
+import { cancelRun } from "./runs";
 import { bookingChanges, bookingResults, bookings, resources, runs } from "./schema";
 
 /**
@@ -36,7 +37,7 @@ export type BookingView = {
   end: string;
   minutes: number;
   timezone: string;
-  status: "active" | "cancelled";
+  status: "active" | "cancelled" | "no_show";
   version: number;
 };
 
@@ -147,11 +148,15 @@ export async function bookFromStep(db: Db, at: { workspaceId: string; test: bool
 
 export type StaffRequest = { workspaceId: string; bookingId: string; version: number } & (
   | { action: "cancel" }
+  // A booking whose time has passed. newRun starts the follow-up in the same transaction; it is not linked to the booking.
+  | { action: "no_show"; newRun: (tx: Tx, booking: BookingView) => Promise<string> }
+  // Back to active, only while the follow-up of the no_show change it undoes can still be cancelled.
+  | { action: "undo_no_show" }
   // newRun starts the run for the new version, in the same transaction, and returns its id.
   | { action: "reschedule"; start: Date; newRun: (tx: Tx, booking: BookingView) => Promise<string> }
 );
-export type StaffReplay = { workspaceId: string; bookingId: string; version: number } & ({ action: "cancel" } | { action: "reschedule"; start: Date });
-export type StaffResult = { result: "done" | "duplicate" | "conflict" | "taken" | "not_found"; booking?: BookingView; runId?: string };
+export type StaffReplay = { workspaceId: string; bookingId: string; version: number } & ({ action: "cancel" | "no_show" | "undo_no_show" } | { action: "reschedule"; start: Date });
+export type StaffResult = { result: "done" | "duplicate" | "conflict" | "taken" | "not_found" | "started" | "not_yet"; booking?: BookingView; runId?: string };
 
 /** The stored answer when the logged change is this same one (same action, same start as an instant), else undefined. */
 function replayOf(prior: typeof bookingChanges.$inferSelect | undefined, req: StaffReplay): StaffResult | undefined {
@@ -184,24 +189,37 @@ export async function staffChange(db: Db, req: StaffRequest, actor: string): Pro
     if (!b) return { result: "not_found" };
     const [prior] = await tx.select().from(bookingChanges).where(and(eq(bookingChanges.bookingId, b.row.id), eq(bookingChanges.fromVersion, req.version)));
     if (prior) return replayOf(prior, req) ?? { result: "conflict", booking: view(b) };
-    if (b.row.version !== req.version || b.row.status !== "active") return { result: "conflict", booking: view(b) };
+    if (b.row.version !== req.version || b.row.status !== (req.action === "undo_no_show" ? "no_show" : "active")) return { result: "conflict", booking: view(b) };
+    if (req.action === "no_show" && b.start > new Date()) return { result: "not_yet", booking: view(b) };
 
     const version = b.row.version + 1;
     const start = req.action === "reschedule" ? req.start : b.start;
     const end = req.action === "reschedule" ? new Date(req.start.getTime() + (b.end.getTime() - b.start.getTime())) : b.end;
-    const status = req.action === "cancel" ? ("cancelled" as const) : ("active" as const);
+    const status = req.action === "cancel" ? ("cancelled" as const) : req.action === "no_show" ? ("no_show" as const) : ("active" as const);
     const next = view({ row: { ...b.row, status, version }, start, end, resourceName: b.resourceName });
     let runId: string | undefined;
+    let started = false;
     const free = await unlessTaken(tx, async (sp) => {
+      if (req.action === "undo_no_show") {
+        // The follow-up of the change this one undoes, which must still be waiting or pending.
+        const [mark] = await sp.select({ runId: bookingChanges.runId }).from(bookingChanges).where(and(eq(bookingChanges.bookingId, b.row.id), eq(bookingChanges.fromVersion, b.row.version - 1), eq(bookingChanges.action, "no_show")));
+        if (mark?.runId && !(await cancelRun(sp, req.workspaceId, mark.runId, actor))) {
+          started = true;
+          return;
+        }
+      }
       await sp.update(bookings).set({ during: range(start, end) as unknown as string, status, version, updatedAt: new Date() }).where(and(eq(bookings.id, b.row.id), eq(bookings.version, b.row.version)));
       if (req.action === "reschedule") {
         runId = await req.newRun(sp, next);
         await sp.update(runs).set({ bookingId: b.row.id, bookingVersion: version }).where(eq(runs.id, runId));
         await sp.update(bookings).set({ runId }).where(eq(bookings.id, b.row.id));
       }
+      if (req.action === "no_show") runId = await req.newRun(sp, next);
       await sp.insert(bookingChanges).values({ bookingId: b.row.id, fromVersion: b.row.version, action: req.action, start: req.action === "reschedule" ? start : null, runId, actor, result: { version, ...(runId ? { runId } : {}), booking: next } });
-      await queueCalendarSync(sp, b.row.id, version, runId ?? b.row.runId);
+      // The calendar event stays for a no-show: the booking was made and not kept, not cancelled.
+      if (req.action === "cancel" || req.action === "reschedule") await queueCalendarSync(sp, b.row.id, version, runId ?? b.row.runId);
     });
+    if (started) return { result: "started", booking: view(b) };
     if (!free) return { result: "taken", booking: view(b) };
     return { result: "done", booking: next, runId };
   });

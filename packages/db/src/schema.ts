@@ -444,7 +444,7 @@ export const bookings = pgTable(
       .references(() => resources.id),
     during: tstzrange("during").notNull(),
     timezone: text("timezone").notNull(),
-    status: text("status", { enum: ["active", "cancelled"] }).notNull().default("active"),
+    status: text("status", { enum: ["active", "cancelled", "no_show"] }).notNull().default("active"),
     version: integer("version").notNull().default(1),
     workflowId: uuid("workflow_id").references(() => workflows.id, { onDelete: "set null" }),
     // The run linked to the current version: the one that made the booking or its last change.
@@ -452,7 +452,7 @@ export const bookings = pgTable(
     createdAt: createdAt(),
     updatedAt: ts("updated_at").notNull().defaultNow(),
   },
-  (t) => [unique().on(t.userId, t.reference), check("bookings_status", sql`${t.status} in ('active', 'cancelled')`)],
+  (t) => [unique().on(t.userId, t.reference), check("bookings_status", sql`${t.status} in ('active', 'cancelled', 'no_show')`)],
 );
 
 /** What a booking step did, written with the change itself, so a retried or taken-over attempt never books twice. */
