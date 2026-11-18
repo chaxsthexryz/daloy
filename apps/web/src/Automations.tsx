@@ -141,6 +141,7 @@ function Card({ w, onCopy }: { w: Workflow; onCopy: (id: string, formId: string)
         </h2>
         <span className={`tag${w.live ? " ok" : ""}`}>{t(w.live ? "On" : "Off")}</span>
         {state && <span className={`state ${state.key}`}>{t(state.label)}</span>}
+        {w.scheduleMissedAt && <span className="state problem">{t("Missed its schedule")}</span>}
       </div>
       <p className="muted">
         {lastEvent(w.last ?? null, Date.now(), language)}

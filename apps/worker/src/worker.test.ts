@@ -398,3 +398,36 @@ describe("booking versions (decision 0032)", () => {
     expect((await waitForEnd(runId)).state).toBe("succeeded");
   });
 });
+
+describe("schedule watchdog in a running worker (N17)", () => {
+  it("flags a schedule that stopped, emails once, and clears the flag after the next fired run", async () => {
+    const [user] = await db.insert(users).values({ email: `dog${++seq}@test.local`, passwordHash: "x" }).returning();
+    const [wf] = await db.insert(workflows).values({ userId: user!.id, name: "Morning report", slug: `dog${seq}` }).returning();
+    const definition = { trigger: { type: "schedule", config: { cron: "* * * * *" } }, steps: [{ id: "a", type: "condition", config: { condition: "true" } }] };
+    await db.insert(workflowVersions).values({ workflowId: wf!.id, version: 1, definition, published: true, createdAt: new Date(Date.now() - 3_600_000) });
+    const outbox: string[][] = [];
+    const transport = { sendMail: async (m: { to: string[] }) => { outbox.push(m.to); return {}; } };
+    const watched = await startWorker({
+      connectionString: dbUrl, db, executor, pollingIntervalSeconds: 0.5, sweepMs: 60_000,
+      watchdog: { secretsKey: Buffer.alloc(32), mail: { installation: { transport: transport as never, from: "Daloy <daloy@localhost>" }, gmail: () => { throw new Error("unused"); }, sharedMail: "open" }, intervalMs: 100 },
+    });
+    const flagged = async () => (await db.select({ at: workflows.scheduleMissedAt }).from(workflows).where(eq(workflows.id, wf!.id)))[0]!.at;
+    const until = async (done: () => Promise<boolean>) => { for (let i = 0; i < 100 && !(await done()); i++) await new Promise((r) => setTimeout(r, 100)); };
+    try {
+      // Nothing fires the schedule, as if the worker had been down: it is flagged, and the owner gets one email.
+      await until(async () => (await flagged()) !== null);
+      expect(await flagged()).not.toBeNull();
+      await new Promise((r) => setTimeout(r, 500));
+      expect(outbox).toEqual([[user!.email]]);
+      // The schedule fires again: a run with firedAt is created and the flag goes.
+      const boss = new PgBoss({ connectionString: dbUrl });
+      await boss.start();
+      try { await boss.send(SCHEDULE_QUEUE, { workflowId: wf!.id }); } finally { await boss.stop({ graceful: false }); }
+      await until(async () => (await flagged()) === null);
+      expect(await flagged()).toBeNull();
+      expect(outbox).toHaveLength(1);
+    } finally {
+      await watched.stop();
+    }
+  });
+});
