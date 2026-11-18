@@ -223,11 +223,14 @@ Order: N3, N4, V1, then V2 and W together, N5 with the pilot search P in paralle
 - [x] N19. CSV export: download an automation's Activity (requests, state, dates, form fields) and Bookings as CSV, owner and operator only, with cells that start with = + - @ escaped so a spreadsheet does not run them. Exit: an API test checks the columns, the escaping and the role rules. (claimed: claude, branch n19-csv)
 - [x] N20. Two starter templates, no new code: Renewal reminders (a schedule plus a sheet of domains, hosting, SSL, permits and insurance, mailed 30 days ahead) and Shopify or WooCommerce orders (a webhook recipe). Do soon. (claimed: claude, branch n20-templates)
 - [x] N21. File upload on forms, and a Google Drive step that saves the files and photos a form receives into a folder (the existing service account). Size and type limits, never run or previewed as HTML. Later. (claimed: claude, branch n21-files)
-- [ ] N22. AI reads images and PDFs (the AI step takes text only today), then a "receipt photo to expense row" template: file to Drive, AI pulls out the shop and amount, a sheet row and an approval follow. Needs N21. Later.
+- [ ] N22. AI reads images and PDFs (the AI step takes text only today), then a "receipt photo to expense row" template: file to Drive, AI pulls out the shop and amount, a sheet row and an approval follow. Needs N21. Later. (claimed: claude, branch n22-vision)
 - [ ] N23. Invoice PDF and chase: a form becomes a PDF invoice by email, with reminders while unpaid. After the pilot; the Invoice follow-up template covers most of it now.
 - [ ] N24. Google Sheets through OAuth ("bring your own Google client", like Outlook), with the service account kept as the fallback. Needs the operator's own Google Cloud app; a verified public consent screen is out of scope. After the pilot.
 - [ ] N25. WhatsApp Cloud API delivery with approved message templates. Only if a pilot asks: Messenger and Viber are read more here, and it needs Meta approval and paid templates.
 - [ ] N11. Real accounts: final security review at the release commit covering N6 to N10, a daily recipient cap on Gmail and Outlook receipts, a timestamp in the webhook signature, MCP token scopes and expiry, password change and reset, per-workflow pause and cancel of a pending run, read-side secret redaction on every surface, a purge policy for retired secrets.
+  - [ ] N11a. Accounts: password change and reset (by email, single-use, short-lived link), MCP token scopes and expiry. (claimed: claude, branch n11a-accounts)
+  - [ ] N11b. Sending and runs: a daily recipient cap on Gmail and Outlook receipts, a timestamp in the webhook signature with a replay window, per-workflow pause, and cancel of a pending run. (claimed: claude, branch n11b-controls)
+  - [ ] N11c. Final security review at the release commit (Codex GPT-6.2 Astra, branch n11-review), then fixes for what it finds, including read-side secret redaction on every surface and a purge policy for retired secrets.
 
 Model and effort per open phase. One coordinator session (Opus 5.5) coordinates: it picks the model for each phase session, checks results, merges and pushes. Phase sessions run on Opus or Sonnet; the lead plans and reviews, and hands file-by-file edits and test runs to Sonnet subagents. Claude Code or ChatGPT Codex can take a phase; `AGENTS.md` has the shared rules and the claim step.
 
@@ -240,7 +243,8 @@ Model and effort per open phase. One coordinator session (Opus 5.5) coordinates:
 | N8 Tagalog | Sonnet 5.5, medium | GPT-6.1 Terra |
 | N9 email-in and embed form | Opus 5.5, high | GPT-6.1 Sol, High |
 | N10 AI helper | Opus 5.5, high | GPT-6.1 Sol, High |
-| N11 real accounts and security review | Opus 5.5, high | GPT-6 Astra, Extra High |
+| N11a accounts, N11b sending and runs | Opus 5.5, high | GPT-6.1 Sol, High |
+| N11c final security review | Opus 5.5, high | GPT-6.2 Astra, Extra High |
 | N12 PayMongo payments | Opus 5.5, high | GPT-6.1 Sol, High |
 | N13 Google Calendar | Sonnet 5.5, high | GPT-6.1 Sol, Medium |
 | N14 Telegram and Viber | Sonnet 5.5, medium | GPT-6.1 Sol, Medium |
