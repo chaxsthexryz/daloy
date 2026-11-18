@@ -9,7 +9,7 @@ type Booking = {
   start: string;
   end: string;
   timezone: string;
-  status: "active" | "cancelled";
+  status: "active" | "cancelled" | "no_show";
   version: number;
   attention: boolean;
   runId: string | null;
@@ -57,6 +57,18 @@ export function BookingsPage() {
       return t("{reference} is cancelled.", { reference: b.reference });
     });
   };
+  const noShow = (b: Booking) => {
+    if (!confirm(t("Mark {reference} as a no-show? The follow-up email to the guest starts. You can undo this until it has gone out.", { reference: b.reference }))) return;
+    return run(async () => {
+      await api("POST", `/bookings/${b.id}/no-show`, { version: b.version });
+      return t("{reference} is marked as a no-show. The follow-up has started.", { reference: b.reference });
+    });
+  };
+  const undoNoShow = (b: Booking) =>
+    run(async () => {
+      await api("POST", `/bookings/${b.id}/undo-no-show`, { version: b.version });
+      return t("{reference} is active again. The follow-up was stopped.", { reference: b.reference });
+    });
   const reschedule = (b: Booking, start: string) =>
     run(async () => {
       const r = await api<{ booking: Booking }>("POST", `/bookings/${b.id}/reschedule`, { version: b.version, start });
@@ -114,8 +126,10 @@ export function BookingsPage() {
                       <>
                         <button type="button" className="quiet" onClick={() => setMoving({ id: b.id, start: b.start.slice(0, 16) })}>{t("Reschedule")}</button>
                         <button type="button" className="quiet" onClick={() => cancel(b)}>{t("Cancel")}</button>
+                        {Date.parse(b.start) <= Date.now() && <button type="button" className="quiet" onClick={() => noShow(b)}>{t("Mark no-show")}</button>}
                       </>
                     )}
+                    {b.status === "no_show" && <button type="button" className="quiet" onClick={() => undoNoShow(b)}>{t("Undo no-show")}</button>}
                     {moving?.id === b.id && (
                       <form
                         className="row"

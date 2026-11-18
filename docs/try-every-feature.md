@@ -96,13 +96,9 @@ Features: booking trigger, Bookings page, reminders, cancel, no-show follow-up, 
 3. Turn it on. Book one slot about 10 minutes from now and a second slot for later.
 4. Bookings: cancel the second slot.
 5. Press Download CSV on Bookings.
-6. No-shows come in by webhook (there is no no-show button on Bookings yet; note it if you want one). Set up the Booking no-show follow-up template, turn it on, change its 1-hour delay to 1 minute for the test, and send:
+6. Set up the Booking no-show follow-up template, turn it on, and change its 1-hour delay to 1 minute for the test. Wait until the first booking's time has passed, open Bookings, press Mark no-show on it and confirm. (The button only shows for a booking whose time has passed; Undo no-show works until the follow-up email has gone out.)
 
-   ```bash
-   curl -X POST "PASTE_NO_SHOW_WEBHOOK_URL" -H "Content-Type: application/json" -d '{"status":"no_show","customer_email":"client@example.com","customer_name":"Ana"}'
-   ```
-
-Check: both bookings get a confirmation, the first gets its reminder about 5 minutes before, the cancelled one never gets a reminder (and its Calendar event is gone, if connected), and the no-show gets the rebooking email.
+Check: both bookings get a confirmation, the first gets its reminder about 5 minutes before, the cancelled one never gets a reminder (and its Calendar event is gone, if connected), and the no-show gets the rebooking email about a minute after you press the button, and pressing it twice sends only one.
 
 ## Mission 6: online shop order with payment
 
@@ -154,13 +150,7 @@ Open New automation and set up each of these once. Change the text to suit you, 
 
 Features: webhook trigger, signing secret, `X-Daloy-Timestamp`, the 5-minute replay window, "Require the timestamp", HTTP step, failure explanations.
 
-1. Save a signing secret. The console has no secrets page yet (finding to note), so while signed in, press F12, open Console, and paste this with a long random value of your own:
-
-   ```js
-   await fetch("/secrets/shop_hook", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ value: "PASTE_A_LONG_RANDOM_VALUE" }) })
-   ```
-
-   A `204` answer means it is saved. It can never be read back, so keep your copy for step 3.
+1. Save a signing secret. Open Advanced, then Secrets. Name it `shop_hook`, paste a long random value of your own into Value and press "Save secret". The field clears at once and the value can never be read back, so keep your copy for step 3. (Replace changes it later; Delete asks first.)
 2. New automation with a webhook trigger. Set "Signing secret name" to `shop_hook` and copy its URL.
 3. Add an AI step: "From this message, return the customer name, item and quantity." Then an HTTP step that posts to `https://example.invalid/orders` (this address never works, on purpose), then an email to yourself.
 4. Turn it on. Send a signed order from Git Bash (put in your URL and secret):

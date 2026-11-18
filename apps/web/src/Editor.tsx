@@ -422,6 +422,7 @@ function TriggerPanel({ trigger, wf, onChange }: { trigger: Trigger; wf: Loaded;
               {t("Signing secret name")} <span className="muted">{t("(optional)")}</span>
             </label>
             <input id={`${id}-hmac`} value={trigger.config.hmacSecret ?? ""} onChange={(e) => onChange({ type: "webhook", config: { ...trigger.config, hmacSecret: e.target.value || undefined, requireTimestamp: e.target.value ? (trigger.config.hmacSecret ? trigger.config.requireTimestamp : true) : undefined } })} />
+            <p className="muted hint"><a href="#/secrets">{t("Manage secrets")}</a></p>
           </div>
           {trigger.config.hmacSecret && (
             <div className="field">

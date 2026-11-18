@@ -11,7 +11,7 @@ function section(hash: string) {
   if (hash.startsWith("#/team")) return "Team";
   if (hash.startsWith("#/settings/business/outlook-") || hash === "#/apps" || hash.startsWith("#/verify-sender")) return "Apps";
   if (hash === "#/settings/business") return "Business";
-  if (/^#\/(advanced|tokens|settings|resources)/.test(hash)) return "Advanced";
+  if (/^#\/(advanced|tokens|secrets|settings|resources)/.test(hash)) return "Advanced";
   return "Automations";
 }
 

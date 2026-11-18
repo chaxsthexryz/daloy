@@ -12,6 +12,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { freshDatabase } from "../../../test/db";
 import { advance, type StepExecutor } from "../../worker/src/advance";
 import { createExecutor } from "../../worker/src/steps";
+import { TEMPLATES } from "@daloy/engine";
 import { createApp } from "./app";
 import { sha256 } from "./http";
 
@@ -471,5 +472,67 @@ describe("pause and staff changes (N11b)", () => {
     expect((await s.listed())[0]).toMatchObject({ version: 1, start: `${at("14:00")}:00+08:00` });
     await s.agent.post(`/workflows/${s.wf.id}/resume`).expect(204);
     await s.agent.post(`/bookings/${b!.id}/reschedule`).send({ version: 1, start: at("16:00") }).expect(200);
+  });
+});
+
+describe("no-show button (N27)", () => {
+  /** A booking whose time has passed, and the published no-show follow-up from the template. */
+  async function noShowSetup(withFollowUp = true) {
+    const s = await setup();
+    await s.book();
+    let followUp = "";
+    if (withFollowUp) {
+      followUp = ((await s.agent.post("/workflows").send({ name: "No-show", slug: "no-show-follow-up" }).expect(201)).body as { id: string }).id;
+      await s.agent.post(`/workflows/${followUp}/versions`).send({ definition: TEMPLATES.find((t) => t.slug === "no-show-follow-up")!.definition, publish: true }).expect(201);
+    }
+    const [b] = await s.listed();
+    const past = async () => void (await pool.query("update bookings set during = tstzrange(now() - interval '2 hours', now() - interval '1 hour', '[)') where id = $1", [b!.id]));
+    const followRuns = async () => (await pool.query<{ id: string; state: string; trigger_payload: Record<string, string> }>("select r.id, r.state, r.trigger_payload from runs r join workflow_versions v on v.id = r.workflow_version_id where v.workflow_id = $1", [followUp])).rows;
+    return { ...s, b: b!, past, followRuns };
+  }
+
+  it("marks a past booking and starts one follow-up run with the guest's details; a repeat starts no second", async () => {
+    const s = await noShowSetup();
+    await s.past();
+    const first = await s.agent.post(`/bookings/${s.b.id}/no-show`).send({ version: 1 }).expect(200);
+    expect(first.body).toMatchObject({ booking: { status: "no_show", version: 2 } });
+    expect(await s.followRuns()).toMatchObject([{ state: "pending", trigger_payload: { status: "no_show", customer_email: "mia@example.com" } }]);
+    expect((await s.agent.post(`/bookings/${s.b.id}/no-show`).send({ version: 1 }).expect(200)).body).toMatchObject({ duplicate: true, booking: { status: "no_show" } });
+    await s.agent.post(`/bookings/${s.b.id}/no-show`).send({ version: 2 }).expect(409);
+    expect(await s.followRuns()).toHaveLength(1);
+  });
+
+  it("refuses a future or cancelled booking, an approver, and a workspace without the follow-up, changing nothing", async () => {
+    const s = await noShowSetup();
+    await s.agent.post(`/bookings/${s.b.id}/no-show`).send({ version: 1 }).expect(409);
+    await s.past();
+    await (await member(s.agent, "approver")).post(`/bookings/${s.b.id}/no-show`).send({ version: 1 }).expect(403);
+    await s.agent.post(`/bookings/${s.b.id}/cancel`).send({ version: 1 }).expect(200);
+    await s.agent.post(`/bookings/${s.b.id}/no-show`).send({ version: 2 }).expect(409);
+    expect(await s.followRuns()).toHaveLength(0);
+    const bare = await noShowSetup(false);
+    await bare.past();
+    expect((await bare.agent.post(`/bookings/${bare.b.id}/no-show`).send({ version: 1 }).expect(409)).body.message).toMatch(/no-show follow-up/i);
+    expect((await bare.listed())[0]).toMatchObject({ status: "active", version: 1 });
+  });
+
+  it("undoes while the follow-up has not sent, and not after", async () => {
+    const s = await noShowSetup();
+    await s.past();
+    await s.agent.post(`/bookings/${s.b.id}/no-show`).send({ version: 1 }).expect(200);
+    const [run] = await s.followRuns();
+    const undone = await s.agent.post(`/bookings/${s.b.id}/undo-no-show`).send({ version: 2 }).expect(200);
+    expect(undone.body).toMatchObject({ booking: { status: "active", version: 3 } });
+    expect((await runRow(run!.id)).state).toBe("cancelled");
+    // Marked again: a new follow-up, which runs to the email.
+    await s.agent.post(`/bookings/${s.b.id}/no-show`).send({ version: 3 }).expect(200);
+    const second = (await s.followRuns()).find((r) => r.id !== run!.id)!;
+    await wake(second.id);
+    await db.update(runs).set({ nextAttemptAt: new Date(Date.now() - 1000) }).where(eq(runs.id, second.id));
+    await drive(second.id);
+    expect((await runRow(second.id)).state).toBe("succeeded");
+    expect(mailSent.at(-1)).toMatchObject({ to: "mia@example.com", subject: "Sorry we missed you" });
+    expect((await s.agent.post(`/bookings/${s.b.id}/undo-no-show`).send({ version: 4 }).expect(409)).body.message).toMatch(/already/i);
+    expect((await s.listed())[0]).toMatchObject({ status: "no_show" });
   });
 });
