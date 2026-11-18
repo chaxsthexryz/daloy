@@ -298,13 +298,34 @@ export const retiredSecrets = pgTable("retired_secrets", {
   retiredAt: createdAt(),
 });
 
-export const apiTokens = pgTable("api_tokens", {
+export const TOKEN_SCOPES = ["read", "run", "manage"] as const;
+export type TokenScope = (typeof TOKEN_SCOPES)[number];
+
+export const apiTokens = pgTable(
+  "api_tokens",
+  {
+    id: id(),
+    userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    tokenHash: text("token_hash").notNull().unique(),
+    // Tokens made before scopes existed got all three, which is the access they always had.
+    scopes: text("scopes").array().$type<TokenScope[]>().notNull().default(sql`'{read,run,manage}'`),
+    // Null: never expires.
+    expiresAt: ts("expires_at"),
+    lastUsedAt: ts("last_used_at"),
+    revokedAt: ts("revoked_at"),
+    createdAt: createdAt(),
+  },
+  (t) => [check("api_tokens_scopes", sql`cardinality(${t.scopes}) > 0 and ${t.scopes} <@ array['read', 'run', 'manage']`)],
+);
+
+/** Password reset links. Only the SHA-256 of the token is stored; a link works once within 30 minutes. */
+export const passwordResets = pgTable("password_resets", {
   id: id(),
   userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
-  name: text("name").notNull(),
   tokenHash: text("token_hash").notNull().unique(),
-  lastUsedAt: ts("last_used_at"),
-  revokedAt: ts("revoked_at"),
+  expiresAt: ts("expires_at").notNull(),
+  usedAt: ts("used_at"),
   createdAt: createdAt(),
 });
 

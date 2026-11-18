@@ -4,7 +4,7 @@ import { payloadSchema, type FormField, type Resource } from "@daloy/engine";
 import { toNodeHandler } from "@modelcontextprotocol/node";
 import { createMcpHandler, McpServer, type AuthInfo, type CallToolResult } from "@modelcontextprotocol/server";
 import { All, type CanActivate, Controller, type ExecutionContext, HttpException, Inject, Injectable, Req, Res, UnauthorizedException, UseGuards } from "@nestjs/common";
-import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, gt, isNull, or, sql } from "drizzle-orm";
 import type { Request, Response } from "express";
 import type { PgBoss } from "pg-boss";
 import * as z from "zod";
@@ -42,8 +42,8 @@ export function runStatus(state: string, last: StepRef | undefined, definition: 
 type McpRequest = Request & { auth?: AuthInfo };
 
 /**
- * Bearer API token from the console tokens page. One query looks the token up by its SHA-256, skips revoked
- * tokens and records the use. The owner's id travels to the tool handlers in authInfo.
+ * Bearer API token from the console tokens page. One query looks the token up by its SHA-256, skips revoked and
+ * expired tokens and records the use. The owner's id and the token's scopes travel to the tool handlers in authInfo.
  */
 @Injectable()
 export class McpTokenGuard implements CanActivate {
@@ -57,14 +57,14 @@ export class McpTokenGuard implements CanActivate {
       ? await this.db
           .update(apiTokens)
           .set({ lastUsedAt: sql`now()` })
-          .where(and(eq(apiTokens.tokenHash, sha256(token)), isNull(apiTokens.revokedAt)))
-          .returning({ id: apiTokens.id, userId: apiTokens.userId })
+          .where(and(eq(apiTokens.tokenHash, sha256(token)), isNull(apiTokens.revokedAt), or(isNull(apiTokens.expiresAt), gt(apiTokens.expiresAt, sql`now()`))))
+          .returning({ id: apiTokens.id, userId: apiTokens.userId, scopes: apiTokens.scopes })
       : [];
     if (!row) {
       res.setHeader("WWW-Authenticate", 'Bearer realm="daloy"');
-      throw new UnauthorizedException("missing, unknown or revoked API token");
+      throw new UnauthorizedException("missing, unknown, revoked or expired API token");
     }
-    req.auth = { token: token!, clientId: row.id, scopes: [], extra: { userId: row.userId } };
+    req.auth = { token: token!, clientId: row.id, scopes: row.scopes, extra: { userId: row.userId } };
     return true;
   }
 }
@@ -86,7 +86,7 @@ export class McpController {
     @Inject(BOSS) private readonly boss: PgBoss,
   ) {
     this.handle = toNodeHandler(
-      createMcpHandler(({ authInfo }) => this.server(String(authInfo?.extra?.userId)), { onerror: (err) => console.error("mcp", err.message) }),
+      createMcpHandler(({ authInfo }) => this.server(String(authInfo?.extra?.userId), authInfo?.scopes ?? []), { onerror: (err) => console.error("mcp", err.message) }),
     );
   }
 
@@ -95,9 +95,10 @@ export class McpController {
     return this.handle(req, res, req.body);
   }
 
-  private async server(userId: string) {
+  /** Tools are registered by the token's scopes, so one it lacks is absent from tools/list and a call to it is an unknown tool. */
+  private async server(userId: string, scopes: string[]) {
     const server = new McpServer({ name: "daloy", version: "1.0.0" });
-    const rows = await this.formWorkflows(userId);
+    const rows = scopes.includes("run") ? await this.formWorkflows(userId) : [];
     for (const tool of toolsFromRows(rows, await resourcesFor(this.db, userId, rows.flatMap((r) => r.fields)))) {
       server.registerTool(tool.name, { title: tool.title, description: tool.description, inputSchema: tool.inputSchema }, async (args) => {
         const { idempotencyKey, ...data } = args as Record<string, unknown> & { idempotencyKey?: string };
@@ -112,47 +113,51 @@ export class McpController {
         return result(duplicate ? { runId, duplicate } : { runId, status: "pending" });
       });
     }
-    server.registerTool(
-      "get_run_status",
-      {
-        title: "Get run status",
-        description: "Returns the state of a run: pending, running, waiting, waiting_approval, needs_review, succeeded, failed or cancelled.",
-        inputSchema: z.object({ runId: z.uuid() }),
-      },
-      async ({ runId }) => {
-        const [run] = await this.db
-          .select({ state: runs.state, error: runs.error, finishedAt: runs.finishedAt, definition: workflowVersions.definition })
-          .from(runs)
-          .innerJoin(workflowVersions, eq(workflowVersions.id, runs.workflowVersionId))
-          .innerJoin(workflows, eq(workflows.id, workflowVersions.workflowId))
-          .where(and(eq(runs.id, runId), eq(workflows.userId, userId)));
-        // Same answer for a run that does not exist and one that belongs to someone else.
-        if (!run) return failure("run not found");
-        const [last] = await this.db
-          .select({ stepId: stepRuns.stepId, state: stepRuns.state })
-          .from(stepRuns)
-          .where(eq(stepRuns.runId, runId))
-          .orderBy(desc(stepRuns.createdAt), desc(stepRuns.attempt))
-          .limit(1);
-        return result({ runId, status: runStatus(run.state, last, run.definition), error: run.error, finishedAt: run.finishedAt?.toISOString() ?? null });
-      },
-    );
-    server.registerTool(
-      "resolve_run",
-      {
-        title: "Resolve a run",
-        description:
-          'Answers a run in needs_review, whose last call may or may not have reached the receiver: "delivered" (it went through; the run continues), "again" (send it once more with the same Idempotency-Key; a receiver that does not deduplicate may get it twice) or "stop" (cancel the run). "retry" gives a failed run one more attempt of its failed step.',
-        inputSchema: z.object({ runId: z.uuid(), action: z.enum(["delivered", "again", "stop", "retry"]) }),
-      },
-      async ({ runId, action }) => {
-        const [me] = await this.db.select({ email: users.email }).from(users).where(eq(users.id, userId));
-        // One guarded update: of two callers acting at once only one acts. Someone else's run looks like a missing one.
-        if (!(await resolveRun(this.db, userId, runId, action, `${me?.email ?? userId} (MCP)`))) return failure("run not found, or not in a state this action applies to");
-        if (action !== "stop") await enqueueRun(this.boss, runId);
-        return result({ runId, action, status: action === "stop" ? "cancelled" : "running" });
-      },
-    );
+    if (scopes.includes("read")) {
+      server.registerTool(
+        "get_run_status",
+        {
+          title: "Get run status",
+          description: "Returns the state of a run: pending, running, waiting, waiting_approval, needs_review, succeeded, failed or cancelled.",
+          inputSchema: z.object({ runId: z.uuid() }),
+        },
+        async ({ runId }) => {
+          const [run] = await this.db
+            .select({ state: runs.state, error: runs.error, finishedAt: runs.finishedAt, definition: workflowVersions.definition })
+            .from(runs)
+            .innerJoin(workflowVersions, eq(workflowVersions.id, runs.workflowVersionId))
+            .innerJoin(workflows, eq(workflows.id, workflowVersions.workflowId))
+            .where(and(eq(runs.id, runId), eq(workflows.userId, userId)));
+          // Same answer for a run that does not exist and one that belongs to someone else.
+          if (!run) return failure("run not found");
+          const [last] = await this.db
+            .select({ stepId: stepRuns.stepId, state: stepRuns.state })
+            .from(stepRuns)
+            .where(eq(stepRuns.runId, runId))
+            .orderBy(desc(stepRuns.createdAt), desc(stepRuns.attempt))
+            .limit(1);
+          return result({ runId, status: runStatus(run.state, last, run.definition), error: run.error, finishedAt: run.finishedAt?.toISOString() ?? null });
+        },
+      );
+    }
+    if (scopes.includes("manage")) {
+      server.registerTool(
+        "resolve_run",
+        {
+          title: "Resolve a run",
+          description:
+            'Answers a run in needs_review, whose last call may or may not have reached the receiver: "delivered" (it went through; the run continues), "again" (send it once more with the same Idempotency-Key; a receiver that does not deduplicate may get it twice) or "stop" (cancel the run). "retry" gives a failed run one more attempt of its failed step.',
+          inputSchema: z.object({ runId: z.uuid(), action: z.enum(["delivered", "again", "stop", "retry"]) }),
+        },
+        async ({ runId, action }) => {
+          const [me] = await this.db.select({ email: users.email }).from(users).where(eq(users.id, userId));
+          // One guarded update: of two callers acting at once only one acts. Someone else's run looks like a missing one.
+          if (!(await resolveRun(this.db, userId, runId, action, `${me?.email ?? userId} (MCP)`))) return failure("run not found, or not in a state this action applies to");
+          if (action !== "stop") await enqueueRun(this.boss, runId);
+          return result({ runId, action, status: action === "stop" ? "cancelled" : "running" });
+        },
+      );
+    }
     // Live bookings only; builder test bookings never show here (decision 0032). Errors keep the API's wording.
     const asTool = async (work: () => Promise<Record<string, unknown>>) => {
       try {
@@ -165,25 +170,29 @@ export class McpController {
         throw err;
       }
     };
-    server.registerTool(
-      "list_bookings",
-      { title: "List bookings", description: "Lists the workspace's bookings with reference, resource, start and end in the booking's timezone, status and version. Pass the version to cancel_booking or reschedule_booking.", inputSchema: z.object({}) },
-      async () => asTool(async () => ({ bookings: (await listBookings(this.db, userId)).map(({ reference, resource, start, end, timezone, status, version, attention }) => ({ reference, resource, start, end, timezone, status, version, attention })) })),
-    );
-    server.registerTool(
-      "cancel_booking",
-      { title: "Cancel a booking", description: "Cancels a booking. version is the version you last saw; a repeat of the same call gets the same answer.", inputSchema: z.object({ reference: z.string().min(1).max(30), version: cancelInput.shape.version }) },
-      async ({ reference, version }) => asTool(async () => cancelBooking(this.db, userId, await bookingIdOf(this.db, userId, reference), version, "mcp")),
-    );
-    server.registerTool(
-      "reschedule_booking",
-      {
-        title: "Reschedule a booking",
-        description: "Moves a booking to a new start time, checked like the booking form's time field (written like 2027-01-20T14:00 in the booking's timezone, or with an offset). Starts one new run for the new time; the old reminders stop. version is the version you last saw.",
-        inputSchema: z.object({ reference: z.string().min(1).max(30), version: rescheduleInput.shape.version, start: rescheduleInput.shape.start }),
-      },
-      async ({ reference, version, start }) => asTool(async () => rescheduleBooking(this.db, this.boss, userId, await bookingIdOf(this.db, userId, reference), version, start, "mcp")),
-    );
+    if (scopes.includes("read")) {
+      server.registerTool(
+        "list_bookings",
+        { title: "List bookings", description: "Lists the workspace's bookings with reference, resource, start and end in the booking's timezone, status and version. Pass the version to cancel_booking or reschedule_booking.", inputSchema: z.object({}) },
+        async () => asTool(async () => ({ bookings: (await listBookings(this.db, userId)).map(({ reference, resource, start, end, timezone, status, version, attention }) => ({ reference, resource, start, end, timezone, status, version, attention })) })),
+      );
+    }
+    if (scopes.includes("manage")) {
+      server.registerTool(
+        "cancel_booking",
+        { title: "Cancel a booking", description: "Cancels a booking. version is the version you last saw; a repeat of the same call gets the same answer.", inputSchema: z.object({ reference: z.string().min(1).max(30), version: cancelInput.shape.version }) },
+        async ({ reference, version }) => asTool(async () => cancelBooking(this.db, userId, await bookingIdOf(this.db, userId, reference), version, "mcp")),
+      );
+      server.registerTool(
+        "reschedule_booking",
+        {
+          title: "Reschedule a booking",
+          description: "Moves a booking to a new start time, checked like the booking form's time field (written like 2027-01-20T14:00 in the booking's timezone, or with an offset). Starts one new run for the new time; the old reminders stop. version is the version you last saw.",
+          inputSchema: z.object({ reference: z.string().min(1).max(30), version: rescheduleInput.shape.version, start: rescheduleInput.shape.start }),
+        },
+        async ({ reference, version, start }) => asTool(async () => rescheduleBooking(this.db, this.boss, userId, await bookingIdOf(this.db, userId, reference), version, start, "mcp")),
+      );
+    }
     return server;
   }
 
