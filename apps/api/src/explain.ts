@@ -87,7 +87,7 @@ export function askFacts(input: FactsInput): AskFacts {
   return { ...failureFacts(input), plainState, steps };
 }
 
-const APPS: Record<string, string> = { google_sheets: "Google Sheets", slack: "Slack", outlook: "Outlook", teams: "Microsoft Teams", google_calendar: "Google Calendar", airtable: "Airtable", notion: "Notion", trello: "Trello" };
+const APPS: Record<string, string> = { google_sheets: "Google Sheets", slack: "Slack", outlook: "Outlook", teams: "Microsoft Teams", google_calendar: "Google Calendar", google_drive: "Google Drive", airtable: "Airtable", notion: "Notion", trello: "Trello" };
 const APPS_FIX = { href: "#/apps", label: "Check the connection" };
 // Retry, Send again and Mark as posted are on the run page itself, so these need no link.
 const ACTIVITY_FIX = null;
@@ -181,7 +181,7 @@ export function explainFailure(facts: Facts, language: "en" | "tl" = "en"): Expl
 }
 
 // The console's names for step types (apps/web/src/FlowCanvas.tsx TYPE_NAMES), plus booking.
-const TYPE_NAMES: Record<string, string> = { condition: "Condition", http: "HTTP request", email: "Send email", delay: "Delay", ai: "AI task", approval: "Approval", sheets: "Add to Google Sheets", slack: "Post to Slack", outlook: "Send from Outlook", teams: "Post to Teams", calendar: "Add to Google Calendar", paymongo_link: "Create payment link", payment_status: "Check payment", airtable: "Add to Airtable", notion: "Add to Notion", trello: "Add to Trello", booking: "Booking" };
+const TYPE_NAMES: Record<string, string> = { condition: "Condition", http: "HTTP request", email: "Send email", delay: "Delay", ai: "AI task", approval: "Approval", sheets: "Add to Google Sheets", drive: "Save files to Google Drive", slack: "Post to Slack", outlook: "Send from Outlook", teams: "Post to Teams", calendar: "Add to Google Calendar", paymongo_link: "Create payment link", payment_status: "Check payment", airtable: "Add to Airtable", notion: "Add to Notion", trello: "Add to Trello", booking: "Booking" };
 const HEADLINES = { "needs you": "This request needs you before it goes on.", done: "This request is done.", problem: "This request stopped with a problem.", waiting: "This request is waiting.", "in progress": "This request is still going." };
 const OPEN_ACTIVITY = "Open the request in Activity to see every step.";
 

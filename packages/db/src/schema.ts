@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { LANGUAGES, RUN_STATES, STEP_STATES } from "@daloy/engine";
+import { LANGUAGES, RUN_STATES, STEP_STATES, type FileRef } from "@daloy/engine";
 import { bigint, boolean, check, customType, date, index, integer, jsonb, pgEnum, pgSequence, pgTable, primaryKey, text, timestamp, unique, uuid, type AnyPgColumn } from "drizzle-orm/pg-core";
 
 const id = () => uuid("id").primaryKey().defaultRandom();
@@ -374,6 +374,31 @@ const tstzrange = customType<{ data: string }>({ dataType: () => "tstzrange" });
 const bytea = customType<{ data: Buffer }>({ dataType: () => "bytea" });
 
 /**
+ * A file sent through a hosted form, kept for the run until a Drive step has saved it (decision 0051). The run's
+ * payload holds only the reference (id, name, type, size). Rows are deleted with the run and after 7 days by the worker.
+ */
+export const uploads = pgTable(
+  "uploads",
+  {
+    id: uuid("id").primaryKey(),
+    userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    runId: uuid("run_id").notNull().references(() => runs.id, { onDelete: "cascade" }),
+    field: text("field").notNull(),
+    name: text("name").notNull(),
+    type: text("type", { enum: ["jpeg", "png", "webp", "heic", "pdf"] }).notNull(),
+    size: integer("size").notNull(),
+    data: bytea("data").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    check("uploads_type", sql`${t.type} in ('jpeg', 'png', 'webp', 'heic', 'pdf')`),
+    check("uploads_size", sql`${t.size} between 1 and 5242880`),
+    index("uploads_created").on(t.createdAt),
+    index("uploads_run").on(t.runId),
+  ],
+);
+
+/**
  * A booked time for a resource (decision 0032). Migration 0019 adds the exclusion constraint drizzle cannot express:
  * no two active bookings of one workspace, test scope and resource overlap. That constraint is the only availability
  * check. Every change raises version, and runs linked to an older version stop at their next step.
@@ -478,7 +503,7 @@ export const mailSenders = pgTable("mail_senders", {
   updatedAt: ts("updated_at").notNull().defaultNow(),
 }, (t) => [check("mail_senders_status", sql`${t.status} in ('unverified', 'active', 'failed', 'disconnected')`)]);
 
-export const PROVIDERS = ["google_sheets", "slack", "outlook", "teams", "telegram", "google_calendar", "paymongo", "airtable", "notion", "trello"] as const;
+export const PROVIDERS = ["google_sheets", "slack", "outlook", "teams", "telegram", "google_calendar", "paymongo", "airtable", "notion", "trello", "google_drive"] as const;
 export type Provider = (typeof PROVIDERS)[number];
 
 /**
@@ -505,7 +530,7 @@ export const connections = pgTable(
   },
   (t) => [
     primaryKey({ columns: [t.userId, t.provider] }),
-    check("connections_provider", sql`${t.provider} in ('google_sheets', 'slack', 'outlook', 'teams', 'telegram', 'google_calendar', 'paymongo', 'airtable', 'notion', 'trello')`),
+    check("connections_provider", sql`${t.provider} in ('google_sheets', 'slack', 'outlook', 'teams', 'telegram', 'google_calendar', 'paymongo', 'airtable', 'notion', 'trello', 'google_drive')`),
     check("connections_status", sql`${t.status} in ('active', 'failed')`),
   ],
 );
@@ -530,12 +555,12 @@ export const deliveries = pgTable(
     stepId: text("step_id").notNull(),
     provider: text("provider", { enum: PROVIDERS }).notNull(),
     reference: text("reference").notNull(),
-    payload: jsonb("payload").$type<{ row: string[] } | { bookingId: string } | { text: string } | { fields?: Record<string, string>; title?: string; name?: string; desc?: string } | { to: string; subject: string; text: string }>().notNull(),
+    payload: jsonb("payload").$type<{ row: string[] } | { bookingId: string } | { text: string } | { fields?: Record<string, string>; title?: string; name?: string; desc?: string } | { to: string; subject: string; text: string } | { files: FileRef[] }>().notNull(),
     state: text("state", { enum: DELIVERY_STATES }).notNull().default("queued"),
     checkFirst: boolean("check_first").notNull().default(false),
     attempts: integer("attempts").notNull().default(0),
     nextAttemptAt: ts("next_attempt_at").notNull().defaultNow(),
-    result: jsonb("result").$type<Record<string, string | boolean>>(),
+    result: jsonb("result").$type<Record<string, string | boolean | number | Record<string, string>>>(),
     lastError: text("last_error"),
     // What the last failure was, as a closed value (decision 0039), so explanations never need the error text.
     errorKind: text("error_kind"),
@@ -559,7 +584,7 @@ export const deliveries = pgTable(
     // The worker polls for due deliveries every couple of seconds.
     index("deliveries_due").on(t.nextAttemptAt).where(sql`${t.state} in ('queued', 'sending')`),
     check("deliveries_state", sql`${t.state} in ('queued', 'sending', 'delivered', 'needs_review', 'failed')`),
-    check("deliveries_provider", sql`${t.provider} in ('google_sheets', 'slack', 'outlook', 'teams', 'telegram', 'google_calendar', 'paymongo', 'airtable', 'notion', 'trello')`),
+    check("deliveries_provider", sql`${t.provider} in ('google_sheets', 'slack', 'outlook', 'teams', 'telegram', 'google_calendar', 'paymongo', 'airtable', 'notion', 'trello', 'google_drive')`),
   ],
 );
 

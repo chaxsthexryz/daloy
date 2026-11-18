@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 import type { Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { freshDatabase } from "../../../test/db";
-import { cycleStart, manilaDay, nextCycleStart, claimUsage, planOf, PLANS, QuotaError, usageSummary } from "./usage";
+import { cycleStart, manilaDay, nextCycleStart, claimUsage, planOf, PLANS, QuotaError, UPLOADS_WITHOUT_PLAN, usageSummary } from "./usage";
 import { usageClaims, usageCounts, users, workflows, workflowVersions } from "./schema";
 import type { Db } from "./index";
 
@@ -111,6 +111,29 @@ describe("usage", () => {
     expect(await planOf(db, u)).toEqual({ plan: null, startedOn: null });
   });
 
+  it("limits uploads per Manila day by plan", async () => {
+    expect([PLANS.pilot.upload, PLANS.business.upload, PLANS.business_plus.upload]).toEqual([100, 500, 2000]);
+    const u = await newUser();
+    await claimUsage(db, u, "upload", { n: 100, now: noon });
+    const err = await claimUsage(db, u, "upload", { now: noon }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(QuotaError);
+    expect(err).toMatchObject({ kind: "upload", outcome: "not_sent" });
+    expect((err as Error).message).toContain("today's limit of 100 files");
+    expect(await used(u, "upload")).toEqual(["2026-11-17:100"]);
+    await claimUsage(db, u, "upload", { now: new Date("2026-11-17T16:00:00Z") });
+    expect(await used(u, "upload")).toEqual(["2026-11-17:100", "2026-11-18:1"]);
+  });
+
+  it("limits a workspace with no plan to 20 uploads a day and nothing else", async () => {
+    expect(UPLOADS_WITHOUT_PLAN).toBe(20);
+    const u = await newUser(null);
+    await claimUsage(db, u, "upload", { n: 20, now: noon });
+    await expect(claimUsage(db, u, "upload", { now: noon })).rejects.toBeInstanceOf(QuotaError);
+    await expect(claimUsage(db, await newUser(null), "upload", { n: 21, now: noon })).rejects.toBeInstanceOf(QuotaError);
+    await claimUsage(db, u, "http", { n: 5000, now: noon });
+    expect(await usageSummary(db, u, noon)).toMatchObject({ upload: { used: 20, limit: 20 }, http: { used: 5000, limit: null } });
+  });
+
   it("starts a fresh counter each Manila day and each monthly cycle", async () => {
     const u = await newUser("pilot", "2026-10-20");
     await claimUsage(db, u, "email", { n: 100, now: noon });
@@ -146,6 +169,7 @@ describe("usage", () => {
       ai: { used: 7, limit: 500, resetsOn: "2026-11-20" },
       email: { used: 3, limit: 300, resetsOn: "2026-11-18" },
       http: { used: 0, limit: 1000, resetsOn: "2026-11-18" },
+      upload: { used: 0, limit: 500, resetsOn: "2026-11-18" },
       automations: { live: 1, limit: 5 },
       minScheduleMinutes: 15,
     });

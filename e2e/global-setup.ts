@@ -81,6 +81,9 @@ export default async function setup() {
   providers.addSheet("e2e-sheet-0000000001", "Office requests", "Requests", [saEmail]);
   providers.addCalendar("e2e-clinic@group.calendar.google.com", "Clinic bookings", [saEmail]);
   process.env.E2E_CALENDAR_ID = "e2e-clinic@group.calendar.google.com";
+  // A folder inside a shared drive, as Drive needs (a service account has no storage of its own).
+  providers.addDriveFolder("e2e-drive-folder-0001", "Patient files", [saEmail], "0Ae2eSharedDrive");
+  process.env.E2E_DRIVE_FOLDER = "e2e-drive-folder-0001";
   providers.slack.token = "xoxb-e2e-0000000000-abcdefabcdef";
   providers.telegram.token = "100000001:E2E-telegram-token-aaaaaaaaaaaaaaaaaa";
   process.env.E2E_TELEGRAM_TOKEN = providers.telegram.token;
@@ -109,6 +112,7 @@ export default async function setup() {
     GOOGLE_TOKEN_URL: providers.urls.googleToken,
     GOOGLE_SHEETS_URL: providers.urls.sheets,
     GOOGLE_CALENDAR_URL: providers.urls.calendar,
+    GOOGLE_DRIVE_URL: providers.urls.drive,
     SLACK_API_URL: providers.urls.slack,
     TELEGRAM_API_URL: providers.urls.telegram,
     PAYMONGO_API_URL: providers.urls.paymongo,

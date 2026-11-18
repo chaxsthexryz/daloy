@@ -1,7 +1,7 @@
 import { publicCopy } from "./public-copy";
 import { createHmac, randomInt, randomUUID, timingSafeEqual } from "node:crypto";
-import { readBrand, workspaceLanguage, businessProfiles, connectionCredential, connections, createKeyedRun, createRun, eventSeen, markPaymentPaid, markPaymentRefunded, paymongoMode, publishedVersion, readSecret, recordEvent, requests, runs, triggers, verifyPaymongoSignature, workflows, type Db, type Payment } from "@daloy/db";
-import { definitionSchema, OFFICE_REQUEST, parsePayload, PURCHASE_REQUEST, type FormField, type Resource } from "@daloy/engine";
+import { claimUsage, QuotaError, readBrand, saveUploads, workspaceLanguage, businessProfiles, connectionCredential, connections, createKeyedRun, createRun, eventSeen, markPaymentPaid, markPaymentRefunded, paymongoMode, publishedVersion, readSecret, recordEvent, requests, runs, triggers, verifyPaymongoSignature, workflows, type Db, type NewUpload, type Payment } from "@daloy/db";
+import { definitionSchema, FILE_MAX_BYTES, FILES_PER_FIELD, FILES_PER_SUBMISSION, fileType, OFFICE_REQUEST, parsePayload, PURCHASE_REQUEST, safeFileName, type FileRef, type FormField, type Resource } from "@daloy/engine";
 import {
   BadRequestException,
   Body,
@@ -10,15 +10,20 @@ import {
   Header,
   Headers,
   HttpCode,
+  HttpException,
+  HttpStatus,
   Inject,
   NotFoundException,
   Param,
   Post,
   Req,
   UnauthorizedException,
+  UploadedFiles,
   UseGuards,
+  UseInterceptors,
   type RawBodyRequest,
 } from "@nestjs/common";
+import { AnyFilesInterceptor } from "@nestjs/platform-express";
 import { and, eq, sql } from "drizzle-orm";
 import type { Request } from "express";
 import type { PgBoss } from "pg-boss";
@@ -33,6 +38,11 @@ const HONEYPOT = "_website";
 /** Both guided templates record a request with a reference, from the form and from MCP; a custom form only starts a run. */
 export const isTracked = (setup: unknown) => [OFFICE_REQUEST, PURCHASE_REQUEST].includes((setup as { template?: string } | null)?.template ?? "");
 const SUBMISSION_KEY = "submission_key";
+
+/** The parts of a multer file this handler reads (@types/multer is not installed). */
+type Part = { fieldname: string; originalname: string; buffer: Buffer; size: number };
+const FILE_TYPES_MESSAGE = "must be a JPEG, PNG, WebP or HEIC photo, or a PDF";
+const OVER_QUOTA = "This form cannot take more files today. Send it without files, or try again tomorrow.";
 
 // Both spellings use one submit handler so they share the same per-IP limit.
 const FORM_PATHS = [":id", ":id/embed"];
@@ -182,30 +192,40 @@ export class FormsController {
 
   @Post(FORM_PATHS)
   @HttpCode(200)
+  // Guards run before interceptors, so an IP over the limit is refused before multer reads a byte of the body.
   @UseGuards(RateLimit(10))
+  // No storage option: multer keeps the files in memory, which is all the 5 MB limit allows.
+  @UseInterceptors(AnyFilesInterceptor({ limits: { fileSize: FILE_MAX_BYTES, files: FILES_PER_SUBMISSION, fields: 50, fieldSize: 64 * 1024, parts: 60 } }))
   @Header("Content-Type", "text/html; charset=utf-8")
-  async submit(@Param("id", new ZodPipe(z.uuid())) id: string, @Body() body: Record<string, unknown> | undefined, @Req() req: Request) {
+  async submit(@Param("id", new ZodPipe(z.uuid())) id: string, @Body() body: Record<string, unknown> | undefined, @Req() req: Request, @UploadedFiles() parts: Part[] | undefined) {
     const { fields, versionId, workflow, tracked } = await this.form(id);
     const language = await workspaceLanguage(this.db, workflow.userId);
     const copy = publicCopy[language];
     const brand = await pageBrand(this.db, workflow.userId);
     // Bots fill every field. Answer as if it worked so they learn nothing.
     if (body?.[HONEYPOT]) return page(copy.thanks, copy.form, language, brand);
-    const parsed = parsePayload(fields, body ?? {}, { resources: await resourcesFor(this.db, workflow.userId, fields) });
+    const stored = readParts(fields, parts ?? []);
+    const hasFiles = fields.some((f) => f.type === "file");
+    const parsed = parsePayload(fields, body ?? {}, { resources: await resourcesFor(this.db, workflow.userId, fields), files: hasFiles ? stored.refs : undefined });
     if (!parsed.ok) throw new BadRequestException(parsed.errors);
+    const key = z.uuid().safeParse(body?.[SUBMISSION_KEY]);
+    if (tracked && !key.success) throw new BadRequestException(`${SUBMISSION_KEY}: reload the form and send it again`);
+    if (stored.files.length > 0) {
+      await claimUsage(this.db, workflow.userId, "upload", { n: stored.files.length }).catch((err: unknown) => {
+        throw err instanceof QuotaError ? new HttpException({ message: OVER_QUOTA }, HttpStatus.TOO_MANY_REQUESTS) : err;
+      });
+    }
     if (!tracked) {
-      const runId = await createRun(this.db, versionId, parsed.data);
+      const runId = await createRun(this.db, versionId, parsed.data, stored.files.length > 0 ? { uploads: { userId: workflow.userId, files: stored.files } } : {});
       await enqueueRun(this.boss, runId);
       return page(copy.thanks, copy.form, language, brand);
     }
 
-    const key = z.uuid().safeParse(body?.[SUBMISSION_KEY]);
-    if (!key.success) throw new BadRequestException(`${SUBMISSION_KEY}: reload the form and send it again`);
     // A member of this workspace who is signed in is recorded as the requester, for My requests (decision 0022).
     // The session cookie is SameSite=Lax, so another site can't post the form as them.
     const member = isFormEmbed(req.path) ? undefined : await sessionUser(this.db, req);
     const requestedBy = member?.workspaceId === workflow.userId ? member.id : undefined;
-    const { reference, runId } = await recordRequest(this.db, workflow, versionId, key.data, parsed.data, requestedBy);
+    const { reference, runId } = await recordRequest(this.db, workflow, versionId, key.success ? key.data : "", parsed.data, requestedBy, stored.files);
     if (runId) await enqueueRun(this.boss, runId);
     return page(
       `<h1>${copy.received}</h1><p>${copy.reference} <strong>${reference}</strong>. ${copy.receipt}</p><p><a href="">${copy.another}</a></p>`,
@@ -229,6 +249,29 @@ export class FormsController {
   }
 }
 
+/**
+ * Checks the uploaded parts against the form's file fields. The type comes from the file's own bytes: the browser's
+ * mimetype and the extension are ignored. Empty parts (a file input left blank) are skipped.
+ */
+function readParts(fields: FormField[], parts: Part[]): { files: NewUpload[]; refs: Record<string, FileRef[]> } {
+  const fileFields = new Set(fields.filter((f) => f.type === "file").map((f) => f.name));
+  const refs: Record<string, FileRef[]> = Object.fromEntries([...fileFields].map((n) => [n, []]));
+  const files: NewUpload[] = [];
+  for (const p of parts) {
+    if (p.size === 0 && !p.originalname) continue;
+    if (!fileFields.has(p.fieldname)) throw new BadRequestException(`${p.fieldname}: this field does not take files`);
+    const type = fileType(p.buffer);
+    if (!type || p.size === 0) throw new BadRequestException(`${p.fieldname}: ${FILE_TYPES_MESSAGE}`);
+    const list = refs[p.fieldname]!;
+    if (list.length >= FILES_PER_FIELD) throw new BadRequestException(`${p.fieldname}: must be at most ${FILES_PER_FIELD} files`);
+    const name = safeFileName(p.originalname);
+    const id = randomUUID();
+    list.push({ id, name, type, size: p.size });
+    files.push({ id, field: p.fieldname, name, type, data: p.buffer });
+  }
+  return { files, refs };
+}
+
 // Crockford base32 without I, L, O and U, so a reference read aloud or copied by hand stays unambiguous.
 const REFERENCE_ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 // ponytail: 32^6 (about 1e9) random references; a collision fails that one submission with a 500. Lengthen when volume grows.
@@ -238,7 +281,7 @@ export const newReference = () => `REQ-${Array.from({ length: 6 }, () => REFEREN
  * Saves the request and its pending run in one transaction. The unique (workflow, submission key) index makes a
  * double-click or a retried post return the first request's reference; runId is set only when this call created it.
  */
-export async function recordRequest(db: Db, workflow: { id: string; userId: string }, versionId: string, submissionKey: string, data: Record<string, unknown>, requestedBy?: string) {
+export async function recordRequest(db: Db, workflow: { id: string; userId: string }, versionId: string, submissionKey: string, data: Record<string, unknown>, requestedBy?: string, files: NewUpload[] = []) {
   const find = () =>
     db
       .select({ reference: requests.reference, runId: requests.runId })
@@ -252,6 +295,7 @@ export async function recordRequest(db: Db, workflow: { id: string; userId: stri
     const runId = await db.transaction(async (tx) => {
       const [run] = await tx.insert(runs).values({ workflowVersionId: versionId, triggerPayload: { ...data, reference } }).returning({ id: runs.id });
       await tx.insert(requests).values({ userId: workflow.userId, workflowId: workflow.id, runId: run!.id, reference, submissionKey, subject: String(data.summary ?? ""), requestedBy });
+      await saveUploads(tx, { userId: workflow.userId, runId: run!.id, files });
       return run!.id;
     });
     return { reference, runId };
@@ -295,6 +339,7 @@ export function renderForm(fields: FormField[], resources: Resource[], submissio
       // the day; other grids get whole minutes here, so no slot the server accepts is blocked (decision 0031).
       const slot = f.slotMinutes && 1440 % f.slotMinutes === 0 ? f.slotMinutes : 1;
       if (f.type === "datetime") control = `<input ${attrs} type="datetime-local" step="${slot * 60}"><br><small>${copy.times} ${escapeHtml(f.timezone!)}</small>`;
+      if (f.type === "file") control = `<input ${attrs} type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif,application/pdf,.heic,.heif" multiple>`;
       if (f.type === "resource") control = `<select ${attrs}><option value="">${copy.choose}</option>${resources.map((r) => `<option value="${r.id}">${escapeHtml(r.name)}</option>`).join("")}</select>`;
       return `<p><label for="${f.name}">${escapeHtml(f.label)}</label><br>${control}</p>`;
     })
@@ -303,5 +348,5 @@ export function renderForm(fields: FormField[], resources: Resource[], submissio
   const honeypot = `<div aria-hidden="true" style="position:absolute;left:-9999px"><label for="${HONEYPOT}">Website</label><input id="${HONEYPOT}" name="${HONEYPOT}" tabindex="-1" autocomplete="off"></div>`;
   const key = submissionKey ? `<input type="hidden" name="${SUBMISSION_KEY}" value="${submissionKey}">` : "";
   const heading = businessName ? `<h1>${escapeHtml(businessName)}</h1>` : "";
-  return page(`${heading}<form method="post">${inputs}${honeypot}${key}<button type="submit">${copy.send}</button></form>`, businessName ? escapeHtml(businessName) : copy.form, language, brand);
+  return page(`${heading}<form method="post"${fields.some((f) => f.type === "file") ? ' enctype="multipart/form-data"' : ""}>${inputs}${honeypot}${key}<button type="submit">${copy.send}</button></form>`, businessName ? escapeHtml(businessName) : copy.form, language, brand);
 }

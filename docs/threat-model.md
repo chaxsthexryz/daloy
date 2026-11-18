@@ -13,18 +13,20 @@ Kept current with each phase. A mitigation marked "planned" does not exist in co
 - Console sessions and API tokens
 - Workspace membership and roles, which decide who can change automations and who can authorize a purchase
 - Run data: trigger payloads and step outputs, which can hold customer personal data
+- Files visitors attach to forms (photos, IDs, receipts), kept 7 days in the database
 - The ability to send email and make HTTP requests from the server
 
 ## Entry points
 
 - Console API (session cookie)
-- Webhook URLs and hosted forms, including anonymous embedded forms (public)
+- Webhook URLs and hosted forms, including anonymous embedded forms (public), and file uploads on those forms
+- File downloads from run details (`GET /runs/:runId/files/:fileId`, owner and operator session)
 - Owner mailbox setup and the worker's outbound IMAP connection
 - Approval links (public, random single-use token; a named approval also needs the approver's session)
 - Invite links (public, random single-use token)
 - Gmail confirmation links (need the owner's session and a random single-use token)
 - MCP endpoint (bearer token)
-- Outbound: HTTP request step, email step (the installation's SMTP server or the owner's Gmail), the API's test email, LLM calls, Google Sheets, Slack, Outlook and Teams deliveries and connection tests
+- Outbound: HTTP request step, email step (the installation's SMTP server or the owner's Gmail), the API's test email, LLM calls, Google Sheets, Google Drive, Slack, Outlook and Teams deliveries and connection tests
 - Inbound from Microsoft: the Outlook consent callback, `GET /settings/connections/outlook/callback`
 
 ## Threats and mitigations
@@ -141,3 +143,14 @@ The demo page (`apps/web/demo`, published as `site/demo/` on Cloudflare Pages) a
 - Ids are validated at the boundary (a Notion link is reduced to its 32-character id), and the target is pinned to each delivery when it is queued, so editing the connection cannot redirect what is already queued.
 - Field values come from run data and go only to the owner's own base, database or list. Keep private details out of anything the whole board or workspace can read.
 - A leaked token lets someone write to what it was granted. Revoke it at the provider, then Replace token in Apps. Grant the narrowest scope: Airtable data.records read and write on one base, Notion access to one database.
+
+## Form files and Google Drive (decision 0051)
+
+- A file that runs in the browser: types are read from the first bytes (JPEG, PNG, WebP, HEIC or HEIF, PDF); SVG, HTML and every other type are refused whatever the name or the browser says. Downloads are always attachments with the stored type, `nosniff`, `Content-Security-Policy: default-src 'none'; sandbox` and `Cache-Control: private, no-store`. Nothing is shown inline, so a PDF's scripts only run if someone opens the downloaded file.
+- Large or many uploads: 5 MB per file, 3 per field, 5 per submission, 50 text fields of 64 KB at most. The 10 posts a minute per IP guard runs before the upload parser, so a blocked address is refused before its body is read. Remaining risk: the parser holds up to 25 MB per request in memory, and many addresses together are not capped.
+- Filling the database: each workspace may store a number of files per Manila day (Pilot 100, Business 500, Business Plus 2000, 20 without a plan), counted before storing. Files are deleted 7 days after upload, and with their run. An invalid or replayed submission stores nothing.
+- A caller pointing a run at someone else's file: only the hosted form handler sets a file field; values from webhooks, MCP, test runs and the Run button are dropped, and a webhook cannot have a file field. The Drive delivery and the download read a file by id, run and workspace together; anything else is a 404.
+- File contents reaching the AI: trigger data holds only id, name, type and size. File bytes never enter trigger data, step input, step output, failure explanations or Ask. `apps/worker/src/steps/ai.test.ts` puts a marker inside a file and checks the model never receives it.
+- Duplicate files in Drive after a timeout: one delivery per run and step, the folder pinned at queue time, each saved file recorded under the worker's claim. An unknown outcome waits in `needs_review`; Post again skips files already recorded.
+- The Drive key: stored like the Sheets key, never returned or logged. It needs the `drive` scope, so a leaked key can read and change everything shared with that service account until the owner deletes the key. Use a dedicated service account per business. Only a folder in a shared drive is accepted, since service accounts have no storage of their own. The Drive address is fixed or set by the installation's env var (`GOOGLE_DRIVE_URL`), never by a user.
+- File names are visitor text: they are cleaned (no path, no control characters, at most 120 characters) and only ever sent as JSON metadata or an encoded `filename*` header.
