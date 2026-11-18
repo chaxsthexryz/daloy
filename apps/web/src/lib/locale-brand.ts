@@ -1,6 +1,8 @@
 /** Brand kit section of Business settings. */
 export const brandTranslations: Record<string, string> = {
-  "Workflow lifecycle": "Daloy ng automation",
+  "Automation status": "Kalagayan ng mga automation",
+  "Recent activity": "Kamakailang aktibidad",
+  "Drafts": "Mga draft",
   "Work queue": "Mga dapat asikasuhin",
   "Check": "Suriin",
   "Act": "Kumilos",
