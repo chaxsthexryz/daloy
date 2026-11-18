@@ -1,0 +1,74 @@
+/* The frame stays consistent while each page keeps its own theme tokens. */
+.console-shell .shell-main { background: var(--bg); }
+:root[data-theme="light"] .console-shell .shell-main { --bg: #f1f1ef; }
+.console-shell .sidebar {
+  color-scheme: dark;
+  --focus: #aed5f0;
+  background: #1a120f;
+  color: #f4eeea;
+  border: 0;
+}
+.console-shell .sidebar-name { font-size: 1.55rem; letter-spacing: -.04em; font-weight: 600; }
+.console-shell .sidebar-top img { width: 28px; height: 28px; }
+.console-shell .sidebar .shell-nav-label {
+  padding: .9rem .75rem .2rem;
+  font-size: .75rem;
+  font-weight: 500;
+  color: #b6aaa2;
+}
+.console-shell .sidebar nav a,
+.console-shell .sidebar nav button {
+  min-height: var(--target);
+  color: #f4eeea;
+  font-size: .86rem;
+  font-weight: 400;
+  border: 0;
+  border-radius: 8px;
+}
+.console-shell .sidebar nav a:hover,
+.console-shell .sidebar nav button:hover { background: #382e29; color: #ffffff; }
+.console-shell .sidebar nav a[aria-current="page"] {
+  background: #353332;
+  color: #f5f3f2;
+  box-shadow: none;
+}
+.console-shell .sidebar .who { color: #b6aaa2; overflow-wrap: anywhere; padding-top: 20px; }
+.console-shell .sidebar nav.open { background: #1a120f; }
+.console-shell .bottom-bar {
+  color-scheme: light;
+  --focus: #244f7a;
+  background: #ffffff;
+  border-color: #e2e0dd;
+}
+.console-shell .bottom-bar a,
+.console-shell .bottom-bar button { color: #1a120f; font-size: .86rem; }
+.console-shell .bottom-bar a:hover,
+.console-shell .bottom-bar button:hover,
+.console-shell .bottom-bar button[aria-expanded="true"],
+.console-shell .bottom-bar a[aria-current="page"] { background: #f3f3f3; color: #1a120f; box-shadow: none; }
+
+@media (min-width: 800px) {
+  body:has(.console-shell) { background: #aed5f0; }
+  .console-shell {
+    width: calc(100% - clamp(24px, 5vw, 90px));
+    max-width: 1700px;
+    margin: clamp(12px, 2.4vw, 36px) auto;
+    min-height: 90svh;
+    background: #1a120f;
+    padding: 7px 7px 7px 0;
+    box-sizing: border-box;
+  }
+  .console-shell .sidebar {
+    width: clamp(176px, 16vw, 228px);
+    height: auto;
+    min-height: 88svh;
+    align-self: stretch;
+    padding: 18px 14px;
+    position: static;
+    box-sizing: border-box;
+  }
+  .console-shell .sidebar-top { padding: 2px 10px 16px; }
+  .console-shell .sidebar nav { min-height: calc(88svh - 96px); height: auto; }
+  .console-shell .sidebar .who { margin-top: auto; }
+  .console-shell .shell-main { border-radius: 22px; background: var(--bg); overflow: hidden; }
+}
