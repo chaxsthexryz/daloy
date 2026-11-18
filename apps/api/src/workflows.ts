@@ -106,7 +106,20 @@ export class WorkflowsController {
     const [trigger] = await this.db.select().from(triggers).where(eq(triggers.workflowId, id));
     // latest is what the builder opens: the newest version, published or draft.
     const [latest] = await this.db.select().from(workflowVersions).where(eq(workflowVersions.workflowId, id)).orderBy(desc(workflowVersions.version)).limit(1);
-    return { ...wf, trigger: trigger ?? null, live: (await publishedVersion(this.db, id)) ?? null, latest: latest ?? null };
+    // The webhook path is a bearer URL: only roles that manage the workflow see it.
+    const shown = trigger && !MANAGE.includes(user.role) ? { ...trigger, webhookPath: null } : (trigger ?? null);
+    return { ...wf, trigger: shown, live: (await publishedVersion(this.db, id)) ?? null, latest: latest ?? null };
+  }
+
+  /** Replaces the webhook URL. The old one stops working at once. */
+  @Post(":id/webhook-url")
+  @UseGuards(Allow(MANAGE))
+  async rotateWebhookUrl(@CurrentUser() user: SessionUser, @Param("id", workflowId) id: string) {
+    await this.owned(user.workspaceId, id);
+    const webhookPath = randomBytes(32).toString("base64url");
+    const rows = await this.db.update(triggers).set({ webhookPath }).where(and(eq(triggers.workflowId, id), eq(triggers.type, "webhook"))).returning({ id: triggers.id });
+    if (rows.length === 0) throw new NotFoundException("this workflow has no webhook trigger");
+    return { webhookPath };
   }
 
   @Patch(":id")

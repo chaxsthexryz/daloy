@@ -3,7 +3,7 @@ import type { Pool } from "pg";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { freshDatabase } from "../../../test/db";
 import type { Db } from "./index";
-import { checkPaymongoKey, createCheckoutSession, eventSeen, findPaymentForStep, insertPayment, markPaymentPaid, markPaymentRefunded, paymongoMode, pesosToCentavos, recordEvent, verifyPaymongoSignature } from "./paymongo";
+import { centavosToPesos, checkPaymongoKey, createCheckoutSession, eventSeen, findPaymentForStep, insertPayment, markPaymentPaid, markPaymentRefunded, paymongoMode, pesosToCentavos, recordEvent, verifyPaymongoSignature } from "./paymongo";
 import { ProviderError } from "./providers";
 import { runs, users, workflows, workflowVersions } from "./schema";
 
@@ -98,52 +98,64 @@ describe("payment state", () => {
 
   it("pending becomes paid once, and a repeat changes nothing", async () => {
     const { p } = await pending();
-    const first = await markPaymentPaid(db, { userId, sessionId: p.providerSessionId, paymentId: "pay_1", amount: 15000, currency: "PHP" });
+    const first = await markPaymentPaid(db, { userId, sessionId: p.providerSessionId, paymentId: "pay_1", amount: 15000, currency: "PHP", livemode: false });
     expect(first).toMatchObject({ changed: true, mismatch: false });
     expect(first.payment!.status).toBe("paid");
     expect(first.payment!.providerPaymentId).toBe("pay_1");
     expect(first.payment!.paidAt).toBeTruthy();
-    const second = await markPaymentPaid(db, { userId, sessionId: p.providerSessionId, paymentId: "pay_2", amount: 15000, currency: "PHP" });
+    const second = await markPaymentPaid(db, { userId, sessionId: p.providerSessionId, paymentId: "pay_2", amount: 15000, currency: "PHP", livemode: false });
     expect(second).toMatchObject({ changed: false, mismatch: false });
     expect(second.payment!.providerPaymentId).toBe("pay_1");
   });
 
   it("an amount or currency mismatch goes to needs_review and stays", async () => {
     const a = await pending();
-    const r = await markPaymentPaid(db, { userId, sessionId: a.p.providerSessionId, paymentId: "pay_m1", amount: 100, currency: "PHP" });
+    const r = await markPaymentPaid(db, { userId, sessionId: a.p.providerSessionId, paymentId: "pay_m1", amount: 100, currency: "PHP", livemode: false });
     expect(r).toMatchObject({ changed: true, mismatch: true });
     expect(r.payment!.status).toBe("needs_review");
     const b = await pending();
-    expect((await markPaymentPaid(db, { userId, sessionId: b.p.providerSessionId, paymentId: "pay_m2", amount: 15000, currency: "USD" })).payment!.status).toBe("needs_review");
-    const again = await markPaymentPaid(db, { userId, sessionId: a.p.providerSessionId, paymentId: "pay_m3", amount: 15000, currency: "PHP" });
+    expect((await markPaymentPaid(db, { userId, sessionId: b.p.providerSessionId, paymentId: "pay_m2", amount: 15000, currency: "USD", livemode: false })).payment!.status).toBe("needs_review");
+    const again = await markPaymentPaid(db, { userId, sessionId: a.p.providerSessionId, paymentId: "pay_m3", amount: 15000, currency: "PHP", livemode: false });
     expect(again.changed).toBe(false);
     expect(again.payment!.status).toBe("needs_review");
   });
 
   it("another owner or an unknown session finds nothing", async () => {
     const { p } = await pending();
-    expect((await markPaymentPaid(db, { userId: randomUUID(), sessionId: p.providerSessionId, paymentId: "pay_x", amount: 15000, currency: "PHP" })).payment).toBeUndefined();
-    expect((await markPaymentPaid(db, { userId, sessionId: "cs_none", paymentId: "pay_x", amount: 1, currency: "PHP" })).payment).toBeUndefined();
+    expect((await markPaymentPaid(db, { userId: randomUUID(), sessionId: p.providerSessionId, paymentId: "pay_x", amount: 15000, currency: "PHP", livemode: false })).payment).toBeUndefined();
+    expect((await markPaymentPaid(db, { userId, sessionId: "cs_none", paymentId: "pay_x", amount: 1, currency: "PHP", livemode: false })).payment).toBeUndefined();
   });
 
   it("refund moves only paid payments, and a late paid never undoes it", async () => {
     const { p } = await pending();
-    expect(await markPaymentRefunded(db, { userId, providerPaymentId: "pay_r" })).toMatchObject({ changed: false });
-    await markPaymentPaid(db, { userId, sessionId: p.providerSessionId, paymentId: "pay_r", amount: 15000, currency: "PHP" });
-    const r = await markPaymentRefunded(db, { userId, providerPaymentId: "pay_r" });
+    expect(await markPaymentRefunded(db, { userId, providerPaymentId: "pay_r", livemode: false })).toMatchObject({ changed: false });
+    await markPaymentPaid(db, { userId, sessionId: p.providerSessionId, paymentId: "pay_r", amount: 15000, currency: "PHP", livemode: false });
+    const r = await markPaymentRefunded(db, { userId, providerPaymentId: "pay_r", livemode: false });
     expect(r.changed).toBe(true);
     expect(r.payment!.status).toBe("refunded");
-    expect((await markPaymentRefunded(db, { userId, providerPaymentId: "pay_r" })).changed).toBe(false);
-    const late = await markPaymentPaid(db, { userId, sessionId: p.providerSessionId, paymentId: "pay_r", amount: 15000, currency: "PHP" });
+    expect((await markPaymentRefunded(db, { userId, providerPaymentId: "pay_r", livemode: false })).changed).toBe(false);
+    const late = await markPaymentPaid(db, { userId, sessionId: p.providerSessionId, paymentId: "pay_r", amount: 15000, currency: "PHP", livemode: false });
     expect(late.changed).toBe(false);
     expect(late.payment!.status).toBe("refunded");
   });
 
-  it("records each event once", async () => {
-    expect(await eventSeen(db, "evt_a")).toBe(false);
+  it("records each event once, per workspace", async () => {
+    const [other] = await db.insert(users).values({ email: "other-pay@test.local", passwordHash: "x" }).returning();
+    expect(await eventSeen(db, userId, "evt_a")).toBe(false);
     expect(await recordEvent(db, { eventId: "evt_a", userId, type: "payment.paid" })).toBe(true);
     expect(await recordEvent(db, { eventId: "evt_a", userId, type: "payment.paid" })).toBe(false);
-    expect(await eventSeen(db, "evt_a")).toBe(true);
+    expect(await eventSeen(db, userId, "evt_a")).toBe(true);
+    expect(await eventSeen(db, other!.id, "evt_a")).toBe(false);
+    expect(await recordEvent(db, { eventId: "evt_a", userId: other!.id, type: "payment.paid" })).toBe(true);
+  });
+
+  it("only touches a payment of the verified mode", async () => {
+    const { p } = await pending();
+    const wrong = await markPaymentPaid(db, { userId, sessionId: p.providerSessionId, paymentId: "pay_lm", amount: 15000, currency: "PHP", livemode: true });
+    expect(wrong).toMatchObject({ payment: undefined, changed: false });
+    await markPaymentPaid(db, { userId, sessionId: p.providerSessionId, paymentId: "pay_lm", amount: 15000, currency: "PHP", livemode: false });
+    expect(await markPaymentRefunded(db, { userId, providerPaymentId: "pay_lm", livemode: true })).toMatchObject({ payment: undefined, changed: false });
+    expect((await markPaymentRefunded(db, { userId, providerPaymentId: "pay_lm", livemode: false })).changed).toBe(true);
   });
 });
 
@@ -181,5 +193,11 @@ describe("PayMongo calls", () => {
     const spy = reply(200, { data: [] });
     expect(await checkPaymongoKey(key, urls)).toEqual({ mode: "test" });
     expect(spy.mock.calls[0]![0]).toBe("https://pm.test/v1/webhooks");
+  });
+});
+
+describe("centavosToPesos", () => {
+  it.each([[15050, "150.50"], [15000, "150.00"], [100, "1.00"], [5, "0.05"], [999999999, "9999999.99"]] as const)("writes %i as %s", (centavos, text) => {
+    expect(centavosToPesos(centavos)).toBe(text);
   });
 });

@@ -374,6 +374,7 @@ function TriggerPanel({ trigger, wf, onChange }: { trigger: Trigger; wf: Loaded;
   const { t } = useLanguage();
   const id = useId();
   const published = wf.trigger && wf.live && wf.trigger.type === trigger.type ? wf.trigger : null;
+  const [newPath, setNewPath] = useState<string | null>(null);
   const fields = trigger.type === "form" ? trigger.config.fields : [];
   const setFields = (next: FormField[]) => onChange({ type: "form", config: { fields: next } });
   return (
@@ -503,7 +504,17 @@ function TriggerPanel({ trigger, wf, onChange }: { trigger: Trigger; wf: Loaded;
       )}
       {published?.webhookPath && (
         <p className="muted hint">
-          {t("Webhook URL:")} <code>{`${location.origin}/hooks/${published.webhookPath}`}</code>
+          {t("Webhook URL:")} <code>{`${location.origin}/hooks/${newPath ?? published.webhookPath}`}</code>{" "}
+          <button
+            type="button"
+            className="quiet"
+            onClick={() =>
+              window.confirm(t("The old URL stops working at once. Continue?")) &&
+              api<{ webhookPath: string }>("POST", `/workflows/${wf.id}/webhook-url`).then((r) => setNewPath(r.webhookPath), (e: Error) => window.alert(e.message))
+            }
+          >
+            {t("New URL")}
+          </button>
         </p>
       )}
       {published && trigger.type === "form" && (

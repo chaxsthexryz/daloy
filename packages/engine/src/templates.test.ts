@@ -46,9 +46,28 @@ describe("starter templates", () => {
     expect(def.edges.some((e) => e.from === "book" && e.on === "not_found")).toBe(true);
   });
 
-  it("order-to-sheets logs a pending row, then a link; order-paid listens for PayMongo paid", () => {
-    expect(parse("order-to-sheets").steps.map((s) => s.type)).toEqual(["sheets", "paymongo_link", "email"]);
+  it("order-to-sheets asks the owner to approve the price before the link; order-paid listens for PayMongo paid", () => {
+    const def = parse("order-to-sheets");
+    expect(def.steps.map((s) => s.type)).toEqual(["approval", "paymongo_link", "sheets", "email", "email", "email"]);
+    const into = def.edges.filter((e) => e.to === "pay_link");
+    expect(into.length).toBeGreaterThan(0);
+    for (const e of into) expect(def.steps.find((s) => s.id === e.from)!.type === "approval" && e.on === "approved").toBe(true);
+    expect(JSON.stringify(def.steps.find((s) => s.type === "approval")!.config)).toContain("{{trigger.amount}}");
     expect(parse("order-paid").trigger).toEqual({ type: "payment", config: { events: ["paid"] } });
+  });
+
+  it("order rows carry the Daloy payment id and pesos with a label, never the raw centavo amount", () => {
+    const pending = JSON.stringify(parse("order-to-sheets").steps.find((s) => s.id === "log_order")!.config);
+    const paid = JSON.stringify(parse("order-paid").steps.find((s) => s.id === "log_paid")!.config);
+    expect(pending).toContain("{{steps.pay_link.output.paymentId}}");
+    expect(pending).toContain("{{steps.pay_link.output.amountPesos}}");
+    expect(paid).toContain("{{trigger.paymentId}}");
+    expect(paid).toContain("{{trigger.amountPesos}}");
+    expect(paid).not.toContain("{{trigger.amount}}");
+  });
+
+  it("invoice-paymongo is signed, requires the timestamp and keys on the invoice number", () => {
+    expect(parse("invoice-paymongo").trigger).toMatchObject({ type: "webhook", config: { hmacSecret: "invoice_webhook_secret", requireTimestamp: true, eventKey: "{{trigger.invoice_id}}" } });
   });
 
   it("invoice-paymongo reminds only while the payment is pending, twice at most", () => {
