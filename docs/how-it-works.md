@@ -532,6 +532,16 @@ Edge cases: the Postgres init script only runs when the volume is created, so an
 
 Tests: `apps/worker/src/app-role.test.ts` applies the SQL to an embedded Postgres and checks, as `daloy_app`, that inserts, updates and deletes work, that CREATE, DROP, ALTER and TRUNCATE are refused (in `public` and `pgboss`), and that a worker with pg-boss runs a workflow to the end.
 
+## CSV export (apps/api/src/csv.ts, csv-export.test.ts)
+
+What it does: owners and operators can download one automation's Activity (`GET /runs/export.csv?workflowId=`) and the live Bookings (`GET /bookings/export.csv`) as CSV. Activity has reference, state, test, created and finished, then one column per form field found in the requests. Bookings has reference, resource, start, end, minutes, timezone and status.
+
+Why this way: the file is built from the same rows and the same secret hiding as the Activity list, so a password or token field exports as `[secret]`. A cell that starts with `=`, `+`, `-`, `@`, a tab or a carriage return gets a leading `'`, so a spreadsheet shows it as text instead of running it. No library: quoting is a few lines.
+
+Edge cases: a plain negative number becomes `'-5`. Field columns follow the order Postgres stores the payload in, not the form order. At most 5000 rows, newest first. Other roles get 403, other workspaces' runs are never included.
+
+Tests: `csv.test.ts` (cell escaping) and `csv-export.test.ts` (columns, formulas, secrets, roles).
+
 ## Operations (docs/operations.md, apps/api/src/upgrade.test.ts)
 
 What it does: `docs/operations.md` is the runbook for the Compose stack: a `pg_dump` backup, a restore onto a new volume, stopping all sends by stopping the worker, upgrades, and a daily check for `failed` and `needs_review` runs. `docs/deployment.md` covers running the stack on a free VM behind a Cloudflare Tunnel with nightly encrypted dumps to Google Drive.

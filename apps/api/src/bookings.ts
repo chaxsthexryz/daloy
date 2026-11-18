@@ -1,10 +1,11 @@
 import { bookingById, bookingByReference, bookingChanges, bookingResults, listBookings, publishedVersion, runs, staffChange, staffReplay, stepRuns, type BookingView, type Db, type StaffResult } from "@daloy/db";
 import { bookingStartField, definitionSchema, parseZoned, type WorkflowDefinition } from "@daloy/engine";
-import { BadRequestException, Body, ConflictException, Controller, Get, HttpCode, Inject, NotFoundException, Param, Post, UseGuards } from "@nestjs/common";
+import { BadRequestException, Body, ConflictException, Controller, Get, Header, HttpCode, Inject, NotFoundException, Param, Post, UseGuards } from "@nestjs/common";
 import { and, asc, eq } from "drizzle-orm";
 import type { PgBoss } from "pg-boss";
 import * as z from "zod";
 import { SessionGuard } from "./auth";
+import { toCsv } from "./csv";
 import { Allow, BOSS, CurrentUser, DB, enqueueRun, OPERATE, ZodPipe, type SessionUser } from "./http";
 
 const CHANGED = "This booking changed since you loaded it. Reload and try again.";
@@ -120,6 +121,15 @@ export class BookingsController {
   @Get()
   list(@CurrentUser() user: SessionUser) {
     return listBookings(this.db, user.workspaceId);
+  }
+
+  /** The same live bookings as CSV (phase N19). */
+  @Get("export.csv")
+  @Header("Content-Type", "text/csv; charset=utf-8")
+  @Header("Content-Disposition", 'attachment; filename="bookings.csv"')
+  async exportCsv(@CurrentUser() user: SessionUser) {
+    const list = await listBookings(this.db, user.workspaceId);
+    return toCsv(["reference", "resource", "start", "end", "minutes", "timezone", "status"], list.map((b) => [b.reference, b.resource.name, b.start, b.end, b.minutes, b.timezone, b.status]));
   }
 
   @Post(":id/cancel")
