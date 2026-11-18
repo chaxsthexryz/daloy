@@ -1,3 +1,4 @@
+import "./workspace-admin.css";
 import { Text, useLanguage } from "./Language";
 import { useEffect, useState, type FormEvent } from "react";
 import { api } from "./api";
@@ -48,7 +49,7 @@ export function TeamPage() {
   };
 
   return (
-    <main className="page">
+    <main className="page workspace-admin admin-team">
       <header className="toolbar plain">
         <h1><Text>Team</Text></h1>
       </header>
@@ -89,7 +90,7 @@ export function TeamPage() {
         <p>{t("Loading…")}</p>
       ) : (
         <div className="table-wrap">
-          <table className="table">
+          <table className="table cards admin-table">
             <thead>
               <tr>
                 <th scope="col"><Text>Email</Text></th>
@@ -103,22 +104,22 @@ export function TeamPage() {
             <tbody>
               {list.map((m) => (
                 <tr key={m.userId}>
-                  <td>{m.email}</td>
-                  <td>
+                  <td data-label={t("Email")}>{m.email}</td>
+                  <td data-label={t("Role")}>
                     {m.role === "owner" ? (
                       t("owner")
                     ) : (
                       <select aria-label={t("Role of {email}", { email: m.email })} value={m.role} onChange={(e) => run(() => api("PATCH", `/workspace/members/${m.userId}`, { role: e.target.value }))}>
                         {MEMBER_ROLES.map((r) => (
                           <option key={r} value={r}>
-                            {r}
+                            {t(r)}
                           </option>
                         ))}
                       </select>
                     )}
                   </td>
-                  <td>{new Date(m.createdAt).toLocaleDateString()}</td>
-                  <td>
+                  <td data-label={t("Joined")}>{new Date(m.createdAt).toLocaleDateString()}</td>
+                  <td data-label={t("Actions")}>
                     {m.role !== "owner" && (
                       <button type="button" onClick={() => remove(m)} aria-label={t("Remove {name}", { name: m.email })}>{t("Remove")}</button>
                     )}

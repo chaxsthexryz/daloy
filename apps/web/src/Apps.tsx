@@ -1,3 +1,4 @@
+import "./workspace-admin.css";
 import { Text, useLanguage } from "./Language";
 import { useEffect, useState, type ReactNode } from "react";
 import { api } from "./api";
@@ -49,7 +50,7 @@ export function AppsPage({ outlookOutcome }: { outlookOutcome?: string }) {
     document.getElementById("app-setup")?.scrollIntoView({ block: "start" });
   }, [open]);
 
-  if (!mail || !conns) return <main className="page">{error ? <p role="alert" className="message error">{error}</p> : <p>{t("Loading…")}</p>}</main>;
+  if (!mail || !conns) return <main className="page workspace-admin admin-apps">{error ? <p role="alert" className="message error">{error}</p> : <p>{t("Loading…")}</p>}</main>;
   const conn = (p: Provider) => conns.connections.find((c) => c.provider === p) ?? null;
   const state = (key: Key): string | null => {
     if (key === "gmail") return mail.sender && mail.sender.status !== "disconnected" ? PILL[mail.sender.status] : null;
@@ -98,7 +99,7 @@ export function AppsPage({ outlookOutcome }: { outlookOutcome?: string }) {
   };
 
   return (
-    <main className="page">
+    <main className="page workspace-admin admin-apps">
       <Header title={t("Apps")} />
       <p className="muted">{t("Everything here is optional. Each app is used only by the automations you turn on, and the demo works without any of them.")}</p>
       <section aria-labelledby="email-in-setup">

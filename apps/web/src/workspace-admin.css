@@ -1,0 +1,143 @@
+/* Workspace administration extends the approved light console. No public form rules. */
+main.page.workspace-admin {
+  color-scheme: light;
+  --bg: #f1f1ef;
+  --surface: #ffffff;
+  --text: #201916;
+  --muted: #635c58;
+  --border: #8b8580;
+  --border-soft: #e2e0dd;
+  --sunken: #f5f4f2;
+  --accent: #244f7a;
+  --accent-hover: #143852;
+  --accent-tint: #e3eef8;
+  --on-accent: #ffffff;
+  --focus: #244f7a;
+  --danger: #a3261c;
+  --ok: #17643a;
+  --warn: #7a4b00;
+  --done: #dff1e6;
+  --on-done: #17643a;
+  --waiting: #fbefc9;
+  --on-waiting: #7a4b00;
+  --problem: #fbe3e0;
+  --on-problem: #a3261c;
+  --radius-md: 12px;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  min-height: 100%;
+  margin: 0;
+  padding: 32px;
+  box-sizing: border-box;
+  background: var(--bg);
+  color: var(--text);
+  overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
+  scrollbar-color: var(--border) var(--bg);
+}
+.workspace-admin ::selection { background: var(--accent-tint); color: var(--text); }
+.workspace-admin :is(input, textarea) { caret-color: var(--accent); }
+.workspace-admin a { text-underline-offset: .2em; }
+.workspace-admin :focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
+.workspace-admin > .toolbar { padding: 0; margin: 0 0 24px; border: 0; gap: 8px 20px; }
+.workspace-admin > .toolbar:has(> a) { align-items: start; flex-direction: column; gap: 4px; }
+.workspace-admin h1 { font-size: 2rem; font-weight: 500; letter-spacing: -.04em; line-height: 1.2; }
+.workspace-admin h2 { font-size: 1.125rem; font-weight: 500; letter-spacing: -.02em; margin: 28px 0 12px; }
+.workspace-admin h3 { font-size: 1rem; font-weight: 500; }
+.workspace-admin > p { max-width: 72ch; }
+.workspace-admin :is(button, input, select, summary) { min-height: 44px; }
+.workspace-admin :is(input, select, textarea) { max-width: 100%; box-sizing: border-box; font-size: .9375rem; }
+.workspace-admin :is(button, .actions a) { font-size: .875rem; }
+.workspace-admin button { white-space: normal; }
+.workspace-admin button:disabled { color: var(--muted); border-color: var(--border-soft); background: var(--sunken); }
+.workspace-admin .actions { gap: 8px; flex-wrap: wrap; }
+.workspace-admin .field { min-width: 0; margin-bottom: 18px; }
+.workspace-admin .field label { font-weight: 500; }
+.workspace-admin :is(.hint, .muted) { font-size: .875rem; }
+.workspace-admin .message, .workspace-admin .notice { border: 1px solid var(--border-soft); border-radius: 12px; }
+.workspace-admin .message.error { border-color: #d4aaa4; }
+.workspace-admin .message.ok { border-color: #a6c7b3; }
+.workspace-admin .notice { border-color: #d2bb7d; }
+.workspace-admin :is(.tag, .badge) { white-space: normal; line-height: 1.35; }
+.workspace-admin > :is(form, section, fieldset),
+.workspace-admin .create {
+  max-width: 960px;
+  padding: 24px;
+  margin: 0 0 24px;
+  background: var(--surface);
+  border: 1px solid var(--border-soft);
+  border-radius: 16px;
+  min-width: 0;
+}
+.workspace-admin > :is(form, section) > :is(h2, h3):first-child,
+.workspace-admin .create > h2:first-child { margin-top: 0; }
+.workspace-admin.narrow > :is(form, section, fieldset, p) { max-width: 760px; }
+.workspace-admin > fieldset { padding-top: 12px; }
+.workspace-admin legend { padding: 0 8px; font-weight: 500; }
+.workspace-admin .check { gap: 12px; }
+.workspace-admin .check input { min-height: 0; flex-shrink: 0; }
+.workspace-admin .choice { padding: 12px 0; gap: 12px; }
+.workspace-admin .choice + .choice { border-top: 1px solid var(--border-soft); }
+.workspace-admin .choice input { min-height: 0; flex: none; margin-top: 6px; }
+.workspace-admin .choice label { min-height: 44px; font-weight: 400; cursor: pointer; }
+.workspace-admin .choice label > span:first-child { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.workspace-admin .choice:has(input:checked) label strong { color: var(--accent); }
+.workspace-admin .in-use { padding: 16px; background: var(--sunken); }
+.workspace-admin .in-use .tag { margin-left: 8px; }
+.workspace-admin .in-use .message { display: block; margin: 12px 0 0; }
+.workspace-admin .connection { border: 0; padding: 0; margin: 0; }
+.workspace-admin .connection > h3 { margin-top: 0; font-size: 1.125rem; }
+.workspace-admin .connection form { max-width: 72ch; margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--border-soft); }
+.workspace-admin .connection p { max-width: 72ch; }
+.workspace-admin .token { background: var(--sunken); border: 1px solid var(--border-soft); padding: 16px; user-select: all; }
+.workspace-admin .row { gap: 12px 20px; }
+.workspace-admin .row > .field { flex-basis: 16rem; }
+.workspace-admin .row > button { margin-bottom: 18px; }
+.workspace-admin .list { list-style: none; padding: 0; max-width: 960px; margin: 0 0 24px; background: var(--surface); border: 1px solid var(--border-soft); border-radius: 16px; }
+.workspace-admin .list li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 20px; padding: 12px 20px; margin: 0; }
+.workspace-admin .list li + li { border-top: 1px solid var(--border-soft); }
+.workspace-admin .list li > a { display: inline-flex; align-items: center; min-height: 44px; }
+.workspace-admin .list li > .muted { flex: 1 1 18rem; }
+.workspace-admin .table-wrap { max-width: 100%; background: var(--surface); border: 1px solid var(--border-soft); border-radius: 16px; }
+.workspace-admin .table th { text-transform: none; letter-spacing: 0; font-weight: 500; background: var(--sunken); }
+.workspace-admin .table :is(th, td) { padding: 16px; vertical-align: top; }
+.workspace-admin .table tr:last-child td { border-bottom: 0; }
+.workspace-admin .table td:first-child { font-weight: 500; }
+.workspace-admin .table td select { width: auto; min-width: 140px; }
+.workspace-admin .table td button { margin: 0 4px 4px 0; }
+.workspace-admin .filters { padding: 16px 0; margin: 0 0 12px; gap: 16px 24px; }
+.workspace-admin .filters button { border-radius: 22px; padding-inline: 16px; border-color: var(--border-soft); color: var(--text); }
+.workspace-admin .filters button[aria-pressed="true"] { background: var(--text); color: var(--surface); border-color: var(--text); }
+.workspace-admin .filters input { border-radius: 12px; }
+.workspace-admin .apps { margin: 16px 0 0; gap: 0; grid-template-columns: minmax(0, 1fr); }
+.workspace-admin .app-card { border: 0; border-radius: 0; padding: 20px 0; gap: 16px; }
+.workspace-admin .app-card + .app-card { border-top: 1px solid var(--border-soft); }
+.workspace-admin .app-tile { background: var(--sunken); color: var(--muted); border: 1px solid var(--border-soft); border-radius: 12px; font-weight: 500; }
+.workspace-admin .app-text { flex-basis: 18rem; }
+.workspace-admin .app-text p { max-width: 64ch; }
+.workspace-admin .app-card button[aria-expanded="true"] { background: var(--accent-tint); }
+.workspace-admin .app-setup { scroll-margin-top: 24px; }
+.workspace-admin #b-accent { width: 88px; padding: 4px; }
+@media (max-width: 799px) {
+  main.page.workspace-admin { padding: 24px 16px; }
+  .workspace-admin h1 { font-size: 1.75rem; }
+  .workspace-admin > :is(form, section, fieldset), .workspace-admin .create { padding: 20px; }
+}
+@media (max-width: 599px) {
+  .workspace-admin > :is(form, section, fieldset), .workspace-admin .create { padding: 16px; border-radius: 12px; }
+  .workspace-admin .row { display: flex; flex-direction: column; align-items: stretch; gap: 0; }
+  .workspace-admin .row > .field { flex: auto; width: 100%; }
+  .workspace-admin .row > button { align-self: start; }
+  .workspace-admin .table-wrap { border: 0; background: transparent; border-radius: 0; overflow: visible; }
+  .workspace-admin .admin-table tr { padding: 16px; border-radius: 12px; }
+  .workspace-admin .admin-table td { padding: 8px 0; }
+  .workspace-admin .admin-table td::before { font-weight: 400; margin-bottom: 4px; }
+  .workspace-admin .admin-table td select { width: 100%; }
+  .workspace-admin .list li { gap: 0; padding: 12px 16px; }
+  .workspace-admin .list li > .muted { flex-basis: 100%; }
+  .workspace-admin .list li > a { width: 100%; }
+  .workspace-admin .app-card { display: grid; grid-template-columns: 40px minmax(0, 1fr); align-items: start; }
+  .workspace-admin .app-card .actions { grid-column: 2; }
+  .workspace-admin .in-use .tag { display: inline-block; margin: 8px 0 0; }
+}

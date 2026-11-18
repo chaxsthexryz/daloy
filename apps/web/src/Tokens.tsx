@@ -1,3 +1,4 @@
+import "./workspace-admin.css";
 import { Text, useLanguage } from "./Language";
 import { useEffect, useState, type FormEvent } from "react";
 import { api } from "./api";
@@ -60,7 +61,7 @@ export function TokensPage() {
   };
 
   return (
-    <main className="page">
+    <main className="page workspace-admin admin-tokens">
       <header className="toolbar plain">
         <a href="#/advanced">{t("Advanced")}</a>
         <h1><Text>API tokens</Text></h1>
@@ -112,7 +113,7 @@ export function TokensPage() {
         <p className="muted">{t("None yet.")}</p>
       ) : (
         <div className="table-wrap">
-          <table className="table">
+          <table className="table cards admin-table">
             <thead>
               <tr>
                 <th scope="col"><Text>Name</Text></th>
@@ -126,12 +127,12 @@ export function TokensPage() {
             <tbody>
               {list.map((token) => (
                 <tr key={token.id}>
-                  <td>{token.name}</td>
-                  <td>{when(token.createdAt)}</td>
-                  <td>{token.lastUsedAt ? when(token.lastUsedAt) : t("never")}</td>
-                  <td>{scopeText(token.scopes)}</td>
-                  <td>{expiry(token.expiresAt)}</td>
-                  <td>
+                  <td data-label={t("Name")}>{token.name}</td>
+                  <td data-label={t("Created")}>{when(token.createdAt)}</td>
+                  <td data-label={t("Last used")}>{token.lastUsedAt ? when(token.lastUsedAt) : t("never")}</td>
+                  <td data-label={t("Access")}>{scopeText(token.scopes)}</td>
+                  <td data-label={t("Expires")}>{expiry(token.expiresAt)}</td>
+                  <td data-label={t("Status")}>
                     {token.revokedAt ? (
                       <span className="muted">{t("Revoked ")}{when(token.revokedAt)}</span>
                     ) : (

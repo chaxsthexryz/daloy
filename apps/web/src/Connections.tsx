@@ -91,7 +91,7 @@ export function SheetsConnection({ conn, onChange }: { conn: Connection | null; 
   const showForm = !conn || editing;
 
   return (
-    <div className="connection" aria-labelledby="sheets-h">
+    <div className="connection" aria-busy={busy} aria-labelledby="sheets-h">
       <h3 id="sheets-h">Google Sheets</h3>
       {conn && <Status conn={conn} label={t("Service account")} />}
       {conn?.destination && (
@@ -167,7 +167,7 @@ export function DriveConnection({ conn, onChange }: { conn: Connection | null; o
   const showForm = !conn || editing;
 
   return (
-    <div className="connection" aria-labelledby="drive-h">
+    <div className="connection" aria-busy={busy} aria-labelledby="drive-h">
       <h3 id="drive-h">Google Drive</h3>
       {conn && <Status conn={conn} label="Service account" />}
       {conn?.destination && (
@@ -252,7 +252,7 @@ export function CalendarConnection({ conn, onChange }: { conn: Connection | null
   const showForm = !conn || editing;
 
   return (
-    <div className="connection" aria-labelledby="calendar-h">
+    <div className="connection" aria-busy={busy} aria-labelledby="calendar-h">
       <h3 id="calendar-h">Google Calendar</h3>
       {conn && <Status conn={conn} label="Service account" />}
       {conn?.destination && (
@@ -336,7 +336,7 @@ export function SlackConnection({ conn, onChange }: { conn: Connection | null; o
   const chosen = channels?.find((c) => c.id === channelId);
 
   return (
-    <div className="connection" aria-labelledby="slack-h">
+    <div className="connection" aria-busy={busy} aria-labelledby="slack-h">
       <h3 id="slack-h">Slack</h3>
       {conn && <Status conn={conn} label={t("Workspace")} />}
       {conn?.destination && (
@@ -429,7 +429,7 @@ export function PaymongoConnection({ conn, webhookBase, onChange }: { conn: Conn
   };
 
   return (
-    <div className="connection" aria-labelledby="paymongo-h">
+    <div className="connection" aria-busy={busy} aria-labelledby="paymongo-h">
       <h3 id="paymongo-h">PayMongo</h3>
       {conn && <Status conn={conn} label="Key" />}
       {conn?.destination && (
@@ -511,7 +511,7 @@ export function TelegramConnection({ conn, onChange }: { conn: Connection | null
   };
 
   return (
-    <div className="connection" aria-labelledby="telegram-h">
+    <div className="connection" aria-busy={busy} aria-labelledby="telegram-h">
       <h3 id="telegram-h">Telegram</h3>
       {conn && <Status conn={conn} label={t("Bot")} />}
       {conn?.destination && (
@@ -579,7 +579,7 @@ export function OutlookConnection({ conn, setup, outcome, onChange }: { conn: Co
   const connect = () => act(async () => location.assign((await api<{ url: string }>("POST", "/settings/connections/outlook/start")).url));
 
   return (
-    <div className="connection" aria-labelledby="outlook-h">
+    <div className="connection" aria-busy={busy} aria-labelledby="outlook-h">
       <h3 id="outlook-h">Outlook</h3>
       {shown && (
         <p role={shown.ok ? "status" : "alert"} className={shown.ok ? "" : "message error"}>
@@ -637,7 +637,7 @@ export function TeamsConnection({ conn, onChange }: { conn: Connection | null; o
   };
 
   return (
-    <div className="connection" aria-labelledby="teams-h">
+    <div className="connection" aria-busy={busy} aria-labelledby="teams-h">
       <h3 id="teams-h">Microsoft Teams</h3>
       {conn && <Status conn={conn} label={t("Channel")} />}
       {conn && <p>{t("Notes carry the reference and the item only. They tell the channel what happened; approvals are answered in Daloy by the named approver.")}</p>}
@@ -838,7 +838,7 @@ export function RecordConnection({ app, conn, onChange }: { app: keyof typeof RE
   };
 
   return (
-    <div className="connection" aria-labelledby={`${app}-h`}>
+    <div className="connection" aria-busy={busy} aria-labelledby={`${app}-h`}>
       <h3 id={`${app}-h`}>{cfg.name}</h3>
       {conn && <Status conn={conn} label={t("Account")} />}
       {conn?.destination && (

@@ -1,3 +1,4 @@
+import "./workspace-admin.css";
 import { Text } from "./Language";
 import { useEffect, useState } from "react";
 import { api, getUsage, type Meter, type Usage } from "./api";
@@ -69,7 +70,7 @@ export function SettingsPage({ user }: { user: User }) {
     saveTheme(t);
   };
   return (
-    <main className="page narrow">
+    <main className="page narrow workspace-admin admin-appsettings">
       <Header title={t("Settings")} />
       {user.role === "owner" && <fieldset disabled={savingLanguage}>
         <legend>{t("Language")}</legend>

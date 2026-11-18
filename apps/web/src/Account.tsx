@@ -1,3 +1,4 @@
+import "./workspace-admin.css";
 import { useState, type FormEvent } from "react";
 import { api } from "./api";
 import { useLanguage } from "./Language";
@@ -114,7 +115,7 @@ export function AccountPage({ backToRequests }: { backToRequests?: boolean }) {
     }
   };
   return (
-    <main className="page narrow">
+    <main className="page narrow workspace-admin admin-account">
       <header className="toolbar plain">
         {backToRequests && <a href="#/">{t("My requests")}</a>}
         <h1>{t("Account")}</h1>
