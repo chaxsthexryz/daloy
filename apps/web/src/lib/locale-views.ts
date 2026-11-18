@@ -32,6 +32,7 @@ export const viewTranslations: Record<string, string> = {
   "Couldn't load this run. Trying again.": "Hindi ma-load ang aktibidad na ito. Sinusubukan ulit.",
   "What happened": "Ano ang nangyari",
   "Couldn't refresh. Trying again.": "Hindi ma-refresh. Sinusubukan ulit.",
+  "Missed its schedule": "Hindi tumakbo sa iskedyul",
   "Taking longer than usual. Tell the person who runs Daloy.": "Mas matagal ito kaysa karaniwan. Sabihin sa namamahala ng Daloy.",
   "Superseded: its booking was rescheduled or cancelled. It stops at its next step and sends nothing more.": "Nabago o nakansela ang booking. Hihinto ang automation sa susunod na hakbang at wala na itong ipapadala.",
   "started {time}": "nagsimula noong {time}",

@@ -510,6 +510,18 @@ Edge cases: colour is never the only signal. Every node prints the state in word
 
 Tests: `apps/web/src/lib/run-flow.test.ts` (every node and edge rule, retries, branches, review, finished runs, unknown ids, the words for each state, and the contrast of text at 4.5:1 and lines at 3:1 in light and dark mode read from `styles.css`), and `e2e/run-animation.spec.ts` (the editor and the run page show the trigger and first edge Done while the last step still waits, a failed step shows Problem, and a faked in-flight poll shows the moving dot and pulse, and neither under reduced motion).
 
+## Schedule watchdog (apps/worker/src/watchdog.ts, packages/engine/src/email-copy.ts, apps/web/src/lib/automations.ts)
+
+What it does: tells the owner when a scheduled automation did not run when it was due, so a stopped worker or a lost job does not go unnoticed. See [decision 0050](decisions/0050-schedule-watchdog.md).
+
+How: every minute the worker looks at each live automation whose trigger is a schedule. It works out the latest cron time that is at least 15 minutes old and checks that a real run started by a schedule fire (trigger payload has `firedAt`) was created since. If not, it sets `workflows.schedule_missed_at`, which the Automations page shows as "Missed its schedule" and counts under Problem, and it emails the owner once.
+
+Why it is built that way: it reads the database, not pg-boss, so a lost schedule row is caught too. Manual runs do not count as the fire, so they cannot hide a broken schedule. It only reports and never replays, because a replay could send the same email twice.
+
+Edge cases: a version published after the due time is not blamed for it. Turning the automation off clears the flag. The flag clears once a fire is covered, and the owner gets at most one email per automation per 24 hours even if the flag clears and returns, because `schedule_alert_at` stays. Two workers checking at once send one email (a conditional UPDATE claims it), and a failed send gives the claim back so the next check retries. The email is in the workspace language.
+
+Tests: `apps/worker/src/watchdog.test.ts` (grace, manual runs, one email, a day later, clearing, Tagalog, retry, two workers), `apps/worker/src/worker.test.ts` (a running worker flags a stopped schedule once and clears it after a fired run), `apps/web/src/lib/automations.test.ts` (ordering and the Problem filter).
+
 ## Seed and demo login (apps/api/src/seed.ts)
 
 What it does: `pnpm seed` (or `SEED_URL=... pnpm seed`) signs up `demo@daloy.local` with the password `daloy-demo-2026`, creates the three starter templates as published workflows, and starts five mocked test runs with realistic trigger data (two inquiries, one unpaid invoice, one no-show and one attended booking). The worker runs them like any other test run. It also turns on an Office requests automation with no requests, saves a business profile for "Daloy Demo Office" and turns on Website inquiries. The demo owner connects no Gmail account, so their mail goes through the installation server (Mailpit locally). The seed sends no form submissions, because those send live email.
