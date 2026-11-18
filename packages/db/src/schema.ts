@@ -371,6 +371,7 @@ export const resources = pgTable(
 
 /** A Postgres tstzrange in its text form. Read it with lower() and upper(). */
 const tstzrange = customType<{ data: string }>({ dataType: () => "tstzrange" });
+const bytea = customType<{ data: Buffer }>({ dataType: () => "bytea" });
 
 /**
  * A booked time for a resource (decision 0032). Migration 0019 adds the exclusion constraint drizzle cannot express:
@@ -446,8 +447,16 @@ export const businessProfiles = pgTable("business_profiles", {
   website: text("website"),
   inquiryEmail: text("inquiry_email"),
   replyTo: text("reply_to"),
+  // Brand kit (decision 0050): a PNG, JPEG or WebP of at most 100 KB kept here, and one accent colour as #rrggbb.
+  logo: bytea("logo"),
+  logoType: text("logo_type"),
+  accent: text("accent"),
   updatedAt: ts("updated_at").notNull().defaultNow(),
-});
+}, (t) => [
+  check("business_profiles_logo_type", sql`${t.logoType} in ('png', 'jpeg', 'webp')`),
+  check("business_profiles_accent", sql`${t.accent} ~ '^#[0-9a-f]{6}$'`),
+  check("business_profiles_logo_pair", sql`(${t.logo} is null) = (${t.logoType} is null)`),
+]);
 
 /**
  * The owner's own Gmail sender. No row: mail goes through the installation's SMTP server (SMTP_* env vars).

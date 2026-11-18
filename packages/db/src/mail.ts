@@ -1,4 +1,5 @@
 import { Readable } from "node:stream";
+import { readBrand, type Brand } from "./brand";
 import { StepError, type EmailConfig, type Outcome } from "@daloy/engine";
 import { eq, sql } from "drizzle-orm";
 import nodemailer, { type Transporter } from "nodemailer";
@@ -123,12 +124,14 @@ const loginRefused = (err: unknown) => {
 export async function sendAs(db: Db, key: Buffer, deps: MailDeps, userId: string, cfg: EmailConfig, idempotencyKey: string, opts: { allowUnconfirmed?: boolean; claim?: () => Promise<() => void> } = {}) {
   const sender = await resolveSender(db, key, userId, opts);
   const mailer = mailerFor(sender, deps);
+  // Before the claim below: the send lock must never wait on a query (decision 0030).
+  const brand = await readBrand(db, userId);
   // The shared server is the one an unapproved sign-up could abuse; Gmail sends as the owner's own confirmed mailbox.
   if (sender.kind === "installation" && deps.sharedMail === "approved") await claimSharedMail(db, userId, checkRecipients(cfg.to).length);
   try {
     const release = await opts.claim?.();
     try {
-      return { ...(await sendEmail(mailer, cfg, idempotencyKey, release)), from: addressOf(mailer.from), gmail: sender.kind === "gmail" };
+      return { ...(await sendEmail(mailer, cfg, idempotencyKey, release, brand)), from: addressOf(mailer.from), gmail: sender.kind === "gmail" };
     } finally {
       // Before the catch below writes to the database (Astra, 6170f4f: ten held locks waiting on lookups emptied the pool).
       release?.();
@@ -193,8 +196,23 @@ function emailOutcome(code: number | undefined, bodyStarted: boolean): Outcome {
   return bodyStarted ? "unknown" : "not_sent";
 }
 
-/** Sends one plain-text email. Recipients come from a resolved template, so they are checked here, after resolution. */
-export async function sendEmail(mailer: Mailer, cfg: EmailConfig, messageKey: string, onBodyStart?: () => void) {
+const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+
+/**
+ * The owner's brand as an HTML part: a header band in the accent colour (text colour chosen for contrast) with the logo
+ * attached inline by cid, so no mail client fetches anything from a website. The text part stays and gets a name line.
+ */
+function brandedParts(cfg: EmailConfig, brand: Brand) {
+  const name = brand.name ?? "";
+  const band = `background:${brand.accent ?? "#f3f4f6"};color:${brand.ink ?? "#111111"}`;
+  const logo = brand.logo ? `<img src="cid:brand-logo" alt="${esc(name)}" height="40" style="vertical-align:middle;margin-right:10px">` : "";
+  const html = `<div style="font-family:Arial,sans-serif;max-width:600px"><div style="${band};padding:12px 16px;font-size:18px">${logo}${esc(name)}</div><div style="padding:16px 4px;white-space:pre-wrap">${esc(cfg.text)}</div></div>`;
+  const attachments = brand.logo ? [{ filename: `logo.${brand.logo.type}`, content: brand.logo.data, cid: "brand-logo", contentType: `image/${brand.logo.type}` }] : [];
+  return { text: name ? `${cfg.text}\n\n-- ${name}` : cfg.text, html, attachments };
+}
+
+/** Sends one email, plain text unless a brand is given. Recipients come from a resolved template, so they are checked here, after resolution. */
+export async function sendEmail(mailer: Mailer, cfg: EmailConfig, messageKey: string, onBodyStart?: () => void, brand?: Brand | null) {
   const to = checkRecipients(cfg.to);
 
   // messageKey is per attempt (run:step:attempt), so each attempt has its own Message-ID, and a re-delivered
@@ -203,7 +221,7 @@ export async function sendEmail(mailer: Mailer, cfg: EmailConfig, messageKey: st
   const daloySend: SendState = { bodyStarted: false, onBodyStart };
   watchBody(mailer.transport);
   try {
-    const info = await mailer.transport.sendMail({ from: mailer.from, replyTo: mailer.replyTo, to, subject: cfg.subject, text: cfg.text, messageId, daloySend } as Parameters<Mailer["transport"]["sendMail"]>[0]);
+    const info = await mailer.transport.sendMail({ from: mailer.from, replyTo: mailer.replyTo, to, subject: cfg.subject, ...(brand ? brandedParts(cfg, brand) : { text: cfg.text }), messageId, daloySend } as unknown as Parameters<Mailer["transport"]["sendMail"]>[0]);
     // jsonTransport puts the built message in info.message; SMTP leaves it undefined.
     return { messageId, to, raw: typeof info.message === "string" ? info.message : undefined };
   } catch (err) {

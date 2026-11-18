@@ -7,6 +7,7 @@ import { startFakeSmtp } from "../../../test/fake-smtp";
 import { freshDatabase } from "../../../test/db";
 import { createDb, type Db } from "./index";
 import { approveSharedMail, mailDeps, sendAs, sendEmail, type MailDeps, type Mailer } from "./mail";
+import { saveBrand } from "./brand";
 import { claimVerifyToken, connectGmail, issueVerifyToken, readSender, saveProfile } from "./mail-senders";
 import { sharedMailUsage, users } from "./schema";
 
@@ -89,6 +90,25 @@ describe("sendAs", () => {
     const sent = JSON.parse(installation.at(-1)!) as { from: { name: string; address: string }; replyTo: { address: string }[] };
     expect(sent.from).toEqual({ name: "Cruz Bakery", address: "daloy@localhost" });
     expect(sent.replyTo[0]!.address).toBe("orders@cruz.example");
+  });
+
+  it("carries the brand in the email, with the logo attached and nothing fetched from a website", async () => {
+    const u = await owner();
+    await saveProfile(db, u, { businessName: "Cruz <Bakery>", website: "https://cruz.example", inquiryEmail: null, replyTo: null });
+    await sendAs(db, key, deps(), u, mail, "b0");
+    expect(JSON.parse(installation.at(-1)!)).toMatchObject({ text: "We got it." });
+    expect(JSON.parse(installation.at(-1)!).html).toBeUndefined();
+
+    await saveBrand(db, u, { accent: "#0b3d91" });
+    await saveBrand(db, u, { logo: { type: "png", data: Buffer.from([0x89, 0x50, 0x4e, 0x47]) } });
+    await sendAs(db, key, deps(), u, mail, "b1");
+    const sent = JSON.parse(installation.at(-1)!) as { text: string; html: string; attachments: { cid: string; contentType: string }[] };
+    expect(sent.text).toBe("We got it.\n\n-- Cruz <Bakery>");
+    expect(sent.html).toContain("Cruz &#60;Bakery&#62;");
+    expect(sent.html).toContain("background:#0b3d91;color:#ffffff");
+    expect(sent.html).toContain('src="cid:brand-logo"');
+    expect(sent.html).not.toMatch(/https?:\/\//);
+    expect(sent.attachments).toMatchObject([{ cid: "brand-logo", contentType: "image/png" }]);
   });
 
   it("logs in to Gmail as the owner and sends from their address", async () => {
