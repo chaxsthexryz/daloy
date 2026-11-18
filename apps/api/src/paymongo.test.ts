@@ -1,7 +1,7 @@
 import { createHmac, randomBytes } from "node:crypto";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { connections, insertPayment, markPaymentPaid, payments, runs, users, workflows, workflowVersions, type Db } from "@daloy/db";
+import { connections, insertPayment, markPaymentPaid, paymongoEvents, payments, runs, saveConnection, triggers, users, workflows, workflowVersions, type Db } from "@daloy/db";
 import type { INestApplication } from "@nestjs/common";
 import { and, eq, inArray } from "drizzle-orm";
 import type { Pool } from "pg";
@@ -23,6 +23,7 @@ let server: Parameters<typeof request>[0];
 let fake: FakeProviders;
 let stub: Server;
 let seq = 0;
+const secretsKey = randomBytes(32);
 
 beforeAll(async () => {
   let url: string;
@@ -36,7 +37,7 @@ beforeAll(async () => {
   });
   await new Promise<void>((r) => stub.listen(0, "127.0.0.1", r));
   const paymongo = `http://127.0.0.1:${(stub.address() as AddressInfo).port}`;
-  app = await createApp({ db, boss, secretsKey: randomBytes(32), secureCookies: false, publicUrl: "https://daloy.test", providers: { ...fake.urls, paymongo, timeoutMs: 2000 } });
+  app = await createApp({ db, boss, secretsKey, secureCookies: false, publicUrl: "https://daloy.test", providers: { ...fake.urls, paymongo, timeoutMs: 2000 } });
   await app.init();
   server = app.getHttpServer();
 }, 120_000);
@@ -72,12 +73,12 @@ async function listener(agent: Agent, events: string[]) {
   return wf.body.id as string;
 }
 
-async function payment(userId: string, amountCentavos = 15000) {
+async function payment(userId: string, amountCentavos = 15000, o: { livemode?: boolean; test?: boolean; sessionId?: string } = {}) {
   const [wf] = await db.insert(workflows).values({ userId, name: "Orders", slug: `orders-${++seq}` }).returning();
   const [v] = await db.insert(workflowVersions).values({ workflowId: wf!.id, version: 1, definition: {} }).returning();
-  const [r] = await db.insert(runs).values({ workflowVersionId: v!.id, triggerPayload: {} }).returning();
-  const sessionId = `cs_${seq}_${randomBytes(4).toString("hex")}`;
-  const p = await insertPayment(db, { userId, workflowId: wf!.id, runId: r!.id, stepId: "link", reference: `ORD-${seq}`, amountCentavos, livemode: false, providerSessionId: sessionId, url: "https://pm.test/x" });
+  const [r] = await db.insert(runs).values({ workflowVersionId: v!.id, triggerPayload: {}, test: o.test ?? false }).returning();
+  const sessionId = o.sessionId ?? `cs_${seq}_${randomBytes(4).toString("hex")}`;
+  const p = await insertPayment(db, { userId, workflowId: wf!.id, runId: r!.id, stepId: "link", reference: `ORD-${seq}`, amountCentavos, livemode: o.livemode ?? false, providerSessionId: sessionId, url: "https://pm.test/x" });
   return { p, sessionId, runId: r!.id };
 }
 
@@ -143,7 +144,9 @@ describe("PayMongo webhook", () => {
     expect(await statusOf(p.id)).toBe("paid");
     const started = await runsOf(wf);
     expect(started).toHaveLength(1);
-    expect(started[0]!.triggerPayload).toEqual({ status: "paid", reference: p.reference, amount: 15000, currency: "PHP", paymentId: p.id, sourceRunId: runId, providerPaymentId: "pay_1" });
+    expect(started[0]!.triggerPayload).toEqual({ status: "paid", reference: p.reference, amount: 15000, amountPesos: "150.00", livemode: false, currency: "PHP", paymentId: p.id, sourceRunId: runId, providerPaymentId: "pay_1" });
+    // A sandbox payment starts its listeners as test runs, which the worker mocks (H2).
+    expect(started[0]!.test).toBe(true);
     expect(await runsOf(refundOnly)).toHaveLength(0);
     expect((await post(path, body).expect(200)).body).toEqual({ duplicate: true });
     await post(path, paidEvent("evt_2", sessionId)).expect(200);
@@ -156,7 +159,7 @@ describe("PayMongo webhook", () => {
     const wf = await listener(agent, ["paid"]);
     const { p, sessionId } = await payment(userId);
     // The update committed, then the API died before starting any run.
-    await markPaymentPaid(db, { userId, sessionId, paymentId: "pay_1", amount: 15000, currency: "PHP" });
+    await markPaymentPaid(db, { userId, sessionId, paymentId: "pay_1", amount: 15000, currency: "PHP", livemode: false });
     expect(await statusOf(p.id)).toBe("paid");
     expect(await runsOf(wf)).toHaveLength(0);
     const body = paidEvent("evt_crash", sessionId);
@@ -191,6 +194,87 @@ describe("PayMongo webhook", () => {
     await post(path, paidEvent("evt_late", sessionId)).expect(200);
     expect(await statusOf(p.id)).toBe("refunded");
     expect(await runsOf(paidWf)).toHaveLength(1);
+  });
+
+  it("a live payment made by a builder test run starts a test run; one made by a real run starts a real run", async () => {
+    const { userId } = await owner();
+    const path = randomBytes(32).toString("base64url");
+    await saveConnection(db, secretsKey, userId, "paymongo", { account: "Live", credential: JSON.stringify({ secretKey: "sk_live_abc123", webhookSecret: WHSK }), destination: { webhookPath: path, mode: "live" } });
+    const [wf] = await db.insert(workflows).values({ userId, name: "Live paid", slug: `lp-${++seq}` }).returning();
+    await db.insert(workflowVersions).values({ workflowId: wf!.id, version: 1, definition: { trigger: { type: "payment", config: { events: ["paid"] } }, steps: [{ id: "a", type: "delay", config: { seconds: 1 } }], edges: [] }, published: true }).returning();
+    await db.insert(triggers).values({ workflowId: wf!.id, type: "payment", config: { events: ["paid"] } });
+    const fromTest = await payment(userId, 15000, { livemode: true, test: true });
+    const fromReal = await payment(userId, 15000, { livemode: true });
+    for (const [id, sessionId] of [["evt_lt", fromTest.sessionId], ["evt_lr", fromReal.sessionId]] as const) {
+      const body = paidEvent(id, sessionId).replace('"livemode":false', '"livemode":true');
+      await post(path, body, sign(body, now(), WHSK, "li")).expect(200);
+    }
+    const started = await runsOf(wf!.id);
+    const bySource = (r: string) => started.find((x) => (x.triggerPayload as { sourceRunId?: string }).sourceRunId === r)!;
+    expect(bySource(fromTest.runId).test).toBe(true);
+    expect(bySource(fromReal.runId).test).toBe(false);
+    expect((bySource(fromReal.runId).triggerPayload as { livemode: boolean }).livemode).toBe(true);
+  });
+
+  it("a live payment is not settled by a test-mode event", async () => {
+    const { agent, userId } = await owner();
+    const path = await connect(agent, userId);
+    const wf = await listener(agent, ["paid"]);
+    const { p, sessionId } = await payment(userId, 15000, { livemode: true });
+    await post(path, paidEvent("evt_lm", sessionId)).expect(200);
+    expect(await statusOf(p.id)).toBe("pending");
+    expect(await runsOf(wf)).toHaveLength(0);
+  });
+
+  it("starts no run for a paused listener", async () => {
+    const { agent, userId } = await owner();
+    const path = await connect(agent, userId);
+    const wf = await listener(agent, ["paid"]);
+    await db.update(workflows).set({ pausedAt: new Date() }).where(eq(workflows.id, wf));
+    const { sessionId } = await payment(userId);
+    await post(path, paidEvent("evt_pz", sessionId)).expect(200);
+    expect(await runsOf(wf)).toHaveLength(0);
+  });
+
+  it("the same event id delivered to another workspace first does not suppress this workspace's payment (M3)", async () => {
+    const a = await owner();
+    const b = await owner();
+    const pathA = await connect(a.agent, a.userId);
+    const pathB = await connect(b.agent, b.userId);
+    const { p, sessionId } = await payment(a.userId);
+    const body = paidEvent("evt_shared", sessionId);
+    await post(pathB, body).expect(200);
+    expect((await post(pathA, body).expect(200)).body).toEqual({ ok: true });
+    expect(await statusOf(p.id)).toBe("paid");
+  });
+
+  it("keeps a refund that arrives first, and a later paid event ends refunded (M4)", async () => {
+    const { agent, userId } = await owner();
+    const path = await connect(agent, userId);
+    const paidWf = await listener(agent, ["paid"]);
+    const refundWf = await listener(agent, ["refunded"]);
+    const { p, sessionId } = await payment(userId);
+    await post(path, refundEvent("evt_early_r")).expect(200);
+    const [kept] = await db.select().from(paymongoEvents).where(and(eq(paymongoEvents.userId, userId), eq(paymongoEvents.eventId, "evt_early_r")));
+    expect(kept).toMatchObject({ state: "kept", payload: { paymentId: "pay_1" } });
+    expect((await post(path, refundEvent("evt_early_r")).expect(200)).body).toEqual({ duplicate: true });
+    await post(path, paidEvent("evt_late_p", sessionId)).expect(200);
+    expect(await statusOf(p.id)).toBe("refunded");
+    expect(await runsOf(paidWf)).toHaveLength(1);
+    expect(await runsOf(refundWf)).toHaveLength(1);
+    const rows = await db.select().from(paymongoEvents).where(eq(paymongoEvents.userId, userId));
+    expect(rows.map((r) => [r.eventId, r.state]).sort()).toEqual([["evt_early_r", "done"], ["evt_late_p", "done"]]);
+  });
+
+  it("keeps a paid event that arrives before the payment row, and storing the row settles it (M4)", async () => {
+    const { agent, userId } = await owner();
+    const path = await connect(agent, userId);
+    await post(path, paidEvent("evt_early_p", "cs_early")).expect(200);
+    expect((await post(path, paidEvent("evt_early_p", "cs_early")).expect(200)).body).toEqual({ duplicate: true });
+    expect(await db.select().from(paymongoEvents).where(eq(paymongoEvents.eventId, "evt_early_p"))).toMatchObject([{ state: "kept" }]);
+    const { p } = await payment(userId, 15000, { sessionId: "cs_early" });
+    expect(await statusOf(p.id)).toBe("paid");
+    expect(await db.select().from(paymongoEvents).where(eq(paymongoEvents.eventId, "evt_early_p"))).toMatchObject([{ state: "done" }]);
   });
 
   it("answers 200 to an event type it does not handle", async () => {

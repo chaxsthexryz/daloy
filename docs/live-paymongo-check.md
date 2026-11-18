@@ -30,7 +30,7 @@ Only after PayMongo business verification is approved.
 2. In Daloy, save the `sk_live_` key and the live webhook secret. Select Test.
 3. Create a link for a small amount (for example 20.00). Pay it with a real GCash or Maya account you own. Expect the follow-up run, the payment `paid`, and the same signature check as in part 1.
 4. Refund it in the PayMongo dashboard. Expect `refunded`.
-5. If you do not need live mode afterwards, turn `PAYMONGO_LIVE` off. Roll the live key if it was shown on a screen you shared.
+5. If you do not need live mode afterwards, turn `PAYMONGO_LIVE` off on both the API and the worker. New live links then fail with a plain message, and live events for payments already made still settle. Roll the live key if it was shown on a screen you shared.
 
 ## Results
 
