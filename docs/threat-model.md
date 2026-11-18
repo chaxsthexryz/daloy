@@ -136,6 +136,7 @@ The demo page (`apps/web/demo`, published as `site/demo/` on Cloudflare Pages) a
 - The Telegram address is fixed (`api.telegram.org`) or set by the installation's env var, never by a user, so a user cannot point Daloy at an internal host.
 - The chat id is validated (a number or `@name`), and the chat is pinned to each delivery when it is queued, so editing the connection cannot redirect messages already queued.
 - Anyone in the chat can read what is sent. The same rule as Slack: keep private details out of the message text.
+- Chat discovery (guided setup): `POST /settings/connections/telegram/chats` takes a pasted token, calls `getMe` and `getUpdates`, and returns the bot name and up to 20 recently seen chats (id, type, title). Titles can be personal: a private chat's title is the person's name. They go only to the signed-in owner who pasted the token, are not stored or logged, and message text and sender details are never read into the answer. The route is owner only and limited to 10 calls a minute. `getUpdates` is called without an offset, so it does not remove updates the bot has not processed. Anyone who holds the token can already read the same updates from Telegram, so the route adds no new reach. Unverified against the live Bot API.
 - A bot token that leaks lets someone message the bot's chats. Replace it in BotFather (/revoke), then Replace token in Apps.
 
 ## Google Calendar (decision 0044)
@@ -152,6 +153,7 @@ The demo page (`apps/web/demo`, published as `site/demo/` on Cloudflare Pages) a
 ## PayMongo (decision 0045)
 
 - A forged webhook: the path is 32 random bytes and finds the connection, then `Paymongo-Signature` must verify (HMAC-SHA256 of `t.rawBody` with the webhook secret, constant-time compare, only the part for the connection's mode). A bad signature is 401 and an unknown path is 404.
+- Key saved before the webhook secret (guided setup): the webhook address only exists after the key is saved, so a connection can briefly have no secret. The hook then answers 401 to every event, because an empty secret is never accepted as a key. The card says the secret is missing until it is saved (decision 0059).
 - Replay: an event id this workspace has seen answers 200 `duplicate`. Event ids are kept per workspace, so a workspace without the order cannot use up another workspace's event (decision 0056). A `t` older than 72 hours or more than 5 minutes ahead is refused. Runs are keyed `paymongo:<paymentId>:<status>`, so a replayed or second event starts nothing. The 72 hours is wide on purpose (PayMongo retries, and disables a failing webhook) and is to be tightened after the live check.
 - Amount tampering: the paid amount and currency must equal the centavos and PHP stored when the link was made, or the payment goes to needs_review and no run starts. The amount is parsed from text into integer centavos, never a float. Payment state never moves back.
 - A leaked webhook path: it only finds the connection. Without the webhook secret a caller cannot pass the signature. The path is kept when keys are replaced, so disconnect and connect PayMongo again to get a new one, and update the URL in PayMongo.

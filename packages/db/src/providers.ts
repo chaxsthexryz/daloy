@@ -451,6 +451,9 @@ export async function slackPost(urls: ProviderUrls, token: string, channel: stri
 
 // ---------------------------------------------------------------- Telegram
 
+/** getUpdates answers 409 while the bot has a webhook, so Daloy cannot list its chats. */
+const TELEGRAM_WEBHOOK_SET = "This bot has a webhook set, so Telegram will not list its chats. Type the chat id instead, or remove the webhook in the Bot API.";
+
 /** Telegram's Bot API answers { ok, result } with an HTTP status that matches (401, 403, 400, 429). The token sits in the URL path, so no error here may echo the URL. */
 async function telegramCall(urls: ProviderUrls, token: string, method: string, params: Record<string, string>, write = false) {
   const res = await call(`${urls.telegram}/bot${token}/${method}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(params) }, urls.timeoutMs ?? 10_000, write, "Telegram");
@@ -459,6 +462,7 @@ async function telegramCall(urls: ProviderUrls, token: string, method: string, p
     throw new ProviderError("Telegram is limiting requests right now. Daloy will try again.", "quota", Number.isFinite(s) && s > 0 ? s * 1000 : retryAfter(res.headers));
   }
   if (res.status >= 500) throw new ProviderError(`Telegram answered ${res.status}.`, write ? "ambiguous" : "unavailable");
+  if (res.status === 409) throw new ProviderError(TELEGRAM_WEBHOOK_SET, "invalid");
   if (res.body.ok === true) return res.body.result as Record<string, unknown>;
   const text = String(res.body.description ?? "").toLowerCase();
   if (res.status === 401 || res.status === 404) throw new ProviderError("Telegram no longer accepts the bot token. Connect Telegram again.", "auth");
@@ -477,6 +481,30 @@ export async function telegramIdentity(urls: ProviderUrls, token: string) {
 export async function telegramChat(urls: ProviderUrls, token: string, chatId: string) {
   const chat = await telegramCall(urls, token, "getChat", { chat_id: chatId });
   return { chatId: String(chat.id ?? chatId), chatTitle: String(chat.title ?? chat.username ?? chat.first_name ?? chatId) };
+}
+
+/**
+ * getUpdates (no offset, so nothing is consumed): the chats the bot saw in roughly the last day, newest first. Only the id, type and
+ * a title are kept. Message text is never read and nothing is stored. Unverified against the live Bot API (see docs/how-it-works.md).
+ */
+export async function telegramChats(urls: ProviderUrls, token: string) {
+  type Chat = { id?: number | string; type?: string; title?: string; username?: string; first_name?: string; last_name?: string };
+  type Update = Record<string, { chat?: Chat } | number | undefined>;
+  let updates: Update[];
+  try {
+    updates = (await telegramCall(urls, token, "getUpdates", {})) as unknown as Update[];
+  } catch (err) {
+    if (err instanceof ProviderError && err.message === TELEGRAM_WEBHOOK_SET) return { chats: [], webhookSet: true };
+    throw err;
+  }
+  const seen = new Map<string, { id: string; type: string; title: string }>();
+  for (const u of [...(Array.isArray(updates) ? updates : [])].reverse()) {
+    const chat = (["message", "channel_post", "my_chat_member", "edited_message"] as const).map((k) => (u[k] as { chat?: Chat } | undefined)?.chat).find((c) => c?.id !== undefined);
+    if (!chat || seen.has(String(chat.id))) continue;
+    const title = chat.title ?? ([chat.first_name, chat.last_name].filter(Boolean).join(" ") || chat.username || String(chat.id));
+    seen.set(String(chat.id), { id: String(chat.id), type: String(chat.type ?? "unknown"), title: title.slice(0, 100) });
+  }
+  return { chats: [...seen.values()].slice(0, 20), webhookSet: false };
 }
 
 /** sendMessage as plain text (no parse_mode, so run data cannot break formatting). */

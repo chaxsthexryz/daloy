@@ -42,6 +42,7 @@ import {
   trelloIdentity,
   trelloList,
   telegramChat,
+  telegramChats,
   telegramIdentity,
   telegramSend,
   spreadsheetIdFrom,
@@ -72,10 +73,12 @@ const telegramInput = z.strictObject({
   token: z.string().trim().regex(/^\d{6,12}:[A-Za-z0-9_-]{30,50}$/, "Paste the bot token from BotFather, like 123456789:AA..."),
   chatId: z.string().trim().regex(/^(-?\d{1,20}|@[A-Za-z][A-Za-z0-9_]{4,31})$/, "Enter the chat id (a number) or the public @name"),
 });
+const telegramChatsInput = z.strictObject({ token: telegramInput.shape.token });
 // PayMongo's secret key and the signing secret of the webhook the owner made in PayMongo. Both are kept encrypted and never returned.
+// The secret may come second: the webhook URL only exists after the key is saved, and until the secret is saved every paid event is refused (decision 0059).
 const paymongoInput = z.strictObject({
   secretKey: z.string().trim().regex(/^sk_(test|live)_\S+$/, "Paste the secret key from PayMongo, which starts with sk_test_ or sk_live_"),
-  webhookSecret: z.string().trim().regex(/^whsk_\S+$/, "Paste the webhook secret from PayMongo, which starts with whsk_"),
+  webhookSecret: z.string().trim().regex(/^whsk_\S+$/, "Paste the webhook secret from PayMongo, which starts with whsk_").optional(),
 });
 // Airtable: a personal access token (pat...), a base id (app...) and a table id (tbl...) or name. Notion: an internal
 // integration token and a database id (or the link to it). Trello: the API key, a token, and a list id (decision 0046).
@@ -241,6 +244,15 @@ export class ConnectionsController {
     return this.get(user);
   }
 
+  /** Wizard step: proves the token (getMe) and lists the chats the bot has recently seen, so the owner taps one. Nothing is saved or returned but the bot name and those chats. */
+  @Post("telegram/chats")
+  @HttpCode(200)
+  @UseGuards(RateLimit(10))
+  async telegramChatList(@Body(new ZodPipe(telegramChatsInput)) body: z.output<typeof telegramChatsInput>) {
+    const { bot } = await telegramIdentity(this.urls, body.token).catch(asBadRequest);
+    return { bot, ...(await telegramChats(this.urls, body.token).catch(asBadRequest)) };
+  }
+
   @Post("telegram/test")
   @HttpCode(200)
   @UseGuards(RateLimit(5))
@@ -258,10 +270,11 @@ export class ConnectionsController {
     await checkPaymongoKey(body.secretKey, this.urls).catch(asBadRequest);
     const old = await connectionCredential(this.db, this.config.secretsKey, user.workspaceId, "paymongo");
     const webhookPath = old?.destination?.webhookPath ?? randomBytes(32).toString("base64url");
+    const webhookSecret = body.webhookSecret ?? (old ? (JSON.parse(old.credential) as { webhookSecret?: string }).webhookSecret : undefined) ?? "";
     await saveConnection(this.db, this.config.secretsKey, user.workspaceId, "paymongo", {
       account: `${mode === "live" ? "Live" : "Test"} mode key`,
-      credential: JSON.stringify({ secretKey: body.secretKey, webhookSecret: body.webhookSecret }),
-      destination: { webhookPath, mode },
+      credential: JSON.stringify({ secretKey: body.secretKey, webhookSecret }),
+      destination: { webhookPath, mode, ...(webhookSecret ? {} : { webhookPending: "true" }) },
     });
     return this.get(user);
   }

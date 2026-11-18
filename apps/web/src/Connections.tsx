@@ -1,6 +1,7 @@
 import { useLanguage } from "./Language";
 import { useState, type FormEvent } from "react";
 import { api } from "./api";
+import { PaymongoSetup, TeamsSetup, TelegramSetup } from "./PasteSetups";
 
 export type Provider = "google_sheets" | "slack" | "outlook" | "teams" | "telegram" | "google_calendar" | "google_drive" | "paymongo" | "airtable" | "notion" | "trello";
 export type Connection = { provider: Provider; status: "active" | "failed"; account: string; destination: Record<string, string> | null; lastError: string | null; lastTestedAt: string | null };
@@ -10,8 +11,6 @@ type Channel = { id: string; name: string; isMember: boolean };
 
 const SERVICE_ACCOUNT_HELP = "https://cloud.google.com/iam/docs/service-accounts-create";
 const SLACK_APP_HELP = "https://api.slack.com/quickstart";
-const TELEGRAM_BOT_HELP = "https://core.telegram.org/bots/tutorial";
-const TEAMS_WORKFLOWS_HELP = "https://support.microsoft.com/en-us/workflows/send-messages-in-teams-using-incoming-webhooks";
 const MICROSOFT_CONSENT_HELP = "https://learn.microsoft.com/en-us/entra/identity/enterprise-apps/configure-user-consent";
 
 /** What the Outlook consent callback reported, by the code in #/settings/business/outlook-<code>. */
@@ -417,16 +416,6 @@ export function PaymongoConnection({ conn, webhookBase, onChange }: { conn: Conn
   const { error, busy, act } = useAction(onChange);
   const [editing, setEditing] = useState(false);
   const [test, setTest] = useState<TestResult | null>(null);
-  const [form, setForm] = useState({ secretKey: "", webhookSecret: "" });
-  const save = (e: FormEvent) => {
-    e.preventDefault();
-    void act(async () => {
-      await api("PUT", "/settings/connections/paymongo", form);
-      setForm({ secretKey: "", webhookSecret: "" });
-      setEditing(false);
-      setTest(null);
-    });
-  };
 
   return (
     <div className="connection" aria-labelledby="paymongo-h">
@@ -437,6 +426,7 @@ export function PaymongoConnection({ conn, webhookBase, onChange }: { conn: Conn
           <p>
             <strong>{conn.destination.mode === "live" ? t("Live mode") : t("Test mode")}</strong>
           </p>
+          {conn.destination.webhookPending && <p className="message error">{t("The webhook secret is not saved yet, so payment events are ignored. Use Replace key or secret to finish.")}</p>}
           <p>
             {t("In PayMongo → Developers → Webhooks, add this URL with the events checkout_session.payment.paid and payment.refunded, then paste the webhook secret here.")}
           </p>
@@ -464,29 +454,7 @@ export function PaymongoConnection({ conn, webhookBase, onChange }: { conn: Conn
         </div>
       )}
       <Outcome test={test} what={t("PayMongo accepted the key")} />
-      {(!conn || editing) && (
-        <form onSubmit={save}>
-          <p>{t("Paste your PayMongo secret key and the webhook secret. Both are stored encrypted and never shown again.")}</p>
-          <div className="field">
-            <label htmlFor="pm-key">{t("Secret key")}</label>
-            <input id="pm-key" type="password" value={form.secretKey} onChange={(e) => setForm({ ...form, secretKey: e.target.value })} required placeholder="sk_test_…" autoComplete="off" />
-          </div>
-          <div className="field">
-            <label htmlFor="pm-whsk">{t("Webhook secret")}</label>
-            <input id="pm-whsk" type="password" value={form.webhookSecret} onChange={(e) => setForm({ ...form, webhookSecret: e.target.value })} required placeholder="whsk_…" autoComplete="off" />
-          </div>
-          <div className="actions">
-            <button type="submit" className="primary" disabled={busy}>
-              {conn ? t("Save") : t("Connect PayMongo")}
-            </button>
-            {conn && (
-              <button type="button" className="quiet" onClick={() => setEditing(false)}>
-                {t("Cancel")}
-              </button>
-            )}
-          </div>
-        </form>
-      )}
+      {(!conn || editing) && <PaymongoSetup conn={conn} webhookBase={webhookBase} onChange={onChange} onClose={(result) => { setEditing(false); setTest(result ?? null); }} />}
       <p role="alert" className="message error" hidden={!error}>
         {error}
       </p>
@@ -499,16 +467,6 @@ export function TelegramConnection({ conn, onChange }: { conn: Connection | null
   const { error, busy, act } = useAction(onChange);
   const [editing, setEditing] = useState(false);
   const [test, setTest] = useState<TestResult | null>(null);
-  const [form, setForm] = useState({ token: "", chatId: conn?.destination?.chatId ?? "" });
-  const save = (e: FormEvent) => {
-    e.preventDefault();
-    void act(async () => {
-      await api("PUT", "/settings/connections/telegram", form);
-      setForm({ ...form, token: "" });
-      setEditing(false);
-      setTest(null);
-    });
-  };
 
   return (
     <div className="connection" aria-labelledby="telegram-h">
@@ -535,34 +493,7 @@ export function TelegramConnection({ conn, onChange }: { conn: Connection | null
         </div>
       )}
       <Outcome test={test} what={t("Telegram accepted a test message")} />
-      {(!conn || editing) && (
-        <form onSubmit={save}>
-          <p>
-            {t("Create a bot with BotFather in Telegram, add it to the chat, and send any message there. Paste the bot token and the chat id.")}{" "}
-            <a href={TELEGRAM_BOT_HELP} target="_blank" rel="noreferrer">
-              {t("How to create a Telegram bot")}
-            </a>
-          </p>
-          <div className="field">
-            <label htmlFor="tg-token">{t("Bot token")}</label>
-            <input id="tg-token" type="password" value={form.token} onChange={(e) => setForm({ ...form, token: e.target.value })} required placeholder="123456789:AA…" autoComplete="off" />
-          </div>
-          <div className="field">
-            <label htmlFor="tg-chat">{t("Chat id")}</label>
-            <input id="tg-chat" value={form.chatId} onChange={(e) => setForm({ ...form, chatId: e.target.value })} required placeholder="-1001234567890 or @channelname" autoComplete="off" />
-          </div>
-          <div className="actions">
-            <button type="submit" className="primary" disabled={busy}>
-              {conn ? t("Save") : t("Connect Telegram")}
-            </button>
-            {conn && (
-              <button type="button" className="quiet" onClick={() => setEditing(false)}>
-                {t("Cancel")}
-              </button>
-            )}
-          </div>
-        </form>
-      )}
+      {(!conn || editing) && <TelegramSetup conn={conn} onChange={onChange} onClose={(result) => { setEditing(false); setTest(result ?? null); }} />}
       <p role="alert" className="message error" hidden={!error}>
         {error}
       </p>
@@ -625,16 +556,6 @@ export function TeamsConnection({ conn, onChange }: { conn: Connection | null; o
   const { error, busy, act } = useAction(onChange);
   const [editing, setEditing] = useState(false);
   const [test, setTest] = useState<TestResult | null>(null);
-  const [form, setForm] = useState({ url: "", channelName: conn?.account ?? "" });
-  const save = (e: FormEvent) => {
-    e.preventDefault();
-    void act(async () => {
-      await api("PUT", "/settings/connections/teams", form);
-      setForm({ ...form, url: "" });
-      setEditing(false);
-      setTest(null);
-    });
-  };
 
   return (
     <div className="connection" aria-labelledby="teams-h">
@@ -655,29 +576,7 @@ export function TeamsConnection({ conn, onChange }: { conn: Connection | null; o
       ) : (
         <Outcome test={test} what="" />
       )}
-      {(!conn || editing) && (
-        <form onSubmit={save}>
-          <p>{t("In Teams, open Workflows and create one from the template ")}<q>{t("Post to a channel when a webhook request is received")}</q>{t(". Choose the team and channel there, then copy the link it shows. Your organization may have to allow the Workflows app first; if the template is missing or blocked, ask your Teams administrator.")}{" "}
-            <a href={TEAMS_WORKFLOWS_HELP} target="_blank" rel="noreferrer">{t("How to create the workflow")}</a>
-          </p>
-          <div className="field">
-            <label htmlFor="tm-url">{t("Workflow link")}</label>
-            <input id="tm-url" type="password" value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} required autoComplete="off" placeholder="https://…logic.azure.com/…" />
-          </div>
-          <div className="field">
-            <label htmlFor="tm-channel">{t("Teams channel name, to show in Daloy")}</label>
-            <input id="tm-channel" value={form.channelName} onChange={(e) => setForm({ ...form, channelName: e.target.value })} required maxLength={100} placeholder={t("Purchasing")} />
-          </div>
-          <div className="actions">
-            <button type="submit" className="primary" disabled={busy}>
-              {conn ? t("Save link") : t("Connect Teams")}
-            </button>
-            {conn && (
-              <button type="button" className="quiet" onClick={() => setEditing(false)}>{t("Cancel")}</button>
-            )}
-          </div>
-        </form>
-      )}
+      {(!conn || editing) && <TeamsSetup conn={conn} onChange={onChange} onClose={(result) => { setEditing(false); setTest(result ?? null); }} />}
       <p role="alert" className="message error" hidden={!error}>
         {error}
       </p>

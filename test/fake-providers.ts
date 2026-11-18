@@ -31,7 +31,7 @@ export async function startFakeProviders(port = 0) {
   const tokens = new Map<string, string>(); // access token -> email
   const sheets = new Map<string, { title: string; tabs: Map<string, string[][]>; editors: Set<string>; metadata: Map<number, SheetMeta> }>();
   const slack = { token: "", team: "Lim Dental", channels: [{ id: "C0REQ", name: "office-requests", is_member: true }], messages: [] as { channel: string; text: string; ts: string }[], revoked: false };
-  const telegram = { token: "", bot: "daloy_test_bot", chats: [{ id: -1001234567890, title: "Office team" }] as { id: number; title: string }[], messages: [] as { chat: string; text: string; id: number }[], revoked: false };
+  const telegram = { token: "", bot: "daloy_test_bot", chats: [{ id: -1001234567890, title: "Office team" }] as { id: number; title: string }[], updates: [] as Record<string, unknown>[], webhook: false, messages: [] as { chat: string; text: string; id: number }[], revoked: false };
   // Airtable, Notion and Trello (N15, decision 0046): a bearer or key/token check, one target each, and the records added.
   const airtable = { token: "", base: "appFAKEBASE000001", table: "tblFAKETABLE00001", records: [] as { id: string; fields: Record<string, unknown> }[], revoked: false };
   const notion = { token: "", database: "0123456789abcdef0123456789abcdef", title: "Office requests", titleProperty: "Name", pages: [] as { id: string; properties: Record<string, unknown> }[], revoked: false };
@@ -377,6 +377,8 @@ export async function startFakeProviders(port = 0) {
       const body = raw ? (JSON.parse(raw) as { chat_id?: string; text?: string }) : {};
       if (!telegram.token || tg[1] !== telegram.token || telegram.revoked) return json(res, 401, { ok: false, error_code: 401, description: "Unauthorized" });
       if (tg[2] === "getMe") return json(res, 200, { ok: true, result: { id: 123456789, is_bot: true, username: telegram.bot } });
+      // getUpdates (P7): what the bot recently saw. A set webhook makes it answer 409 like the real Bot API.
+      if (tg[2] === "getUpdates") return telegram.webhook ? json(res, 409, { ok: false, error_code: 409, description: "Conflict: can't use getUpdates method while webhook is active" }) : json(res, 200, { ok: true, result: telegram.updates });
       const chat = telegram.chats.find((c) => String(c.id) === body.chat_id);
       if (!chat) return json(res, 400, { ok: false, error_code: 400, description: "Bad Request: chat not found" });
       if (tg[2] === "getChat") return json(res, 200, { ok: true, result: { id: chat.id, title: chat.title, type: "group" } });

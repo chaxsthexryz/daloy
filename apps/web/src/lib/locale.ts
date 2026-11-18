@@ -4,6 +4,7 @@ import { controlsTranslations } from "./locale-controls";
 import { builderTranslations } from "./locale-builder";
 import { guidedTranslations } from "./locale-guided";
 import { viewTranslations } from "./locale-views";
+import { pasteTranslations } from "./locale-paste";
 export type Language = "en" | "tl";
 
 const tagalog: Record<string, string> = {
@@ -11,6 +12,7 @@ const tagalog: Record<string, string> = {
   ...builderTranslations,
   ...guidedTranslations,
   ...viewTranslations,
+  ...pasteTranslations,
   ...brandTranslations,
   ...controlsTranslations,
   "Plan: {plan}": "Plan: {plan}",

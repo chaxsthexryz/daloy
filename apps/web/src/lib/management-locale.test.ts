@@ -59,7 +59,7 @@ describe("management interface language", () => {
     expect(calendar).toContain("Ikonekta ang Google Calendar");
     const payment = render(createElement(PaymongoConnection, { conn: null, webhookBase: "https://example.test", onChange: async () => undefined }), "tl");
     expect(payment).toContain("Ikonekta ang PayMongo");
-    expect(payment).toContain("I-paste ang PayMongo secret key");
+    expect(payment).toContain("Gamitin muna ang test mode");
     expect(render(createElement(PaymongoConnection, { conn: null, webhookBase: "https://example.test", onChange: async () => undefined }), "en")).toContain("Connect PayMongo");
   });
 });

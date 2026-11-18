@@ -1,0 +1,43 @@
+// Tagalog for the guided paste setups (Telegram, Teams, PayMongo). English is the key.
+export const pasteTranslations: Record<string, string> = {
+  "Checking…": "Sinusuri…",
+  "Create the bot": "Gumawa ng bot",
+  "Paste the bot token": "I-paste ang bot token",
+  "Add the bot to your chat and pick it": "Idagdag ang bot sa chat mo at piliin ito",
+  "Connect": "Ikonekta",
+  "In Telegram, open": "Sa Telegram, buksan ang",
+  ", send /newbot and answer its questions. BotFather then shows a token.": ", ipadala ang /newbot at sagutin ang mga tanong nito. Ipapakita ng BotFather ang token.",
+  "Check token": "Suriin ang token",
+  "Add the bot to the chat, then send any message there. Daloy lists the chats the bot has seen. It reads only the chat name, never the messages, and keeps nothing.":
+    "Idagdag ang bot sa chat, saka magpadala ng kahit anong mensahe doon. Ililista ng Daloy ang mga chat na nakita ng bot. Pangalan lang ng chat ang binabasa nito, hindi ang mga mensahe, at wala itong itinatabi.",
+  "Find my chats": "Hanapin ang mga chat ko",
+  "Tapping a chat above fills this in. You can also type the chat id.": "Pag pinindot mo ang chat sa itaas, mapupunan ito. Puwede mo ring i-type ang chat id.",
+  "Token works. The bot is {bot}.": "Gumagana ang token. Ang bot ay {bot}.",
+  "This bot has a webhook set, so Telegram will not list its chats. Type the chat id below instead, or remove the webhook.":
+    "May webhook ang bot na ito, kaya hindi ililista ng Telegram ang mga chat nito. I-type na lang ang chat id sa ibaba, o alisin ang webhook.",
+  "Found {count} chat(s). Tap yours.": "May nakitang {count} chat. Pindutin ang sa iyo.",
+  "No chats yet. Add the bot to your chat, send any message there, then look again.": "Wala pang chat. Idagdag ang bot sa chat mo, magpadala ng mensahe doon, saka hanapin ulit.",
+  "Start a workflow in Teams": "Magsimula ng workflow sa Teams",
+  "Choose the team and channel, and who can trigger it": "Piliin ang team at channel, at kung sino ang puwedeng mag-trigger",
+  "Paste the link and send a test message": "I-paste ang link at magpadala ng test message",
+  "In Teams, open the Workflows app and start a new workflow that posts to a channel when a webhook request is received. Menu names may differ. Your organization may have to allow the Workflows app first; if you cannot find it, ask your Teams administrator.":
+    "Sa Teams, buksan ang Workflows app at gumawa ng bagong workflow na nagpo-post sa channel kapag may natanggap na webhook request. Maaaring iba ang pangalan ng mga menu. Maaaring kailangang payagan muna ng organisasyon mo ang Workflows app; kung hindi mo ito makita, magtanong sa Teams administrator mo.",
+  "Pick the team and channel that should get the notes. If the workflow asks who can trigger it, choose anyone, or Daloy's messages will be refused.":
+    "Piliin ang team at channel na tatanggap ng mga mensahe. Kung tinatanong ng workflow kung sino ang puwedeng mag-trigger, piliin ang sinuman, kung hindi ay tatanggihan ang mga mensahe ng Daloy.",
+  "Use test mode first": "Gamitin muna ang test mode",
+  "Copy the secret key and save it": "Kopyahin ang secret key at i-save ito",
+  "Add the webhook in PayMongo": "Idagdag ang webhook sa PayMongo",
+  "Paste the webhook secret": "I-paste ang webhook secret",
+  "Sign in to the PayMongo dashboard and switch to test mode. Test keys and test webhooks start with test, and no money moves. Menu names may differ.":
+    "Mag-sign in sa PayMongo dashboard at lumipat sa test mode. Walang perang gumagalaw sa test keys at test webhooks. Maaaring iba ang pangalan ng mga menu.",
+  "This is a test key. Money does not move.": "Test key ito. Walang perang gumagalaw.",
+  "This is a live key. Start with a test key; live mode needs PayMongo business verification.": "Live key ito. Magsimula sa test key; kailangan ng live mode ang business verification ng PayMongo.",
+  "A secret key starts with sk_test_ or sk_live_. Do not paste the public key (pk_).": "Nagsisimula ang secret key sa sk_test_ o sk_live_. Huwag i-paste ang public key (pk_).",
+  "Save key": "I-save ang key",
+  "Save webhook secret": "I-save ang webhook secret",
+  "PayMongo accepted the key. The webhook address is below.": "Tinanggap ng PayMongo ang key. Nasa ibaba ang webhook address.",
+  "In PayMongo, add a webhook with this address and the events checkout_session.payment.paid and payment.refunded. Menu names may differ.":
+    "Sa PayMongo, magdagdag ng webhook gamit ang address na ito at ang mga event na checkout_session.payment.paid at payment.refunded. Maaaring iba ang pangalan ng mga menu.",
+  "Save the secret key first. Daloy then shows the webhook address.": "I-save muna ang secret key. Ipapakita ng Daloy ang webhook address pagkatapos.",
+  "The webhook secret is not saved yet, so payment events are ignored. Use Replace key or secret to finish.": "Hindi pa naka-save ang webhook secret, kaya hindi pinapansin ang mga payment event. Gamitin ang Replace key or secret para matapos.",
+};
