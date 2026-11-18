@@ -312,7 +312,7 @@ export async function calendarWriteTest(urls: ProviderUrls, sa: ServiceAccount, 
   return { created: true, deleted: true };
 }
 
-export type CalendarBooking = { status: "active" | "cancelled"; start: Date; end: Date; timezone: string };
+export type CalendarBooking = { status: "active" | "cancelled" | "no_show"; start: Date; end: Date; timezone: string };
 export type CalendarContent = { title: string; description: string };
 
 /**
