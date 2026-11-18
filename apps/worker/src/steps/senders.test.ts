@@ -156,3 +156,74 @@ describe("when the shared mail server only sends for approved owners", () => {
     expect(installation.messages.at(-1)).toMatchObject({ user: undefined, to: ["customer@example.com"] });
   });
 });
+
+describe("the daily recipient cap on Gmail (N11b)", () => {
+  const withCap = async (cap: string, body: () => Promise<void>) => {
+    const before = process.env.MAILBOX_DAILY_CAP;
+    process.env.MAILBOX_DAILY_CAP = cap;
+    try {
+      await body();
+    } finally {
+      if (before === undefined) delete process.env.MAILBOX_DAILY_CAP;
+      else process.env.MAILBOX_DAILY_CAP = before;
+    }
+  };
+  const mailTo = (id: string, to: string): Step => ({ id, type: "email", config: { to, subject: "Hello", text: "Hi" } });
+  async function finish(userId: string, steps: Step[]) {
+    const definition = { trigger: { type: "manual", config: {} }, steps, edges: [] };
+    const [wf] = await db.insert(workflows).values({ userId, name: "w", slug: `w-${Math.random().toString(36).slice(2)}` }).returning();
+    const [v] = await db.insert(workflowVersions).values({ workflowId: wf!.id, version: 1, definition, published: true }).returning();
+    const [r] = await db.insert(runs).values({ workflowVersionId: v!.id, triggerPayload: {} }).returning();
+    for (let i = 0; i < 4; i++) {
+      await advance({ db, executor: executor(), owner: "test", leaseMs: 5000, enqueue: async () => {} }, r!.id);
+      const [after] = await db.select().from(runs).where(eq(runs.id, r!.id));
+      if (after!.state !== "running" && after!.state !== "pending") return after!;
+    }
+    throw new Error("run did not finish");
+  }
+
+  it("counts every recipient, then sends nothing more and waits for a person, with the reason", async () => {
+    await withCap("3", async () => {
+      const cara = await owner("cara@test.local");
+      await connect(cara, "cara.shop@gmail.com");
+      const before = gmail.messages.length;
+      expect((await finish(cara, [mailTo("first", "a@example.com,b@example.com")])).state).toBe("succeeded");
+      expect((await finish(cara, [mailTo("second", "c@example.com")])).state).toBe("succeeded");
+      const capped = await finish(cara, [mailTo("third", "d@example.com")]);
+      expect(capped.state).toBe("needs_review");
+      expect(capped.error).toContain("today's limit of 3 recipients through its Gmail or Outlook. Nothing was sent.");
+      // Two messages went out (the first had two recipients) and the third was held.
+      expect(gmail.messages.length).toBe(before + 2);
+      const [attempt] = await db.select().from(stepRuns).where(eq(stepRuns.runId, capped.id));
+      expect(attempt).toMatchObject({ state: "failed", outcome: "not_sent" });
+    });
+  });
+
+  it("is per workspace: another owner's Gmail still sends, and installation mail is not counted", async () => {
+    await withCap("1", async () => {
+      const dan = await owner("dan@test.local");
+      await connect(dan, "dan.shop@gmail.com");
+      expect((await finish(dan, [mailTo("one", "a@example.com")])).state).toBe("succeeded");
+      expect((await finish(dan, [mailTo("two", "b@example.com")])).state).toBe("needs_review");
+      const fay = await owner("fay@test.local");
+      await connect(fay, "fay.shop@gmail.com");
+      expect((await finish(fay, [mailTo("fay_one", "a@example.com")])).state).toBe("succeeded");
+      const before = installation.messages.length;
+      expect((await finish(demo, [mailTo("d1", "a@example.com")])).state).toBe("succeeded");
+      expect((await finish(demo, [mailTo("d2", "b@example.com")])).state).toBe("succeeded");
+      expect(installation.messages.length).toBe(before + 2);
+    });
+  });
+
+  it("does not count a retried send twice", async () => {
+    await withCap("2", async () => {
+      const eve = await owner("eve@test.local");
+      await connect(eve, "eve.shop@gmail.com");
+      const step = mailTo("same", "a@example.com");
+      await run(eve, step);
+      await run(eve, step);
+      await run(eve, mailTo("other", "b@example.com"));
+      await expect(run(eve, mailTo("third", "c@example.com"))).rejects.toMatchObject({ review: true, outcome: "not_sent" });
+    });
+  });
+});

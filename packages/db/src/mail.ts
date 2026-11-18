@@ -1,5 +1,6 @@
 import { Readable } from "node:stream";
 import { readBrand, type Brand } from "./brand";
+import { claimUsage } from "./usage";
 import { StepError, type EmailConfig, type Outcome } from "@daloy/engine";
 import { eq, sql } from "drizzle-orm";
 import nodemailer, { type Transporter } from "nodemailer";
@@ -121,13 +122,16 @@ const loginRefused = (err: unknown) => {
  * claim, for a send that is not safe to repeat, is called once the sender is known and nothing but the network is left,
  * so its database lock never waits on another query; it is released when the message body starts (decision 0030).
  */
-export async function sendAs(db: Db, key: Buffer, deps: MailDeps, userId: string, cfg: EmailConfig, idempotencyKey: string, opts: { allowUnconfirmed?: boolean; claim?: () => Promise<() => void> } = {}) {
+export async function sendAs(db: Db, key: Buffer, deps: MailDeps, userId: string, cfg: EmailConfig, idempotencyKey: string, opts: { allowUnconfirmed?: boolean; claim?: () => Promise<() => void>; capKey?: string } = {}) {
   const sender = await resolveSender(db, key, userId, opts);
   const mailer = mailerFor(sender, deps);
   // Before the claim below: the send lock must never wait on a query (decision 0030).
   const brand = await readBrand(db, userId);
   // The shared server is the one an unapproved sign-up could abuse; Gmail sends as the owner's own confirmed mailbox.
   if (sender.kind === "installation" && deps.sharedMail === "approved") await claimSharedMail(db, userId, checkRecipients(cfg.to).length);
+  // Gmail has its own daily limit, so a workspace is capped before a busy automation gets the owner's mailbox suspended (N11b).
+  // capKey is the step key, the same on every attempt, so a retry is not counted twice. The watchdog and the test email pass none: they are not counted.
+  if (sender.kind === "gmail" && opts.capKey) await claimUsage(db, userId, "mailbox", { n: checkRecipients(cfg.to).length, key: opts.capKey });
   try {
     const release = await opts.claim?.();
     try {

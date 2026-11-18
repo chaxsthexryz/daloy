@@ -124,7 +124,18 @@ async function runNext(deps: AdvanceDeps, run: Run): Promise<void> {
     .innerJoin(workflows, eq(workflows.id, workflowVersions.workflowId))
     .where(eq(workflowVersions.id, run.workflowVersionId));
   const def = definitionSchema.parse(version!.definition);
-  if (run.state === "pending") await moveRun(db, run.id, "pending", "running");
+  // An operator's Cancel moved the run while this worker was waking or starting it (N11b): their guarded update won, so this attempt ends quietly.
+  const cancelledUnderUs = async (err: unknown) => {
+    const [now] = await db.select({ state: runs.state }).from(runs).where(eq(runs.id, run.id));
+    if (now?.state !== "cancelled") throw err;
+  };
+  if (run.state === "pending") {
+    try {
+      await moveRun(db, run.id, "pending", "running");
+    } catch (err) {
+      return cancelledUnderUs(err);
+    }
+  }
 
   const history = await db.select().from(stepRuns).where(eq(stepRuns.runId, run.id)).orderBy(asc(stepRuns.createdAt), asc(stepRuns.attempt));
   const last = history.at(-1);
@@ -151,6 +162,9 @@ async function runNext(deps: AdvanceDeps, run: Run): Promise<void> {
       await moveRun(tx, run.id, "waiting", "running", { nextAttemptAt: null });
       Object.assign(last!, extra);
       return true;
+    }).catch(async (err: unknown) => {
+      await cancelledUnderUs(err);
+      return false;
     });
     if (!resumed) return;
     last!.state = "succeeded";
