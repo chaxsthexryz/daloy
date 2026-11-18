@@ -221,6 +221,12 @@ Order: N3, N4, V1, then V2 and W together, N5 with the pilot search P in paralle
 - [ ] N17. Schedule watchdog: when a scheduled automation misses its run (worker down, a queue job lost, or no run within its expected window plus a grace period), the owner sees "Missed its schedule" on Automations and gets one email, at most one per automation per day. Exit: a test stops the schedule, the watchdog flags it once and clears it after the next good run. (claimed: claude, branch n17-watchdog)
 - [ ] N18. Brand kit: the owner sets a business name, logo and one accent colour in Settings, used on public forms, booking pages and outgoing emails. Logo size and type are checked; nothing is fetched from another site. Exit: a form and an email show the brand, and the defaults stay when none is set. (claimed: claude, branch n18-brand)
 - [ ] N19. CSV export: download an automation's Activity (requests, state, dates, form fields) and Bookings as CSV, owner and operator only, with cells that start with = + - @ escaped so a spreadsheet does not run them. Exit: an API test checks the columns, the escaping and the role rules. (claimed: claude, branch n19-csv)
+- [ ] N20. Two starter templates, no new code: Renewal reminders (a schedule plus a sheet of domains, hosting, SSL, permits and insurance, mailed 30 days ahead) and Shopify or WooCommerce orders (a webhook recipe). Do soon.
+- [ ] N21. File upload on forms, and a Google Drive step that saves the files and photos a form receives into a folder (the existing service account). Size and type limits, never run or previewed as HTML. Later.
+- [ ] N22. AI reads images and PDFs (the AI step takes text only today), then a "receipt photo to expense row" template: file to Drive, AI pulls out the shop and amount, a sheet row and an approval follow. Needs N21. Later.
+- [ ] N23. Invoice PDF and chase: a form becomes a PDF invoice by email, with reminders while unpaid. After the pilot; the Invoice follow-up template covers most of it now.
+- [ ] N24. Google Sheets through OAuth ("bring your own Google client", like Outlook), with the service account kept as the fallback. Needs the operator's own Google Cloud app; a verified public consent screen is out of scope. After the pilot.
+- [ ] N25. WhatsApp Cloud API delivery with approved message templates. Only if a pilot asks: Messenger and Viber are read more here, and it needs Meta approval and paid templates.
 - [ ] N11. Real accounts: final security review at the release commit covering N6 to N10, a daily recipient cap on Gmail and Outlook receipts, a timestamp in the webhook signature, MCP token scopes and expiry, password change and reset, per-workflow pause and cancel of a pending run, read-side secret redaction on every surface, a purge policy for retired secrets.
 
 Model and effort per open phase. One coordinator session (Opus 5.5) coordinates: it picks the model for each phase session, checks results, merges and pushes. Phase sessions run on Opus or Sonnet; the lead plans and reviews, and hands file-by-file edits and test runs to Sonnet subagents. Claude Code or ChatGPT Codex can take a phase; `AGENTS.md` has the shared rules and the claim step.
@@ -243,6 +249,12 @@ Model and effort per open phase. One coordinator session (Opus 5.5) coordinates:
 | N17 schedule watchdog | Sonnet 5.5, high | GPT-6.1 Sol, Medium |
 | N18 brand kit | Sonnet 5.5, medium | GPT-6.1 Sol, Medium |
 | N19 CSV export | Sonnet 5.5, medium | GPT-6.1 Sol, Medium |
+| N20 starter templates | Sonnet 5.5, medium | GPT-6.1 Sol, Medium |
+| N21 form files and Google Drive | Opus 5.5, high | GPT-6.1 Sol, High |
+| N22 AI image and PDF input | Opus 5.5, high | GPT-6.1 Sol, High |
+| N23 invoice PDF | Sonnet 5.5, high | GPT-6.1 Sol, Medium |
+| N24 Sheets OAuth | Opus 5.5, high | GPT-6.1 Sol, High |
+| N25 WhatsApp | Opus 5.5, high | GPT-6.1 Sol, High |
 | Read-only checks and retests | Sonnet 5.5, medium | GPT-6.1 Terra |
 
 Hygiene, any time (done 16 November 2026): add a LICENSE (MIT), the README "How AI was used" section CLAUDE.md asks for, and fix by hand the four statements in docs/how-it-works.md that the code contradicts (steps never reach `skipped`, the table has 85 cases not 72, `failed` can go back to `running`, not every change goes through `assertTransition`).
@@ -265,21 +277,11 @@ Hygiene, any time (done 16 November 2026): add a LICENSE (MIT), the README "How 
 - Acceptance check: from the setup screen, the owner can test Gmail, activate inquiry replies and submit a sample inquiry as a customer. The reply reaches that customer's address and the notification reaches the business inbox, without opening the workflow editor.
 
 
-## Planned backlog: integrations and the built-in table (not scheduled, not built)
+## Backlog review (2026-11-18)
 
-Recorded from a planning conversation on 2026-11-18. None of this exists in code yet.
+DeepSeek's review is in `docs/roadmap-review-2026-11-18.md`. Claude's second opinion moved the kept items into N20 to N25 above. SMS is N7. Dropped, so they are not proposed again without a pilot asking:
 
-Verdicts, sizes, sprint order and open questions: `docs/roadmap-review-2026-11-18.md`. Written by DeepSeek (deepseek-flash), awaiting a second opinion from Claude.
-
-- **Daloy table**, built in: rows in Postgres, a page to see them, an "Add a row" and "Find rows" step, "new row in a table" as a trigger, typed columns, and export to `.xlsx` and `.csv` (import too, so a sheet can move in). Lets an office keep orders, leads or requests without Google Sheets.
-- **WhatsApp Cloud API** delivery, with approved message templates. The channel most customers here read first.
-- **Google Drive** step: save the files and photos a form receives into a folder. The existing service account covers it.
-- **Renewal reminders** starter template: schedule plus table, for domains, hosting, SSL, permits and insurance, mailed 30 days ahead.
-- **Receipt photo to expense row**: file into Drive, AI extracts the shop and amount, a table row and an approval step follow.
-- **Invoice PDF and chase**: form to PDF by email, then a reminder when it is still unpaid after a set number of days.
-- **E-signature** through Dropbox Sign (free tier) for service agreements, with the signed copy recorded.
-- **GitHub and deploy alerts**: push, failed build or failed deploy to Slack, Telegram or the client.
-- **Shopify and WooCommerce order** starter template: a webhook recipe, no new API to build.
-- **Stripe** payments next to PayMongo, **SMS** through Semaphore or Twilio, and "payment received" as a trigger.
-- **Google Sheets through OAuth** ("bring your own Google client", like Outlook), with the service account kept as the fallback. Needs the operator's own Google Cloud app; a verified public consent screen is out of scope.
-- **AI with vision or PDF input**: the AI step reads text only today, so a scanned receipt or an attached PDF cannot be read.
+- Built-in Daloy table: a spreadsheet inside Daloy. Sheets, Airtable and Notion hold rows already, and N19 exports CSV.
+- E-signature through Dropbox Sign: niche, and one more outside account.
+- GitHub and deploy alerts: developers are not the users, and the webhook trigger covers it.
+- Stripe: PayMongo is the Philippine choice.
