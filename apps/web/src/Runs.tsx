@@ -152,6 +152,9 @@ export function RunsPage({ workflowId, ask }: { workflowId?: string; ask?: boole
           </p>
           <h1>{wf?.name ?? t("Activity")}</h1>
           <AutomationTabs id={workflowId} here="activity" overview={!!wf?.setup && !!wf.live} />
+          <p>
+            <a href={`/runs/export.csv?workflowId=${workflowId}`} download>{t("Download CSV")}</a>
+          </p>
         </>
       ) : (
         <>

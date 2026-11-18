@@ -1,10 +1,11 @@
 import { aiConnection, claimUsage, deliveries, listDeliveries, QuotaError, redactSecrets, requests, resolveRun, runs, secretForms, supersededSql, secretValuesToHide, stepRuns, workflows, workflowVersions, type Db, type RunAction } from "@daloy/db";
 import { generate } from "@daloy/llm-ts";
-import { Body, ConflictException, Controller, Get, HttpCode, HttpException, HttpStatus, Inject, NotFoundException, Param, Post, Query, UseGuards } from "@nestjs/common";
+import { Body, ConflictException, Controller, Get, Header, HttpCode, HttpException, HttpStatus, Inject, NotFoundException, Param, Post, Query, UseGuards } from "@nestjs/common";
 import { and, asc, desc, eq, ilike, or, sql } from "drizzle-orm";
 import type { PgBoss } from "pg-boss";
 import * as z from "zod";
 import { SessionGuard } from "./auth";
+import { toCsv } from "./csv";
 import { answerAll, askFacts, explainFailure, failureFacts } from "./explain";
 import { Allow, BOSS, CONFIG, CurrentUser, DB, enqueueRun, RateLimit, ZodPipe, type ApiConfig, type SessionUser, MANAGE, OPERATE } from "./http";
 import { maskSecrets } from "./mask";
@@ -100,6 +101,24 @@ export class RunsController {
     const fixed = answerAll(facts, language)[body.question];
     if (!fixed) throw new ConflictException("There is nothing to explain for this question.");
     return this.reworded(user.workspaceId, ASK_SYSTEM, { question: body.question, language, facts, fixed });
+  }
+
+  /** One automation's Activity as CSV: the request, state and dates, then every form field. Secrets are hidden as in the list; spreadsheet formulas are defused (phase N19). */
+  @Get("export.csv")
+  @Header("Content-Type", "text/csv; charset=utf-8")
+  @Header("Content-Disposition", 'attachment; filename="activity.csv"')
+  async exportCsv(@CurrentUser() user: SessionUser, @Query("workflowId", uuid) workflowId: string) {
+    const rows = await this.owned().where(and(eq(workflows.userId, user.workspaceId), eq(workflows.id, workflowId))).orderBy(desc(runs.createdAt)).limit(5000);
+    const hide = await this.hide(user.workspaceId);
+    const fields = rows.map((r) => {
+      const p = hide(r.triggerPayload);
+      return p !== null && typeof p === "object" && !Array.isArray(p) ? (p as Record<string, unknown>) : {};
+    });
+    const names = [...new Set(fields.flatMap((f) => Object.keys(f)))];
+    return toCsv(
+      ["reference", "state", "test", "created", "finished", ...names],
+      rows.map((r, i) => [r.reference, r.state, r.test, r.createdAt.toISOString(), r.finishedAt?.toISOString(), ...names.map((n) => fields[i]![n])]),
+    );
   }
 
   @Get(":id")
