@@ -21,6 +21,7 @@ export * from "./paymongo";
 export * from "./providers";
 export * from "./runs";
 export * from "./schema";
+export * from "./uploads";
 export * from "./usage";
 export { schema };
 

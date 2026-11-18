@@ -135,3 +135,54 @@ describe("resource fields", () => {
     expect(parsePayload([therapist], { therapist: resources[0]!.id })).toEqual(refused);
   });
 });
+
+describe("file fields", () => {
+  const photo = field({ name: "photo", type: "file", required: true });
+  const extra = field({ name: "extra", type: "file" });
+  const ref = (n: number) => ({ id: `00000000-0000-4000-8000-00000000000${n}`, name: `p${n}.png`, type: "png" as const, size: 10 });
+
+  it("leaves file fields out of the payload when there is no files context", () => {
+    expect(parsePayload([note, photo], { note: "hi", photo: [{ id: "x" }] })).toEqual({ ok: true, data: { note: "hi" } });
+    expect(payloadSchema([photo]).shape).toEqual({});
+  });
+  it("takes the value from the files context, never from the client", () => {
+    const r = parsePayload([note, photo], { photo: "evil" }, { files: { photo: [ref(1)] } });
+    expect(r).toEqual({ ok: true, data: { photo: [ref(1)] } });
+  });
+  it("requires a required file field only when there is a context", () => {
+    expect(parsePayload([photo], {}, { files: {} })).toEqual({ ok: false, errors: ["photo: is required"] });
+    expect(parsePayload([photo], {}, { files: { photo: [] } })).toEqual({ ok: false, errors: ["photo: is required"] });
+    expect(parsePayload([photo], {}).ok).toBe(true);
+  });
+  it("allows an optional file field to be empty", () => {
+    expect(parsePayload([extra], {}, { files: {} })).toEqual({ ok: true, data: {} });
+  });
+  it("reads an optional file field whose key is absent from the submitted data", () => {
+    expect(parsePayload([note, extra], { note: "hi" }, { files: { extra: [ref(2)] } })).toEqual({ ok: true, data: { note: "hi", extra: [ref(2)] } });
+  });
+  it("allows at most three files per field", () => {
+    expect(parsePayload([photo], {}, { files: { photo: [ref(1), ref(2), ref(3)] } }).ok).toBe(true);
+    expect(parsePayload([photo], {}, { files: { photo: [ref(1), ref(2), ref(3), ref(4)] } })).toEqual({ ok: false, errors: ["photo: must be at most 3 files"] });
+  });
+  it("is a form-only field type", () => {
+    const def = (trigger: unknown) => definitionSchema.safeParse({ trigger, steps: [{ id: "a", type: "http", config: { method: "GET", url: "https://x.test" } }], edges: [] });
+    expect(def({ type: "form", config: { fields: [photo] } }).success).toBe(true);
+    const r = def({ type: "webhook", config: { fields: [photo] } });
+    expect(r.success).toBe(false);
+    expect(r.error?.issues[0]?.message).toMatch(/webhook cannot take files/);
+  });
+});
+
+describe("drive step", () => {
+  const def = (trigger: unknown, config: unknown = {}) => definitionSchema.safeParse({ trigger, steps: [{ id: "save", type: "drive", ...(config === undefined ? {} : { config }) }], edges: [] });
+  const withFile = { type: "form", config: { fields: [{ name: "photo", label: "Photo", type: "file" }] } };
+  it("needs a form trigger with a file field", () => {
+    expect(def(withFile).success).toBe(true);
+    expect(def(withFile, undefined).success).toBe(true);
+    for (const t of [{ type: "manual", config: {} }, { type: "form", config: { fields: [{ name: "n", label: "N", type: "text" }] } }]) {
+      const r = def(t);
+      expect(r.success).toBe(false);
+      expect(r.error?.issues[0]?.message).toMatch(/form trigger with at least one file field/);
+    }
+  });
+});

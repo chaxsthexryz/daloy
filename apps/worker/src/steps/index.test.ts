@@ -1,7 +1,7 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { approvals, bookings, encryptSecret, hashToken, joinWorkspace, payments, recordDecision, resources, runs, saveAiSettings, saveConnection, secrets, stepRuns, usageClaims, users, workflows, workflowVersions, type Db } from "@daloy/db";
+import { approvals, bookings, deliveries, encryptSecret, hashToken, joinWorkspace, payments, recordDecision, resources, runs, saveAiSettings, saveConnection, secrets, stepRuns, usageClaims, users, workflows, workflowVersions, type Db } from "@daloy/db";
 import type { Step } from "@daloy/engine";
 import { eq } from "drizzle-orm";
 import nodemailer, { type SendMailOptions, type Transporter } from "nodemailer";
@@ -548,5 +548,43 @@ describe("payment_status step", () => {
     const s = await setup();
     await expect(s.exec("pay")).rejects.toMatchObject({ retryable: false });
     expect((await s.exec("pay", true)).output).toMatchObject({ mocked: true, status: "pending" });
+  });
+});
+
+describe("drive step", () => {
+  const ref = (name: string) => ({ id: randomUUID(), name, type: "png", size: 4 });
+  async function setup() {
+    const [u] = await db.insert(users).values({ email: `drive-${randomUUID()}@test.local`, passwordHash: "x" }).returning();
+    const [wf] = await db.insert(workflows).values({ userId: u!.id, name: "Intake", slug: `w${randomUUID().slice(0, 8)}` }).returning();
+    const [v] = await db.insert(workflowVersions).values({ workflowId: wf!.id, version: 1, definition: {}, published: true }).returning();
+    const [r] = await db.insert(runs).values({ workflowVersionId: v!.id }).returning();
+    const exec = (trigger: Record<string, unknown>, fileFields: string[] | undefined, mock = false) =>
+      createExecutor({ db, secretsKey: key, mail: {} as never }).execute({ runId: r!.id, stepRunId: NO_STEP_RUN, userId: u!.id, step: { id: "save", type: "drive", config: {} }, attempt: 1, idempotencyKey: `${r!.id}:save`, ctx: { trigger, steps: {} }, workflowId: wf!.id, mock, fileFields });
+    return { runId: r!.id, exec };
+  }
+
+  it("queues one Drive delivery with the files of every file field, and the same one when the step runs again", async () => {
+    const s = await setup();
+    const [a, b, c] = [ref("front.png"), ref("side.png"), ref("scan.png")];
+    const trigger = { reference: "REQ-5", name: "Ana", photos: [a, b], scan: [c] };
+    const out = (await s.exec(trigger, ["photos", "scan"])).output as { deliveryId: string; files: number };
+    expect(out).toMatchObject({ reference: "REQ-5", state: "queued", files: 3 });
+    const rows = await db.select().from(deliveries).where(eq(deliveries.runId, s.runId));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ provider: "google_drive", reference: "REQ-5", payload: { files: [a, b, c] } });
+    expect(((await s.exec(trigger, ["photos", "scan"])).output as { deliveryId: string }).deliveryId).toBe(out.deliveryId);
+  });
+
+  it("ignores values of fields that are not file fields, and queues nothing when there are no files", async () => {
+    const s = await setup();
+    expect((await s.exec({ reference: "REQ-6", other: [ref("x.png")] }, ["photos"])).output).toEqual({ files: 0 });
+    expect((await s.exec({ reference: "REQ-6" }, undefined)).output).toEqual({ files: 0 });
+    expect(await db.select().from(deliveries).where(eq(deliveries.runId, s.runId))).toHaveLength(0);
+  });
+
+  it("only counts the files in a test run", async () => {
+    const s = await setup();
+    expect((await s.exec({ photos: [ref("a.png"), ref("b.png")] }, ["photos"], true)).output).toEqual({ mocked: true, files: 2 });
+    expect(await db.select().from(deliveries).where(eq(deliveries.runId, s.runId))).toHaveLength(0);
   });
 });

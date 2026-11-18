@@ -7,6 +7,7 @@ import { AskRequest } from "./AskRequest";
 import { RunFlow } from "./FlowCanvas";
 import type { Draft } from "./lib/graph";
 import { pollDelay, takingLonger } from "./lib/poll";
+import { fileRefs, fileSize } from "./lib/run-files";
 import { fixFor, ownerError, plainState, runKind } from "./lib/states";
 
 /**
@@ -270,6 +271,7 @@ export function RunPage({ runId, owner, ask, openAsk }: { runId: string; owner: 
       )}
       <RunActions run={run} onDone={() => setReload((n) => n + 1)} />
       <RunDeliveries runId={runId} />
+      <RunFiles runId={runId} payload={run.triggerPayload} />
       <RunPath run={run} />
       <details className="technician">
         <summary>{t("Details for a technician")}</summary>
@@ -283,6 +285,28 @@ export function RunPage({ runId, owner, ask, openAsk }: { runId: string; owner: 
         <RunResult run={run} />
       </details>
     </main>
+  );
+}
+
+/** Files attached to the request. Plain download links only: the server sends them as attachments, and they are never previewed in the page. */
+function RunFiles({ runId, payload }: { runId: string; payload: unknown }) {
+  const { t } = useLanguage();
+  const files = fileRefs(payload);
+  if (files.length === 0) return null;
+  return (
+    <section aria-labelledby="run-files-h">
+      <h2 id="run-files-h">{t("Files")}</h2>
+      <ul>
+        {files.map((f) => (
+          <li key={f.id}>
+            {f.name} <span className="muted">{fileSize(f.size)}</span>{" "}
+            <a href={`/runs/${runId}/files/${f.id}`} download>
+              {t("Download")}<span className="visually-hidden"> {f.name}</span>
+            </a>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 

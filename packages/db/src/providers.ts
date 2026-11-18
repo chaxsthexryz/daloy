@@ -1,4 +1,4 @@
-import { createHash, createSign } from "node:crypto";
+import { createHash, createSign, randomBytes } from "node:crypto";
 import * as z from "zod";
 
 /**
@@ -28,6 +28,7 @@ export type ProviderUrls = {
   googleToken: string;
   sheets: string;
   calendar: string;
+  drive: string;
   slack: string;
   telegram: string;
   /** PayMongo API base. Unset in test fakes: paymongo.ts falls back to the real one. */
@@ -48,6 +49,7 @@ export const providerUrls = (env: NodeJS.ProcessEnv = process.env): ProviderUrls
   googleToken: env.GOOGLE_TOKEN_URL ?? "https://oauth2.googleapis.com/token",
   sheets: trim(env.GOOGLE_SHEETS_URL ?? "https://sheets.googleapis.com"),
   calendar: trim(env.GOOGLE_CALENDAR_URL ?? "https://www.googleapis.com"),
+  drive: trim(env.GOOGLE_DRIVE_URL ?? "https://www.googleapis.com"),
   slack: trim(env.SLACK_API_URL ?? "https://slack.com"),
   telegram: trim(env.TELEGRAM_API_URL ?? "https://api.telegram.org"),
   paymongo: trim(env.PAYMONGO_API_URL ?? "https://api.paymongo.com"),
@@ -111,6 +113,7 @@ export function spreadsheetIdFrom(input: string): string | null {
 
 const SHEETS_SCOPE = "https://www.googleapis.com/auth/spreadsheets";
 const CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar.events";
+const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive";
 // Access tokens by key, in memory. ponytail: per process, so the API and the worker each fetch their own; fine at this scale.
 const tokenCache = new Map<string, { token: string; expiresAt: number }>();
 const cacheKey = (sa: ServiceAccount, scope = SHEETS_SCOPE) => createHash("sha256").update(`${scope}\n${sa.client_email}\n${sa.private_key}`).digest("hex");
@@ -335,6 +338,74 @@ export async function syncCalendarEvent(urls: ProviderUrls, sa: ServiceAccount, 
   if (made.status !== 409) return { event: "created", eventId };
   await calendar(urls, sa, `${base}/${eventId}`, { method: "PATCH", headers: json, body: JSON.stringify({ ...fields, status: "confirmed" }) }, true);
   return { event: "updated", eventId };
+}
+
+// ---------------------------------------------------------------- Google Drive
+
+export type DriveDestination = { folderId: string; title: string };
+
+/** A folder link (https://drive.google.com/drive/folders/<id>, with or without /u/N/ and a query) or the folder id itself. */
+export function driveFolderIdFrom(input: string): string | null {
+  const text = input.trim();
+  const id = /^https?:\/\/drive\.google\.com\/drive\/(?:u\/\d+\/)?folders\/([\w-]+)/.exec(text)?.[1] ?? text;
+  return /^[\w-]{10,100}$/.test(id) ? id : null;
+}
+
+const SHARED_DRIVE = (sa: ServiceAccount) => `Service accounts can only save files in a shared drive. Move the folder into a shared drive and add ${sa.client_email} as Content manager.`;
+
+function driveFailure(res: Reply, sa: ServiceAccount, write: boolean): ProviderError {
+  const error = (res.body.error ?? {}) as { message?: unknown; errors?: { reason?: unknown }[] };
+  const message = String(error.message ?? "");
+  const reason = String(error.errors?.[0]?.reason ?? "");
+  const share = `Share the folder with ${sa.client_email} as Content manager.`;
+  if (res.status === 401) return new ProviderError("Google did not accept Daloy's access. Connect Google Drive again.", "auth");
+  if (res.status === 403 && reason === "storageQuotaExceeded") return new ProviderError(SHARED_DRIVE(sa), "permission");
+  if (res.status === 429 || (res.status === 403 && /rateLimitExceeded|userRateLimitExceeded/i.test(reason))) {
+    return new ProviderError("Google Drive is limiting requests right now. Daloy will try again.", "quota", retryAfter(res.headers));
+  }
+  if (res.status === 403) return new ProviderError(`Google Drive refused access. ${share}${message ? ` Google said: ${message}` : ""}`, "permission");
+  if (res.status === 404) return new ProviderError(`The Drive folder was not found. Check the folder link, and ${share.charAt(0).toLowerCase()}${share.slice(1)}`, "permission");
+  if (res.status >= 500) return new ProviderError(`Google Drive answered ${res.status}.`, write ? "ambiguous" : "unavailable");
+  return new ProviderError(`Google Drive rejected the request${message ? `: ${message}` : ` (${res.status})`}.`, "invalid");
+}
+
+/** A Drive API call with the cached token. A 401 drops the token and tries once more. */
+async function drive(urls: ProviderUrls, sa: ServiceAccount, path: string, init: RequestInit, write: boolean): Promise<Reply> {
+  for (let tries = 0; ; tries++) {
+    const token = await accessToken(urls, sa, DRIVE_SCOPE);
+    const res = await call(`${urls.drive}${path}`, { ...init, headers: { ...init.headers, authorization: `Bearer ${token}` } }, urls.timeoutMs ?? 30_000, write, "Google Drive");
+    if (res.status === 200) return res;
+    if (res.status === 401 && tries === 0) {
+      tokenCache.delete(cacheKey(sa, DRIVE_SCOPE));
+      continue;
+    }
+    throw driveFailure(res, sa, write);
+  }
+}
+
+/** Checks the folder when connecting: it must be a folder inside a shared drive that the account can add files to. Reads only. */
+export async function driveFolderInfo(urls: ProviderUrls, sa: ServiceAccount, folderId: string) {
+  const res = await drive(urls, sa, `/drive/v3/files/${encodeURIComponent(folderId)}?supportsAllDrives=true&fields=${encodeURIComponent("id,name,mimeType,driveId,capabilities/canAddChildren")}`, {}, false);
+  const b = res.body as { name?: unknown; mimeType?: unknown; driveId?: unknown; capabilities?: { canAddChildren?: unknown } };
+  if (b.mimeType !== "application/vnd.google-apps.folder") throw new ProviderError("That link is not a Drive folder. Open the folder in Drive and copy its link.", "invalid");
+  if (!b.driveId) throw new ProviderError(SHARED_DRIVE(sa), "permission");
+  if (b.capabilities?.canAddChildren !== true) throw new ProviderError(`Daloy cannot add files to that folder. Share it with ${sa.client_email} as Content manager.`, "permission");
+  return { title: String(b.name ?? folderId) };
+}
+
+/** Saves one file in the folder. Hand-built multipart/related: the JSON metadata, then the bytes. Not repeatable: a lost answer may mean the file is there. */
+export async function driveUpload(urls: ProviderUrls, sa: ServiceAccount, folderId: string, file: { name: string; mimeType: string; data: Buffer }): Promise<{ id: string }> {
+  const boundary = `daloy${randomBytes(16).toString("hex")}`;
+  const meta = JSON.stringify({ name: file.name, parents: [folderId], mimeType: file.mimeType });
+  const body = Buffer.concat([
+    Buffer.from(`--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${meta}\r\n--${boundary}\r\nContent-Type: ${file.mimeType}\r\n\r\n`),
+    file.data,
+    Buffer.from(`\r\n--${boundary}--`),
+  ]);
+  const res = await drive(urls, sa, "/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true&fields=id,name", { method: "POST", headers: { "content-type": `multipart/related; boundary=${boundary}` }, body }, true);
+  const id = res.body.id;
+  if (typeof id !== "string" || !id) throw new ProviderError("Google Drive answered without a file id, so Daloy cannot tell whether the file was saved.", "ambiguous");
+  return { id };
 }
 
 // ---------------------------------------------------------------- Slack

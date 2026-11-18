@@ -13,6 +13,10 @@ import type { AddressInfo } from "node:net";
  * - { late: ms }: hold the call, do the write after ms (after the caller gave up), and never answer.
  * - { heldUntil }: do the write now and answer when the promise settles; with status, write nothing and answer that then.
  *
+ * once(path, behaviour, skip) lets the first `skip` matching calls through, so a test can fail only the second file of a Drive save.
+ *
+ * Drive: a folder is in a shared drive (sharedDriveId) or not. Like Google, a service account cannot own files, so an upload to a folder with no shared drive fails with 403 storageQuotaExceeded.
+ *
  * Sheets developer metadata follows Google: a spreadsheets.batchUpdate is all or nothing, and creating metadata with an
  * id that already exists in the spreadsheet fails the whole batch with 400.
  */
@@ -48,9 +52,12 @@ export async function startFakeProviders(port = 0) {
   // Google Calendar: events by calendar id then event id. Like Google, a deleted event stays as "cancelled" and its id cannot be inserted again.
   type CalendarEvent = { id: string; status: "confirmed" | "cancelled"; summary?: string; description?: string; start?: { dateTime: string; timeZone?: string }; end?: { dateTime: string; timeZone?: string } };
   const calendars = new Map<string, { title: string; editors: Set<string>; events: Map<string, CalendarEvent> }>();
+  // Google Drive: folders by id, and the files saved into them (bytes are kept as a hash, not stored).
+  const driveFolders = new Map<string, { name: string; editors: Set<string>; sharedDriveId: string | null }>();
+  const driveFiles: { id: string; name: string; parent: string; mimeType: string; size: number; sha256: string }[] = [];
   const paymongo = { sessions: [] as { id: string; amount: number }[], keys: new Map<string, unknown>() }; // keys: Idempotency-Key -> stored response
   const teams = { flows: new Set(["flow-purchasing"]), posts: [] as { flow: string; text: string }[] };
-  const pending: { path: string; behaviour: Behaviour }[] = [];
+  const pending: { path: string; behaviour: Behaviour; skip: number }[] = [];
   const calls: string[] = [];
   const hanging = new Set<ServerResponse>();
   let seq = 0;
@@ -61,9 +68,9 @@ export async function startFakeProviders(port = 0) {
   const googleError = (res: ServerResponse, code: number, status: string, message: string) => json(res, code, { error: { code, status, message } });
 
   async function body(req: IncomingMessage) {
-    let raw = "";
-    for await (const chunk of req) raw += chunk;
-    return raw;
+    const chunks: Buffer[] = [];
+    for await (const chunk of req) chunks.push(chunk as Buffer);
+    return Buffer.concat(chunks);
   }
 
   function verifyJwt(assertion: string): string | null {
@@ -79,9 +86,10 @@ export async function startFakeProviders(port = 0) {
   const server = createServer(async (req, res) => {
     const url = new URL(req.url ?? "/", "http://fake");
     const path = decodeURIComponent(url.pathname);
-    const raw = await body(req);
+    const bytes = await body(req);
+    const raw = bytes.toString("utf8");
     calls.push(`${req.method} ${path}`);
-    const i = pending.findIndex((p) => path.includes(p.path));
+    const i = pending.findIndex((p) => path.includes(p.path) && (p.skip > 0 ? (p.skip--, false) : true));
     const behaviour = i >= 0 ? pending.splice(i, 1)[0]!.behaviour : undefined;
     if (behaviour === "hang") return void hanging.add(res);
     const late = typeof behaviour === "object" && "late" in behaviour;
@@ -103,6 +111,7 @@ export async function startFakeProviders(port = 0) {
         if (c.microsoftConsent) microsoft.consent = c.microsoftConsent;
       }
       return json(res, 200, {
+        driveFiles,
         calendarEvents: [...calendars.values()].flatMap((c) => [...c.events.values()]),
         sheetRows: [...sheets.values()].flatMap((s) => [...s.tabs.values()].flat()).length,
         slackMessages: slack.messages.map((m) => m.text),
@@ -200,6 +209,37 @@ export async function startFakeProviders(port = 0) {
       const token = `ya29.fake-${++seq}`;
       tokens.set(token, email);
       return json(res, 200, { access_token: token, expires_in: 3599, token_type: "Bearer" });
+    }
+
+    // Google Drive API v3: read a folder, and multipart/related upload into one.
+    const driveGet = /^\/drive\/v3\/files\/([^/]+)$/.exec(path)?.[1];
+    if (driveGet || path === "/upload/drive/v3/files") {
+      const email = tokens.get((req.headers.authorization ?? "").replace(/^Bearer /, ""));
+      if (!email) return googleError(res, 401, "UNAUTHENTICATED", "Invalid Credentials");
+      const driveError = (code: number, reason: string, message: string) => json(res, code, { error: { code, message, errors: [{ reason, message }] } });
+      if (driveGet) {
+        const f = driveFolders.get(driveGet);
+        if (!f || !f.editors.has(email)) return googleError(res, 404, "NOT_FOUND", `File not found: ${driveGet}.`);
+        return answer(200, { id: driveGet, name: f.name, mimeType: "application/vnd.google-apps.folder", ...(f.sharedDriveId ? { driveId: f.sharedDriveId } : {}), capabilities: { canAddChildren: true } });
+      }
+      const boundary = /boundary=([^;]+)/.exec(String(req.headers["content-type"] ?? ""))?.[1];
+      if (!boundary || url.searchParams.get("uploadType") !== "multipart") return googleError(res, 400, "INVALID_ARGUMENT", "Bad multipart request.");
+      const delim = Buffer.from(`--${boundary}`);
+      const crlf2 = Buffer.from("\r\n\r\n");
+      const start1 = bytes.indexOf(delim);
+      const head1 = bytes.indexOf(crlf2, start1);
+      const next = bytes.indexOf(Buffer.from(`\r\n--${boundary}`), head1);
+      const head2 = bytes.indexOf(crlf2, next);
+      const end = bytes.lastIndexOf(Buffer.from(`\r\n--${boundary}--`));
+      if (start1 < 0 || head1 < 0 || next < 0 || head2 < 0 || end < head2) return googleError(res, 400, "INVALID_ARGUMENT", "Bad multipart request.");
+      const meta = JSON.parse(bytes.subarray(head1 + 4, next).toString("utf8")) as { name?: string; parents?: string[]; mimeType?: string };
+      const data = bytes.subarray(head2 + 4, end);
+      const folder = driveFolders.get(meta.parents?.[0] ?? "");
+      if (!folder || !folder.editors.has(email)) return googleError(res, 404, "NOT_FOUND", "File not found.");
+      if (!folder.sharedDriveId) return driveError(403, "storageQuotaExceeded", "Service Accounts do not have storage quota. Leverage shared drives instead.");
+      const id = `drivefile${String(++seq).padStart(8, "0")}`;
+      driveFiles.push({ id, name: meta.name ?? "", parent: meta.parents![0]!, mimeType: meta.mimeType ?? "", size: data.length, sha256: createHash("sha256").update(data).digest("hex") });
+      return answer(200, { id, name: meta.name });
     }
 
     // Google Calendar API v3: events list, insert (with a client-chosen id), patch and delete.
@@ -394,7 +434,7 @@ export async function startFakeProviders(port = 0) {
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 
   return {
-    urls: { googleToken: `${base}/token`, sheets: base, calendar: base, paymongo: base, airtable: base, notion: base, trello: base, slack: base, telegram: base, microsoftLogin: `${base}/ms`, graph: `${base}/graph`, teamsHosts: ["127.0.0.1"] },
+    urls: { googleToken: `${base}/token`, sheets: base, calendar: base, drive: base, paymongo: base, airtable: base, notion: base, trello: base, slack: base, telegram: base, microsoftLogin: `${base}/ms`, graph: `${base}/graph`, teamsHosts: ["127.0.0.1"] },
     calls,
     slack,
     telegram,
@@ -422,7 +462,11 @@ export async function startFakeProviders(port = 0) {
       calendars.set(id, c);
       return c;
     },
-    once: (path: string, behaviour: Behaviour) => pending.push({ path, behaviour }),
+    addDriveFolder: (id: string, name: string, editors: string[], sharedDriveId: string | null) => {
+      driveFolders.set(id, { name, editors: new Set(editors), sharedDriveId });
+    },
+    driveFiles,
+    once: (path: string, behaviour: Behaviour, skip = 0) => pending.push({ path, behaviour, skip }),
     async close() {
       for (const res of hanging) res.destroy();
       server.closeAllConnections();

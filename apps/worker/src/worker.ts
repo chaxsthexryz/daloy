@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { hostname } from "node:os";
-import { clearSheetWriteKeys, createRun, planOf, PLANS, publishedVersion, runDueDeliveries, RUN_QUEUE, RUN_QUEUE_OPTIONS, runs, SCHEDULE_QUEUE, workflows, workflowVersions, type Db, type MailDeps, type ProviderUrls } from "@daloy/db";
+import { clearSheetWriteKeys, createRun, planOf, PLANS, publishedVersion, purgeUploads, runDueDeliveries, RUN_QUEUE, RUN_QUEUE_OPTIONS, runs, SCHEDULE_QUEUE, workflows, workflowVersions, type Db, type MailDeps, type ProviderUrls } from "@daloy/db";
 import type { RetryPolicy } from "@daloy/engine";
 import { and, eq, gt, inArray, isNull, lt, lte, or, sql } from "drizzle-orm";
 import { PgBoss } from "pg-boss";
@@ -102,6 +102,7 @@ export async function startWorker(opts: WorkerOptions) {
   const sweepTimer = setInterval(() => {
     sweep().catch((err: unknown) => console.error("sweep failed", err));
     clearMarkers().catch((err: unknown) => console.error("sheet marker sweep failed", err));
+    purgeUploads(db).catch((err: unknown) => console.error("upload purge failed", err));
   }, sweepMs);
   await sweep();
 
