@@ -199,6 +199,8 @@ Claude Code wrote the earlier phases. Codex wrote the email-in trigger and form 
 - Every AI step of a user's workflows uses the one model picked on the AI model page; there is no per-step model.
 - Draft warnings come from fixed rules and can be wrong (a form field really named `test` is flagged). Only the editor and Build with AI show them; the save API and MCP do not.
 - The hosted providers (Gemini, OpenAI, OpenRouter) are tested against mocked replies only. The first live call is the owner's own Test with their key.
+- The AI step reads a PDF's text only. A scanned PDF with no text is refused, and the sender is asked for a photo.
+- HEIC photos are read only with Gemini. DeepSeek and text-only local models read no photos (a local model that does can be allowed with `LLM_VISION=on`).
 - The local choice uses whatever the operator set in `LLM_PROVIDER` and `LLM_BASE_URL`; users cannot enter their own server address.
 - Run history masks fields by key name. A field called `max_tokens` shows as `[secret]`, and a secret sent in trigger data under an ordinary key name stays visible to the workflow owner.
 - Run history lists the latest 50 runs per workflow, with no paging.

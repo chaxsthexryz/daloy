@@ -71,6 +71,7 @@ it("uses the fixed Gemini URL and the saved, encrypted key", async () => {
     model: "gemini-3.8-flash",
     extraBody: { reasoning_effort: "low" },
     reasoningTokens: 2048,
+    imageTypes: ["jpeg", "png", "webp", "heic"],
   });
   const rows = [...(await db.select().from(aiSettings)), ...(await db.select().from(aiKeys))];
   expect(JSON.stringify(rows)).not.toContain("AIza-test");
@@ -160,4 +161,25 @@ it("turns DeepSeek thinking off", async () => {
   vi.stubEnv("LLM_PROVIDER", "openai");
   vi.stubEnv("LLM_BASE_URL", "https://api.deepseek.com");
   expect(await aiConnection(db, key, await newUser())).toMatchObject({ extraBody: { thinking: { type: "disabled" } } });
+});
+
+it("lists the image types each preset reads", async () => {
+  const types = async (preset: "gemini" | "openai" | "openrouter" | "deepseek") => {
+    const user = await newUser();
+    await saveAiSettings(db, key, user, { preset, model: "m", apiKey: "sk-test" });
+    return (await aiConnection(db, key, user)).imageTypes;
+  };
+  expect(await types("gemini")).toEqual(["jpeg", "png", "webp", "heic"]);
+  expect(await types("openai")).toEqual(["jpeg", "png", "webp"]);
+  expect(await types("openrouter")).toEqual(["jpeg", "png", "webp"]);
+  expect(await types("deepseek")).toBeUndefined();
+});
+
+it("reads images on the local server only when the operator turns LLM_VISION on", async () => {
+  const user = await newUser();
+  await saveAiSettings(db, key, user, { preset: "local", model: "llama3.2" });
+  expect((await aiConnection(db, key, user)).imageTypes).toBeUndefined();
+  vi.stubEnv("LLM_VISION", "on");
+  expect((await aiConnection(db, key, user)).imageTypes).toEqual(["jpeg", "png", "webp"]);
+  expect((await aiConnection(db, key, await newUser())).imageTypes).toEqual(["jpeg", "png", "webp"]);
 });
