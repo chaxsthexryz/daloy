@@ -37,6 +37,31 @@ main.page.workspace-admin {
   scrollbar-color: var(--border) var(--bg);
 }
 .workspace-admin ::selection { background: var(--accent-tint); color: var(--text); }
+/* Settings previews the saved device theme; the homepage keeps its light scope. */
+:root[data-theme="dark"] main.page.admin-appsettings {
+  color-scheme: dark;
+  --bg: inherit;
+  --surface: inherit;
+  --text: inherit;
+  --muted: inherit;
+  --border: inherit;
+  --border-soft: inherit;
+  --sunken: inherit;
+  --accent: inherit;
+  --accent-hover: inherit;
+  --accent-tint: inherit;
+  --on-accent: inherit;
+  --focus: inherit;
+  --danger: inherit;
+  --ok: inherit;
+  --warn: inherit;
+  --done: inherit;
+  --on-done: inherit;
+  --waiting: inherit;
+  --on-waiting: inherit;
+  --problem: inherit;
+  --on-problem: inherit;
+}
 .workspace-admin :is(input, textarea) { caret-color: var(--accent); }
 .workspace-admin a { text-underline-offset: .2em; }
 .workspace-admin :focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }

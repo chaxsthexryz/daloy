@@ -39,7 +39,7 @@ test("an owner starts from the top button, narrows the list, deletes a draft and
     await page.reload();
     await expect(cards.first()).toContainText("Problem", { timeout: 1000 });
   }).toPass({ timeout: 30_000 });
-  await page.getByRole("button", { name: "Problem" }).click();
+  await page.getByRole("button", { name: "Problem", exact: true }).click();
   await expect(cards).toHaveCount(1);
   await expect(cards).toContainText("Broken");
   await page.getByRole("button", { name: "All" }).click();
@@ -80,28 +80,43 @@ test("Settings in the menu sets light or dark on this device, and System follows
   await page.emulateMedia({ colorScheme: "light" });
   await signUp(page);
   const theme = () => page.evaluate(() => document.documentElement.dataset.theme);
-  const background = () => page.evaluate(() => getComputedStyle(document.body).backgroundColor);
+  const surface = page.getByRole("main");
+  const background = () => surface.evaluate((el) => getComputedStyle(el).backgroundColor);
   expect(await theme()).toBe("light");
-  const light = await background();
+  const homeLight = await background();
 
   await page.getByRole("link", { name: "Settings", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Settings", level: 1 })).toBeVisible();
   await expect(page.getByText(/Signed in as nav-\d+@test\.local, Owner\./)).toBeVisible();
   await expect(page.getByRole("link", { name: "AI model" })).toHaveAttribute("href", "#/settings/ai");
+  const light = await background();
   await page.getByLabel("Dark").check();
   expect(await theme()).toBe("dark");
-  expect(await background()).not.toBe(light);
+  await expect.poll(background).not.toBe(light);
+  await expect(surface).toHaveCSS("color-scheme", "dark");
 
   // The choice is kept on reload and set before the page draws (public/theme.js).
   await page.reload();
   expect(await theme()).toBe("dark");
   await expect(page.getByLabel("Dark")).toBeChecked();
+  await expect.poll(background).not.toBe(light);
+
+  // The approved homepage stays light even when this device is set to Dark.
+  await page.getByRole("link", { name: "Automations", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Automations", exact: true })).toBeVisible();
+  expect(await theme()).toBe("dark");
+  await expect.poll(background).toBe(homeLight);
+  await page.getByRole("link", { name: "Settings", exact: true }).click();
+  await expect(page.getByLabel("Dark")).toBeChecked();
+  await expect.poll(background).not.toBe(light);
 
   // System follows the device again, including a later switch.
   await page.getByLabel("System (follows this device)").check();
   expect(await theme()).toBe("light");
+  await expect.poll(background).toBe(light);
   await page.emulateMedia({ colorScheme: "dark" });
   await expect.poll(theme).toBe("dark");
+  await expect.poll(background).not.toBe(light);
 });
 
 test("Apps lists each app as a card, and Connect opens that app's own setup", async ({ page }) => {
