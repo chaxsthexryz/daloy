@@ -96,13 +96,9 @@ Features: booking trigger, Bookings page, reminders, cancel, no-show follow-up, 
 3. Turn it on. Book one slot about 10 minutes from now and a second slot for later.
 4. Bookings: cancel the second slot.
 5. Press Download CSV on Bookings.
-6. No-shows come in by webhook (there is no no-show button on Bookings yet; note it if you want one). Set up the Booking no-show follow-up template, turn it on, change its 1-hour delay to 1 minute for the test, and send:
+6. Set up the Booking no-show follow-up template, turn it on, and change its 1-hour delay to 1 minute for the test. Wait until the first booking's time has passed, open Bookings, press Mark no-show on it and confirm. (The button only shows for a booking whose time has passed; Undo no-show works until the follow-up email has gone out.)
 
-   ```bash
-   curl -X POST "PASTE_NO_SHOW_WEBHOOK_URL" -H "Content-Type: application/json" -d '{"status":"no_show","customer_email":"client@example.com","customer_name":"Ana"}'
-   ```
-
-Check: both bookings get a confirmation, the first gets its reminder about 5 minutes before, the cancelled one never gets a reminder (and its Calendar event is gone, if connected), and the no-show gets the rebooking email.
+Check: both bookings get a confirmation, the first gets its reminder about 5 minutes before, the cancelled one never gets a reminder (and its Calendar event is gone, if connected), and the no-show gets the rebooking email about a minute after you press the button, and pressing it twice sends only one.
 
 ## Mission 6: online shop order with payment
 
