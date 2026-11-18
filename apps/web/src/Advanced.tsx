@@ -31,6 +31,9 @@ export function AdvancedPage() {
           <a href="#/tokens"><Text>API tokens</Text></a> <span className="muted">{t("for MCP clients and scripts")}</span>
         </li>
         <li>
+          <a href="#/secrets"><Text>Secrets</Text></a> <span className="muted">{t("for webhook signing and HTTP step keys")}</span>
+        </li>
+        <li>
           <a href="#/resources"><Text>Resources</Text></a> <span className="muted">{t("rooms, people and tables that bookings reserve")}</span>
         </li>
       </ul>
