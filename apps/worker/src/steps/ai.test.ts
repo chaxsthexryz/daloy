@@ -67,3 +67,15 @@ describe("runAi", () => {
     expect((err as Error).message).toMatch(/HTTP 503/);
   });
 });
+
+describe("runAi with an uploaded file", () => {
+  it("never sends the bytes of a file, because the trigger holds only its reference", async () => {
+    const marker = "SECRET-MARKER-9f3a1c";
+    // The payload as the hosted form handler builds it: the file's bytes (here holding the marker) went to the uploads table, the run got a reference.
+    const trigger = { name: "Ana", photo: [{ id: "6f1c2d1e-1b0a-4c55-9d3a-0e2f7c9a1b11", name: "id.pdf", type: "pdf", size: Buffer.from(`%PDF-1.4 ${marker}`).length }] };
+    reply = { status: 200, content: '{"label":"support"}' };
+    await runAi(classify, JSON.stringify(trigger), { model: "m", attempt: 1 });
+    expect(JSON.stringify(bodies)).not.toContain(marker);
+    expect(JSON.stringify(bodies)).toContain("id.pdf");
+  });
+});

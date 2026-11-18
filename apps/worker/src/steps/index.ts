@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { workspaceLanguage, aiConnection, bookFromStep, checkRecipients, claimTimeout, claimUsage, createApproval, findPaymentForStep, findApprover, queueCalendarEvent, queueDelivery, readSecrets, redactSecrets, secretForms, sendAs, type Db, type MailDeps, type Provider } from "@daloy/db";
-import { approvalEmailBody, bookingStartField, conditionBranch, parseZoned, type TestChoice, type Trigger, declaresJson, parseInstant, isRetryable, mockAiOutput, parseJsonTemplate, resolveJsonTemplate, resolveTemplate, StepError, usesSecrets, type ExpressionContext, type Step } from "@daloy/engine";
+import { approvalEmailBody, type FileRef, bookingStartField, conditionBranch, parseZoned, type TestChoice, type Trigger, declaresJson, parseInstant, isRetryable, mockAiOutput, parseJsonTemplate, resolveJsonTemplate, resolveTemplate, StepError, usesSecrets, type ExpressionContext, type Step } from "@daloy/engine";
 import type { StepExecutor, StepResult } from "../advance";
 import { runAi } from "./ai";
 import { httpRequest } from "./http";
@@ -85,6 +85,8 @@ function resolveInput(step: Step, ctx: ExpressionContext): Record<string, unknow
     }
     case "sheets":
       return { columns: step.config.columns.map((c) => text(c, ctx)) } satisfies SheetsInput;
+    case "drive":
+      return {};
     case "slack":
     case "teams":
     case "telegram":
@@ -122,9 +124,9 @@ function resolveInput(step: Step, ctx: ExpressionContext): Record<string, unknow
 type BookingInput = { action: "create" | "reschedule" | "cancel"; resource?: string; booking?: string; start?: string; minutes?: number };
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-type Attempt = { runId: string; idempotencyKey: string; attempt: number; stepRunId: string; userId: string; workflowId?: string; mock: boolean; aiLive?: boolean; choice?: TestChoice; claimSend?: () => Promise<() => void>; booking?: { test: boolean; workflowId: string; trigger: Trigger } };
+type Attempt = { runId: string; idempotencyKey: string; attempt: number; stepRunId: string; userId: string; workflowId?: string; mock: boolean; aiLive?: boolean; choice?: TestChoice; claimSend?: () => Promise<() => void>; booking?: { test: boolean; workflowId: string; trigger: Trigger }; fileFields?: string[] };
 
-async function runStep(deps: FullDeps, step: Step, input: unknown, ctx: ExpressionContext, { runId, idempotencyKey, attempt, stepRunId, userId, workflowId, mock, aiLive, choice, claimSend, booking }: Attempt): Promise<StepResult> {
+async function runStep(deps: FullDeps, step: Step, input: unknown, ctx: ExpressionContext, { runId, idempotencyKey, attempt, stepRunId, userId, workflowId, mock, aiLive, choice, claimSend, booking, fileFields }: Attempt): Promise<StepResult> {
   // The API only accepts a fail choice on a step a faked run fakes (choiceProblems).
   // "unknown" fails only the first attempt, so Send again in review shows the step going through. Nothing is sent.
   if (mock && choice && "fail" in choice && (choice.fail !== "unknown" || attempt === 1)) {
@@ -243,6 +245,17 @@ async function runStep(deps: FullDeps, step: Step, input: unknown, ctx: Expressi
       // The run waits until the timeout; recording a decision wakes it earlier (decision 0009).
       return { output: { expiresAt: expiresAt.toISOString() }, waitUntil: expiresAt };
     }
+    case "drive": {
+      // The files a hosted form stored for this run: the values of the definition's file fields, never client-supplied text.
+      const trigger = (ctx.trigger ?? {}) as Record<string, unknown>;
+      const files = (fileFields ?? []).flatMap((name) => (Array.isArray(trigger[name]) ? (trigger[name] as FileRef[]) : []));
+      if (mock) return { output: { mocked: true, files: files.length } };
+      if (files.length === 0) return { output: { files: 0 } };
+      const ref = trigger.reference;
+      const reference = typeof ref === "string" ? ref : runId;
+      const d = await queueDelivery(deps.db, { userId, runId, stepId: step.id, provider: "google_drive", reference, payload: { files } });
+      return { output: { deliveryId: d.id, reference, state: d.state, files: files.length } };
+    }
     case "sheets":
     case "slack":
     case "outlook":
@@ -299,7 +312,7 @@ export function createExecutor(deps: ExecutorDeps): StepExecutor {
     publicUrl: (deps.publicUrl ?? "http://localhost:3000").replace(/\/+$/, ""),
   };
   return {
-    async execute({ runId, step, userId, workflowId, idempotencyKey, attempt, stepRunId, ctx, mock = false, aiLive, choice, claimSend, booking }) {
+    async execute({ runId, step, userId, workflowId, idempotencyKey, attempt, stepRunId, ctx, mock = false, aiLive, choice, claimSend, booking, fileFields }) {
       const secrets = await readSecrets(deps.db, deps.secretsKey, userId);
       const forms = secretForms(Object.values(secrets));
       // Only an HTTP step sees secrets. Every other step resolves without them, so an email, AI prompt or condition can't carry one.
@@ -316,7 +329,7 @@ export function createExecutor(deps: ExecutorDeps): StepExecutor {
             throw new StepError("A request that uses a secret must go to a fixed address: trigger or step data changed its host. Move that data into the path or query.", false);
           }
         }
-        const result = await runStep(full, step, input, real, { runId, idempotencyKey, attempt, stepRunId, userId, workflowId, mock, aiLive, choice, claimSend, booking });
+        const result = await runStep(full, step, input, real, { runId, idempotencyKey, attempt, stepRunId, userId, workflowId, mock, aiLive, choice, claimSend, booking, fileFields });
         return { ...result, input: preview, output: redactSecrets(result.output, forms) };
       } catch (err) {
         const message = redactSecrets(err instanceof Error ? err.message : String(err), forms) as string;

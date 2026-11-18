@@ -32,7 +32,7 @@ export type StepResult = { input?: unknown; output?: unknown; branch?: string; i
 export interface StepExecutor {
   // booking: what a booking step needs about its run: the test scope, the workflow and the trigger whose datetime field
   // sets the rules for start (decision 0032).
-  execute(input: { runId: string; stepRunId: string; userId: string; workflowId?: string; step: Step; attempt: number; idempotencyKey: string; ctx: ExpressionContext; mock?: boolean; aiLive?: boolean; choice?: TestChoice; claimSend?: () => Promise<() => void>; booking?: { test: boolean; workflowId: string; trigger: Trigger } }): Promise<StepResult>;
+  execute(input: { runId: string; stepRunId: string; userId: string; workflowId?: string; step: Step; attempt: number; idempotencyKey: string; ctx: ExpressionContext; mock?: boolean; aiLive?: boolean; choice?: TestChoice; claimSend?: () => Promise<() => void>; booking?: { test: boolean; workflowId: string; trigger: Trigger }; fileFields?: string[] }): Promise<StepResult>;
 }
 
 export type AdvanceDeps = {
@@ -245,6 +245,7 @@ async function runNext(deps: AdvanceDeps, run: Run): Promise<void> {
       aiLive: run.aiLive,
       choice: (run.testChoices as Record<string, TestChoice> | null)?.[step.id],
       claimSend: !mock && unsafeToRepeat(step) ? claimSend : undefined,
+      fileFields: step.type === "drive" && def.trigger.type === "form" ? def.trigger.config.fields.filter((f) => f.type === "file").map((f) => f.name) : undefined,
       booking: step.type === "booking" ? { test: run.test, workflowId: version!.workflowId, trigger: def.trigger } : undefined,
     });
     // A comparison on a missing or non-number value has nowhere to go without an "invalid" edge, so it fails here

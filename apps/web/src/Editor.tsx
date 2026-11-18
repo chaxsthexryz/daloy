@@ -23,8 +23,9 @@ const tomorrowAtTen = () => `${new Date(Date.now() + 86_400_000).toISOString().s
 function samplePayload(trigger: Trigger, resourceId = "a resource id from the Resources page"): string {
   if (trigger.type === "email") return JSON.stringify({ from: "ana@example.com", replyTo: "ana@example.com", to: ["inquiries@example.com"], subject: "Website inquiry", text: "I would like a quote.", messageId: "sample-inquiry@example.com", receivedAt: new Date().toISOString() }, null, 2);
   if (trigger.type !== "form") return "{}";
+  // File fields are left out: a test run takes no files, and the server drops a value sent for one.
   const sample = Object.fromEntries(
-    trigger.config.fields.map((f) => [f.name, f.type === "number" ? 1 : f.type === "email" ? "ana@example.com" : f.type === "datetime" ? tomorrowAtTen() : f.type === "resource" ? resourceId : `Sample ${f.label.toLowerCase()}`]),
+    trigger.config.fields.filter((f) => f.type !== "file").map((f) => [f.name, f.type === "number" ? 1 : f.type === "email" ? "ana@example.com" : f.type === "datetime" ? tomorrowAtTen() : f.type === "resource" ? resourceId : `Sample ${f.label.toLowerCase()}`]),
   );
   return JSON.stringify(sample, null, 2);
 }
@@ -422,7 +423,7 @@ function TriggerPanel({ trigger, wf, onChange }: { trigger: Trigger; wf: Loaded;
                     set({ type, min: undefined, max: undefined, integer: undefined, slotMinutes: undefined, timezone: type === "datetime" ? Intl.DateTimeFormat().resolvedOptions().timeZone : undefined });
                   }}
                 >
-                  {["text", "email", "textarea", "number", "datetime", "resource"].map((kind) => (
+                  {["text", "email", "textarea", "number", "datetime", "resource", "file"].map((kind) => (
                     <option key={kind} value={kind}>{t(kind)}</option>
                   ))}
                 </select>
@@ -445,6 +446,7 @@ function TriggerPanel({ trigger, wf, onChange }: { trigger: Trigger; wf: Loaded;
                   </>
                 )}
                 {f.type === "resource" && <span className="muted">{t("a resource from the Resources page")}</span>}
+                {f.type === "file" && <span className="muted">{t("photos or PDFs, up to 5 MB each, 3 per field")}</span>}
                 <button type="button" className="quiet" onClick={() => setFields(fields.filter((_, j) => j !== i))} disabled={fields.length === 1}>
                   {t("Remove")}
                 </button>
@@ -471,7 +473,7 @@ function TriggerPanel({ trigger, wf, onChange }: { trigger: Trigger; wf: Loaded;
   );
 }
 
-const OUTSIDE = new Set(["http", "email", "approval", "sheets", "slack", "outlook", "teams", "telegram", "calendar", "airtable", "notion", "trello"]);
+const OUTSIDE = new Set(["http", "email", "approval", "sheets", "drive", "slack", "outlook", "teams", "telegram", "calendar", "airtable", "notion", "trello"]);
 
 /** Per-step outcomes for a mocked or AI-only test run: a classify label, an approval decision, or a failure. */
 function TestChoices({ steps, choices, onChange }: { steps: Step[]; choices: Record<string, string>; onChange: (c: Record<string, string>) => void }) {

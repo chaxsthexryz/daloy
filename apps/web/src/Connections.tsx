@@ -2,7 +2,7 @@ import { useLanguage } from "./Language";
 import { useState, type FormEvent } from "react";
 import { api } from "./api";
 
-export type Provider = "google_sheets" | "slack" | "outlook" | "teams" | "telegram" | "google_calendar" | "paymongo" | "airtable" | "notion" | "trello";
+export type Provider = "google_sheets" | "slack" | "outlook" | "teams" | "telegram" | "google_calendar" | "google_drive" | "paymongo" | "airtable" | "notion" | "trello";
 export type Connection = { provider: Provider; status: "active" | "failed"; account: string; destination: Record<string, string> | null; lastError: string | null; lastTestedAt: string | null };
 type TestResult = { ok: true; range?: string; channel?: string } | { ok: false; error: string };
 export type OutlookSetup = { configured: boolean; adminConsentUrl?: string };
@@ -133,6 +133,89 @@ export function SheetsConnection({ conn, onChange }: { conn: Connection | null; 
             </button>
             {conn && (
               <button type="button" className="quiet" onClick={() => setEditing(false)}>{t("Cancel")}</button>
+            )}
+          </div>
+        </form>
+      )}
+      <p role="alert" className="message error" hidden={!error}>
+        {error}
+      </p>
+    </div>
+  );
+}
+
+export function DriveConnection({ conn, onChange }: { conn: Connection | null; onChange: () => Promise<unknown> }) {
+  const { t } = useLanguage();
+  const { error, busy, act } = useAction(onChange);
+  const [editing, setEditing] = useState(false);
+  const [form, setForm] = useState({ serviceAccount: "", folder: "" });
+  // The key file names the account to add to the shared drive. Read here only to show it; the file is sent once, on save.
+  let shareWith = conn?.account ?? "";
+  try {
+    shareWith = (JSON.parse(form.serviceAccount) as { client_email?: string }).client_email ?? shareWith;
+  } catch {
+    // not pasted yet
+  }
+  const save = (e: FormEvent) => {
+    e.preventDefault();
+    void act(async () => {
+      await api("PUT", "/settings/connections/google-drive", form);
+      setForm({ serviceAccount: "", folder: "" });
+      setEditing(false);
+    });
+  };
+  const showForm = !conn || editing;
+
+  return (
+    <div className="connection" aria-labelledby="drive-h">
+      <h3 id="drive-h">Google Drive</h3>
+      {conn && <Status conn={conn} label="Service account" />}
+      {conn?.destination && (
+        <p>
+          {t("Files go to ")}<strong>{conn.destination.title}</strong>{t(". Files in a request are kept in Daloy for 7 days, so save them to Drive before then.")}
+        </p>
+      )}
+      {conn && (
+        <div className="actions">
+          {!editing && (
+            <button type="button" className="quiet" onClick={() => setEditing(true)}>
+              {t("Change folder or key")}
+            </button>
+          )}
+          <button type="button" className="quiet" disabled={busy} onClick={() => window.confirm(t("Disconnect Google Drive? Files stop being saved to Drive until you reconnect.")) && void act(() => api("DELETE", "/settings/connections/google-drive"))}>
+            {t("Disconnect")}
+          </button>
+        </div>
+      )}
+      {showForm && (
+        <form onSubmit={save}>
+          <p>
+            {t("Service accounts cannot store files in My Drive. The folder must be in a shared drive, with the service account added as a Content manager. Create a service account with the Google Drive API turned on, add a JSON key, then paste the key and the folder link.")}{" "}
+            <a href={SERVICE_ACCOUNT_HELP} target="_blank" rel="noreferrer">
+              {t("How to create a service account")}
+            </a>
+          </p>
+          <div className="field">
+            <label htmlFor="d-key">{t("Service account key file (JSON)")}</label>
+            <textarea id="d-key" rows={4} value={form.serviceAccount} onChange={(e) => setForm({ ...form, serviceAccount: e.target.value })} required autoComplete="off" spellCheck={false} />
+          </div>
+          {shareWith && (
+            <p className="muted">
+              {t("Add ")}<code>{shareWith}</code>{t(" to the shared drive as Content manager.")}
+            </p>
+          )}
+          <div className="field">
+            <label htmlFor="d-folder">{t("Folder link")}</label>
+            <input id="d-folder" value={form.folder} onChange={(e) => setForm({ ...form, folder: e.target.value })} required placeholder="https://drive.google.com/drive/folders/..." />
+          </div>
+          <div className="actions">
+            <button type="submit" className="primary" disabled={busy}>
+              {conn ? t("Save folder") : t("Connect Google Drive")}
+            </button>
+            {conn && (
+              <button type="button" className="quiet" onClick={() => setEditing(false)}>
+                {t("Cancel")}
+              </button>
             )}
           </div>
         </form>
@@ -615,7 +698,7 @@ export type Delivery = {
   lastError: string | null;
 };
 
-const NAMES: Record<Provider, string> = { google_sheets: "Sheet row", slack: "Slack note", outlook: "Outlook email", teams: "Teams note", telegram: "Telegram message", google_calendar: "Calendar event", paymongo: "PayMongo", airtable: "Airtable record", notion: "Notion page", trello: "Trello card" };
+const NAMES: Record<Provider, string> = { google_sheets: "Sheet row", slack: "Slack note", outlook: "Outlook email", teams: "Teams note", telegram: "Telegram message", google_calendar: "Calendar event", google_drive: "Drive file", paymongo: "PayMongo", airtable: "Airtable record", notion: "Notion page", trello: "Trello card" };
 
 function describe(d: Delivery, t: ReturnType<typeof useLanguage>["t"]): string {
   switch (d.state) {
@@ -629,6 +712,7 @@ function describe(d: Delivery, t: ReturnType<typeof useLanguage>["t"]): string {
       if (d.result?.reconciled) return t("already in the sheet ({sheet}), not written twice", { sheet: String(d.result.sheet ?? d.result.range) });
       if (d.provider === "google_sheets") return t("added to {sheet}", { sheet: String(d.result?.sheet ?? d.result?.range ?? t("the sheet")) });
       if (d.provider === "google_calendar") return t(d.result?.event === "deleted" ? "event removed from the calendar" : d.result?.event === "updated" ? "event updated on the calendar" : "event added to the calendar");
+      if (d.provider === "google_drive") return t("saved to {folder}", { folder: String(d.result?.folder ?? t("the folder")) });
       if (d.provider === "outlook") return t("sent to {email}", { email: String(d.result?.to ?? "") });
       return t(d.provider === "teams" ? "accepted by Teams" : "posted");
     case "needs_review":

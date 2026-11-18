@@ -1,7 +1,9 @@
-import { aiConnection, claimUsage, deliveries, listDeliveries, QuotaError, redactSecrets, requests, resolveRun, runs, secretForms, supersededSql, secretValuesToHide, stepRuns, workflows, workflowVersions, type Db, type RunAction } from "@daloy/db";
+import { aiConnection, claimUsage, readUpload, deliveries, listDeliveries, QuotaError, redactSecrets, requests, resolveRun, runs, secretForms, supersededSql, secretValuesToHide, stepRuns, workflows, workflowVersions, type Db, type RunAction } from "@daloy/db";
+import { FILE_MIME, safeFileName } from "@daloy/engine";
 import { generate } from "@daloy/llm-ts";
-import { Body, ConflictException, Controller, Get, Header, HttpCode, HttpException, HttpStatus, Inject, NotFoundException, Param, Post, Query, UseGuards } from "@nestjs/common";
+import { Body, ConflictException, Controller, Get, Header, HttpCode, HttpException, HttpStatus, Inject, NotFoundException, Param, Post, Query, Res, StreamableFile, UseGuards } from "@nestjs/common";
 import { and, asc, desc, eq, ilike, or, sql } from "drizzle-orm";
+import type { Response } from "express";
 import type { PgBoss } from "pg-boss";
 import * as z from "zod";
 import { SessionGuard } from "./auth";
@@ -119,6 +121,22 @@ export class RunsController {
       ["reference", "state", "test", "created", "finished", ...names],
       rows.map((r, i) => [r.reference, r.state, r.test, r.createdAt.toISOString(), r.finishedAt?.toISOString(), ...names.map((n) => fields[i]![n])]),
     );
+  }
+
+  /** A file a form collected, for the owner and operators of the run's workspace. Always a download, never shown by the browser (phase N21). */
+  @Get(":runId/files/:fileId")
+  async file(@CurrentUser() user: SessionUser, @Param("runId", uuid) runId: string, @Param("fileId", uuid) fileId: string, @Res({ passthrough: true }) res: Response) {
+    const [run] = await this.owned().where(and(eq(workflows.userId, user.workspaceId), eq(runs.id, runId)));
+    const file = run && (await readUpload(this.db, { userId: user.workspaceId, runId, id: fileId }));
+    if (!file) throw new NotFoundException();
+    res.set({
+      "Content-Type": FILE_MIME[file.type],
+      "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(safeFileName(file.name))}`,
+      "X-Content-Type-Options": "nosniff",
+      "Content-Security-Policy": "default-src 'none'; sandbox",
+      "Cache-Control": "private, no-store",
+    });
+    return new StreamableFile(file.data);
   }
 
   @Get(":id")

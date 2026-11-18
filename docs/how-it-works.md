@@ -565,6 +565,24 @@ The owner sets a logo and one accent colour on Business settings. The business n
 - Email: the brand is read before the send lock is taken. The HTML part carries the logo as an inline attachment.
 - Tests: `packages/engine/src/brand.test.ts` (types and contrast), `packages/db/src/brand.test.ts`, `packages/db/src/mail.test.ts` (branded and default email), `apps/api/src/brand.test.ts` (form with and without brand, refused uploads), `e2e/brand-kit.spec.ts`. See decision 0050.
 
+## Form files and Google Drive (packages/engine/src/file-type.ts, packages/db/src/uploads.ts, providers.ts, deliveries.ts, apps/api/src/public.ts, runs.ts)
+
+What it does: a form can have file fields. A visitor attaches photos or PDFs, and a `drive` step saves them into one Google Drive folder chosen in Apps. The owner and operators can also download each file from the run's details for 7 days.
+
+How it works (decision 0051):
+
+- Limits: 5 MB per file, 3 files per field, 5 files per submission. The type comes from the file's first bytes (JPEG, PNG, WebP, HEIC or HEIF, PDF). The browser's type and the file name's extension are ignored, so SVG, HTML and anything else are refused even when renamed `.jpg`.
+- The per-IP limit of 10 posts a minute is a guard, and Nest runs guards before the upload parser, so a blocked address never gets its body read.
+- The files are stored in Postgres (`uploads`) in the same transaction as the run. An invalid post stores nothing, and a replayed submission key stores no second copy. The worker's sweep deletes files 7 days after upload.
+- The run's trigger data holds only references (`id`, `name`, `type`, `size`) under each file field. File contents never enter trigger data, step input or output, so templates, the AI step, failure explanations and Ask cannot read them. Only the form handler sets a file field: a value sent through a webhook, MCP, a test run or the Run button is dropped.
+- Each workspace may store a number of files per Manila day: Pilot 100, Business 500, Business Plus 2000, and 20 without a plan. Over the limit, a submission with files gets a plain refusal. One without files goes through.
+- The Drive step queues one delivery like Sheets: the folder is pinned when it is queued, and each saved file is recorded under the worker's claim, so a retry skips files already saved. Drive cannot be asked whether an upload landed, so an unknown outcome waits in `needs_review` for Mark as posted or Post again. Post again also skips files already recorded.
+- Downloads are always attachments, with the stored type, `nosniff`, a sandbox CSP and no caching.
+
+Edge cases: a service account has no Drive storage of its own, so Connect refuses a folder outside a shared drive and says how to fix it. A file removed after 7 days fails its delivery with that reason. A run with no files completes the step and queues nothing. Files above 5 MB would need Google's two-step upload, which is not built.
+
+Tests: `packages/engine/src/file-type.test.ts`, `packages/engine/src/payload.test.ts` (file fields), `packages/db/src/uploads.test.ts`, `packages/db/src/usage.test.ts` (upload quota), `packages/db/src/drive.test.ts` (connect check, saves, progress, needs_review, Post again, shared drive refusal, purged file), `apps/worker/src/steps/index.test.ts` (drive step), `apps/worker/src/steps/ai.test.ts` (file contents never reach the model), `apps/api/src/form-files.test.ts` (limits, types, replay, quota, download headers and roles, Drive connect), `e2e/form-files.spec.ts`. The fake Drive API is in `test/fake-providers.ts`.
+
 ## Operations (docs/operations.md, apps/api/src/upgrade.test.ts)
 
 What it does: `docs/operations.md` is the runbook for the Compose stack: a `pg_dump` backup, a restore onto a new volume, stopping all sends by stopping the worker, upgrades, and a daily check for `failed` and `needs_review` runs. `docs/deployment.md` covers running the stack on a free VM behind a Cloudflare Tunnel with nightly encrypted dumps to Google Drive.

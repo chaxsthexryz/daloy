@@ -202,6 +202,7 @@ describe("role permissions", () => {
       ["get", `/workflows/${id}/versions`, operate],
       ["get", "/runs", operate],
       ["get", `/deliveries?runId=${randomUUID()}`, operate],
+      ["get", `/runs/${randomUUID()}/files/${randomUUID()}`, operate],
       ["get", "/templates", operate],
       ["get", "/step-schemas", operate],
       ["post", "/workflows", only, { name: "x", slug: `x-${randomUUID().slice(0, 8)}` }],

@@ -5,6 +5,8 @@ import {
   calendarIdFrom,
   calendarInfo,
   calendarWriteTest,
+  driveFolderIdFrom,
+  driveFolderInfo,
   consentOutcome,
   confirmDelivery,
   connectionCredential,
@@ -95,9 +97,10 @@ const trelloInput = z.strictObject({
   listId: z.string().trim().regex(/^[a-f0-9]{24}$/i, "The list id is 24 letters and digits"),
 });
 const calendarInput = z.strictObject({ serviceAccount: z.string().min(2).max(10_000), calendar: z.string().trim().min(3).max(300) });
+const driveInput = z.strictObject({ serviceAccount: z.string().min(2).max(10_000), folder: z.string().trim().min(3).max(500) });
 const retryInput = z.strictObject({ postAgain: z.boolean().default(false) });
 const teamsInput = z.strictObject({ url: z.string().trim().min(10).max(2000), channelName: z.string().trim().min(1).max(100) });
-const SLUGS: Record<string, Provider> = { "google-sheets": "google_sheets", slack: "slack", outlook: "outlook", teams: "teams", telegram: "telegram", "google-calendar": "google_calendar", paymongo: "paymongo", airtable: "airtable", notion: "notion", trello: "trello" };
+const SLUGS: Record<string, Provider> = { "google-sheets": "google_sheets", slack: "slack", outlook: "outlook", teams: "teams", telegram: "telegram", "google-calendar": "google_calendar", "google-drive": "google_drive", paymongo: "paymongo", airtable: "airtable", notion: "notion", trello: "trello" };
 const providerSlug = new ZodPipe(z.enum(Object.keys(SLUGS) as [string, ...string[]]).transform((s) => SLUGS[s]!));
 const uuid = new ZodPipe(z.uuid());
 
@@ -198,6 +201,23 @@ export class ConnectionsController {
   async testCalendar(@CurrentUser() user: SessionUser) {
     const conn = await this.connection(user.workspaceId, "google_calendar");
     return this.test(user.workspaceId, "google_calendar", conn, () => calendarWriteTest(this.urls, JSON.parse(conn.credential) as ServiceAccount, conn.destination!.calendarId!));
+  }
+
+  /** Connect or Reconnect Google Drive: a service account key, and a folder inside a shared drive that the account can add files to. Only the email and key are kept. */
+  @Put("google-drive")
+  @UseGuards(RateLimit(10))
+  async putDrive(@CurrentUser() user: SessionUser, @Body(new ZodPipe(driveInput)) body: z.output<typeof driveInput>) {
+    let sa: ServiceAccount;
+    try {
+      sa = serviceAccountSchema.parse(JSON.parse(body.serviceAccount));
+    } catch {
+      throw new BadRequestException("That is not a service account key file. In Google Cloud, create a key for the service account as JSON and paste the whole file.");
+    }
+    const folderId = driveFolderIdFrom(body.folder);
+    if (!folderId) throw new BadRequestException("Paste the folder's link from the browser address bar, like https://drive.google.com/drive/folders/...");
+    const { title } = await driveFolderInfo(this.urls, sa, folderId).catch(asBadRequest);
+    await saveConnection(this.db, this.config.secretsKey, user.workspaceId, "google_drive", { account: sa.client_email, credential: JSON.stringify({ client_email: sa.client_email, private_key: sa.private_key }), destination: { folderId, title } });
+    return this.get(user);
   }
 
   /** Connect or Reconnect Slack with the app's bot token. A reconnect keeps the chosen channel. */

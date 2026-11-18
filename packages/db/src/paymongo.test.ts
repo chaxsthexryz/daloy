@@ -149,7 +149,7 @@ describe("payment state", () => {
 
 describe("PayMongo calls", () => {
   const key = "sk_test_supersecret";
-  const urls = { googleToken: "", sheets: "", calendar: "", slack: "", telegram: "", airtable: "", notion: "", trello: "", paymongo: "https://pm.test" };
+  const urls = { googleToken: "", sheets: "", calendar: "", drive: "", slack: "", telegram: "", airtable: "", notion: "", trello: "", paymongo: "https://pm.test" };
   const reply = (status: number, body: object) => vi.spyOn(globalThis, "fetch").mockImplementation(async () => new Response(JSON.stringify(body), { status }));
   afterEach(() => vi.restoreAllMocks());
 

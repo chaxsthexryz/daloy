@@ -20,7 +20,7 @@ export type TestChoice = z.infer<typeof testChoiceSchema>;
 export const testChoicesSchema = z.record(z.string().max(64), testChoiceSchema).refine((c) => Object.keys(c).length <= 100, "at most 100 choices");
 
 // Steps a mocked run fakes, so a tester can make them fail to see the failure path.
-const OUTSIDE = new Set(["http", "email", "approval", "sheets", "slack", "outlook", "teams", "calendar"]);
+const OUTSIDE = new Set(["http", "email", "approval", "sheets", "drive", "slack", "outlook", "teams", "calendar"]);
 
 /** What is wrong with these choices for this workflow, one message per choice. Empty when they all fit. */
 export function choiceProblems(def: WorkflowDefinition, choices: Record<string, TestChoice>, mode: TestMode): string[] {
