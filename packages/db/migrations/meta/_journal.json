@@ -246,6 +246,13 @@
       "when": 1795067336937,
       "tag": "0034_apps_and_mail_fixes",
       "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1795011181615,
+      "tag": "0035_payment_events_per_workspace",
+      "breakpoints": true
     }
   ]
 }

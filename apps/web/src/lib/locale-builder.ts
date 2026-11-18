@@ -183,6 +183,8 @@ export const builderTranslations: Record<string, string> = {
   "Add field": "Magdagdag ng field",
   "New field": "Bagong field",
   "Webhook URL:": "Webhook URL:",
+  "New URL": "Bagong URL",
+  "The old URL stops working at once. Continue?": "Titigil agad ang lumang URL. Magpatuloy?",
   "Public form:": "Pampublikong form:",
   "Test outcomes": "Mga resulta ng test",
   "approved (default)": "inaprubahan (default)",

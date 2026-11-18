@@ -1,6 +1,6 @@
 import { publicCopy } from "./public-copy";
 import { createHmac, randomInt, randomUUID, timingSafeEqual } from "node:crypto";
-import { assertNotPaused, claimUsage, QuotaError, readBrand, saveUploads, workspaceLanguage, businessProfiles, connectionCredential, connections, createKeyedRun, createRun, eventSeen, markPaymentPaid, markPaymentRefunded, paymongoMode, publishedVersion, readSecret, recordEvent, requests, runs, triggers, verifyPaymongoSignature, WorkflowPausedError, workflows, type Db, type NewUpload, type Payment } from "@daloy/db";
+import { assertNotPaused, claimUsage, QuotaError, readBrand, saveUploads, workspaceLanguage, businessProfiles, connectionCredential, connections, createKeyedRun, createRun, eventSeen, finishEvent, keptEvent, markPaymentPaid, markPaymentRefunded, centavosToPesos, paymongoMode, publishedVersion, readSecret, recordEvent, requests, runs, triggers, verifyPaymongoSignature, WorkflowPausedError, workflows, type Db, type NewUpload, type Payment } from "@daloy/db";
 import { definitionSchema, FILE_MAX_BYTES, FILES_PER_FIELD, FILES_PER_SUBMISSION, fileType, OFFICE_REQUEST, parsePayload, PURCHASE_REQUEST, safeFileName, type FileRef, type FormField, type Resource } from "@daloy/engine";
 import {
   BadRequestException,
@@ -78,7 +78,7 @@ export class HooksController {
     if (!row || !version) throw new NotFoundException();
 
     const { hmacSecret: secretName, requireTimestamp } = row.trigger.config as { hmacSecret?: string; requireTimestamp?: boolean };
-    // The signature of a timestamped call names the call exactly, so a replay in the window gets the first run back (decision 0054).
+    // The signature of a timestamped call names the call exactly, so a replay in the window gets the first run back. The signature wins over the Idempotency-Key header, which it does not cover (decisions 0054, 0056).
     let replayKey: string | undefined;
     if (secretName) {
       // Fails closed: a missing secret rejects every call instead of accepting unsigned ones.
@@ -96,7 +96,7 @@ export class HooksController {
     }
 
     const { trigger } = definitionSchema.parse(version.definition);
-    const callerKey = idempotencyKey ?? replayKey;
+    const callerKey = replayKey ?? idempotencyKey;
     const first = await replayedRun(this.db, row.trigger.workflowId, trigger, req.body, callerKey);
     if (first) return { runId: first, duplicate: true };
     const fields = (row.trigger.config as { fields?: FormField[] }).fields;
@@ -141,25 +141,39 @@ export class PaymongoHooksController {
     const type = data?.attributes?.type;
     if (!data || typeof eventId !== "string" || typeof type !== "string") throw new BadRequestException();
     if ((data.attributes?.livemode === true) !== (mode === "live")) throw new BadRequestException("event mode does not match the connection");
-    if (await eventSeen(this.db, eventId)) return { duplicate: true };
+    if (await eventSeen(this.db, owner.userId, eventId)) return { duplicate: true };
 
+    const livemode = mode === "live";
     const resource = data.attributes?.data;
     let started: { payment: Payment; status: "paid" | "refunded" } | undefined;
+    let kept: Record<string, unknown> | undefined;
+    let settled: Payment | undefined;
     if (type === "checkout_session.payment.paid" && typeof resource?.id === "string") {
       const paid = resource.attributes?.payments?.find((p) => p.attributes?.status === "paid");
       const { amount, currency } = paid?.attributes ?? {};
       if (typeof paid?.id === "string" && typeof amount === "number" && typeof currency === "string") {
-        const r = await markPaymentPaid(this.db, { userId: owner.userId, sessionId: resource.id, paymentId: paid.id, amount, currency });
+        const r = await markPaymentPaid(this.db, { userId: owner.userId, sessionId: resource.id, paymentId: paid.id, amount, currency, livemode });
+        if (!r.payment) kept = { sessionId: resource.id, paymentId: paid.id, amount, currency, livemode };
         if (r.payment?.status === "paid") started = { payment: r.payment, status: "paid" };
+        settled = r.payment;
       }
     } else if (type === "payment.refunded" && typeof resource?.id === "string") {
-      const r = await markPaymentRefunded(this.db, { userId: owner.userId, providerPaymentId: resource.id });
+      const r = await markPaymentRefunded(this.db, { userId: owner.userId, providerPaymentId: resource.id, livemode });
+      if (!r.payment) kept = { paymentId: resource.id };
       if (r.payment?.status === "refunded") started = { payment: r.payment, status: "refunded" };
     }
     // Started on the payment's state, not on whether this call changed it: a crash after the update but before the runs
     // is retried by PayMongo and still starts them. The key is payment + status, so a replay or a second event starts nothing.
     if (started) await this.startRuns(owner.userId, started.payment, started.status);
-    await recordEvent(this.db, { eventId, userId: owner.userId, type });
+    // A refund that came before this paid event was kept: apply it now (decision 0056).
+    const refund = settled?.providerPaymentId && (settled.status === "paid" || settled.status === "refunded") ? await keptEvent(this.db, owner.userId, "payment.refunded", "paymentId", settled.providerPaymentId) : undefined;
+    if (refund) {
+      const r = await markPaymentRefunded(this.db, { userId: owner.userId, providerPaymentId: settled!.providerPaymentId!, livemode });
+      if (r.payment?.status === "refunded") await this.startRuns(owner.userId, r.payment, "refunded");
+      await finishEvent(this.db, owner.userId, refund.eventId);
+    }
+    // An unmatched paid or refund event is kept so the payment it belongs to can apply it later; the answer is still 200.
+    await recordEvent(this.db, { eventId, userId: owner.userId, type, ...(kept && { state: "kept" as const, payload: kept }) });
     return { ok: true };
   }
 
@@ -170,13 +184,17 @@ export class PaymongoHooksController {
       .from(triggers)
       .innerJoin(workflows, eq(workflows.id, triggers.workflowId))
       .where(and(eq(workflows.userId, userId), eq(triggers.type, "payment")));
-    const payload = { status, reference: p.reference, amount: p.amountCentavos, currency: p.currency, paymentId: p.id, sourceRunId: p.runId, providerPaymentId: p.providerPaymentId };
+    const payload = { status, reference: p.reference, amount: p.amountCentavos, amountPesos: centavosToPesos(p.amountCentavos), livemode: p.livemode, currency: p.currency, paymentId: p.id, sourceRunId: p.runId, providerPaymentId: p.providerPaymentId };
+    // A sandbox payment, or one the builder's test run made, starts test runs, which the worker mocks (decision 0056).
+    const [source] = await this.db.select({ test: runs.test }).from(runs).where(eq(runs.id, p.runId));
+    const test = !p.livemode || source?.test === true;
     for (const l of listeners) {
       if (!((l.config as { events?: string[] }).events ?? ["paid"]).includes(status)) continue;
       const version = await publishedVersion(this.db, l.workflowId);
       if (!version) continue;
       // Paused (N11b): acknowledged with 2xx and no run, so PayMongo does not disable its webhook.
-      const started = await createKeyedRun(this.db, l.workflowId, version.id, payload, `paymongo:${p.id}:${status}`).catch((err: unknown) => {
+      // A test run skips createRun's pause check, so check it here.
+      const started = await Promise.resolve(test && assertNotPaused(this.db, version.id)).then(() => createKeyedRun(this.db, l.workflowId, version.id, payload, `paymongo:${p.id}:${status}`, { test })).catch((err: unknown) => {
         if (err instanceof WorkflowPausedError) return null;
         throw err;
       });

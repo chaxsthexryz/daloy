@@ -1,6 +1,8 @@
 import { createHmac, randomBytes } from "node:crypto";
-import { apiTokens, requests, runs, secrets, SCHEDULE_QUEUE, stepRuns, users, type Db } from "@daloy/db";
+import { apiTokens, joinWorkspace, requests, runs, secrets, SCHEDULE_QUEUE, sessions, stepRuns, users, type Db } from "@daloy/db";
+import { TEMPLATES } from "@daloy/engine";
 import type { INestApplication } from "@nestjs/common";
+import { hash } from "@node-rs/argon2";
 import { eq } from "drizzle-orm";
 import type { Pool } from "pg";
 import { PgBoss } from "pg-boss";
@@ -8,6 +10,7 @@ import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { freshDatabase } from "../../../test/db";
 import { createApp } from "./app";
+import { sha256 } from "./http";
 
 let app: INestApplication;
 let boss: PgBoss;
@@ -433,13 +436,13 @@ describe("webhook signature with a timestamp (N11b)", () => {
     expect((await call(now - 1).expect(202)).body.runId).not.toBe(first.runId);
   });
 
-  it("lets the caller's Idempotency-Key decide instead of the signature", async () => {
+  it("a signed timestamped call is repeated by its signature, whatever Idempotency-Key it carries", async () => {
     const { post } = await signedHook();
     const body = JSON.stringify({ order: 3 });
     const now = Math.floor(Date.now() / 1000);
-    const call = (t: number) => post(body).set("Idempotency-Key", "order-3").set("X-Daloy-Timestamp", String(t)).set("X-Daloy-Signature", stamp(t, "whsec_test", body));
-    const first = (await call(now).expect(202)).body;
-    expect((await call(now - 2).expect(202)).body).toEqual({ runId: first.runId, duplicate: true });
+    const call = (key: string) => post(body).set("Idempotency-Key", key).set("X-Daloy-Timestamp", String(now)).set("X-Daloy-Signature", stamp(now, "whsec_test", body));
+    const first = (await call("order-3a").expect(202)).body;
+    expect((await call("order-3b").expect(202)).body).toEqual({ runId: first.runId, duplicate: true });
   });
 
   it("still accepts the old signature, says so in a header and records it, until the owner requires the timestamp", async () => {
@@ -462,5 +465,60 @@ describe("webhook signature with a timestamp (N11b)", () => {
     expect(res.body.message).toContain("X-Daloy-Timestamp");
     const now = Math.floor(Date.now() / 1000);
     await post(body).set("X-Daloy-Timestamp", String(now)).set("X-Daloy-Signature", stamp(now, "whsec_test", body)).expect(202);
+  });
+});
+
+describe("invoice starter webhook (M2)", () => {
+  const stamp = (t: number, key: string, body: string) => `sha256=${createHmac("sha256", key).update(`${t}.${body}`).digest("hex")}`;
+  async function invoiceHook() {
+    const { agent } = await signedIn();
+    await agent.put("/secrets/invoice_webhook_secret").send({ value: "whsec_invoice" }).expect(204);
+    const wf = await agent.post("/workflows").send({ name: "Invoice", slug: `inv-${++seq}` }).expect(201);
+    const definition = TEMPLATES.find((t) => t.slug === "invoice-paymongo")!.definition;
+    await agent.post(`/workflows/${wf.body.id}/versions`).send({ definition, publish: true }).expect(201);
+    const full = (await agent.get(`/workflows/${wf.body.id}`).expect(200)).body;
+    return (body: string) => request(server).post(`/hooks/${full.trigger.webhookPath}`).set("Content-Type", "application/json").send(body);
+  }
+
+  it("makes one run when a signed retry has a new timestamp and a new Idempotency-Key, and refuses an unsigned call", async () => {
+    const post = await invoiceHook();
+    const body = JSON.stringify({ invoice_id: "INV-1", customer_name: "Ana", customer_email: "ana@example.com", amount: 500 });
+    const t = Math.floor(Date.now() / 1000);
+    const call = (time: number, key: string) => post(body).set("Idempotency-Key", key).set("X-Daloy-Timestamp", String(time)).set("X-Daloy-Signature", stamp(time, "whsec_invoice", body));
+    const first = (await call(t, "k1").expect(202)).body;
+    expect((await call(t + 1, "k2").expect(202)).body).toEqual({ runId: first.runId, duplicate: true });
+    await post(body).expect(401);
+  });
+});
+
+describe("workflow webhook URL visibility (M2)", () => {
+  it("shows the bearer URL to the owner but not to an operator", async () => {
+    const { agent } = await signedIn();
+    const wf = await publishedWorkflow(agent, { type: "webhook", config: {} });
+    expect(wf.trigger.webhookPath).toEqual(expect.any(String));
+    const workspaceId = (await agent.get("/auth/me").expect(200)).body.workspaceId as string;
+    const [u] = await db.insert(users).values({ email: `op${++seq}@test.local`, passwordHash: await hash("correct horse battery") }).returning();
+    await joinWorkspace(db, u!.id, workspaceId, "operator");
+    const token = randomBytes(32).toString("base64url");
+    await db.insert(sessions).values({ idHash: sha256(token), userId: u!.id, expiresAt: new Date(Date.now() + 3_600_000) });
+    const operator = request.agent(server).set("Cookie", `daloy_session=${token}`);
+    const seen = (await operator.get(`/workflows/${wf.id}`).expect(200)).body;
+    expect(seen.trigger.webhookPath).toBeNull();
+    expect(seen.trigger.type).toBe("webhook");
+  });
+
+  it("lets the owner replace the URL: the old one stops, the new one works, an operator is refused", async () => {
+    const { agent } = await signedIn();
+    const wf = await publishedWorkflow(agent, { type: "webhook", config: {} });
+    const workspaceId = (await agent.get("/auth/me").expect(200)).body.workspaceId as string;
+    const [u] = await db.insert(users).values({ email: `op${++seq}@test.local`, passwordHash: await hash("correct horse battery") }).returning();
+    await joinWorkspace(db, u!.id, workspaceId, "operator");
+    const token = randomBytes(32).toString("base64url");
+    await db.insert(sessions).values({ idHash: sha256(token), userId: u!.id, expiresAt: new Date(Date.now() + 3_600_000) });
+    await request.agent(server).set("Cookie", `daloy_session=${token}`).post(`/workflows/${wf.id}/webhook-url`).expect(403);
+    const { webhookPath } = (await agent.post(`/workflows/${wf.id}/webhook-url`).expect(201)).body;
+    expect(webhookPath).not.toBe(wf.trigger.webhookPath);
+    await request(server).post(`/hooks/${wf.trigger.webhookPath}`).send({}).expect(404);
+    await request(server).post(`/hooks/${webhookPath}`).send({}).expect(202);
   });
 });

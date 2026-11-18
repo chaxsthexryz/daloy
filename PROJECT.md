@@ -233,7 +233,7 @@ Order: N3, N4, V1, then V2 and W together, N5 with the pilot search P in paralle
   - [x] N11a. Accounts: password change and reset (by email, single-use, short-lived link), MCP token scopes and expiry. Done in [decision 0053](docs/decisions/0053-accounts-and-token-scopes.md): changing the password needs the current one and signs out other sessions, and a reset link is a 30 minute single-use token in the URL fragment, mailed through the installation's SMTP server. API tokens get `read`, `run` and `manage` scopes and an optional expiry, enforced by which MCP tools are registered. Migration 0031. Tokens made before keep full access and never expire.
   - [x] N11b. Sending and runs: a daily recipient cap on Gmail and Outlook receipts, a timestamp in the webhook signature with a replay window, per-workflow pause, and cancel of a pending run. (claimed: claude, branch n11b-controls)
   - [ ] N11c. Final security review at the release commit (Codex GPT-6.2 Astra, branch n11-review), then fixes for what it finds, including read-side secret redaction on every surface and a purge policy for retired secrets.
-    - [ ] N11c-1. Payment fixes from [the review](docs/security-review-2026-11-19.md): H1, H2, M2, M3, M4, M5. (claimed: claude, branch n11c-payments)
+    - [x] N11c-1. Payment fixes from [the review](docs/security-review-2026-11-19.md): H1, H2, M2, M3, M4, M5. (claimed: claude, branch n11c-payments)
     - [ ] N11c-2. Public intake fixes: H3, M1, M6, M10, M14, M15, M17. (claimed: claude, branch n11c-intake)
     - [x] N11c-3. Apps and mail fixes: M7, M8, M9, M11, M12, M13, M16 ([decision 0055](docs/decisions/0055-apps-and-mail-fixes.md)). (claimed: claude, branch n11c-apps)
 
