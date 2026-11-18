@@ -1,3 +1,4 @@
+import "./request-access.css";
 import "./workspace-admin.css";
 import { Text, useLanguage } from "./Language";
 import { useEffect, useState, type FormEvent } from "react";
@@ -150,7 +151,7 @@ export function AcceptInvitePage({ token, onDone }: { token: string; onDone: (u:
     }
   };
   return (
-    <main className="page narrow">
+    <main className="page narrow request-page access-page">
       <h1 className="brand">
         <img src="/logo.svg" alt="" width="32" height="32" />
         Daloy
@@ -185,7 +186,7 @@ export function MyRequestsPage({ user, onSignOut }: { user: User; onSignOut: () 
     api<MyRequest[]>("GET", "/my/requests").then(setList, (e: Error) => setError(e.message));
   }, []);
   return (
-    <main className="page">
+    <main className="page request-page my-requests">
       <header className="toolbar plain">
         <img src="/logo.svg" alt="Daloy" width="28" height="28" />
         <h1>{t("My requests")}</h1>
@@ -206,7 +207,7 @@ export function MyRequestsPage({ user, onSignOut }: { user: User; onSignOut: () 
         <p className="muted">{t("None yet.")}</p>
       ) : (
         <div className="table-wrap">
-          <table className="table">
+          <table className="table cards">
             <thead>
               <tr>
                 <th scope="col"><Text>Reference</Text></th>
@@ -219,11 +220,11 @@ export function MyRequestsPage({ user, onSignOut }: { user: User; onSignOut: () 
             <tbody>
               {list.map((r) => (
                 <tr key={r.reference}>
-                  <td>{r.reference}</td>
-                  <td>{r.subject}</td>
-                  <td>{r.automation}</td>
-                  <td>{new Date(r.createdAt).toLocaleString()}</td>
-                  <td>{t(r.state)}</td>
+                  <td data-label={t("Reference")}>{r.reference}</td>
+                  <td data-label={t("Subject")}>{r.subject}</td>
+                  <td data-label={t("Automation")}>{r.automation}</td>
+                  <td data-label={t("Sent")}>{new Date(r.createdAt).toLocaleString()}</td>
+                  <td data-label={t("Status")}>{t(r.state)}</td>
                 </tr>
               ))}
             </tbody>
