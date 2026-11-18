@@ -227,6 +227,8 @@ Order: N3, N4, V1, then V2 and W together, N5 with the pilot search P in paralle
 - [ ] N23. Invoice PDF and chase: a form becomes a PDF invoice by email, with reminders while unpaid. After the pilot; the Invoice follow-up template covers most of it now.
 - [ ] N24. Google Sheets through OAuth ("bring your own Google client", like Outlook), with the service account kept as the fallback. Needs the operator's own Google Cloud app; a verified public consent screen is out of scope. After the pilot.
 - [ ] N25. WhatsApp Cloud API delivery with approved message templates. Only if a pilot asks: Messenger and Viber are read more here, and it needs Meta approval and paid templates.
+- [ ] N26. Secrets page: owners add, replace and delete named secrets (webhook signing secrets, HTTP step keys) in the console instead of the browser console. Values are write-only: only names and dates come back. Found while writing docs/try-every-feature.md. (claimed: claude, branch n26-secrets)
+- [ ] N27. No-show button on Bookings: staff mark a past booking as a no-show, which starts the no-show follow-up without a webhook. Found while writing docs/try-every-feature.md. (claimed: claude, branch n27-noshow)
 - [ ] N11. Real accounts: final security review at the release commit covering N6 to N10, a daily recipient cap on Gmail and Outlook receipts, a timestamp in the webhook signature, MCP token scopes and expiry, password change and reset, per-workflow pause and cancel of a pending run, read-side secret redaction on every surface, a purge policy for retired secrets.
   - [x] N11a. Accounts: password change and reset (by email, single-use, short-lived link), MCP token scopes and expiry. Done in [decision 0053](docs/decisions/0053-accounts-and-token-scopes.md): changing the password needs the current one and signs out other sessions, and a reset link is a 30 minute single-use token in the URL fragment, mailed through the installation's SMTP server. API tokens get `read`, `run` and `manage` scopes and an optional expiry, enforced by which MCP tools are registered. Migration 0031. Tokens made before keep full access and never expire.
   - [x] N11b. Sending and runs: a daily recipient cap on Gmail and Outlook receipts, a timestamp in the webhook signature with a replay window, per-workflow pause, and cancel of a pending run. (claimed: claude, branch n11b-controls)
@@ -259,6 +261,8 @@ Model and effort per open phase. One coordinator session (Opus 5.5) coordinates:
 | N23 invoice PDF | Sonnet 5.5, high | GPT-6.1 Sol, Medium |
 | N24 Sheets OAuth | Opus 5.5, high | GPT-6.1 Sol, High |
 | N25 WhatsApp | Opus 5.5, high | GPT-6.1 Sol, High |
+| N26 secrets page | Sonnet 5.5, medium | GPT-6.1 Sol, Medium |
+| N27 no-show button | Sonnet 5.5, medium | GPT-6.1 Sol, Medium |
 | Read-only checks and retests | Sonnet 5.5, medium | GPT-6.1 Terra |
 
 Hygiene, any time (done 16 November 2026): add a LICENSE (MIT), the README "How AI was used" section CLAUDE.md asks for, and fix by hand the four statements in docs/how-it-works.md that the code contradicts (steps never reach `skipped`, the table has 85 cases not 72, `failed` can go back to `running`, not every change goes through `assertTransition`).
