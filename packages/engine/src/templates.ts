@@ -414,4 +414,78 @@ export const TEMPLATES = [
       ],
     },
   },
+  // N22: the AI step reads the receipt photo. The photo stays in the run page; the sheet row holds only the text the model read.
+  {
+    slug: "receipt-expense",
+    name: "Receipt to expense row",
+    description: "Someone sends a receipt photo on a form. The model reads the shop, total and date, you approve, and Daloy adds a row to your Google Sheet. Needs Google Drive (a shared drive folder), Google Sheets, and an AI model that reads images (Gemini, OpenAI or OpenRouter).",
+    definition: {
+      trigger: {
+        type: "form",
+        config: {
+          fields: [
+            { name: "name", label: "Your name", type: "text", required: true },
+            { name: "email", label: "Email", type: "email", required: true },
+            { name: "receipt", label: "Receipt photo", type: "file", required: true },
+            { name: "note", label: "Note", type: "textarea", required: false },
+          ],
+        },
+      },
+      steps: [
+        { id: "save_receipt", type: "drive", config: {} },
+        {
+          id: "read_receipt",
+          type: "ai",
+          config: {
+            task: "extract",
+            input: "Sent by {{trigger.name}}. Note: {{trigger.note}}",
+            files: ["receipt"],
+            fields: {
+              shop: "Shop or business name on the receipt",
+              amount: "Total amount paid, digits and a decimal point only",
+              date: "Date on the receipt as YYYY-MM-DD",
+            },
+          },
+        },
+        {
+          id: "approve",
+          type: "approval",
+          config: {
+            to: "owner@example.com",
+            subject: "Expense from {{trigger.name}}",
+            message: "{{trigger.name}} sent a receipt.\nShop: {{steps.read_receipt.output.shop}}\nAmount: {{steps.read_receipt.output.amount}}\nThe photo is on the run page in Daloy.",
+            timeoutSeconds: 172_800,
+          },
+        },
+        {
+          id: "log_expense",
+          type: "sheets",
+          config: { columns: ["{{trigger.name}}", "{{steps.read_receipt.output.shop}}", "{{steps.read_receipt.output.amount}}", "{{steps.read_receipt.output.date}}", "{{trigger.note}}"] },
+        },
+        {
+          id: "tell_approved",
+          type: "email",
+          config: { to: "{{trigger.email}}", subject: "Your expense was approved", text: "Hi {{trigger.name}}, your receipt from {{steps.read_receipt.output.shop}} ({{steps.read_receipt.output.amount}}) was approved and added to the expense list." },
+        },
+        {
+          id: "tell_rejected",
+          type: "email",
+          config: { to: "{{trigger.email}}", subject: "Your expense was not approved", text: "Hi {{trigger.name}}, your receipt from {{steps.read_receipt.output.shop}} ({{steps.read_receipt.output.amount}}) was not approved." },
+        },
+        {
+          id: "tell_no_decision",
+          type: "email",
+          config: { to: "{{trigger.email}}", subject: "No decision on your expense yet", text: "Hi {{trigger.name}}, nobody has decided on your receipt from {{steps.read_receipt.output.shop}} yet. Please ask the owner." },
+        },
+      ],
+      edges: [
+        { from: "save_receipt", to: "read_receipt" },
+        { from: "read_receipt", to: "approve" },
+        { from: "approve", to: "log_expense", on: "approved" },
+        { from: "log_expense", to: "tell_approved" },
+        { from: "approve", to: "tell_rejected", on: "rejected" },
+        { from: "approve", to: "tell_no_decision", on: "timeout" },
+      ],
+    },
+  },
 ] as const;

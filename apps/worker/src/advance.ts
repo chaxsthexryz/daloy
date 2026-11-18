@@ -20,6 +20,16 @@ import {
 } from "@daloy/engine";
 import { and, asc, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
 
+/**
+ * The file fields of a form that a drive step saves or an AI step may read. The definition check already rejects other
+ * names in an AI step; this keeps a stale definition from reading a field that is not a file field.
+ */
+const fileFieldsFor = (step: Step, trigger: Trigger) => {
+  if (trigger.type !== "form" || (step.type !== "drive" && step.type !== "ai")) return undefined;
+  const names = trigger.config.fields.filter((f) => f.type === "file").map((f) => f.name);
+  return step.type === "ai" ? names.filter((n) => step.config.files?.includes(n)) : names;
+};
+
 /** waitUntil parks the step and the run in "waiting" until that time (delay, and the approval timeout). */
 /** input is the resolved config the attempt ran with, already redacted. On failure it travels on StepError.input. */
 export type StepResult = { input?: unknown; output?: unknown; branch?: string; inputTokens?: number; outputTokens?: number; waitUntil?: Date };
@@ -245,7 +255,7 @@ async function runNext(deps: AdvanceDeps, run: Run): Promise<void> {
       aiLive: run.aiLive,
       choice: (run.testChoices as Record<string, TestChoice> | null)?.[step.id],
       claimSend: !mock && unsafeToRepeat(step) ? claimSend : undefined,
-      fileFields: step.type === "drive" && def.trigger.type === "form" ? def.trigger.config.fields.filter((f) => f.type === "file").map((f) => f.name) : undefined,
+      fileFields: fileFieldsFor(step, def.trigger),
       booking: step.type === "booking" ? { test: run.test, workflowId: version!.workflowId, trigger: def.trigger } : undefined,
     });
     // A comparison on a missing or non-number value has nowhere to go without an "invalid" edge, so it fails here

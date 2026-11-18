@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { createServer } from "node:http";
 
 /**
@@ -22,6 +23,9 @@ const warned = {
   definition: { trigger: form, steps: [approvalAsk, thank], edges: [{ from: "ask", to: "thank", on: "approved" }] },
 };
 
+// N22: what each AI step request carried, so a spec can check which images and text reached the model.
+const aiRequests: { images: string[]; text: string }[] = [];
+
 export function startLlmFake(port: number) {
   const server = createServer((req, res) => {
     let raw = "";
@@ -30,8 +34,20 @@ export function startLlmFake(port: number) {
       res.setHeader("content-type", "application/json");
       // The AI model page lists the local server's models.
       if (req.method === "GET" && req.url === "/api/tags") return res.end(JSON.stringify({ models: [{ name: "fake-model" }] }));
+      if (req.method === "GET" && req.url === "/__control") return res.end(JSON.stringify({ aiRequests }));
       if (req.method !== "POST") return res.writeHead(404).end("{}");
-      const body = JSON.parse(raw) as { messages: { role?: string; content: string }[] };
+      const body = JSON.parse(raw) as { messages: { role?: string; content: string; images?: string[] }[] };
+      // An AI step (buildPrompt): record the images and the user text, and answer an extract task.
+      if (body.messages.some((m) => m.role === "system" && m.content.startsWith("You are one step in an automated workflow"))) {
+        const user = body.messages.filter((m) => m.role === "user");
+        aiRequests.push({
+          images: user.flatMap((m) => m.images ?? []).map((b64) => createHash("sha256").update(Buffer.from(b64, "base64")).digest("hex")),
+          text: user.map((m) => m.content).join(" "),
+        });
+        const extract = body.messages.some((m) => m.content.includes("Extract these fields"));
+        const content = extract ? JSON.stringify({ shop: "Sari-sari Store", amount: "250.00", date: "2026-11-18" }) : "{}";
+        return res.end(JSON.stringify({ message: { content }, prompt_eval_count: 1, eval_count: 1 }));
+      }
       // The run explainer (N10a) asks for plain text, not a workflow draft.
       if (body.messages.some((m) => m.content.startsWith("You explain why a Daloy automation stopped")))
         return res.end(JSON.stringify({ message: { content: "The automation stopped because a step was set to fail in this preview. Nothing was sent." }, prompt_eval_count: 1, eval_count: 1 }));

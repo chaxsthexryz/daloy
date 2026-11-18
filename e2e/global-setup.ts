@@ -73,6 +73,7 @@ export default async function setup() {
   process.env.E2E_IMAP_MAIL_FILE = inboxFile;
   const inbox = await startFakeImap(inboxFile);
   const llm = startLlmFake(LLM_PORT);
+  process.env.E2E_LLM_URL = `http://127.0.0.1:${LLM_PORT}`;
   // Fake Google Sheets, Slack and Microsoft. Tests read the key file and token from these env vars and the fake's /__control.
   const providers = await startFakeProviders(PROVIDERS_PORT);
   const saEmail = "daloy-e2e@office-demo.iam.gserviceaccount.com";
@@ -108,6 +109,8 @@ export default async function setup() {
     PUBLIC_URL: `http://localhost:${E2E_PORT}`,
     // The fake model, so AI drafts work without Ollama. AI steps in e2e test runs are mocked anyway.
     LLM_PROVIDER: "ollama",
+    // The fake model accepts images, so an AI step may be given form files.
+    LLM_VISION: "on",
     LLM_BASE_URL: `http://127.0.0.1:${LLM_PORT}`,
     GOOGLE_TOKEN_URL: providers.urls.googleToken,
     GOOGLE_SHEETS_URL: providers.urls.sheets,

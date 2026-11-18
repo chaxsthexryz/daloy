@@ -4,7 +4,7 @@ import { lintDefinition } from "./lint";
 import { templatesForLanguage } from "./template-language";
 import { TEMPLATES } from "./templates";
 
-const SLUGS = ["inquiry-triage", "invoice-follow-up", "no-show-follow-up", "appointment-reminder", "request-to-sheets", "lead-to-booking", "order-to-sheets", "order-paid", "invoice-paymongo", "quote-deposit", "renewal-reminders", "store-orders"];
+const SLUGS = ["inquiry-triage", "invoice-follow-up", "no-show-follow-up", "appointment-reminder", "request-to-sheets", "lead-to-booking", "order-to-sheets", "order-paid", "invoice-paymongo", "quote-deposit", "renewal-reminders", "store-orders", "receipt-expense"];
 const parse = (slug: string) => definitionSchema.parse(TEMPLATES.find((t) => t.slug === slug)!.definition);
 
 describe("starter templates", () => {
@@ -63,6 +63,15 @@ describe("starter templates", () => {
     expect(def.trigger.type).toBe("form");
     expect(def.steps.map((s) => s.type)).toEqual(["sheets", "delay", "email"]);
     expect(def.steps.find((s) => s.id === "wait_until_30_days_before")!.config).toEqual({ until: "{{trigger.expires_at}}", offsetSeconds: -2_592_000 });
+  });
+
+  it("receipt-expense saves the photo, lets the model read it, and logs a row only after approval", () => {
+    const def = parse("receipt-expense");
+    expect(def.steps.map((s) => s.type)).toEqual(["drive", "ai", "approval", "sheets", "email", "email", "email"]);
+    expect(def.steps.find((s) => s.id === "read_receipt")).toMatchObject({ config: { task: "extract", files: ["receipt"] } });
+    expect(def.edges).toContainEqual({ from: "approve", to: "log_expense", on: "approved" });
+    expect(def.edges).toContainEqual({ from: "approve", to: "tell_no_decision", on: "timeout" });
+    expect(TEMPLATES.find((t) => t.slug === "receipt-expense")!.description).toMatch(/Google Drive.*Google Sheets.*Gemini, OpenAI or OpenRouter/);
   });
 
   it("store-orders is a webhook recipe that logs, receipts the customer and tells the owner without private details", () => {

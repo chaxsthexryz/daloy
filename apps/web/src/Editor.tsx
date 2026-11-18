@@ -30,6 +30,9 @@ function samplePayload(trigger: Trigger, resourceId = "a resource id from the Re
   return JSON.stringify(sample, null, 2);
 }
 
+// SchemaForm cannot render arrays, so the AI step's files are chosen with checkboxes below it.
+const withoutFiles = (schema: JsonSchema): JsonSchema => ({ ...schema, properties: Object.fromEntries(Object.entries(schema.properties ?? {}).filter(([k]) => k !== "files")) });
+
 export function Editor({ id }: { id: string }) {
   const { t, language } = useLanguage();
   const [wf, setWf] = useState<Loaded | null>(null);
@@ -244,10 +247,33 @@ export function Editor({ id }: { id: string }) {
               </p>
               <SchemaForm
                 key={step.id}
-                schema={catalog.schemas[step.type]!}
+                schema={step.type === "ai" ? withoutFiles(catalog.schemas.ai!) : catalog.schemas[step.type]!}
                 value={step.config as Record<string, unknown>}
                 onChange={(config) => update({ ...draft, steps: draft.steps.map((s) => (s.id === step.id ? ({ ...s, config } as Step) : s)) })}
               />
+              {step.type === "ai" && draft.trigger.type === "form" && draft.trigger.config.fields.some((f) => f.type === "file") && (
+                <fieldset>
+                  <legend>{t("Let the AI read these files")}</legend>
+                  {draft.trigger.config.fields
+                    .filter((f) => f.type === "file")
+                    .map((f) => (
+                      <label key={f.name} className="check">
+                        <input
+                          type="checkbox"
+                          checked={(step.config as { files?: string[] }).files?.includes(f.name) ?? false}
+                          onChange={(e) => {
+                            const { files = [], ...rest } = step.config as { files?: string[] };
+                            const next = e.target.checked ? [...files, f.name] : files.filter((n) => n !== f.name);
+                            const config = next.length ? { ...rest, files: next } : rest;
+                            update({ ...draft, steps: draft.steps.map((s) => (s.id === step.id ? ({ ...s, config } as Step) : s)) });
+                          }}
+                        />
+                        {f.label}
+                      </label>
+                    ))}
+                  <p className="muted hint">{t("Checked files are sent to the AI model you picked on the AI model page. Photos need Gemini, OpenAI or OpenRouter.")}</p>
+                </fieldset>
+              )}
               <button
                 type="button"
                 className="danger"

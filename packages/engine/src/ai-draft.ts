@@ -13,6 +13,13 @@ export type DraftResult = { ok: true; name: string; summary: string; definition:
 
 const example = TEMPLATES[0]!;
 
+// "files" is the owner's consent to let the model read a form file, so Build with AI never hears of it.
+const withoutFiles = (schema: unknown) => {
+  const properties = { ...(schema as { properties: Record<string, unknown> }).properties };
+  delete properties.files;
+  return { ...(schema as object), properties };
+};
+
 /**
  * The part of the prompt that describes a definition: trigger, steps, edges and the rules a draft has to follow.
  * Exported so the chat prompt (ai-chat.ts) describes workflows in exactly the same words.
@@ -26,7 +33,7 @@ const SPEC = [
   'A condition comparing with gt, gte, lt or lte takes its "invalid" branch when a side is missing or not a number. Give it an "invalid" edge when bad data needs its own handling (such as manual review); without one, the run fails with a message.',
   'steps is a list of {"id","type","config"}. ids use a-z, 0-9 and _. The config of each step type follows this JSON Schema:',
   // Airtable, Notion, Trello, payment status and drive steps are left out of the draft prompt to keep it inside a small local model's context.
-  JSON.stringify(Object.fromEntries(Object.entries(stepJsonSchemas()).filter(([type]) => !["airtable", "notion", "trello", "payment_status", "drive"].includes(type)))),
+  JSON.stringify(Object.fromEntries(Object.entries(stepJsonSchemas()).filter(([type]) => !["airtable", "notion", "trello", "payment_status", "drive"].includes(type)).map(([type, schema]) => [type, type === "ai" ? withoutFiles(schema) : schema]))),
   'edges is a list of {"from","to"} and, from a branching step, "on": ' +
     Object.entries(BRANCHES)
       .map(([type, labels]) => `${type} has ${labels!.map((l) => `"${l}"`).join(", ")}`)

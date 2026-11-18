@@ -45,6 +45,46 @@ describe("generate", () => {
     expect(result).toEqual({ text: "hi", usage: { inputTokens: 12, outputTokens: 5 } });
   });
 
+  const img = { type: "image/png", base64: "QUJD" };
+  const withImage = { ...base, messages: [{ role: "user" as const, content: "what is this", images: [img] }] };
+  const sentBody = (fetch: ReturnType<typeof mockFetch>) => JSON.parse(String((fetch.mock.calls[0] as unknown as [string, RequestInit])[1].body));
+
+  it("sends images to Ollama in the images array", async () => {
+    const fetch = mockFetch(ok("hi"));
+    await generate(withImage);
+    expect(sentBody(fetch).messages[1]).toEqual({ role: "user", content: "what is this", images: ["QUJD"] });
+  });
+
+  it("sends images to an OpenAI-compatible server as image_url parts, also in object JSON mode", async () => {
+    for (const jsonMode of ["schema", "object"] as const) {
+      const fetch = mockFetch(new Response(JSON.stringify({ choices: [{ message: { content: "{}" } }] })));
+      await generate({ ...withImage, schema: z.object({}), connection: { provider: "openai", baseUrl: "http://x/v1", jsonMode } });
+      expect(sentBody(fetch).messages[1]).toEqual({
+        role: "user",
+        content: [{ type: "text", text: "what is this" }, { type: "image_url", image_url: { url: "data:image/png;base64,QUJD" } }],
+      });
+    }
+  });
+
+  it("serializes a message without images exactly as before", async () => {
+    const fetch = mockFetch(ok("hi"));
+    await generate({ ...base, messages: [{ role: "user", content: "hello", images: [] }] });
+    expect(JSON.stringify(sentBody(fetch).messages[1])).toBe('{"role":"user","content":"hello"}');
+  });
+
+  it("explains a 400 on a request with images, without retry", async () => {
+    mockFetch(new Response("secret body", { status: 400 }));
+    await expect(generate(withImage)).rejects.toMatchObject({
+      message: "The AI model refused the file (HTTP 400). Pick a model that reads images on the AI model page.",
+      retryable: false,
+    });
+  });
+
+  it("keeps the plain message for a 400 without images", async () => {
+    mockFetch(new Response("", { status: 400 }));
+    await expect(generate(base)).rejects.toMatchObject({ message: "LLM returned HTTP 400" });
+  });
+
   it("sends the schema as JSON schema and returns validated data", async () => {
     const fetch = mockFetch(ok('{"label":"billing"}'));
     const schema = z.object({ label: z.enum(["billing", "support"]) });
