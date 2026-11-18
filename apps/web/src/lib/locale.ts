@@ -26,7 +26,7 @@ const tagalog: Record<string, string> = {
   "for MCP clients and scripts": "para sa MCP clients at scripts",
 
   "Settings": "Settings", "New": "Bago", "New automation": "Bagong automation", "Automations": "Mga automation",
-  "Activity": "Aktibidad", "Build with AI": "Bumuo gamit ang AI", "Bookings": "Mga booking", "Team": "Team",
+  "Activity": "Aktibidad", "Build with AI": "Bumuo gamit ang AI", "Bookings": "Mga booking", "Download CSV": "I-download ang CSV", "Team": "Team",
   "Apps": "Mga app", "Business": "Negosyo", "Advanced": "Advanced", "Sign out": "Mag-sign out", "Menu": "Menu",
   "Main": "Pangunahing menu", "Quick": "Mabilis na menu", "This automation": "Automation na ito", "Overview": "Buod", "Steps": "Mga hakbang",
   "Appearance": "Itsura", "System (follows this device)": "System (ayon sa device na ito)", "Light": "Light", "Dark": "Dark",

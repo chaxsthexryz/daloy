@@ -68,6 +68,7 @@ export function BookingsPage() {
     <main className="page">
       <header className="toolbar plain">
         <h1><Text>Bookings</Text></h1>
+        <a href="/bookings/export.csv" download>{t("Download CSV")}</a>
       </header>
       <p role="status" className="message ok" hidden={!note}>
         {note}
