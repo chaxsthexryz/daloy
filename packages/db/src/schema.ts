@@ -665,10 +665,19 @@ export const payments = pgTable(
   ],
 );
 
-/** PayMongo webhook events already handled, so a redelivered event does nothing twice. */
-export const paymongoEvents = pgTable("paymongo_events", {
-  eventId: text("event_id").primaryKey(),
-  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
-  type: text("type").notNull(),
-  receivedAt: ts("received_at").notNull().defaultNow(),
-});
+/**
+ * PayMongo webhook events already handled, so a redelivered event does nothing twice. Event ids are unique per workspace.
+ * A supported event that matched no payment is 'kept' with what is needed to apply it later (decision 0056).
+ */
+export const paymongoEvents = pgTable(
+  "paymongo_events",
+  {
+    eventId: text("event_id").notNull(),
+    userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    type: text("type").notNull(),
+    state: text("state", { enum: ["done", "kept"] }).notNull().default("done"),
+    payload: jsonb("payload"),
+    receivedAt: ts("received_at").notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.eventId] })],
+);

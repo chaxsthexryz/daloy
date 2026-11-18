@@ -12,6 +12,9 @@ export function pesosToCentavos(text: string): number {
   return centavos;
 }
 
+/** Centavos as peso text for a sheet row: 15050 -> "150.50". Integer math only. */
+export const centavosToPesos = (centavos: number): string => `${Math.floor(centavos / 100)}.${String(centavos % 100).padStart(2, "0")}`;
+
 export type PaymongoMode = "test" | "live";
 export function paymongoMode(secretKey: string): PaymongoMode {
   if (secretKey.startsWith("sk_test_")) return "test";
@@ -86,34 +89,59 @@ export const findPaymentForStep = async (db: Db, runId: string, stepId: string):
 /** One payment per run and step: a repeat returns the existing row. */
 export async function insertPayment(db: Db, v: { userId: string; workflowId: string; runId: string; stepId: string; reference: string; amountCentavos: number; livemode: boolean; providerSessionId: string; url: string }): Promise<Payment> {
   await db.insert(payments).values(v).onConflictDoNothing({ target: [payments.runId, payments.stepId] });
+  // A paid event that arrived before this row was kept (decision 0056).
+  // shortcut: listener runs are not started on this path because Daloy only hands out the checkout URL after the row is stored, so a paid event cannot normally arrive first, upgrade if a link can reach a buyer earlier.
+  const kept = await keptEvent(db, v.userId, "checkout_session.payment.paid", "sessionId", v.providerSessionId);
+  const k = kept?.payload as { paymentId: string; amount: number; currency: string; livemode: boolean } | undefined;
+  // Only an event verified in this payment's mode settles it.
+  if (kept && k?.livemode === v.livemode) {
+    await markPaymentPaid(db, { userId: v.userId, sessionId: v.providerSessionId, paymentId: k.paymentId, amount: k.amount, currency: k.currency, livemode: v.livemode });
+    const refund = await keptEvent(db, v.userId, "payment.refunded", "paymentId", k.paymentId);
+    if (refund) await markPaymentRefunded(db, { userId: v.userId, providerPaymentId: k.paymentId, livemode: v.livemode }).then(() => finishEvent(db, v.userId, refund.eventId));
+    await finishEvent(db, v.userId, kept.eventId);
+  }
   return (await findPaymentForStep(db, v.runId, v.stepId))!;
 }
 
-const bySession = (userId: string, sessionId: string) => and(eq(payments.userId, userId), eq(payments.providerSessionId, sessionId));
+// Only a payment of the mode the event was verified in: a sandbox event never settles a live payment.
+const bySession = (userId: string, sessionId: string, livemode: boolean) => and(eq(payments.userId, userId), eq(payments.providerSessionId, sessionId), eq(payments.livemode, livemode));
 
 /** pending -> paid, only once. A different amount or currency parks it in needs_review for a person. Paid, refunded and needs_review never move back. */
-export async function markPaymentPaid(db: Db, o: { userId: string; sessionId: string; paymentId: string; amount: number; currency: string }): Promise<{ payment: Payment | undefined; changed: boolean; mismatch: boolean }> {
+export async function markPaymentPaid(db: Db, o: { userId: string; sessionId: string; paymentId: string; amount: number; currency: string; livemode: boolean }): Promise<{ payment: Payment | undefined; changed: boolean; mismatch: boolean }> {
   const matches = sql`${o.amount}::int = ${payments.amountCentavos} and ${o.currency} = ${payments.currency}`;
   const [row] = await db
     .update(payments)
     .set({ status: sql`case when ${matches} then 'paid' else 'needs_review' end`, providerPaymentId: o.paymentId, paidAt: sql`now()`, updatedAt: sql`now()` })
-    .where(and(bySession(o.userId, o.sessionId), eq(payments.status, "pending")))
+    .where(and(bySession(o.userId, o.sessionId, o.livemode), eq(payments.status, "pending")))
     .returning();
   if (row) return { payment: row, changed: true, mismatch: row.status === "needs_review" };
-  return { payment: (await db.select().from(payments).where(bySession(o.userId, o.sessionId)))[0], changed: false, mismatch: false };
+  return { payment: (await db.select().from(payments).where(bySession(o.userId, o.sessionId, o.livemode)))[0], changed: false, mismatch: false };
 }
 
 /** paid -> refunded, only. */
-export async function markPaymentRefunded(db: Db, o: { userId: string; providerPaymentId: string }): Promise<{ payment: Payment | undefined; changed: boolean }> {
-  const own = and(eq(payments.userId, o.userId), eq(payments.providerPaymentId, o.providerPaymentId));
+export async function markPaymentRefunded(db: Db, o: { userId: string; providerPaymentId: string; livemode: boolean }): Promise<{ payment: Payment | undefined; changed: boolean }> {
+  const own = and(eq(payments.userId, o.userId), eq(payments.providerPaymentId, o.providerPaymentId), eq(payments.livemode, o.livemode));
   const [row] = await db.update(payments).set({ status: "refunded", updatedAt: sql`now()` }).where(and(own, eq(payments.status, "paid"))).returning();
   if (row) return { payment: row, changed: true };
   return { payment: (await db.select().from(payments).where(own))[0], changed: false };
 }
 
-export const eventSeen = async (db: Db, eventId: string) => (await db.select().from(paymongoEvents).where(eq(paymongoEvents.eventId, eventId))).length > 0;
+const ownEvent = (userId: string, eventId: string) => and(eq(paymongoEvents.userId, userId), eq(paymongoEvents.eventId, eventId));
 
-/** True when this call recorded the event, false when it was already there. */
-export async function recordEvent(db: Db, v: { eventId: string; userId: string; type: string }) {
+export const eventSeen = async (db: Db, userId: string, eventId: string) => (await db.select().from(paymongoEvents).where(ownEvent(userId, eventId))).length > 0;
+
+/** True when this call recorded the event, false when it was already there. A 'kept' event carries the fields needed to apply it later. */
+export async function recordEvent(db: Db, v: { eventId: string; userId: string; type: string; state?: "done" | "kept"; payload?: Record<string, unknown> }) {
   return (await db.insert(paymongoEvents).values(v).onConflictDoNothing().returning()).length > 0;
 }
+
+/** A kept event of this type whose payload field (sessionId or paymentId) is value. */
+export async function keptEvent(db: Db, userId: string, type: string, field: "sessionId" | "paymentId", value: string) {
+  const [row] = await db
+    .select()
+    .from(paymongoEvents)
+    .where(and(eq(paymongoEvents.userId, userId), eq(paymongoEvents.type, type), eq(paymongoEvents.state, "kept"), sql`${paymongoEvents.payload}->>${field} = ${value}`));
+  return row;
+}
+
+export const finishEvent = (db: Db, userId: string, eventId: string) => db.update(paymongoEvents).set({ state: "done" }).where(ownEvent(userId, eventId));

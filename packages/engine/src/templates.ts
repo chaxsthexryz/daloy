@@ -214,7 +214,7 @@ export const TEMPLATES = [
   {
     slug: "order-to-sheets",
     name: "Order to Sheets with payment link",
-    description: "An order form adds a pending row to your Google Sheet and emails the customer a PayMongo payment link.",
+    description: "An order form asks you to approve the price first. If you approve, it adds a pending row to your Google Sheet and emails the customer a PayMongo payment link.",
     definition: {
       trigger: {
         type: "form",
@@ -228,17 +228,35 @@ export const TEMPLATES = [
         },
       },
       steps: [
-        { id: "log_order", type: "sheets", config: { columns: ["{{trigger.name}}", "{{trigger.item}}", "{{trigger.amount}}", "pending"] } },
+        {
+          id: "approve_price",
+          type: "approval",
+          config: { to: "owner@example.com", subject: "Order from {{trigger.name}}: {{trigger.item}}", message: "{{trigger.name}} ({{trigger.email}}) wants to order:\n{{trigger.item}}\nAmount entered by the buyer: {{trigger.amount}} pesos\nApprove only if this is your price for the item.", timeoutSeconds: 172_800 },
+        },
         { id: "pay_link", type: "paymongo_link", config: { amount: "{{trigger.amount}}", description: "{{trigger.item}}", reference: "{{trigger.name}} - {{trigger.item}}" } },
+        { id: "log_order", type: "sheets", config: { columns: ["{{steps.pay_link.output.paymentId}}", "{{trigger.name}}", "{{trigger.item}}", "{{steps.pay_link.output.amountPesos}}", "PHP", "pending"] } },
         {
           id: "send_link",
           type: "email",
           config: { to: "{{trigger.email}}", subject: "Pay for your order: {{trigger.item}}", text: "Hi {{trigger.name}}, thanks for your order of {{trigger.item}} ({{trigger.amount}} pesos). Pay here: {{steps.pay_link.output.url}}" },
         },
+        {
+          id: "tell_declined",
+          type: "email",
+          config: { to: "{{trigger.email}}", subject: "About your order: {{trigger.item}}", text: "Hi {{trigger.name}}, thank you for your order. We could not accept it at that price. Please contact us to arrange it." },
+        },
+        {
+          id: "tell_no_decision",
+          type: "email",
+          config: { to: "owner@example.com", subject: "Order from {{trigger.name}} is waiting", text: "Nobody answered the order from {{trigger.name}} ({{trigger.email}}) for {{trigger.item}} in two days. Please reply to them." },
+        },
       ],
       edges: [
-        { from: "log_order", to: "pay_link" },
-        { from: "pay_link", to: "send_link" },
+        { from: "approve_price", to: "pay_link", on: "approved" },
+        { from: "pay_link", to: "log_order" },
+        { from: "log_order", to: "send_link" },
+        { from: "approve_price", to: "tell_declined", on: "rejected" },
+        { from: "approve_price", to: "tell_no_decision", on: "timeout" },
       ],
     },
   },
@@ -248,7 +266,7 @@ export const TEMPLATES = [
     description: "When PayMongo confirms a payment, add a paid row to your Google Sheet. Pairs with Order to Sheets.",
     definition: {
       trigger: { type: "payment", config: { events: ["paid"] } },
-      steps: [{ id: "log_paid", type: "sheets", config: { columns: ["{{trigger.reference}}", "paid", "{{trigger.amount}}"] } }],
+      steps: [{ id: "log_paid", type: "sheets", config: { columns: ["{{trigger.paymentId}}", "paid", "{{trigger.amountPesos}}", "PHP"] } }],
       edges: [],
     },
   },
@@ -260,6 +278,9 @@ export const TEMPLATES = [
       trigger: {
         type: "webhook",
         config: {
+          hmacSecret: "invoice_webhook_secret",
+          requireTimestamp: true,
+          eventKey: "{{trigger.invoice_id}}",
           fields: [
             { name: "invoice_id", label: "Invoice number", type: "text", required: true },
             { name: "customer_name", label: "Customer name", type: "text", required: true },

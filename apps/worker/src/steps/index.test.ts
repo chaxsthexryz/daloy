@@ -498,7 +498,7 @@ describe("paymongo_link step", () => {
     expect(calls[0]!.auth).toBe(`Basic ${Buffer.from("sk_test_abc:").toString("base64")}`);
     expect(calls[0]!.body.data.attributes.line_items[0]!.amount).toBe(15050);
     expect(calls[0]!.body.data.attributes.metadata).toEqual({ daloy_run: s.runId, daloy_step: "pay", reference: "INV-1" });
-    expect(out.output).toMatchObject({ url: expect.stringContaining("https://pay.test/cs_"), reference: "INV-1", amount: 15050, status: "pending" });
+    expect(out.output).toMatchObject({ url: expect.stringContaining("https://pay.test/cs_"), reference: "INV-1", amount: 15050, amountPesos: "150.50", status: "pending" });
     expect(await db.select().from(payments).where(eq(payments.runId, s.runId))).toHaveLength(1);
     expect(await db.select().from(usageClaims).where(eq(usageClaims.key, `${s.runId}:pay`))).toMatchObject([{ kind: "http" }]);
   });
@@ -524,6 +524,21 @@ describe("paymongo_link step", () => {
     const s = await setup(false);
     await expect(s.exec("150")).rejects.toMatchObject({ retryable: false, message: "Connect PayMongo first." });
     expect(calls).toHaveLength(0);
+  });
+
+  it("refuses a saved live key while PAYMONGO_LIVE is off, before any request", async () => {
+    calls.length = 0;
+    const s = await setup(false);
+    await saveConnection(db, key, s.userId, "paymongo", { account: "Live", credential: JSON.stringify({ secretKey: "sk_live_abc", webhookSecret: "whsk_x" }) });
+    const was = process.env.PAYMONGO_LIVE;
+    delete process.env.PAYMONGO_LIVE;
+    try {
+      await expect(s.exec("150")).rejects.toMatchObject({ retryable: false, message: expect.stringMatching(/live PayMongo is switched off/i) });
+      expect(calls).toHaveLength(0);
+      expect(await db.select().from(usageClaims).where(eq(usageClaims.key, `${s.runId}:pay`))).toHaveLength(0);
+    } finally {
+      if (was !== undefined) process.env.PAYMONGO_LIVE = was;
+    }
   });
 
   it("does not retry a refused request", async () => {

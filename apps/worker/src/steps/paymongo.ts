@@ -1,10 +1,10 @@
-import { connectionCredential, createCheckoutSession, findPaymentForStep, insertPayment, pesosToCentavos, ProviderError, type Db, type Payment } from "@daloy/db";
+import { centavosToPesos, connectionCredential, createCheckoutSession, findPaymentForStep, insertPayment, pesosToCentavos, ProviderError, type Db, type Payment } from "@daloy/db";
 import { StepError, type Outcome } from "@daloy/engine";
 
 type Link = { amount: string; description: string; reference: string };
 type Where = { userId: string; workflowId: string; runId: string; stepId: string; idempotencyKey: string };
 
-const output = (p: Payment) => ({ paymentId: p.id, url: p.url, reference: p.reference, amount: p.amountCentavos, status: p.status });
+const output = (p: Payment) => ({ paymentId: p.id, url: p.url, reference: p.reference, amount: p.amountCentavos, amountPesos: centavosToPesos(p.amountCentavos), status: p.status });
 
 // Same reading of a provider's answer as an HTTP step: a quota or an unreachable PayMongo is retried, a refusal is not,
 // and a timeout after the request left may have created the session, so a person decides (decision 0030).
@@ -27,6 +27,8 @@ export async function paymongoLink(db: Db, key: Buffer, at: Where, cfg: Link, cl
   const conn = await connectionCredential(db, key, at.userId, "paymongo");
   if (!conn) throw new StepError("Connect PayMongo first.", false);
   const { secretKey } = JSON.parse(conn.credential) as { secretKey: string };
+  // Checked before claim() and before any request. The webhook keeps settling live events whatever the flag (decision 0056).
+  if (secretKey.startsWith("sk_live_") && process.env.PAYMONGO_LIVE !== "on") throw new StepError("Live PayMongo is switched off on this server, so no new payment link can be made with the live key.", false);
   await claim();
   try {
     const session = await createCheckoutSession({ secretKey, amountCentavos, description: cfg.description, reference: cfg.reference, idempotencyKey: at.idempotencyKey, metadata: { daloy_run: at.runId, daloy_step: at.stepId, reference: cfg.reference } });

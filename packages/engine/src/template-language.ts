@@ -50,7 +50,12 @@ export function localizeGeneratedDefinition(definition: WorkflowDefinition, lang
       tell_taken: { subject: "Hindi na available ang oras na iyon", text: "Hi {{trigger.name}}, may nag-book na sa {{trigger.appointment_at}}. Ipadala ulit ang form na may ibang oras." },
       tell_owner: { subject: "May problema sa booking ni {{trigger.name}}", text: "Humiling si {{trigger.name}} ({{trigger.email}}) ng resource na hindi makita. Pakisagot siya." },
     },
-    "order-to-sheets": { send_link: { subject: "Bayaran ang order mo: {{trigger.item}}", text: "Hi {{trigger.name}}, salamat sa order mo na {{trigger.item}} ({{trigger.amount}} piso). Magbayad dito: {{steps.pay_link.output.url}}" } },
+    "order-to-sheets": {
+      approve_price: { subject: "Order mula kay {{trigger.name}}: {{trigger.item}}", message: "Gustong umorder ni {{trigger.name}} ({{trigger.email}}) ng:\n{{trigger.item}}\nHalagang inilagay ng buyer: {{trigger.amount}} piso\nI-approve lang kung ito ang presyo mo para sa item." },
+      send_link: { subject: "Bayaran ang order mo: {{trigger.item}}", text: "Hi {{trigger.name}}, salamat sa order mo na {{trigger.item}} ({{trigger.amount}} piso). Magbayad dito: {{steps.pay_link.output.url}}" },
+      tell_declined: { subject: "Tungkol sa order mo: {{trigger.item}}", text: "Hi {{trigger.name}}, salamat sa order mo. Hindi namin ito matatanggap sa presyong iyon. Makipag-ugnayan sa amin para maayos ito." },
+      tell_no_decision: { subject: "Naghihintay ang order ni {{trigger.name}}", text: "Walang sumagot sa order ni {{trigger.name}} ({{trigger.email}}) para sa {{trigger.item}} sa loob ng dalawang araw. Pakisagot siya." },
+    },
     "invoice-paymongo": {
       send_invoice: { subject: "Invoice {{trigger.invoice_id}}", text: "Hi {{trigger.customer_name}}, handa na ang invoice {{trigger.invoice_id}} na {{trigger.amount}} piso. Magbayad dito: {{steps.pay_link.output.url}}" },
       remind: { subject: "Paalala: invoice {{trigger.invoice_id}}", text: "Hi {{trigger.customer_name}}, bukas pa ang invoice {{trigger.invoice_id}} na {{trigger.amount}} piso. Magbayad dito: {{steps.pay_link.output.url}}" },
