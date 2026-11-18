@@ -20,6 +20,7 @@ import { LanguageController } from "./language";
 import { MembersController, MyRequestsController } from "./members";
 import { FormsController, HooksController, isFormEmbed, PaymongoHooksController } from "./public";
 import { RunsController } from "./runs";
+import { BrandController, BrandLogoController } from "./brand";
 import { BookingsController } from "./bookings";
 import { ResourcesController } from "./resources";
 import { SecretsController } from "./secrets";
@@ -37,7 +38,7 @@ export async function createApp({ db, boss, ...config }: AppOptions) {
   await boss.createQueue(SCHEDULE_QUEUE);
 
   @Module({
-    controllers: [AuthController, WorkflowsController, CatalogController, SecretsController, ResourcesController, BookingsController, TokensController, RunsController, HooksController, PaymongoHooksController, FormsController, ApprovalsController, McpController, SettingsController, LanguageController, EmailSettingsController, EmailSourceController, ConnectionsController, OutlookCallbackController, DeliveriesController, AiDraftController, AiChatController, MembersController, MyRequestsController, UsageController],
+    controllers: [AuthController, WorkflowsController, CatalogController, SecretsController, ResourcesController, BookingsController, TokensController, RunsController, HooksController, PaymongoHooksController, FormsController, ApprovalsController, McpController, SettingsController, LanguageController, EmailSettingsController, EmailSourceController, ConnectionsController, OutlookCallbackController, DeliveriesController, AiDraftController, AiChatController, MembersController, MyRequestsController, UsageController, BrandController, BrandLogoController],
     providers: [
       { provide: DB, useValue: db },
       { provide: BOSS, useValue: boss },

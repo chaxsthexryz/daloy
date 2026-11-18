@@ -42,10 +42,77 @@ export function BusinessSetupPage() {
       ) : (
         <>
           <ProfileForm profile={data.profile} onSaved={load} />
+          <BrandKit />
           <InquiryForm data={data} />
         </>
       )}
     </main>
+  );
+}
+
+type Brand = { accent: string | null; logo: boolean };
+
+/** Logo and accent colour (decision 0050). The server checks type, size and colour again; this only saves a round trip. */
+function BrandKit() {
+  const { t } = useLanguage();
+  const [brand, setBrand] = useState<Brand | null>(null);
+  const [colour, setColour] = useState("#1a73e8");
+  const [preview, setPreview] = useState("");
+  const [status, setStatus] = useState("");
+  const [error, setError] = useState("");
+  const file = useRef<HTMLInputElement>(null);
+  const load = () => api<Brand>("GET", "/settings/brand").then((b) => { setBrand(b); if (b.accent) setColour(b.accent); }, (e: Error) => setError(e.message));
+  useEffect(() => void load(), []);
+  const run = async (done: string, fn: () => Promise<unknown>) => {
+    setError("");
+    setStatus("");
+    try {
+      await fn();
+      await load();
+      setStatus(done);
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  };
+  const upload = () =>
+    run("Logo saved.", async () => {
+      const chosen = file.current?.files?.[0];
+      if (!chosen) throw new Error(t("Choose a file first."));
+      const url = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result));
+        reader.onerror = () => reject(new Error("The file could not be read"));
+        reader.readAsDataURL(chosen);
+      });
+      await api("PUT", "/settings/brand/logo", { data: url.slice(url.indexOf(",") + 1) });
+      setPreview(url);
+    });
+  return (
+    <section aria-labelledby="brand-h">
+      <h2 id="brand-h"><Text>Logo and colour</Text></h2>
+      <p className="muted"><Text>Shown on your public forms and in the emails Daloy sends for you. Leave both empty to keep the default look.</Text></p>
+      <div className="field">
+        <label htmlFor="b-logo"><Text>Logo (PNG, JPEG or WebP, up to 100 KB)</Text></label>
+        <input id="b-logo" ref={file} type="file" accept="image/png,image/jpeg,image/webp" />
+        {preview && <img src={preview} alt="" style={{ maxHeight: 64, maxWidth: 240 }} />}
+        <span className="muted">{brand?.logo ? <Text>A logo is saved.</Text> : <Text>No logo yet.</Text>}</span>
+      </div>
+      <div className="actions">
+        <button type="button" onClick={() => void upload()}><Text>Upload logo</Text></button>
+        {brand?.logo && <button type="button" onClick={() => void run("Logo removed.", async () => { await api("DELETE", "/settings/brand/logo"); setPreview(""); })}><Text>Remove logo</Text></button>}
+      </div>
+      <div className="field">
+        <label htmlFor="b-accent"><Text>Accent colour</Text></label>
+        <input id="b-accent" type="color" value={colour} onChange={(e) => setColour(e.target.value.toLowerCase())} aria-describedby="b-accent-note" />
+        <span id="b-accent-note" className="muted"><Text>Text on this colour is chosen to stay readable.</Text></span>
+      </div>
+      <div className="actions">
+        <button type="button" onClick={() => void run("Colour saved.", () => api("PUT", "/settings/brand", { accent: colour }))}><Text>Save colour</Text></button>
+        {brand?.accent && <button type="button" onClick={() => void run("Colour cleared.", () => api("PUT", "/settings/brand", { accent: null }))}><Text>Clear colour</Text></button>}
+      </div>
+      <p role="status">{t(status)}</p>
+      <p role="alert" className="message error" hidden={!error}>{error}</p>
+    </section>
   );
 }
 

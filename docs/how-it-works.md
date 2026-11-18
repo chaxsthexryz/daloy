@@ -554,6 +554,17 @@ Edge cases: a plain negative number becomes `'-5`. Field columns follow the orde
 
 Tests: `csv.test.ts` (cell escaping) and `csv-export.test.ts` (columns, formulas, secrets, roles).
 
+## Brand kit (packages/db/src/brand.ts, apps/api/src/brand.ts, packages/engine/src/brand.ts)
+
+The owner sets a logo and one accent colour on Business settings. The business name is the existing profile name. Forms and the page shown after sending use them, and so do emails.
+
+- Why Postgres: the API and worker may run apart, and every other piece of workspace data is already in the database. Nothing is fetched from a URL, so an email never makes a mail client call a website.
+- Checks: the logo is at most 100 KB and must start with a PNG, JPEG or WebP signature. The declared type is ignored. SVG is refused because it can carry script. The colour must be lowercase `#rrggbb`. The database repeats the type and colour checks.
+- Readable text: `inkFor` picks white or near black by WCAG contrast, so any accent gets readable button and email band text.
+- Defaults: with no logo and no accent, form HTML and email messages are the same as before this phase.
+- Email: the brand is read before the send lock is taken. The HTML part carries the logo as an inline attachment.
+- Tests: `packages/engine/src/brand.test.ts` (types and contrast), `packages/db/src/brand.test.ts`, `packages/db/src/mail.test.ts` (branded and default email), `apps/api/src/brand.test.ts` (form with and without brand, refused uploads), `e2e/brand-kit.spec.ts`. See decision 0050.
+
 ## Operations (docs/operations.md, apps/api/src/upgrade.test.ts)
 
 What it does: `docs/operations.md` is the runbook for the Compose stack: a `pg_dump` backup, a restore onto a new volume, stopping all sends by stopping the worker, upgrades, and a daily check for `failed` and `needs_review` runs. `docs/deployment.md` covers running the stack on a free VM behind a Cloudflare Tunnel with nightly encrypted dumps to Google Drive.

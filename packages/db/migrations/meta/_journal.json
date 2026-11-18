@@ -204,6 +204,13 @@
       "when": 1794969646812,
       "tag": "0028_schedule_watchdog",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1794971707900,
+      "tag": "0029_brand_kit",
+      "breakpoints": true
     }
   ]
 }
