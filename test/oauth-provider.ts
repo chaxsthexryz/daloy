@@ -6,7 +6,7 @@ import type { FakeProviders } from "./fake-providers";
  * borrows a real provider column value, since connections and flows check the provider name; tests pick one that has no
  * definition of its own yet.
  */
-export function fakeOAuthProvider(fake: FakeProviders, o: { app?: string; provider?: Provider; slug?: string; revoke?: boolean; pkce?: boolean; previousRefreshTokenWorks?: boolean } = {}): OAuthProvider {
+export function fakeOAuthProvider(fake: FakeProviders, o: { app?: string; provider?: Provider; slug?: string; revoke?: boolean; pkce?: boolean; previousRefreshTokenWorks?: boolean } = {}): OAuthProvider & { provider: Provider } {
   const app = fake.oauth[o.app ?? "test"]!;
   const u = fake.oauthUrls(app.name);
   return {

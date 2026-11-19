@@ -44,6 +44,8 @@ export type ProviderUrls = {
   microsoft?: { clientId: string; clientSecret: string; tenant: string };
   /** The installation's Google OAuth client and endpoints (decision 0060). Unset: Google keeps its service account form. */
   googleOAuth?: GoogleOAuthConfig;
+  /** Gmail API base, for Gmail sent through a Google sign-in (decision 0063). Unset: such a sender is blocked. */
+  gmail?: string;
   timeoutMs?: number;
 };
 export type GoogleOAuthConfig = { clientId: string; clientSecret: string; authorize: string; token: string; revoke: string; userinfo: string; pickerApiKey?: string; projectNumber?: string };
@@ -61,6 +63,7 @@ export const providerUrls = (env: NodeJS.ProcessEnv = process.env): ProviderUrls
   trello: trim(env.TRELLO_API_URL ?? "https://api.trello.com"),
   microsoftLogin: trim(env.MICROSOFT_LOGIN_URL ?? "https://login.microsoftonline.com"),
   graph: trim(env.MICROSOFT_GRAPH_URL ?? "https://graph.microsoft.com"),
+  gmail: trim(env.GMAIL_API_URL ?? "https://gmail.googleapis.com"),
   teamsHosts: (env.TEAMS_WEBHOOK_HOSTS ?? "logic.azure.com,powerplatform.com").split(",").map((h) => h.trim().toLowerCase()).filter(Boolean),
   microsoft:
     env.MICROSOFT_CLIENT_ID && env.MICROSOFT_CLIENT_SECRET

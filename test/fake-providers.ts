@@ -40,6 +40,8 @@ function oauthApp(name: string, o: { expiresIn?: number; rotation?: "none" | "ro
     clientId: `${name}-client-id`,
     clientSecret: `${name}-client-secret`,
     user: { id: `${name}-user-1`, email: `ana@${name}.example` },
+    /** userinfo's email_verified (Gmail refuses an address Google did not verify). */
+    emailVerified: true,
     consent: "grant" as "grant" | "declined" | "admin_required" | "narrow",
     grantScopes: [] as string[],
     rotation: o.rotation ?? "strict",
@@ -93,6 +95,8 @@ export async function startFakeProviders(port = 0) {
   const driveFiles: { id: string; name: string; parent: string; mimeType: string; size: number; sha256: string }[] = [];
   const paymongo = { sessions: [] as { id: string; amount: number }[], keys: new Map<string, unknown>() }; // keys: Idempotency-Key -> stored response
   const teams = { flows: new Set(["flow-purchasing"]), posts: [] as { flow: string; text: string }[] };
+  // Gmail API (decision 0063): messages sent with a Google OAuth access token, as the RFC 822 text Google received.
+  const gmail = { sent: [] as { id: string; user: string; raw: string }[] };
   const oauth: Record<string, ReturnType<typeof oauthApp>> = { test: oauthApp("test") };
   const pending: { path: string; behaviour: Behaviour; skip: number }[] = [];
   const calls: string[] = [];
@@ -167,6 +171,7 @@ export async function startFakeProviders(port = 0) {
         airtableRecords: airtable.records.map((r) => r.fields),
         notionPages: notion.pages.map((p) => p.properties),
         trelloCards: trello.cards.map((c) => c.name),
+        gmailMessages: gmail.sent,
       });
     }
 
@@ -196,7 +201,7 @@ export async function startFakeProviders(port = 0) {
       const form = new URLSearchParams(raw);
       if (endpoint === "userinfo") {
         const who = app.accessTokens.get((req.headers.authorization ?? "").replace(/^Bearer /, ""));
-        return who ? json(res, 200, { sub: who.id, email: who.email }) : json(res, 401, { error: "invalid_token" });
+        return who ? json(res, 200, { sub: who.id, email: who.email, email_verified: app.emailVerified }) : json(res, 401, { error: "invalid_token" });
       }
       if (form.get("client_id") !== app.clientId || form.get("client_secret") !== app.clientSecret) return json(res, 401, { error: "invalid_client" });
       if (endpoint === "revoke") {
@@ -236,6 +241,17 @@ export async function startFakeProviders(port = 0) {
       app.accessTokens.set(access, grant.user);
       if (refreshToken) app.refreshTokens.set(refreshToken, grant);
       return answer(200, { token_type: "Bearer", access_token: access, ...(refreshToken ? { refresh_token: refreshToken } : {}), ...(app.expiresIn === undefined ? {} : { expires_in: app.expiresIn }), scope: grant.scope });
+    }
+
+    // Gmail API users.messages.send: a Google OAuth app's access token and the message as base64url.
+    if (path === "/gmail/v1/users/me/messages/send" && req.method === "POST") {
+      const user = oauth.google?.accessTokens.get((req.headers.authorization ?? "").replace(/^Bearer /, ""));
+      if (!user) return googleError(res, 401, "UNAUTHENTICATED", "Request had invalid authentication credentials.");
+      const message = (JSON.parse(raw) as { raw?: string }).raw;
+      if (!message) return googleError(res, 400, "INVALID_ARGUMENT", "Recipient address required");
+      const id = `gmail-${++seq}`;
+      gmail.sent.push({ id, user: user.email, raw: Buffer.from(message, "base64url").toString("utf8") });
+      return answer(200, { id, threadId: id, labelIds: ["SENT"] });
     }
 
     // Microsoft identity platform v2.0, for any tenant: authorize (consents at once, or answers like a blocked
@@ -565,7 +581,7 @@ export async function startFakeProviders(port = 0) {
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 
   return {
-    urls: { googleToken: `${base}/token`, sheets: base, calendar: base, drive: base, paymongo: base, airtable: base, notion: base, trello: base, slack: base, telegram: base, microsoftLogin: `${base}/ms`, graph: `${base}/graph`, teamsHosts: ["127.0.0.1"] },
+    urls: { googleToken: `${base}/token`, sheets: base, calendar: base, drive: base, paymongo: base, airtable: base, notion: base, trello: base, slack: base, telegram: base, microsoftLogin: `${base}/ms`, graph: `${base}/graph`, gmail: base, teamsHosts: ["127.0.0.1"] },
     calls,
     slack,
     telegram,
@@ -574,6 +590,7 @@ export async function startFakeProviders(port = 0) {
     trello,
     microsoft,
     teams,
+    gmail,
     oauth,
     /** Adds another generic OAuth app, for a provider phase or a test that needs a second one. */
     addOAuthApp: (name: string, o?: Parameters<typeof oauthApp>[1]) => (oauth[name] = oauthApp(name, o)),

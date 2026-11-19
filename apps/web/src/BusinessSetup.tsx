@@ -4,10 +4,11 @@ import { useLanguage } from "./Language";
 import { WEBSITE_INQUIRY_SLUG, websiteInquiryDefinition } from "@daloy/engine";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { api, ApiError, type Workflow } from "./api";
+import { ConnectPanel, useAction } from "./ConnectPanel";
 import { FormEmbed } from "./FormEmbed";
 
 type Profile = { businessName: string | null; website: string | null; inquiryEmail: string | null; replyTo: string | null };
-type Sender = { address: string; status: "unverified" | "active" | "failed" | "disconnected"; lastError: string | null; verifiedAt: string | null; lastTestedAt: string | null };
+type Sender = { address: string; status: "unverified" | "active" | "failed" | "disconnected"; lastError: string | null; verifiedAt: string | null; lastTestedAt: string | null; authMethod?: "app_password" | "oauth" };
 export type Settings = { profile: Profile | null; sender: Sender | null; installationFrom: string; installationAllowed: boolean; installationLocal: boolean; signInEmail: string };
 type TestResult = { ok: true; to: string; from: string; replyTo?: string; gmail: boolean; needsConfirmation: boolean } | { ok: false; error: string };
 
@@ -205,22 +206,8 @@ export function SenderSection({ data, onChange }: { data: Settings; onChange: ()
       <h2 id="sender-h">
         {t("Email sender")} <span className={`tag${sender?.status === "active" ? " ok" : ""}`}>{t(sender ? PILL[sender.status] : "Not connected")}</span>
       </h2>
-      {!sender && !data.installationAllowed ? (
-        <p className="message error"><Text>This installation's mail server does not send for your account. Connect Gmail below to send email from your own address.</Text></p>
-      ) : !sender ? (
-        <p>
-          Your automations send from <code>{data.installationFrom}</code>, this installation's mail server. On a local install that is Mailpit, which keeps every message on this
-          computer (open <a href="http://localhost:8025">localhost:8025</a> to read them).
-        </p>
-      ) : (
-        <p className="in-use">
-          Gmail: <strong>{sender.address}</strong>
-          <span className={`tag${sender.status === "active" ? " ok" : ""}`}>{t(STATUS[sender.status])}</span>
-          {sender.lastError && <span className="message error"> {sender.lastError}</span>}
-        </p>
-      )}
-      {sender?.status === "failed" && <p><Text>Mail from your automations is paused. Replace the app password to send again. Nothing is sent from another address in the meantime.</Text></p>}
-      {sender?.status === "disconnected" && <p><Text>Mail from your automations is paused until you reconnect Gmail. Nothing is sent from another address in the meantime.</Text></p>}
+      {!sender ? <InstallationNote data={data} /> : <SenderLine sender={sender} />}
+      <Paused sender={sender} />
 
       <div className="actions">
         <button type="button" disabled={busy || sender?.status === "disconnected"} onClick={() => void sendTest()}>
@@ -259,6 +246,85 @@ export function SenderSection({ data, onChange }: { data: Settings; onChange: ()
         />
       )}
     </section>
+  );
+}
+
+function InstallationNote({ data }: { data: Settings }) {
+  return !data.installationAllowed ? (
+    <p className="message error"><Text>This installation's mail server does not send for your account. Connect Gmail below to send email from your own address.</Text></p>
+  ) : (
+    <p>
+      Your automations send from <code>{data.installationFrom}</code>, this installation's mail server. On a local install that is Mailpit, which keeps every message on this
+      computer (open <a href="http://localhost:8025">localhost:8025</a> to read them).
+    </p>
+  );
+}
+
+function SenderLine({ sender }: { sender: Sender }) {
+  const { t } = useLanguage();
+  const status = sender.status === "failed" && sender.authMethod === "oauth" ? "Google no longer accepts Daloy's access" : STATUS[sender.status];
+  return (
+    <p className="in-use">
+      Gmail: <strong>{sender.address}</strong>
+      <span className={`tag${sender.status === "active" ? " ok" : ""}`}>{t(status)}</span>
+      {sender.lastError && <span className="message error"> {sender.lastError}</span>}
+    </p>
+  );
+}
+
+/** Decision 0020: a failed or disconnected sender pauses mail, and nothing is sent from another address. */
+function Paused({ sender }: { sender: Sender | null }) {
+  if (sender?.status === "failed" && sender.authMethod === "oauth") return <p><Text>Mail from your automations is paused. Reconnect Gmail to send again. Nothing is sent from another address in the meantime.</Text></p>;
+  if (sender?.status === "failed") return <p><Text>Mail from your automations is paused. Replace the app password to send again. Nothing is sent from another address in the meantime.</Text></p>;
+  if (sender?.status === "disconnected") return <p><Text>Mail from your automations is paused until you reconnect Gmail. Nothing is sent from another address in the meantime.</Text></p>;
+  return null;
+}
+
+/**
+ * Gmail on Apps (decision 0063). With a Google client on this installation the main action is Connect Gmail with
+ * Google (gmail.send, sent through the Gmail API) and the app password form is under Advanced. Without one, the app
+ * password card as before.
+ */
+export function GmailCard({ data, google, outcome, onChange }: { data: Settings; google: boolean; outcome?: string; onChange: () => Promise<void> }) {
+  const { t } = useLanguage();
+  const [test, setTest] = useState<TestResult | null>(null);
+  const { error, busy, act } = useAction(onChange);
+  if (!google) return <SenderSection data={data} onChange={onChange} />;
+  const { sender } = data;
+  const live = sender && sender.status !== "disconnected" ? sender : null;
+  return (
+    <ConnectPanel
+      slug="gmail"
+      name="Gmail"
+      configured
+      connectLabel="Connect Gmail with Google"
+      label="Gmail:"
+      conn={live && { account: live.address, status: live.status, lastError: live.lastError }}
+      status={live && <SenderLine sender={live} />}
+      outcome={outcome}
+      intro={!live && <p><Text>Google will ask you to let Daloy send email as you. Daloy cannot read your mail. Automations that receive email still connect their inbox with an app password.</Text></p>}
+      after={test && <TestOutcome test={test} />}
+      disconnect={() => api("POST", "/settings/email/disconnect")}
+      removeHint="Daloy deleted its access to Gmail. If Google did not confirm it, or you made an app password for Daloy, remove Daloy in your Google account's security settings too."
+      form={<GmailForm address={sender?.address ?? ""} title={t("Use an app password instead")} onSaved={async () => { setTest(null); await onChange(); }} />}
+      onChange={onChange}
+    >
+      {!sender && <InstallationNote data={data} />}
+      <Paused sender={sender} />
+      <div className="actions">
+        <button type="button" disabled={busy || sender?.status === "disconnected"} onClick={() => void act(async () => setTest(await api<TestResult>("POST", "/settings/email/test")))}>
+          <Text>Send a test email to me</Text>
+        </button>
+        {sender?.status === "disconnected" && (
+          <button type="button" className="quiet" disabled={busy} onClick={() => void act(() => api("DELETE", "/settings/email/gmail"))}>
+            <Text>Use the local mail server instead</Text>
+          </button>
+        )}
+      </div>
+      <p role="alert" className="message error" hidden={!error}>
+        {error}
+      </p>
+    </ConnectPanel>
   );
 }
 
@@ -302,8 +368,8 @@ function GmailForm({ address: initial, title, onSaved, onCancel }: { address: st
     }
   };
   return (
-    <form onSubmit={save} aria-labelledby="gmail-h">
-      <h3 id="gmail-h">{title}</h3>
+    <form onSubmit={save} aria-labelledby="gmail-form-h">
+      <h3 id="gmail-form-h">{title}</h3>
       <p><Text>Daloy sends as you with a Google app password, a 16-letter code that works for email only. Some work and school accounts do not offer them; ask your administrator.</Text></p>
       <ol className="numbered">
         <li><Text>Turn on 2-Step Verification in your Google account. Google offers app passwords only after that.</Text></li>

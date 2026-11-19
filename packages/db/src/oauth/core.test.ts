@@ -11,7 +11,7 @@ import { queueDelivery, runDueDeliveries } from "../deliveries";
 import type { Db } from "../index";
 import { ProviderError, type ProviderUrls } from "../providers";
 import { connections, deliveries, oauthFlows, runs, users, workflows, workflowVersions } from "../schema";
-import { consumeFlow, deleteOldFlows, disconnectOAuth, finishFlow, freshToken, keepOAuthAlive, oauthEnvProblem, pkceChallenge, readTokenBlob, startFlow, withFreshToken, type OAuthProvider } from "./core";
+import { consumeFlow, deleteOldFlows, disconnectOAuth, finishFlow, freshToken, keepOAuthAlive, oauthEnvProblem, pkceChallenge, readTokenBlob, startFlow, withFreshToken } from "./core";
 
 // Decision 0058: the shared OAuth core against the generic fake app. Synthetic secrets only; nothing leaves the machine.
 const key = randomBytes(32);
@@ -20,7 +20,7 @@ let db: Db;
 let pool: Pool;
 let fake: FakeProviders;
 let urls: ProviderUrls;
-let def: OAuthProvider;
+let def: ReturnType<typeof fakeOAuthProvider>;
 
 const newUser = async () => (await db.insert(users).values({ email: `u${randomBytes(4).toString("hex")}@test.local`, passwordHash: "x" }).returning())[0]!.id;
 const app = () => fake.oauth.test!;

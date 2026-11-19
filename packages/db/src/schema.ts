@@ -547,6 +547,9 @@ export type Provider = (typeof PROVIDERS)[number];
 /** What a connection's credential is (decision 0058): a pasted token, a Google service account key, an OAuth token blob, or a webhook URL. */
 export const AUTH_METHODS = ["token", "service_account", "oauth", "webhook_url"] as const;
 export type AuthMethod = (typeof AUTH_METHODS)[number];
+/** What a consent flow can be for: a connections provider, or Gmail, whose grant lives on mail_senders (decision 0063). */
+export const OAUTH_FLOW_PROVIDERS = [...PROVIDERS, "gmail"] as const;
+export type OAuthFlowProvider = (typeof OAUTH_FLOW_PROVIDERS)[number];
 
 /**
  * An owner's Google Sheets, Slack, Outlook or Teams connection (roadmap phases 3 and 5, decisions 0021 and 0023). One per owner and provider. The
@@ -598,7 +601,7 @@ export const oauthFlows = pgTable(
     stateHash: text("state_hash").notNull().unique(),
     workspaceId: uuid("workspace_id").notNull().references(() => users.id, { onDelete: "cascade" }),
     memberId: uuid("member_id").notNull().references(() => users.id, { onDelete: "cascade" }),
-    provider: text("provider", { enum: PROVIDERS }).notNull(),
+    provider: text("provider", { enum: OAUTH_FLOW_PROVIDERS }).notNull(),
     // Null for a provider without PKCE.
     verifierCiphertext: text("verifier_ciphertext"),
     verifierIv: text("verifier_iv"),
@@ -609,7 +612,7 @@ export const oauthFlows = pgTable(
   },
   (t) => [
     index("oauth_flows_expires").on(t.expiresAt),
-    check("oauth_flows_provider", sql`${t.provider} in ('google_sheets', 'slack', 'outlook', 'teams', 'telegram', 'google_calendar', 'paymongo', 'airtable', 'notion', 'trello', 'google_drive')`),
+    check("oauth_flows_provider", sql`${t.provider} in ('google_sheets', 'slack', 'outlook', 'teams', 'telegram', 'google_calendar', 'paymongo', 'airtable', 'notion', 'trello', 'google_drive', 'gmail')`),
   ],
 );
 
