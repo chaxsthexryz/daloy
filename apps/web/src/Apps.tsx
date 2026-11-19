@@ -5,6 +5,7 @@ import { api } from "./api";
 import { GmailCard, PILL, type Settings } from "./BusinessSetup";
 import { OutlookConnection, RecordConnection, PaymongoConnection, SlackConnection, TeamsConnection, TelegramConnection, type Connection, type OutlookSetup, type Provider } from "./Connections";
 import { GoogleCalendarCard } from "./GoogleCalendar";
+import { SharedGrants } from "./ConnectPanel";
 import { GoogleDriveCard, GoogleSheetsCard } from "./GoogleConnect";
 import { Header } from "./Nav";
 
@@ -33,7 +34,7 @@ const APPS: { key: Key; name: string; line: string }[] = [
 export function AppsPage({ outcome }: { outcome?: { app: string; code: string } }) {
   const { t } = useLanguage();
   const [mail, setMail] = useState<Settings | null>(null);
-  const [conns, setConns] = useState<{ connections: Connection[]; outlook: OutlookSetup; oauth: string[]; paymongoWebhookBase: string } | null>(null);
+  const [conns, setConns] = useState<{ connections: Connection[]; outlook: OutlookSetup; oauth: string[]; shared: string[]; paymongoWebhookBase: string } | null>(null);
   const [error, setError] = useState("");
   // An app slug is its provider name with dashes (google-sheets is google_sheets). "oauth" means the flow was not found.
   const landed = outcome && APPS.find((a) => a.key === outcome.app.replaceAll("-", "_"))?.key;
@@ -140,7 +141,7 @@ export function AppsPage({ outcome }: { outcome?: { app: string; code: string } 
       {(onlyConnected ? connected : found).length === 0 && <p className="muted">{onlyConnected && total === 0 ? t("Nothing is connected yet.") : t("No app matches.")}</p>}
       {open && (
         <section id="app-setup" className="app-setup" aria-label={t("{app} setup", { app: APPS.find((a) => a.key === open)!.name })}>
-          {setup[open]()}
+          <SharedGrants.Provider value={conns.shared}>{setup[open]()}</SharedGrants.Provider>
         </section>
       )}
     </main>

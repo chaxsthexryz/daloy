@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { createContext, useContext, useState, type ReactNode } from "react";
 import { useLanguage } from "./Language";
 import { api } from "./api";
 import type { Connection } from "./Connections";
@@ -37,6 +37,12 @@ export function useAction(onChange: () => Promise<unknown>) {
 
 /** What the panel shows of a connection. Gmail passes its sender, which is not a connections row (decision 0063). */
 type Shown = Pick<Connection, "account" | "lastError"> & { status: string };
+
+/**
+ * Plan R14: the app keys (google_sheets, gmail, ...) whose provider account is also connected elsewhere in Daloy, from
+ * GET /settings/connections. Provided once by the Apps page so every card can warn without a prop of its own.
+ */
+export const SharedGrants = createContext<readonly string[]>([]);
 
 export function Status({ conn, label }: { conn: Shown; label: string }) {
   const { t } = useLanguage();
@@ -92,10 +98,15 @@ export function ConnectPanel(p: {
   const { error, busy, act } = useAction(p.onChange);
   const [removed, setRemoved] = useState(false);
   const shown = p.outcome && p.configured ? (p.outcomes ?? OAUTH_OUTCOMES)[p.outcome] : undefined;
+  const sharedApps = useContext(SharedGrants);
+  const shared = !!p.conn && sharedApps.includes(p.slug.replaceAll("-", "_"));
+  const sharedText = t("This {app} account is also connected somewhere else in Daloy, in another app or another workspace. {app} may keep one permission for both, so disconnecting here can also stop Daloy's access there.", { app: p.name });
   // A full page visit to the provider. The callback brings the browser back to Apps with the outcome in the address.
   const connect = () => act(async () => location.assign((await api<{ url: string }>("POST", `/settings/connections/${p.slug}/oauth/start`)).url));
   const disconnect = () =>
-    window.confirm(t("Disconnect {app}? Automations stop sending there until you reconnect.", { app: p.name })) &&
+    window.confirm(t("Disconnect {app}? Automations stop sending there until you reconnect.", { app: p.name }) + (shared ? `
+
+${sharedText}` : "")) &&
     void act(async () => {
       const out = await (p.disconnect ? p.disconnect() : api<{ revoked: boolean } | undefined>("DELETE", `/settings/connections/${p.slug}`));
       setRemoved(out?.revoked !== true);
@@ -114,6 +125,7 @@ export function ConnectPanel(p: {
       ) : (
         <>
           {p.conn && (p.status ?? <Status conn={p.conn} label={t(p.label)} />)}
+          {shared && <p className="muted">{sharedText}</p>}
           {p.children}
           {p.intro}
           <div className="actions">

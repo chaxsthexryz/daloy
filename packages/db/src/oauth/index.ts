@@ -17,6 +17,7 @@ export * from "./airtable";
 export * from "./notion";
 export * from "./trello";
 export * from "./records";
+export * from "./shared";
 
 /** Every provider on the shared OAuth core. A provider whose client is not configured stays on its paste form. */
 export const OAUTH_PROVIDERS: readonly OAuthProvider[] = [outlook, googleSheets, googleDrive, gmail, googleCalendar, slack, airtable, notion, trello];

@@ -26,6 +26,7 @@ import {
   PROVIDER_NAMES,
   ProviderError,
   readConnections,
+  sharedGrants,
   retryDelivery,
   BOOKING_CHANGED,
   deliveryBookingMoved,
@@ -140,7 +141,7 @@ export class ConnectionsController {
     const ms = this.urls.microsoft ? { configured: true, adminConsentUrl: outlookAdminConsentUrl(this.urls, redirectUri(this.config.publicUrl, outlook)) } : { configured: false };
     // The providers with a Connect button: their client is configured on this installation (decision 0058).
     const oauth = this.config.oauthProviders.filter((d) => d.client(this.urls)).map((d) => d.slug);
-    return { connections: await readConnections(this.db, user.workspaceId), outlook: ms, oauth, paymongoWebhookBase: `${this.config.publicUrl}/hooks/paymongo` };
+    return { connections: await readConnections(this.db, user.workspaceId), outlook: ms, oauth, shared: await sharedGrants(this.db, user.workspaceId), paymongoWebhookBase: `${this.config.publicUrl}/hooks/paymongo` };
   }
 
   /** The sheet and tab, checked with a read before saving. Shared by connect and "change sheet". */

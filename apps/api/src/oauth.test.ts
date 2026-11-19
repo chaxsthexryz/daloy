@@ -200,15 +200,21 @@ describe("disconnect", () => {
 
 describe("isolation", () => {
   it("keeps two offices on the same provider account apart", async () => {
+    // An account no other test connects, so the shared list below sees only these two offices.
+    fake.oauth.test!.user = { id: "isolation-user", email: "iso@test.example" };
     const a = await owner();
     const b = await owner();
     await land(a.agent, await consentBack(a.agent));
     await land(b.agent, await consentBack(b.agent));
     const [ta, tb] = [await connectionCredential(db, secretsKey, a.id, "trello"), await connectionCredential(db, secretsKey, b.id, "trello")];
     expect(readTokenBlob(ta!.credential).refreshToken).not.toBe(readTokenBlob(tb!.credential).refreshToken);
+    // Plan R14: each office is told the account is connected elsewhere too, without saying where.
+    expect((await a.agent.get("/settings/connections").expect(200)).body.shared).toEqual(["trello"]);
     await b.agent.delete("/settings/connections/trello").expect(200);
     expect(await rows(a.id)).toHaveLength(1);
-    expect((await a.agent.get("/settings/connections").expect(200)).body.connections).toEqual([expect.objectContaining({ provider: "trello", status: "active" })]);
+    const after = (await a.agent.get("/settings/connections").expect(200)).body;
+    expect(after.connections).toEqual([expect.objectContaining({ provider: "trello", status: "active" })]);
+    expect(after.shared).toEqual([]);
   });
 });
 

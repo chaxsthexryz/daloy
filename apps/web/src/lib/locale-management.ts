@@ -69,6 +69,7 @@ export const managementTranslations: Record<string, string> = {
   "Disconnect Sheets? Automations stop sending there until you reconnect.": "Idiskonekta ang Sheets? Hihinto ang pagpapadala ng mga automation dito hanggang ikonekta mo ulit.",
   "Disconnect Slack? Automations stop sending there until you reconnect.": "Idiskonekta ang Slack? Hihinto ang pagpapadala ng mga automation dito hanggang ikonekta mo ulit.",
   "Disconnect {app}? Automations stop sending there until you reconnect.": "Idiskonekta ang {app}? Hihinto ang pagpapadala ng mga automation dito hanggang ikonekta mo ulit.",
+  "This {app} account is also connected somewhere else in Daloy, in another app or another workspace. {app} may keep one permission for both, so disconnecting here can also stop Daloy's access there.": "Nakakonekta rin ang account na ito ng {app} sa ibang lugar sa Daloy, sa ibang app o ibang workspace. Maaaring iisang pahintulot lang ang hawak ng {app} para sa dalawa, kaya kapag dinisconnect mo ito dito, maaari ring huminto ang access ng Daloy doon.",
   "Disconnect Teams? Automations stop sending there until you reconnect.": "Idiskonekta ang Teams? Hihinto ang pagpapadala ng mga automation dito hanggang ikonekta mo ulit.",
   "Google Sheets accepted a test row": "Tinanggap ng Google Sheets ang test row",
   ". Check that it is there.": ". Tingnan kung nandoon ito.", "The test did not go through: ": "Hindi natuloy ang test: ",
