@@ -1,5 +1,5 @@
 import { randomBytes, randomUUID } from "node:crypto";
-import { createInvite, joinWorkspace, sessions, users, type Db } from "@daloy/db";
+import { createInvite, joinWorkspace, queueDelivery, sessions, users, type Db } from "@daloy/db";
 import { defaultAnswers, officeRequestDefinition } from "@daloy/engine";
 import type { INestApplication } from "@nestjs/common";
 import type { Pool } from "pg";
@@ -180,20 +180,10 @@ describe("changing and removing members", () => {
 describe("role permissions", () => {
   const answers = defaultAnswers("office@test.local");
 
-  it("gives each role exactly its routes", async () => {
-    const o = await owner();
-    const wf = await o.agent.post("/workflows").send({ name: "Office requests", slug: "office" }).expect(201);
-    const id = wf.body.id as string;
-    const agents = {
-      owner: o.agent,
-      operator: (await member(o.agent, "operator")).agent,
-      approver: (await member(o.agent, "approver")).agent,
-      requester: (await member(o.agent, "requester")).agent,
-    };
-    const only = ["owner"];
-    const operate = ["owner", "operator"];
-    const all = ["owner", "operator", "approver", "requester"];
-    const routes: [string, string, string[], object?][] = [
+  const only = ["owner"];
+  const operate = ["owner", "operator"];
+  const all = ["owner", "operator", "approver", "requester"];
+  const routeMatrix = (id: string): [string, string, string[], object?][] => [
       ["get", "/auth/me", all],
       ["get", "/my/requests", all],
       ["get", "/workflows", operate],
@@ -218,9 +208,23 @@ describe("role permissions", () => {
       ["get", "/settings/connections", only],
       ["post", "/settings/connections/outlook/oauth/start", only],
       ["post", "/settings/connections/gmail/oauth/start", only],
-      ["post", "/settings/email/disconnect", only],
-      ["post", "/settings/connections/outlook/start", only],
-      ["delete", "/settings/connections/trello", only],
+      ["post", "/settings/connections/google-sheets/picker-token", only],
+      ["post", "/settings/connections/google-drive/picker-token", only],
+      ["post", "/settings/connections/google-sheets/create", only],
+      ["post", "/settings/connections/google-sheets/pick", only, {}],
+      ["get", "/settings/connections/google-sheets/tabs", only],
+      ["post", "/settings/connections/google-drive/create", only],
+      ["post", "/settings/connections/google-drive/pick", only, {}],
+      ["post", "/settings/connections/google-calendar/create", only, {}],
+      ["get", "/settings/connections/airtable/bases", only],
+      ["get", "/settings/connections/airtable/bases/app1234567890/tables", only],
+      ["put", "/settings/connections/airtable/target", only, {}],
+      ["get", "/settings/connections/notion/databases", only],
+      ["put", "/settings/connections/notion/target", only, {}],
+      ["get", "/settings/connections/trello/boards", only],
+      ["get", "/settings/connections/trello/boards/0123456789abcdef01234567/lists", only],
+      ["put", "/settings/connections/trello/target", only, {}],
+      ["post", "/settings/connections/telegram/chats", only, {}],
       ["post", "/ai/draft", only, { description: "x" }],
       ["get", "/workspace/members", only],
       ["post", "/workspace/invites", only, { email: "x@test.local", role: "operator" }],
@@ -232,17 +236,131 @@ describe("role permissions", () => {
       ["get", "/resources", all],
       ["post", "/resources", only, { name: `Room ${randomUUID().slice(0, 8)}` }],
       ["patch", `/resources/${randomUUID()}`, only, { active: false }],
+      ["get", `/workflows/${id}/versions/1`, operate],
+      ["post", `/workflows/${id}/webhook-url`, only, {}],
+      ["get", `/workflows/${id}/email-source`, only],
+      ["put", `/workflows/${id}/email-source`, only, {}],
+      ["post", `/workflows/${id}/email-source/check`, only, {}],
+      ["delete", `/workflows/${id}/email-source`, only],
+      ["get", "/usage", operate],
+      ["get", `/runs/ask?reference=REQ-1`, operate],
+      ["post", "/runs/ask/reword", only, {}],
+      ["get", `/runs/export.csv?workflowId=${id}`, operate],
+      ["get", `/runs/${randomUUID()}`, operate],
+      ["get", `/runs/${randomUUID()}/explanation`, operate],
+      ["post", `/runs/${randomUUID()}/explanation/reword`, only, {}],
+      ["post", `/runs/${randomUUID()}/resolve`, operate, {}],
+      ["post", `/runs/${randomUUID()}/cancel`, operate, {}],
+      ["post", `/runs/${randomUUID()}/retry`, operate, {}],
+      ["put", "/secrets/matrix_secret", only, { value: "x" }],
+      ["delete", "/secrets/matrix_secret", only],
+      ["get", "/bookings", operate],
+      ["get", "/bookings/export.csv", operate],
+      ["post", `/bookings/${randomUUID()}/cancel`, operate, {}],
+      ["post", `/bookings/${randomUUID()}/no-show`, operate, {}],
+      ["post", `/bookings/${randomUUID()}/undo-no-show`, operate, {}],
+      ["post", `/bookings/${randomUUID()}/reschedule`, operate, {}],
+      ["post", "/tokens", only, { name: "matrix", scopes: ["read"] }],
+      ["delete", `/tokens/${randomUUID()}`, only],
+      ["get", "/settings/ai/local-models", only],
+      ["post", "/settings/ai/models", only, {}],
+      ["put", "/settings/ai", only, {}],
+      ["post", "/settings/ai/test", only, {}],
+      ["put", "/settings/language", only, {}],
+      ["put", "/settings/email/profile", only, {}],
+      ["put", "/settings/email/gmail", only, {}],
+      ["post", "/settings/email/test", only, {}],
+      ["post", "/settings/email/verify", only, {}],
+      ["post", "/settings/email/disconnect", only, {}],
+      ["delete", "/settings/email/gmail", only],
+      ["put", "/settings/connections/google-sheets", only, {}],
+      ["put", "/settings/connections/google-sheets/destination", only, {}],
+      ["post", "/settings/connections/google-sheets/test", only, {}],
+      ["put", "/settings/connections/google-calendar", only, {}],
+      ["post", "/settings/connections/google-calendar/test", only, {}],
+      ["put", "/settings/connections/google-drive", only, {}],
+      ["put", "/settings/connections/slack", only, {}],
+      ["post", "/settings/connections/slack/test", only, {}],
+      ["get", "/settings/connections/slack/channels", only],
+      ["put", "/settings/connections/slack/channel", only, {}],
+      ["put", "/settings/connections/telegram", only, {}],
+      ["post", "/settings/connections/telegram/test", only, {}],
+      ["put", "/settings/connections/paymongo", only, {}],
+      ["post", "/settings/connections/paymongo/test", only, {}],
+      ["put", "/settings/connections/airtable", only, {}],
+      ["post", "/settings/connections/airtable/test", only, {}],
+      ["put", "/settings/connections/notion", only, {}],
+      ["post", "/settings/connections/notion/test", only, {}],
+      ["put", "/settings/connections/trello", only, {}],
+      ["post", "/settings/connections/trello/test", only, {}],
+      ["post", "/settings/connections/outlook/start", only, {}],
+      ["post", "/settings/connections/outlook/test", only, {}],
+      ["put", "/settings/connections/teams", only, {}],
+      ["post", "/settings/connections/teams/test", only, {}],
+      ["delete", "/settings/connections/slack", only],
+      ["post", "/ai/chat", only, {}],
+      ["get", "/settings/brand", only],
+      ["put", "/settings/brand", only, {}],
+      ["put", "/settings/brand/logo", only],
+      ["delete", "/settings/brand/logo", only],
+      // Pause and resume last: a paused automation refuses the runs above.
+      ["post", `/workflows/${id}/pause`, only],
+      ["post", `/workflows/${id}/resume`, only],
     ];
+
+  // Not in the matrix on purpose. Each is public by design or guarded by its own rule, and has its own tests:
+  // auth.ts and password.test.ts, public*.test.ts and paymongo.test.ts, approvals.test.ts, mcp.test.ts, oauth.test.ts, microsoft.test.ts, brand.test.ts.
+  const outsideMatrix = new Set([
+    "POST /auth/register", "POST /auth/login", "POST /auth/invites/:token/accept", "POST /auth/logout", "POST /auth/password", "POST /auth/password-reset", "POST /auth/password-reset/:token",
+    "POST /hooks/:path", "POST /hooks/paymongo/:path", "GET /forms/:id", "GET /forms/:id/embed", "POST /forms/:id", "POST /forms/:id/embed",
+    "GET /approvals/:token", "POST /approvals/:token", "GET /settings/connections/oauth/callback", "GET /settings/connections/outlook/callback", "GET /brand/logo/:id",
+  ]);
+
+  it("gives each role exactly its routes", async () => {
+    const o = await owner();
+    const wf = await o.agent.post("/workflows").send({ name: "Office requests", slug: "office" }).expect(201);
+    const id = wf.body.id as string;
+    const agents = {
+      owner: o.agent,
+      operator: (await member(o.agent, "operator")).agent,
+      approver: (await member(o.agent, "approver")).agent,
+      requester: (await member(o.agent, "requester")).agent,
+      signedOut: request.agent(server),
+    };
     const wrong: string[] = [];
-    for (const [method, path, allowed, body] of routes) {
+    for (const [method, path, allowed, body] of routeMatrix(id)) {
       for (const [role, agent] of Object.entries(agents)) {
         const req = (agent as unknown as Record<string, (p: string) => request.Test>)[method]!(path);
         const res = await (body ? req.send(body) : req);
         const refused = res.status === 403 || res.status === 401;
-        if (refused === allowed.includes(role)) wrong.push(`${role} ${method} ${path} -> ${res.status}`);
+        // Signed out is always a 401: the session check comes before any role check.
+        if (role === "signedOut" ? res.status !== 401 : refused === allowed.includes(role)) wrong.push(`${role} ${method} ${path} -> ${res.status}`);
       }
     }
     expect(wrong).toEqual([]);
+  });
+
+  it("puts every route the API registers in the matrix or on the short list of routes with their own rules", () => {
+    const stack = (app.getHttpAdapter().getInstance() as { router: { stack: { route?: { path: string; methods: Record<string, boolean> } }[] } }).router.stack;
+    // /mcp answers every verb and checks an API token, not a session (mcp.test.ts).
+    const registered = stack.flatMap((l) => (l.route && l.route.path !== "/mcp" ? Object.keys(l.route.methods).map((m) => `${m.toUpperCase()} ${l.route!.path}`) : []));
+    const params = (r: string) => (r.match(/:/g) ?? []).length;
+    const matches = (route: string, method: string, path: string) => {
+      const [m, pattern] = route.split(" ") as [string, string];
+      if (m !== method.toUpperCase()) return false;
+      const want = pattern.split("/");
+      const got = path.split("?")[0]!.split("/");
+      return want.length === got.length && want.every((seg, i) => (seg.startsWith(":") ? got[i]!.length > 0 : seg === got[i]));
+    };
+    const covered = new Set<string>();
+    const stray: string[] = [];
+    for (const [method, path] of routeMatrix(randomUUID())) {
+      // A concrete path can fit several patterns (/runs/ask and /runs/:id): the one with fewer parameters is meant.
+      const best = registered.filter((r) => matches(r, method, path)).sort((a, b) => params(a) - params(b))[0];
+      if (best) covered.add(best);
+      else stray.push(`${method} ${path}`);
+    }
+    expect({ stray, unlisted: registered.filter((r) => !covered.has(r) && !outsideMatrix.has(r)), staleOutside: [...outsideMatrix].filter((r) => !registered.includes(r)) }).toEqual({ stray: [], unlisted: [], staleOutside: [] });
   });
 
   it("keeps every role out of another workspace's data", async () => {
@@ -255,6 +373,86 @@ describe("role permissions", () => {
       await agent.get(`/workflows/${wf.body.id}/requests`).expect(404);
       expect((await agent.get("/workflows").expect(200)).body).toEqual([]);
     }
+  });
+
+  it("keeps another workspace's owner out of every object that can be named by id, and leaves it unchanged", async () => {
+    const a = await owner();
+    const b = await owner();
+    const definition = { trigger: { type: "manual" }, steps: [{ id: "s", type: "delay", config: { seconds: 1 } }], edges: [] };
+    const wf = (await a.agent.post("/workflows").send({ name: "Theirs", slug: "theirs" }).expect(201)).body.id as string;
+    await a.agent.post(`/workflows/${wf}/versions`).send({ definition, publish: true }).expect(201);
+    const version = (await pool.query<{ id: string }>("select id from workflow_versions where workflow_id = $1", [wf])).rows[0]!.id;
+    const run = (await pool.query<{ id: string }>("insert into runs (workflow_version_id, trigger_payload) values ($1, '{}') returning id", [version])).rows[0]!.id;
+    const resource = (await a.agent.post("/resources").send({ name: "Room A" }).expect(201)).body.id as string;
+    const token = (await a.agent.post("/tokens").send({ name: "theirs", scopes: ["read"] }).expect(201)).body.id as string;
+    await a.agent.put("/secrets/their_secret").send({ value: "kept" }).expect(204);
+    const delivery = (await queueDelivery(db, { userId: a.id, runId: run, stepId: "s", provider: "slack", reference: "R-1", payload: { text: "hi" } })).id;
+    const booking = (await pool.query<{ id: string }>("insert into bookings (user_id, test, reference, resource_id, during, timezone) values ($1, false, 'BK-1', $2, tstzrange(now() + interval '1 day', now() + interval '1 day 1 hour', '[)'), 'Asia/Manila') returning id", [a.id, resource])).rows[0]!.id;
+
+    const none = randomUUID();
+    const attempts: [string, string, number[], object?][] = [
+      ["get", `/workflows/${wf}`, [404]],
+      ["patch", `/workflows/${wf}`, [404], { name: "Taken" }],
+      ["patch", `/workflows/${wf}/setup`, [404], { step: "fields", answers: defaultAnswers("office@test.local") }],
+      ["post", `/workflows/${wf}/webhook-url`, [404], {}],
+      ["get", `/workflows/${wf}/requests`, [404]],
+      ["post", `/workflows/${wf}/pause`, [404]],
+      ["post", `/workflows/${wf}/resume`, [404]],
+      ["get", `/workflows/${wf}/versions`, [404]],
+      ["get", `/workflows/${wf}/versions/1`, [404]],
+      ["post", `/workflows/${wf}/versions`, [404], { definition, publish: true }],
+      ["post", `/workflows/${wf}/test-runs`, [404], { definition }],
+      ["post", `/workflows/${wf}/runs`, [404], {}],
+      ["get", `/workflows/${wf}/email-source`, [404]],
+      ["put", `/workflows/${wf}/email-source`, [400, 404], {}],
+      ["post", `/workflows/${wf}/email-source/check`, [404], {}],
+      ["delete", `/workflows/${wf}/email-source`, [404]],
+      ["get", `/runs/${run}`, [404]],
+      ["get", `/runs/${run}/explanation`, [404]],
+      ["post", `/runs/${run}/explanation/reword`, [404], {}],
+      ["get", `/runs/${run}/files/${none}`, [404]],
+      ["post", `/runs/${run}/resolve`, [404], { action: "stop" }],
+      ["post", `/runs/${run}/cancel`, [404], {}],
+      ["post", `/runs/${run}/retry`, [404], {}],
+      ["patch", `/resources/${resource}`, [404], { active: false }],
+      ["delete", `/tokens/${token}`, [404]],
+      ["post", `/deliveries/${delivery}/retry`, [404], {}],
+      ["post", `/deliveries/${delivery}/confirm`, [404]],
+      ["post", `/bookings/${booking}/cancel`, [404], { version: 1 }],
+      ["post", `/bookings/${booking}/no-show`, [404], { version: 1 }],
+      ["post", `/bookings/${booking}/undo-no-show`, [404], { version: 1 }],
+      ["post", `/bookings/${booking}/reschedule`, [404], { version: 1, start: "2030-01-01T09:00", timezone: "Asia/Manila" }],
+      // Secrets are named, not numbered: another workspace deleting the same name touches only its own (none).
+      ["delete", `/secrets/their_secret`, [204, 404]],
+      ["delete", `/workflows/${wf}`, [404]],
+    ];
+    const wrong: string[] = [];
+    for (const [method, path, expected, body] of attempts) {
+      const req = (b.agent as unknown as Record<string, (p: string) => request.Test>)[method]!(path);
+      const res = await (body ? req.send(body) : req);
+      if (!expected.includes(res.status)) wrong.push(`${method} ${path} -> ${res.status}`);
+    }
+    expect(wrong).toEqual([]);
+
+    // Their lists show nothing of ours.
+    expect((await b.agent.get("/runs").expect(200)).body).toEqual([]);
+    expect((await b.agent.get(`/runs?workflowId=${wf}`).expect(200)).body).toEqual([]);
+    expect((await b.agent.get(`/deliveries?runId=${run}`).expect(200)).body).toEqual([]);
+    expect((await b.agent.get("/bookings").expect(200)).body).toEqual([]);
+    expect((await b.agent.get("/resources").expect(200)).body).toEqual([]);
+    expect((await b.agent.get("/tokens").expect(200)).body).toEqual([]);
+    expect((await b.agent.get("/secrets").expect(200)).body).toEqual([]);
+    expect((await b.agent.get(`/runs/export.csv?workflowId=${wf}`)).text ?? "").not.toContain("Theirs");
+
+    // And nothing of ours changed.
+    const mine = (await a.agent.get(`/workflows/${wf}`).expect(200)).body;
+    expect(mine).toMatchObject({ name: "Theirs", pausedAt: null });
+    expect((await pool.query("select state from runs where id = $1", [run])).rows[0]).toEqual({ state: "pending" });
+    expect((await pool.query("select state from deliveries where id = $1", [delivery])).rows[0]).toEqual({ state: "queued" });
+    expect((await pool.query("select status, version from bookings where id = $1", [booking])).rows[0]).toEqual({ status: "active", version: 1 });
+    expect((await pool.query("select active from resources where id = $1", [resource])).rows[0]).toEqual({ active: true });
+    expect(((await a.agent.get("/tokens").expect(200)).body as { id: string; revokedAt: string | null }[]).map((t) => [t.id, t.revokedAt])).toEqual([[token, null]]);
+    expect(((await a.agent.get("/secrets").expect(200)).body as { name: string }[]).map((x) => x.name)).toEqual(["their_secret"]);
   });
 
   it("lets an operator see the owner's workflows and requests", async () => {

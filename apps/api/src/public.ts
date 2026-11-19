@@ -5,6 +5,9 @@ import { definitionSchema, FILE_MAX_BYTES, FILES_PER_FIELD, FILES_PER_SUBMISSION
 import {
   BadRequestException,
   Body,
+  type CanActivate,
+  type ExecutionContext,
+  Injectable,
   Controller,
   Get,
   Header,
@@ -257,6 +260,67 @@ export function validSignature(body: Buffer, header: string | undefined, key: st
   return sameText(header, `sha256=${createHmac("sha256", key).update(body).digest("hex")}`);
 }
 
+/** The form trigger with its latest published version, from one statement (decision 0057). */
+async function findForm(db: Db, id: string) {
+  const [row] = await db
+    .select({ trigger: triggers, version: workflowVersions, workflow: { id: workflows.id, userId: workflows.userId, setup: workflows.setup, pausedAt: workflows.pausedAt }, businessName: businessProfiles.businessName })
+    .from(triggers)
+    .innerJoin(workflows, eq(workflows.id, triggers.workflowId))
+    .innerJoin(workflowVersions, latestPublished)
+    .leftJoin(businessProfiles, eq(businessProfiles.userId, workflows.userId))
+    .where(and(eq(triggers.id, id), eq(triggers.type, "form")));
+  const config = row && savedTrigger(row.version.definition, "form");
+  if (!row || !config) throw new NotFoundException();
+  const tracked = isTracked(row.workflow.setup);
+  return { fields: (config as { fields: FormField[] }).fields, versionId: row.version.id, workflow: row.workflow, tracked, businessName: row.businessName };
+}
+
+/** The most one submission can send: every file at its limit plus every text field at its limit. */
+export const MULTIPART_MAX_BYTES = FILES_PER_SUBMISSION * FILE_MAX_BYTES + 50 * 64 * 1024 + 256 * 1024;
+const DEFAULT_UPLOAD_BUDGET = 128 * 1024 * 1024;
+
+/**
+ * Bounds the bytes of multipart bodies being read at once, across all forms and visitors (review, before release 2).
+ * multer buffers files in memory before the handler runs, and the per-file and per-IP limits do not add up to a bound.
+ * Everything here is decided from the headers and one form lookup, before a byte of the body is read: the declared
+ * length is reserved from a shared budget until the response ends, a form that takes no files is refused, and a size
+ * above what one submission can hold is refused. Node never delivers more than the declared length, so the
+ * reservation is the most the request can occupy.
+ * shortcut: the counter is per process, like RateLimit; several API instances each get their own budget.
+ */
+export function UploadBudget() {
+  let used = 0;
+  @Injectable()
+  class UploadBudgetGuard implements CanActivate {
+    constructor(
+      @Inject(DB) private readonly db: Db,
+      @Inject(CONFIG) private readonly config: ApiConfig,
+    ) {}
+
+    async canActivate(ctx: ExecutionContext) {
+      const http = ctx.switchToHttp();
+      const req = http.getRequest<Request>();
+      const res = http.getResponse<Response>();
+      if (!req.is("multipart/form-data")) return true;
+      const length = /^\d+$/.test(req.get("content-length") ?? "") ? Number(req.get("content-length")) : 0;
+      if (length === 0) throw new HttpException("send the form with its Content-Length", HttpStatus.LENGTH_REQUIRED);
+      if (length > MULTIPART_MAX_BYTES) throw new HttpException("this form is larger than a submission can be", HttpStatus.PAYLOAD_TOO_LARGE);
+      if (used + length > (this.config.uploadBudgetBytes ?? DEFAULT_UPLOAD_BUDGET)) {
+        res.setHeader("Retry-After", "5");
+        throw new HttpException("the server is taking other uploads, try again in a moment", HttpStatus.SERVICE_UNAVAILABLE);
+      }
+      used += length;
+      res.once("close", () => (used -= length));
+      const id = z.uuid().safeParse(req.params.id);
+      if (!id.success) throw new NotFoundException();
+      const { fields } = await findForm(this.db, id.data);
+      if (!fields.some((f) => f.type === "file")) throw new HttpException("this form does not take files", HttpStatus.UNSUPPORTED_MEDIA_TYPE);
+      return true;
+    }
+  }
+  return UploadBudgetGuard;
+}
+
 @Controller("forms")
 export class FormsController {
   constructor(
@@ -278,7 +342,7 @@ export class FormsController {
   @Post(FORM_PATHS)
   @HttpCode(200)
   // Guards run before interceptors, so an IP over the limit is refused before multer reads a byte of the body.
-  @UseGuards(RateLimit(10))
+  @UseGuards(RateLimit(10), UploadBudget())
   // No storage option: multer keeps the files in memory, which is all the 5 MB limit allows.
   @UseInterceptors(AnyFilesInterceptor({ limits: { fileSize: FILE_MAX_BYTES, files: FILES_PER_SUBMISSION, fields: 50, fieldSize: 64 * 1024, parts: 60 } }))
   @Header("Content-Type", "text/html; charset=utf-8")
@@ -332,18 +396,8 @@ export class FormsController {
     return page(`<h1>${copy.paused}</h1><p>${copy.pausedNote}</p>`, copy.paused, language, await pageBrand(this.db, workspaceId));
   }
 
-  private async form(id: string) {
-    const [row] = await this.db
-      .select({ trigger: triggers, version: workflowVersions, workflow: { id: workflows.id, userId: workflows.userId, setup: workflows.setup, pausedAt: workflows.pausedAt }, businessName: businessProfiles.businessName })
-      .from(triggers)
-      .innerJoin(workflows, eq(workflows.id, triggers.workflowId))
-      .innerJoin(workflowVersions, latestPublished)
-      .leftJoin(businessProfiles, eq(businessProfiles.userId, workflows.userId))
-      .where(and(eq(triggers.id, id), eq(triggers.type, "form")));
-    const config = row && savedTrigger(row.version.definition, "form");
-    if (!row || !config) throw new NotFoundException();
-    const tracked = isTracked(row.workflow.setup);
-    return { fields: (config as { fields: FormField[] }).fields, versionId: row.version.id, workflow: row.workflow, tracked, businessName: row.businessName };
+  private form(id: string) {
+    return findForm(this.db, id);
   }
 }
 

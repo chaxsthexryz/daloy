@@ -296,3 +296,42 @@ it("says the token limit ran out when a reply is empty and cut off, instead of '
   expect(err.message).toMatch(/used up its token limit/);
   expect(err).toMatchObject({ retryable: false, invalidOutput: true, usage: { inputTokens: 30, outputTokens: 0 } });
 });
+
+// A model host that answers with a redirect must not move the prompt or the key to another origin (review, route and data checks).
+describe("redirects", () => {
+  async function pair() {
+    const { createServer } = await import("node:http");
+    const hits: { url?: string; auth?: string }[] = [];
+    const target = createServer((req, res) => {
+      hits.push({ url: req.url, auth: req.headers.authorization });
+      res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ message: { content: "hi" }, models: [] }));
+    });
+    await new Promise<void>((r) => target.listen(0, "127.0.0.1", r));
+    const targetUrl = `http://127.0.0.1:${(target.address() as import("node:net").AddressInfo).port}`;
+    const front = createServer((_req, res) => res.writeHead(307, { location: `${targetUrl}/stolen` }).end());
+    await new Promise<void>((r) => front.listen(0, "127.0.0.1", r));
+    const baseUrl = `http://127.0.0.1:${(front.address() as import("node:net").AddressInfo).port}`;
+    const close = () => Promise.all([target, front].map((s) => new Promise((r) => s.close(r))));
+    return { hits, baseUrl, close };
+  }
+
+  it("generate refuses a redirect and sends nothing to the other origin", async () => {
+    const { hits, baseUrl, close } = await pair();
+    try {
+      await expect(generate({ ...base, connection: { provider: "ollama", baseUrl, apiKey: "secret-key" } })).rejects.toBeInstanceOf(LlmError);
+      expect(hits).toEqual([]);
+    } finally {
+      await close();
+    }
+  });
+
+  it("listModels refuses a redirect and sends nothing to the other origin", async () => {
+    const { hits, baseUrl, close } = await pair();
+    try {
+      await expect(listModels({ provider: "openai", baseUrl, apiKey: "secret-key" })).rejects.toBeInstanceOf(LlmError);
+      expect(hits).toEqual([]);
+    } finally {
+      await close();
+    }
+  });
+});

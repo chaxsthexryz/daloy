@@ -24,7 +24,7 @@ export const CONFIG = Symbol("config");
  * oauthProviders defaults to OAUTH_PROVIDERS; tests add a definition for the fake OAuth app.
  * trustProxy is the number of proxies in front of the API (Express "trust proxy"), so req.ip is the real client.
  */
-export type ApiConfig = { secretsKey: Buffer; secureCookies: boolean; trustProxy?: number; mail?: MailDeps; publicUrl?: string; providers?: ProviderUrls; ask?: boolean; oauthProviders?: readonly OAuthProvider[] };
+export type ApiConfig = { secretsKey: Buffer; secureCookies: boolean; trustProxy?: number; mail?: MailDeps; publicUrl?: string; providers?: ProviderUrls; ask?: boolean; oauthProviders?: readonly OAuthProvider[]; uploadBudgetBytes?: number };
 
 /**
  * TRUST_PROXY and SECURE_COOKIES from the env (docs/deployment.md). A value that cannot be read stops the boot, so a

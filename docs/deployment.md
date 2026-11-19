@@ -132,4 +132,19 @@ The steps only the owner can do, in order:
 11. Run the exit check from two networks (section 6).
 12. Record the date, the commit and the results in `PROJECT.md` under N3.
 
+13. Before inviting real accounts, work through section 8.
+
 Store the secrets (`SECRETS_KEY`, both database passwords, the rclone crypt password and salt) in a password manager, never in the repository or in chat.
+
+## 8. Checks before real accounts
+
+The November review asked for these on the real topology. The app side is tested; these parts depend on your proxy and host, so only you can confirm them. Record each result in `PROJECT.md` under N11d.
+
+1. Proxy hops. Section 6 steps 1 and 2 pass from two networks, so `TRUST_PROXY=1` matches the tunnel.
+2. Cookie flags. Section 6 step 3: `daloy_session` is Secure, HttpOnly and SameSite=Lax.
+3. `Origin` and `Host`. Sign in at the public address and change something (rename an automation). It must work. If every change answers 403, the proxy rewrites `Origin` or `Host`: set `PUBLIC_URL` to the address people type, and make the proxy pass `Origin` unchanged.
+4. Sibling sites. No other site on a sibling name of the console host (for example `blog.example.com` next to `daloy.example.com`) may hold content you do not control. Cookies are host-only, but requests from a sibling are same-site. Prefer a separate registrable domain for anything untrusted.
+5. Logs. Trello sends its key and token in the query string. Check that Cloudflare, `cloudflared`, Caddy or any outbound proxy does not log full URLs with queries for requests to `api.trello.com`, and that the console host's access log does not keep query strings.
+6. Upload memory. The API holds at most 128 MB of in-flight form uploads. Check `docker stats` on the VM during a 5 MB upload test and confirm the API container has room for that plus its normal use. A proxy limit of about 30 MB on `/forms/` request bodies is a good second layer.
+7. PayMongo. Run `docs/live-paymongo-check.md` with test keys before turning on real orders: signed test deliveries, event retries, a refund.
+8. Release commit. Repeat the review checks on the exact commit you deploy.

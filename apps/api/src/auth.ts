@@ -66,14 +66,35 @@ export async function sessionUser(db: Db, req: Request): Promise<SessionUser | n
 
 @Injectable()
 export class SessionGuard implements CanActivate {
-  constructor(@Inject(DB) private readonly db: Db) {}
+  constructor(
+    @Inject(DB) private readonly db: Db,
+    @Inject(CONFIG) private readonly config: ApiConfig,
+  ) {}
 
   async canActivate(ctx: ExecutionContext): Promise<boolean> {
     const req = ctx.switchToHttp().getRequest<Request & { user?: SessionUser }>();
     const user = await sessionUser(this.db, req);
     if (!user) throw new UnauthorizedException();
+    if (!["GET", "HEAD", "OPTIONS"].includes(req.method) && !fromOwnOrigin(req, this.config.publicUrl)) throw new ForbiddenException("this change must be made from the Daloy page itself");
     req.user = user;
     return true;
+  }
+}
+
+/**
+ * False when a browser sent this request from some other origin. SameSite=Lax still sends the cookie from a sibling
+ * origin of the same site, and a plain form post can carry a urlencoded body the API parses, so a signed-in change
+ * must come from this installation's page. Own origin means PUBLIC_URL, or the host the request itself was sent to
+ * (a LAN address, the Vite dev server). A request with no Origin header is not from a browser page and passes.
+ */
+function fromOwnOrigin(req: Request, publicUrl: string | undefined): boolean {
+  const origin = req.get("origin");
+  if (origin === undefined) return true;
+  try {
+    const { origin: normalised, host } = new URL(origin);
+    return normalised === new URL(publicUrl ?? "http://localhost:3000").origin || host === req.get("host");
+  } catch {
+    return false;
   }
 }
 

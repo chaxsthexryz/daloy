@@ -126,6 +126,8 @@ export async function generate<T = unknown>(input: GenerateInput<T>): Promise<Ge
   try {
     res = await fetch(req.url, {
       method: "POST",
+      // A configured model host is a privacy boundary: never follow a redirect with the prompt (and its images) in the body.
+      redirect: "error",
       headers: { "content-type": "application/json", ...(apiKey ? { authorization: `Bearer ${apiKey}` } : {}) },
       signal: AbortSignal.timeout(input.timeoutMs),
       body: JSON.stringify(req.body),
@@ -170,6 +172,7 @@ export async function listModels(conn: Connection, timeoutMs = 5000): Promise<st
   let res: Response;
   try {
     res = await fetch(conn.provider === "ollama" ? `${base}/api/tags` : `${base}/models`, {
+      redirect: "error",
       headers: conn.apiKey ? { authorization: `Bearer ${conn.apiKey}` } : {},
       signal: AbortSignal.timeout(timeoutMs),
     });
