@@ -55,6 +55,8 @@ export function ConnectPanel(p: {
   slug: string;
   name: string;
   configured: boolean;
+  /** Another action on this card is reading or saving its target. */
+  disabled?: boolean;
   conn: Connection | null;
   /** The label before the account, such as Mailbox or Account. */
   label: string;
@@ -104,13 +106,13 @@ export function ConnectPanel(p: {
           {p.children}
           {p.intro}
           <div className="actions">
-            <button type="button" className={p.conn ? "" : "primary"} disabled={busy} onClick={() => void connect()}>
+            <button type="button" className={p.conn ? "" : "primary"} disabled={busy || p.disabled} onClick={() => void connect()}>
               {p.conn ? t("Reconnect {app}", { app: p.name }) : t("Connect {app}", { app: p.name })}
             </button>
             {p.conn && (
               <>
                 {p.actions}
-                <button type="button" className="quiet" disabled={busy} onClick={disconnect}>{t("Disconnect")}</button>
+                <button type="button" className="quiet" disabled={busy || p.disabled} onClick={disconnect}>{t("Disconnect")}</button>
               </>
             )}
           </div>

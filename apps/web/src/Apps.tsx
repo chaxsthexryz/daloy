@@ -74,9 +74,9 @@ export function AppsPage({ outcome }: { outcome?: { app: string; code: string } 
     google_calendar: () => <CalendarConnection conn={conn("google_calendar")} onChange={load} />,
     google_drive: () => <DriveConnection conn={conn("google_drive")} onChange={load} />,
     paymongo: () => <PaymongoConnection conn={conn("paymongo")} webhookBase={conns.paymongoWebhookBase} onChange={load} />,
-    airtable: () => <RecordConnection app="airtable" conn={conn("airtable")} onChange={load} />,
-    notion: () => <RecordConnection app="notion" conn={conn("notion")} onChange={load} />,
-    trello: () => <RecordConnection app="trello" conn={conn("trello")} onChange={load} />,
+    airtable: () => <RecordConnection key="airtable" app="airtable" conn={conn("airtable")} configured={conns.oauth.includes("airtable")} outcome={landed === "airtable" ? outcome?.code : undefined} onChange={load} />,
+    notion: () => <RecordConnection key="notion" app="notion" conn={conn("notion")} configured={conns.oauth.includes("notion")} outcome={landed === "notion" ? outcome?.code : undefined} onChange={load} />,
+    trello: () => <RecordConnection key="trello" app="trello" conn={conn("trello")} configured={conns.oauth.includes("trello")} outcome={landed === "trello" ? outcome?.code : undefined} onChange={load} />,
   };
   const card = (a: (typeof APPS)[number]) => {
     const s = state(a.key);
