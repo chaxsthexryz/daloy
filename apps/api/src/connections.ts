@@ -114,12 +114,6 @@ const SLUGS: Record<string, Provider> = { "google-sheets": "google_sheets", slac
 const providerSlug = new ZodPipe(z.enum(Object.keys(SLUGS) as [string, ...string[]]).transform((s) => SLUGS[s]!));
 const uuid = new ZodPipe(z.uuid());
 
-/** A provider's answer as a 400 the console can show. Anything else is a real error. */
-function asBadRequest(err: unknown): never {
-  if (err instanceof ProviderError) throw new BadRequestException(err.message);
-  throw err;
-}
-
 /**
  * Apps (was Business and email), connections (roadmap phase 3, decision 0021). One Google Sheets and one Slack connection per owner,
  * each with its destination. Credentials are write-only: no response ever includes one.
@@ -136,6 +130,15 @@ export class ConnectionsController {
     return this.config.providers;
   }
 
+  /** A provider's answer as a 400 the console can show, with workspace secrets hidden. Anything else is a real error. */
+  private asBadRequest(workspaceId: string) {
+    return async (err: unknown): Promise<never> => {
+      if (!(err instanceof ProviderError)) throw err;
+      const hide = await historyHider(this.db, this.config.secretsKey, workspaceId);
+      throw new BadRequestException(hide(err.message) as string);
+    };
+  }
+
   @Get()
   async get(@CurrentUser() user: SessionUser) {
     const ms = this.urls.microsoft ? { configured: true, adminConsentUrl: outlookAdminConsentUrl(this.urls, redirectUri(this.config.publicUrl, outlook)) } : { configured: false };
@@ -147,10 +150,10 @@ export class ConnectionsController {
   }
 
   /** The sheet and tab, checked with a read before saving. Shared by connect and "change sheet". */
-  private async destination(sa: ServiceAccount, input: z.output<typeof destinationInput>) {
+  private async destination(workspaceId: string, sa: ServiceAccount, input: z.output<typeof destinationInput>) {
     const spreadsheetId = spreadsheetIdFrom(input.sheet);
     if (!spreadsheetId) throw new BadRequestException("Paste the sheet's link from the browser address bar.");
-    const info = await sheetInfo(this.urls, sa, spreadsheetId).catch(asBadRequest);
+    const info = await sheetInfo(this.urls, sa, spreadsheetId).catch(this.asBadRequest(workspaceId));
     if (!info.tabs.includes(input.tab)) throw new BadRequestException(`The sheet has no tab called "${input.tab}". Its tabs are: ${info.tabs.join(", ")}.`);
     return { spreadsheetId, tab: input.tab, title: info.title };
   }
@@ -165,7 +168,7 @@ export class ConnectionsController {
     } catch {
       throw new BadRequestException("That is not a service account key file. In Google Cloud, create a key for the service account as JSON and paste the whole file.");
     }
-    const destination = await this.destination(sa, body);
+    const destination = await this.destination(user.workspaceId, sa, body);
     await saveConnection(this.db, this.config.secretsKey, user.workspaceId, "google_sheets", { account: sa.client_email, credential: JSON.stringify({ client_email: sa.client_email, private_key: sa.private_key }), destination });
     return this.get(user);
   }
@@ -177,7 +180,7 @@ export class ConnectionsController {
   async putSheetDestination(@CurrentUser() user: SessionUser, @Body(new ZodPipe(destinationInput)) body: z.output<typeof destinationInput>) {
     const conn = await this.connection(user.workspaceId, "google_sheets");
     if (conn.authMethod === "oauth") throw new BadRequestException("This connection uses a Google sign-in. Pick or create the sheet instead.");
-    await setDestination(this.db, user.workspaceId, "google_sheets", await this.destination(JSON.parse(conn.credential) as ServiceAccount, body));
+    await setDestination(this.db, user.workspaceId, "google_sheets", await this.destination(user.workspaceId, JSON.parse(conn.credential) as ServiceAccount, body));
   }
 
   /** Adds a visible test row, which proves Daloy can write (a shared-as-viewer sheet passes the read check but fails here). */
@@ -205,7 +208,7 @@ export class ConnectionsController {
     }
     const calendarId = calendarIdFrom(body.calendar);
     if (!calendarId) throw new BadRequestException("Paste the calendar's id from its settings (Integrate calendar), like abc123@group.calendar.google.com.");
-    const { title } = await calendarInfo(this.urls, sa, calendarId).catch(asBadRequest);
+    const { title } = await calendarInfo(this.urls, sa, calendarId).catch(this.asBadRequest(user.workspaceId));
     await saveConnection(this.db, this.config.secretsKey, user.workspaceId, "google_calendar", { account: sa.client_email, credential: JSON.stringify({ client_email: sa.client_email, private_key: sa.private_key }), destination: { calendarId, title } });
     return this.get(user);
   }
@@ -234,7 +237,7 @@ export class ConnectionsController {
     }
     const folderId = driveFolderIdFrom(body.folder);
     if (!folderId) throw new BadRequestException("Paste the folder's link from the browser address bar, like https://drive.google.com/drive/folders/...");
-    const { title } = await driveFolderInfo(this.urls, sa, folderId).catch(asBadRequest);
+    const { title } = await driveFolderInfo(this.urls, sa, folderId).catch(this.asBadRequest(user.workspaceId));
     await saveConnection(this.db, this.config.secretsKey, user.workspaceId, "google_drive", { account: sa.client_email, credential: JSON.stringify({ client_email: sa.client_email, private_key: sa.private_key }), destination: { folderId, title } });
     return this.get(user);
   }
@@ -243,7 +246,7 @@ export class ConnectionsController {
   @Put("slack")
   @UseGuards(RateLimit(10))
   async putSlack(@CurrentUser() user: SessionUser, @Body(new ZodPipe(slackInput)) body: z.output<typeof slackInput>) {
-    const { team } = await slackIdentity(this.urls, body.token).catch(asBadRequest);
+    const { team } = await slackIdentity(this.urls, body.token).catch(this.asBadRequest(user.workspaceId));
     const old = await connectionCredential(this.db, this.config.secretsKey, user.workspaceId, "slack");
     await saveConnection(this.db, this.config.secretsKey, user.workspaceId, "slack", { account: team, credential: body.token, destination: old?.destination ?? null });
     return this.get(user);
@@ -253,8 +256,8 @@ export class ConnectionsController {
   @Put("telegram")
   @UseGuards(RateLimit(10))
   async putTelegram(@CurrentUser() user: SessionUser, @Body(new ZodPipe(telegramInput)) body: z.output<typeof telegramInput>) {
-    const { bot } = await telegramIdentity(this.urls, body.token).catch(asBadRequest);
-    const chat = await telegramChat(this.urls, body.token, body.chatId).catch(asBadRequest);
+    const { bot } = await telegramIdentity(this.urls, body.token).catch(this.asBadRequest(user.workspaceId));
+    const chat = await telegramChat(this.urls, body.token, body.chatId).catch(this.asBadRequest(user.workspaceId));
     await saveConnection(this.db, this.config.secretsKey, user.workspaceId, "telegram", { account: bot, credential: body.token, destination: chat });
     return this.get(user);
   }
@@ -263,9 +266,9 @@ export class ConnectionsController {
   @Post("telegram/chats")
   @HttpCode(200)
   @UseGuards(RateLimit(10))
-  async telegramChatList(@Body(new ZodPipe(telegramChatsInput)) body: z.output<typeof telegramChatsInput>) {
-    const { bot } = await telegramIdentity(this.urls, body.token).catch(asBadRequest);
-    return { bot, ...(await telegramChats(this.urls, body.token).catch(asBadRequest)) };
+  async telegramChatList(@CurrentUser() user: SessionUser, @Body(new ZodPipe(telegramChatsInput)) body: z.output<typeof telegramChatsInput>) {
+    const { bot } = await telegramIdentity(this.urls, body.token).catch(this.asBadRequest(user.workspaceId));
+    return { bot, ...(await telegramChats(this.urls, body.token).catch(this.asBadRequest(user.workspaceId))) };
   }
 
   @Post("telegram/test")
@@ -282,7 +285,7 @@ export class ConnectionsController {
   async putPaymongo(@CurrentUser() user: SessionUser, @Body(new ZodPipe(paymongoInput)) body: z.output<typeof paymongoInput>) {
     const mode = paymongoMode(body.secretKey);
     if (mode === "live" && process.env.PAYMONGO_LIVE !== "on") throw new BadRequestException("Live mode needs PayMongo business verification, which is not switched on here. Use a test key (sk_test_) for now.");
-    await checkPaymongoKey(body.secretKey, this.urls).catch(asBadRequest);
+    await checkPaymongoKey(body.secretKey, this.urls).catch(this.asBadRequest(user.workspaceId));
     const old = await connectionCredential(this.db, this.config.secretsKey, user.workspaceId, "paymongo");
     const webhookPath = old?.destination?.webhookPath ?? randomBytes(32).toString("base64url");
     const webhookSecret = body.webhookSecret ?? (old ? (JSON.parse(old.credential) as { webhookSecret?: string }).webhookSecret : undefined) ?? "";
@@ -306,7 +309,7 @@ export class ConnectionsController {
   @Put("airtable")
   @UseGuards(RateLimit(10))
   async putAirtable(@CurrentUser() user: SessionUser, @Body(new ZodPipe(airtableInput)) body: z.output<typeof airtableInput>) {
-    const destination = await airtableCheck(this.urls, body.token, body.baseId, body.tableId).catch(asBadRequest);
+    const destination = await airtableCheck(this.urls, body.token, body.baseId, body.tableId).catch(this.asBadRequest(user.workspaceId));
     await saveConnection(this.db, this.config.secretsKey, user.workspaceId, "airtable", { account: body.baseId, credential: body.token, destination });
     return this.get(user);
   }
@@ -325,7 +328,7 @@ export class ConnectionsController {
   @Put("notion")
   @UseGuards(RateLimit(10))
   async putNotion(@CurrentUser() user: SessionUser, @Body(new ZodPipe(notionInput)) body: z.output<typeof notionInput>) {
-    const destination = await notionDatabase(this.urls, body.token, body.database).catch(asBadRequest);
+    const destination = await notionDatabase(this.urls, body.token, body.database).catch(this.asBadRequest(user.workspaceId));
     await saveConnection(this.db, this.config.secretsKey, user.workspaceId, "notion", { account: destination.databaseTitle, credential: body.token, destination });
     return this.get(user);
   }
@@ -344,8 +347,8 @@ export class ConnectionsController {
   @UseGuards(RateLimit(10))
   async putTrello(@CurrentUser() user: SessionUser, @Body(new ZodPipe(trelloInput)) body: z.output<typeof trelloInput>) {
     const cred = { key: body.key, token: body.token };
-    const { account } = await trelloIdentity(this.urls, cred).catch(asBadRequest);
-    const destination = await trelloList(this.urls, cred, body.listId).catch(asBadRequest);
+    const { account } = await trelloIdentity(this.urls, cred).catch(this.asBadRequest(user.workspaceId));
+    const destination = await trelloList(this.urls, cred, body.listId).catch(this.asBadRequest(user.workspaceId));
     await saveConnection(this.db, this.config.secretsKey, user.workspaceId, "trello", { account, credential: JSON.stringify(cred), destination });
     return this.get(user);
   }
@@ -362,14 +365,14 @@ export class ConnectionsController {
   @UseGuards(RateLimit(20))
   async channels(@CurrentUser() user: SessionUser) {
     const conn = await this.connection(user.workspaceId, "slack");
-    return slackChannels(this.urls, slackToken(conn)).catch(asBadRequest);
+    return slackChannels(this.urls, slackToken(conn)).catch(this.asBadRequest(user.workspaceId));
   }
 
   @Put("slack/channel")
   @HttpCode(204)
   async putChannel(@CurrentUser() user: SessionUser, @Body(new ZodPipe(channelInput)) body: z.output<typeof channelInput>) {
     const conn = await this.connection(user.workspaceId, "slack");
-    const channel = (await slackChannels(this.urls, slackToken(conn)).catch(asBadRequest)).find((c) => c.id === body.channelId);
+    const channel = (await slackChannels(this.urls, slackToken(conn)).catch(this.asBadRequest(user.workspaceId))).find((c) => c.id === body.channelId);
     if (!channel) throw new BadRequestException("That channel is not in the list. Refresh the channel list and pick again.");
     await setDestination(this.db, user.workspaceId, "slack", { channelId: channel.id, channelName: channel.name });
   }

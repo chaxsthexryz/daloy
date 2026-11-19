@@ -165,31 +165,38 @@ export class PaymongoHooksController {
     const resource = data.attributes?.data;
     let started: { payment: Payment; status: "paid" | "refunded" } | undefined;
     let kept: Record<string, unknown> | undefined;
-    let settled: Payment | undefined;
+    let finishedRefundId: string | undefined;
     if (type === "checkout_session.payment.paid" && typeof resource?.id === "string") {
       const paid = resource.attributes?.payments?.find((p) => p.attributes?.status === "paid");
       const { amount, currency } = paid?.attributes ?? {};
       if (typeof paid?.id === "string" && typeof amount === "number" && typeof currency === "string") {
         const r = await markPaymentPaid(this.db, { userId: owner.userId, sessionId: resource.id, paymentId: paid.id, amount, currency, livemode });
-        if (!r.payment) kept = { sessionId: resource.id, paymentId: paid.id, amount, currency, livemode };
-        if (r.payment?.status === "paid") started = { payment: r.payment, status: "paid" };
-        settled = r.payment;
+        if (!r.payment) {
+          kept = { sessionId: resource.id, paymentId: paid.id, amount, currency, livemode };
+        } else {
+          // A refund that came before this paid event was kept: apply it before starting paid listeners (decision 0056).
+          const refund =
+            r.payment.providerPaymentId && (r.payment.status === "paid" || r.payment.status === "refunded")
+              ? await keptEvent(this.db, owner.userId, "payment.refunded", "paymentId", r.payment.providerPaymentId, livemode)
+              : undefined;
+          if (refund && (refund.payload as { livemode?: boolean } | null)?.livemode === livemode) {
+            const ref = await markPaymentRefunded(this.db, { userId: owner.userId, providerPaymentId: r.payment.providerPaymentId!, livemode });
+            if (ref.payment?.status === "refunded") started = { payment: ref.payment, status: "refunded" };
+            finishedRefundId = refund.eventId;
+          } else if (r.payment.status === "paid") {
+            started = { payment: r.payment, status: "paid" };
+          }
+        }
       }
     } else if (type === "payment.refunded" && typeof resource?.id === "string") {
       const r = await markPaymentRefunded(this.db, { userId: owner.userId, providerPaymentId: resource.id, livemode });
-      if (!r.payment) kept = { paymentId: resource.id };
+      if (!r.payment) kept = { paymentId: resource.id, livemode };
       if (r.payment?.status === "refunded") started = { payment: r.payment, status: "refunded" };
     }
     // Started on the payment's state, not on whether this call changed it: a crash after the update but before the runs
     // is retried by PayMongo and still starts them. The key is payment + status, so a replay or a second event starts nothing.
     if (started) await this.startRuns(owner.userId, started.payment, started.status);
-    // A refund that came before this paid event was kept: apply it now (decision 0056).
-    const refund = settled?.providerPaymentId && (settled.status === "paid" || settled.status === "refunded") ? await keptEvent(this.db, owner.userId, "payment.refunded", "paymentId", settled.providerPaymentId) : undefined;
-    if (refund) {
-      const r = await markPaymentRefunded(this.db, { userId: owner.userId, providerPaymentId: settled!.providerPaymentId!, livemode });
-      if (r.payment?.status === "refunded") await this.startRuns(owner.userId, r.payment, "refunded");
-      await finishEvent(this.db, owner.userId, refund.eventId);
-    }
+    if (finishedRefundId) await finishEvent(this.db, owner.userId, finishedRefundId);
     // An unmatched paid or refund event is kept so the payment it belongs to can apply it later; the answer is still 200.
     await recordEvent(this.db, { eventId, userId: owner.userId, type, ...(kept && { state: "kept" as const, payload: kept }) });
     return { ok: true };

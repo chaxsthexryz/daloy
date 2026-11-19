@@ -266,7 +266,7 @@ describe("PayMongo webhook", () => {
     expect(await statusOf(p.id)).toBe("paid");
   });
 
-  it("keeps a refund that arrives first, and a later paid event ends refunded (M4)", async () => {
+  it("keeps a refund that arrives first, and a later paid event ends refunded without starting paid listeners (M5)", async () => {
     const { agent, userId } = await owner();
     const path = await connect(agent, userId);
     const paidWf = await listener(agent, ["paid"]);
@@ -274,14 +274,46 @@ describe("PayMongo webhook", () => {
     const { p, sessionId } = await payment(userId);
     await post(path, refundEvent("evt_early_r")).expect(200);
     const [kept] = await db.select().from(paymongoEvents).where(and(eq(paymongoEvents.userId, userId), eq(paymongoEvents.eventId, "evt_early_r")));
-    expect(kept).toMatchObject({ state: "kept", payload: { paymentId: "pay_1" } });
+    expect(kept).toMatchObject({ state: "kept", payload: { paymentId: "pay_1", livemode: false } });
     expect((await post(path, refundEvent("evt_early_r")).expect(200)).body).toEqual({ duplicate: true });
     await post(path, paidEvent("evt_late_p", sessionId)).expect(200);
     expect(await statusOf(p.id)).toBe("refunded");
-    expect(await runsOf(paidWf)).toHaveLength(1);
+    expect(await runsOf(paidWf)).toHaveLength(0);
     expect(await runsOf(refundWf)).toHaveLength(1);
     const rows = await db.select().from(paymongoEvents).where(eq(paymongoEvents.userId, userId));
     expect(rows.map((r) => [r.eventId, r.state]).sort()).toEqual([["evt_early_r", "done"], ["evt_late_p", "done"]]);
+  });
+
+  it("ignores a test-mode kept refund for a live-mode payment, and a live-mode kept refund for a test-mode payment (M5)", async () => {
+    // Test-mode kept refund must not affect a live-mode payment.
+    const live = await owner();
+    const livePath = randomBytes(32).toString("base64url");
+    await saveConnection(db, secretsKey, live.userId, "paymongo", { account: "Live", credential: JSON.stringify({ secretKey: "sk_live_abc123", webhookSecret: WHSK }), destination: { webhookPath: livePath, mode: "live" } });
+    const livePaidWf = await listener(live.agent, ["paid"]);
+    const liveRefundWf = await listener(live.agent, ["refunded"]);
+    const livePay = await payment(live.userId, 15000, { livemode: true });
+    await db.insert(paymongoEvents).values({ eventId: "evt_test_ref", userId: live.userId, type: "payment.refunded", state: "kept", payload: { paymentId: "pay_1", livemode: false } });
+    const livePaidBody = paidEvent("evt_live_p", livePay.sessionId).replace('"livemode":false', '"livemode":true');
+    await post(livePath, livePaidBody, sign(livePaidBody, now(), WHSK, "li")).expect(200);
+    expect(await statusOf(livePay.p.id)).toBe("paid");
+    expect(await runsOf(livePaidWf)).toHaveLength(1);
+    expect(await runsOf(liveRefundWf)).toHaveLength(0);
+    const [stillKeptTest] = await db.select().from(paymongoEvents).where(and(eq(paymongoEvents.userId, live.userId), eq(paymongoEvents.eventId, "evt_test_ref")));
+    expect(stillKeptTest!.state).toBe("kept");
+
+    // Live-mode kept refund must not affect a test-mode payment.
+    const test = await owner();
+    const testPath = await connect(test.agent, test.userId);
+    const testPaidWf = await listener(test.agent, ["paid"]);
+    const testRefundWf = await listener(test.agent, ["refunded"]);
+    const testPay = await payment(test.userId, 15000, { livemode: false });
+    await db.insert(paymongoEvents).values({ eventId: "evt_live_ref", userId: test.userId, type: "payment.refunded", state: "kept", payload: { paymentId: "pay_1", livemode: true } });
+    await post(testPath, paidEvent("evt_test_p", testPay.sessionId)).expect(200);
+    expect(await statusOf(testPay.p.id)).toBe("paid");
+    expect(await runsOf(testPaidWf)).toHaveLength(1);
+    expect(await runsOf(testRefundWf)).toHaveLength(0);
+    const [stillKeptLive] = await db.select().from(paymongoEvents).where(and(eq(paymongoEvents.userId, test.userId), eq(paymongoEvents.eventId, "evt_live_ref")));
+    expect(stillKeptLive!.state).toBe("kept");
   });
 
   it("keeps a paid event that arrives before the payment row, and storing the row settles it (M4)", async () => {

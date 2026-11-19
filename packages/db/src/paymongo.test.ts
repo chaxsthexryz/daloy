@@ -157,6 +157,24 @@ describe("payment state", () => {
     expect(await markPaymentRefunded(db, { userId, providerPaymentId: "pay_lm", livemode: true })).toMatchObject({ payment: undefined, changed: false });
     expect((await markPaymentRefunded(db, { userId, providerPaymentId: "pay_lm", livemode: false })).changed).toBe(true);
   });
+
+  it("ignores a kept refund from the other mode when insertPayment settles a kept paid event (M5)", async () => {
+    const [v] = await db.insert(workflowVersions).values({ workflowId, version: ++n, definition: {} }).returning();
+    const [rLive] = await db.insert(runs).values({ workflowVersionId: v!.id, triggerPayload: {} }).returning();
+    const [rTest] = await db.insert(runs).values({ workflowVersionId: v!.id, triggerPayload: {} }).returning();
+
+    // Test-mode kept refund must not refund a live-mode payment.
+    await recordEvent(db, { eventId: "evt_kept_paid_live", userId, type: "checkout_session.payment.paid", state: "kept", payload: { sessionId: "cs_m5_live", paymentId: "pay_m5_1", amount: 15000, currency: "PHP", livemode: true } });
+    await recordEvent(db, { eventId: "evt_kept_ref_test", userId, type: "payment.refunded", state: "kept", payload: { paymentId: "pay_m5_1", livemode: false } });
+    const liveP = await insertPayment(db, { userId, workflowId, runId: rLive!.id, stepId: "link", reference: "ORD-M5-L", amountCentavos: 15000, livemode: true, providerSessionId: "cs_m5_live", url: "https://pm.test/l" });
+    expect(liveP.status).toBe("paid");
+
+    // Live-mode kept refund must not refund a test-mode payment.
+    await recordEvent(db, { eventId: "evt_kept_paid_test", userId, type: "checkout_session.payment.paid", state: "kept", payload: { sessionId: "cs_m5_test", paymentId: "pay_m5_2", amount: 15000, currency: "PHP", livemode: false } });
+    await recordEvent(db, { eventId: "evt_kept_ref_live", userId, type: "payment.refunded", state: "kept", payload: { paymentId: "pay_m5_2", livemode: true } });
+    const testP = await insertPayment(db, { userId, workflowId, runId: rTest!.id, stepId: "link", reference: "ORD-M5-T", amountCentavos: 15000, livemode: false, providerSessionId: "cs_m5_test", url: "https://pm.test/t" });
+    expect(testP.status).toBe("paid");
+  });
 });
 
 describe("PayMongo calls", () => {

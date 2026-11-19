@@ -53,7 +53,7 @@ export async function retireSecret(tx: Pick<Db, "select" | "insert" | "execute">
  * One statement, so one snapshot: a rotation or deletion commits the retired copy and the change together, so a value
  * is either still current or already retired here, never missing from both (retest of 6e603de).
  */
-export async function secretValuesToHide(db: Db, key: Buffer, userId: string): Promise<string[]> {
+export async function secretValuesToHide(db: Pick<Db, "execute">, key: Buffer, userId: string): Promise<string[]> {
   const { rows } = await db.execute<EncryptedSecret & { name: string; oauth: boolean }>(sql`
     select name, ciphertext, iv, auth_tag as "authTag", false as oauth from secrets where user_id = ${userId}
     union all
@@ -66,7 +66,7 @@ export async function secretValuesToHide(db: Db, key: Buffer, userId: string): P
   // A token blob that does not decrypt was never usable, so it has nothing to hide and must not break every history page.
   const tokens = (r: EncryptedSecret & { name: string }) => {
     try {
-      return blobTokens(decryptSecret(key, userId, r.name, r));
+      return blobTokens(decryptSecret(key, userId, r.name, r), { allowBare: r.name === "connection:outlook" });
     } catch {
       return [];
     }

@@ -372,6 +372,13 @@ describe("run history and secrets", () => {
       expect(testOut).not.toContain(oauthRefresh);
       expect(testOut).toContain("[secret]");
 
+      // Connection setup 400 error redaction (L2): provider error text returned via asBadRequest hides secrets and OAuth tokens.
+      fake.once("/api/auth.test", { status: 200, body: { ok: false, error: `bad ${secretVal} and ${oauthRefresh}` } });
+      const badReqOut = (await agent.put("/settings/connections/slack").send({ token: "xoxb-1234567890-abcdefghij" }).expect(400)).text;
+      expect(badReqOut).not.toContain(secretVal);
+      expect(badReqOut).not.toContain(oauthRefresh);
+      expect(badReqOut).toContain("[secret]");
+
       // Age the retired secret past 90 days and run the scrub-then-delete purge: zero retired_secrets remain,
       // yet every read surface still shows [secret] and never leaks any form of secretVal.
       await db
@@ -406,6 +413,71 @@ describe("run history and secrets", () => {
     } finally {
       echoSmtpSecret = undefined;
       await client.close();
+    }
+  });
+
+  it("hides a retired secret on GET /approvals/:token when a purge commits between reading the approval and loading retired_secrets (L2)", async () => {
+    const { agent, userId } = await owner();
+    const secretVal = `approval-race-${randomBytes(4).toString("hex")}`;
+    await agent.put("/secrets/race_approval").send({ value: secretVal }).expect(204);
+    await agent.delete("/secrets/race_approval").expect(204);
+    await db
+      .update(retiredSecrets)
+      .set({ retiredAt: new Date(Date.now() - 91 * 86_400_000) })
+      .where(eq(retiredSecrets.userId, userId));
+
+    const [wf] = await db.insert(workflows).values({ userId, name: "Approve race", slug: `approve-race-${seq}` }).returning();
+    const [v] = await db.insert(workflowVersions).values({ workflowId: wf!.id, version: 1, definition: {}, published: true }).returning();
+    const [r] = await db.insert(runs).values({ workflowVersionId: v!.id, state: "waiting", triggerPayload: {} }).returning();
+    const [step] = await db.insert(stepRuns).values({
+      runId: r!.id,
+      stepId: "approve",
+      attempt: 1,
+      state: "waiting",
+      input: { message: `Approve ${secretVal}` },
+    }).returning();
+    const approval = (await createApproval(db, step!.id, new Date(Date.now() + 600_000)))!;
+
+    const origQuery = pool.query.bind(pool) as (...args: unknown[]) => Promise<unknown>;
+    const origConnect = pool.connect.bind(pool) as (...args: unknown[]) => Promise<{ query: (...a: unknown[]) => Promise<unknown>; release: (...a: unknown[]) => void }>;
+    let inFlight: (() => Promise<void>) | undefined = async () => {
+      await purgeRetiredSecrets(db, key);
+    };
+    const intercept = (run: (...args: unknown[]) => Promise<unknown>) => async (...args: unknown[]) => {
+      const result = await run(...args);
+      const text = typeof args[0] === "string" ? args[0] : (args[0] as { text?: string } | undefined)?.text;
+      if (inFlight && text?.includes('"approvals"') && text?.includes('"step_runs"')) {
+        const change = inFlight;
+        inFlight = undefined;
+        await change();
+      }
+      return result;
+    };
+    Object.assign(pool, {
+      query: intercept(origQuery),
+      connect: (...args: unknown[]) => {
+        if (typeof args[0] === "function") return origConnect(...args);
+        return origConnect(...args).then((client) => {
+          const clientQuery = client.query.bind(client) as (...a: unknown[]) => Promise<unknown>;
+          const clientRelease = client.release.bind(client) as (...a: unknown[]) => void;
+          Object.assign(client, {
+            query: intercept(clientQuery),
+            release: (...r: unknown[]) => {
+              Object.assign(client, { query: clientQuery, release: clientRelease });
+              return clientRelease(...r);
+            },
+          });
+          return client;
+        });
+      },
+    });
+    try {
+      const html = (await request(server).get(`/approvals/${approval.token}`).expect(200)).text;
+      expect(inFlight, "the approval read was not paused").toBeUndefined();
+      expect(html).not.toContain(secretVal);
+      expect(html).toContain("[secret]");
+    } finally {
+      Object.assign(pool, { query: origQuery, connect: origConnect });
     }
   });
 });

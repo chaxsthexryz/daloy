@@ -17,7 +17,7 @@ export function maskSecrets(value: unknown): unknown {
 }
 
 /** One reader for stored history: hides every current and retired secret value, then secret-looking keys (decision 0025). */
-export async function historyHider(db: Db, secretsKey: Buffer, workspaceId: string) {
+export async function historyHider(db: Pick<Db, "execute">, secretsKey: Buffer, workspaceId: string) {
   const forms = secretForms(await secretValuesToHide(db, secretsKey, workspaceId));
   return (v: unknown) => maskSecrets(redactSecrets(v, forms));
 }

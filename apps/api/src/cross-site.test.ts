@@ -22,7 +22,7 @@ beforeAll(async () => {
   ({ url, db, pool } = await freshDatabase());
   boss = new PgBoss(url);
   await boss.start();
-  app = await createApp({ db, boss, secretsKey: randomBytes(32), secureCookies: false, publicUrl: "https://daloy.example.com" });
+  app = await createApp({ db, boss, secretsKey: randomBytes(32), secureCookies: false, publicUrl: "https://daloy.example.com", trustProxy: 1 });
   await app.init();
   server = app.getHttpServer();
 }, 120_000);
@@ -66,6 +66,32 @@ describe("a signed-in change from another origin", () => {
     // Reached by another name than PUBLIC_URL (a LAN address, the Vite dev server): its own Host is its origin.
     await a.post("/workflows").set("Host", "daloy.lan:3000").set("Origin", "http://daloy.lan:3000").send({ name: "Same host", slug: "host" }).expect(201);
     expect(await names(a)).toEqual(expect.arrayContaining(["Own origin", "No origin", "Same host"]));
+  });
+
+  it("refuses a scheme-downgraded Origin against the same Host over HTTPS (L1)", async () => {
+    const a = await owner();
+    await a
+      .post("/workflows")
+      .set("Host", "daloy.example.com")
+      .set("X-Forwarded-Proto", "https")
+      .set("Origin", "http://daloy.example.com")
+      .send({ name: "Downgraded", slug: "downgraded" })
+      .expect(403);
+    await a
+      .post("/workflows")
+      .set("Host", "daloy.lan:3000")
+      .set("X-Forwarded-Proto", "https")
+      .set("Origin", "http://daloy.lan:3000")
+      .send({ name: "Downgraded LAN", slug: "downgraded-lan" })
+      .expect(403);
+    await a
+      .post("/workflows")
+      .set("Host", "daloy.lan:3000")
+      .set("X-Forwarded-Proto", "https")
+      .set("Origin", "https://daloy.lan:3000")
+      .send({ name: "Matching HTTPS LAN", slug: "https-lan" })
+      .expect(201);
+    expect(await names(a)).toEqual(["Matching HTTPS LAN"]);
   });
 
   it("leaves reads, sign-in and public routes alone", async () => {

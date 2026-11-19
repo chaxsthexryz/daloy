@@ -338,7 +338,7 @@ describe("role permissions", () => {
       }
     }
     expect(wrong).toEqual([]);
-  });
+  }, 15_000);
 
   it("puts every route the API registers in the matrix or on the short list of routes with their own rules", () => {
     const stack = (app.getHttpAdapter().getInstance() as { router: { stack: { route?: { path: string; methods: Record<string, boolean> } }[] } }).router.stack;

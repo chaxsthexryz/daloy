@@ -83,6 +83,12 @@ services:
       SHARED_LLM_KEY: ${SHARED_LLM_KEY:-off}
       # Comma list of the only hosts an HTTP step may call, for the public demo. Empty means any public host.
       HTTP_ALLOWED_HOSTS: ${HTTP_ALLOWED_HOSTS:-}
+      # Recipients a workspace may send to in one Manila day through its own Gmail or Outlook (decision 0052). Empty defaults to 400.
+      MAILBOX_DAILY_CAP: ${MAILBOX_DAILY_CAP:-}
+      # Days to keep retired secret values before scrubbing history and deleting them. Empty defaults to 90.
+      RETIRED_SECRETS_MAX_AGE_DAYS: ${RETIRED_SECRETS_MAX_AGE_DAYS:-}
+      # on lets workspaces create payment links with a live PayMongo key (sk_live_). Empty allows test keys only.
+      PAYMONGO_LIVE: ${PAYMONGO_LIVE:-}
       PUBLIC_URL: ${PUBLIC_URL:-http://localhost:3000}
       # Optional: the installation's Microsoft Entra app, for Connect Outlook (decision 0023). Empty means Outlook is not offered.
       MICROSOFT_CLIENT_ID: ${MICROSOFT_CLIENT_ID:-}
@@ -139,6 +145,8 @@ services:
       REGISTER_LIMIT_PER_HOUR: ${REGISTER_LIMIT_PER_HOUR:-10}
       # none: new sign-ups have no plan and no limits. Empty: the preview plan (docs/decisions/0057-public-intake-fixes.md).
       SIGNUP_PLAN: ${SIGNUP_PLAN:-}
+      # on lets workspaces connect a live PayMongo key (sk_live_). Empty allows test keys only.
+      PAYMONGO_LIVE: ${PAYMONGO_LIVE:-}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:

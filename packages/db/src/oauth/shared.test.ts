@@ -23,8 +23,18 @@ async function workspace() {
 }
 const grant = (userId: string, provider: Provider, externalId: string | null, authMethod: "oauth" | "token" = "oauth") =>
   db.insert(connections).values({ userId, provider, status: "active", account: "a", credentialCiphertext: "c", credentialIv: `iv${++seq}`, credentialAuthTag: "t", authMethod, externalId });
-const gmail = (userId: string, externalId: string) =>
-  db.insert(mailSenders).values({ userId, address: `g${++seq}@gmail.test`, status: "active", authMethod: "oauth", externalId });
+const gmail = (userId: string, externalId: string, overrides: Partial<typeof mailSenders.$inferInsert> = {}) =>
+  db.insert(mailSenders).values({
+    userId,
+    address: `g${++seq}@gmail.test`,
+    status: "active",
+    authMethod: "oauth",
+    externalId,
+    passwordCiphertext: "c",
+    passwordIv: `iv${++seq}`,
+    passwordAuthTag: "t",
+    ...overrides,
+  });
 
 describe("shared grants", () => {
   it("flags the same provider account in two workspaces, in both", async () => {
@@ -62,5 +72,16 @@ describe("shared grants", () => {
     await grant(b, "trello", "same-id");
     expect(await sharedGrants(db, a)).toEqual([]);
     expect(await sharedGrants(db, b)).toEqual([]);
+  });
+
+  it("ignores a disconnected Gmail sender and one without a stored credential (L4)", async () => {
+    const [a, b, c] = [await workspace(), await workspace(), await workspace()];
+    await grant(a, "google_sheets", "sub-disc");
+    await gmail(a, "sub-disc", { status: "disconnected", passwordCiphertext: null, passwordIv: null, passwordAuthTag: null });
+    await gmail(b, "sub-disc", { status: "disconnected", passwordCiphertext: "stale" });
+    await gmail(c, "sub-disc", { status: "active", passwordCiphertext: null, passwordIv: null, passwordAuthTag: null });
+    expect(await sharedGrants(db, a)).toEqual([]);
+    expect(await sharedGrants(db, b)).toEqual([]);
+    expect(await sharedGrants(db, c)).toEqual([]);
   });
 });

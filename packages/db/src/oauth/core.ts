@@ -263,17 +263,18 @@ function connectionsStore(def: OAuthProvider): GrantStore {
   // A definition without its own store is a connections provider.
   const provider = def.provider as Provider;
   const row = (workspaceId: string) => and(eq(connections.userId, workspaceId), eq(connections.provider, provider));
+  const oauthRow = (workspaceId: string) => and(row(workspaceId), eq(connections.authMethod, "oauth"));
   return {
     secretName: `connection:${provider}`,
     lock: async (tx, workspaceId) => {
-      const [r] = await tx.select().from(connections).where(row(workspaceId)).for("update");
+      const [r] = await tx.select().from(connections).where(oauthRow(workspaceId)).for("update");
       return r ? { ciphertext: r.credentialCiphertext, iv: r.credentialIv, authTag: r.credentialAuthTag } : null;
     },
     refreshed: async (tx, workspaceId, e, accessExpiresAt) => {
-      await tx.update(connections).set({ credentialCiphertext: e.ciphertext, credentialIv: e.iv, credentialAuthTag: e.authTag, accessExpiresAt, refreshedAt: new Date(), updatedAt: new Date() }).where(row(workspaceId));
+      await tx.update(connections).set({ credentialCiphertext: e.ciphertext, credentialIv: e.iv, credentialAuthTag: e.authTag, accessExpiresAt, refreshedAt: new Date(), updatedAt: new Date() }).where(oauthRow(workspaceId));
     },
     refused: async (tx, workspaceId, revision, error) => {
-      await tx.update(connections).set({ status: "failed", lastError: error.slice(0, 500), updatedAt: new Date() }).where(and(row(workspaceId), eq(connections.credentialIv, revision)));
+      await tx.update(connections).set({ status: "failed", lastError: error.slice(0, 500), updatedAt: new Date() }).where(and(oauthRow(workspaceId), eq(connections.credentialIv, revision)));
     },
     connect: async (tx, workspaceId, e, blob, who, clientId) => {
       // Locks the row, so a refresh in flight finishes first and cannot write its old grant over this one.
@@ -311,6 +312,7 @@ function connectionsStore(def: OAuthProvider): GrantStore {
 }
 
 const storeOf = (def: OAuthProvider) => def.store ?? connectionsStore(def);
+const allowBare = (def: OAuthProvider) => def.provider === "outlook";
 
 // ---------------------------------------------------------------- refresh under a row lock
 
@@ -343,7 +345,7 @@ async function refreshLocked(db: Db, key: Buffer, urls: ProviderUrls, workspaceI
       const row = await store.lock(tx, workspaceId);
       if (!row) return { refused: new ProviderError(`${def.name} is not connected. Connect it in Apps, then retry.`, "auth") };
       const credential = decryptSecret(key, workspaceId, name, row);
-      const blob = readTokenBlob(credential);
+      const blob = readTokenBlob(credential, { allowBare: allowBare(def) });
       if (!o.force && blob.accessToken !== o.rejected && fresh(blob)) return { held: { credential, revision: row.iv } };
       const refuse = async (err: ProviderError) => {
         await store.refused(tx, workspaceId, row.iv, err.message);
@@ -393,13 +395,13 @@ async function refreshLocked(db: Db, key: Buffer, urls: ProviderUrls, workspaceI
  * always refreshes (a console test, the keepalive). Updates conn to the stored credential and revision.
  */
 export async function freshToken(db: Db, key: Buffer, urls: ProviderUrls, workspaceId: string, def: OAuthProvider, conn: HeldConnection, o: { rejected?: string; force?: boolean } = {}) {
-  const blob = readTokenBlob(conn.credential);
+  const blob = readTokenBlob(conn.credential, { allowBare: allowBare(def) });
   // A nonexpiring grant with no refresh token can only be checked by calling the API itself.
   if (o.rejected === undefined && fresh(blob) && (!o.force || (!blob.refreshToken && blob.accessExpiresAt === null))) return blob.accessToken;
   const held = await refreshLocked(db, key, urls, workspaceId, def, o);
   conn.credential = held.credential;
   conn.revision = held.revision;
-  return readTokenBlob(held.credential).accessToken;
+  return readTokenBlob(held.credential, { allowBare: allowBare(def) }).accessToken;
 }
 
 /**
@@ -429,14 +431,14 @@ export async function keepOAuthAlive(db: Db, key: Buffer, urls: ProviderUrls, de
     const store = storeOf(def);
     const due = await store.due(db, def.keepaliveDays, limit - refreshed);
     for (const r of due) {
-      const conn = { credential: decryptSecret(key, r.userId, store.secretName, r), revision: r.iv };
-      if (!readTokenBlob(conn.credential).refreshToken) {
-        // A token that never expires (Notion may issue one): nothing to refresh. Stamped so the sweep does not pick it up first every day.
-        // Only a connections row can hold such a token; Gmail always has a refresh token.
-        if (!def.store) await db.update(connections).set({ refreshedAt: new Date() }).where(and(eq(connections.userId, r.userId), eq(connections.provider, def.provider as Provider), eq(connections.credentialIv, r.iv)));
-        continue;
-      }
       try {
+        const conn = { credential: decryptSecret(key, r.userId, store.secretName, r), revision: r.iv };
+        if (!readTokenBlob(conn.credential, { allowBare: allowBare(def) }).refreshToken) {
+          // A token that never expires (Notion may issue one): nothing to refresh. Stamped so the sweep does not pick it up first every day.
+          // Only a connections row can hold such a token; Gmail always has a refresh token.
+          if (!def.store) await db.update(connections).set({ refreshedAt: new Date() }).where(and(eq(connections.userId, r.userId), eq(connections.provider, def.provider as Provider), eq(connections.authMethod, "oauth"), eq(connections.credentialIv, r.iv)));
+          continue;
+        }
         await freshToken(db, key, urls, r.userId, def, conn, { force: true });
         refreshed++;
       } catch {
@@ -458,7 +460,7 @@ export async function disconnectOAuth(db: Db, key: Buffer, urls: ProviderUrls, w
   if (!credential || !def.revokeUrl) return { removed: true, revoked: null };
   try {
     const client = clientOf(def, urls);
-    const blob = readTokenBlob(decryptSecret(key, workspaceId, store.secretName, credential));
+    const blob = readTokenBlob(decryptSecret(key, workspaceId, store.secretName, credential), { allowBare: allowBare(def) });
     const token = def.revokeToken === "access" ? blob.accessToken : (blob.refreshToken ?? blob.accessToken);
     const init = clientRequest(def, client, { token, ...(def.tokenFormat === "json" ? {} : { token_type_hint: blob.refreshToken ? "refresh_token" : "access_token" }) });
     const res = await call(def.revokeUrl(urls), init, Math.min(5000, urls.timeoutMs ?? 5000), false, `${def.name} revoke`);

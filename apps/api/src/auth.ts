@@ -91,8 +91,9 @@ function fromOwnOrigin(req: Request, publicUrl: string | undefined): boolean {
   const origin = req.get("origin");
   if (origin === undefined) return true;
   try {
-    const { origin: normalised, host } = new URL(origin);
-    return normalised === new URL(publicUrl ?? "http://localhost:3000").origin || host === req.get("host");
+    const { origin: normalised } = new URL(origin);
+    const host = req.get("host");
+    return normalised === new URL(publicUrl ?? "http://localhost:3000").origin || (!!host && normalised === `${req.protocol}://${host}`);
   } catch {
     return false;
   }

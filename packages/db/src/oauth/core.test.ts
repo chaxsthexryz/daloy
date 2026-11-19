@@ -5,7 +5,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { freshDatabase } from "../../../../test/db";
 import { startFakeProviders, type FakeProviders } from "../../../../test/fake-providers";
 import { fakeOAuthProvider } from "../../../../test/oauth-provider";
-import { connectionCredential, readConnections, setDestination } from "../connections";
+import { connectionCredential, readConnections, saveConnection, setDestination } from "../connections";
 import { decryptSecret } from "../crypto";
 import { queueDelivery, runDueDeliveries } from "../deliveries";
 import type { Db } from "../index";
@@ -267,6 +267,71 @@ describe("refresh", () => {
     expect((await row(revoked)).status).toBe("failed");
     expect(await row(down)).toMatchObject({ status: "active" });
     expect((await row(down)).refreshedAt!.getTime()).toBeLessThan(Date.now() - 30 * 86_400_000);
+  });
+
+  it("rejects non-v1 token blobs unless bare refresh tokens are explicitly allowed (M1)", () => {
+    const valid = JSON.stringify({ v: 1, accessToken: "tok", accessExpiresAt: null, scope: "read" });
+    expect(readTokenBlob(valid)).toEqual({ v: 1, accessToken: "tok", accessExpiresAt: null, scope: "read" });
+    const serviceAccount = JSON.stringify({ client_email: "sa@proj.iam.gserviceaccount.com", private_key: "PRIVATE-KEY-SECRET" });
+    expect(() => readTokenBlob(serviceAccount)).toThrow();
+    expect(() => readTokenBlob("xoxb-pasted-bot-token")).toThrow();
+    expect(readTokenBlob("legacy-outlook-refresh", { allowBare: true })).toEqual({
+      v: 1,
+      accessToken: "",
+      accessExpiresAt: 0,
+      refreshToken: "legacy-outlook-refresh",
+      scope: "",
+    });
+  });
+
+  it("does not refresh, send to the token endpoint, or fail a pasted credential that replaced an OAuth grant (M1)", async () => {
+    const ws = await newUser();
+    await stale(ws);
+    const staleHeld = await held(ws);
+    const pastedCredential = JSON.stringify({ key: "pasted-key", token: "PASTED-SECRET-TOKEN" });
+    await saveConnection(db, key, ws, def.provider, { account: "pasted@test.example", credential: pastedCredential });
+    const pastedBefore = await row(ws);
+    expect(pastedBefore.authMethod).toBe("token");
+
+    // Stale worker holding the pre-replacement OAuth credential attempts refresh.
+    await expect(freshToken(db, key, urls, ws, def, staleHeld, { force: true })).rejects.toMatchObject({ kind: "auth" });
+    expect(app().tokenCalls).toBe(0);
+    expect(await row(ws)).toMatchObject({
+      status: "active",
+      authMethod: "token",
+      lastError: null,
+      credentialIv: pastedBefore.credentialIv,
+    });
+    expect((await held(ws)).credential).toBe(pastedCredential);
+
+    // Keepalive sweep ignores pasted credentials even when old (clear leftover due rows from earlier tests first).
+    await db.update(connections).set({ refreshedAt: new Date() }).where(and(eq(connections.provider, def.provider), eq(connections.authMethod, "oauth")));
+    await db.update(connections).set({ updatedAt: sql`now() - interval '60 days'` }).where(and(eq(connections.userId, ws), eq(connections.provider, def.provider)));
+    expect(await keepOAuthAlive(db, key, urls, [def])).toBe(0);
+    expect(app().tokenCalls).toBe(0);
+    expect(await row(ws)).toMatchObject({ status: "active", authMethod: "token", lastError: null });
+
+    // Keepalive race: OAuth connection is due, then replaced with a pasted credential before refreshLocked acquires the lock.
+    const ws2 = await newUser();
+    await consent(ws2);
+    await db.update(connections).set({ refreshedAt: sql`now() - interval '60 days'` }).where(and(eq(connections.userId, ws2), eq(connections.provider, def.provider)));
+    const oauthBefore = await row(ws2);
+    const ws3 = await newUser();
+    await consent(ws3);
+    await db.update(connections).set({ refreshedAt: sql`now() - interval '61 days'` }).where(and(eq(connections.userId, ws3), eq(connections.provider, def.provider)));
+    app().tokenCalls = 0;
+    let release!: () => void;
+    fake.once("/oauth/test/token", { heldUntil: new Promise<void>((r) => (release = r)) });
+    const sweeping = keepOAuthAlive(db, key, urls, [def]);
+    for (let i = 0; i < 300 && app().tokenCalls === 0; i++) await new Promise((r) => setTimeout(r, 10));
+    // While ws3 (older) is refreshing, ws2 (already in the keepalive due batch) is replaced with a pasted credential.
+    await saveConnection(db, key, ws2, def.provider, { account: "pasted2@test.example", credential: pastedCredential });
+    const pasted2 = await row(ws2);
+    expect(pasted2.credentialIv).not.toBe(oauthBefore.credentialIv);
+    release();
+    expect(await sweeping).toBe(1); // only ws3 refreshed
+    expect(app().tokenCalls).toBe(1); // ws2's pasted credential was never sent to the token endpoint
+    expect(await row(ws2)).toMatchObject({ status: "active", authMethod: "token", lastError: null, credentialIv: pasted2.credentialIv });
   });
 });
 

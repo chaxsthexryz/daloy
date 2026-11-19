@@ -91,13 +91,15 @@ export async function insertPayment(db: Db, v: { userId: string; workflowId: str
   await db.insert(payments).values(v).onConflictDoNothing({ target: [payments.runId, payments.stepId] });
   // A paid event that arrived before this row was kept (decision 0056).
   // shortcut: listener runs are not started on this path because Daloy only hands out the checkout URL after the row is stored, so a paid event cannot normally arrive first, upgrade if a link can reach a buyer earlier.
-  const kept = await keptEvent(db, v.userId, "checkout_session.payment.paid", "sessionId", v.providerSessionId);
+  const kept = await keptEvent(db, v.userId, "checkout_session.payment.paid", "sessionId", v.providerSessionId, v.livemode);
   const k = kept?.payload as { paymentId: string; amount: number; currency: string; livemode: boolean } | undefined;
   // Only an event verified in this payment's mode settles it.
   if (kept && k?.livemode === v.livemode) {
     await markPaymentPaid(db, { userId: v.userId, sessionId: v.providerSessionId, paymentId: k.paymentId, amount: k.amount, currency: k.currency, livemode: v.livemode });
-    const refund = await keptEvent(db, v.userId, "payment.refunded", "paymentId", k.paymentId);
-    if (refund) await markPaymentRefunded(db, { userId: v.userId, providerPaymentId: k.paymentId, livemode: v.livemode }).then(() => finishEvent(db, v.userId, refund.eventId));
+    const refund = await keptEvent(db, v.userId, "payment.refunded", "paymentId", k.paymentId, v.livemode);
+    if (refund && (refund.payload as { livemode?: boolean } | null)?.livemode === v.livemode) {
+      await markPaymentRefunded(db, { userId: v.userId, providerPaymentId: k.paymentId, livemode: v.livemode }).then(() => finishEvent(db, v.userId, refund.eventId));
+    }
     await finishEvent(db, v.userId, kept.eventId);
   }
   return (await findPaymentForStep(db, v.runId, v.stepId))!;
@@ -135,12 +137,20 @@ export async function recordEvent(db: Db, v: { eventId: string; userId: string; 
   return (await db.insert(paymongoEvents).values(v).onConflictDoNothing().returning()).length > 0;
 }
 
-/** A kept event of this type whose payload field (sessionId or paymentId) is value. */
-export async function keptEvent(db: Db, userId: string, type: string, field: "sessionId" | "paymentId", value: string) {
+/** A kept event of this type whose payload field (sessionId or paymentId) is value, optionally restricted to one livemode. */
+export async function keptEvent(db: Db, userId: string, type: string, field: "sessionId" | "paymentId", value: string, livemode?: boolean) {
   const [row] = await db
     .select()
     .from(paymongoEvents)
-    .where(and(eq(paymongoEvents.userId, userId), eq(paymongoEvents.type, type), eq(paymongoEvents.state, "kept"), sql`${paymongoEvents.payload}->>${field} = ${value}`));
+    .where(
+      and(
+        eq(paymongoEvents.userId, userId),
+        eq(paymongoEvents.type, type),
+        eq(paymongoEvents.state, "kept"),
+        sql`${paymongoEvents.payload}->>${field} = ${value}`,
+        livemode === undefined ? undefined : sql`${paymongoEvents.payload}->'livemode' = ${JSON.stringify(livemode)}::jsonb`,
+      ),
+    );
   return row;
 }
 

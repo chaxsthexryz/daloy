@@ -50,7 +50,7 @@ const live = (token: string) => and(eq(approvals.tokenHash, hashToken(token)), i
  * The waiting step's stored input (it holds the message to show) and the named approver (null for a link-holder
  * approval), or null when the link is unknown, used or expired.
  */
-export async function findPendingApproval(db: AnyDb, token: string): Promise<{ input: unknown; approverId: string | null; workspaceId: string } | null> {
+export async function findPendingApproval(db: Pick<AnyDb, "select">, token: string): Promise<{ input: unknown; approverId: string | null; workspaceId: string } | null> {
   const [row] = await db
     .select({ input: stepRuns.input, approverId: approvals.approverId, workspaceId: workflows.userId })
     .from(approvals)

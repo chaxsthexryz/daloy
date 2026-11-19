@@ -14,7 +14,7 @@ export async function sharedGrants(db: Db, workspaceId: string): Promise<string[
       select user_id, provider as app, external_id, case when provider like 'google\_%' then 'google' else provider end as family
         from connections where auth_method = 'oauth' and external_id is not null
       union all
-      select user_id, 'gmail', external_id, 'google' from mail_senders where auth_method = 'oauth' and external_id is not null
+      select user_id, 'gmail', external_id, 'google' from mail_senders where auth_method = 'oauth' and external_id is not null and status <> 'disconnected' and password_ciphertext is not null
     )
     select distinct mine.app from grants mine
       join grants other on other.family = mine.family and other.external_id = mine.external_id and not (other.user_id = mine.user_id and other.app = mine.app)

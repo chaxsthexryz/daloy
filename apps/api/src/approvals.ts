@@ -47,11 +47,21 @@ export class ApprovalsController {
   @Header("Content-Type", "text/html; charset=utf-8")
   @Header("Cache-Control", "no-store")
   async show(@Param("token", token) value: string, @Req() req: Request, @Res({ passthrough: true }) res: Response) {
-    const pending = await findPendingApproval(this.db, value);
-    if (!pending) {
+    // One REPEATABLE READ snapshot for both the approval input and retired secrets, so a concurrent purge cannot remove a retired secret between the two reads.
+    const snapshot = await this.db.transaction(
+      async (tx) => {
+        const pending = await findPendingApproval(tx, value);
+        if (!pending) return null;
+        const hide = await historyHider(tx, this.config.secretsKey, pending.workspaceId);
+        return { pending, hide };
+      },
+      { isolationLevel: "repeatable read", accessMode: "read only" },
+    );
+    if (!snapshot) {
       res.status(404);
       return GONE;
     }
+    const { pending, hide } = snapshot;
     const access = await this.access(pending, value, req);
     if (!access.ok) {
       res.status(access.status);
@@ -59,7 +69,6 @@ export class ApprovalsController {
     }
     const language = await workspaceLanguage(this.db, pending.workspaceId);
     const copy = publicCopy[language];
-    const hide = await historyHider(this.db, this.config.secretsKey, pending.workspaceId);
     const input = hide(pending.input) as { message?: unknown } | null;
     const message = String(input?.message ?? "");
     const who = access.user ? `<p class="muted">${copy.signedIn} ${escapeHtml(access.user.email)}</p>` : "";
