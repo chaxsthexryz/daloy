@@ -2,6 +2,8 @@
 
 The automated tests never contact Google or Slack. They use `test/fake-providers.ts`, a local server that checks the service account's JWT signature, keeps sheets and channels in memory, and can answer with 401, 403, 429, a revoked token, or a timeout after accepting a write. This page is the separate check against real accounts. Run it by hand with accounts you control.
 
+For Connect Slack (the OAuth install), see [live Slack install check](live-slack-oauth-check.md). This page covers the pasted bot token.
+
 Status: not run yet. Record the date, the Daloy commit and what you saw at the end of this file when you do.
 
 ## Before you start

@@ -288,7 +288,7 @@ export function CalendarConnection({ conn, onChange }: { conn: Connection | null
   );
 }
 
-export function SlackConnection({ conn, onChange }: { conn: Connection | null; onChange: () => Promise<unknown> }) {
+export function SlackConnection({ conn, configured, outcome, onChange }: { conn: Connection | null; configured: boolean; outcome?: string; onChange: () => Promise<unknown> }) {
   const { t } = useLanguage();
   const { error, busy, act } = useAction(onChange);
   const [token, setToken] = useState("");
@@ -307,76 +307,118 @@ export function SlackConnection({ conn, onChange }: { conn: Connection | null; o
   };
   const chosen = channels?.find((c) => c.id === channelId);
 
+  // The same pieces serve both layouts: with a Slack app on this installation (Connect Slack, the token under Advanced)
+  // and without one (the token form is the card, as before decision 0061).
+  const note = conn?.destination && (
+    <p>{t("Notes go to ")}<strong>#{conn.destination.channelName}</strong>{t(". They carry the reference and subject only: names and emails stay in Daloy.")}</p>
+  );
+  const channelButtons = (
+    <>
+      <button type="button" disabled={busy} onClick={() => void loadChannels()}>
+        {conn?.destination ? t("Change channel") : t("Pick a channel")}
+      </button>
+      {conn?.destination && (
+        <button type="button" disabled={busy} onClick={() => void act(async () => setTest(await api<TestResult>("POST", "/settings/connections/slack/test")))}>{t("Send a test message")}</button>
+      )}
+    </>
+  );
+  const picker = channels && (
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        void act(async () => {
+          await api("PUT", "/settings/connections/slack/channel", { channelId });
+          setChannels(null);
+        });
+      }}
+    >
+      <div className="field">
+        <label htmlFor="sl-channel">{t("Channel")}</label>
+        <select id="sl-channel" value={channelId} onChange={(e) => setChannelId(e.target.value)} required>
+          <option value="">{t("Choose a public channel")}</option>
+          {channels.map((c) => (
+            <option key={c.id} value={c.id}>
+              #{c.name}
+            </option>
+          ))}
+        </select>
+      </div>
+      {chosen && !chosen.isMember && <p className="muted">{t("The app is not in #")}{chosen.name}{t(" yet. Type /invite and the app's name in that channel, or posts will fail.")}</p>}
+      <div className="actions">
+        <button type="submit" className="primary" disabled={busy}>{t("Save channel")}</button>
+      </div>
+    </form>
+  );
+  const tokenForm = (
+    <form onSubmit={save}>
+      <p>{t("Create a Slack app for your workspace with the bot scopes ")}<code>chat:write</code>{t(" and ")}<code>channels:read</code>{t(", install it (your workspace may need an admin to approve it), and paste its Bot User OAuth Token.")}{" "}
+        <a href={SLACK_APP_HELP} target="_blank" rel="noreferrer">{t("How to create a Slack app")}</a>
+      </p>
+      <div className="field">
+        <label htmlFor="sl-token">{t("Bot token")}</label>
+        <input id="sl-token" type="password" value={token} onChange={(e) => setToken(e.target.value)} required placeholder="xoxb-…" autoComplete="off" />
+      </div>
+      <div className="actions">
+        <button type="submit" className="primary" disabled={busy}>
+          {conn || configured ? t("Save token") : t("Connect Slack")}
+        </button>
+        {conn && !configured && (
+          <button type="button" className="quiet" onClick={() => setEditing(false)}>{t("Cancel")}</button>
+        )}
+      </div>
+    </form>
+  );
+  const result = <Outcome test={test} what={t("Slack accepted a test message")} />;
+
+  if (configured) {
+    return (
+      <ConnectPanel
+        slug="slack"
+        name="Slack"
+        configured
+        conn={conn}
+        label="Workspace"
+        outcome={outcome}
+        onChange={onChange}
+        advancedLabel="Advanced: use your own Slack app token"
+        removeHint="Daloy deleted its access to Slack. Slack did not confirm that it removed the Daloy app, so also remove it in Slack under Manage apps."
+        intro={<p>{t("Slack will ask you to let Daloy post messages (chat:write) and list the public channels (channels:read) in your workspace. Daloy asks for nothing else. Your workspace may need an admin to approve the app.")}</p>}
+        actions={channelButtons}
+        after={
+          <>
+            {picker}
+            {result}
+            <p role="alert" className="message error" hidden={!error}>
+              {error}
+            </p>
+          </>
+        }
+        form={tokenForm}
+      >
+        {note}
+      </ConnectPanel>
+    );
+  }
+
   return (
     <div className="connection" aria-labelledby="slack-h">
       <h3 id="slack-h">Slack</h3>
       {conn && <Status conn={conn} label={t("Workspace")} />}
-      {conn?.destination && (
-        <p>{t("Notes go to ")}<strong>#{conn.destination.channelName}</strong>{t(". They carry the reference and subject only: names and emails stay in Daloy.")}</p>
-      )}
+      {note}
       {conn && (
         <>
           <div className="actions">
-            <button type="button" disabled={busy} onClick={() => void loadChannels()}>
-              {conn.destination ? t("Change channel") : t("Pick a channel")}
-            </button>
-            {conn.destination && (
-              <button type="button" disabled={busy} onClick={() => void act(async () => setTest(await api<TestResult>("POST", "/settings/connections/slack/test")))}>{t("Send a test message")}</button>
-            )}
+            {channelButtons}
             {!editing && (
               <button type="button" className="quiet" onClick={() => setEditing(true)}>{t("Replace token")}</button>
             )}
             <button type="button" className="quiet" disabled={busy} onClick={() => window.confirm(t("Disconnect Slack? Automations stop sending there until you reconnect.")) && void act(() => api("DELETE", "/settings/connections/slack"))}>{t("Disconnect")}</button>
           </div>
-          {channels && (
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                void act(async () => {
-                  await api("PUT", "/settings/connections/slack/channel", { channelId });
-                  setChannels(null);
-                });
-              }}
-            >
-              <div className="field">
-                <label htmlFor="sl-channel">{t("Channel")}</label>
-                <select id="sl-channel" value={channelId} onChange={(e) => setChannelId(e.target.value)} required>
-                  <option value="">{t("Choose a public channel")}</option>
-                  {channels.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      #{c.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              {chosen && !chosen.isMember && <p className="muted">{t("The app is not in #")}{chosen.name}{t(" yet. Type /invite and the app's name in that channel, or posts will fail.")}</p>}
-              <div className="actions">
-                <button type="submit" className="primary" disabled={busy}>{t("Save channel")}</button>
-              </div>
-            </form>
-          )}
+          {picker}
         </>
       )}
-      <Outcome test={test} what={t("Slack accepted a test message")} />
-      {(!conn || editing) && (
-        <form onSubmit={save}>
-          <p>{t("Create a Slack app for your workspace with the bot scopes ")}<code>chat:write</code>{t(" and ")}<code>channels:read</code>{t(", install it (your workspace may need an admin to approve it), and paste its Bot User OAuth Token.")}{" "}
-            <a href={SLACK_APP_HELP} target="_blank" rel="noreferrer">{t("How to create a Slack app")}</a>
-          </p>
-          <div className="field">
-            <label htmlFor="sl-token">{t("Bot token")}</label>
-            <input id="sl-token" type="password" value={token} onChange={(e) => setToken(e.target.value)} required placeholder="xoxb-…" autoComplete="off" />
-          </div>
-          <div className="actions">
-            <button type="submit" className="primary" disabled={busy}>
-              {conn ? t("Save token") : t("Connect Slack")}
-            </button>
-            {conn && (
-              <button type="button" className="quiet" onClick={() => setEditing(false)}>{t("Cancel")}</button>
-            )}
-          </div>
-        </form>
-      )}
+      {result}
+      {(!conn || editing) && tokenForm}
       <p role="alert" className="message error" hidden={!error}>
         {error}
       </p>

@@ -33,6 +33,7 @@ import {
   setDestination,
   sheetInfo,
   slackChannels,
+  slackToken,
   slackIdentity,
   slackPost,
   airtableCheck,
@@ -335,14 +336,14 @@ export class ConnectionsController {
   @UseGuards(RateLimit(20))
   async channels(@CurrentUser() user: SessionUser) {
     const conn = await this.connection(user.workspaceId, "slack");
-    return slackChannels(this.urls, conn.credential).catch(asBadRequest);
+    return slackChannels(this.urls, slackToken(conn)).catch(asBadRequest);
   }
 
   @Put("slack/channel")
   @HttpCode(204)
   async putChannel(@CurrentUser() user: SessionUser, @Body(new ZodPipe(channelInput)) body: z.output<typeof channelInput>) {
     const conn = await this.connection(user.workspaceId, "slack");
-    const channel = (await slackChannels(this.urls, conn.credential).catch(asBadRequest)).find((c) => c.id === body.channelId);
+    const channel = (await slackChannels(this.urls, slackToken(conn)).catch(asBadRequest)).find((c) => c.id === body.channelId);
     if (!channel) throw new BadRequestException("That channel is not in the list. Refresh the channel list and pick again.");
     await setDestination(this.db, user.workspaceId, "slack", { channelId: channel.id, channelName: channel.name });
   }
@@ -352,7 +353,7 @@ export class ConnectionsController {
   @UseGuards(RateLimit(5))
   async testSlack(@CurrentUser() user: SessionUser) {
     const conn = await this.connection(user.workspaceId, "slack");
-    return this.test(user.workspaceId, "slack", conn, () => slackPost(this.urls, conn.credential, conn.destination!.channelId!, "Test message from Daloy. Office requests will be posted here."));
+    return this.test(user.workspaceId, "slack", conn, () => slackPost(this.urls, slackToken(conn), conn.destination!.channelId!, "Test message from Daloy. Office requests will be posted here."));
   }
 
   /** Connect or Reconnect Outlook, from before the shared start route (decision 0058): the same flow as outlook/oauth/start. */

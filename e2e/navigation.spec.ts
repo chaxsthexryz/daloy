@@ -115,7 +115,10 @@ test("Apps lists each app as a card, and Connect opens that app's own setup", as
   await page.getByLabel("Find an app").fill("sla");
   await expect(more.getByRole("listitem")).toHaveCount(1);
   await page.getByRole("button", { name: "Connect Slack" }).click();
-  await expect(page.getByRole("region", { name: "Slack setup" }).getByLabel("Bot token")).toBeVisible();
+  const slackSetup = page.getByRole("region", { name: "Slack setup" });
+  await expect(slackSetup.getByRole("button", { name: "Connect Slack" })).toBeVisible();
+  await slackSetup.getByText("Advanced: use your own Slack app token").click();
+  await expect(slackSetup.getByLabel("Bot token")).toBeVisible();
   await expect(page.getByRole("button", { name: "Close Slack" })).toHaveAttribute("aria-expanded", "true");
   await page.getByRole("button", { name: "Connected 0" }).click();
   await expect(page.getByText("Nothing is connected yet.")).toBeVisible();

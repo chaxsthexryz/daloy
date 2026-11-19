@@ -70,6 +70,8 @@ export function ConnectPanel(p: {
   form?: ReactNode;
   /** Shown instead when the app has no client and no paste form. */
   unavailable?: ReactNode;
+  /** The disclosure's title for the paste form. Default: Advanced: use a key or token instead. */
+  advancedLabel?: string;
   /** After Disconnect, when the provider did not confirm it removed Daloy's access. */
   removeHint?: string;
   onChange: () => Promise<unknown>;
@@ -118,7 +120,7 @@ export function ConnectPanel(p: {
           {removed && !p.conn && <p role="status">{t(p.removeHint ?? "Daloy deleted its access to {app}. {app} did not confirm that it removed Daloy, so remove Daloy in your {app} account settings too.", { app: p.name })}</p>}
           {p.form && (
             <details>
-              <summary>{t("Advanced: use a key or token instead")}</summary>
+              <summary>{t(p.advancedLabel ?? "Advanced: use a key or token instead")}</summary>
               {p.form}
             </details>
           )}

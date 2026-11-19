@@ -126,6 +126,10 @@ export default async function setup() {
     MICROSOFT_CLIENT_SECRET: providers.microsoft.clientSecret,
     MICROSOFT_LOGIN_URL: providers.urls.microsoftLogin,
     MICROSOFT_GRAPH_URL: providers.urls.graph,
+    // "Connect Slack" against the fake install (decision 0061). OAUTH_ENV is required once a managed client is set.
+    OAUTH_ENV: "development",
+    SLACK_CLIENT_ID: providers.oauth.v2!.clientId,
+    SLACK_CLIENT_SECRET: providers.oauth.v2!.clientSecret,
     TEAMS_WEBHOOK_HOSTS: "127.0.0.1",
     // Every spec signs up from 127.0.0.1.
     REGISTER_LIMIT_PER_HOUR: "1000",
