@@ -51,8 +51,9 @@ export async function connectionCredential(db: Db, key: Buffer, userId: string, 
   return { credential, status: row.status, account: row.account, destination: row.destination, revision: row.credentialIv, authMethod: row.authMethod, externalId: row.externalId };
 }
 
-export async function setDestination(db: Db, userId: string, provider: Provider, destination: Record<string, string>) {
-  await db.update(connections).set({ destination, updatedAt: new Date() }).where(and(eq(connections.userId, userId), eq(connections.provider, provider)));
+export async function setDestination(db: Db, userId: string, provider: Provider, destination: Record<string, string>, revision?: string) {
+  const changed = await db.update(connections).set({ destination, updatedAt: new Date() }).where(and(eq(connections.userId, userId), eq(connections.provider, provider), revision ? eq(connections.credentialIv, revision) : undefined)).returning({ userId: connections.userId });
+  return changed.length === 1;
 }
 
 /**

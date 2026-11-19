@@ -1,7 +1,8 @@
 import { useLanguage } from "./Language";
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { api } from "./api";
 import { ConnectPanel, Status, useAction } from "./ConnectPanel";
+import { RecordTargetPicker } from "./RecordTargetPicker";
 
 export type Provider = "google_sheets" | "slack" | "outlook" | "teams" | "telegram" | "google_calendar" | "google_drive" | "paymongo" | "airtable" | "notion" | "trello";
 export type Connection = { provider: Provider; status: "active" | "failed"; authMethod?: "token" | "service_account" | "oauth" | "webhook_url"; account: string; destination: Record<string, string> | null; lastError: string | null; lastTestedAt: string | null };
@@ -800,7 +801,7 @@ const RECORD_APPS: Record<"airtable" | "notion" | "trello", RecordApp> = {
       { key: "baseId", label: "Base id", placeholder: "app…" },
       { key: "tableId", label: "Table id", placeholder: "tbl…" },
     ],
-    goesTo: (d) => d.tableId ?? "",
+    goesTo: (d) => d.tableName ?? d.tableId ?? "",
     testButton: "Check the connection",
     testOk: "Airtable can read that table",
   },
@@ -833,13 +834,16 @@ const RECORD_APPS: Record<"airtable" | "notion" | "trello", RecordApp> = {
   },
 };
 
-export function RecordConnection({ app, conn, onChange }: { app: keyof typeof RECORD_APPS; conn: Connection | null; onChange: () => Promise<unknown> }) {
+export function RecordConnection({ app, conn, configured = false, outcome, onChange }: { app: keyof typeof RECORD_APPS; conn: Connection | null; configured?: boolean; outcome?: string; onChange: () => Promise<unknown> }) {
   const { t } = useLanguage();
   const cfg = RECORD_APPS[app];
   const { error, busy, act } = useAction(onChange);
   const [editing, setEditing] = useState(false);
+  const [pickerBusy, setPickerBusy] = useState(false);
   const [test, setTest] = useState<TestResult | null>(null);
   const [form, setForm] = useState<Record<string, string>>({});
+  const destinationKey = JSON.stringify(conn?.destination);
+  useEffect(() => setTest(null), [app, conn?.account, conn?.authMethod, destinationKey]);
   const save = (e: FormEvent) => {
     e.preventDefault();
     void act(async () => {
@@ -850,16 +854,14 @@ export function RecordConnection({ app, conn, onChange }: { app: keyof typeof RE
     });
   };
 
-  return (
-    <div className="connection" aria-busy={busy} aria-labelledby={`${app}-h`}>
-      <h3 id={`${app}-h`}>{cfg.name}</h3>
-      {conn && <Status conn={conn} label={t("Account")} />}
-      {conn?.destination && (
+  const pasteForm = <>
+      {!configured && conn && <Status conn={conn} label={t("Account")} />}
+      {!configured && conn?.destination && (
         <p>
           {t("Entries are added to")} <strong>{cfg.goesTo(conn.destination)}</strong>.
         </p>
       )}
-      {conn && (
+      {!configured && conn && (
         <div className="actions">
           <button type="button" disabled={busy} onClick={() => void act(async () => setTest(await api<TestResult>("POST", `/settings/connections/${app}/test`)))}>
             {t(cfg.testButton)}
@@ -874,9 +876,10 @@ export function RecordConnection({ app, conn, onChange }: { app: keyof typeof RE
           </button>
         </div>
       )}
-      <Outcome test={test} what={t(cfg.testOk)} />
-      {(!conn || editing) && (
+      {!configured && <Outcome test={test} what={t(cfg.testOk)} />}
+      {(configured || !conn || editing) && (
         <form onSubmit={save}>
+          <fieldset disabled={busy || pickerBusy}>
           <p>
             {t(cfg.help)}{" "}
             <a href={cfg.helpUrl} target="_blank" rel="noreferrer">
@@ -899,11 +902,20 @@ export function RecordConnection({ app, conn, onChange }: { app: keyof typeof RE
               </button>
             )}
           </div>
+          </fieldset>
         </form>
       )}
       <p role="alert" className="message error" hidden={!error}>
         {error}
       </p>
-    </div>
-  );
+  </>;
+  return <ConnectPanel slug={app} name={cfg.name} configured={configured} conn={conn} label="Account" outcome={outcome} onChange={onChange} disabled={busy || pickerBusy}
+    form={pasteForm}
+    intro={<p>{t(app === "airtable" ? "Allow Daloy to add records to the bases you select. After connecting, pick a base and table." : app === "notion" ? "On Notion's consent screen, select the pages that contain your database. After connecting, pick a shared database." : "Allow Daloy to read your boards and add cards. After connecting, pick a board and list.")}</p>}
+    actions={conn?.destination && <button type="button" disabled={busy || pickerBusy} onClick={() => void act(async () => setTest(await api<TestResult>("POST", `/settings/connections/${app}/test`)))}>{t(cfg.testButton)}</button>}
+    after={<><Outcome test={test} what={t(cfg.testOk)} /><p role="alert" className="message error" hidden={!error}>{error}</p></>}
+  >
+    {conn?.destination && <p>{t("Entries are added to")} <strong>{cfg.goesTo(conn.destination)}</strong>.</p>}
+    {conn?.authMethod === "oauth" && <RecordTargetPicker disabled={busy} hasDestination={!!conn.destination} key={`${app}:${conn.account}:${JSON.stringify(conn.destination)}`} app={app} onChange={onChange} onBusy={setPickerBusy} />}
+  </ConnectPanel>;
 }

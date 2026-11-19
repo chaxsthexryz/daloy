@@ -14,6 +14,9 @@ describe("scope manifest", () => {
       // Decision 0064: only calendars Daloy creates. calendar.events and calendar.calendarlist.readonly are not asked for.
       "google-calendar": { scopes: ["openid", "email", "https://www.googleapis.com/auth/calendar.app.created"], required: ["https://www.googleapis.com/auth/calendar.app.created"], pkce: true },
       slack: { scopes: ["chat:write", "channels:read"], required: ["chat:write", "channels:read"], pkce: false },
+      airtable: { scopes: ["data.records:write", "schema.bases:read"], required: ["data.records:write", "schema.bases:read"], pkce: true },
+      notion: { scopes: [], required: [], pkce: false },
+      trello: { scopes: ["offline_access", "read:member:trello", "read:board:trello", "write:board:trello"], required: ["read:member:trello", "read:board:trello", "write:board:trello"], pkce: true },
     });
     // Decision 0060: Google scopes per feature live in one table.
     expect(GOOGLE_FEATURE_SCOPES).toEqual({ sheets: ["https://www.googleapis.com/auth/drive.file"], drive: ["https://www.googleapis.com/auth/drive.file"], gmail: ["https://www.googleapis.com/auth/gmail.send"], calendar: ["https://www.googleapis.com/auth/calendar.app.created"] });

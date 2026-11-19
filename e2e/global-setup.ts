@@ -105,6 +105,7 @@ export default async function setup() {
   // Fake Microsoft sign-in, Graph and Teams Workflows (roadmap phase 5). The flow URL is what Teams would show.
   process.env.E2E_TEAMS_URL = providers.teamsUrl("flow-purchasing");
 
+  const clients = providers.recordClients();
   const env = {
     DATABASE_URL: url,
     SECRETS_KEY: randomBytes(32).toString("base64"),
@@ -113,6 +114,7 @@ export default async function setup() {
     SMTP_HOST: "127.0.0.1",
     SMTP_PORT: String(SMTP_PORT),
     PUBLIC_URL: `http://localhost:${E2E_PORT}`,
+    OAUTH_ENV: "development",
     // The fake model, so AI drafts work without Ollama. AI steps in e2e test runs are mocked anyway.
     LLM_PROVIDER: "ollama",
     // The fake model accepts images, so an AI step may be given form files.
@@ -126,8 +128,16 @@ export default async function setup() {
     TELEGRAM_API_URL: providers.urls.telegram,
     PAYMONGO_API_URL: providers.urls.paymongo,
     AIRTABLE_API_URL: providers.urls.airtable,
+    AIRTABLE_LOGIN_URL: providers.urls.airtableLogin,
+    AIRTABLE_CLIENT_ID: clients.airtableClient.clientId,
+    AIRTABLE_CLIENT_SECRET: clients.airtableClient.clientSecret,
     NOTION_API_URL: providers.urls.notion,
+    NOTION_CLIENT_ID: clients.notionClient.clientId,
+    NOTION_CLIENT_SECRET: clients.notionClient.clientSecret,
     TRELLO_API_URL: providers.urls.trello,
+    TRELLO_LOGIN_URL: providers.urls.trelloLogin,
+    TRELLO_CLIENT_ID: clients.trelloClient.clientId,
+    TRELLO_CLIENT_SECRET: clients.trelloClient.clientSecret,
     MICROSOFT_CLIENT_ID: providers.microsoft.clientId,
     MICROSOFT_CLIENT_SECRET: providers.microsoft.clientSecret,
     MICROSOFT_LOGIN_URL: providers.urls.microsoftLogin,

@@ -747,3 +747,13 @@ What the owner sees: "Cancel run" on a run that is pending or waiting on a delay
 How: `cancelRun` is one guarded UPDATE. It also closes the waiting step as not sent and expires the run's open approval links, so an approval email already sent cannot confirm anything. If a worker wakes the run at the same moment, exactly one of the two writes wins; the worker stands down without an error.
 
 Tests: `packages/db/src/cancel.test.ts`, `apps/worker/src/cancel.test.ts` (the later wake-up, the race), `apps/api/src/run-controls.test.ts` (roles, 409 messages), `e2e/run-controls.spec.ts`.
+
+## Record app OAuth and destination pickers
+
+Airtable, Notion and Trello use the shared OAuth core (decisions 0058 and 0062). A workspace manager connects the account, then picks an Airtable base and table, a Notion database, or a Trello board and list. Notion only lists databases available to the integration after the user shares pages in the consent screen. Daloy reads the chosen database's title property for page creation. The existing pasted credential forms remain available.
+
+The picker endpoints require a manager session and an OAuth connection. They use that workspace's credential, validate IDs, and read the provider's lists again before saving a target. Child list reads check the parent, and a target save is rejected if the credential changed during the picker operation. An Airtable OAuth target uses a table ID, closing M16 for this path only. A changed target can hold a queued delivery for review under the existing delivery rules. Provider permission can change after a list is read; the eventual delivery can still fail.
+
+Airtable asks for `data.records:write` and `schema.bases:read`, Notion uses integration capabilities and shared content, and Trello asks for `offline_access`, `read:member:trello`, `read:board:trello` and `write:board:trello`. Trello's member scope includes access to email and memberships, although Daloy asks its member endpoint for the username. See the [Trello scope table](https://developer.atlassian.com/cloud/trello/guides/rest-api/oauth-2-client-configuration/). Refresh uses the shared core. Disconnect removes the local connection; provider revocation differs by app and must not be assumed to succeed.
+
+Automated coverage includes `packages/db/src/oauth/records.test.ts` for consent URL and scope definitions. Tests against fakes do not establish real provider behavior. The owner-run [live check](live-records-oauth-check.md) remains unverified.

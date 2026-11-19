@@ -38,6 +38,12 @@ export type ProviderUrls = {
   trello: string;
   microsoftLogin?: string;
   graph?: string;
+  /** Sign-in hosts and the installation's own OAuth clients for Airtable, Notion and Trello (decision 0062). Notion signs in on its API host. Unset client: the paste form stays. */
+  airtableLogin?: string;
+  trelloLogin?: string;
+  airtableClient?: { clientId: string; clientSecret: string };
+  notionClient?: { clientId: string; clientSecret: string };
+  trelloClient?: { clientId: string; clientSecret: string };
   /** Host suffixes a Teams Workflows URL may use. 127.0.0.1 (tests only) is the one host allowed over http. */
   teamsHosts?: string[];
   /** The installation's own Microsoft Entra app, for Outlook consent. Unset: Outlook is not offered (decision 0023). */
@@ -63,6 +69,11 @@ export const providerUrls = (env: NodeJS.ProcessEnv = process.env): ProviderUrls
   airtable: trim(env.AIRTABLE_API_URL ?? "https://api.airtable.com"),
   notion: trim(env.NOTION_API_URL ?? "https://api.notion.com"),
   trello: trim(env.TRELLO_API_URL ?? "https://api.trello.com"),
+  airtableLogin: trim(env.AIRTABLE_LOGIN_URL ?? "https://airtable.com"),
+  trelloLogin: trim(env.TRELLO_LOGIN_URL ?? "https://auth.atlassian.com"),
+  airtableClient: env.AIRTABLE_CLIENT_ID && env.AIRTABLE_CLIENT_SECRET ? { clientId: env.AIRTABLE_CLIENT_ID, clientSecret: env.AIRTABLE_CLIENT_SECRET } : undefined,
+  notionClient: env.NOTION_CLIENT_ID && env.NOTION_CLIENT_SECRET ? { clientId: env.NOTION_CLIENT_ID, clientSecret: env.NOTION_CLIENT_SECRET } : undefined,
+  trelloClient: env.TRELLO_CLIENT_ID && env.TRELLO_CLIENT_SECRET ? { clientId: env.TRELLO_CLIENT_ID, clientSecret: env.TRELLO_CLIENT_SECRET } : undefined,
   microsoftLogin: trim(env.MICROSOFT_LOGIN_URL ?? "https://login.microsoftonline.com"),
   graph: trim(env.MICROSOFT_GRAPH_URL ?? "https://graph.microsoft.com"),
   gmail: trim(env.GMAIL_API_URL ?? "https://gmail.googleapis.com"),
@@ -559,10 +570,10 @@ function recordFailure(res: Reply, what: string, write: boolean, defaultWaitMs: 
   throw new ProviderError(`${what} refused the request. Check that the field and property names match.`, "invalid");
 }
 
-const enc = encodeURIComponent;
+export const enc = encodeURIComponent;
 
 // Airtable: 5 requests a second per base, and a 429 means wait 30 seconds.
-async function airtableCall(urls: ProviderUrls, token: string, method: "GET" | "POST", path: string, body?: object) {
+export async function airtableCall(urls: ProviderUrls, token: string, method: "GET" | "POST", path: string, body?: object) {
   const res = await call(`${urls.airtable}/v0/${path}`, { method, headers: { authorization: `Bearer ${token}`, "content-type": "application/json" }, body: body && JSON.stringify(body) }, urls.timeoutMs ?? 10_000, method === "POST", "Airtable");
   if (res.status === 200) return res.body;
   return recordFailure(res, "Airtable", method === "POST", 30_000);
@@ -581,15 +592,16 @@ export async function airtableAdd(urls: ProviderUrls, token: string, dest: { bas
 }
 
 // Notion: about 3 requests a second, 429 and 529 carry Retry-After. Pinned to an API version whose database object lists its properties.
-const NOTION_VERSION = "2022-06-28";
-async function notionCall(urls: ProviderUrls, token: string, method: "GET" | "POST", path: string, body?: object) {
-  const res = await call(`${urls.notion}/v1/${path}`, { method, headers: { authorization: `Bearer ${token}`, "notion-version": NOTION_VERSION, "content-type": "application/json" }, body: body && JSON.stringify(body) }, urls.timeoutMs ?? 10_000, method === "POST", "Notion");
+export const NOTION_VERSION = "2022-06-28";
+// write is false for the search POST, a read that a timeout must not turn into "may have been added".
+export async function notionCall(urls: ProviderUrls, token: string, method: "GET" | "POST", path: string, body?: object, write = method === "POST") {
+  const res = await call(`${urls.notion}/v1/${path}`, { method, headers: { authorization: `Bearer ${token}`, "notion-version": NOTION_VERSION, "content-type": "application/json" }, body: body && JSON.stringify(body) }, urls.timeoutMs ?? 10_000, write, "Notion");
   if (res.status === 200) return res.body;
   if (res.status === 529) throw new ProviderError("Notion is limiting requests right now. Daloy will try again.", "quota", retryAfter(res.headers) ?? 10_000);
-  if (res.status === 503 && method === "POST" && typeof (res.body.additional_data as { committed_resource_id?: unknown } | undefined)?.committed_resource_id === "string") {
+  if (res.status === 503 && write && typeof (res.body.additional_data as { committed_resource_id?: unknown } | undefined)?.committed_resource_id === "string") {
     throw new ProviderError(`Notion answered 503 but may have saved the page ${(res.body.additional_data as { committed_resource_id: string }).committed_resource_id}.`, "ambiguous");
   }
-  return recordFailure(res, "Notion", method === "POST", 10_000);
+  return recordFailure(res, "Notion", write, 10_000);
 }
 
 /** The database's name, and the name of its title property (every page needs one, and its name is the owner's). */
@@ -612,23 +624,26 @@ export async function notionAddPage(urls: ProviderUrls, token: string, dest: { d
 
 // Trello: 100 requests per 10 seconds per token. The key and token travel in the query string, as Trello's REST API expects.
 export type TrelloCredential = { key: string; token: string };
-async function trelloCall(urls: ProviderUrls, cred: TrelloCredential, method: "GET" | "POST", path: string, body?: object) {
-  const auth = `key=${enc(cred.key)}&token=${enc(cred.token)}`;
-  const res = await call(`${urls.trello}/1/${path}${path.includes("?") ? "&" : "?"}${auth}`, { method, headers: { "content-type": "application/json" }, body: body && JSON.stringify(body) }, urls.timeoutMs ?? 10_000, method === "POST", "Trello");
+/** A pasted key and token travel in the query string; an OAuth 2.0 access token goes in the Authorization header (decision 0062). */
+export type TrelloAuth = TrelloCredential | { bearer: string };
+export async function trelloCall(urls: ProviderUrls, cred: TrelloAuth, method: "GET" | "POST", path: string, body?: object) {
+  const query = "bearer" in cred ? "" : `${path.includes("?") ? "&" : "?"}key=${enc(cred.key)}&token=${enc(cred.token)}`;
+  const headers: Record<string, string> = { "content-type": "application/json", ...("bearer" in cred ? { authorization: `Bearer ${cred.bearer}` } : {}) };
+  const res = await call(`${urls.trello}/1/${path}${query}`, { method, headers, body: body && JSON.stringify(body) }, urls.timeoutMs ?? 10_000, method === "POST", "Trello");
   if (res.status === 200) return res.body;
   return recordFailure(res, "Trello", method === "POST", 10_000);
 }
 
-export async function trelloIdentity(urls: ProviderUrls, cred: TrelloCredential) {
+export async function trelloIdentity(urls: ProviderUrls, cred: TrelloAuth) {
   return { account: `@${String((await trelloCall(urls, cred, "GET", "members/me?fields=username")).username ?? "trello")}` };
 }
 
-export async function trelloList(urls: ProviderUrls, cred: TrelloCredential, listId: string) {
+export async function trelloList(urls: ProviderUrls, cred: TrelloAuth, listId: string) {
   const list = await trelloCall(urls, cred, "GET", `lists/${enc(listId)}?fields=name`);
   return { listId, listName: String(list.name ?? listId) };
 }
 
-export async function trelloAddCard(urls: ProviderUrls, cred: TrelloCredential, listId: string, name: string, desc: string) {
+export async function trelloAddCard(urls: ProviderUrls, cred: TrelloAuth, listId: string, name: string, desc: string) {
   const card = await trelloCall(urls, cred, "POST", "cards", { idList: listId, name, desc });
   return { cardId: String(card.id) };
 }

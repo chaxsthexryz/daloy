@@ -3,7 +3,7 @@ import { backoffDelayMs, FILE_MIME, type FileRef, type RetryPolicy } from "@dalo
 import { and, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { connectionCredential, markConnectionFailed, PROVIDER_NAMES } from "./connections";
 import { withGoogle } from "./google-access";
-import { freshToken, oauthProvider, slackToken, withFreshToken } from "./oauth";
+import { freshToken, oauthProvider, slackToken, trelloAuthOf, withFreshToken, withRecordAuth } from "./oauth";
 import type { Db } from "./index";
 import { airtableAdd, appendRowOnce, driveUpload, type DriveDestination, notionAddPage, trelloAddCard, type TrelloCredential, deleteSheetMarker, outlookSend, ProviderError, slackPost, syncCalendarEvent, teamsPost, telegramSend, type CalendarDestination, type OutlookMessage, type ProviderErrorKind, type ProviderUrls, type SheetDestination } from "./providers";
 import { bookingSuperseded, supersededSql } from "./bookings";
@@ -102,7 +102,7 @@ async function attempt(db: Db, key: Buffer, urls: ProviderUrls, d: Delivery): Pr
   const conn = await connectionCredential(db, key, d.userId, d.provider);
   if (!conn) return { state: "failed", error: `${name} is not connected. Connect it in Apps, then retry.`, kind: "not_connected" };
   if (conn.status === "failed") return { state: "failed", error: `${name} needs to be connected again (${conn.account}). Reconnect it in Apps, then retry.`, kind: "reconnect" };
-  if (!conn.destination) return { state: "failed", error: `No ${d.provider === "google_sheets" ? "sheet" : d.provider === "google_calendar" ? "calendar" : d.provider === "google_drive" ? "folder" : d.provider === "telegram" ? "chat" : "channel"} is chosen for ${name}. Pick one in Apps, then retry.`, kind: "no_destination" };
+  if (!conn.destination) return { state: "failed", error: `No ${d.provider === "google_sheets" ? "sheet" : d.provider === "google_calendar" ? "calendar" : d.provider === "google_drive" ? "folder" : d.provider === "telegram" ? "chat" : d.provider === "airtable" ? "table" : d.provider === "notion" ? "database" : d.provider === "trello" ? "list" : "channel"} is chosen for ${name}. Pick one in Apps, then retry.`, kind: "no_destination" };
   if (d.pinnedAccount === null) {
     return { state: "needs_review", error: `This was queued before Daloy recorded where deliveries go, so it cannot confirm the ${name} destination. Choose Post again to send it to ${describe(d.provider, conn.destination)}, or Mark as posted.`, kind: "queued_before_pin" };
   }
@@ -169,9 +169,11 @@ async function attempt(db: Db, key: Buffer, urls: ProviderUrls, d: Delivery): Pr
     }
     // Airtable, Notion and Trello add one record, page or card. None can be asked "did this land?", so an unknown outcome is a person's call.
     const p = d.payload as { text: string; fields: Record<string, string>; title: string; name: string; desc?: string };
-    if (d.provider === "airtable") return { state: "delivered", result: await airtableAdd(urls, conn.credential, destination as { baseId: string; tableId: string }, p.fields) };
-    if (d.provider === "notion") return { state: "delivered", result: await notionAddPage(urls, conn.credential, destination as { databaseId: string; titleProperty: string }, p.title, p.fields) };
-    if (d.provider === "trello") return { state: "delivered", result: await trelloAddCard(urls, JSON.parse(conn.credential) as TrelloCredential, destination.listId!, p.name, p.desc ?? "") };
+    // A pasted credential is used as it is stored; an OAuth grant is refreshed first and its access token sent (decision 0062).
+    const auth = <T>(fn: (credential: string) => Promise<T>) => withRecordAuth(db, key, urls, d.userId, oauth, conn, fn);
+    if (d.provider === "airtable") return { state: "delivered", result: await auth((t) => airtableAdd(urls, t, destination as { baseId: string; tableId: string }, p.fields)) };
+    if (d.provider === "notion") return { state: "delivered", result: await auth((t) => notionAddPage(urls, t, destination as { databaseId: string; titleProperty: string }, p.title, p.fields)) };
+    if (d.provider === "trello") return { state: "delivered", result: await auth((t) => trelloAddCard(urls, trelloAuthOf(conn.authMethod, t), destination.listId!, p.name, p.desc ?? "")) };
     const text = p.text;
     if (d.provider === "teams") return { state: "delivered", result: await teamsPost(urls, conn.credential, text) };
     if (d.provider === "telegram") return { state: "delivered", result: await telegramSend(urls, conn.credential, destination.chatId!, text) };
@@ -224,7 +226,7 @@ function describe(provider: Provider, dest: Record<string, string>) {
   if (provider === "slack") return `#${dest.channelName ?? dest.channelId}`;
   if (provider === "telegram") return `the Telegram chat ${dest.chatTitle ?? dest.chatId}`;
   if (provider === "outlook") return dest.mailbox ?? "the Outlook mailbox";
-  if (provider === "airtable") return `the Airtable table ${dest.tableId}`;
+  if (provider === "airtable") return `the Airtable table ${dest.tableName ?? dest.tableId}`;
   if (provider === "notion") return `the Notion database ${dest.databaseTitle ?? dest.databaseId}`;
   if (provider === "trello") return `the Trello list ${dest.listName ?? dest.listId}`;
   return `the Teams channel ${dest.channelName ?? ""}`.trim();
@@ -241,7 +243,10 @@ const destinationOnly = (p: Provider, method: string) => p === "google_sheets" |
 
 /** Same provider account: by its stable id when both sides have one (OAuth), otherwise by the account name as before. */
 const sameAccount = (d: Delivery, conn: { account: string; externalId: string | null }) =>
-  d.pinnedExternalId && conn.externalId ? d.pinnedExternalId === conn.externalId : d.pinnedAccount === conn.account;
+  // Plan R7 (decision 0062): for these destination providers a table, database or list id names the place, so a paste
+  // connection replaced by an OAuth one, or another sign-in, does not stop a delivery that still goes to the same place.
+  DESTINATION_ONLY.has(d.provider) || (d.pinnedExternalId && conn.externalId ? d.pinnedExternalId === conn.externalId : d.pinnedAccount === conn.account);
+const DESTINATION_ONLY = new Set<Provider>(["airtable", "notion", "trello"]);
 
 /** Same place: the fields that pick where a delivery lands. Display names may change without moving anything. */
 function sameDestination(a: Record<string, string> | null, b: Record<string, string>) {

@@ -34,9 +34,15 @@ import type { AddressInfo } from "node:net";
  * - expiresIn: access token lifetime in seconds (undefined: never expires). refresh: whether refresh tokens exist.
  * 429, 5xx and slow answers come from once("/oauth/<name>/token", ...), like every other fake endpoint.
  */
-function oauthApp(name: string, o: { expiresIn?: number; rotation?: "none" | "rotate" | "strict"; refresh?: boolean } = {}) {
+function oauthApp(name: string, o: { expiresIn?: number; rotation?: "none" | "rotate" | "strict"; refresh?: boolean; clientAuth?: "basic"; bodyFormat?: "json"; requirePkce?: boolean } = {}) {
   return {
     name,
+    /** What the token endpoint insists on, like the real ones: client credentials in a Basic header, a JSON body, a PKCE challenge at consent. */
+    clientAuth: o.clientAuth,
+    bodyFormat: o.bodyFormat,
+    requirePkce: o.requirePkce ?? false,
+    /** How each token and revoke call arrived, without any secret: for assertions about the wire format. */
+    seen: [] as { endpoint: string; basic: boolean; json: boolean; fields: string[]; notionVersion: boolean }[],
     clientId: `${name}-client-id`,
     clientSecret: `${name}-client-secret`,
     user: { id: `${name}-user-1`, email: `ana@${name}.example` },
@@ -71,9 +77,42 @@ export async function startFakeProviders(port = 0) {
   const slack = { token: "", team: "Lim Dental", channels: [{ id: "C0REQ", name: "office-requests", is_member: true }], messages: [] as { channel: string; text: string; ts: string }[], revoked: false, installs: new Map<string, { teamId: string; team: string }>(), revokedInstalls: [] as string[] };
   const telegram = { token: "", bot: "daloy_test_bot", chats: [{ id: -1001234567890, title: "Office team" }] as { id: number; title: string }[], messages: [] as { chat: string; text: string; id: number }[], revoked: false };
   // Airtable, Notion and Trello (N15, decision 0046): a bearer or key/token check, one target each, and the records added.
-  const airtable = { token: "", base: "appFAKEBASE000001", table: "tblFAKETABLE00001", records: [] as { id: string; fields: Record<string, unknown> }[], revoked: false };
-  const notion = { token: "", database: "0123456789abcdef0123456789abcdef", title: "Office requests", titleProperty: "Name", pages: [] as { id: string; properties: Record<string, unknown> }[], revoked: false };
-  const trello = { key: "", token: "", username: "daloy_tester", list: "5f0000000000000000000001", listName: "To do", cards: [] as { id: string; name: string; desc: string }[], revoked: false };
+  // The OAuth pickers (decision 0062) list what is here: bases and tables for Airtable, databases for Notion, boards and lists for Trello.
+  const airtable = {
+    token: "",
+    base: "appFAKEBASE000001",
+    table: "tblFAKETABLE00001",
+    records: [] as { id: string; fields: Record<string, unknown> }[],
+    revoked: false,
+    bases: [
+      { id: "appFAKEBASE000001", name: "Office", permissionLevel: "create", tables: [{ id: "tblFAKETABLE00001", name: "Requests" }, { id: "tblFAKETABLE00002", name: "Archive" }] },
+      { id: "appFAKEBASE000002", name: "Read only base", permissionLevel: "read", tables: [{ id: "tblFAKETABLE00003", name: "Secrets" }] },
+      { id: "appFAKEBASE000003", name: "Second base", permissionLevel: "edit", tables: [{ id: "tblFAKETABLE00004", name: "Leads" }] },
+    ],
+  };
+  const notion = {
+    token: "",
+    database: "0123456789abcdef0123456789abcdef",
+    title: "Office requests",
+    titleProperty: "Name",
+    pages: [] as { id: string; properties: Record<string, unknown> }[],
+    revoked: false,
+    more: [{ id: "fedcba9876543210fedcba9876543210", title: "Leads", titleProperty: "Lead name" }],
+    workspace: "Lim Dental Workspace",
+  };
+  const trello = {
+    key: "",
+    token: "",
+    username: "daloy_tester",
+    list: "5f0000000000000000000001",
+    listName: "To do",
+    cards: [] as { id: string; name: string; desc: string }[],
+    revoked: false,
+    boards: [
+      { id: "5f0000000000000000000010", name: "Office", lists: [{ id: "5f0000000000000000000001", name: "To do", closed: false }, { id: "5f0000000000000000000002", name: "Doing", closed: false }, { id: "5f0000000000000000000004", name: "Old list", closed: true }] },
+      { id: "5f0000000000000000000011", name: "Home", lists: [{ id: "5f0000000000000000000003", name: "Chores", closed: false }] },
+    ],
+  };
   // Microsoft: consent decides what the authorize page answers. Every refresh hands out a new refresh token; like the
   // real service, the old one keeps working until it is revoked (refreshTokens.clear()).
   const microsoft = {
@@ -100,8 +139,19 @@ export async function startFakeProviders(port = 0) {
   const gmail = { sent: [] as { id: string; user: string; raw: string }[] };
   // "v2" is Slack's "Connect Slack" install (/oauth/v2/authorize, and /api/oauth.v2.access below): bot tokens that never expire.
   // Its user stands for the installing workspace: id is the team id and email the team name.
-  const oauth: Record<string, ReturnType<typeof oauthApp>> = { test: oauthApp("test"), v2: oauthApp("v2", { refresh: false, expiresIn: undefined }) };
+  // The record apps' consent and token endpoints, as the real ones want them (decision 0062).
+  const oauth: Record<string, ReturnType<typeof oauthApp>> = {
+    test: oauthApp("test"),
+    v2: oauthApp("v2", { refresh: false, expiresIn: undefined }),
+    airtable: oauthApp("airtable", { clientAuth: "basic", requirePkce: true }),
+    notion: oauthApp("notion", { clientAuth: "basic", bodyFormat: "json" }),
+    trello: oauthApp("trello", { bodyFormat: "json", requirePkce: true }),
+  };
   oauth.v2!.user = { id: "T0INSTALL1", email: "Acme Dental" };
+  const bearerOf = (req: IncomingMessage) => (req.headers.authorization ?? "").replace(/^Bearer /, "");
+  /** Who an OAuth access token issued by a record app belongs to; undefined for anything else. */
+  const oauthWho = (name: string, req: IncomingMessage) => oauth[name]?.accessTokens.get(bearerOf(req));
+  const dashed = (id: string) => id.replace(/^(.{8})(.{4})(.{4})(.{4})(.{12})$/, "$1-$2-$3-$4-$5");
   const pending: { path: string; behaviour: Behaviour; skip: number }[] = [];
   const calls: string[] = [];
   const hanging = new Set<ServerResponse>();
@@ -183,7 +233,10 @@ export async function startFakeProviders(port = 0) {
     }
 
     // Generic OAuth apps (see oauthApp above).
-    const oa = /^\/oauth\/([\w-]+)\/(authorize|token|revoke|userinfo)$/.exec(path);
+    // The record apps answer at the real providers' own paths (decision 0062).
+    const real = [/^\/(airtable)-login\/oauth2\/v1\/(authorize|token)$/, /^\/(atlassian)\/(authorize|oauth\/token)$/].map((re) => re.exec(path)).find(Boolean);
+    const notionOauth = /^\/v1\/oauth\/(authorize|token|revoke)$/.exec(path);
+    const oa = real ? [path, real[1] === "atlassian" ? "trello" : real[1], real[2] === "oauth/token" ? "token" : real[2]] : notionOauth ? [path, "notion", notionOauth[1]] : /^\/oauth\/([\w-]+)\/(authorize|token|revoke|userinfo)$/.exec(path);
     const app = oa && oauth[oa[1]!];
     if (oa && app) {
       const endpoint = oa[2];
@@ -192,6 +245,7 @@ export async function startFakeProviders(port = 0) {
         const back = new URL(q.get("redirect_uri") ?? "http://invalid");
         back.searchParams.set("state", q.get("state") ?? "");
         if (q.get("client_id") !== app.clientId) back.searchParams.set("error", "invalid_client");
+        else if (app.requirePkce && (!q.get("code_challenge") || q.get("code_challenge_method") !== "S256")) back.searchParams.set("error", "invalid_request");
         else if (app.consent === "declined") back.searchParams.set("error", "access_denied");
         else if (app.consent === "admin_required") {
           back.searchParams.set("error", "access_denied");
@@ -205,16 +259,23 @@ export async function startFakeProviders(port = 0) {
         res.writeHead(302, { location: back.toString() }).end();
         return;
       }
-      const form = new URLSearchParams(raw);
+      const isJson = (req.headers["content-type"] ?? "").includes("json");
+      const form = new URLSearchParams(isJson ? Object.entries(JSON.parse(raw || "{}") as Record<string, unknown>).map(([k, v]) => [k, String(v)]) : raw);
+      const basic = /^Basic (.+)$/.exec(req.headers.authorization ?? "");
+      const [basicId, basicSecret] = basic ? Buffer.from(basic[1]!, "base64").toString().split(":") : [];
+      if (endpoint !== "userinfo" && endpoint !== "authorize") app.seen.push({ endpoint: String(endpoint), basic: !!basic, json: isJson, fields: [...form.keys()], notionVersion: !!req.headers["notion-version"] });
       if (endpoint === "userinfo") {
         const who = app.accessTokens.get((req.headers.authorization ?? "").replace(/^Bearer /, ""));
         return who ? json(res, 200, { sub: who.id, email: who.email, email_verified: app.emailVerified }) : json(res, 401, { error: "invalid_token" });
       }
-      if (form.get("client_id") !== app.clientId || form.get("client_secret") !== app.clientSecret) return json(res, 401, { error: "invalid_client" });
+      if (app.bodyFormat === "json" && !isJson) return json(res, 400, { error: "invalid_request" });
+      if (app.clientAuth === "basic" && !basic) return json(res, 401, { error: "invalid_client" });
+      if ((basic ? basicId : form.get("client_id")) !== app.clientId || (basic ? basicSecret : form.get("client_secret")) !== app.clientSecret) return json(res, 401, { error: "invalid_client" });
       if (endpoint === "revoke") {
         const token = form.get("token") ?? "";
         app.revoked.push(token);
         if (app.revokeStatus !== 200) return json(res, app.revokeStatus, { error: "server_error" });
+        if (app.name === "notion" && !app.accessTokens.has(token)) return json(res, 400, { error: "invalid_request" });
         app.refreshTokens.delete(token);
         app.accessTokens.delete(token);
         return json(res, 200, {});
@@ -226,6 +287,7 @@ export async function startFakeProviders(port = 0) {
       if (form.get("grant_type") === "authorization_code") {
         const c = app.codes.get(form.get("code") ?? "");
         app.codes.delete(form.get("code") ?? "");
+        if (app.requirePkce && !form.get("code_verifier")) return invalidGrant();
         const pkceOk = !c?.challenge || createHash("sha256").update(form.get("code_verifier") ?? "").digest("base64url") === c.challenge;
         if (!c || c.redirectUri !== form.get("redirect_uri") || !pkceOk) return invalidGrant();
         grant = c;
@@ -574,41 +636,84 @@ export async function startFakeProviders(port = 0) {
       }
       return json(res, 404, { ok: false, error_code: 404, description: "Not Found" });
     }
-    // Airtable: Bearer token, 401 for a bad one, 404 for another base or table. Each added record gets an id.
-    const at = /^\/v0\/([^/]+)\/([^/]+)$/.exec(path);
-    if (at) {
-      if (!airtable.token || req.headers.authorization !== `Bearer ${airtable.token}` || airtable.revoked) return json(res, 401, { error: { type: "AUTHENTICATION_REQUIRED" } });
-      if (at[1] !== airtable.base || at[2] !== airtable.table) return json(res, 404, { error: { type: "TABLE_NOT_FOUND" } });
-      if (req.method === "GET") return json(res, 200, { records: airtable.records.slice(0, 1) });
-      const fields = (JSON.parse(raw) as { fields?: Record<string, unknown> }).fields ?? {};
-      const id = `rec${String(++seq).padStart(14, "0")}`;
-      airtable.records.push({ id, fields });
-      return answer(200, { id, fields, createdTime: new Date().toISOString() });
+    // Airtable: a personal access token or an OAuth access token, 401 for a bad one, 404 for another base or table. Each added record gets an id.
+    if (path.startsWith("/v0/")) {
+      const airtableUser = oauthWho("airtable", req);
+      if (airtable.revoked || !(airtableUser || (airtable.token && req.headers.authorization === `Bearer ${airtable.token}`))) return json(res, 401, { error: { type: "AUTHENTICATION_REQUIRED" } });
+      if (path === "/v0/meta/whoami") return json(res, 200, { id: airtableUser?.id ?? "usrPAT", scopes: [] });
+      if (path === "/v0/meta/bases") return json(res, 200, { bases: airtable.bases.map((b) => ({ id: b.id, name: b.name, permissionLevel: b.permissionLevel })) });
+      const tables = /^\/v0\/meta\/bases\/([^/]+)\/tables$/.exec(path);
+      if (tables) {
+        const b = airtable.bases.find((x) => x.id === tables[1]);
+        return b ? json(res, 200, { tables: b.tables.map((t) => ({ id: t.id, name: t.name, fields: [] })) }) : json(res, 404, { error: { type: "NOT_FOUND" } });
+      }
+      const at = /^\/v0\/([^/]+)\/([^/]+)$/.exec(path);
+      if (at) {
+        if (!airtable.bases.some((b) => b.id === at[1] && b.tables.some((t) => t.id === at[2]))) return json(res, 404, { error: { type: "TABLE_NOT_FOUND" } });
+        if (req.method === "GET") return json(res, 200, { records: airtable.records.slice(0, 1) });
+        const fields = (JSON.parse(raw) as { fields?: Record<string, unknown> }).fields ?? {};
+        const id = `rec${String(++seq).padStart(14, "0")}`;
+        airtable.records.push({ id, fields });
+        return answer(200, { id, fields, createdTime: new Date().toISOString() });
+      }
     }
-    // Notion: Bearer token and a Notion-Version header. A page needs the database's title property.
+    // Notion: a bearer token (internal secret or OAuth access token) and a Notion-Version header. A page needs the database's title property.
     if (path.startsWith("/v1/")) {
-      if (!notion.token || req.headers.authorization !== `Bearer ${notion.token}` || notion.revoked) return json(res, 401, { object: "error", code: "unauthorized" });
+      const notionUser = oauthWho("notion", req);
+      if (notion.revoked || !(notionUser || (notion.token && req.headers.authorization === `Bearer ${notion.token}`))) return json(res, 401, { object: "error", code: "unauthorized" });
       if (!req.headers["notion-version"]) return json(res, 400, { object: "error", code: "missing_version" });
-      if (req.method === "GET" && path === `/v1/databases/${notion.database}`) return json(res, 200, { object: "database", id: notion.database, title: [{ plain_text: notion.title }], properties: { [notion.titleProperty]: { type: "title" }, Notes: { type: "rich_text" } } });
+      const databases = [{ id: notion.database, title: notion.title, titleProperty: notion.titleProperty }, ...notion.more];
+      const known = (id: string | undefined) => databases.find((d) => d.id === (id ?? "").replace(/-/g, ""));
+      const properties = (d: (typeof databases)[number]) => ({ [d.titleProperty]: { type: "title" }, Notes: { type: "rich_text" } });
+      if (req.method === "GET" && path === "/v1/users/me") return json(res, 200, { object: "user", id: notionUser?.id ?? "notion-static-bot", type: "bot", name: "Daloy", bot: { workspace_name: notion.workspace } });
+      if (req.method === "POST" && path === "/v1/search") {
+        // Like Notion, a database filter returns databases only; without it pages come back too.
+        const q = JSON.parse(raw || "{}") as { filter?: { value?: string }; page_size?: number; start_cursor?: string };
+        const all = [...databases.map((d) => ({ object: "database", id: dashed(d.id), title: [{ plain_text: d.title }], properties: properties(d) })), ...(q.filter?.value === "database" ? [] : [{ object: "page", id: dashed("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa") }])];
+        const size = q.page_size ?? 100;
+        const from = Number(q.start_cursor ?? 0);
+        const next = from + size;
+        return json(res, 200, { object: "list", results: all.slice(from, next), has_more: next < all.length, next_cursor: next < all.length ? String(next) : null });
+      }
+      const one = /^\/v1\/databases\/([^/]+)$/.exec(path);
+      if (req.method === "GET" && one) {
+        const d = known(one[1]);
+        return d ? json(res, 200, { object: "database", id: d.id, title: [{ plain_text: d.title }], properties: properties(d) }) : json(res, 404, { object: "error", code: "object_not_found" });
+      }
       if (req.method === "POST" && path === "/v1/pages") {
         const page = JSON.parse(raw) as { parent?: { database_id?: string }; properties?: Record<string, { title?: unknown }> };
-        if (page.parent?.database_id !== notion.database) return json(res, 404, { object: "error", code: "object_not_found" });
-        if (!page.properties?.[notion.titleProperty]?.title) return json(res, 400, { object: "error", code: "validation_error" });
+        const d = known(page.parent?.database_id);
+        if (!d) return json(res, 404, { object: "error", code: "object_not_found" });
+        if (!page.properties?.[d.titleProperty]?.title) return json(res, 400, { object: "error", code: "validation_error" });
         const id = `page-${++seq}`;
         notion.pages.push({ id, properties: page.properties });
         return answer(200, { object: "page", id });
       }
       return json(res, 404, { object: "error", code: "object_not_found" });
     }
-    // Trello: key and token in the query string. Answers are plain text on errors, like the real API.
+    // Trello: key and token in the query string, or an OAuth 2.0 access token as a bearer header. Answers are plain text on errors, like the real API.
     if (path.startsWith("/1/")) {
       const q = url.searchParams;
-      if (!trello.token || q.get("key") !== trello.key || q.get("token") !== trello.token || trello.revoked) return res.writeHead(401, { "content-type": "text/plain" }).end("invalid token");
-      if (path === "/1/members/me") return json(res, 200, { username: trello.username });
-      if (path === `/1/lists/${trello.list}`) return json(res, 200, { id: trello.list, name: trello.listName });
+      const trelloUser = oauthWho("trello", req);
+      const pasted = trello.token && q.get("key") === trello.key && q.get("token") === trello.token;
+      if (trello.revoked || !(trelloUser || pasted)) return res.writeHead(401, { "content-type": "text/plain" }).end("invalid token");
+      const lists = trello.boards.flatMap((b) => b.lists);
+      const open = (l: { closed: boolean }) => q.get("filter") !== "open" || !l.closed;
+      if (path === "/1/members/me") return json(res, 200, { id: trelloUser?.id ?? "static-member", username: trello.username });
+      if (path === "/1/members/me/boards") return json(res, 200, trello.boards.map((b) => ({ id: b.id, name: b.name })));
+      const boardLists = /^\/1\/boards\/([^/]+)\/lists$/.exec(path);
+      if (boardLists) {
+        const b = trello.boards.find((x) => x.id === boardLists[1]);
+        return b ? json(res, 200, b.lists.filter(open).map((l) => ({ id: l.id, name: l.name }))) : res.writeHead(404, { "content-type": "text/plain" }).end("The requested resource was not found.");
+      }
+      const list = /^\/1\/lists\/([^/]+)$/.exec(path);
+      if (list) {
+        const l = lists.find((x) => x.id === list[1]);
+        return l ? json(res, 200, { id: l.id, name: l.name }) : res.writeHead(404, { "content-type": "text/plain" }).end("not found");
+      }
       if (path === "/1/cards" && req.method === "POST") {
         const c = JSON.parse(raw) as { idList?: string; name?: string; desc?: string };
-        if (c.idList !== trello.list) return res.writeHead(400, { "content-type": "text/plain" }).end("invalid value for idList");
+        if (!lists.some((l) => l.id === c.idList)) return res.writeHead(400, { "content-type": "text/plain" }).end("invalid value for idList");
         const id = `card${++seq}`;
         trello.cards.push({ id, name: c.name ?? "", desc: c.desc ?? "" });
         return answer(200, { id, name: c.name });
@@ -621,7 +726,13 @@ export async function startFakeProviders(port = 0) {
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 
   return {
-    urls: { googleToken: `${base}/token`, sheets: base, calendar: base, drive: base, paymongo: base, airtable: base, notion: base, trello: base, slack: base, telegram: base, microsoftLogin: `${base}/ms`, graph: `${base}/graph`, gmail: base, teamsHosts: ["127.0.0.1"] },
+    urls: { googleToken: `${base}/token`, sheets: base, calendar: base, drive: base, paymongo: base, airtable: base, notion: base, trello: base, slack: base, telegram: base, microsoftLogin: `${base}/ms`, graph: `${base}/graph`, gmail: base, airtableLogin: `${base}/airtable-login`, trelloLogin: `${base}/atlassian`, teamsHosts: ["127.0.0.1"] },
+    /** The installation's OAuth clients for the record apps, as providerUrls() would read them from env (decision 0062). */
+    recordClients: () => ({
+      airtableClient: { clientId: oauth.airtable!.clientId, clientSecret: oauth.airtable!.clientSecret },
+      notionClient: { clientId: oauth.notion!.clientId, clientSecret: oauth.notion!.clientSecret },
+      trelloClient: { clientId: oauth.trello!.clientId, clientSecret: oauth.trello!.clientSecret },
+    }),
     calls,
     slack,
     telegram,
