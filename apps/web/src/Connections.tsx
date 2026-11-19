@@ -201,7 +201,8 @@ export function DriveConnection({ conn, onChange, embedded }: { conn: Connection
   );
 }
 
-export function CalendarConnection({ conn, onChange }: { conn: Connection | null; onChange: () => Promise<unknown> }) {
+/** embedded: only the service account form, as the Advanced option under Connect with Google (decision 0064). */
+export function CalendarConnection({ conn, onChange, embedded }: { conn: Connection | null; onChange: () => Promise<unknown>; embedded?: boolean }) {
   const { t } = useLanguage();
   const { error, busy, act } = useAction(onChange);
   const [editing, setEditing] = useState(false);
@@ -223,18 +224,18 @@ export function CalendarConnection({ conn, onChange }: { conn: Connection | null
       setTest(null);
     });
   };
-  const showForm = !conn || editing;
+  const showForm = !conn || editing || embedded;
 
   return (
-    <div className="connection" aria-labelledby="calendar-h">
-      <h3 id="calendar-h">Google Calendar</h3>
-      {conn && <Status conn={conn} label="Service account" />}
-      {conn?.destination && (
+    <div className={embedded ? undefined : "connection"} aria-labelledby={embedded ? undefined : "calendar-h"}>
+      {!embedded && <h3 id="calendar-h">Google Calendar</h3>}
+      {conn && !embedded && <Status conn={conn} label="Service account" />}
+      {conn?.destination && !embedded && (
         <p>
           {t("Events go to ")}<strong>{conn.destination.title}</strong>{t(". An event follows its booking: moved when the booking is rescheduled, deleted when it is cancelled.")}
         </p>
       )}
-      {conn && (
+      {conn && !embedded && (
         <div className="actions">
           <button type="button" disabled={busy} onClick={() => void act(async () => setTest(await api<TestResult>("POST", "/settings/connections/google-calendar/test")))}>
             {t("Add a test event")}
@@ -275,7 +276,7 @@ export function CalendarConnection({ conn, onChange }: { conn: Connection | null
             <button type="submit" className="primary" disabled={busy}>
               {conn ? t("Save calendar") : t("Connect Google Calendar")}
             </button>
-            {conn && (
+            {conn && !embedded && (
               <button type="button" className="quiet" onClick={() => setEditing(false)}>
                 {t("Cancel")}
               </button>

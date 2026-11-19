@@ -2,7 +2,8 @@ import { Text, useLanguage } from "./Language";
 import { useEffect, useState, type ReactNode } from "react";
 import { api } from "./api";
 import { PILL, SenderSection, type Settings } from "./BusinessSetup";
-import { CalendarConnection, OutlookConnection, RecordConnection, PaymongoConnection, SlackConnection, TeamsConnection, TelegramConnection, type Connection, type OutlookSetup, type Provider } from "./Connections";
+import { OutlookConnection, RecordConnection, PaymongoConnection, SlackConnection, TeamsConnection, TelegramConnection, type Connection, type OutlookSetup, type Provider } from "./Connections";
+import { GoogleCalendarCard } from "./GoogleCalendar";
 import { GoogleDriveCard, GoogleSheetsCard } from "./GoogleConnect";
 import { Header } from "./Nav";
 
@@ -72,7 +73,7 @@ export function AppsPage({ outcome }: { outcome?: { app: string; code: string } 
     outlook: () => <OutlookConnection conn={conn("outlook")} setup={conns.outlook} outcome={landed === "outlook" ? outcome?.code : undefined} onChange={load} />,
     teams: () => <TeamsConnection conn={conn("teams")} onChange={load} />,
     telegram: () => <TelegramConnection conn={conn("telegram")} onChange={load} />,
-    google_calendar: () => <CalendarConnection conn={conn("google_calendar")} onChange={load} />,
+    google_calendar: () => <GoogleCalendarCard conn={conn("google_calendar")} configured={conns.oauth.includes("google-calendar")} outcome={landed === "google_calendar" ? outcome?.code : undefined} onChange={load} />,
     google_drive: () => <GoogleDriveCard conn={conn("google_drive")} configured={conns.oauth.includes("google-drive")} outcome={landed === "google_drive" ? outcome?.code : undefined} onChange={load} />,
     paymongo: () => <PaymongoConnection conn={conn("paymongo")} webhookBase={conns.paymongoWebhookBase} onChange={load} />,
     airtable: () => <RecordConnection app="airtable" conn={conn("airtable")} onChange={load} />,
