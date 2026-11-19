@@ -767,3 +767,28 @@ The picker endpoints require a manager session and an OAuth connection. They use
 Airtable asks for `data.records:write` and `schema.bases:read`, Notion uses integration capabilities and shared content, and Trello asks for `offline_access`, `read:member:trello`, `read:board:trello` and `write:board:trello`. Trello's member scope includes access to email and memberships, although Daloy asks its member endpoint for the username. See the [Trello scope table](https://developer.atlassian.com/cloud/trello/guides/rest-api/oauth-2-client-configuration/). Refresh uses the shared core. Disconnect removes the local connection; provider revocation differs by app and must not be assumed to succeed.
 
 Automated coverage includes `packages/db/src/oauth/records.test.ts` for consent URL and scope definitions. Tests against fakes do not establish real provider behavior. The owner-run [live check](live-records-oauth-check.md) remains unverified.
+
+## Managed OAuth across all apps (integration of plan phases P1 to P7)
+
+What it does: nine apps share the OAuth core above. `OAUTH_PROVIDERS` in `packages/db/src/oauth/index.ts` lists Outlook, Google Sheets, Google Drive, Gmail, Google Calendar, Slack, Airtable, Notion and Trello. Each one shows its Connect button only when the installation has its client in env, and keeps its paste or service account form otherwise. Telegram, Teams and PayMongo stay paste setups with guided steps (decision 0059).
+
+How it works: every provider goes through the same start route, the same callback and the same token blob. They differ only in their definition file:
+
+| App | Grant kept in | Scopes | PKCE | Refresh | Revoke at disconnect |
+|---|---|---|---|---|---|
+| Outlook | `connections` | `offline_access Mail.Send User.Read` | yes | rotating, previous token kept | none (the page tells the owner) |
+| Sheets, Drive | `connections` | `openid email drive.file` | yes | Google refresh token | Google revoke |
+| Gmail | `mail_senders` (decision 0063) | `openid email gmail.send` | yes | Google refresh token | Google revoke |
+| Calendar | `connections` | `openid email calendar.app.created` | yes | Google refresh token | Google revoke |
+| Slack | `connections` | `chat:write channels:read` (bot) | no (unverified) | none, the bot token does not expire | `auth.revoke`, `ok: true` required |
+| Airtable | `connections` | `data.records:write schema.bases:read` | yes | rotating | none: Airtable documents no revoke call, the page tells the owner |
+| Notion | `connections` | none (pages chosen on Notion's screen) | no | none, treated as not expiring | the access token, at Notion's revoke endpoint |
+| Trello | `connections` | `offline_access read:member:trello read:board:trello write:board:trello` | yes | rotating | none: revoke is unverified, the page tells the owner |
+
+The scope column is asserted in full by `packages/db/src/oauth/scopes.test.ts`. The worker's daily keepalive refreshes each provider with refresh tokens after its `keepaliveDays` (30 for most, 45 for Trello, 90 for Google). Slack and Notion are skipped because they have nothing to refresh. A grant of any other provider that holds no refresh token is only stamped, so it does not stay first in the queue.
+
+Why this way: each phase built its provider on its own branch, and the merge kept one core. Gmail's grant store (`GrantStore`) and the record apps' request options (`tokenAuth`, `tokenFormat`, `revokeToken`) and Slack's options (`scopeSeparator`, `tokenTypes`, `revokeAccepted`) are all fields of the one `OAuthProvider` type, so adding a provider still means one definition file and one line in `OAUTH_PROVIDERS` (decision 0058, "How to add an OAuth provider").
+
+Edge cases handled in the merge: the keepalive stamp for a token without a refresh token writes only to `connections`, never to Gmail's `mail_senders` row; the e2e server gets `OAUTH_ENV` once even though four phases set clients; the Apps page maps every slug (`google-sheets`, `google-calendar` and the rest) back to its card when the callback lands.
+
+Tests: every file listed in the sections above runs together on the integration branch. On 19 November 2026 that was 135 test files and 1795 unit and integration tests, 64 Playwright tests (including `google-connect`, `gmail-connect`, `google-calendar`, `slack-oauth`, `airtable`, `notion`, `trello`, the guided setups in `navigation` and Outlook in `purchase-request`), lint and typecheck, all passing on branch `oauth-p8-integration`. The [Google sensitive scope submission pack](google-scope-submission.md) is what the owner sends Google for Gmail and Calendar.
