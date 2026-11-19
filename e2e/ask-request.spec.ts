@@ -51,6 +51,8 @@ test("an owner asks why a request stopped and only reads, nothing in the card ch
 
     // Activity row link, then the run page region (decision 0049): no typing, the run's reference is loaded.
     await page.goto("/#/activity");
+    // Semgrep: built from a test-made reference, not user input.
+    // nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp
     await page.getByRole("row", { name: new RegExp(reference) }).getByRole("link", { name: "Ask what happened" }).click();
     await expect(page).toHaveURL(/#\/runs\/[0-9a-f-]{36}\/ask$/);
     const card = page.getByRole("region", { name: "Ask what happened" });

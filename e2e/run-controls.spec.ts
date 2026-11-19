@@ -26,6 +26,8 @@ test("pausing stops a signed webhook, resuming starts it again, and a waiting ru
   const call = async () => {
     const body = JSON.stringify({ event: ++n });
     const t = Math.floor(Date.now() / 1000);
+    // Semgrep: a fixed test signing key for the fake webhook.
+    // nosemgrep: javascript.lang.security.audit.hardcoded-hmac-key.hardcoded-hmac-key
     const signature = `sha256=${createHmac("sha256", "whsec_e2e").update(`${t}.${body}`).digest("hex")}`;
     return request.post(`/hooks/${path}`, { headers: { "Content-Type": "application/json", "X-Daloy-Timestamp": String(t), "X-Daloy-Signature": signature }, data: body });
   };
@@ -49,6 +51,8 @@ test("pausing stops a signed webhook, resuming starts it again, and a waiting ru
   expect((await call()).status()).toBe(202);
   const body = JSON.stringify({ event: "old" });
   const old = Math.floor(Date.now() / 1000) - 600;
+  // Semgrep: a fixed test signing key for the fake webhook.
+  // nosemgrep: javascript.lang.security.audit.hardcoded-hmac-key.hardcoded-hmac-key
   const stale = await request.post(`/hooks/${path}`, { headers: { "Content-Type": "application/json", "X-Daloy-Timestamp": String(old), "X-Daloy-Signature": `sha256=${createHmac("sha256", "whsec_e2e").update(`${old}.${body}`).digest("hex")}` }, data: body });
   expect(stale.status()).toBe(401);
 

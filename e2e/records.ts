@@ -29,6 +29,8 @@ export async function connectRecord(page: Page, app: RecordApp, name: string) {
   await page.getByRole("button", { name: `Connect ${name}`, exact: true }).click();
   const panel = recordPanel(page, name);
   await panel.getByRole("button", { name: `Connect ${name}`, exact: true }).click();
+  // Semgrep: built from a test-made reference, not user input.
+  // nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp
   await expect(page).toHaveURL(new RegExp(`/#/apps/${app}-connected$`));
   await expect(recordPanel(page, name)).toContainText(`${name} is connected.`);
   return recordPanel(page, name);
