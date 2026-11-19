@@ -7,6 +7,9 @@ import nodemailer, { type Transporter } from "nodemailer";
 import * as z from "zod";
 import type { Db } from "./index";
 import { markSenderFailed, resolveSender, type ResolvedSender } from "./mail-senders";
+import { withFreshToken } from "./oauth/core";
+import { gmail, gmailSend } from "./oauth/gmail";
+import { ProviderError, providerUrls, type ProviderUrls } from "./providers";
 import { sharedMailUsage, users } from "./schema";
 
 export type Mailer = { host?: string; transport: Transporter; from: string | { name: string; address: string }; replyTo?: string };
@@ -14,7 +17,13 @@ export type Mailer = { host?: string; transport: Transporter; from: string | { n
  * The installation's own server, how to log in to Gmail as one owner, and who may use the shared server: "open" for
  * everyone (a local catcher such as Mailpit), "approved" for workspace owners the operator approved (decision 0024).
  */
-export type MailDeps = { installation: Mailer; gmail: (auth: { user: string; pass: string }) => Transporter; sharedMail: "open" | "approved" };
+export type MailDeps = {
+  installation: Mailer;
+  gmail: (auth: { user: string; pass: string }) => Transporter;
+  sharedMail: "open" | "approved";
+  /** The Google client and the Gmail API, for a Google sign-in (decision 0063). Unset: such a sender is blocked, never replaced. */
+  urls?: ProviderUrls;
+};
 
 const MAX_RECIPIENTS = 10;
 const address = z.email();
@@ -49,7 +58,7 @@ export function sharedMailPolicy(env: NodeJS.ProcessEnv = process.env): MailDeps
   return isLocalCatcher(env.SMTP_HOST) ? "open" : "approved";
 }
 
-export const mailDeps = (env: NodeJS.ProcessEnv = process.env): MailDeps => ({ installation: smtpMailer(env), gmail: gmailTransport, sharedMail: sharedMailPolicy(env) });
+export const mailDeps = (env: NodeJS.ProcessEnv = process.env): MailDeps => ({ installation: smtpMailer(env), gmail: gmailTransport, sharedMail: sharedMailPolicy(env), urls: providerUrls(env) });
 
 /** The operator approves a workspace owner for the shared server, with a daily recipient limit. Null withdraws it. */
 export async function approveSharedMail(db: Db, userId: string, dailyLimit: number | null) {
@@ -99,7 +108,8 @@ export function mailerFor(sender: ResolvedSender, deps: MailDeps): Mailer {
     return { ...deps.installation, from, replyTo: sender.replyTo };
   }
   return {
-    transport: deps.gmail({ user: sender.address, pass: sender.password }),
+    // The Gmail API takes the message nodemailer builds for SMTP, so it is built by a stream transport (rawMessage).
+    transport: sender.kind === "gmail" ? deps.gmail({ user: sender.address, pass: sender.password }) : rawBuilder,
     from: sender.fromName ? { name: sender.fromName, address: sender.address } : sender.address,
     replyTo: sender.replyTo,
   };
@@ -131,7 +141,9 @@ export async function sendAs(db: Db, key: Buffer, deps: MailDeps, userId: string
   if (sender.kind === "installation" && deps.sharedMail === "approved") await claimSharedMail(db, userId, checkRecipients(cfg.to).length);
   // Gmail has its own daily limit, so a workspace is capped before a busy automation gets the owner's mailbox suspended (N11b).
   // capKey is the step key, the same on every attempt, so a retry is not counted twice. The watchdog and the test email pass none: they are not counted.
-  if (sender.kind === "gmail" && opts.capKey) await claimUsage(db, userId, "mailbox", { n: checkRecipients(cfg.to).length, key: opts.capKey });
+  // A Google sign-in sends from the same mailbox, so it counts the same.
+  if ((sender.kind === "gmail" || sender.kind === "gmail_api") && opts.capKey) await claimUsage(db, userId, "mailbox", { n: checkRecipients(cfg.to).length, key: opts.capKey });
+  if (sender.kind === "gmail_api") return { ...(await sendWithGmailApi(db, key, deps, userId, sender, mailer, cfg, idempotencyKey, brand, opts.claim)), from: addressOf(mailer.from), gmail: true };
   try {
     const release = await opts.claim?.();
     try {
@@ -144,6 +156,36 @@ export async function sendAs(db: Db, key: Buffer, deps: MailDeps, userId: string
     if (sender.kind !== "gmail" || !loginRefused(err)) throw err;
     await markSenderFailed(db, userId, "Gmail rejected the app password.");
     throw new StepError("Gmail rejected the app password. Reconnect Gmail in Apps.", false, { cause: err });
+  }
+}
+
+/**
+ * One email through the Gmail API with a Google sign-in (decision 0063). The token is refreshed before the send claim,
+ * so the claim's lock never waits on a query (decision 0030), and released as the request goes out. A 401 refreshes
+ * once and sends again (Gmail did not take the first). A refused grant marks the sender failed: nothing falls back to
+ * another sender (decision 0020). A 5xx or a timeout after the request left is unknown and never resent on its own.
+ */
+async function sendWithGmailApi(db: Db, key: Buffer, deps: MailDeps, userId: string, sender: Extract<ResolvedSender, { kind: "gmail_api" }>, mailer: Mailer, cfg: EmailConfig, messageKey: string, brand: Brand | null, claim?: () => Promise<() => void>) {
+  const { to, messageId, raw } = await rawMessage(mailer, cfg, messageKey, brand);
+  const urls = deps.urls;
+  if (!urls || !gmail.client(urls) || !urls.gmail) throw new StepError("Gmail sign-in is not set up on this installation any more. Connect Gmail again in Apps.", false, { outcome: "not_sent" });
+  try {
+    await withFreshToken(db, key, urls, userId, gmail, sender.grant, async (token) => {
+      (await claim?.())?.();
+      return gmailSend(urls, token, raw);
+    });
+    return { messageId, to, raw: undefined };
+  } catch (err) {
+    if (!(err instanceof ProviderError)) throw err;
+    if (err.kind === "auth") {
+      // A refused refresh marked the sender already; a second 401 after a fresh token marks it here.
+      await markSenderFailed(db, userId, "Gmail no longer accepts Daloy's access. Reconnect Gmail in Apps.");
+      throw new StepError("Gmail no longer accepts Daloy's access, so nothing was sent. Reconnect Gmail in Apps.", false, { cause: err, outcome: "not_sent" });
+    }
+    if (err.kind === "quota") throw new StepError(`email failed: ${err.message}`, true, { cause: err, outcome: "throttled", retryAfterMs: err.retryAfterMs });
+    if (err.kind === "unavailable") throw new StepError(`email failed: ${err.message}`, true, { cause: err, outcome: "not_sent" });
+    if (err.kind === "ambiguous") throw new StepError(`email failed: ${err.message}`, false, { cause: err, outcome: "unknown" });
+    throw new StepError(`email failed: ${err.message}`, false, { cause: err, outcome: "rejected" });
   }
 }
 
@@ -215,17 +257,35 @@ function brandedParts(cfg: EmailConfig, brand: Brand) {
   return { text: name ? `${cfg.text}\n\n-- ${name}` : cfg.text, html, attachments };
 }
 
-/** Sends one email, plain text unless a brand is given. Recipients come from a resolved template, so they are checked here, after resolution. */
-export async function sendEmail(mailer: Mailer, cfg: EmailConfig, messageKey: string, onBodyStart?: () => void, brand?: Brand | null) {
+/**
+ * What nodemailer is given for one email, plain text unless a brand is given. Recipients come from a resolved template,
+ * so they are checked here, after resolution. SMTP and the Gmail API both send this, so their headers are the same.
+ */
+function message(mailer: Mailer, cfg: EmailConfig, messageKey: string, brand?: Brand | null) {
   const to = checkRecipients(cfg.to);
-
   // messageKey is per attempt (run:step:attempt), so each attempt has its own Message-ID, and a re-delivered
   // attempt keeps it, so receivers can drop the duplicate.
   const messageId = `<${messageKey.replaceAll(":", ".")}@daloy>`;
+  return { to, messageId, mail: { from: mailer.from, replyTo: mailer.replyTo, to, subject: cfg.subject, ...(brand ? brandedParts(cfg, brand) : { text: cfg.text }), messageId } };
+}
+
+/** Builds a message without sending it. */
+const rawBuilder = nodemailer.createTransport({ streamTransport: true, buffer: true });
+
+/** The RFC 822 bytes of an email, as SMTP would send them, for the Gmail API (decision 0063). */
+export async function rawMessage(mailer: Mailer, cfg: EmailConfig, messageKey: string, brand?: Brand | null) {
+  const { to, messageId, mail } = message(mailer, cfg, messageKey, brand);
+  const info = await rawBuilder.sendMail(mail);
+  return { to, messageId, raw: info.message as Buffer };
+}
+
+/** Sends one email, plain text unless a brand is given. */
+export async function sendEmail(mailer: Mailer, cfg: EmailConfig, messageKey: string, onBodyStart?: () => void, brand?: Brand | null) {
+  const { to, messageId, mail } = message(mailer, cfg, messageKey, brand);
   const daloySend: SendState = { bodyStarted: false, onBodyStart };
   watchBody(mailer.transport);
   try {
-    const info = await mailer.transport.sendMail({ from: mailer.from, replyTo: mailer.replyTo, to, subject: cfg.subject, ...(brand ? brandedParts(cfg, brand) : { text: cfg.text }), messageId, daloySend } as unknown as Parameters<Mailer["transport"]["sendMail"]>[0]);
+    const info = await mailer.transport.sendMail({ ...mail, daloySend } as unknown as Parameters<Mailer["transport"]["sendMail"]>[0]);
     // jsonTransport puts the built message in info.message; SMTP leaves it undefined.
     return { messageId, to, raw: typeof info.message === "string" ? info.message : undefined };
   } catch (err) {

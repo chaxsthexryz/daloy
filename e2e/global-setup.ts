@@ -141,6 +141,7 @@ export default async function setup() {
     GOOGLE_OAUTH_TOKEN_URL: providers.oauthUrls("google").token,
     GOOGLE_REVOKE_URL: providers.oauthUrls("google").revoke,
     GOOGLE_USERINFO_URL: providers.oauthUrls("google").userinfo,
+    GMAIL_API_URL: providers.urls.gmail,
     GOOGLE_PICKER_API_KEY: "e2e-picker-key",
     GOOGLE_PROJECT_NUMBER: "000000000000",
     // Every spec signs up from 127.0.0.1.

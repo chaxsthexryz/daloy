@@ -1,5 +1,5 @@
 import { call, ProviderError, type GoogleOAuthConfig, type ProviderUrls } from "../providers";
-import type { Provider } from "../schema";
+import type { OAuthFlowProvider } from "../schema";
 import type { OAuthProvider } from "./core";
 
 /**
@@ -18,6 +18,8 @@ export const GOOGLE_IDENTITY_SCOPES = ["openid", "email"] as const;
 export const GOOGLE_FEATURE_SCOPES = {
   sheets: ["https://www.googleapis.com/auth/drive.file"],
   drive: ["https://www.googleapis.com/auth/drive.file"],
+  // Sensitive, not restricted (decision 0063): send only. Reading mail would need a restricted scope.
+  gmail: ["https://www.googleapis.com/auth/gmail.send"],
 } as const satisfies Record<string, readonly string[]>;
 export type GoogleFeature = keyof typeof GOOGLE_FEATURE_SCOPES;
 
@@ -36,16 +38,16 @@ export function googleConsentOutcome(error: string): "declined" | "admin_require
   return "failed";
 }
 
-/** The OpenID userinfo answer: sub is stable for the Google account, the email may change and is only shown. */
-async function googleIdentity(urls: ProviderUrls, accessToken: string) {
+/** The OpenID userinfo answer: sub is stable for the Google account, the email may change. emailVerified: Google confirmed the address. */
+export async function googleIdentity(urls: ProviderUrls, accessToken: string) {
   const res = await call(googleConfig(urls).userinfo, { headers: { authorization: `Bearer ${accessToken}` } }, urls.timeoutMs ?? 10_000, false, "Google sign-in");
   if (res.status === 401) throw new ProviderError("Google did not accept the new sign-in.", "auth");
   if (res.status !== 200 || typeof res.body.sub !== "string" || !res.body.sub) throw new ProviderError("Google did not say which account signed in.", "unavailable");
-  return { externalId: res.body.sub, account: typeof res.body.email === "string" && res.body.email ? res.body.email : res.body.sub };
+  return { externalId: res.body.sub, account: typeof res.body.email === "string" && res.body.email ? res.body.email : res.body.sub, emailVerified: res.body.email_verified === true };
 }
 
 /** One Google app on the core. Exported for Gmail (P5) and Calendar (P6), which add a feature row and call this. */
-export function googleProvider(feature: GoogleFeature, provider: Provider, slug: string, name: string): OAuthProvider {
+export function googleProvider(feature: GoogleFeature, provider: OAuthFlowProvider, slug: string, name: string): OAuthProvider {
   return {
     provider,
     slug,

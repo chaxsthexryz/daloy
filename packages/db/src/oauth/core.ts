@@ -1,9 +1,9 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { and, eq, gt, isNull, sql } from "drizzle-orm";
-import { decryptSecret, encryptSecret } from "../crypto";
+import { decryptSecret, encryptSecret, type EncryptedSecret } from "../crypto";
 import type { Db } from "../index";
 import { call, ProviderError, retryAfter, type ProviderUrls } from "../providers";
-import { connections, oauthFlows, type Provider } from "../schema";
+import { connections, oauthFlows, type OAuthFlowProvider, type Provider } from "../schema";
 import { readTokenBlob, type TokenBlob } from "./blob";
 
 export * from "./blob";
@@ -23,10 +23,33 @@ export const FLOW_TTL_MINUTES = 10;
 
 export type OAuthClient = { clientId: string; clientSecret: string };
 export type OAuthIdentity = { externalId: string; account: string; destination?: Record<string, string> };
+type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
+
+/**
+ * Where a grant is kept. The default is the provider's connections row (connectionsStore below). Gmail keeps its grant
+ * on the owner's mail_senders row, where decision 0020's sender rules live (decision 0063). The row lock for refresh is
+ * a SELECT ... FOR UPDATE on that row either way.
+ */
+export type GrantStore = {
+  /** Associated data for the encrypted token blob, beside the workspace (crypto.ts). */
+  secretName: string;
+  /** In tx: lock the row and return its encrypted credential. Null: nothing connected. */
+  lock: (tx: Tx, workspaceId: string) => Promise<EncryptedSecret | null>;
+  /** In tx, under the lock: write a refreshed credential. */
+  refreshed: (tx: Tx, workspaceId: string, e: EncryptedSecret, accessExpiresAt: Date | null) => Promise<void>;
+  /** In tx: the provider refused the grant. Marks it failed only while the credential is still the one read (revision is its IV). */
+  refused: (tx: Tx, workspaceId: string, revision: string, error: string) => Promise<void>;
+  /** In tx: save a new grant from the consent callback. */
+  connect: (tx: Tx, workspaceId: string, e: EncryptedSecret, blob: TokenBlob, who: OAuthIdentity, clientId: string) => Promise<void>;
+  /** Active grants not refreshed for `days`, oldest first, for the keepalive sweep. */
+  due: (db: Db, days: number, limit: number) => Promise<(EncryptedSecret & { userId: string })[]>;
+  /** Disconnect: remove or block the grant first. credential is the OAuth blob it held, for revoke, or null. */
+  remove: (db: Db, workspaceId: string) => Promise<{ removed: boolean; credential: EncryptedSecret | null }>;
+};
 
 /** Everything that differs between providers. Adding a provider is one of these in oauth/<provider>.ts plus a line in OAUTH_PROVIDERS. */
 export type OAuthProvider = {
-  provider: Provider;
+  provider: OAuthFlowProvider;
   /** In URLs (/settings/connections/<slug>/oauth/start) and the landing page address. */
   slug: string;
   /** Shown to people and used in error text. */
@@ -59,6 +82,8 @@ export type OAuthProvider = {
   identity: (urls: ProviderUrls, accessToken: string) => Promise<OAuthIdentity>;
   /** A consent error on the way back, as a closed outcome. Provider text never goes further. */
   outcome: (error: string, description: string) => "declined" | "admin_required" | "failed";
+  /** Where the grant is kept. Default: the connections row of `provider`. */
+  store?: GrantStore;
 };
 
 /** Scopes Daloy must never ask for: Google restricted scopes need a paid security assessment (plan section 9). */
@@ -133,7 +158,7 @@ export async function startFlow(db: Db, key: Buffer, urls: ProviderUrls, publicU
  * The callback's one-time use of a flow: one guarded UPDATE, so of two callbacks with the same state only one gets the
  * row. Unknown, used, expired, another member's or another workspace's state all give null and change nothing.
  */
-export async function consumeFlow(db: Db, key: Buffer, state: string, who: { workspaceId: string; memberId: string }): Promise<{ provider: Provider; verifier?: string } | null> {
+export async function consumeFlow(db: Db, key: Buffer, state: string, who: { workspaceId: string; memberId: string }): Promise<{ provider: OAuthFlowProvider; verifier?: string } | null> {
   if (!state) return null;
   const [row] = await db
     .update(oauthFlows)
@@ -204,30 +229,65 @@ export async function finishFlow(db: Db, key: Buffer, urls: ProviderUrls, public
   if (def.refreshTokens && !t.refreshToken) throw new ProviderError(`${def.name} did not give Daloy lasting access.`, "invalid");
   const who = await def.identity(urls, t.accessToken);
   const blob: TokenBlob = { v: 1, accessToken: t.accessToken, accessExpiresAt: expiry(t), refreshToken: t.refreshToken, scope: t.scope ?? def.scopes.join(" ") };
-  await db.transaction(async (tx) => {
-    // Locks the row, so a refresh in flight finishes first and cannot write its old grant over this one.
-    const [old] = await tx.select({ externalId: connections.externalId, destination: connections.destination }).from(connections).where(and(eq(connections.userId, workspaceId), eq(connections.provider, def.provider))).for("update");
-    const e = encryptSecret(key, workspaceId, `connection:${def.provider}`, JSON.stringify(blob));
-    const values = {
-      status: "active" as const,
-      account: who.account,
-      credentialCiphertext: e.ciphertext,
-      credentialIv: e.iv,
-      credentialAuthTag: e.authTag,
-      destination: who.destination ?? (old && old.externalId === who.externalId ? old.destination : null),
-      lastError: null,
-      updatedAt: new Date(),
-      authMethod: "oauth" as const,
-      externalId: who.externalId,
-      scopes: blob.scope,
-      oauthClientId: clientOf(def, urls).clientId,
-      accessExpiresAt: blob.accessExpiresAt === null ? null : new Date(blob.accessExpiresAt),
-      refreshedAt: new Date(),
-    };
-    await tx.insert(connections).values({ userId: workspaceId, provider: def.provider, ...values }).onConflictDoUpdate({ target: [connections.userId, connections.provider], set: values });
-  });
+  const store = storeOf(def);
+  const e = encryptSecret(key, workspaceId, store.secretName, JSON.stringify(blob));
+  await db.transaction((tx) => store.connect(tx, workspaceId, e, blob, who, clientOf(def, urls).clientId));
   return "connected";
 }
+
+/** A provider's grant on its connections row (decision 0058). */
+function connectionsStore(def: OAuthProvider): GrantStore {
+  // A definition without its own store is a connections provider.
+  const provider = def.provider as Provider;
+  const row = (workspaceId: string) => and(eq(connections.userId, workspaceId), eq(connections.provider, provider));
+  return {
+    secretName: `connection:${provider}`,
+    lock: async (tx, workspaceId) => {
+      const [r] = await tx.select().from(connections).where(row(workspaceId)).for("update");
+      return r ? { ciphertext: r.credentialCiphertext, iv: r.credentialIv, authTag: r.credentialAuthTag } : null;
+    },
+    refreshed: async (tx, workspaceId, e, accessExpiresAt) => {
+      await tx.update(connections).set({ credentialCiphertext: e.ciphertext, credentialIv: e.iv, credentialAuthTag: e.authTag, accessExpiresAt, refreshedAt: new Date(), updatedAt: new Date() }).where(row(workspaceId));
+    },
+    refused: async (tx, workspaceId, revision, error) => {
+      await tx.update(connections).set({ status: "failed", lastError: error.slice(0, 500), updatedAt: new Date() }).where(and(row(workspaceId), eq(connections.credentialIv, revision)));
+    },
+    connect: async (tx, workspaceId, e, blob, who, clientId) => {
+      // Locks the row, so a refresh in flight finishes first and cannot write its old grant over this one.
+      const [old] = await tx.select({ externalId: connections.externalId, destination: connections.destination }).from(connections).where(row(workspaceId)).for("update");
+      const values = {
+        status: "active" as const,
+        account: who.account,
+        credentialCiphertext: e.ciphertext,
+        credentialIv: e.iv,
+        credentialAuthTag: e.authTag,
+        destination: who.destination ?? (old && old.externalId === who.externalId ? old.destination : null),
+        lastError: null,
+        updatedAt: new Date(),
+        authMethod: "oauth" as const,
+        externalId: who.externalId,
+        scopes: blob.scope,
+        oauthClientId: clientId,
+        accessExpiresAt: blob.accessExpiresAt === null ? null : new Date(blob.accessExpiresAt),
+        refreshedAt: new Date(),
+      };
+      await tx.insert(connections).values({ userId: workspaceId, provider, ...values }).onConflictDoUpdate({ target: [connections.userId, connections.provider], set: values });
+    },
+    due: (db, days, limit) =>
+      db
+        .select({ userId: connections.userId, ciphertext: connections.credentialCiphertext, iv: connections.credentialIv, authTag: connections.credentialAuthTag })
+        .from(connections)
+        .where(and(eq(connections.provider, provider), eq(connections.authMethod, "oauth"), eq(connections.status, "active"), sql`coalesce(${connections.refreshedAt}, ${connections.updatedAt}) < now() - make_interval(days => ${days})`))
+        .orderBy(sql`coalesce(${connections.refreshedAt}, ${connections.updatedAt})`)
+        .limit(limit),
+    remove: async (db, workspaceId) => {
+      const [r] = await db.delete(connections).where(row(workspaceId)).returning();
+      return { removed: !!r, credential: r?.authMethod === "oauth" ? { ciphertext: r.credentialCiphertext, iv: r.credentialIv, authTag: r.credentialAuthTag } : null };
+    },
+  };
+}
+
+const storeOf = (def: OAuthProvider) => def.store ?? connectionsStore(def);
 
 // ---------------------------------------------------------------- refresh under a row lock
 
@@ -251,18 +311,19 @@ const lockTimedOut = (err: unknown) => {
  */
 async function refreshLocked(db: Db, key: Buffer, urls: ProviderUrls, workspaceId: string, def: OAuthProvider, o: { rejected?: string; force?: boolean }): Promise<HeldConnection> {
   clientOf(def, urls);
-  const name = `connection:${def.provider}`;
+  const store = storeOf(def);
+  const name = store.secretName;
   let out: { held: HeldConnection } | { refused: ProviderError };
   try {
     out = await db.transaction(async (tx) => {
       await tx.execute(sql`set local lock_timeout = '15s'`);
-      const [row] = await tx.select().from(connections).where(and(eq(connections.userId, workspaceId), eq(connections.provider, def.provider))).for("update");
+      const row = await store.lock(tx, workspaceId);
       if (!row) return { refused: new ProviderError(`${def.name} is not connected. Connect it in Apps, then retry.`, "auth") };
-      const credential = decryptSecret(key, workspaceId, name, { ciphertext: row.credentialCiphertext, iv: row.credentialIv, authTag: row.credentialAuthTag });
+      const credential = decryptSecret(key, workspaceId, name, row);
       const blob = readTokenBlob(credential);
-      if (!o.force && blob.accessToken !== o.rejected && fresh(blob)) return { held: { credential, revision: row.credentialIv } };
+      if (!o.force && blob.accessToken !== o.rejected && fresh(blob)) return { held: { credential, revision: row.iv } };
       const refuse = async (err: ProviderError) => {
-        await tx.update(connections).set({ status: "failed", lastError: err.message.slice(0, 500), updatedAt: new Date() }).where(and(eq(connections.userId, workspaceId), eq(connections.provider, def.provider), eq(connections.credentialIv, row.credentialIv)));
+        await store.refused(tx, workspaceId, row.iv, err.message);
         return { refused: err };
       };
       if (!blob.refreshToken) return refuse(new ProviderError(`${def.name} no longer accepts Daloy's access. Reconnect ${def.name}.`, "auth"));
@@ -291,10 +352,7 @@ async function refreshLocked(db: Db, key: Buffer, urls: ProviderUrls, workspaceI
       };
       const plaintext = JSON.stringify(next);
       const e = encryptSecret(key, workspaceId, name, plaintext);
-      await tx
-        .update(connections)
-        .set({ credentialCiphertext: e.ciphertext, credentialIv: e.iv, credentialAuthTag: e.authTag, accessExpiresAt: next.accessExpiresAt === null ? null : new Date(next.accessExpiresAt), refreshedAt: new Date(), updatedAt: new Date() })
-        .where(and(eq(connections.userId, workspaceId), eq(connections.provider, def.provider)));
+      await store.refreshed(tx, workspaceId, e, next.accessExpiresAt === null ? null : new Date(next.accessExpiresAt));
       return { held: { credential: plaintext, revision: e.iv } };
     });
   } catch (err) {
@@ -342,14 +400,10 @@ export async function keepOAuthAlive(db: Db, key: Buffer, urls: ProviderUrls, de
   let refreshed = 0;
   for (const def of defs) {
     if (!def.client(urls) || refreshed >= limit) continue;
-    const due = await db
-      .select({ userId: connections.userId, ciphertext: connections.credentialCiphertext, iv: connections.credentialIv, authTag: connections.credentialAuthTag })
-      .from(connections)
-      .where(and(eq(connections.provider, def.provider), eq(connections.authMethod, "oauth"), eq(connections.status, "active"), sql`coalesce(${connections.refreshedAt}, ${connections.updatedAt}) < now() - make_interval(days => ${def.keepaliveDays})`))
-      .orderBy(sql`coalesce(${connections.refreshedAt}, ${connections.updatedAt})`)
-      .limit(limit - refreshed);
+    const store = storeOf(def);
+    const due = await store.due(db, def.keepaliveDays, limit - refreshed);
     for (const r of due) {
-      const conn = { credential: decryptSecret(key, r.userId, `connection:${def.provider}`, r), revision: r.iv };
+      const conn = { credential: decryptSecret(key, r.userId, store.secretName, r), revision: r.iv };
       try {
         await freshToken(db, key, urls, r.userId, def, conn, { force: true });
         refreshed++;
@@ -362,16 +416,17 @@ export async function keepOAuthAlive(db: Db, key: Buffer, urls: ProviderUrls, de
 }
 
 /**
- * Disconnect an OAuth connection: delete the row first, so it never looks disconnected in Daloy while still usable,
+ * Disconnect an OAuth connection: delete (or, for Gmail, block) the grant first, so it never looks disconnected in Daloy while still usable,
  * then ask the provider to revoke (5 seconds). revoked is null when the provider has no revoke call, false when it failed.
  */
 export async function disconnectOAuth(db: Db, key: Buffer, urls: ProviderUrls, workspaceId: string, def: OAuthProvider): Promise<{ removed: boolean; revoked: boolean | null }> {
-  const [row] = await db.delete(connections).where(and(eq(connections.userId, workspaceId), eq(connections.provider, def.provider))).returning();
-  if (!row) return { removed: false, revoked: null };
-  if (row.authMethod !== "oauth" || !def.revokeUrl) return { removed: true, revoked: null };
+  const store = storeOf(def);
+  const { removed, credential } = await store.remove(db, workspaceId);
+  if (!removed) return { removed: false, revoked: null };
+  if (!credential || !def.revokeUrl) return { removed: true, revoked: null };
   try {
     const client = clientOf(def, urls);
-    const blob = readTokenBlob(decryptSecret(key, workspaceId, `connection:${def.provider}`, { ciphertext: row.credentialCiphertext, iv: row.credentialIv, authTag: row.credentialAuthTag }));
+    const blob = readTokenBlob(decryptSecret(key, workspaceId, store.secretName, credential));
     const token = blob.refreshToken ?? blob.accessToken;
     const body = new URLSearchParams({ token, token_type_hint: blob.refreshToken ? "refresh_token" : "access_token", client_id: client.clientId, client_secret: client.clientSecret });
     const res = await call(def.revokeUrl(urls), { method: "POST", body }, Math.min(5000, urls.timeoutMs ?? 5000), false, `${def.name} revoke`);

@@ -3,17 +3,22 @@ import { and, eq, gt, isNotNull, sql } from "drizzle-orm";
 import { hashToken } from "./approvals";
 import { decryptSecret, encryptSecret } from "./crypto";
 import type { Db } from "./index";
+import type { HeldConnection } from "./oauth/core";
+import { GMAIL_GRANT } from "./oauth/gmail";
 import { businessProfiles, mailSenders } from "./schema";
 
 export type Profile = { businessName: string | null; website: string | null; inquiryEmail: string | null; replyTo: string | null };
 
 /**
- * Who sends an owner's mail. "installation" is the SMTP server from the env vars (Mailpit locally), used when the owner
- * connected no account. "blocked" stops the send: an owner who connected Gmail never silently falls back (decision 0020).
+ * Who sends an owner's mail, and how. "installation" is the SMTP server from the env vars (Mailpit locally), used when
+ * the owner connected no account. "gmail" is Gmail's SMTP server with an app password; "gmail_api" is the Gmail API
+ * with a Google sign-in's token blob (decision 0063). "blocked" stops the send: an owner who connected Gmail never
+ * silently falls back (decision 0020).
  */
 export type ResolvedSender =
   | { kind: "installation"; fromName?: string; replyTo?: string }
   | { kind: "gmail"; address: string; password: string; fromName?: string; replyTo?: string }
+  | { kind: "gmail_api"; address: string; grant: HeldConnection; fromName?: string; replyTo?: string }
   | { kind: "blocked"; reason: string };
 
 // The owner id is in the associated data (crypto.ts), so a password copied to another owner's row does not decrypt.
@@ -33,7 +38,7 @@ export async function saveProfile(db: Db, userId: string, profile: Profile) {
 /** The sender's state for the console. The password never leaves this module. */
 export async function readSender(db: Db, userId: string) {
   const [row] = await db
-    .select({ address: mailSenders.address, status: mailSenders.status, lastError: mailSenders.lastError, verifiedAt: mailSenders.verifiedAt, lastTestedAt: mailSenders.lastTestedAt })
+    .select({ address: mailSenders.address, status: mailSenders.status, lastError: mailSenders.lastError, verifiedAt: mailSenders.verifiedAt, lastTestedAt: mailSenders.lastTestedAt, authMethod: mailSenders.authMethod })
     .from(mailSenders)
     .where(eq(mailSenders.userId, userId));
   return row ?? null;
@@ -46,7 +51,8 @@ export async function readSender(db: Db, userId: string) {
 export async function connectGmail(db: Db, key: Buffer, userId: string, input: { address: string; appPassword: string }) {
   const address = input.address.trim().toLowerCase();
   const e = encryptSecret(key, userId, PASSWORD, input.appPassword.replace(/\s+/g, ""));
-  const password = { passwordCiphertext: e.ciphertext, passwordIv: e.iv, passwordAuthTag: e.authTag, lastError: null, updatedAt: new Date() };
+  // Replaces a Google sign-in too (its grant at Google is not revoked here; Disconnect does that).
+  const password = { passwordCiphertext: e.ciphertext, passwordIv: e.iv, passwordAuthTag: e.authTag, lastError: null, updatedAt: new Date(), authMethod: "app_password" as const, externalId: null, scopes: null, accessExpiresAt: null, refreshedAt: null };
   const [old] = await db.select({ address: mailSenders.address, verifiedAt: mailSenders.verifiedAt }).from(mailSenders).where(eq(mailSenders.userId, userId));
   const keepsVerification = old?.address === address && old.verifiedAt !== null;
   const state = keepsVerification
@@ -58,10 +64,10 @@ export async function connectGmail(db: Db, key: Buffer, userId: string, input: {
     .onConflictDoUpdate({ target: mailSenders.userId, set: { address, ...password, ...state } });
 }
 
-/** The decrypted credential, whatever the status, for the test email. Null when nothing is connected. */
+/** The decrypted app password, whatever the status, for the test email. Null when nothing is connected or Gmail uses a Google sign-in. */
 export async function gmailCredential(db: Db, key: Buffer, userId: string) {
   const [row] = await db.select().from(mailSenders).where(eq(mailSenders.userId, userId));
-  if (!row?.passwordCiphertext || !row.passwordIv || !row.passwordAuthTag) return null;
+  if (!row?.passwordCiphertext || !row.passwordIv || !row.passwordAuthTag || row.authMethod !== "app_password") return null;
   const password = decryptSecret(key, userId, PASSWORD, { ciphertext: row.passwordCiphertext, iv: row.passwordIv, authTag: row.passwordAuthTag });
   return { address: row.address, password, status: row.status, verified: row.verifiedAt !== null };
 }
@@ -73,15 +79,16 @@ export async function gmailCredential(db: Db, key: Buffer, userId: string) {
 export async function resolveSender(db: Db, key: Buffer, userId: string, { allowUnconfirmed = false } = {}): Promise<ResolvedSender> {
   const profile = await readProfile(db, userId);
   const extras = { fromName: profile?.businessName ?? undefined, replyTo: profile?.replyTo ?? undefined };
-  const [row] = await db.select({ status: mailSenders.status }).from(mailSenders).where(eq(mailSenders.userId, userId));
+  const [row] = await db.select().from(mailSenders).where(eq(mailSenders.userId, userId));
   if (!row) return { kind: "installation", ...extras };
   if (row.status === "disconnected") return { kind: "blocked", reason: "Gmail is disconnected. Reconnect Gmail in Apps." };
-  if (allowUnconfirmed) {
-    const cred = (await gmailCredential(db, key, userId))!;
-    return { kind: "gmail", address: cred.address, password: cred.password, ...extras };
+  if (!allowUnconfirmed && row.status === "unverified") return { kind: "blocked", reason: "Gmail is connected but not confirmed. Send the test email and confirm it in Apps." };
+  if (!allowUnconfirmed && row.status === "failed") return { kind: "blocked", reason: "Gmail could not send. Reconnect Gmail in Apps." };
+  if (row.authMethod === "oauth") {
+    // The token blob, refreshed under the row lock by the send (oauth/core.ts). The IV is the revision a refusal is marked against.
+    const grant = { credential: decryptSecret(key, userId, GMAIL_GRANT, { ciphertext: row.passwordCiphertext!, iv: row.passwordIv!, authTag: row.passwordAuthTag! }), revision: row.passwordIv! };
+    return { kind: "gmail_api", address: row.address, grant, ...extras };
   }
-  if (row.status === "unverified") return { kind: "blocked", reason: "Gmail is connected but not confirmed. Send the test email and confirm it in Apps." };
-  if (row.status === "failed") return { kind: "blocked", reason: "Gmail could not send. Reconnect Gmail in Apps." };
   const cred = (await gmailCredential(db, key, userId))!;
   return { kind: "gmail", address: cred.address, password: cred.password, ...extras };
 }

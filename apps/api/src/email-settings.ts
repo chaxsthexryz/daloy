@@ -2,7 +2,8 @@ import { randomUUID } from "node:crypto";
 import {
   claimVerifyToken,
   connectGmail,
-  disconnectGmail,
+  disconnectOAuth,
+  gmail,
   isLocalCatcher,
   issueVerifyToken,
   type Mailer,
@@ -17,8 +18,9 @@ import {
   type Db,
 } from "@daloy/db";
 import { builtInEmailCopy, gmailInput, profileInput } from "@daloy/engine";
-import { BadRequestException, Body, Controller, Delete, Get, HttpCode, Inject, NotFoundException, Post, Put, UseGuards } from "@nestjs/common";
+import { BadRequestException, Body, Controller, Delete, Get, HttpCode, Inject, NotFoundException, Post, Put, Res, UseGuards } from "@nestjs/common";
 import { eq } from "drizzle-orm";
+import type { Response } from "express";
 import * as z from "zod";
 import { SessionGuard } from "./auth";
 import { Allow, CONFIG, CurrentUser, DB, RateLimit, ZodPipe, type ApiConfig, type SessionUser, MANAGE } from "./http";
@@ -90,7 +92,9 @@ export class EmailSettingsController {
       );
     }
     try {
-      const sent = await sendAs(this.db, this.config.secretsKey, this.config.mail, user.workspaceId, { to, subject: copy.testSubject, text: lines.join("\n") }, `test:${randomUUID()}`, {
+      // The Gmail API and Google client for a Google sign-in (decision 0063): the API's own provider URLs unless the mailer has them.
+      const mail = { ...this.config.mail, urls: this.config.mail.urls ?? this.config.providers };
+      const sent = await sendAs(this.db, this.config.secretsKey, mail, user.workspaceId, { to, subject: copy.testSubject, text: lines.join("\n") }, `test:${randomUUID()}`, {
         allowUnconfirmed: true,
       });
       if (sent.gmail) await markSenderWorking(this.db, user.workspaceId);
@@ -111,20 +115,26 @@ export class EmailSettingsController {
     }
   }
 
-  /** Deletes the app password. Mail from this owner's automations stops until they reconnect; nothing is sent another way. */
+  /**
+   * Deletes the app password or the Google sign-in. Mail from this owner's automations stops until they reconnect;
+   * nothing is sent another way. A Google sign-in is then revoked at Google (decision 0063): 200 with { revoked }.
+   */
   @Post("disconnect")
-  @HttpCode(204)
-  async disconnect(@CurrentUser() user: SessionUser) {
-    if (!(await readSender(this.db, user.workspaceId))) throw new NotFoundException();
-    await disconnectGmail(this.db, user.workspaceId);
+  async disconnect(@CurrentUser() user: SessionUser, @Res({ passthrough: true }) res: Response) {
+    const out = await disconnectOAuth(this.db, this.config.secretsKey, this.config.providers, user.workspaceId, gmail);
+    if (!out.removed) throw new NotFoundException();
+    res.status(out.revoked === null ? 204 : 200);
+    return out.revoked === null ? undefined : { revoked: out.revoked };
   }
 
   /** "Use the local mail server instead": the owner's explicit choice to send through the installation server again. */
   @Delete("gmail")
   @HttpCode(204)
   async remove(@CurrentUser() user: SessionUser) {
-    const [row] = await this.db.select({ userId: mailSenders.userId }).from(mailSenders).where(eq(mailSenders.userId, user.workspaceId));
+    const [row] = await this.db.select({ authMethod: mailSenders.authMethod, connected: mailSenders.passwordCiphertext }).from(mailSenders).where(eq(mailSenders.userId, user.workspaceId));
     if (!row) throw new NotFoundException();
+    // A Google sign-in still held is revoked first, so choosing the local server leaves no grant behind at Google.
+    if (row.authMethod === "oauth" && row.connected) await disconnectOAuth(this.db, this.config.secretsKey, this.config.providers, user.workspaceId, gmail);
     await removeGmail(this.db, user.workspaceId);
   }
 }
