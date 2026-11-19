@@ -432,7 +432,8 @@ export async function keepOAuthAlive(db: Db, key: Buffer, urls: ProviderUrls, de
       const conn = { credential: decryptSecret(key, r.userId, store.secretName, r), revision: r.iv };
       if (!readTokenBlob(conn.credential).refreshToken) {
         // A token that never expires (Notion may issue one): nothing to refresh. Stamped so the sweep does not pick it up first every day.
-        await db.update(connections).set({ refreshedAt: new Date() }).where(and(eq(connections.userId, r.userId), eq(connections.provider, def.provider), eq(connections.credentialIv, r.iv)));
+        // Only a connections row can hold such a token; Gmail always has a refresh token.
+        if (!def.store) await db.update(connections).set({ refreshedAt: new Date() }).where(and(eq(connections.userId, r.userId), eq(connections.provider, def.provider as Provider), eq(connections.credentialIv, r.iv)));
         continue;
       }
       try {

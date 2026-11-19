@@ -5,7 +5,7 @@ import { connectionCredential, markConnectionFailed, PROVIDER_NAMES } from "./co
 import { withGoogle } from "./google-access";
 import { freshToken, oauthProvider, slackToken, trelloAuthOf, withFreshToken, withRecordAuth } from "./oauth";
 import type { Db } from "./index";
-import { airtableAdd, appendRowOnce, driveUpload, type DriveDestination, notionAddPage, trelloAddCard, type TrelloCredential, deleteSheetMarker, outlookSend, ProviderError, slackPost, syncCalendarEvent, teamsPost, telegramSend, type CalendarDestination, type OutlookMessage, type ProviderErrorKind, type ProviderUrls, type SheetDestination } from "./providers";
+import { airtableAdd, appendRowOnce, driveUpload, type DriveDestination, notionAddPage, trelloAddCard, deleteSheetMarker, outlookSend, ProviderError, slackPost, syncCalendarEvent, teamsPost, telegramSend, type CalendarDestination, type OutlookMessage, type ProviderErrorKind, type ProviderUrls, type SheetDestination } from "./providers";
 import { bookingSuperseded, supersededSql } from "./bookings";
 import { bookingForCalendar } from "./calendar";
 import { bookings, calendarEvents, connections, deliveries, runs, type Provider } from "./schema";

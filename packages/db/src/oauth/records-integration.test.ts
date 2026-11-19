@@ -8,7 +8,7 @@ import { connectionCredential, readConnections, saveConnection, setDestination }
 import { queueDelivery, runDueDeliveries } from "../deliveries";
 import type { Db } from "../index";
 import { airtableAdd, notionAddPage, trelloAddCard, type ProviderUrls } from "../providers";
-import { connections, deliveries, runs, users, workflows, workflowVersions } from "../schema";
+import { connections, deliveries, runs, users, workflows, workflowVersions, type Provider } from "../schema";
 import { airtable, airtableBases, airtableTables, consumeFlow, disconnectOAuth, finishFlow, keepOAuthAlive, notion, notionDatabases, readTokenBlob, startFlow, trello, trelloAuthOf, trelloBoards, trelloLists, withRecordAuth, type OAuthProvider } from "./index";
 
 const key = randomBytes(32);
@@ -17,7 +17,8 @@ let db: Db;
 let pool: Pool;
 let fake: FakeProviders;
 let urls: ProviderUrls;
-const defs = [airtable, notion, trello];
+// The record apps keep their grant on a connections row, so their provider is a connections provider.
+const defs = [airtable, notion, trello] as (OAuthProvider & { provider: Provider })[];
 const target = {
   airtable: { baseId: "appFAKEBASE000001", tableId: "tblFAKETABLE00001" },
   notion: { databaseId: "0123456789abcdef0123456789abcdef", titleProperty: "Name" },
@@ -34,7 +35,7 @@ async function consent(ws: string, def: OAuthProvider) {
   return finishFlow(db, key, urls, publicUrl, def, ws, back.searchParams.get("code")!, flow!.verifier);
 }
 async function held(ws: string, def: OAuthProvider) {
-  return (await connectionCredential(db, key, ws, def.provider))!;
+  return (await connectionCredential(db, key, ws, def.provider as Provider))!;
 }
 async function newRun(ws: string) {
   const [wf] = await db.insert(workflows).values({ userId: ws, name: "Record", slug: randomBytes(8).toString("hex") }).returning();
