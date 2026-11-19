@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { randomBytes } from "node:crypto";
-import { encryptSecret, hashToken, migrate, readSecret, type Db } from "@daloy/db";
+import { authorizeUrl, codeTokens, connectionCredential, encryptSecret, hashToken, migrate, outlook, pkceChallenge, PROVIDERS, readSecret, readTokenBlob, runDueDeliveries, type Db, type Provider } from "@daloy/db";
 import type { INestApplication } from "@nestjs/common";
 import { hash } from "@node-rs/argon2";
 import { drizzle } from "drizzle-orm/node-postgres";
@@ -13,6 +13,7 @@ import { PgBoss } from "pg-boss";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { freshDatabase } from "../../../test/db";
+import { startFakeProviders, type FakeProviders } from "../../../test/fake-providers";
 import { createApp } from "./app";
 
 // Roadmap phase 4 upgrade: a database at migration 0008 with an owner, a workflow, a run, a saved key and an approval
@@ -142,5 +143,92 @@ describe("upgrade from the previous migration (0018 to 0019)", () => {
     const { rows } = await book("B-1", "[2026-12-01 09:00Z,2026-12-01 10:00Z)");
     await p.query("update runs set booking_id = $1, booking_version = 1 where id = $2", [rows[0].id, run]);
     await expect(book("B-2", "[2026-12-01 09:30Z,2026-12-01 10:30Z)")).rejects.toThrow(/bookings_no_overlap/);
+  });
+});
+
+describe("upgrade to the shared OAuth core (0036 to 0037), with every provider connected", () => {
+  let p: Pool;
+  let d: Db;
+  let a: INestApplication;
+  let b: PgBoss;
+  let fake: FakeProviders;
+  let owner: string;
+  let delivery: string;
+  const creds = {} as Record<Provider, string>;
+  const microsoft = () => ({ clientId: fake.microsoft.clientId, clientSecret: fake.microsoft.clientSecret, tenant: "organizations" });
+
+  beforeAll(async () => {
+    let url: string;
+    ({ url, db: d, pool: p } = await freshDatabase({ migrated: false }));
+    fake = await startFakeProviders();
+    await migrateUpTo(p, 36);
+    const q = async (sql: string, params: unknown[]) => (await p.query(sql, params)).rows[0] as { id: string };
+    owner = (await q("insert into users (email, password_hash) values ($1, $2) returning id", ["oauth.owner@test.local", await hash(PASSWORD)])).id;
+    await q("insert into workspace_members (workspace_id, user_id, role) values ($1, $1, 'owner') returning user_id as id", [owner]);
+    // Outlook before 0037 stored the bare refresh token Microsoft handed back.
+    const verifier = randomBytes(32).toString("base64url");
+    const redirect = "http://localhost:3000/settings/connections/outlook/callback";
+    const urls = { ...fake.urls, microsoft: microsoft() };
+    const code = new URL((await fetch(authorizeUrl(outlook, urls, { redirectUri: redirect, state: "s", codeChallenge: pkceChallenge(verifier) }), { redirect: "manual" })).headers.get("location")!).searchParams.get("code")!;
+    fake.slack.token = "xoxb-upgrade-synthetic-0001";
+    Object.assign(creds, {
+      google_sheets: JSON.stringify({ client_email: "sa@test.iam.gserviceaccount.com", private_key: "synthetic-key" }),
+      google_calendar: JSON.stringify({ client_email: "sa@test.iam.gserviceaccount.com", private_key: "synthetic-key" }),
+      google_drive: JSON.stringify({ client_email: "sa@test.iam.gserviceaccount.com", private_key: "synthetic-key" }),
+      slack: fake.slack.token,
+      outlook: (await codeTokens(outlook, urls, code, verifier, redirect)).refreshToken!,
+      teams: fake.teamsUrl("flow-purchasing"),
+      telegram: "123456789:AAsyntheticsyntheticsyntheticsynth",
+      paymongo: JSON.stringify({ secretKey: "sk_test_synthetic", webhookSecret: "whsk_synthetic" }),
+      airtable: "patSYNTHETIC.0123456789abcdefghijklmnop",
+      notion: "ntn_synthetic0123456789abcdefghij",
+      trello: JSON.stringify({ key: "0".repeat(32), token: "t".repeat(64) }),
+    });
+    const dest: Partial<Record<Provider, Record<string, string>>> = { outlook: { mailbox: "ana@contoso.example" }, slack: { channelId: "C0REQ", channelName: "office-requests" }, teams: { channelName: "Purchasing" } };
+    for (const provider of PROVIDERS) {
+      const e = encryptSecret(key, owner, `connection:${provider}`, creds[provider]);
+      await p.query("insert into connections (user_id, provider, status, account, credential_ciphertext, credential_iv, credential_auth_tag, destination) values ($1, $2, 'active', $3, $4, $5, $6, $7)", [owner, provider, provider === "outlook" ? "ana@contoso.example" : `${provider} account`, e.ciphertext, e.iv, e.authTag, dest[provider] ?? null]);
+    }
+    const wf = (await q("insert into workflows (user_id, name, slug) values ($1, 'Purchases', 'purchases') returning id", [owner])).id;
+    const version = (await q("insert into workflow_versions (workflow_id, version, definition, published) values ($1, 1, '{}', true) returning id", [wf])).id;
+    const run = (await q("insert into runs (workflow_version_id, state) values ($1, 'succeeded') returning id", [version])).id;
+    delivery = (await q("insert into deliveries (user_id, run_id, step_id, provider, reference, payload, pinned_account, pinned_destination) values ($1, $2, 'tell', 'outlook', 'PUR-1', $3, 'ana@contoso.example', $4) returning id", [owner, run, { to: "buyer@contoso.example", subject: "Chair", text: "Buy" }, { mailbox: "ana@contoso.example" }])).id;
+
+    await migrate(p);
+    b = new PgBoss(url);
+    await b.start();
+    a = await createApp({ db: d, boss: b, secretsKey: key, secureCookies: false, publicUrl: "http://localhost:3000", providers: { ...fake.urls, timeoutMs: 2000, microsoft: microsoft() } });
+    await a.init();
+  }, 120_000);
+
+  afterAll(async () => {
+    await a?.close();
+    await b?.stop({ graceful: false });
+    await fake?.close();
+    await p?.end();
+  });
+
+  it("names every connection's kind of credential, and every credential still decrypts as it was", async () => {
+    const { rows } = await p.query<{ provider: Provider; auth_method: string }>("select provider, auth_method from connections where user_id = $1", [owner]);
+    expect(Object.fromEntries(rows.map((r) => [r.provider, r.auth_method]))).toEqual({
+      google_sheets: "service_account", google_calendar: "service_account", google_drive: "service_account", teams: "webhook_url", outlook: "oauth",
+      slack: "token", telegram: "token", paymongo: "token", airtable: "token", notion: "token", trello: "token",
+    });
+    for (const provider of PROVIDERS) expect((await connectionCredential(d, key, owner, provider))!.credential).toBe(creds[provider]);
+    const { rows: pins } = await p.query("select pinned_account, pinned_destination, pinned_external_id from deliveries where id = $1", [delivery]);
+    expect(pins[0]).toEqual({ pinned_account: "ana@contoso.example", pinned_destination: { mailbox: "ana@contoso.example" }, pinned_external_id: null });
+  });
+
+  it("keeps the connections working: Slack, Teams and Outlook test, and an Outlook email queued before the upgrade is sent", async () => {
+    const agent = request.agent(a.getHttpServer());
+    await agent.post("/auth/login").send({ email: "oauth.owner@test.local", password: PASSWORD }).expect(200);
+    expect((await agent.post("/settings/connections/slack/test").expect(200)).body).toMatchObject({ ok: true });
+    expect((await agent.post("/settings/connections/teams/test").expect(200)).body).toMatchObject({ ok: true });
+    expect((await agent.post("/settings/connections/outlook/test").expect(200)).body).toMatchObject({ ok: true });
+    // The bare refresh token became a version 1 token blob on its first refresh.
+    expect(readTokenBlob((await connectionCredential(d, key, owner, "outlook"))!.credential)).toMatchObject({ v: 1, accessToken: expect.stringMatching(/^ms-access-/) });
+    await runDueDeliveries(d, key, { ...fake.urls, timeoutMs: 2000, microsoft: microsoft() });
+    expect((await p.query("select state from deliveries where id = $1", [delivery])).rows[0]).toEqual({ state: "delivered" });
+    expect(fake.microsoft.sent).toEqual(expect.arrayContaining([expect.objectContaining({ to: "buyer@contoso.example", subject: "Chair" })]));
   });
 });

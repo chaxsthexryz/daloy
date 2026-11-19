@@ -1,5 +1,5 @@
 import "reflect-metadata";
-import { mailDeps, providerUrls, RUN_QUEUE, RUN_QUEUE_OPTIONS, SCHEDULE_QUEUE, type Db } from "@daloy/db";
+import { mailDeps, OAUTH_PROVIDERS, providerUrls, RUN_QUEUE, RUN_QUEUE_OPTIONS, SCHEDULE_QUEUE, type Db } from "@daloy/db";
 import { Module } from "@nestjs/common";
 import { APP_FILTER, APP_GUARD, NestFactory } from "@nestjs/core";
 import type { NestExpressApplication } from "@nestjs/platform-express";
@@ -11,7 +11,9 @@ import { AiChatController } from "./ai-chat";
 import { AiDraftController } from "./ai-draft";
 import { ApprovalsController } from "./approvals";
 import { AuthController, SessionGuard } from "./auth";
-import { ConnectionsController, DeliveriesController, OutlookCallbackController } from "./connections";
+import { ConnectionsController, DeliveriesController } from "./connections";
+import { OAuthCallbackController, OAuthStartController } from "./oauth";
+import { consoleHeaders, GoogleController } from "./google";
 import { EmailSettingsController } from "./email-settings";
 import { EmailSourceController } from "./email-source";
 import { BOSS, CONFIG, DB, RateLimit, type ApiConfig } from "./http";
@@ -39,11 +41,11 @@ export async function createApp({ db, boss, ...config }: AppOptions) {
   await boss.createQueue(SCHEDULE_QUEUE);
 
   @Module({
-    controllers: [AuthController, WorkflowsController, CatalogController, SecretsController, ResourcesController, BookingsController, TokensController, RunsController, HooksController, PaymongoHooksController, FormsController, ApprovalsController, McpController, SettingsController, LanguageController, EmailSettingsController, EmailSourceController, ConnectionsController, OutlookCallbackController, DeliveriesController, AiDraftController, AiChatController, MembersController, MyRequestsController, UsageController, BrandController, BrandLogoController],
+    controllers: [AuthController, WorkflowsController, CatalogController, SecretsController, ResourcesController, BookingsController, TokensController, RunsController, HooksController, PaymongoHooksController, FormsController, ApprovalsController, McpController, SettingsController, LanguageController, EmailSettingsController, EmailSourceController, ConnectionsController, OAuthStartController, OAuthCallbackController, GoogleController, DeliveriesController, AiDraftController, AiChatController, MembersController, MyRequestsController, UsageController, BrandController, BrandLogoController],
     providers: [
       { provide: DB, useValue: db },
       { provide: BOSS, useValue: boss },
-      { provide: CONFIG, useValue: { ...config, mail: config.mail ?? mailDeps(), providers: config.providers ?? providerUrls(), publicUrl: (config.publicUrl ?? process.env.PUBLIC_URL ?? "http://localhost:3000").replace(/\/+$/, "") } },
+      { provide: CONFIG, useValue: { ...config, mail: config.mail ?? mailDeps(), providers: config.providers ?? providerUrls(), oauthProviders: config.oauthProviders ?? OAUTH_PROVIDERS, publicUrl: (config.publicUrl ?? process.env.PUBLIC_URL ?? "http://localhost:3000").replace(/\/+$/, "") } },
       // Default limit for every route; login, forms, webhooks and approvals add stricter ones.
       { provide: APP_GUARD, useClass: RateLimit(120) },
       { provide: APP_FILTER, useClass: PausedFilter },
@@ -58,7 +60,8 @@ export async function createApp({ db, boss, ...config }: AppOptions) {
   if (config.trustProxy) app.set("trust proxy", config.trustProxy);
   app.useBodyParser("json", { limit: "256kb" });
   app.useBodyParser("urlencoded", { limit: "64kb", extended: false });
-  const standardHeaders = helmet();
+  // The console policy gains the Google Picker hosts only when the Picker is set up (decision 0060).
+  const standardHeaders = helmet(consoleHeaders(config.providers ?? providerUrls()));
   const embedHeaders = helmet({
     xFrameOptions: false,
     contentSecurityPolicy: { directives: { frameAncestors: ["'self'", "https:", "http:"] } },

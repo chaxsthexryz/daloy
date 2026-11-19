@@ -1,5 +1,5 @@
 import { builtInEmailCopy } from "@daloy/engine";
-import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import {
   appendRow,
   calendarIdFrom,
@@ -7,7 +7,6 @@ import {
   calendarWriteTest,
   driveFolderIdFrom,
   driveFolderInfo,
-  consentOutcome,
   confirmDelivery,
   connectionCredential,
   deliveries,
@@ -15,16 +14,18 @@ import {
   markConnectionFailed,
   markConnectionWorking,
   outlookAdminConsentUrl,
-  outlookAuthorizeUrl,
-  outlookCodeTokens,
-  outlookMailbox,
+  outlook,
+  redirectUri,
+  disconnectOAuth,
+  removeConnection,
+  withFreshToken,
+  withGoogle,
   outlookSend,
   checkPaymongoKey,
   paymongoMode,
   PROVIDER_NAMES,
   ProviderError,
   readConnections,
-  removeConnection,
   retryDelivery,
   BOOKING_CHANGED,
   deliveryBookingMoved,
@@ -47,20 +48,20 @@ import {
   spreadsheetIdFrom,
   teamsPost,
   teamsWebhookUrl,
-  rotateInto,
   type Db,
   type Provider,
   type ProviderUrls,
   type ServiceAccount,
   type SheetDestination,
 } from "@daloy/db";
-import { BadRequestException, Body, ConflictException, Controller, Delete, Get, HttpCode, Inject, NotFoundException, Param, Post, Put, Query, Req, Res, UseGuards } from "@nestjs/common";
+import { BadRequestException, Body, ConflictException, Controller, Delete, Get, HttpCode, Inject, NotFoundException, Param, Post, Put, Query, Res, UseGuards } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
 import * as z from "zod";
-import type { Request, Response } from "express";
-import { SessionGuard, sessionUser } from "./auth";
+import type { Response } from "express";
+import { SessionGuard } from "./auth";
 import { Allow, CONFIG, CurrentUser, DB, RateLimit, ZodPipe, type ApiConfig, type SessionUser, MANAGE, OPERATE } from "./http";
 import { historyHider } from "./mask";
+import { startOAuth } from "./oauth";
 
 const sheetsInput = z.strictObject({ serviceAccount: z.string().min(2).max(10_000), sheet: z.string().trim().min(1).max(500), tab: z.string().trim().min(1).max(100) });
 const destinationInput = sheetsInput.omit({ serviceAccount: true });
@@ -129,8 +130,10 @@ export class ConnectionsController {
 
   @Get()
   async get(@CurrentUser() user: SessionUser) {
-    const outlook = this.urls.microsoft ? { configured: true, adminConsentUrl: outlookAdminConsentUrl(this.urls, outlookRedirectUri(this.config)) } : { configured: false };
-    return { connections: await readConnections(this.db, user.workspaceId), outlook, paymongoWebhookBase: `${this.config.publicUrl}/hooks/paymongo` };
+    const ms = this.urls.microsoft ? { configured: true, adminConsentUrl: outlookAdminConsentUrl(this.urls, redirectUri(this.config.publicUrl, outlook)) } : { configured: false };
+    // The providers with a Connect button: their client is configured on this installation (decision 0058).
+    const oauth = this.config.oauthProviders.filter((d) => d.client(this.urls)).map((d) => d.slug);
+    return { connections: await readConnections(this.db, user.workspaceId), outlook: ms, oauth, paymongoWebhookBase: `${this.config.publicUrl}/hooks/paymongo` };
   }
 
   /** The sheet and tab, checked with a read before saving. Shared by connect and "change sheet". */
@@ -163,6 +166,7 @@ export class ConnectionsController {
   @UseGuards(RateLimit(10))
   async putSheetDestination(@CurrentUser() user: SessionUser, @Body(new ZodPipe(destinationInput)) body: z.output<typeof destinationInput>) {
     const conn = await this.connection(user.workspaceId, "google_sheets");
+    if (conn.authMethod === "oauth") throw new BadRequestException("This connection uses a Google sign-in. Pick or create the sheet instead.");
     await setDestination(this.db, user.workspaceId, "google_sheets", await this.destination(JSON.parse(conn.credential) as ServiceAccount, body));
   }
 
@@ -173,8 +177,9 @@ export class ConnectionsController {
   async testSheets(@CurrentUser() user: SessionUser) {
     const conn = await this.connection(user.workspaceId, "google_sheets");
     const stamp = new Date().toISOString();
+    // force: with a Google sign-in, a test proves the grant itself still works (decision 0058).
     return this.test(user.workspaceId, "google_sheets", conn, () =>
-      appendRow(this.urls, JSON.parse(conn.credential) as ServiceAccount, conn.destination as SheetDestination, [`TEST-${stamp}`, stamp, "Test row from Daloy. You can delete this row."]),
+      withGoogle(this.db, this.config.secretsKey, this.urls, user.workspaceId, "google_sheets", conn, (auth) => appendRow(this.urls, auth, conn.destination as SheetDestination, [`TEST-${stamp}`, stamp, "Test row from Daloy. You can delete this row."]), { force: true }),
     );
   }
 
@@ -353,18 +358,12 @@ export class ConnectionsController {
     return this.test(user.workspaceId, "slack", conn, () => slackPost(this.urls, conn.credential, conn.destination!.channelId!, "Test message from Daloy. Office requests will be posted here."));
   }
 
-  /**
-   * Connect or Reconnect Outlook: the page sends the browser to this URL, Microsoft asks the owner (or tells them an
-   * administrator must approve), and comes back to the callback below. The state is signed, so nothing is stored here.
-   */
+  /** Connect or Reconnect Outlook, from before the shared start route (decision 0058): the same flow as outlook/oauth/start. */
   @Post("outlook/start")
   @HttpCode(200)
   @UseGuards(RateLimit(10))
   startOutlook(@CurrentUser() user: SessionUser) {
-    if (!this.urls.microsoft) throw new BadRequestException("Outlook is not set up on this installation. Set MICROSOFT_CLIENT_ID and MICROSOFT_CLIENT_SECRET.");
-    const state = signState(this.config.secretsKey, { w: user.workspaceId, m: user.id, e: Date.now() + STATE_TTL_MS, n: randomBytes(12).toString("base64url") });
-    const codeChallenge = createHash("sha256").update(pkceVerifier(this.config.secretsKey, state)).digest("base64url");
-    return { url: outlookAuthorizeUrl(this.urls, { redirectUri: outlookRedirectUri(this.config), state, codeChallenge }) };
+    return startOAuth(this.db, this.config, outlook, user);
   }
 
   /** Sends a test email from the connected mailbox to itself, so nobody else receives it. */
@@ -373,10 +372,10 @@ export class ConnectionsController {
   @UseGuards(RateLimit(5))
   async testOutlook(@CurrentUser() user: SessionUser) {
     const conn = await this.connection(user.workspaceId, "outlook");
-    const save = rotateInto(this.db, this.config.secretsKey, user.workspaceId, "outlook", conn);
     const copy = builtInEmailCopy(user.language);
+    // force: a test proves the grant itself still works, not only an access token that has not expired yet.
     return this.test(user.workspaceId, "outlook", conn, () =>
-      outlookSend(this.urls, conn.credential, save, { to: conn.account, subject: copy.outlookSubject, text: copy.outlookBody }),
+      withFreshToken(this.db, this.config.secretsKey, this.urls, user.workspaceId, outlook, conn, (token) => outlookSend(this.urls, token, { to: conn.account, subject: copy.outlookSubject, text: copy.outlookBody }), { force: true }),
     );
   }
 
@@ -398,11 +397,18 @@ export class ConnectionsController {
     return this.test(user.workspaceId, "teams", conn, () => teamsPost(this.urls, conn.credential, "Test message from Daloy. Approved purchase requests will be noted in this channel."));
   }
 
-  /** Disconnect: deletes the stored credential. Queued deliveries fail with "not connected" and keep their payload for Retry. */
+  /**
+   * Disconnect: deletes the stored credential. Queued deliveries fail with "not connected" and keep their payload for
+   * Retry. An OAuth grant is then revoked at the provider (decision 0058): 200 with { revoked } says whether that
+   * worked. 204 when there was nothing to revoke there, as before.
+   */
   @Delete(":provider")
-  @HttpCode(204)
-  async remove(@CurrentUser() user: SessionUser, @Param("provider", providerSlug) provider: Provider) {
-    if (!(await removeConnection(this.db, user.workspaceId, provider))) throw new NotFoundException();
+  async remove(@CurrentUser() user: SessionUser, @Param("provider", providerSlug) provider: Provider, @Res({ passthrough: true }) res: Response) {
+    const def = this.config.oauthProviders.find((d) => d.provider === provider);
+    const out = def ? await disconnectOAuth(this.db, this.config.secretsKey, this.urls, user.workspaceId, def) : { removed: await removeConnection(this.db, user.workspaceId, provider), revoked: null };
+    if (!out.removed) throw new NotFoundException();
+    if (out.revoked === null) return void res.status(204);
+    return { revoked: out.revoked };
   }
 
   private async connection(userId: string, provider: Provider) {
@@ -423,61 +429,6 @@ export class ConnectionsController {
       if (!(err instanceof ProviderError)) throw err;
       if (err.kind === "auth") await markConnectionFailed(this.db, userId, provider, err.message, conn.revision);
       return { ok: false, error: err.message };
-    }
-  }
-}
-
-const STATE_TTL_MS = 10 * 60_000;
-type ConsentState = { w: string; m: string; e: number; n: string };
-const mac = (key: Buffer, label: string, data: string) => createHmac("sha256", key).update(`${label}:${data}`).digest("base64url");
-export const outlookRedirectUri = (config: Required<ApiConfig>) => `${config.publicUrl}/settings/connections/outlook/callback`;
-
-/** The consent state: who started it and until when, signed with the secrets key so the callback can trust it. */
-export function signState(key: Buffer, s: ConsentState) {
-  const payload = Buffer.from(JSON.stringify(s)).toString("base64url");
-  return `${payload}.${mac(key, "outlook-state", payload)}`;
-}
-export function readState(key: Buffer, state: string): ConsentState | null {
-  const [payload, sig] = state.split(".");
-  if (!payload || !sig) return null;
-  const want = Buffer.from(mac(key, "outlook-state", payload));
-  const got = Buffer.from(sig);
-  if (want.length !== got.length || !timingSafeEqual(want, got)) return null;
-  const s = JSON.parse(Buffer.from(payload, "base64url").toString()) as ConsentState;
-  return s.e > Date.now() ? s : null;
-}
-/** The PKCE verifier, derived from the signed state, so it needs no storage and only this installation can make it. */
-const pkceVerifier = (key: Buffer, state: string) => mac(key, "outlook-pkce", state);
-
-/**
- * Where Microsoft sends the browser back. Not behind SessionGuard, because an administrator who approves Daloy for the
- * organization usually has no Daloy session. Swapping a code for tokens still needs the signed-in owner who started it.
- * The page learns the outcome from a short code in the address, never from Microsoft's text.
- */
-@Controller("settings/connections/outlook")
-export class OutlookCallbackController {
-  constructor(
-    @Inject(DB) private readonly db: Db,
-    @Inject(CONFIG) private readonly config: Required<ApiConfig>,
-  ) {}
-
-  @Get("callback")
-  async callback(@Req() req: Request, @Res() res: Response, @Query() q: Record<string, unknown>) {
-    const done = (outcome: string) => res.redirect(302, `/#/settings/business/outlook-${outcome}`);
-    const str = (k: string) => (typeof q[k] === "string" ? (q[k] as string) : "");
-    if (str("admin_consent")) return done(str("admin_consent").toLowerCase() === "true" ? "admin_approved" : "admin_required");
-    if (str("error")) return done(consentOutcome(str("error"), str("error_description")));
-    const state = readState(this.config.secretsKey, str("state"));
-    const user = await sessionUser(this.db, req);
-    if (!state || !user || user.id !== state.m || user.workspaceId !== state.w || !MANAGE.includes(user.role)) return done("expired");
-    try {
-      const tokens = await outlookCodeTokens(this.config.providers, str("code"), pkceVerifier(this.config.secretsKey, str("state")), outlookRedirectUri(this.config));
-      const mailbox = await outlookMailbox(this.config.providers, tokens.accessToken);
-      await saveConnection(this.db, this.config.secretsKey, state.w, "outlook", { account: mailbox, credential: tokens.refreshToken, destination: { mailbox } });
-      return done("connected");
-    } catch (err) {
-      if (!(err instanceof ProviderError)) throw err;
-      return done("failed");
     }
   }
 }

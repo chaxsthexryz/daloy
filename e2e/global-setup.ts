@@ -85,6 +85,12 @@ export default async function setup() {
   // A folder inside a shared drive, as Drive needs (a service account has no storage of its own).
   providers.addDriveFolder("e2e-drive-folder-0001", "Patient files", [saEmail], "0Ae2eSharedDrive");
   process.env.E2E_DRIVE_FOLDER = "e2e-drive-folder-0001";
+  // Connect with Google (decision 0060): the fake Google OAuth app, a sheet and a My Drive folder this user can pick.
+  const google = providers.addOAuthApp("google", { rotation: "none" });
+  google.user = { id: "e2e-google-user", email: "owner@clinic-e2e.example" };
+  providers.addSheet("e2e-picked-sheet-0001", "Front desk log", "Requests", [google.user.email]).tabs.set("Walk-ins", []);
+  providers.addSheet("e2e-unpicked-sheet-01", "Someone else's sheet", "Data", ["someone@else.example"]);
+  providers.addDriveFolder("e2e-picked-folder-001", "Clinic scans", [google.user.email], null);
   providers.slack.token = "xoxb-e2e-0000000000-abcdefabcdef";
   providers.telegram.token = "100000001:E2E-telegram-token-aaaaaaaaaaaaaaaaaa";
   process.env.E2E_TELEGRAM_TOKEN = providers.telegram.token;
@@ -127,6 +133,16 @@ export default async function setup() {
     MICROSOFT_LOGIN_URL: providers.urls.microsoftLogin,
     MICROSOFT_GRAPH_URL: providers.urls.graph,
     TEAMS_WEBHOOK_HOSTS: "127.0.0.1",
+    // Synthetic values for the fake Google OAuth app; nothing here reaches Google.
+    OAUTH_ENV: "development",
+    GOOGLE_OAUTH_CLIENT_ID: google.clientId,
+    GOOGLE_OAUTH_CLIENT_SECRET: google.clientSecret,
+    GOOGLE_AUTHORIZE_URL: providers.oauthUrls("google").authorize,
+    GOOGLE_OAUTH_TOKEN_URL: providers.oauthUrls("google").token,
+    GOOGLE_REVOKE_URL: providers.oauthUrls("google").revoke,
+    GOOGLE_USERINFO_URL: providers.oauthUrls("google").userinfo,
+    GOOGLE_PICKER_API_KEY: "e2e-picker-key",
+    GOOGLE_PROJECT_NUMBER: "000000000000",
     // Every spec signs up from 127.0.0.1.
     REGISTER_LIMIT_PER_HOUR: "1000",
     // Specs publish several automations on one account.

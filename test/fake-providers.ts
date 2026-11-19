@@ -17,9 +17,45 @@ import type { AddressInfo } from "node:net";
  *
  * Drive: a folder is in a shared drive (sharedDriveId) or not. Like Google, a service account cannot own files, so an upload to a folder with no shared drive fails with 403 storageQuotaExceeded.
  *
+ * Google OAuth (decision 0060): add the app with addOAuthApp("google"). Its access tokens work on the Sheets and Drive
+ * fakes as that user, with drive.file rules: a file the user did not pick (is not an editor of) answers 404, and an
+ * upload may go to My Drive. Creating a spreadsheet or folder makes the user its editor, like a file the app created.
+ *
  * Sheets developer metadata follows Google: a spreadsheets.batchUpdate is all or nothing, and creating metadata with an
  * id that already exists in the spreadsheet fails the whole batch with 400.
  */
+/**
+ * A generic OAuth 2.0 app at /oauth/<name>/{authorize,token,revoke,userinfo}, for the shared OAuth core (decision 0058).
+ * Later phases add an app with oauthApp("<name>", { ...overrides }) in the `oauth` list below and point their provider
+ * definition at fake.oauthUrls("<name>"). The fields are the knobs a test turns:
+ * - consent: what the authorize page answers. "narrow" grants only grantScopes.
+ * - rotation: "none" keeps the refresh token, "rotate" hands out a new one and keeps the old working, "strict" hands out
+ *   a new one and refuses the old (reuse), unless keepPrevious lets the previous one through once more.
+ * - expiresIn: access token lifetime in seconds (undefined: never expires). refresh: whether refresh tokens exist.
+ * 429, 5xx and slow answers come from once("/oauth/<name>/token", ...), like every other fake endpoint.
+ */
+function oauthApp(name: string, o: { expiresIn?: number; rotation?: "none" | "rotate" | "strict"; refresh?: boolean } = {}) {
+  return {
+    name,
+    clientId: `${name}-client-id`,
+    clientSecret: `${name}-client-secret`,
+    user: { id: `${name}-user-1`, email: `ana@${name}.example` },
+    consent: "grant" as "grant" | "declined" | "admin_required" | "narrow",
+    grantScopes: [] as string[],
+    rotation: o.rotation ?? "strict",
+    keepPrevious: false,
+    expiresIn: "expiresIn" in o ? o.expiresIn : 3600,
+    refresh: o.refresh ?? true,
+    revokeStatus: 200,
+    codes: new Map<string, { challenge: string; redirectUri: string; scope: string; user: { id: string; email: string } }>(),
+    refreshTokens: new Map<string, { scope: string; user: { id: string; email: string } }>(),
+    previous: new Map<string, { scope: string; user: { id: string; email: string } }>(),
+    accessTokens: new Map<string, { id: string; email: string }>(),
+    revoked: [] as string[],
+    tokenCalls: 0,
+  };
+}
+
 type Behaviour = { status: number; body: unknown; headers?: Record<string, string> } | "hang" | "hang-after" | { late: number } | { heldUntil: Promise<unknown>; status?: number; body?: unknown };
 type SheetMeta = { metadataId: number; metadataKey: string; metadataValue?: string; location: { sheetId: number }; visibility: string };
 
@@ -41,7 +77,7 @@ export async function startFakeProviders(port = 0) {
   const microsoft = {
     clientId: "fake-client-id",
     clientSecret: "fake-client-secret",
-    user: { mail: "ana@contoso.example", displayName: "Ana Lim" },
+    user: { id: "ms-user-ana", mail: "ana@contoso.example", displayName: "Ana Lim" },
     consent: "grant" as "grant" | "admin_required" | "declined",
     mailboxEnabled: true,
     codes: new Map<string, { challenge: string; redirectUri: string; scope: string }>(),
@@ -57,6 +93,7 @@ export async function startFakeProviders(port = 0) {
   const driveFiles: { id: string; name: string; parent: string; mimeType: string; size: number; sha256: string }[] = [];
   const paymongo = { sessions: [] as { id: string; amount: number }[], keys: new Map<string, unknown>() }; // keys: Idempotency-Key -> stored response
   const teams = { flows: new Set(["flow-purchasing"]), posts: [] as { flow: string; text: string }[] };
+  const oauth: Record<string, ReturnType<typeof oauthApp>> = { test: oauthApp("test") };
   const pending: { path: string; behaviour: Behaviour; skip: number }[] = [];
   const calls: string[] = [];
   const hanging = new Set<ServerResponse>();
@@ -66,6 +103,14 @@ export async function startFakeProviders(port = 0) {
     res.writeHead(status, { "content-type": "application/json", ...headers }).end(JSON.stringify(body));
   };
   const googleError = (res: ServerResponse, code: number, status: string, message: string) => json(res, code, { error: { code, status, message } });
+  /** Who a Google bearer token belongs to: a service account, or a user of the Google OAuth app (drive.file). */
+  const googleCaller = (req: IncomingMessage) => {
+    const token = (req.headers.authorization ?? "").replace(/^Bearer /, "");
+    const sa = tokens.get(token);
+    if (sa) return { email: sa, oauth: false };
+    const user = oauth.google?.accessTokens.get(token);
+    return user ? { email: user.email, oauth: true } : null;
+  };
 
   async function body(req: IncomingMessage) {
     const chunks: Buffer[] = [];
@@ -125,6 +170,74 @@ export async function startFakeProviders(port = 0) {
       });
     }
 
+    // Generic OAuth apps (see oauthApp above).
+    const oa = /^\/oauth\/([\w-]+)\/(authorize|token|revoke|userinfo)$/.exec(path);
+    const app = oa && oauth[oa[1]!];
+    if (oa && app) {
+      const endpoint = oa[2];
+      if (endpoint === "authorize") {
+        const q = url.searchParams;
+        const back = new URL(q.get("redirect_uri") ?? "http://invalid");
+        back.searchParams.set("state", q.get("state") ?? "");
+        if (q.get("client_id") !== app.clientId) back.searchParams.set("error", "invalid_client");
+        else if (app.consent === "declined") back.searchParams.set("error", "access_denied");
+        else if (app.consent === "admin_required") {
+          back.searchParams.set("error", "access_denied");
+          back.searchParams.set("error_description", "admin approval required");
+        } else {
+          const code = `${app.name}-code-${++seq}`;
+          const scope = app.consent === "narrow" ? app.grantScopes.join(" ") : (q.get("scope") ?? "");
+          app.codes.set(code, { challenge: q.get("code_challenge") ?? "", redirectUri: q.get("redirect_uri") ?? "", scope, user: { ...app.user } });
+          back.searchParams.set("code", code);
+        }
+        res.writeHead(302, { location: back.toString() }).end();
+        return;
+      }
+      const form = new URLSearchParams(raw);
+      if (endpoint === "userinfo") {
+        const who = app.accessTokens.get((req.headers.authorization ?? "").replace(/^Bearer /, ""));
+        return who ? json(res, 200, { sub: who.id, email: who.email }) : json(res, 401, { error: "invalid_token" });
+      }
+      if (form.get("client_id") !== app.clientId || form.get("client_secret") !== app.clientSecret) return json(res, 401, { error: "invalid_client" });
+      if (endpoint === "revoke") {
+        const token = form.get("token") ?? "";
+        app.revoked.push(token);
+        if (app.revokeStatus !== 200) return json(res, app.revokeStatus, { error: "server_error" });
+        app.refreshTokens.delete(token);
+        app.accessTokens.delete(token);
+        return json(res, 200, {});
+      }
+      app.tokenCalls++;
+      const invalidGrant = () => json(res, 400, { error: "invalid_grant", error_description: "The grant is invalid, expired, revoked or was used before." });
+      let grant: { scope: string; user: { id: string; email: string } };
+      let refreshToken: string | undefined;
+      if (form.get("grant_type") === "authorization_code") {
+        const c = app.codes.get(form.get("code") ?? "");
+        app.codes.delete(form.get("code") ?? "");
+        const pkceOk = !c?.challenge || createHash("sha256").update(form.get("code_verifier") ?? "").digest("base64url") === c.challenge;
+        if (!c || c.redirectUri !== form.get("redirect_uri") || !pkceOk) return invalidGrant();
+        grant = c;
+        if (app.refresh) refreshToken = `${app.name}-refresh-${++seq}`;
+      } else if (form.get("grant_type") === "refresh_token") {
+        const old = form.get("refresh_token") ?? "";
+        const live = app.refreshTokens.get(old) ?? (app.keepPrevious ? app.previous.get(old) : undefined);
+        if (!live) return invalidGrant();
+        grant = live;
+        if (app.rotation !== "none") {
+          refreshToken = `${app.name}-refresh-${++seq}`;
+          if (app.rotation === "strict") {
+            app.refreshTokens.delete(old);
+            app.previous.clear();
+            if (app.keepPrevious) app.previous.set(old, live);
+          }
+        }
+      } else return json(res, 400, { error: "unsupported_grant_type" });
+      const access = `${app.name}-access-${++seq}`;
+      app.accessTokens.set(access, grant.user);
+      if (refreshToken) app.refreshTokens.set(refreshToken, grant);
+      return answer(200, { token_type: "Bearer", access_token: access, ...(refreshToken ? { refresh_token: refreshToken } : {}), ...(app.expiresIn === undefined ? {} : { expires_in: app.expiresIn }), scope: grant.scope });
+    }
+
     // Microsoft identity platform v2.0, for any tenant: authorize (consents at once, or answers like a blocked
     // tenant), token (authorization code with PKCE, and refresh), and the admin consent page.
     const msPath = /^\/ms\/[^/]+\/(v2\.0\/adminconsent|oauth2\/v2\.0\/authorize|oauth2\/v2\.0\/token)$/.exec(path)?.[1];
@@ -179,7 +292,7 @@ export async function startFakeProviders(port = 0) {
       if (!microsoft.accessTokens.has((req.headers.authorization ?? "").replace(/^Bearer /, ""))) {
         return json(res, 401, { error: { code: "InvalidAuthenticationToken", message: "Access token has expired or is not yet valid." } });
       }
-      if (req.method === "GET") return json(res, 200, { displayName: microsoft.user.displayName, mail: microsoft.user.mail, userPrincipalName: microsoft.user.mail });
+      if (req.method === "GET") return json(res, 200, { id: microsoft.user.id, displayName: microsoft.user.displayName, mail: microsoft.user.mail, userPrincipalName: microsoft.user.mail });
       if (!microsoft.mailboxEnabled) return json(res, 403, { error: { code: "ErrorAccessDenied", message: "Access is denied. Check credentials and try again." } });
       const { message } = JSON.parse(raw) as { message: { subject: string; body: { content: string }; toRecipients: { emailAddress: { address: string } }[] } };
       microsoft.sent.push({ to: message.toRecipients.map((r) => r.emailAddress.address).join(","), subject: message.subject, text: message.body.content });
@@ -213,9 +326,17 @@ export async function startFakeProviders(port = 0) {
 
     // Google Drive API v3: read a folder, and multipart/related upload into one.
     const driveGet = /^\/drive\/v3\/files\/([^/]+)$/.exec(path)?.[1];
-    if (driveGet || path === "/upload/drive/v3/files") {
-      const email = tokens.get((req.headers.authorization ?? "").replace(/^Bearer /, ""));
-      if (!email) return googleError(res, 401, "UNAUTHENTICATED", "Invalid Credentials");
+    if (driveGet || path === "/upload/drive/v3/files" || (path === "/drive/v3/files" && req.method === "POST")) {
+      const caller = googleCaller(req);
+      if (!caller) return googleError(res, 401, "UNAUTHENTICATED", "Invalid Credentials");
+      const email = caller.email;
+      if (path === "/drive/v3/files") {
+        const meta = JSON.parse(raw) as { name?: string; mimeType?: string };
+        if (meta.mimeType !== "application/vnd.google-apps.folder") return googleError(res, 400, "INVALID_ARGUMENT", "Only folders here.");
+        const id = `drivefolder${String(++seq).padStart(8, "0")}`;
+        driveFolders.set(id, { name: meta.name ?? "Untitled folder", editors: new Set([email]), sharedDriveId: null });
+        return answer(200, { id, name: meta.name });
+      }
       const driveError = (code: number, reason: string, message: string) => json(res, code, { error: { code, message, errors: [{ reason, message }] } });
       if (driveGet) {
         const f = driveFolders.get(driveGet);
@@ -236,7 +357,7 @@ export async function startFakeProviders(port = 0) {
       const data = bytes.subarray(head2 + 4, end);
       const folder = driveFolders.get(meta.parents?.[0] ?? "");
       if (!folder || !folder.editors.has(email)) return googleError(res, 404, "NOT_FOUND", "File not found.");
-      if (!folder.sharedDriveId) return driveError(403, "storageQuotaExceeded", "Service Accounts do not have storage quota. Leverage shared drives instead.");
+      if (!folder.sharedDriveId && !caller.oauth) return driveError(403, "storageQuotaExceeded", "Service Accounts do not have storage quota. Leverage shared drives instead.");
       const id = `drivefile${String(++seq).padStart(8, "0")}`;
       driveFiles.push({ id, name: meta.name ?? "", parent: meta.parents![0]!, mimeType: meta.mimeType ?? "", size: data.length, sha256: createHash("sha256").update(data).digest("hex") });
       return answer(200, { id, name: meta.name });
@@ -277,11 +398,11 @@ export async function startFakeProviders(port = 0) {
     const batchPath = /^\/v4\/spreadsheets\/([^/:]+):batchUpdate$/.exec(path);
     const metaPath = /^\/v4\/spreadsheets\/([^/]+)\/developerMetadata\/(\d+)$/.exec(path);
     if (batchPath || metaPath) {
-      const email = tokens.get((req.headers.authorization ?? "").replace(/^Bearer /, ""));
-      if (!email) return googleError(res, 401, "UNAUTHENTICATED", "Request had invalid authentication credentials.");
+      const caller = googleCaller(req);
+      if (!caller) return googleError(res, 401, "UNAUTHENTICATED", "Request had invalid authentication credentials.");
       const sheet = sheets.get((batchPath ?? metaPath)![1]!);
-      if (!sheet) return googleError(res, 404, "NOT_FOUND", "Requested entity was not found.");
-      if (!sheet.editors.has(email)) return googleError(res, 403, "PERMISSION_DENIED", "The caller does not have permission");
+      if (!sheet || (caller.oauth && !sheet.editors.has(caller.email))) return googleError(res, 404, "NOT_FOUND", "Requested entity was not found.");
+      if (!sheet.editors.has(caller.email)) return googleError(res, 403, "PERMISSION_DENIED", "The caller does not have permission");
       if (metaPath) {
         const meta = sheet.metadata.get(Number(metaPath[2]));
         return meta ? answer(200, meta) : googleError(res, 404, "NOT_FOUND", `No developer metadata with ID: ${metaPath[2]}`);
@@ -318,13 +439,23 @@ export async function startFakeProviders(port = 0) {
     }
 
     // Google Sheets API v4.
+    // spreadsheets.create: a new spreadsheet with one tab, owned by the caller.
+    if (path === "/v4/spreadsheets" && req.method === "POST") {
+      const caller = googleCaller(req);
+      if (!caller) return googleError(res, 401, "UNAUTHENTICATED", "Request had invalid authentication credentials.");
+      const title = (JSON.parse(raw) as { properties?: { title?: string } }).properties?.title ?? "Untitled spreadsheet";
+      const id = `created-sheet-${String(++seq).padStart(8, "0")}`;
+      sheets.set(id, { title, tabs: new Map([["Sheet1", [] as string[][]]]), editors: new Set([caller.email]), metadata: new Map<number, SheetMeta>() });
+      return answer(200, { spreadsheetId: id, properties: { title }, sheets: [{ properties: { sheetId: 1, title: "Sheet1" } }] });
+    }
+
     const sheetPath = /^\/v4\/spreadsheets\/([^/]+)(?:\/values\/(.+?)(:append)?)?$/.exec(path);
     if (sheetPath) {
-      const email = tokens.get((req.headers.authorization ?? "").replace(/^Bearer /, ""));
-      if (!email) return googleError(res, 401, "UNAUTHENTICATED", "Request had invalid authentication credentials.");
+      const caller = googleCaller(req);
+      if (!caller) return googleError(res, 401, "UNAUTHENTICATED", "Request had invalid authentication credentials.");
       const sheet = sheets.get(sheetPath[1]!);
-      if (!sheet) return googleError(res, 404, "NOT_FOUND", "Requested entity was not found.");
-      if (!sheet.editors.has(email)) return googleError(res, 403, "PERMISSION_DENIED", "The caller does not have permission");
+      if (!sheet || (caller.oauth && !sheet.editors.has(caller.email))) return googleError(res, 404, "NOT_FOUND", "Requested entity was not found.");
+      if (!sheet.editors.has(caller.email)) return googleError(res, 403, "PERMISSION_DENIED", "The caller does not have permission");
       if (!sheetPath[2]) return answer(200, { properties: { title: sheet.title }, sheets: [...sheet.tabs.keys()].map((title, i) => ({ properties: { title, sheetId: i + 1 } })) });
       const tabName = /^'?(.*?)'?!/.exec(sheetPath[2])?.[1]?.replaceAll("''", "'") ?? "";
       const tab = sheet.tabs.get(tabName);
@@ -443,6 +574,10 @@ export async function startFakeProviders(port = 0) {
     trello,
     microsoft,
     teams,
+    oauth,
+    /** Adds another generic OAuth app, for a provider phase or a test that needs a second one. */
+    addOAuthApp: (name: string, o?: Parameters<typeof oauthApp>[1]) => (oauth[name] = oauthApp(name, o)),
+    oauthUrls: (name: string) => ({ authorize: `${base}/oauth/${name}/authorize`, token: `${base}/oauth/${name}/token`, revoke: `${base}/oauth/${name}/revoke`, userinfo: `${base}/oauth/${name}/userinfo` }),
     teamsUrl: (flowId: string) => `${base}/teams/workflows/${flowId}`,
     /** Registers a service account key with Google. */
     addServiceAccount: (email: string, publicKeyPem: string) => {
@@ -457,6 +592,10 @@ export async function startFakeProviders(port = 0) {
       sheets.set(id, s);
       return s;
     },
+    /** A spreadsheet by id, such as one Daloy created through the API. */
+    sheet: (id: string) => sheets.get(id),
+    /** A Drive folder by id, such as one Daloy created through the API. */
+    driveFolder: (id: string) => driveFolders.get(id),
     addCalendar: (id: string, title: string, editors: string[]) => {
       const c = { title, editors: new Set(editors), events: new Map<string, CalendarEvent>() };
       calendars.set(id, c);

@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { keyedRun, RUN_QUEUE, type Db, type MailDeps, type ProviderUrls, type Role } from "@daloy/db";
+import { keyedRun, RUN_QUEUE, type Db, type MailDeps, type OAuthProvider, type ProviderUrls, type Role } from "@daloy/db";
 import { parsePayload, resolveTemplate, type FormField, type Language, type Resource, type Trigger } from "@daloy/engine";
 import {
   BadRequestException,
@@ -21,9 +21,10 @@ export const BOSS = Symbol("boss");
 export const CONFIG = Symbol("config");
 /**
  * mail and publicUrl are for the test email and its confirmation link; createApp fills them from the env vars when left out.
+ * oauthProviders defaults to OAUTH_PROVIDERS; tests add a definition for the fake OAuth app.
  * trustProxy is the number of proxies in front of the API (Express "trust proxy"), so req.ip is the real client.
  */
-export type ApiConfig = { secretsKey: Buffer; secureCookies: boolean; trustProxy?: number; mail?: MailDeps; publicUrl?: string; providers?: ProviderUrls; ask?: boolean };
+export type ApiConfig = { secretsKey: Buffer; secureCookies: boolean; trustProxy?: number; mail?: MailDeps; publicUrl?: string; providers?: ProviderUrls; ask?: boolean; oauthProviders?: readonly OAuthProvider[] };
 
 /**
  * TRUST_PROXY and SECURE_COOKIES from the env (docs/deployment.md). A value that cannot be read stops the boot, so a
