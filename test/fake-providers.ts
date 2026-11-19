@@ -87,7 +87,8 @@ export async function startFakeProviders(port = 0) {
   };
   // Google Calendar: events by calendar id then event id. Like Google, a deleted event stays as "cancelled" and its id cannot be inserted again.
   type CalendarEvent = { id: string; status: "confirmed" | "cancelled"; summary?: string; description?: string; start?: { dateTime: string; timeZone?: string }; end?: { dateTime: string; timeZone?: string } };
-  const calendars = new Map<string, { title: string; editors: Set<string>; events: Map<string, CalendarEvent> }>();
+  // createdBy is the Google sign-in that made the calendar through calendars.insert: with calendar.app.created (decision 0064) that is the only kind a sign-in may use.
+  const calendars = new Map<string, { title: string; editors: Set<string>; events: Map<string, CalendarEvent>; createdBy?: string }>();
   // Google Drive: folders by id, and the files saved into them (bytes are kept as a hash, not stored).
   const driveFolders = new Map<string, { name: string; editors: Set<string>; sharedDriveId: string | null }>();
   const driveFiles: { id: string; name: string; parent: string; mimeType: string; size: number; sha256: string }[] = [];
@@ -364,12 +365,22 @@ export async function startFakeProviders(port = 0) {
     }
 
     // Google Calendar API v3: events list, insert (with a client-chosen id), patch and delete.
+    // calendars.insert: a Google sign-in makes a calendar it may then use (calendar.app.created).
+    if (path === "/calendar/v3/calendars" && req.method === "POST") {
+      const caller = googleCaller(req);
+      if (!caller?.oauth) return googleError(res, caller ? 403 : 401, caller ? "PERMISSION_DENIED" : "UNAUTHENTICATED", "Only a Google sign-in makes calendars here.");
+      const id = `daloycal${String(++seq).padStart(6, "0")}@group.calendar.google.com`;
+      const title = (JSON.parse(raw || "{}") as { summary?: string }).summary ?? "";
+      calendars.set(id, { title, editors: new Set([caller.email]), events: new Map(), createdBy: caller.email });
+      return answer(200, { id, summary: title });
+    }
     const calPath = /^\/calendar\/v3\/calendars\/([^/]+)\/events(?:\/([^/]+))?$/.exec(path);
     if (calPath) {
-      const email = tokens.get((req.headers.authorization ?? "").replace(/^Bearer /, ""));
-      if (!email) return googleError(res, 401, "UNAUTHENTICATED", "Invalid Credentials");
+      const caller = googleCaller(req);
+      if (!caller) return googleError(res, 401, "UNAUTHENTICATED", "Invalid Credentials");
+      const email = caller.email;
       const cal = calendars.get(calPath[1]!);
-      if (!cal || !cal.editors.has(email)) return googleError(res, 404, "NOT_FOUND", "Not Found");
+      if (!cal || !cal.editors.has(email) || (caller.oauth && cal.createdBy !== email)) return googleError(res, 404, "NOT_FOUND", "Not Found");
       const eventId = calPath[2];
       const sent = raw ? (JSON.parse(raw) as Partial<CalendarEvent>) : {};
       if (!eventId && req.method === "GET") return answer(200, { summary: cal.title, items: [...cal.events.values()].filter((e) => e.status === "confirmed") });
@@ -596,6 +607,8 @@ export async function startFakeProviders(port = 0) {
     sheet: (id: string) => sheets.get(id),
     /** A Drive folder by id, such as one Daloy created through the API. */
     driveFolder: (id: string) => driveFolders.get(id),
+    /** A calendar by id, such as one Daloy created through the API. */
+    calendar: (id: string) => calendars.get(id),
     addCalendar: (id: string, title: string, editors: string[]) => {
       const c = { title, editors: new Set(editors), events: new Map<string, CalendarEvent>() };
       calendars.set(id, c);

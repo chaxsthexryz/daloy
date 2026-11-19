@@ -18,6 +18,8 @@ export const GOOGLE_IDENTITY_SCOPES = ["openid", "email"] as const;
 export const GOOGLE_FEATURE_SCOPES = {
   sheets: ["https://www.googleapis.com/auth/drive.file"],
   drive: ["https://www.googleapis.com/auth/drive.file"],
+  // Daloy creates its own calendar and works only on calendars it created (decision 0064). Class unverified: see there.
+  calendar: ["https://www.googleapis.com/auth/calendar.app.created"],
 } as const satisfies Record<string, readonly string[]>;
 export type GoogleFeature = keyof typeof GOOGLE_FEATURE_SCOPES;
 
@@ -70,3 +72,4 @@ export function googleProvider(feature: GoogleFeature, provider: Provider, slug:
 
 export const googleSheets = googleProvider("sheets", "google_sheets", "google-sheets", "Google Sheets");
 export const googleDrive = googleProvider("drive", "google_drive", "google-drive", "Google Drive");
+export const googleCalendar = googleProvider("calendar", "google_calendar", "google-calendar", "Google Calendar");

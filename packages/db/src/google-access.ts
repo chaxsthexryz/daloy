@@ -5,7 +5,7 @@ import type { AuthMethod } from "./schema";
 
 /** The Sheets or Drive connection a caller holds: a service account key, or an OAuth grant (decision 0060). */
 export type GoogleConnection = HeldConnection & { authMethod: AuthMethod };
-type GoogleApp = "google_sheets" | "google_drive";
+type GoogleApp = "google_sheets" | "google_drive" | "google_calendar";
 
 /**
  * Calls fn with whatever the connection signs in with: the service account key as before, or a fresh OAuth access

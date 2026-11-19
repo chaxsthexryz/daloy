@@ -138,6 +138,7 @@ export function spreadsheetIdFrom(input: string): string | null {
 }
 
 const SHEETS_SCOPE = "https://www.googleapis.com/auth/spreadsheets";
+// The service account key signs for calendar.events. A Google sign-in asks for calendar.app.created instead (oauth/google.ts).
 const CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar.events";
 const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive";
 // Access tokens by key, in memory. ponytail: per process, so the API and the worker each fetch their own; fine at this scale.
@@ -290,37 +291,55 @@ export function calendarIdFrom(input: string): string | null {
  */
 export const calendarEventId = (bookingId: string) => `dl${createHash("sha256").update(bookingId).digest("hex").slice(0, 40)}`;
 
-function calendarFailure(res: Reply, sa: ServiceAccount, write: boolean): ProviderError {
+const PICK_CALENDAR_AGAIN = "Daloy cannot open its calendar with your Google connection. It may have been deleted in Google Calendar. In Apps, choose Create a new Daloy calendar.";
+
+function calendarFailure(res: Reply, auth: GoogleAuth, write: boolean): ProviderError {
   const error = (res.body.error ?? {}) as { errors?: { reason?: unknown }[] };
-  const share = `Share the calendar with ${sa.client_email} and choose "Make changes to events".`;
+  const share = isOAuth(auth) ? "" : `Share the calendar with ${auth.client_email} and choose "Make changes to events".`;
   if (res.status === 401) return new ProviderError("Google did not accept Daloy's access. Connect Google Calendar again.", "auth");
   if (res.status === 429 || (res.status === 403 && /rateLimitExceeded|quotaExceeded/i.test(String(error.errors?.[0]?.reason ?? "")))) {
     return new ProviderError("Google Calendar is limiting requests right now. Daloy will try again.", "quota", retryAfter(res.headers));
   }
+  // With calendar.app.created Google answers 403 or 404 for a calendar Daloy did not create or that was deleted (decision 0064).
+  if (isOAuth(auth) && (res.status === 403 || res.status === 404)) return new ProviderError(PICK_CALENDAR_AGAIN, "permission");
   if (res.status === 403) return new ProviderError(`Google Calendar refused access. ${share}`, "permission");
   if (res.status === 404) return new ProviderError(`The calendar or event was not found. Check the calendar id, and ${share.charAt(0).toLowerCase()}${share.slice(1)}`, "permission");
   if (res.status >= 500) return new ProviderError(`Google Calendar answered ${res.status}.`, write ? "ambiguous" : "unavailable");
   return new ProviderError(`Google Calendar rejected the request (${res.status}).`, "invalid");
 }
 
-/** A Calendar API call with the cached token. Statuses in `accept` come back to the caller instead of failing. */
-async function calendar(urls: ProviderUrls, sa: ServiceAccount, path: string, init: RequestInit, write: boolean, accept: number[] = []): Promise<Reply> {
+/**
+ * A Calendar API call. A service account's 401 drops the cached token and tries once more; an OAuth 401 goes back to
+ * withFreshToken. Statuses in `accept` come back to the caller instead of failing.
+ */
+async function calendar(urls: ProviderUrls, auth: GoogleAuth, path: string, init: RequestInit, write: boolean, accept: number[] = []): Promise<Reply> {
   for (let tries = 0; ; tries++) {
-    const token = await accessToken(urls, sa, CALENDAR_SCOPE);
+    const token = await bearer(urls, auth, CALENDAR_SCOPE);
     const res = await call(`${urls.calendar}${path}`, { ...init, headers: { ...init.headers, authorization: `Bearer ${token}` } }, urls.timeoutMs ?? 10_000, write, "Google Calendar");
     if (res.status === 200 || res.status === 204 || accept.includes(res.status)) return res;
-    if (res.status === 401 && tries === 0) {
-      tokenCache.delete(cacheKey(sa, CALENDAR_SCOPE));
+    if (res.status === 401 && tries === 0 && !isOAuth(auth)) {
+      tokenCache.delete(cacheKey(auth, CALENDAR_SCOPE));
       continue;
     }
-    throw calendarFailure(res, sa, write);
+    throw calendarFailure(res, auth, write);
   }
+}
+
+/**
+ * Creates the calendar Daloy writes to, in the owner's account. Under calendar.app.created Daloy may use it because
+ * Daloy created it. Not idempotent: a lost answer may leave an unused calendar (decision 0064).
+ */
+export async function createCalendar(urls: ProviderUrls, auth: GoogleAuth, title: string) {
+  const res = await calendar(urls, auth, "/calendar/v3/calendars", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ summary: title }) }, true);
+  const calendarId = String(res.body.id ?? "");
+  if (!calendarId) throw new ProviderError("Google Calendar answered without a calendar id.", "unavailable");
+  return { calendarId, title: String(res.body.summary ?? title) };
 }
 
 const eventsPath = (calendarId: string) => `/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events`;
 
 /** The calendar's title, to check access when connecting. Reads only. */
-export async function calendarInfo(urls: ProviderUrls, sa: ServiceAccount, calendarId: string) {
+export async function calendarInfo(urls: ProviderUrls, sa: GoogleAuth, calendarId: string) {
   const res = await calendar(urls, sa, `${eventsPath(calendarId)}?maxResults=1&fields=summary`, {}, false);
   return { title: String(res.body.summary ?? calendarId) };
 }
@@ -329,7 +348,7 @@ export async function calendarInfo(urls: ProviderUrls, sa: ServiceAccount, calen
  * Proves Daloy can write: creates a one-hour event tomorrow under a one-off id and deletes it again. A calendar shared
  * as "see all event details" passes the read check but fails here.
  */
-export async function calendarWriteTest(urls: ProviderUrls, sa: ServiceAccount, calendarId: string) {
+export async function calendarWriteTest(urls: ProviderUrls, sa: GoogleAuth, calendarId: string) {
   const eventId = `dltest${createHash("sha256").update(String(Math.random()) + Date.now()).digest("hex").slice(0, 20)}`;
   const start = new Date(Date.now() + 24 * 3600_000);
   const body = { id: eventId, summary: "Test event from Daloy", start: { dateTime: start.toISOString() }, end: { dateTime: new Date(start.getTime() + 3600_000).toISOString() } };
@@ -347,7 +366,7 @@ export type CalendarContent = { title: string; description: string };
  * Cancelled: delete it; already gone (404, 410) is fine. Each branch can be repeated at any time with the same result,
  * so a retry after a lost answer is always safe (decision 0044). Times are sent in UTC with the booking's own zone.
  */
-export async function syncCalendarEvent(urls: ProviderUrls, sa: ServiceAccount, calendarId: string, bookingId: string, b: CalendarBooking, content: CalendarContent): Promise<{ event: "created" | "updated" | "deleted"; eventId: string }> {
+export async function syncCalendarEvent(urls: ProviderUrls, sa: GoogleAuth, calendarId: string, bookingId: string, b: CalendarBooking, content: CalendarContent): Promise<{ event: "created" | "updated" | "deleted"; eventId: string }> {
   const eventId = calendarEventId(bookingId);
   const base = eventsPath(calendarId);
   if (b.status === "cancelled") {
