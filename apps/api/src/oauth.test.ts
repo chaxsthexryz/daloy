@@ -37,7 +37,8 @@ beforeAll(async () => {
   const microsoft = { clientId: fake.microsoft.clientId, clientSecret: fake.microsoft.clientSecret, tenant: "organizations" };
   // notion: a provider definition whose client is not configured on this installation.
   const unconfigured = { ...fakeOAuthProvider(fake, { provider: "notion", slug: "notion" }), client: () => undefined };
-  const oauthProviders = [...OAUTH_PROVIDERS, fakeOAuthProvider(fake), unconfigured];
+  // trello and notion have real definitions now (decision 0062); the generic fake stands in for them here.
+  const oauthProviders = [...OAUTH_PROVIDERS.filter((d) => d.provider !== "trello" && d.provider !== "notion"), fakeOAuthProvider(fake), unconfigured];
   app = await createApp({ db, boss, secretsKey, secureCookies: false, publicUrl: "http://localhost:3000", providers: { ...fake.urls, timeoutMs: 2000, microsoft }, oauthProviders, ask: true });
   await app.init();
   server = app.getHttpServer();

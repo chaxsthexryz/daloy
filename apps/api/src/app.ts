@@ -27,6 +27,9 @@ import { BookingsController } from "./bookings";
 import { ResourcesController } from "./resources";
 import { SecretsController } from "./secrets";
 import { SettingsController } from "./settings";
+import { AirtableOAuthController } from "./oauth-airtable";
+import { NotionOAuthController } from "./oauth-notion";
+import { TrelloOAuthController } from "./oauth-trello";
 import { TokensController } from "./tokens";
 import { UsageController } from "./usage";
 import { CatalogController, WorkflowsController } from "./workflows";
@@ -40,7 +43,7 @@ export async function createApp({ db, boss, ...config }: AppOptions) {
   await boss.createQueue(SCHEDULE_QUEUE);
 
   @Module({
-    controllers: [AuthController, WorkflowsController, CatalogController, SecretsController, ResourcesController, BookingsController, TokensController, RunsController, HooksController, PaymongoHooksController, FormsController, ApprovalsController, McpController, SettingsController, LanguageController, EmailSettingsController, EmailSourceController, ConnectionsController, OAuthStartController, OAuthCallbackController, DeliveriesController, AiDraftController, AiChatController, MembersController, MyRequestsController, UsageController, BrandController, BrandLogoController],
+    controllers: [AuthController, WorkflowsController, CatalogController, SecretsController, ResourcesController, BookingsController, TokensController, RunsController, HooksController, PaymongoHooksController, FormsController, ApprovalsController, McpController, SettingsController, LanguageController, EmailSettingsController, EmailSourceController, ConnectionsController, OAuthStartController, OAuthCallbackController, AirtableOAuthController, NotionOAuthController, TrelloOAuthController, DeliveriesController, AiDraftController, AiChatController, MembersController, MyRequestsController, UsageController, BrandController, BrandLogoController],
     providers: [
       { provide: DB, useValue: db },
       { provide: BOSS, useValue: boss },

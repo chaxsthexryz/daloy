@@ -36,6 +36,9 @@ import {
   slackIdentity,
   slackPost,
   airtableCheck,
+  airtableSchemaCheck,
+  trelloAuthOf,
+  withRecordAuth,
   notionAddPage,
   notionDatabase,
   trelloAddCard,
@@ -291,7 +294,8 @@ export class ConnectionsController {
   @UseGuards(RateLimit(5))
   async testAirtable(@CurrentUser() user: SessionUser) {
     const conn = await this.connection(user.workspaceId, "airtable");
-    return this.test(user.workspaceId, "airtable", conn, () => airtableCheck(this.urls, conn.credential, conn.destination!.baseId!, conn.destination!.tableId!));
+    // An OAuth grant has no record read scope, so it checks the schema instead. force: the test proves the grant itself.
+    return this.test(user.workspaceId, "airtable", conn, () => this.auth(user, "airtable", conn, (t) => (conn.authMethod === "oauth" ? airtableSchemaCheck : airtableCheck)(this.urls, t, conn.destination!.baseId!, conn.destination!.tableId!)));
   }
 
   /** Connect or Reconnect Notion: the database must be shared with the integration; its title property is found and saved. */
@@ -309,7 +313,7 @@ export class ConnectionsController {
   @UseGuards(RateLimit(5))
   async testNotion(@CurrentUser() user: SessionUser) {
     const conn = await this.connection(user.workspaceId, "notion");
-    return this.test(user.workspaceId, "notion", conn, () => notionAddPage(this.urls, conn.credential, conn.destination as { databaseId: string; titleProperty: string }, "Test page from Daloy. You can delete this page.", {}));
+    return this.test(user.workspaceId, "notion", conn, () => this.auth(user, "notion", conn, (t) => notionAddPage(this.urls, t, conn.destination as { databaseId: string; titleProperty: string }, "Test page from Daloy. You can delete this page.", {})));
   }
 
   /** Connect or Reconnect Trello: the key and token are saved together as one secret, never returned. */
@@ -328,7 +332,7 @@ export class ConnectionsController {
   @UseGuards(RateLimit(5))
   async testTrello(@CurrentUser() user: SessionUser) {
     const conn = await this.connection(user.workspaceId, "trello");
-    return this.test(user.workspaceId, "trello", conn, () => trelloAddCard(this.urls, JSON.parse(conn.credential), conn.destination!.listId!, "Test card from Daloy. You can archive this card.", ""));
+    return this.test(user.workspaceId, "trello", conn, () => this.auth(user, "trello", conn, (t) => trelloAddCard(this.urls, trelloAuthOf(conn.authMethod, t), conn.destination!.listId!, "Test card from Daloy. You can archive this card.", "")));
   }
 
   @Get("slack/channels")
@@ -408,6 +412,11 @@ export class ConnectionsController {
     return { revoked: out.revoked };
   }
 
+  /** The record apps' calls: an OAuth access token (refreshed first, forced for a test) or the pasted credential (decision 0062). */
+  private auth<T>(user: SessionUser, provider: Provider, conn: Awaited<ReturnType<ConnectionsController["connection"]>>, fn: (credential: string) => Promise<T>) {
+    return withRecordAuth(this.db, this.config.secretsKey, this.urls, user.workspaceId, this.config.oauthProviders.find((d) => d.provider === provider), conn, fn, { force: true });
+  }
+
   private async connection(userId: string, provider: Provider) {
     const conn = await connectionCredential(this.db, this.config.secretsKey, userId, provider);
     if (!conn) throw new NotFoundException(`${PROVIDER_NAMES[provider]} is not connected.`);
@@ -417,7 +426,7 @@ export class ConnectionsController {
   /** ok: true means the provider accepted the write. A rejected credential marks the connection failed, as a delivery would. */
   // conn is the connection the test sends with, so its result only touches that credential (Astra, 8e2c5d8).
   private async test(userId: string, provider: Provider, conn: { destination: Record<string, string> | null; revision: string }, send: () => Promise<Record<string, string | boolean>>) {
-    if (!conn.destination) return { ok: false, error: provider === "google_sheets" ? "Pick a sheet first." : "Pick a channel first." };
+    if (!conn.destination) return { ok: false, error: `Pick a ${{ google_sheets: "sheet", airtable: "table", notion: "database", trello: "list" }[provider as string] ?? "channel"} first.` };
     try {
       const result = await send();
       await markConnectionWorking(this.db, userId, provider, conn.revision);

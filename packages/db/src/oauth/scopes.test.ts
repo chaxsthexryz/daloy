@@ -7,6 +7,9 @@ describe("scope manifest", () => {
   it("asks each provider for exactly these scopes", () => {
     expect(Object.fromEntries(OAUTH_PROVIDERS.map((d) => [d.slug, { scopes: d.scopes, required: d.requiredScopes, pkce: d.pkce }]))).toEqual({
       outlook: { scopes: ["offline_access", "https://graph.microsoft.com/Mail.Send", "https://graph.microsoft.com/User.Read"], required: ["Mail.Send", "User.Read"], pkce: true },
+      airtable: { scopes: ["data.records:write", "schema.bases:read"], required: ["data.records:write", "schema.bases:read"], pkce: true },
+      notion: { scopes: [], required: [], pkce: false },
+      trello: { scopes: ["offline_access", "read:member:trello", "read:board:trello", "write:board:trello"], required: ["read:member:trello", "read:board:trello", "write:board:trello"], pkce: true },
     });
   });
 

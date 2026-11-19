@@ -45,6 +45,12 @@ export type OAuthProvider = {
   extraParams?: Record<string, string>;
   /** Added to every token request. */
   tokenParams?: Record<string, string>;
+  /** Client id and secret as an HTTP Basic header on token and revoke requests, not as body fields (Airtable, Notion). */
+  tokenAuth?: "basic";
+  /** Token and revoke requests as a JSON body, not a form (Notion, Atlassian for Trello). */
+  tokenFormat?: "json";
+  /** Added to every token and revoke request. */
+  tokenHeaders?: Record<string, string>;
   /** Send a PKCE S256 challenge. */
   pkce: boolean;
   /** The provider hands out refresh tokens: a code exchange without one is refused. */
@@ -94,7 +100,8 @@ const verifierName = (flowId: string) => `oauth-flow:${flowId}`;
 
 /** The provider's consent page. state is opaque; codeChallenge is the S256 of the verifier when the provider uses PKCE. */
 export function authorizeUrl(def: OAuthProvider, urls: ProviderUrls, o: { redirectUri: string; state: string; codeChallenge?: string }) {
-  const q = new URLSearchParams({ client_id: clientOf(def, urls).clientId, response_type: "code", redirect_uri: o.redirectUri, scope: def.scopes.join(" "), state: o.state });
+  // Notion has no scopes: an empty scope parameter is left out.
+  const q = new URLSearchParams({ client_id: clientOf(def, urls).clientId, response_type: "code", redirect_uri: o.redirectUri, ...(def.scopes.length ? { scope: def.scopes.join(" ") } : {}), state: o.state });
   if (def.pkce && o.codeChallenge) {
     q.set("code_challenge", o.codeChallenge);
     q.set("code_challenge_method", "S256");
@@ -153,13 +160,21 @@ export async function deleteOldFlows(db: Db) {
 
 // ---------------------------------------------------------------- tokens
 
+/** A token or revoke request: the client's credentials as body fields or a Basic header, and a form or JSON body (decision 0062). */
+function clientRequest(def: OAuthProvider, client: OAuthClient, params: Record<string, string>): RequestInit {
+  const basic = def.tokenAuth === "basic";
+  const all = basic ? params : { client_id: client.clientId, client_secret: client.clientSecret, ...params };
+  const headers: Record<string, string> = { ...def.tokenHeaders, ...(basic ? { authorization: `Basic ${Buffer.from(`${client.clientId}:${client.clientSecret}`).toString("base64")}` } : {}) };
+  if (def.tokenFormat === "json") return { method: "POST", headers: { ...headers, "content-type": "application/json" }, body: JSON.stringify(all) };
+  return { method: "POST", headers, body: new URLSearchParams(all) };
+}
+
 type TokenAnswer = { accessToken: string; refreshToken?: string; expiresIn?: number; scope?: string };
 
 /** The token endpoint, for a code and for a refresh. Provider text never reaches the error message. */
 async function tokenRequest(def: OAuthProvider, urls: ProviderUrls, params: Record<string, string>): Promise<TokenAnswer> {
   const client = clientOf(def, urls);
-  const body = new URLSearchParams({ client_id: client.clientId, client_secret: client.clientSecret, ...def.tokenParams, ...params });
-  const res = await call(def.tokenUrl(urls), { method: "POST", body }, urls.timeoutMs ?? 10_000, false, `${def.name} sign-in`);
+  const res = await call(def.tokenUrl(urls), clientRequest(def, client, { ...def.tokenParams, ...params }), urls.timeoutMs ?? 10_000, false, `${def.name} sign-in`);
   const b = res.body;
   if (res.status === 200 && typeof b.access_token === "string" && b.access_token && String(b.token_type ?? "").toLowerCase() === "bearer") {
     return {
@@ -350,6 +365,11 @@ export async function keepOAuthAlive(db: Db, key: Buffer, urls: ProviderUrls, de
       .limit(limit - refreshed);
     for (const r of due) {
       const conn = { credential: decryptSecret(key, r.userId, `connection:${def.provider}`, r), revision: r.iv };
+      if (!readTokenBlob(conn.credential).refreshToken) {
+        // A token that never expires (Notion may issue one): nothing to refresh. Stamped so the sweep does not pick it up first every day.
+        await db.update(connections).set({ refreshedAt: new Date() }).where(and(eq(connections.userId, r.userId), eq(connections.provider, def.provider), eq(connections.credentialIv, r.iv)));
+        continue;
+      }
       try {
         await freshToken(db, key, urls, r.userId, def, conn, { force: true });
         refreshed++;
@@ -373,8 +393,8 @@ export async function disconnectOAuth(db: Db, key: Buffer, urls: ProviderUrls, w
     const client = clientOf(def, urls);
     const blob = readTokenBlob(decryptSecret(key, workspaceId, `connection:${def.provider}`, { ciphertext: row.credentialCiphertext, iv: row.credentialIv, authTag: row.credentialAuthTag }));
     const token = blob.refreshToken ?? blob.accessToken;
-    const body = new URLSearchParams({ token, token_type_hint: blob.refreshToken ? "refresh_token" : "access_token", client_id: client.clientId, client_secret: client.clientSecret });
-    const res = await call(def.revokeUrl(urls), { method: "POST", body }, Math.min(5000, urls.timeoutMs ?? 5000), false, `${def.name} revoke`);
+    const init = clientRequest(def, client, { token, ...(def.tokenFormat === "json" ? {} : { token_type_hint: blob.refreshToken ? "refresh_token" : "access_token" }) });
+    const res = await call(def.revokeUrl(urls), init, Math.min(5000, urls.timeoutMs ?? 5000), false, `${def.name} revoke`);
     return { removed: true, revoked: res.status >= 200 && res.status < 300 };
   } catch {
     return { removed: true, revoked: false };

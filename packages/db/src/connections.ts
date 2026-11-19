@@ -37,7 +37,7 @@ export async function saveConnection(db: Db, key: Buffer, userId: string, provid
 /** The owner's connections for the console. Credentials never leave this module. */
 export async function readConnections(db: Db, userId: string) {
   return db
-    .select({ provider: connections.provider, status: connections.status, account: connections.account, destination: connections.destination, lastError: connections.lastError, lastTestedAt: connections.lastTestedAt })
+    .select({ provider: connections.provider, authMethod: connections.authMethod, status: connections.status, account: connections.account, destination: connections.destination, lastError: connections.lastError, lastTestedAt: connections.lastTestedAt })
     .from(connections)
     .where(eq(connections.userId, userId));
 }
