@@ -537,6 +537,8 @@ export const mailSenders = pgTable("mail_senders", {
   scopes: text("scopes"),
   accessExpiresAt: ts("access_expires_at"),
   refreshedAt: ts("refreshed_at"),
+  // When the owner was last emailed that this Google sign-in stopped working (plan R8): at most once a day.
+  alertAt: ts("alert_at"),
 }, (t) => [
   check("mail_senders_status", sql`${t.status} in ('unverified', 'active', 'failed', 'disconnected')`),
   check("mail_senders_auth_method", sql`${t.authMethod} in ('app_password', 'oauth')`),
@@ -580,9 +582,13 @@ export const connections = pgTable(
     oauthClientId: text("oauth_client_id"),
     accessExpiresAt: ts("access_expires_at"),
     refreshedAt: ts("refreshed_at"),
+    // When the owner was last emailed that this grant stopped working (plan R8): at most once a day per connection.
+    alertAt: ts("alert_at"),
   },
   (t) => [
     primaryKey({ columns: [t.userId, t.provider] }),
+    // The same provider account connected elsewhere in Daloy (plan R14).
+    index("connections_external_id").on(t.externalId),
     check("connections_provider", sql`${t.provider} in ('google_sheets', 'slack', 'outlook', 'teams', 'telegram', 'google_calendar', 'paymongo', 'airtable', 'notion', 'trello', 'google_drive')`),
     check("connections_status", sql`${t.status} in ('active', 'failed')`),
     check("connections_auth_method", sql`${t.authMethod} in ('token', 'service_account', 'oauth', 'webhook_url')`),

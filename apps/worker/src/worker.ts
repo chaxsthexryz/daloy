@@ -7,6 +7,7 @@ import { PgBoss } from "pg-boss";
 import { advance, type AdvanceDeps, type StepExecutor } from "./advance";
 import { pollEmailSources, type ImapAdapter } from "./email-in";
 import { connectImap } from "./imap";
+import { alertBrokenGrants } from "./connection-alerts";
 import { checkSchedules } from "./watchdog";
 
 export type WorkerOptions = {
@@ -139,8 +140,12 @@ export async function startWorker(opts: WorkerOptions) {
   let checking: Promise<void> | undefined;
   const watchdogTimer = opts.watchdog ? setInterval(() => {
     if (checking) return;
-    checking = checkSchedules({ db, ...opts.watchdog! })
+    const deps = { db, ...opts.watchdog! };
+    checking = checkSchedules(deps)
       .catch((err: unknown) => console.error("schedule watchdog failed", err))
+      // Plan R8: one email a day per broken OAuth grant.
+      .then(() => alertBrokenGrants(deps))
+      .catch((err: unknown) => console.error("connection alerts failed", err))
       .finally(() => { checking = undefined; });
   }, opts.watchdog.intervalMs ?? 60_000) : undefined;
 
