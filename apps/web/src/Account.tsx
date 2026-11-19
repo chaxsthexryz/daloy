@@ -1,3 +1,5 @@
+import "./request-access.css";
+import "./workspace-admin.css";
 import { useState, type FormEvent } from "react";
 import { api } from "./api";
 import { useLanguage } from "./Language";
@@ -24,7 +26,7 @@ export function ForgotPasswordPage() {
     }
   };
   return (
-    <main className="page narrow">
+    <main className="page narrow request-page access-page">
       <Brand />
       <form onSubmit={submit}>
         <h2>Forgot your password?</h2>
@@ -65,7 +67,7 @@ export function ResetPasswordPage({ token }: { token: string }) {
     }
   };
   return (
-    <main className="page narrow">
+    <main className="page narrow request-page access-page">
       <Brand />
       <form onSubmit={submit}>
         <h2>Set a new password</h2>
@@ -114,7 +116,7 @@ export function AccountPage({ backToRequests }: { backToRequests?: boolean }) {
     }
   };
   return (
-    <main className="page narrow">
+    <main className="page narrow workspace-admin admin-account">
       <header className="toolbar plain">
         {backToRequests && <a href="#/">{t("My requests")}</a>}
         <h1>{t("Account")}</h1>

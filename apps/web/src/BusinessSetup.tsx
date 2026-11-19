@@ -1,3 +1,4 @@
+import "./workspace-admin.css";
 import { Text } from "./Language";
 import { useLanguage } from "./Language";
 import { WEBSITE_INQUIRY_SLUG, websiteInquiryDefinition } from "@daloy/engine";
@@ -29,7 +30,7 @@ export function BusinessSetupPage() {
   useEffect(() => void load(), []);
 
   return (
-    <main className="page narrow">
+    <main className="page narrow workspace-admin admin-business">
       <header className="toolbar plain">
         {back}
         <h1><Text>Business</Text></h1>

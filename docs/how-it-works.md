@@ -2,6 +2,10 @@
 
 This file explains each core module in plain language: what it does, why it is built that way, which edge cases it handles, and which tests prove it. It grows with each phase.
 
+## Reviewing the console design
+
+Staff start on Automations to see which workflows need attention. Activity opens the run behind a status, and Bookings lists appointments staff can change. The sidebar groups daily work, creation and workspace settings. On a phone, the bottom navigation and Menu expose the pages available to the signed-in role. The [offline walkthrough](design/console-review.html) shows these screens with sample records. Open it in a browser and switch between Desktop and Phone. The [phase ledger](design/console-redesign-phases.md) records which actions were tested separately.
+
 ## Layout
 
 - `packages/engine`: the rules of a workflow run (definition schema, state machine, retries, expressions). Pure TypeScript with no database or network access, so every rule can be tested in milliseconds.

@@ -1,3 +1,4 @@
+import "./creation.css";
 import { templatesForLanguage } from "@daloy/engine";
 import { Text, useLanguage } from "./Language";
 import { useState, type FormEvent } from "react";
@@ -35,35 +36,43 @@ export function NewAutomationPage({ email }: { email: string }) {
   };
 
   return (
-    <main className="page">
+    <main className="page creation-page new-automation">
       <Header title={t("New automation")} />
       <section className="create" aria-labelledby="guided">
         <h2 id="guided"><Text>Set up with a few questions</Text></h2>
-        <h3><Text>Track an office request</Text></h3>
-        <p><Text>Staff fill in a form. Each request gets a reference. Your office receives a notification.</Text></p>
-        <div className="actions">
-          <a href="#/try/office-request"><Text>Try an example</Text></a>
-          <button type="button" className="primary" onClick={() => startOfficeSetup(email, language).catch((e: Error) => setStartError(e.message))}>
-            {t("Set up for my office")}
-          </button>
-        </div>
-        <h3><Text>Purchase request with a named approver</Text></h3>
-        <p><Text>Staff ask to buy something and get a reference. The person you name approves or rejects it in Daloy. Approved requests go to purchasing, from Outlook and with a Teams note if you connect them.</Text></p>
-        <div className="actions">
-          <button type="button" className="primary" onClick={() => startPurchaseSetup(email, language).catch((e: Error) => setStartError(e.message))}>
-            {t("Set up purchase requests")}
-          </button>
-        </div>
-        <h3><Text>Reply to a website inquiry</Text></h3>
-        <p><Text>Visitors fill in your inquiry form. They get a reply from your own email address, and your inbox gets the inquiry.</Text></p>
-        <div className="actions">
-          <a href="#/settings/business"><Text>Set up inquiry replies</Text></a>
+        <div className="creation-options">
+          <article className="creation-option">
+            <h3><Text>Track an office request</Text></h3>
+            <p><Text>Staff fill in a form. Each request gets a reference. Your office receives a notification.</Text></p>
+            <div className="actions">
+              <a href="#/try/office-request"><Text>Try an example</Text></a>
+              <button type="button" className="primary" onClick={() => startOfficeSetup(email, language).catch((e: Error) => setStartError(e.message))}>
+                {t("Set up for my office")}
+              </button>
+            </div>
+          </article>
+          <article className="creation-option">
+            <h3><Text>Purchase request with a named approver</Text></h3>
+            <p><Text>Staff ask to buy something and get a reference. The person you name approves or rejects it in Daloy. Approved requests go to purchasing, from Outlook and with a Teams note if you connect them.</Text></p>
+            <div className="actions">
+              <button type="button" className="primary" onClick={() => startPurchaseSetup(email, language).catch((e: Error) => setStartError(e.message))}>
+                {t("Set up purchase requests")}
+              </button>
+            </div>
+          </article>
+          <article className="creation-option">
+            <h3><Text>Reply to a website inquiry</Text></h3>
+            <p><Text>Visitors fill in your inquiry form. They get a reply from your own email address, and your inbox gets the inquiry.</Text></p>
+            <div className="actions">
+              <a href="#/settings/business"><Text>Set up inquiry replies</Text></a>
+            </div>
+          </article>
         </div>
         <p role="alert" className="message error" hidden={!startError}>
           {startError}
         </p>
       </section>
-      <section className="create" aria-labelledby="describe-ai">
+      <section className="create creation-ai-entry" aria-labelledby="describe-ai">
         <h2 id="describe-ai"><Text>Describe it to the AI</Text></h2>
         <p><Text>Say what should happen in your own words, answer a few questions, and check the draft before anything is saved.</Text></p>
         <div className="actions">

@@ -1,3 +1,4 @@
+import "./workspace-admin.css";
 import { Text, useLanguage } from "./Language";
 import { useEffect, useState, type FormEvent } from "react";
 import { api } from "./api";
@@ -127,7 +128,7 @@ export function AiModelPage() {
   };
 
   return (
-    <main className="page narrow">
+    <main className="page narrow workspace-admin admin-settings">
       <header className="toolbar plain">
         <a href="#/settings"><Text>Settings</Text></a>
         <h1><Text>AI model</Text></h1>

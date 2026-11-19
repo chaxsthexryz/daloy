@@ -1,3 +1,4 @@
+import "./creation.css";
 import { useLanguage } from "./Language";
 import { definitionSchema, lintDefinition, type FormField, type Step, type Trigger } from "@daloy/engine";
 import { Background, Controls, ReactFlow, type NodeChange } from "@xyflow/react";
@@ -138,14 +139,14 @@ export function Editor({ id }: { id: string }) {
       setRunId(r.id);
     });
 
-  if (!wf || !catalog) return <main className="page">{message ? <p role="alert">{message.text}</p> : <p>{t("Loading…")}</p>}</main>;
+  if (!wf || !catalog) return <main className="page creation-page">{message ? <p role="alert">{message.text}</p> : <p>{t("Loading…")}</p>}</main>;
 
   const step = draft.steps.find((s) => s.id === selected);
   const status = dirty ? t("Unsaved changes") : wf.latest ? t("Version {version}{state}", { version: wf.latest.version, state: t(wf.latest.published ? " (live)" : ", draft") }) : t("Not saved yet");
 
   return (
-    <div className="editor">
-      <header className="toolbar">
+    <div className="editor creation-page creation-editor">
+      <header className="toolbar creation-editor-header">
         <a href="#/">{t("Automations")}</a>
         <h1>{wf.name}</h1>
         <AutomationTabs id={id} here="steps" overview={!!wf.setup && !!wf.live} />
@@ -176,7 +177,7 @@ export function Editor({ id }: { id: string }) {
             nodesDraggable={false}
             nodesConnectable={false}
             deleteKeyCode="Delete"
-            colorMode={document.documentElement.dataset.theme === "dark" ? "dark" : "light"}
+            colorMode="light"
             fitView
             fitViewOptions={{ maxZoom: 1 }}
           >
@@ -184,14 +185,14 @@ export function Editor({ id }: { id: string }) {
             <Controls showInteractive={false} />
           </ReactFlow>
         </section>
-        <aside className="panel">
+        <aside className="panel creation-editor-panel">
           {message && (
             <p role={message.kind === "error" ? "alert" : "status"} className={`message ${message.kind}`}>
               {message.text}
             </p>
           )}
           {warnings.length > 0 && (
-            <section aria-labelledby="checks-heading">
+            <section className="creation-checks" aria-labelledby="checks-heading">
               <h2 id="checks-heading">{t("Check before publishing")}</h2>
               <ul>
                 {warnings.map((w) => (
@@ -286,7 +287,7 @@ export function Editor({ id }: { id: string }) {
               </button>
             </section>
           )}
-          <section aria-labelledby="run-heading">
+          <section className="creation-test" aria-labelledby="run-heading">
             <h2 id="run-heading">{t("Run")}</h2>
             <div className="field">
               <label htmlFor="payload">{t("Sample trigger data (JSON)")}</label>

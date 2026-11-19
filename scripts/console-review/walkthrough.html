@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Daloy console review</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #f1f1ef; color: #201916; font: 16px/1.5 system-ui, sans-serif; }
+    header, main { width: min(1240px, 100%); margin: auto; padding: 20px; }
+    header { border-bottom: 1px solid #d5d0cd; }
+    h1, h2 { font-weight: 600; line-height: 1.2; margin: 0 0 8px; }
+    h1 { font-size: 26px; }
+    h2 { font-size: 22px; }
+    p { margin: 0 0 8px; }
+    .note { color: #635c58; }
+    .controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; margin-top: 16px; }
+    label { display: grid; gap: 3px; font-size: 14px; }
+    select, button { min-height: 42px; max-width: 100%; padding: 8px 10px; font: inherit; background: #fff; color: inherit; border: 1px solid #817772; border-radius: 8px; }
+    button { cursor: pointer; }
+    button:disabled { cursor: default; color: #635c58; background: #e6e3e0; }
+    :focus-visible { outline: 3px solid #245a91; outline-offset: 2px; }
+    img { display: block; width: auto; max-width: 100%; height: auto; margin: 14px auto; background: #fff; border: 1px solid #d5d0cd; border-radius: 8px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Daloy console review</h1>
+    <p class="note">Screenshots use a sample workspace. Choose a screen, compare desktop and phone, or switch to Tagalog for available screens.</p>
+    <p id="revision" class="note" hidden></p>
+    <div class="controls">
+      <label>Language
+        <select id="language"><option value="en">English</option><option value="tl">Tagalog</option></select>
+      </label>
+      <label>Screen <select id="screen"></select></label>
+      <label>Layout
+        <select id="layout"><option value="1180">Desktop</option><option value="390">Phone</option></select>
+      </label>
+      <button id="previous" type="button">Previous</button>
+      <button id="next" type="button">Next</button>
+    </div>
+  </header>
+  <main>
+    <h2 id="title"></h2>
+    <p id="note" class="note"></p>
+    <img id="shot" alt="">
+  </main>
+  <script type="application/json" id="captures"><!-- WALKTHROUGH_DATA --></script>
+  <script>
+    const byId = (id) => document.getElementById(id);
+    const { captures, commit } = JSON.parse(byId("captures").textContent);
+    const screen = byId("screen");
+    const language = byId("language");
+    const layout = byId("layout");
+    const previous = byId("previous");
+    const next = byId("next");
+    const shot = byId("shot");
+    if (commit) {
+      byId("revision").textContent = "Commit " + commit.slice(0, 12);
+      byId("revision").hidden = false;
+    }
+
+    function show() {
+      const capture = captures.find((item) => item.name === screen.value && item.language === language.value && item.width === Number(layout.value));
+      byId("title").textContent = capture.name;
+      byId("note").textContent = capture.note;
+      const languageName = language.selectedOptions[0].text;
+      shot.alt = capture.name + " at " + capture.width + "px (" + languageName + ")";
+      shot.src = "data:image/jpeg;base64," + capture.image;
+      previous.disabled = screen.selectedIndex === 0;
+      next.disabled = screen.selectedIndex === screen.options.length - 1;
+    }
+
+    function listScreens() {
+      const current = screen.value;
+      const names = new Set(captures.filter((item) => item.language === language.value).map((item) => item.name));
+      screen.replaceChildren(...Array.from(names, (name) => new Option(name, name)));
+      if (names.has(current)) screen.value = current;
+      show();
+    }
+
+    previous.addEventListener("click", () => { screen.selectedIndex -= 1; show(); });
+    next.addEventListener("click", () => { screen.selectedIndex += 1; show(); });
+    language.addEventListener("change", listScreens);
+    screen.addEventListener("change", show);
+    layout.addEventListener("change", show);
+    listScreens();
+  </script>
+</body>
+</html>

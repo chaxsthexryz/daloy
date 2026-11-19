@@ -1,3 +1,4 @@
+import "./creation.css";
 import { useLanguage } from "./Language";
 import { useEffect, useReducer, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { api } from "./api";
@@ -136,7 +137,7 @@ export function BuildWithAiPage({ email }: { email: string }) {
 
   const composer = (
     <form className="composer" onSubmit={send}>
-      <label htmlFor="chat-text" className="sr-only">
+      <label htmlFor="chat-text" className="composer-label">
         {draft ? t("What should change?") : t("What should happen?")}
       </label>
       <textarea
@@ -169,7 +170,7 @@ export function BuildWithAiPage({ email }: { email: string }) {
   );
 
   return (
-    <main className="page">
+    <main className="page creation-page creation-chat">
       <Header title={t("Build with AI")} />
       <div className={`ai-build${empty ? " ai-empty" : ""}`}>
         {!empty && (

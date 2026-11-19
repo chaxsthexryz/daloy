@@ -75,7 +75,7 @@ export function AskRequest({ reference }: { reference?: string } = {}) {
 
   const shown = reply ? (reply.answers[which] ?? reply.answers.happened) : null;
   return (
-    <section className="demo-card" aria-labelledby="ask-title">
+    <section className="demo-card request-help" aria-labelledby="ask-title">
       <h2 id="ask-title">{reference ? t("Ask what happened") : t("Ask about a request")}</h2>
       {!reference && (
       <form onSubmit={submit}>

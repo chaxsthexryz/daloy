@@ -46,9 +46,17 @@ test("the editor and the run page show the trigger and first edge done before th
   await expect(path.locator(".node.run-done")).toHaveCount(2);
   await expect(page.getByText("Details for a technician")).toBeVisible();
 
-  // The canvas is desktop only.
+  // Phones replace the diagram with the same steps and statuses in a readable list.
   await page.setViewportSize({ width: 390, height: 800 });
-  await expect(path).toBeHidden();
+  await expect(path).toBeVisible();
+  await expect(path.locator(".run-canvas")).toBeHidden();
+  const steps = path.getByRole("listitem");
+  await expect(steps).toHaveCount(2);
+  await expect(steps.nth(0)).toContainText("post");
+  await expect(steps.nth(0)).toContainText("Done");
+  await expect(steps.nth(1)).toContainText("pause");
+  await expect(steps.nth(1)).toContainText("Waiting");
+  await expect(steps.nth(1)).toBeVisible();
 });
 
 test("a failed step is red and says Problem", async ({ page }) => {

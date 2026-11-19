@@ -1,6 +1,7 @@
 import { Text, useLanguage } from "./Language";
 import { useEffect, useRef, useState } from "react";
 import { api } from "./api";
+import "./operations.css";
 
 type Booking = {
   id: string;
@@ -77,10 +78,10 @@ export function BookingsPage() {
     });
 
   return (
-    <main className="page">
+    <main className="page operations-page bookings-page">
       <header className="toolbar plain">
         <h1><Text>Bookings</Text></h1>
-        <a href="/bookings/export.csv" download>{t("Download CSV")}</a>
+        <a className="operations-export" href="/bookings/export.csv" download>{t("Download CSV")}</a>
       </header>
       <p role="status" className="message ok" hidden={!note}>
         {note}
@@ -89,12 +90,12 @@ export function BookingsPage() {
         {error}
       </p>
       {list === null ? (
-        <p>{t("Loading…")}</p>
+        <p className="operations-empty" role="status">{t("Loading…")}</p>
       ) : list.length === 0 ? (
-        <p><Text>No bookings yet. They appear when a workflow's booking step books a resource.</Text></p>
+        <p className="operations-empty"><Text>No bookings yet. They appear when a workflow's booking step books a resource.</Text></p>
       ) : (
-        <div className="table-wrap">
-          <table className="table">
+        <div className="table-wrap operations-table">
+          <table className="table cards">
             <thead>
               <tr>
                 <th scope="col"><Text>Reference</Text></th>
@@ -102,26 +103,26 @@ export function BookingsPage() {
                 <th scope="col"><Text>Time</Text></th>
                 <th scope="col"><Text>Status</Text></th>
                 <th scope="col">
-                  <span className="sr-only"><Text>Actions</Text></span>
+                  <span className="visually-hidden"><Text>Actions</Text></span>
                 </th>
               </tr>
             </thead>
             <tbody>
               {list.map((b) => (
                 <tr key={b.id}>
-                  <td>{b.runId ? <a href={`#/runs/${b.runId}`}>{b.reference}</a> : b.reference}</td>
-                  <td>{b.resource.name}</td>
-                  <td>
+                  <td className="operations-reference" data-label={t("Reference")}>{b.runId ? <a href={`#/runs/${b.runId}`}>{b.reference}</a> : b.reference}</td>
+                  <td data-label={t("Resource")}>{b.resource.name}</td>
+                  <td data-label={t("Time")}>
                     {local(b.start)}{t(" to ")}{local(b.end).slice(11)} <span className="muted">({b.timezone})</span>
                   </td>
-                  <td>
+                  <td data-label={t("Status")}>
                     <span className={`badge ${b.status === "active" ? "succeeded" : "cancelled"}`}>{t(b.status)}</span>
                     {b.attention && (
                       <span className="badge failed" title={t("The run for this booking failed or waits for review. The booking is still active.")}>
                         {" "}{t("needs attention")}</span>
                     )}
                   </td>
-                  <td>
+                  <td className="operations-row-actions" data-label={t("Actions")}>
                     {b.status === "active" && moving?.id !== b.id && (
                       <>
                         <button type="button" className="quiet" onClick={() => setMoving({ id: b.id, start: b.start.slice(0, 16) })}>{t("Reschedule")}</button>
@@ -132,7 +133,7 @@ export function BookingsPage() {
                     {b.status === "no_show" && <button type="button" className="quiet" onClick={() => undoNoShow(b)}>{t("Undo no-show")}</button>}
                     {moving?.id === b.id && (
                       <form
-                        className="row"
+                        className="row operations-reschedule"
                         onSubmit={(e) => {
                           e.preventDefault();
                           void reschedule(b, moving.start);

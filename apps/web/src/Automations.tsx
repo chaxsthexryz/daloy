@@ -1,8 +1,10 @@
 import { Text, useLanguage } from "./Language";
 import { useEffect, useState } from "react";
 import { api, type RunSummary, type Workflow } from "./api";
+import { isDraft } from "./lib/drafts";
 import { Header } from "./Nav";
 import { FormEmbed } from "./FormEmbed";
+import "./automation-home.css";
 import { arrange, type Filter } from "./lib/automations";
 import { lastEvent, plainState } from "./lib/states";
 import type { User } from "./Team";
@@ -17,7 +19,7 @@ const FILTERS: [Filter, string][] = [
 
 /** Home: one card per automation with its state, last event and the few things an owner does with it. */
 export function Automations({ user }: { user: User }) {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const owner = user.role === "owner";
   const [list, setList] = useState<Workflow[] | null>(null);
   const [listError, setListError] = useState(false);
@@ -67,11 +69,45 @@ export function Automations({ user }: { user: User }) {
       setError((e as Error).message);
     }
   };
+  const all = list ?? [];
+  const statuses = [
+    { label: "On", color: "on", count: all.filter(w => w.live && !w.pausedAt).length },
+    { label: "Paused", color: "paused", count: all.filter(w => !!w.pausedAt).length },
+    { label: "Off", color: "off", count: all.filter(w => !w.pausedAt && !w.live && !isDraft(w)).length },
+    { label: "Drafts", color: "draft", count: all.filter(w => !w.pausedAt && isDraft(w)).length },
+  ];
+  const recent = all.flatMap(w => w.last ? [{ id: w.id, name: w.name, last: w.last }] : [])
+    .sort((a, b) => Date.parse(b.last.createdAt) - Date.parse(a.last.createdAt)).slice(0, 3);
+
   const { shown, drafts } = arrange(list ?? [], query, filter);
 
   return (
-    <main className="page">
-      <Header title={t("Automations")} action={owner && <a className="primary" href="#/new"><Text>New automation</Text></a>} />
+    <main className="page automation-home">
+      <Header title={t("Automations")} action={owner && <><a href="#/ai">{t("Build with AI")}</a><a className="primary" href="#/new"><Text>New automation</Text></a></>} />
+      {list && !listError && (
+        <div className="home-overview">
+          <section className="home-status">
+            <div className="home-panel-title"><h2>{t("Automation status")}</h2><span className="home-total">{list.length}</span></div>
+            <div className="home-meter" aria-hidden="true">{statuses.filter(s => s.count > 0).map(s => <i key={s.label} className={s.color} style={{flexGrow:s.count}} />)}</div>
+            <dl className="home-stats">{statuses.map(s => <div key={s.label}><dt><i className={s.color} />{t(s.label)}</dt><dd>{s.count}</dd></div>)}</dl>
+          </section>
+
+          <section className="home-attention"><h2>{t("Work queue")}</h2>
+            {(["needs_you", "problem", "waiting"] as const).map(key => (
+              <button key={key} type="button" aria-pressed={filter === key} onClick={() => {setQuery(""); setFilter(key); document.getElementById("find")?.focus();}}>
+                <span>{t(FILTERS.find(([value]) => value === key)![1])}</span><b>{arrange(list, "", key).shown.length}</b>
+              </button>
+            ))}
+          </section>
+          <section className="home-recent">
+            <div className="home-panel-title"><h2>{t("Recent activity")}</h2><a href="#/activity">{t("View all")} ↗</a></div>
+            {recent.length === 0 ? <p className="muted">{t("No activity yet")}</p> : <ul>{recent.map(({id,name,last}) => <li key={id}>
+              <a href={`#/runs/${last.runId}`}><strong>{name}</strong><time dateTime={last.createdAt}>{new Date(last.createdAt).toLocaleString(language === "tl" ? "fil-PH" : "en", {month:"short",day:"numeric",hour:"numeric",minute:"2-digit"})}</time></a>
+            </li>)}</ul>}
+          </section>
+
+        </div>
+      )}
       {review.length > 0 && (
         <p role="status" className="needs-you">
           <strong>{review.length >= 50 ? t("50 or more") : review.length}</strong> {t(review.length === 1 ? "request needs you." : "requests need you.")}{" "}

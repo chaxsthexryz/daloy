@@ -1,0 +1,89 @@
+/* Request and access flows use the same light surfaces as the approved console. */
+.request-page {
+  color-scheme: light;
+  --bg: #f1f1ef;
+  --surface: #ffffff;
+  --text: #201916;
+  --muted: #635c58;
+  --border: #8b8580;
+  --border-soft: #e2e0dd;
+  --sunken: #f5f4f2;
+  --accent: #244f7a;
+  --accent-hover: #143852;
+  --accent-tint: #e3eef8;
+  --on-accent: #ffffff;
+  --focus: #244f7a;
+  --danger: #a3261c;
+  --ok: #17643a;
+  --warn: #7a4b00;
+  --done: #dff1e6;
+  --on-done: #17643a;
+  --waiting: #fbefc9;
+  --on-waiting: #7a4b00;
+  --problem: #fbe3e0;
+  --on-problem: #a3261c;
+  --radius-md: 12px;
+  background: var(--bg);
+  color: var(--text);
+  min-width: 0;
+  overflow-wrap: anywhere;
+  scrollbar-color: var(--border) var(--bg);
+}
+.request-page ::selection { background: var(--accent-tint); color: var(--text); }
+.request-page :is(input, textarea) { caret-color: var(--accent); }
+.request-page :is(input, select, textarea, button) { max-width: 100%; }
+.request-page :is(button, a.primary) { white-space: normal; }
+.request-page :is(.field, form, section, .row) { min-width: 0; }
+.request-page h1 { font-size: clamp(1.75rem, 3vw, 2.75rem); line-height: 1.15; font-weight: 500; letter-spacing: -.04em; }
+.request-page h2 { font-size: 1.25rem; line-height: 1.35; font-weight: 500; letter-spacing: -.02em; }
+.request-page h3 { font-size: 1rem; font-weight: 600; }
+.request-page > p { max-width: 72ch; }
+.request-page .actions { gap: 12px; }
+.request-page .message { border-left-width: 1px; }
+.request-page .table { font-variant-numeric: tabular-nums; }
+.request-page .table :is(th, td) { padding: 16px; vertical-align: top; }
+.request-page .table th { text-transform: none; letter-spacing: 0; font-weight: 500; background: var(--sunken); }
+.request-page .table-wrap { margin-top: 20px; background: var(--surface); border: 1px solid var(--border-soft); border-radius: 17px; }
+.request-page .table tbody tr:last-child td { border-bottom: 0; }
+
+main.page.guided-request { max-width: none; margin: 0; min-height: 100%; padding: clamp(16px, 2.6vw, 42px); }
+.guided-request > h1 { margin-top: 24px; }
+.guided-request .create { display: block; max-width: 56rem; margin-top: 24px; padding: 24px; border-radius: 20px; }
+.guided-request .create > h2 { margin: 0 0 20px; }
+.guided-request .create > h3 { margin-top: 24px; }
+.guided-request .create > .actions { margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--border-soft); }
+.guided-request .create .field { max-width: 44rem; }
+.guided-request > section { max-width: 56rem; margin-top: 24px; }
+.guided-request > section pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+.request-progress { display: block; width: min(100%, 56rem); height: 6px; border: 0; border-radius: 6px; overflow: hidden; accent-color: var(--accent); background: var(--border-soft); }
+.request-progress::-webkit-progress-bar { background: var(--border-soft); }
+.request-progress::-webkit-progress-value { background: var(--accent); }
+.request-progress::-moz-progress-bar { background: var(--accent); }
+.request-help.demo-card { padding: 24px; border-color: var(--border-soft); border-radius: 17px; background: var(--surface); }
+.request-help > h2 { margin-top: 0; }
+.request-help .demo-starters { display: grid; gap: 8px; }
+
+/* These roles have no staff sidebar, so their page supplies the outer frame. */
+body:has(.access-page, .my-requests) { background: #aed5f0; }
+main.page.access-page { max-width: 30rem; margin: clamp(16px, 7vh, 72px) auto; padding: clamp(20px, 4vw, 36px); border-radius: 22px; width: calc(100% - 32px); box-sizing: border-box; }
+.access-page .brand { margin: 0 0 24px; font-size: 2rem; }
+.access-page > .muted { margin-bottom: 28px; }
+.access-page form > h2 { margin: 0 0 20px; }
+.access-page form > .actions { align-items: stretch; flex-direction: column; }
+.access-page .actions > button { width: 100%; }
+.access-page form > p:last-child { margin-bottom: 0; }
+main.page.my-requests { max-width: 76rem; min-height: 80svh; box-sizing: border-box; margin: 24px auto; width: calc(100% - 48px); padding: clamp(20px, 3vw, 42px); border-radius: 22px; }
+.my-requests > .toolbar { padding: 0 0 24px; margin: 0 0 24px; gap: 12px 20px; border-bottom: 1px solid var(--border-soft); }
+.my-requests .toolbar h1 { flex: 1 1 auto; }
+.my-requests .toolbar .muted { flex-basis: 100%; order: 1; }
+.my-requests > p:last-child { padding: 24px; background: var(--surface); border: 1px solid var(--border-soft); border-radius: 17px; }
+
+@media (max-width: 650px) {
+  .guided-request .create, .request-help.demo-card { padding: 20px; }
+  .guided-request .create > .actions > button { flex: 1 1 100%; }
+  main.page.my-requests { width: calc(100% - 24px); margin-block: 12px; padding: 20px; }
+  .my-requests .toolbar h1 { flex-basis: calc(100% - 48px); }
+  .request-page .table-wrap:has(.cards) { border: 0; background: transparent; }
+  .request-page .table.cards td { padding: 6px 0; }
+  .request-page .table.cards tr { padding: 16px; border-radius: 17px; }
+}

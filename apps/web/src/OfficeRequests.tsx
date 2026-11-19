@@ -1,3 +1,4 @@
+import "./request-access.css";
 import { Text } from "./Language";
 import { useLanguage } from "./Language";
 import type { Language } from "./lib/locale";
@@ -73,7 +74,7 @@ export function TryOfficeRequest({ email }: { email: string }) {
   const [shown, setShown] = useState<string | null>(null);
   const [error, setError] = useState("");
   return (
-    <main className="page">
+    <main className="page request-page guided-request">
       <p>{back}</p>
       <h1><Text>Preview only</Text></h1>
       <p className="muted"><Text>Try an example of Track an office request. Nothing is sent and no request is recorded.</Text></p>
@@ -160,10 +161,10 @@ export function OfficeRequestPage({ id }: { id: string }) {
   const [error, setError] = useState("");
   const load = () => api<Detail>("GET", `/workflows/${id}`).then(setWf, (e: Error) => setError(e.message));
   useEffect(() => void load(), [id]);
-  if (error) return <main className="page">{back}<p role="alert" className="message error">{error}</p></main>;
-  if (!wf) return <main className="page" />;
+  if (error) return <main className="page request-page guided-request">{back}<p role="alert" className="message error">{error}</p></main>;
+  if (!wf) return <main className="page request-page guided-request" />;
   const setup = wf.setup as Setup | PurchaseSetup | null;
-  if (!setup) return <main className="page">{back}<p><Text>This workflow has no guided setup.</Text> <a href={`#/w/${id}`}><Text>Open advanced editor</Text></a></p></main>;
+  if (!setup) return <main className="page request-page guided-request">{back}<p><Text>This workflow has no guided setup.</Text> <a href={`#/w/${id}`}><Text>Open advanced editor</Text></a></p></main>;
   if (wf.live && wf.trigger) return <LivePage wf={wf} formId={wf.trigger.id} />;
   return setup.template === PURCHASE_REQUEST ? <PurchaseWizard wf={wf} setup={setup} onLive={load} /> : <SetupWizard wf={wf} setup={setup as Setup} onLive={load} />;
 }
@@ -226,12 +227,13 @@ function useWizard<S extends string, A extends { name: string }>(wf: Detail, ste
     </button>
   );
   const frame = (title: string, stepTitle: string, body: ReactNode) => (
-    <main className="page">
+    <main className="page request-page guided-request">
       <p>{back}</p>
       <h1>{t("Set up: {title}", { title: t(title) })}</h1>
-      <p className="muted">
+      <p id="request-step" className="muted">
         {t("Step {step} of {total}: {title}. Your answers are saved at each step.", { step: index + 1, total: steps.length, title: t(stepTitle) })}
       </p>
+      <progress className="request-progress" value={index + 1} max={steps.length} aria-labelledby="request-step" />
       <form className="create" onSubmit={(e) => void onSubmit(e)}>
         <h2>{t(stepTitle)}</h2>
         {body}
@@ -476,7 +478,7 @@ function LivePage({ wf, formId }: { wf: Detail; formId: string }) {
     );
 
   return (
-    <main className="page">
+    <main className="page request-page guided-request">
       <p>{back}</p>
       <h1>{wf.name}</h1>
       <AutomationTabs id={wf.id} here="overview" overview />

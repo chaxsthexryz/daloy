@@ -1,3 +1,4 @@
+import "./creation.css";
 import { Text, useLanguage } from "./Language";
 import { useEffect, useState } from "react";
 import { api, type Version, type VersionSummary, type Workflow } from "./api";
@@ -68,7 +69,7 @@ export function VersionsPage({ workflowId }: { workflowId: string }) {
   const shown = list?.filter((v) => showDrafts || v.published) ?? [];
 
   return (
-    <main className="page">
+    <main className="page creation-page creation-versions">
       <header className="toolbar plain">
         <a href={`#/w/${workflowId}`}>{wf?.name ?? t("Workflow")}</a>
         <h1>{t("Versions")}</h1>
@@ -93,7 +94,7 @@ export function VersionsPage({ workflowId }: { workflowId: string }) {
               </li>
             ))}
           </ul>
-          <section aria-labelledby="diff-heading">
+          <section className="creation-diff" aria-labelledby="diff-heading">
             <h2 id="diff-heading">{selected === null ? t("Version") : t("Version {version}", { version: selected })}</h2>
             {!diff ? (
               <p><Text>Loading…</Text></p>

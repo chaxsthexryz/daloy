@@ -1,6 +1,7 @@
 import { Text, useLanguage } from "./Language";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { api } from "./api";
+import "./operations.css";
 
 export type Resource = { id: string; name: string; active: boolean; createdAt: string };
 
@@ -47,13 +48,13 @@ export function ResourcesPage() {
   };
 
   return (
-    <main className="page">
+    <main className="page operations-page resources-page">
       <header className="toolbar plain">
         <a href="#/advanced">{t("Advanced")}</a>
         <h1><Text>Resources</Text></h1>
       </header>
       <p className="muted">{t("People, rooms or tables a form can be booked for. Add a field of type resource to a form to let people choose one.")}</p>
-      <form onSubmit={add} className="create">
+      <form onSubmit={add} className="create operations-create">
         <div className="row">
           <div className="field">
             <label htmlFor="resource-name"><Text>Name</Text></label>
@@ -66,27 +67,27 @@ export function ResourcesPage() {
         </p>
       </form>
       {list === null ? (
-        <p>{t("Loading…")}</p>
+        <p className="operations-empty" role="status">{t("Loading…")}</p>
       ) : list.length === 0 ? (
-        <p>{t("No resources yet.")}</p>
+        <p className="operations-empty">{t("No resources yet.")}</p>
       ) : (
-        <div className="table-wrap">
-          <table className="table">
+        <div className="table-wrap operations-table">
+          <table className="table cards">
             <thead>
               <tr>
                 <th scope="col"><Text>Name</Text></th>
                 <th scope="col"><Text>Status</Text></th>
                 <th scope="col">
-                  <span className="sr-only"><Text>Actions</Text></span>
+                  <span className="visually-hidden"><Text>Actions</Text></span>
                 </th>
               </tr>
             </thead>
             <tbody>
               {list.map((r) => (
                 <tr key={r.id}>
-                  <td>{r.name}</td>
-                  <td>{r.active ? t("Active") : t("Archived")}</td>
-                  <td>
+                  <td data-label={t("Name")}>{r.name}</td>
+                  <td data-label={t("Status")}><span className={`operations-resource-state ${r.active ? "active" : "archived"}`}>{r.active ? t("Active") : t("Archived")}</span></td>
+                  <td className="operations-row-actions" data-label={t("Actions")}>
                     <button type="button" className="quiet" onClick={() => rename(r)}>{t("Rename")}</button>
                     <button type="button" className="quiet" onClick={() => run(() => api("PATCH", `/resources/${r.id}`, { active: !r.active }))}>
                       {r.active ? t("Archive") : t("Restore")}

@@ -1,3 +1,4 @@
+import "./workspace-admin.css";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { api } from "./api";
 import { Text, useLanguage } from "./Language";
@@ -47,7 +48,7 @@ export function SecretsPage() {
   };
 
   return (
-    <main className="page">
+    <main className="page workspace-admin admin-secrets">
       <Header title={t("Secrets")} />
       <p><a href="#/advanced">{t("Advanced")}</a></p>
       <p>{t("Named values that automations use: a webhook's signing secret, or a key an HTTP step sends. A value is saved once and can never be read back, not even here. To change one, save it again under the same name.")}</p>
@@ -75,7 +76,7 @@ export function SecretsPage() {
         <p className="muted">{t("None yet.")}</p>
       ) : (
         <div className="table-wrap">
-          <table className="table">
+          <table className="table cards admin-table">
             <thead>
               <tr>
                 <th scope="col">{t("Name")}</th>
@@ -86,9 +87,9 @@ export function SecretsPage() {
             <tbody>
               {list.map((s) => (
                 <tr key={s.name}>
-                  <td>{s.name}</td>
-                  <td>{new Date(s.createdAt).toLocaleString()}</td>
-                  <td>
+                  <td data-label={t("Name")}>{s.name}</td>
+                  <td data-label={t("Created")}>{new Date(s.createdAt).toLocaleString()}</td>
+                  <td data-label={t("Actions")}>
                     <button type="button" aria-label={t("Replace {name}", { name: s.name })} onClick={() => { setName(s.name); setSaved(""); valueRef.current?.focus(); }}>{t("Replace")}</button>{" "}
                     <button type="button" aria-label={t("Delete {name}", { name: s.name })} onClick={() => remove(s)}>{t("Delete")}</button>
                   </td>

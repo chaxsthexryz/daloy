@@ -1,3 +1,4 @@
+import "./request-access.css";
 import { useEffect, useState, type FormEvent } from "react";
 import { api } from "./api";
 import { LanguageContext } from "./Language";
@@ -130,7 +131,7 @@ function SignIn({ onDone }: { onDone: (u: User) => void }) {
     }
   };
   return (
-    <main className="page narrow">
+    <main className="page narrow request-page access-page">
       <h1 className="brand">
         <img src="/logo.svg" alt="" width="32" height="32" />
         Daloy

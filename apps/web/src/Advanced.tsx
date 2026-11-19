@@ -1,3 +1,4 @@
+import "./workspace-admin.css";
 import { Text, useLanguage } from "./Language";
 import { useEffect, useState } from "react";
 import { api, type Workflow } from "./api";
@@ -19,7 +20,7 @@ export function AdvancedPage() {
   useEffect(() => void loadList(), []);
 
   return (
-    <main className="page">
+    <main className="page workspace-admin admin-advanced">
       <Header title={t("Advanced")} />
       <p className="muted">{t("For the person who runs this installation. Owners do not need this page to run their automations.")}</p>
       <h2><Text>Settings</Text></h2>
