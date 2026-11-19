@@ -1,8 +1,11 @@
-import { createDb, migrate } from "@daloy/db";
+import { createDb, oauthEnvProblem, migrate } from "@daloy/db";
 import { PgBoss } from "pg-boss";
 import { createApp } from "./app";
 import { deployEnv } from "./http";
 
+// A development OAuth client must not serve a public host, nor a production one a laptop (decision 0058).
+const oauthProblem = oauthEnvProblem(process.env);
+if (oauthProblem) throw new Error(oauthProblem);
 const url = process.env.DATABASE_URL;
 const key = process.env.SECRETS_KEY;
 if (!url) throw new Error("DATABASE_URL is not set");

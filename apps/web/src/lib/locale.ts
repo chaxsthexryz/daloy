@@ -4,6 +4,10 @@ import { controlsTranslations } from "./locale-controls";
 import { builderTranslations } from "./locale-builder";
 import { guidedTranslations } from "./locale-guided";
 import { viewTranslations } from "./locale-views";
+import { googleTranslations } from "./locale-google";
+import { gmailTranslations } from "./locale-gmail";
+import { calendarTranslations } from "./locale-calendar";
+import { pasteTranslations } from "./locale-paste";
 export type Language = "en" | "tl";
 
 const tagalog: Record<string, string> = {
@@ -11,8 +15,12 @@ const tagalog: Record<string, string> = {
   ...builderTranslations,
   ...guidedTranslations,
   ...viewTranslations,
+  ...pasteTranslations,
   ...brandTranslations,
   ...controlsTranslations,
+  ...googleTranslations,
+  ...gmailTranslations,
+  ...calendarTranslations,
   "Plan: {plan}": "Plan: {plan}",
   "{used}, no limit": "{used}, walang limit",
   "{used} of {limit}": "{used} sa {limit}",

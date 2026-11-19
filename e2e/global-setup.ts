@@ -85,6 +85,12 @@ export default async function setup() {
   // A folder inside a shared drive, as Drive needs (a service account has no storage of its own).
   providers.addDriveFolder("e2e-drive-folder-0001", "Patient files", [saEmail], "0Ae2eSharedDrive");
   process.env.E2E_DRIVE_FOLDER = "e2e-drive-folder-0001";
+  // Connect with Google (decision 0060): the fake Google OAuth app, a sheet and a My Drive folder this user can pick.
+  const google = providers.addOAuthApp("google", { rotation: "none" });
+  google.user = { id: "e2e-google-user", email: "owner@clinic-e2e.example" };
+  providers.addSheet("e2e-picked-sheet-0001", "Front desk log", "Requests", [google.user.email]).tabs.set("Walk-ins", []);
+  providers.addSheet("e2e-unpicked-sheet-01", "Someone else's sheet", "Data", ["someone@else.example"]);
+  providers.addDriveFolder("e2e-picked-folder-001", "Clinic scans", [google.user.email], null);
   providers.slack.token = "xoxb-e2e-0000000000-abcdefabcdef";
   providers.telegram.token = "100000001:E2E-telegram-token-aaaaaaaaaaaaaaaaaa";
   process.env.E2E_TELEGRAM_TOKEN = providers.telegram.token;
@@ -99,6 +105,7 @@ export default async function setup() {
   // Fake Microsoft sign-in, Graph and Teams Workflows (roadmap phase 5). The flow URL is what Teams would show.
   process.env.E2E_TEAMS_URL = providers.teamsUrl("flow-purchasing");
 
+  const clients = providers.recordClients();
   const env = {
     DATABASE_URL: url,
     SECRETS_KEY: randomBytes(32).toString("base64"),
@@ -107,6 +114,7 @@ export default async function setup() {
     SMTP_HOST: "127.0.0.1",
     SMTP_PORT: String(SMTP_PORT),
     PUBLIC_URL: `http://localhost:${E2E_PORT}`,
+    OAUTH_ENV: "development",
     // The fake model, so AI drafts work without Ollama. AI steps in e2e test runs are mocked anyway.
     LLM_PROVIDER: "ollama",
     // The fake model accepts images, so an AI step may be given form files.
@@ -120,13 +128,34 @@ export default async function setup() {
     TELEGRAM_API_URL: providers.urls.telegram,
     PAYMONGO_API_URL: providers.urls.paymongo,
     AIRTABLE_API_URL: providers.urls.airtable,
+    AIRTABLE_LOGIN_URL: providers.urls.airtableLogin,
+    AIRTABLE_CLIENT_ID: clients.airtableClient.clientId,
+    AIRTABLE_CLIENT_SECRET: clients.airtableClient.clientSecret,
     NOTION_API_URL: providers.urls.notion,
+    NOTION_CLIENT_ID: clients.notionClient.clientId,
+    NOTION_CLIENT_SECRET: clients.notionClient.clientSecret,
     TRELLO_API_URL: providers.urls.trello,
+    TRELLO_LOGIN_URL: providers.urls.trelloLogin,
+    TRELLO_CLIENT_ID: clients.trelloClient.clientId,
+    TRELLO_CLIENT_SECRET: clients.trelloClient.clientSecret,
     MICROSOFT_CLIENT_ID: providers.microsoft.clientId,
     MICROSOFT_CLIENT_SECRET: providers.microsoft.clientSecret,
     MICROSOFT_LOGIN_URL: providers.urls.microsoftLogin,
     MICROSOFT_GRAPH_URL: providers.urls.graph,
+    // "Connect Slack" against the fake install (decision 0061). OAUTH_ENV (set above) is required once a managed client is set.
+    SLACK_CLIENT_ID: providers.oauth.v2!.clientId,
+    SLACK_CLIENT_SECRET: providers.oauth.v2!.clientSecret,
     TEAMS_WEBHOOK_HOSTS: "127.0.0.1",
+    // Synthetic values for the fake Google OAuth app; nothing here reaches Google.
+    GOOGLE_OAUTH_CLIENT_ID: google.clientId,
+    GOOGLE_OAUTH_CLIENT_SECRET: google.clientSecret,
+    GOOGLE_AUTHORIZE_URL: providers.oauthUrls("google").authorize,
+    GOOGLE_OAUTH_TOKEN_URL: providers.oauthUrls("google").token,
+    GOOGLE_REVOKE_URL: providers.oauthUrls("google").revoke,
+    GOOGLE_USERINFO_URL: providers.oauthUrls("google").userinfo,
+    GMAIL_API_URL: providers.urls.gmail,
+    GOOGLE_PICKER_API_KEY: "e2e-picker-key",
+    GOOGLE_PROJECT_NUMBER: "000000000000",
     // Every spec signs up from 127.0.0.1.
     REGISTER_LIMIT_PER_HOUR: "1000",
     // Specs publish several automations on one account.

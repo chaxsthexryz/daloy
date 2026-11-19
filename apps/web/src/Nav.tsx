@@ -12,7 +12,7 @@ function section(hash: string) {
   if (hash === "#/ai") return "Build with AI";
   if (hash.startsWith("#/bookings")) return "Bookings";
   if (hash.startsWith("#/team")) return "Team";
-  if (hash.startsWith("#/settings/business/outlook-") || hash === "#/apps" || hash.startsWith("#/verify-sender")) return "Apps";
+  if (hash.startsWith("#/settings/business/outlook-") || hash === "#/apps" || hash.startsWith("#/apps/") || hash.startsWith("#/verify-sender")) return "Apps";
   if (hash === "#/settings/business") return "Business";
   if (/^#\/(advanced|tokens|secrets|settings|resources)/.test(hash)) return "Advanced";
   return "Automations";

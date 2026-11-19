@@ -1,7 +1,10 @@
-import { createDb, mailDeps, migrate, providerUrls } from "@daloy/db";
+import { createDb, oauthEnvProblem, mailDeps, migrate, providerUrls } from "@daloy/db";
 import { createExecutor } from "./steps";
 import { startWorker } from "./worker";
 
+// A development OAuth client must not serve a public host, nor a production one a laptop (decision 0058).
+const oauthProblem = oauthEnvProblem(process.env);
+if (oauthProblem) throw new Error(oauthProblem);
 const url = process.env.DATABASE_URL;
 if (!url) throw new Error("DATABASE_URL is not set");
 const secretsKey = Buffer.from(process.env.SECRETS_KEY ?? "", "base64");

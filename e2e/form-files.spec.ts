@@ -18,6 +18,8 @@ test("a form file is saved to Drive and downloaded from the run, and an SVG is r
 
   await page.getByRole("link", { name: "Apps" }).first().click();
   await page.getByRole("button", { name: "Connect Google Drive" }).click();
+  // Google sign-in is the main option in e2e (decision 0060); the service account form is under Advanced.
+  await page.getByText("Advanced: use a key or token instead").click();
   await page.getByLabel("Service account key file (JSON)").fill(process.env.E2E_SHEETS_KEY!);
   await page.getByLabel("Folder link").fill(`https://drive.google.com/drive/folders/${process.env.E2E_DRIVE_FOLDER}?usp=sharing`);
   await page.getByRole("button", { name: "Connect Google Drive" }).click();

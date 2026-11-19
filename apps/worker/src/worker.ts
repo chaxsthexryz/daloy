@@ -1,12 +1,13 @@
 import { randomUUID } from "node:crypto";
 import { hostname } from "node:os";
-import { clearSheetWriteKeys, createRun, planOf, PLANS, publishedVersion, purgeUploads, runDueDeliveries, RUN_QUEUE, RUN_QUEUE_OPTIONS, runs, SCHEDULE_QUEUE, WorkflowPausedError, workflows, workflowVersions, type Db, type MailDeps, type ProviderUrls } from "@daloy/db";
+import { clearSheetWriteKeys, createRun, deleteOldFlows, keepOAuthAlive, OAUTH_PROVIDERS, planOf, PLANS, publishedVersion, purgeUploads, runDueDeliveries, RUN_QUEUE, RUN_QUEUE_OPTIONS, runs, SCHEDULE_QUEUE, WorkflowPausedError, workflows, workflowVersions, type Db, type MailDeps, type ProviderUrls } from "@daloy/db";
 import type { RetryPolicy } from "@daloy/engine";
 import { and, eq, gt, inArray, isNull, lt, lte, or, sql } from "drizzle-orm";
 import { PgBoss } from "pg-boss";
 import { advance, type AdvanceDeps, type StepExecutor } from "./advance";
 import { pollEmailSources, type ImapAdapter } from "./email-in";
 import { connectImap } from "./imap";
+import { alertBrokenGrants } from "./connection-alerts";
 import { checkSchedules } from "./watchdog";
 
 export type WorkerOptions = {
@@ -113,6 +114,15 @@ export async function startWorker(opts: WorkerOptions) {
   }, sweepMs);
   await sweep();
 
+  // OAuth (decision 0058): keeps idle grants alive and deletes consent flows a day past expiry. At start, then daily.
+  const oauthSweep = () => {
+    if (!opts.deliveries) return;
+    keepOAuthAlive(db, opts.deliveries.secretsKey, opts.deliveries.urls, OAUTH_PROVIDERS).catch(() => console.error("oauth keepalive failed"));
+    deleteOldFlows(db).catch(() => console.error("oauth flow cleanup failed"));
+  };
+  oauthSweep();
+  const oauthTimer = setInterval(oauthSweep, 24 * 60 * 60_000);
+
   // Deliveries are rows, not jobs: each poll claims the due ones with SKIP LOCKED (packages/db/src/deliveries.ts).
   // One poll at a time per worker; several workers share the work through the claim.
   let delivering: Promise<unknown> = Promise.resolve();
@@ -130,8 +140,12 @@ export async function startWorker(opts: WorkerOptions) {
   let checking: Promise<void> | undefined;
   const watchdogTimer = opts.watchdog ? setInterval(() => {
     if (checking) return;
-    checking = checkSchedules({ db, ...opts.watchdog! })
+    const deps = { db, ...opts.watchdog! };
+    checking = checkSchedules(deps)
       .catch((err: unknown) => console.error("schedule watchdog failed", err))
+      // Plan R8: one email a day per broken OAuth grant.
+      .then(() => alertBrokenGrants(deps))
+      .catch((err: unknown) => console.error("connection alerts failed", err))
       .finally(() => { checking = undefined; });
   }, opts.watchdog.intervalMs ?? 60_000) : undefined;
 
@@ -149,6 +163,7 @@ export async function startWorker(opts: WorkerOptions) {
     /** Stops taking jobs and waits for the ones in progress, so their leases are released cleanly. */
     async stop() {
       clearInterval(sweepTimer);
+      clearInterval(oauthTimer);
       clearInterval(deliveryTimer);
       clearInterval(emailTimer);
       clearInterval(watchdogTimer);

@@ -23,11 +23,15 @@ test("the receipt template sends the photo to the model, which fills the approva
   await signUp(page, "receipt");
   await page.getByRole("link", { name: "Apps" }).first().click();
   await page.getByRole("button", { name: "Connect Google Drive" }).click();
+  // Google sign-in is the main option in e2e (decision 0060); the service account form is under Advanced.
+  await page.getByText("Advanced: use a key or token instead").click();
   await page.getByLabel("Service account key file (JSON)").fill(process.env.E2E_SHEETS_KEY!);
   await page.getByLabel("Folder link").fill(`https://drive.google.com/drive/folders/${process.env.E2E_DRIVE_FOLDER}?usp=sharing`);
   await page.getByRole("button", { name: "Connect Google Drive" }).click();
   await expect(page.getByText("Files go to")).toBeVisible();
   await page.getByRole("button", { name: "Connect Google Sheets" }).click();
+  // Google sign-in is the main option in e2e (decision 0060); the service account form is under Advanced.
+  await page.getByText("Advanced: use a key or token instead").click();
   await page.getByLabel("Service account key file (JSON)").fill(process.env.E2E_SHEETS_KEY!);
   await page.getByLabel("Sheet link").fill("https://docs.google.com/spreadsheets/d/e2e-sheet-0000000001/edit");
   await page.getByLabel("Tab name").fill("Requests");

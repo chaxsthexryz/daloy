@@ -47,11 +47,15 @@ describe("webhook signature with a timestamp (N11b)", () => {
   });
 
   it("never reads a call that carries a timestamp as the old format", () => {
+    // Semgrep: a fixed test signing key for the fake webhook.
+    // nosemgrep: javascript.lang.security.audit.hardcoded-hmac-key.hardcoded-hmac-key
     const old = `sha256=${createHmac("sha256", "k").update(body).digest("hex")}`;
     expect(check({ signature: old })).toEqual({ ok: false, reason: "bad signature" });
   });
 
   it("accepts the old signature without a timestamp only while the trigger does not require one", () => {
+    // Semgrep: a fixed test signing key for the fake webhook.
+    // nosemgrep: javascript.lang.security.audit.hardcoded-hmac-key.hardcoded-hmac-key
     const old = `sha256=${createHmac("sha256", "k").update(body).digest("hex")}`;
     expect(check({ timestamp: undefined, signature: old })).toEqual({ ok: true, legacy: true, replayKey: undefined });
     expect(check({ timestamp: undefined, signature: old, requireTimestamp: true })).toEqual({ ok: false, reason: "This webhook requires the X-Daloy-Timestamp header. See how-it-works.md, webhook signatures." });

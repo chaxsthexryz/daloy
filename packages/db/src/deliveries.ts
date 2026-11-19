@@ -1,9 +1,11 @@
 import { randomBytes } from "node:crypto";
 import { backoffDelayMs, FILE_MIME, type FileRef, type RetryPolicy } from "@daloy/engine";
 import { and, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
-import { connectionCredential, markConnectionFailed, PROVIDER_NAMES, rotateInto } from "./connections";
+import { connectionCredential, markConnectionFailed, PROVIDER_NAMES } from "./connections";
+import { withGoogle } from "./google-access";
+import { freshToken, oauthProvider, slackToken, trelloAuthOf, withFreshToken, withRecordAuth } from "./oauth";
 import type { Db } from "./index";
-import { airtableAdd, appendRowOnce, driveUpload, type DriveDestination, notionAddPage, trelloAddCard, type TrelloCredential, deleteSheetMarker, outlookSend, ProviderError, serviceAccountSchema, slackPost, syncCalendarEvent, teamsPost, telegramSend, type CalendarDestination, type OutlookMessage, type ProviderErrorKind, type ProviderUrls, type SheetDestination } from "./providers";
+import { airtableAdd, appendRowOnce, driveUpload, type DriveDestination, notionAddPage, trelloAddCard, deleteSheetMarker, outlookSend, ProviderError, slackPost, syncCalendarEvent, teamsPost, telegramSend, type CalendarDestination, type OutlookMessage, type ProviderErrorKind, type ProviderUrls, type SheetDestination } from "./providers";
 import { bookingSuperseded, supersededSql } from "./bookings";
 import { bookingForCalendar } from "./calendar";
 import { bookings, calendarEvents, connections, deliveries, runs, type Provider } from "./schema";
@@ -48,11 +50,11 @@ const markerValue = () => randomBytes(6).toString("base64url");
  * first row back. Pins the connection as it is now; an empty pin means nothing was connected yet, pinned on first send.
  */
 export async function queueDelivery(db: Db, d: { userId: string; runId: string; stepId: string; provider: Provider; reference: string; payload: DeliveryPayload }): Promise<Delivery> {
-  const [conn] = await db.select({ account: connections.account, destination: connections.destination }).from(connections).where(and(eq(connections.userId, d.userId), eq(connections.provider, d.provider)));
+  const [conn] = await db.select({ account: connections.account, destination: connections.destination, externalId: connections.externalId }).from(connections).where(and(eq(connections.userId, d.userId), eq(connections.provider, d.provider)));
   const sheet = d.provider === "google_sheets" ? { sheetMetaId: sql<number>`nextval('sheet_meta_seq')`, sheetMetaValue: markerValue() } : {};
   await db
     .insert(deliveries)
-    .values({ ...d, pinnedAccount: conn?.account ?? "", pinnedDestination: conn?.destination ?? null, ...sheet })
+    .values({ ...d, pinnedAccount: conn?.account ?? "", pinnedDestination: conn?.destination ?? null, pinnedExternalId: conn?.externalId ?? null, ...sheet })
     .onConflictDoNothing({ target: [deliveries.runId, deliveries.stepId] });
   const [row] = await db.select().from(deliveries).where(and(eq(deliveries.runId, d.runId), eq(deliveries.stepId, d.stepId)));
   return row!;
@@ -100,16 +102,16 @@ async function attempt(db: Db, key: Buffer, urls: ProviderUrls, d: Delivery): Pr
   const conn = await connectionCredential(db, key, d.userId, d.provider);
   if (!conn) return { state: "failed", error: `${name} is not connected. Connect it in Apps, then retry.`, kind: "not_connected" };
   if (conn.status === "failed") return { state: "failed", error: `${name} needs to be connected again (${conn.account}). Reconnect it in Apps, then retry.`, kind: "reconnect" };
-  if (!conn.destination) return { state: "failed", error: `No ${d.provider === "google_sheets" ? "sheet" : d.provider === "google_calendar" ? "calendar" : d.provider === "google_drive" ? "folder" : d.provider === "telegram" ? "chat" : "channel"} is chosen for ${name}. Pick one in Apps, then retry.`, kind: "no_destination" };
+  if (!conn.destination) return { state: "failed", error: `No ${d.provider === "google_sheets" ? "sheet" : d.provider === "google_calendar" ? "calendar" : d.provider === "google_drive" ? "folder" : d.provider === "telegram" ? "chat" : d.provider === "airtable" ? "table" : d.provider === "notion" ? "database" : d.provider === "trello" ? "list" : "channel"} is chosen for ${name}. Pick one in Apps, then retry.`, kind: "no_destination" };
   if (d.pinnedAccount === null) {
     return { state: "needs_review", error: `This was queued before Daloy recorded where deliveries go, so it cannot confirm the ${name} destination. Choose Post again to send it to ${describe(d.provider, conn.destination)}, or Mark as posted.`, kind: "queued_before_pin" };
   }
   if (d.pinnedAccount === "") {
     // Nothing was connected when it was queued: this connection is the first, so pin it now.
-    const pinned = await db.update(deliveries).set({ pinnedAccount: conn.account, pinnedDestination: conn.destination }).where(heldBy(d)).returning({ id: deliveries.id });
+    const pinned = await db.update(deliveries).set({ pinnedAccount: conn.account, pinnedDestination: conn.destination, pinnedExternalId: conn.externalId }).where(heldBy(d)).returning({ id: deliveries.id });
     // Another worker took the claim over while this one was pinning: that one pins and sends, this one must not (Astra, 8e2c5d8).
     if (pinned.length === 0) return null;
-  } else if (d.pinnedAccount !== conn.account || !sameDestination(d.pinnedDestination, conn.destination)) {
+  } else if ((!destinationOnly(d.provider, conn.authMethod) && !sameAccount(d, conn)) || !sameDestination(d.pinnedDestination, conn.destination)) {
     return {
       state: "needs_review",
       error: d.provider === "google_calendar"
@@ -127,12 +129,12 @@ async function attempt(db: Db, key: Buffer, urls: ProviderUrls, d: Delivery): Pr
     return { state: "needs_review", error: `${name} may have ${verb(d.provider)} this before the connection dropped. ${reviewHint(d.provider, conn.destination)}`, kind: "ambiguous" };
   }
   const destination = conn.destination;
+  const oauth = conn.authMethod === "oauth" ? oauthProvider(d.provider) : undefined;
   // null: the claim was lost partway through a Drive save, so the new holder owns what happens next.
   const send = async (tx: Pick<Db, "select" | "update">): Promise<Outcome | null> => {
     if (d.provider === "google_sheets") {
-      const sa = serviceAccountSchema.parse(JSON.parse(conn.credential));
       // Retrying the same marked write is safe: Google adds the row at most once (decision 0021).
-      const out = await appendRowOnce(urls, sa, conn.destination as SheetDestination, (d.payload as { row: string[] }).row, { id: d.sheetMetaId!, value: d.sheetMetaValue! });
+      const out = await withGoogle(db, key, urls, d.userId, "google_sheets", conn, (auth) => appendRowOnce(urls, auth, conn.destination as SheetDestination, (d.payload as { row: string[] }).row, { id: d.sheetMetaId!, value: d.sheetMetaValue! }));
       return { state: "delivered", result: out.reconciled ? { sheet: out.sheet, reconciled: true } : { sheet: out.sheet } };
     }
     if (d.provider === "google_calendar") {
@@ -140,12 +142,12 @@ async function attempt(db: Db, key: Buffer, urls: ProviderUrls, d: Delivery): Pr
       const b = await bookingForCalendar(tx, d.userId, bookingId);
       if (!b) return { state: "failed", error: "The booking or its calendar event details are gone, so nothing was sent.", kind: "invalid" };
       const calendarId = (conn.destination as CalendarDestination).calendarId;
-      const out = await syncCalendarEvent(urls, serviceAccountSchema.parse(JSON.parse(conn.credential)), calendarId, bookingId, b, b);
+      // A service account key or a Google sign-in, by the connection's auth_method (decision 0064).
+      const out = await withGoogle(db, key, urls, d.userId, "google_calendar", conn, (auth) => syncCalendarEvent(urls, auth, calendarId, bookingId, b, b));
       await tx.update(calendarEvents).set({ account: conn.account, calendarId }).where(eq(calendarEvents.bookingId, bookingId));
       return { state: "delivered", result: { event: out.event, eventId: out.eventId } };
     }
     if (d.provider === "google_drive") {
-      const sa = serviceAccountSchema.parse(JSON.parse(conn.credential));
       const { folderId, title } = destination as DriveDestination;
       const files = (d.payload as { files: FileRef[] }).files;
       // Files already saved by an earlier attempt (or before a Post again) are not saved twice.
@@ -154,7 +156,7 @@ async function attempt(db: Db, key: Buffer, urls: ProviderUrls, d: Delivery): Pr
         if (saved[f.id]) continue;
         const up = await readUpload(db, { userId: d.userId, runId: d.runId, id: f.id });
         if (!up) return { state: "failed", error: `The file ${f.name} was removed after 7 days, so it cannot be saved now.`, kind: "invalid" };
-        saved[f.id] = (await driveUpload(urls, sa, folderId, { name: `${d.reference} ${up.name}`, mimeType: FILE_MIME[up.type], data: up.data })).id;
+        saved[f.id] = (await withGoogle(db, key, urls, d.userId, "google_drive", conn, (auth) => driveUpload(urls, auth, folderId, { name: `${d.reference} ${up.name}`, mimeType: FILE_MIME[up.type], data: up.data }))).id;
         // Written through db, not the transaction this runs in, so what is saved survives a later throw or rollback.
         const held = await db.update(deliveries).set({ result: { saved }, updatedAt: sql`now()` }).where(heldBy(d)).returning({ id: deliveries.id });
         if (held.length === 0) return null;
@@ -162,20 +164,25 @@ async function attempt(db: Db, key: Buffer, urls: ProviderUrls, d: Delivery): Pr
       return { state: "delivered", result: { folder: title, saved, count: files.length } };
     }
     if (d.provider === "outlook") {
-      const save = rotateInto(db, key, d.userId, "outlook", conn);
-      return { state: "delivered", result: await outlookSend(urls, conn.credential, save, d.payload as OutlookMessage) };
+      // Outlook is always an OAuth grant (migration 0037), so oauth is set.
+      return { state: "delivered", result: await withFreshToken(db, key, urls, d.userId, oauth!, conn, (token) => outlookSend(urls, token, d.payload as OutlookMessage)) };
     }
     // Airtable, Notion and Trello add one record, page or card. None can be asked "did this land?", so an unknown outcome is a person's call.
     const p = d.payload as { text: string; fields: Record<string, string>; title: string; name: string; desc?: string };
-    if (d.provider === "airtable") return { state: "delivered", result: await airtableAdd(urls, conn.credential, destination as { baseId: string; tableId: string }, p.fields) };
-    if (d.provider === "notion") return { state: "delivered", result: await notionAddPage(urls, conn.credential, destination as { databaseId: string; titleProperty: string }, p.title, p.fields) };
-    if (d.provider === "trello") return { state: "delivered", result: await trelloAddCard(urls, JSON.parse(conn.credential) as TrelloCredential, destination.listId!, p.name, p.desc ?? "") };
+    // A pasted credential is used as it is stored; an OAuth grant is refreshed first and its access token sent (decision 0062).
+    const auth = <T>(fn: (credential: string) => Promise<T>) => withRecordAuth(db, key, urls, d.userId, oauth, conn, fn);
+    if (d.provider === "airtable") return { state: "delivered", result: await auth((t) => airtableAdd(urls, t, destination as { baseId: string; tableId: string }, p.fields)) };
+    if (d.provider === "notion") return { state: "delivered", result: await auth((t) => notionAddPage(urls, t, destination as { databaseId: string; titleProperty: string }, p.title, p.fields)) };
+    if (d.provider === "trello") return { state: "delivered", result: await auth((t) => trelloAddCard(urls, trelloAuthOf(conn.authMethod, t), destination.listId!, p.name, p.desc ?? "")) };
     const text = p.text;
     if (d.provider === "teams") return { state: "delivered", result: await teamsPost(urls, conn.credential, text) };
     if (d.provider === "telegram") return { state: "delivered", result: await telegramSend(urls, conn.credential, destination.chatId!, text) };
-    return { state: "delivered", result: await slackPost(urls, conn.credential, destination.channelId!, text) };
+    return { state: "delivered", result: await slackPost(urls, slackToken(conn), destination.channelId!, text) };
   };
   try {
+    // An expiring OAuth token is refreshed before the booking-lock transaction opens, so the common refresh never needs
+    // a second pool connection while the transaction holds one (decision 0058).
+    if (oauth) await freshToken(db, key, urls, d.userId, oauth, conn);
     // The run's booking link as it is now (its own booking step may have moved it), checked under a share lock held
     // until the provider answers: a cancel or reschedule either committed before this check (nothing is sent) or waits
     // for the call to return (decision 0032).
@@ -219,11 +226,27 @@ function describe(provider: Provider, dest: Record<string, string>) {
   if (provider === "slack") return `#${dest.channelName ?? dest.channelId}`;
   if (provider === "telegram") return `the Telegram chat ${dest.chatTitle ?? dest.chatId}`;
   if (provider === "outlook") return dest.mailbox ?? "the Outlook mailbox";
-  if (provider === "airtable") return `the Airtable table ${dest.tableId}`;
+  if (provider === "airtable") return `the Airtable table ${dest.tableName ?? dest.tableId}`;
   if (provider === "notion") return `the Notion database ${dest.databaseTitle ?? dest.databaseId}`;
   if (provider === "trello") return `the Trello list ${dest.listName ?? dest.listId}`;
   return `the Teams channel ${dest.channelName ?? ""}`.trim();
 }
+
+/**
+ * Sheets, Drive and Calendar pin only where data lands: the same spreadsheet and tab, folder or calendar id, reached
+ * through another Google account or a service account replaced by a Google sign-in, is the same place (plan R7,
+ * decisions 0060 and 0064). For Calendar this holds only while the connection is a Google sign-in, which can reach
+ * only calendars Daloy created; a service account still compares the account as before. A different calendar id still
+ * goes to review, so M11 holds.
+ */
+const destinationOnly = (p: Provider, method: string) => p === "google_sheets" || p === "google_drive" || (p === "google_calendar" && method === "oauth");
+
+/** Same provider account: by its stable id when both sides have one (OAuth), otherwise by the account name as before. */
+const sameAccount = (d: Delivery, conn: { account: string; externalId: string | null }) =>
+  // Plan R7 (decision 0062): for these destination providers a table, database or list id names the place, so a paste
+  // connection replaced by an OAuth one, or another sign-in, does not stop a delivery that still goes to the same place.
+  DESTINATION_ONLY.has(d.provider) || (d.pinnedExternalId && conn.externalId ? d.pinnedExternalId === conn.externalId : d.pinnedAccount === conn.account);
+const DESTINATION_ONLY = new Set<Provider>(["airtable", "notion", "trello"]);
 
 /** Same place: the fields that pick where a delivery lands. Display names may change without moving anything. */
 function sameDestination(a: Record<string, string> | null, b: Record<string, string>) {
@@ -295,6 +318,7 @@ export async function retryDelivery(db: Db, userId: string, id: string, { postAg
             checkFirst: false,
             pinnedAccount: "",
             pinnedDestination: null,
+            pinnedExternalId: null,
             sheetMetaId: sql`case when ${deliveries.provider} = 'google_sheets' then nextval('sheet_meta_seq') end`,
             sheetMetaValue: sql`case when ${deliveries.provider} = 'google_sheets' then ${markerValue()} end`,
           }
@@ -378,7 +402,7 @@ export async function clearSheetWriteKeys(db: Db, key: Buffer, urls: ProviderUrl
     const spreadsheetId = (d.pinnedDestination as SheetDestination | null)?.spreadsheetId;
     try {
       if (conn && spreadsheetId && (conn.destination as SheetDestination | null)?.spreadsheetId === spreadsheetId) {
-        await deleteSheetMarker(urls, serviceAccountSchema.parse(JSON.parse(conn.credential)), spreadsheetId, { id: d.sheetMetaId!, value: d.sheetMetaValue! });
+        await withGoogle(db, key, urls, d.userId, "google_sheets", conn, (auth) => deleteSheetMarker(urls, auth, spreadsheetId, { id: d.sheetMetaId!, value: d.sheetMetaValue! }));
       }
       await db.update(deliveries).set({ sheetMetaClearedAt: sql`now()` }).where(eq(deliveries.id, d.id));
       cleared++;

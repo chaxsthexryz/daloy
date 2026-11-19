@@ -86,6 +86,8 @@ describe("H3: a submission that crosses a republish", () => {
     const w = await workflow(o.agent, { type: "webhook", config: { hmacSecret: "hook_a" } });
     spy.afterFirstRead("triggers", async () => void (await publish(o.agent, w.id, { type: "webhook", config: { hmacSecret: "hook_b" } }).expect(201)));
     const body = JSON.stringify({ n: 1 });
+    // Semgrep: a fixed test signing key for the fake webhook.
+    // nosemgrep: javascript.lang.security.audit.hardcoded-hmac-key.hardcoded-hmac-key
     const signature = `sha256=${createHmac("sha256", "key-a").update(body).digest("hex")}`;
     const res = await request(server).post(`/hooks/${w.trigger.webhookPath}`).set("Content-Type", "application/json").set("X-Daloy-Signature", signature).send(body);
     expect(await versionCount(w.id)).toBe(2);

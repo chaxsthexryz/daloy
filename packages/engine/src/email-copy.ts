@@ -35,6 +35,23 @@ export function approvalEmailBody(message: string, link: string, expiresAt: stri
   return `${message}\n\nApprove or reject here:\n${link}\n\n${who}The link works once and expires at ${expiresAt}.`;
 }
 
+/**
+ * The owner's one email per day when an app's sign-in stops working (managed OAuth plan R8). It never quotes the
+ * provider's error. The link is left out when the installation has no public URL.
+ */
+export function brokenConnectionEmail(app: string, link: string | undefined, language: Language = "en") {
+  if (language === "tl") {
+    return {
+      subject: `I-reconnect ang ${app} sa Daloy`,
+      text: `Hindi na tinatanggap ng ${app} ang access ng Daloy. Maaaring tinanggal ang pahintulot, nag-expire ito, o pinalitan ang password ng account. Hindi maipapadala sa ${app} ang mga gawain ng iyong automations hanggang i-reconnect mo ito, at puwede silang subukang muli pagkatapos.\n\nBuksan ang Apps sa Daloy at piliin ang I-reconnect ang ${app}. Hindi ito mag-e-email ulit tungkol dito sa loob ng isang araw.${link ? `\n\n${link}` : ""}`,
+    };
+  }
+  return {
+    subject: `Reconnect ${app} in Daloy`,
+    text: `${app} no longer accepts Daloy's access. The permission may have been removed, it may have expired, or the account's password changed. What your automations send to ${app} fails until you reconnect it, and it can be retried afterwards.\n\nOpen Apps in Daloy and select Reconnect ${app}. You will not get another email about it for a day.${link ? `\n\n${link}` : ""}`,
+  };
+}
+
 /** The owner's one email per day when a scheduled automation misses its run (N17). The link is left out when the installation has no public URL. */
 export function missedScheduleEmail(name: string, link: string | undefined, language: Language = "en") {
   if (language === "tl") {

@@ -38,12 +38,25 @@ export type ProviderUrls = {
   trello: string;
   microsoftLogin?: string;
   graph?: string;
+  /** Sign-in hosts and the installation's own OAuth clients for Airtable, Notion and Trello (decision 0062). Notion signs in on its API host. Unset client: the paste form stays. */
+  airtableLogin?: string;
+  trelloLogin?: string;
+  airtableClient?: { clientId: string; clientSecret: string };
+  notionClient?: { clientId: string; clientSecret: string };
+  trelloClient?: { clientId: string; clientSecret: string };
   /** Host suffixes a Teams Workflows URL may use. 127.0.0.1 (tests only) is the one host allowed over http. */
   teamsHosts?: string[];
   /** The installation's own Microsoft Entra app, for Outlook consent. Unset: Outlook is not offered (decision 0023). */
   microsoft?: { clientId: string; clientSecret: string; tenant: string };
+  /** The installation's Google OAuth client and endpoints (decision 0060). Unset: Google keeps its service account form. */
+  googleOAuth?: GoogleOAuthConfig;
+  /** Gmail API base, for Gmail sent through a Google sign-in (decision 0063). Unset: such a sender is blocked. */
+  gmail?: string;
+  /** The installation's own Slack app, for "Connect Slack" (decision 0061). Unset: the pasted bot token stays the main option. */
+  slackClient?: { clientId: string; clientSecret: string };
   timeoutMs?: number;
 };
+export type GoogleOAuthConfig = { clientId: string; clientSecret: string; authorize: string; token: string; revoke: string; userinfo: string; pickerApiKey?: string; projectNumber?: string };
 const trim = (url: string) => url.replace(/\/+$/, "");
 export const providerUrls = (env: NodeJS.ProcessEnv = process.env): ProviderUrls => ({
   googleToken: env.GOOGLE_TOKEN_URL ?? "https://oauth2.googleapis.com/token",
@@ -56,13 +69,33 @@ export const providerUrls = (env: NodeJS.ProcessEnv = process.env): ProviderUrls
   airtable: trim(env.AIRTABLE_API_URL ?? "https://api.airtable.com"),
   notion: trim(env.NOTION_API_URL ?? "https://api.notion.com"),
   trello: trim(env.TRELLO_API_URL ?? "https://api.trello.com"),
+  airtableLogin: trim(env.AIRTABLE_LOGIN_URL ?? "https://airtable.com"),
+  trelloLogin: trim(env.TRELLO_LOGIN_URL ?? "https://auth.atlassian.com"),
+  airtableClient: env.AIRTABLE_CLIENT_ID && env.AIRTABLE_CLIENT_SECRET ? { clientId: env.AIRTABLE_CLIENT_ID, clientSecret: env.AIRTABLE_CLIENT_SECRET } : undefined,
+  notionClient: env.NOTION_CLIENT_ID && env.NOTION_CLIENT_SECRET ? { clientId: env.NOTION_CLIENT_ID, clientSecret: env.NOTION_CLIENT_SECRET } : undefined,
+  trelloClient: env.TRELLO_CLIENT_ID && env.TRELLO_CLIENT_SECRET ? { clientId: env.TRELLO_CLIENT_ID, clientSecret: env.TRELLO_CLIENT_SECRET } : undefined,
   microsoftLogin: trim(env.MICROSOFT_LOGIN_URL ?? "https://login.microsoftonline.com"),
   graph: trim(env.MICROSOFT_GRAPH_URL ?? "https://graph.microsoft.com"),
+  gmail: trim(env.GMAIL_API_URL ?? "https://gmail.googleapis.com"),
   teamsHosts: (env.TEAMS_WEBHOOK_HOSTS ?? "logic.azure.com,powerplatform.com").split(",").map((h) => h.trim().toLowerCase()).filter(Boolean),
   microsoft:
     env.MICROSOFT_CLIENT_ID && env.MICROSOFT_CLIENT_SECRET
       ? { clientId: env.MICROSOFT_CLIENT_ID, clientSecret: env.MICROSOFT_CLIENT_SECRET, tenant: env.MICROSOFT_TENANT || "organizations" }
       : undefined,
+  googleOAuth:
+    env.GOOGLE_OAUTH_CLIENT_ID && env.GOOGLE_OAUTH_CLIENT_SECRET
+      ? {
+          clientId: env.GOOGLE_OAUTH_CLIENT_ID,
+          clientSecret: env.GOOGLE_OAUTH_CLIENT_SECRET,
+          authorize: env.GOOGLE_AUTHORIZE_URL ?? "https://accounts.google.com/o/oauth2/v2/auth",
+          token: env.GOOGLE_OAUTH_TOKEN_URL ?? "https://oauth2.googleapis.com/token",
+          revoke: env.GOOGLE_REVOKE_URL ?? "https://oauth2.googleapis.com/revoke",
+          userinfo: env.GOOGLE_USERINFO_URL ?? "https://openidconnect.googleapis.com/v1/userinfo",
+          pickerApiKey: env.GOOGLE_PICKER_API_KEY || undefined,
+          projectNumber: env.GOOGLE_PROJECT_NUMBER || undefined,
+        }
+      : undefined,
+  slackClient: env.SLACK_CLIENT_ID && env.SLACK_CLIENT_SECRET ? { clientId: env.SLACK_CLIENT_ID, clientSecret: env.SLACK_CLIENT_SECRET } : undefined,
 });
 
 export type Reply = { status: number; headers: Headers; body: Record<string, unknown> };
@@ -103,6 +136,16 @@ export const serviceAccountSchema = z.object({
   private_key: z.string().includes("PRIVATE KEY"),
 });
 export type ServiceAccount = z.infer<typeof serviceAccountSchema>;
+/**
+ * What a Sheets or Drive call signs in with: a service account (JWT grant, cached here) or an OAuth access token that
+ * withFreshToken already made fresh (decision 0060). A 401 on an OAuth token is an auth error, so withFreshToken refreshes once.
+ */
+export type GoogleAuth = ServiceAccount | { accessToken: string };
+const isOAuth = (auth: GoogleAuth): auth is { accessToken: string } => "accessToken" in auth;
+const bearer = (urls: ProviderUrls, auth: GoogleAuth, scope: string) => (isOAuth(auth) ? Promise.resolve(auth.accessToken) : accessToken(urls, auth, scope));
+// Under drive.file Google answers 404 (or 403) for any file the owner did not pick and Daloy did not create, and after a reconnect a picked file may need picking again.
+const PICK_SHEET_AGAIN = "Daloy cannot open this spreadsheet with your Google connection. In Apps, pick the sheet again (Google lets Daloy reach only sheets you picked or Daloy created).";
+const PICK_FOLDER_AGAIN = "Daloy cannot open this Drive folder with your Google connection. In Apps, pick the folder again (Google lets Daloy reach only folders you picked or Daloy created).";
 export type SheetDestination = { spreadsheetId: string; tab: string };
 
 /** Takes a sheet link (https://docs.google.com/spreadsheets/d/<id>/edit) or the id itself. */
@@ -112,6 +155,7 @@ export function spreadsheetIdFrom(input: string): string | null {
 }
 
 const SHEETS_SCOPE = "https://www.googleapis.com/auth/spreadsheets";
+// The service account key signs for calendar.events. A Google sign-in asks for calendar.app.created instead (oauth/google.ts).
 const CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar.events";
 const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive";
 // Access tokens by key, in memory. ponytail: per process, so the API and the worker each fetch their own; fine at this scale.
@@ -142,10 +186,11 @@ async function accessToken(urls: ProviderUrls, sa: ServiceAccount, scope = SHEET
   return res.body.access_token;
 }
 
-function sheetsFailure(res: Reply, sa: ServiceAccount, write: boolean): ProviderError {
+function sheetsFailure(res: Reply, auth: GoogleAuth, write: boolean): ProviderError {
   const message = String((res.body.error as { message?: unknown } | undefined)?.message ?? "");
-  const share = `Share the sheet with ${sa.client_email} as an Editor.`;
   if (res.status === 401) return new ProviderError("Google did not accept Daloy's access. Connect Google Sheets again.", "auth");
+  if (isOAuth(auth) && (res.status === 403 || res.status === 404)) return new ProviderError(PICK_SHEET_AGAIN, "permission");
+  const share = isOAuth(auth) ? "" : `Share the sheet with ${auth.client_email} as an Editor.`;
   if (res.status === 403) return new ProviderError(`Google Sheets refused access. ${share}${message ? ` Google said: ${message}` : ""}`, "permission");
   if (res.status === 404) return new ProviderError(`The spreadsheet was not found. Check the link, and ${share.charAt(0).toLowerCase()}${share.slice(1)}`, "permission");
   if (res.status === 429) return new ProviderError("Google Sheets is limiting requests right now. Daloy will try again.", "quota", retryAfter(res.headers));
@@ -154,17 +199,17 @@ function sheetsFailure(res: Reply, sa: ServiceAccount, write: boolean): Provider
   return new ProviderError(`Google Sheets rejected the request${message ? `: ${message}` : ` (${res.status})`}.`, "invalid");
 }
 
-/** A Sheets API call with the cached token. A 401 drops the token and tries once with a new one (expired access). */
-async function sheets(urls: ProviderUrls, sa: ServiceAccount, path: string, init: RequestInit, write: boolean): Promise<Record<string, unknown>> {
+/** A Sheets API call. A service account's 401 drops the cached token and tries once more; an OAuth 401 goes back to withFreshToken. */
+async function sheets(urls: ProviderUrls, auth: GoogleAuth, path: string, init: RequestInit, write: boolean): Promise<Record<string, unknown>> {
   for (let tries = 0; ; tries++) {
-    const token = await accessToken(urls, sa);
+    const token = await bearer(urls, auth, SHEETS_SCOPE);
     const res = await call(`${urls.sheets}${path}`, { ...init, headers: { ...init.headers, authorization: `Bearer ${token}` } }, urls.timeoutMs ?? 10_000, write, "Google Sheets");
     if (res.status === 200) return res.body;
-    if (res.status === 401 && tries === 0) {
-      tokenCache.delete(cacheKey(sa, SHEETS_SCOPE));
+    if (res.status === 401 && tries === 0 && !isOAuth(auth)) {
+      tokenCache.delete(cacheKey(auth, SHEETS_SCOPE));
       continue;
     }
-    throw sheetsFailure(res, sa, write);
+    throw sheetsFailure(res, auth, write);
   }
 }
 
@@ -172,8 +217,8 @@ async function sheets(urls: ProviderUrls, sa: ServiceAccount, path: string, init
 const range = (tab: string, cells: string) => encodeURIComponent(`'${tab.replaceAll("'", "''")}'!${cells}`);
 
 /** The spreadsheet's title and tab names, to check access when connecting. Reads only. */
-export async function sheetInfo(urls: ProviderUrls, sa: ServiceAccount, spreadsheetId: string) {
-  const body = await sheets(urls, sa, `/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}?fields=properties.title,sheets.properties.title`, {}, false);
+export async function sheetInfo(urls: ProviderUrls, auth: GoogleAuth, spreadsheetId: string) {
+  const body = await sheets(urls, auth, `/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}?fields=properties.title,sheets.properties.title`, {}, false);
   const tabs = ((body.sheets as { properties: { title: string } }[] | undefined) ?? []).map((s) => s.properties.title);
   return { title: String((body.properties as { title?: unknown } | undefined)?.title ?? ""), tabs };
 }
@@ -182,9 +227,9 @@ export async function sheetInfo(urls: ProviderUrls, sa: ServiceAccount, spreadsh
  * Adds the row under the last one in the tab. RAW keeps every value as typed, so form text such as "=IMPORTXML(...)"
  * is stored as text and never runs as a formula.
  */
-export async function appendRow(urls: ProviderUrls, sa: ServiceAccount, dest: SheetDestination, row: string[]) {
+export async function appendRow(urls: ProviderUrls, auth: GoogleAuth, dest: SheetDestination, row: string[]) {
   const path = `/v4/spreadsheets/${encodeURIComponent(dest.spreadsheetId)}/values/${range(dest.tab, "A1")}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`;
-  const body = await sheets(urls, sa, path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ values: [row] }) }, true);
+  const body = await sheets(urls, auth, path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ values: [row] }) }, true);
   return { range: String((body.updates as { updatedRange?: unknown } | undefined)?.updatedRange ?? "") };
 }
 
@@ -193,17 +238,17 @@ export type SheetWriteKey = { id: number; value: string };
 const MARKER_KEY = "daloy";
 const json = { "content-type": "application/json" };
 
-async function sheetIdOf(urls: ProviderUrls, sa: ServiceAccount, dest: SheetDestination): Promise<number> {
-  const body = await sheets(urls, sa, `/v4/spreadsheets/${encodeURIComponent(dest.spreadsheetId)}?fields=sheets.properties(sheetId,title)`, {}, false);
+async function sheetIdOf(urls: ProviderUrls, auth: GoogleAuth, dest: SheetDestination): Promise<number> {
+  const body = await sheets(urls, auth, `/v4/spreadsheets/${encodeURIComponent(dest.spreadsheetId)}?fields=sheets.properties(sheetId,title)`, {}, false);
   const tab = ((body.sheets as { properties: { sheetId: number; title: string } }[] | undefined) ?? []).find((s) => s.properties.title === dest.tab);
   if (!tab) throw new ProviderError(`The tab "${dest.tab}" is no longer in the spreadsheet. Pick the tab again in Apps, then retry.`, "invalid");
   return tab.properties.sheetId;
 }
 
 /** The value of our marker with this id, "" for someone else's metadata under that id, or null when there is none. */
-async function markerAt(urls: ProviderUrls, sa: ServiceAccount, spreadsheetId: string, id: number): Promise<string | null> {
+async function markerAt(urls: ProviderUrls, auth: GoogleAuth, spreadsheetId: string, id: number): Promise<string | null> {
   try {
-    const body = await sheets(urls, sa, `/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}/developerMetadata/${id}`, {}, false);
+    const body = await sheets(urls, auth, `/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}/developerMetadata/${id}`, {}, false);
     return body.metadataKey === MARKER_KEY ? String(body.metadataValue ?? "") : "";
   } catch (err) {
     // 404 comes back as "permission" (spreadsheet or entry not found); the spreadsheet was just reachable, so: no entry.
@@ -219,18 +264,18 @@ async function markerAt(urls: ProviderUrls, sa: ServiceAccount, spreadsheetId: s
  * request cannot add the row twice. Once the marker is deleted that no longer holds (decision 0021). A refused batch is
  * checked against the marker: ours means the row is already in. Cells are string values, never formulas.
  */
-export async function appendRowOnce(urls: ProviderUrls, sa: ServiceAccount, dest: SheetDestination, row: string[], key: SheetWriteKey): Promise<{ sheet: string; reconciled?: true }> {
-  const sheetId = await sheetIdOf(urls, sa, dest);
+export async function appendRowOnce(urls: ProviderUrls, auth: GoogleAuth, dest: SheetDestination, row: string[], key: SheetWriteKey): Promise<{ sheet: string; reconciled?: true }> {
+  const sheetId = await sheetIdOf(urls, auth, dest);
   const requests = [
     { createDeveloperMetadata: { developerMetadata: { metadataId: key.id, metadataKey: MARKER_KEY, metadataValue: key.value, location: { sheetId }, visibility: "PROJECT" } } },
     { appendCells: { sheetId, rows: [{ values: row.map((v) => ({ userEnteredValue: { stringValue: v } })) }], fields: "userEnteredValue" } },
   ];
   try {
-    await sheets(urls, sa, `/v4/spreadsheets/${encodeURIComponent(dest.spreadsheetId)}:batchUpdate`, { method: "POST", headers: json, body: JSON.stringify({ requests }) }, true);
+    await sheets(urls, auth, `/v4/spreadsheets/${encodeURIComponent(dest.spreadsheetId)}:batchUpdate`, { method: "POST", headers: json, body: JSON.stringify({ requests }) }, true);
     return { sheet: dest.tab };
   } catch (err) {
     if (!(err instanceof ProviderError) || err.kind !== "invalid") throw err;
-    const found = await markerAt(urls, sa, dest.spreadsheetId, key.id);
+    const found = await markerAt(urls, auth, dest.spreadsheetId, key.id);
     if (found === key.value) return { sheet: dest.tab, reconciled: true };
     if (found !== null) throw new ProviderError(`Something else in this spreadsheet already uses Daloy's marker ${key.id}, so Daloy cannot tell whether this row was added. Check the sheet, then choose Mark as posted or Post again.`, "review");
     throw err;
@@ -242,9 +287,9 @@ export async function appendRowOnce(urls: ProviderUrls, sa: ServiceAccount, dest
  * our key and our value, and Google deletes only metadata matching all three, so metadata another tool keeps under the
  * same id (a marker collision) is never touched. Deleting a missing one is fine.
  */
-export async function deleteSheetMarker(urls: ProviderUrls, sa: ServiceAccount, spreadsheetId: string, key: SheetWriteKey) {
+export async function deleteSheetMarker(urls: ProviderUrls, auth: GoogleAuth, spreadsheetId: string, key: SheetWriteKey) {
   const requests = [{ deleteDeveloperMetadata: { dataFilter: { developerMetadataLookup: { metadataId: key.id, metadataKey: MARKER_KEY, metadataValue: key.value } } } }];
-  await sheets(urls, sa, `/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}:batchUpdate`, { method: "POST", headers: json, body: JSON.stringify({ requests }) }, false);
+  await sheets(urls, auth, `/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}:batchUpdate`, { method: "POST", headers: json, body: JSON.stringify({ requests }) }, false);
 }
 
 // ---------------------------------------------------------------- Google Calendar
@@ -263,37 +308,55 @@ export function calendarIdFrom(input: string): string | null {
  */
 export const calendarEventId = (bookingId: string) => `dl${createHash("sha256").update(bookingId).digest("hex").slice(0, 40)}`;
 
-function calendarFailure(res: Reply, sa: ServiceAccount, write: boolean): ProviderError {
+const PICK_CALENDAR_AGAIN = "Daloy cannot open its calendar with your Google connection. It may have been deleted in Google Calendar. In Apps, choose Create a new Daloy calendar.";
+
+function calendarFailure(res: Reply, auth: GoogleAuth, write: boolean): ProviderError {
   const error = (res.body.error ?? {}) as { errors?: { reason?: unknown }[] };
-  const share = `Share the calendar with ${sa.client_email} and choose "Make changes to events".`;
+  const share = isOAuth(auth) ? "" : `Share the calendar with ${auth.client_email} and choose "Make changes to events".`;
   if (res.status === 401) return new ProviderError("Google did not accept Daloy's access. Connect Google Calendar again.", "auth");
   if (res.status === 429 || (res.status === 403 && /rateLimitExceeded|quotaExceeded/i.test(String(error.errors?.[0]?.reason ?? "")))) {
     return new ProviderError("Google Calendar is limiting requests right now. Daloy will try again.", "quota", retryAfter(res.headers));
   }
+  // With calendar.app.created Google answers 403 or 404 for a calendar Daloy did not create or that was deleted (decision 0064).
+  if (isOAuth(auth) && (res.status === 403 || res.status === 404)) return new ProviderError(PICK_CALENDAR_AGAIN, "permission");
   if (res.status === 403) return new ProviderError(`Google Calendar refused access. ${share}`, "permission");
   if (res.status === 404) return new ProviderError(`The calendar or event was not found. Check the calendar id, and ${share.charAt(0).toLowerCase()}${share.slice(1)}`, "permission");
   if (res.status >= 500) return new ProviderError(`Google Calendar answered ${res.status}.`, write ? "ambiguous" : "unavailable");
   return new ProviderError(`Google Calendar rejected the request (${res.status}).`, "invalid");
 }
 
-/** A Calendar API call with the cached token. Statuses in `accept` come back to the caller instead of failing. */
-async function calendar(urls: ProviderUrls, sa: ServiceAccount, path: string, init: RequestInit, write: boolean, accept: number[] = []): Promise<Reply> {
+/**
+ * A Calendar API call. A service account's 401 drops the cached token and tries once more; an OAuth 401 goes back to
+ * withFreshToken. Statuses in `accept` come back to the caller instead of failing.
+ */
+async function calendar(urls: ProviderUrls, auth: GoogleAuth, path: string, init: RequestInit, write: boolean, accept: number[] = []): Promise<Reply> {
   for (let tries = 0; ; tries++) {
-    const token = await accessToken(urls, sa, CALENDAR_SCOPE);
+    const token = await bearer(urls, auth, CALENDAR_SCOPE);
     const res = await call(`${urls.calendar}${path}`, { ...init, headers: { ...init.headers, authorization: `Bearer ${token}` } }, urls.timeoutMs ?? 10_000, write, "Google Calendar");
     if (res.status === 200 || res.status === 204 || accept.includes(res.status)) return res;
-    if (res.status === 401 && tries === 0) {
-      tokenCache.delete(cacheKey(sa, CALENDAR_SCOPE));
+    if (res.status === 401 && tries === 0 && !isOAuth(auth)) {
+      tokenCache.delete(cacheKey(auth, CALENDAR_SCOPE));
       continue;
     }
-    throw calendarFailure(res, sa, write);
+    throw calendarFailure(res, auth, write);
   }
+}
+
+/**
+ * Creates the calendar Daloy writes to, in the owner's account. Under calendar.app.created Daloy may use it because
+ * Daloy created it. Not idempotent: a lost answer may leave an unused calendar (decision 0064).
+ */
+export async function createCalendar(urls: ProviderUrls, auth: GoogleAuth, title: string) {
+  const res = await calendar(urls, auth, "/calendar/v3/calendars", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ summary: title }) }, true);
+  const calendarId = String(res.body.id ?? "");
+  if (!calendarId) throw new ProviderError("Google Calendar answered without a calendar id.", "unavailable");
+  return { calendarId, title: String(res.body.summary ?? title) };
 }
 
 const eventsPath = (calendarId: string) => `/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events`;
 
 /** The calendar's title, to check access when connecting. Reads only. */
-export async function calendarInfo(urls: ProviderUrls, sa: ServiceAccount, calendarId: string) {
+export async function calendarInfo(urls: ProviderUrls, sa: GoogleAuth, calendarId: string) {
   const res = await calendar(urls, sa, `${eventsPath(calendarId)}?maxResults=1&fields=summary`, {}, false);
   return { title: String(res.body.summary ?? calendarId) };
 }
@@ -302,7 +365,7 @@ export async function calendarInfo(urls: ProviderUrls, sa: ServiceAccount, calen
  * Proves Daloy can write: creates a one-hour event tomorrow under a one-off id and deletes it again. A calendar shared
  * as "see all event details" passes the read check but fails here.
  */
-export async function calendarWriteTest(urls: ProviderUrls, sa: ServiceAccount, calendarId: string) {
+export async function calendarWriteTest(urls: ProviderUrls, sa: GoogleAuth, calendarId: string) {
   const eventId = `dltest${createHash("sha256").update(String(Math.random()) + Date.now()).digest("hex").slice(0, 20)}`;
   const start = new Date(Date.now() + 24 * 3600_000);
   const body = { id: eventId, summary: "Test event from Daloy", start: { dateTime: start.toISOString() }, end: { dateTime: new Date(start.getTime() + 3600_000).toISOString() } };
@@ -320,7 +383,7 @@ export type CalendarContent = { title: string; description: string };
  * Cancelled: delete it; already gone (404, 410) is fine. Each branch can be repeated at any time with the same result,
  * so a retry after a lost answer is always safe (decision 0044). Times are sent in UTC with the booking's own zone.
  */
-export async function syncCalendarEvent(urls: ProviderUrls, sa: ServiceAccount, calendarId: string, bookingId: string, b: CalendarBooking, content: CalendarContent): Promise<{ event: "created" | "updated" | "deleted"; eventId: string }> {
+export async function syncCalendarEvent(urls: ProviderUrls, sa: GoogleAuth, calendarId: string, bookingId: string, b: CalendarBooking, content: CalendarContent): Promise<{ event: "created" | "updated" | "deleted"; eventId: string }> {
   const eventId = calendarEventId(bookingId);
   const base = eventsPath(calendarId);
   if (b.status === "cancelled") {
@@ -352,48 +415,55 @@ export function driveFolderIdFrom(input: string): string | null {
 
 const SHARED_DRIVE = (sa: ServiceAccount) => `Service accounts can only save files in a shared drive. Move the folder into a shared drive and add ${sa.client_email} as Content manager.`;
 
-function driveFailure(res: Reply, sa: ServiceAccount, write: boolean): ProviderError {
+function driveFailure(res: Reply, auth: GoogleAuth, write: boolean): ProviderError {
   const error = (res.body.error ?? {}) as { message?: unknown; errors?: { reason?: unknown }[] };
   const message = String(error.message ?? "");
   const reason = String(error.errors?.[0]?.reason ?? "");
-  const share = `Share the folder with ${sa.client_email} as Content manager.`;
   if (res.status === 401) return new ProviderError("Google did not accept Daloy's access. Connect Google Drive again.", "auth");
-  if (res.status === 403 && reason === "storageQuotaExceeded") return new ProviderError(SHARED_DRIVE(sa), "permission");
+  if (res.status === 403 && reason === "storageQuotaExceeded") {
+    return new ProviderError(isOAuth(auth) ? "The Google account's Drive storage is full. Free up space in Drive, then retry." : SHARED_DRIVE(auth), "permission");
+  }
   if (res.status === 429 || (res.status === 403 && /rateLimitExceeded|userRateLimitExceeded/i.test(reason))) {
     return new ProviderError("Google Drive is limiting requests right now. Daloy will try again.", "quota", retryAfter(res.headers));
   }
+  if (isOAuth(auth) && (res.status === 403 || res.status === 404)) return new ProviderError(PICK_FOLDER_AGAIN, "permission");
+  const share = isOAuth(auth) ? "" : `Share the folder with ${auth.client_email} as Content manager.`;
   if (res.status === 403) return new ProviderError(`Google Drive refused access. ${share}${message ? ` Google said: ${message}` : ""}`, "permission");
   if (res.status === 404) return new ProviderError(`The Drive folder was not found. Check the folder link, and ${share.charAt(0).toLowerCase()}${share.slice(1)}`, "permission");
   if (res.status >= 500) return new ProviderError(`Google Drive answered ${res.status}.`, write ? "ambiguous" : "unavailable");
   return new ProviderError(`Google Drive rejected the request${message ? `: ${message}` : ` (${res.status})`}.`, "invalid");
 }
 
-/** A Drive API call with the cached token. A 401 drops the token and tries once more. */
-async function drive(urls: ProviderUrls, sa: ServiceAccount, path: string, init: RequestInit, write: boolean): Promise<Reply> {
+/** A Drive API call. A service account's 401 drops the cached token and tries once more; an OAuth 401 goes back to withFreshToken. */
+async function drive(urls: ProviderUrls, auth: GoogleAuth, path: string, init: RequestInit, write: boolean): Promise<Reply> {
   for (let tries = 0; ; tries++) {
-    const token = await accessToken(urls, sa, DRIVE_SCOPE);
+    const token = await bearer(urls, auth, DRIVE_SCOPE);
     const res = await call(`${urls.drive}${path}`, { ...init, headers: { ...init.headers, authorization: `Bearer ${token}` } }, urls.timeoutMs ?? 30_000, write, "Google Drive");
     if (res.status === 200) return res;
-    if (res.status === 401 && tries === 0) {
-      tokenCache.delete(cacheKey(sa, DRIVE_SCOPE));
+    if (res.status === 401 && tries === 0 && !isOAuth(auth)) {
+      tokenCache.delete(cacheKey(auth, DRIVE_SCOPE));
       continue;
     }
-    throw driveFailure(res, sa, write);
+    throw driveFailure(res, auth, write);
   }
 }
+/** For the OAuth-only calls in google-access.ts (create a sheet or folder). */
+export { sheets as sheetsApi, drive as driveApi };
 
-/** Checks the folder when connecting: it must be a folder inside a shared drive that the account can add files to. Reads only. */
-export async function driveFolderInfo(urls: ProviderUrls, sa: ServiceAccount, folderId: string) {
-  const res = await drive(urls, sa, `/drive/v3/files/${encodeURIComponent(folderId)}?supportsAllDrives=true&fields=${encodeURIComponent("id,name,mimeType,driveId,capabilities/canAddChildren")}`, {}, false);
+/** Checks the folder when connecting: a folder the account can add files to, inside a shared drive for a service account (OAuth may use My Drive). Reads only. */
+export async function driveFolderInfo(urls: ProviderUrls, auth: GoogleAuth, folderId: string) {
+  const res = await drive(urls, auth, `/drive/v3/files/${encodeURIComponent(folderId)}?supportsAllDrives=true&fields=${encodeURIComponent("id,name,mimeType,driveId,capabilities/canAddChildren")}`, {}, false);
   const b = res.body as { name?: unknown; mimeType?: unknown; driveId?: unknown; capabilities?: { canAddChildren?: unknown } };
   if (b.mimeType !== "application/vnd.google-apps.folder") throw new ProviderError("That link is not a Drive folder. Open the folder in Drive and copy its link.", "invalid");
-  if (!b.driveId) throw new ProviderError(SHARED_DRIVE(sa), "permission");
-  if (b.capabilities?.canAddChildren !== true) throw new ProviderError(`Daloy cannot add files to that folder. Share it with ${sa.client_email} as Content manager.`, "permission");
+  if (!b.driveId && !isOAuth(auth)) throw new ProviderError(SHARED_DRIVE(auth), "permission");
+  if (b.capabilities?.canAddChildren !== true) {
+    throw new ProviderError(isOAuth(auth) ? "Your Google account cannot add files to that folder. Pick a folder you can edit." : `Daloy cannot add files to that folder. Share it with ${auth.client_email} as Content manager.`, "permission");
+  }
   return { title: String(b.name ?? folderId) };
 }
 
 /** Saves one file in the folder. Hand-built multipart/related: the JSON metadata, then the bytes. Not repeatable: a lost answer may mean the file is there. */
-export async function driveUpload(urls: ProviderUrls, sa: ServiceAccount, folderId: string, file: { name: string; mimeType: string; data: Buffer }): Promise<{ id: string }> {
+export async function driveUpload(urls: ProviderUrls, auth: GoogleAuth, folderId: string, file: { name: string; mimeType: string; data: Buffer }): Promise<{ id: string }> {
   const boundary = `daloy${randomBytes(16).toString("hex")}`;
   const meta = JSON.stringify({ name: file.name, parents: [folderId], mimeType: file.mimeType });
   const body = Buffer.concat([
@@ -401,7 +471,7 @@ export async function driveUpload(urls: ProviderUrls, sa: ServiceAccount, folder
     file.data,
     Buffer.from(`\r\n--${boundary}--`),
   ]);
-  const res = await drive(urls, sa, "/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true&fields=id,name", { method: "POST", headers: { "content-type": `multipart/related; boundary=${boundary}` }, body }, true);
+  const res = await drive(urls, auth, "/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true&fields=id,name", { method: "POST", headers: { "content-type": `multipart/related; boundary=${boundary}` }, body }, true);
   const id = res.body.id;
   if (typeof id !== "string" || !id) throw new ProviderError("Google Drive answered without a file id, so Daloy cannot tell whether the file was saved.", "ambiguous");
   return { id };
@@ -431,10 +501,10 @@ async function slackCall(urls: ProviderUrls, token: string, method: string, para
   throw new ProviderError(`Slack said ${error}.`, "invalid");
 }
 
-/** auth.test: proves the token works and names the workspace. */
+/** auth.test: proves the token works and names the workspace (team) and its stable id (teamId). */
 export async function slackIdentity(urls: ProviderUrls, token: string) {
   const body = await slackCall(urls, token, "auth.test", {});
-  return { team: String(body.team ?? "Slack") };
+  return { team: String(body.team ?? "Slack"), teamId: String(body.team_id ?? "") };
 }
 
 /** Public channels, for the channel picker (channels:read). ponytail: first 200 only; page with next_cursor if a workspace has more. */
@@ -451,6 +521,9 @@ export async function slackPost(urls: ProviderUrls, token: string, channel: stri
 
 // ---------------------------------------------------------------- Telegram
 
+/** getUpdates answers 409 while the bot has a webhook, so Daloy cannot list its chats. */
+const TELEGRAM_WEBHOOK_SET = "This bot has a webhook set, so Telegram will not list its chats. Type the chat id instead, or remove the webhook in the Bot API.";
+
 /** Telegram's Bot API answers { ok, result } with an HTTP status that matches (401, 403, 400, 429). The token sits in the URL path, so no error here may echo the URL. */
 async function telegramCall(urls: ProviderUrls, token: string, method: string, params: Record<string, string>, write = false) {
   const res = await call(`${urls.telegram}/bot${token}/${method}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(params) }, urls.timeoutMs ?? 10_000, write, "Telegram");
@@ -459,6 +532,7 @@ async function telegramCall(urls: ProviderUrls, token: string, method: string, p
     throw new ProviderError("Telegram is limiting requests right now. Daloy will try again.", "quota", Number.isFinite(s) && s > 0 ? s * 1000 : retryAfter(res.headers));
   }
   if (res.status >= 500) throw new ProviderError(`Telegram answered ${res.status}.`, write ? "ambiguous" : "unavailable");
+  if (res.status === 409) throw new ProviderError(TELEGRAM_WEBHOOK_SET, "invalid");
   if (res.body.ok === true) return res.body.result as Record<string, unknown>;
   const text = String(res.body.description ?? "").toLowerCase();
   if (res.status === 401 || res.status === 404) throw new ProviderError("Telegram no longer accepts the bot token. Connect Telegram again.", "auth");
@@ -477,6 +551,30 @@ export async function telegramIdentity(urls: ProviderUrls, token: string) {
 export async function telegramChat(urls: ProviderUrls, token: string, chatId: string) {
   const chat = await telegramCall(urls, token, "getChat", { chat_id: chatId });
   return { chatId: String(chat.id ?? chatId), chatTitle: String(chat.title ?? chat.username ?? chat.first_name ?? chatId) };
+}
+
+/**
+ * getUpdates (no offset, so nothing is consumed): the chats the bot saw in roughly the last day, newest first. Only the id, type and
+ * a title are kept. Message text is never read and nothing is stored. Unverified against the live Bot API (see docs/how-it-works.md).
+ */
+export async function telegramChats(urls: ProviderUrls, token: string) {
+  type Chat = { id?: number | string; type?: string; title?: string; username?: string; first_name?: string; last_name?: string };
+  type Update = Record<string, { chat?: Chat } | number | undefined>;
+  let updates: Update[];
+  try {
+    updates = (await telegramCall(urls, token, "getUpdates", {})) as unknown as Update[];
+  } catch (err) {
+    if (err instanceof ProviderError && err.message === TELEGRAM_WEBHOOK_SET) return { chats: [], webhookSet: true };
+    throw err;
+  }
+  const seen = new Map<string, { id: string; type: string; title: string }>();
+  for (const u of [...(Array.isArray(updates) ? updates : [])].reverse()) {
+    const chat = (["message", "channel_post", "my_chat_member", "edited_message"] as const).map((k) => (u[k] as { chat?: Chat } | undefined)?.chat).find((c) => c?.id !== undefined);
+    if (!chat || seen.has(String(chat.id))) continue;
+    const title = chat.title ?? ([chat.first_name, chat.last_name].filter(Boolean).join(" ") || chat.username || String(chat.id));
+    seen.set(String(chat.id), { id: String(chat.id), type: String(chat.type ?? "unknown"), title: title.slice(0, 100) });
+  }
+  return { chats: [...seen.values()].slice(0, 20), webhookSet: false };
 }
 
 /** sendMessage as plain text (no parse_mode, so run data cannot break formatting). */
@@ -500,10 +598,10 @@ function recordFailure(res: Reply, what: string, write: boolean, defaultWaitMs: 
   throw new ProviderError(`${what} refused the request. Check that the field and property names match.`, "invalid");
 }
 
-const enc = encodeURIComponent;
+export const enc = encodeURIComponent;
 
 // Airtable: 5 requests a second per base, and a 429 means wait 30 seconds.
-async function airtableCall(urls: ProviderUrls, token: string, method: "GET" | "POST", path: string, body?: object) {
+export async function airtableCall(urls: ProviderUrls, token: string, method: "GET" | "POST", path: string, body?: object) {
   const res = await call(`${urls.airtable}/v0/${path}`, { method, headers: { authorization: `Bearer ${token}`, "content-type": "application/json" }, body: body && JSON.stringify(body) }, urls.timeoutMs ?? 10_000, method === "POST", "Airtable");
   if (res.status === 200) return res.body;
   return recordFailure(res, "Airtable", method === "POST", 30_000);
@@ -522,15 +620,16 @@ export async function airtableAdd(urls: ProviderUrls, token: string, dest: { bas
 }
 
 // Notion: about 3 requests a second, 429 and 529 carry Retry-After. Pinned to an API version whose database object lists its properties.
-const NOTION_VERSION = "2022-06-28";
-async function notionCall(urls: ProviderUrls, token: string, method: "GET" | "POST", path: string, body?: object) {
-  const res = await call(`${urls.notion}/v1/${path}`, { method, headers: { authorization: `Bearer ${token}`, "notion-version": NOTION_VERSION, "content-type": "application/json" }, body: body && JSON.stringify(body) }, urls.timeoutMs ?? 10_000, method === "POST", "Notion");
+export const NOTION_VERSION = "2022-06-28";
+// write is false for the search POST, a read that a timeout must not turn into "may have been added".
+export async function notionCall(urls: ProviderUrls, token: string, method: "GET" | "POST", path: string, body?: object, write = method === "POST") {
+  const res = await call(`${urls.notion}/v1/${path}`, { method, headers: { authorization: `Bearer ${token}`, "notion-version": NOTION_VERSION, "content-type": "application/json" }, body: body && JSON.stringify(body) }, urls.timeoutMs ?? 10_000, write, "Notion");
   if (res.status === 200) return res.body;
   if (res.status === 529) throw new ProviderError("Notion is limiting requests right now. Daloy will try again.", "quota", retryAfter(res.headers) ?? 10_000);
-  if (res.status === 503 && method === "POST" && typeof (res.body.additional_data as { committed_resource_id?: unknown } | undefined)?.committed_resource_id === "string") {
+  if (res.status === 503 && write && typeof (res.body.additional_data as { committed_resource_id?: unknown } | undefined)?.committed_resource_id === "string") {
     throw new ProviderError(`Notion answered 503 but may have saved the page ${(res.body.additional_data as { committed_resource_id: string }).committed_resource_id}.`, "ambiguous");
   }
-  return recordFailure(res, "Notion", method === "POST", 10_000);
+  return recordFailure(res, "Notion", write, 10_000);
 }
 
 /** The database's name, and the name of its title property (every page needs one, and its name is the owner's). */
@@ -553,60 +652,31 @@ export async function notionAddPage(urls: ProviderUrls, token: string, dest: { d
 
 // Trello: 100 requests per 10 seconds per token. The key and token travel in the query string, as Trello's REST API expects.
 export type TrelloCredential = { key: string; token: string };
-async function trelloCall(urls: ProviderUrls, cred: TrelloCredential, method: "GET" | "POST", path: string, body?: object) {
-  const auth = `key=${enc(cred.key)}&token=${enc(cred.token)}`;
-  const res = await call(`${urls.trello}/1/${path}${path.includes("?") ? "&" : "?"}${auth}`, { method, headers: { "content-type": "application/json" }, body: body && JSON.stringify(body) }, urls.timeoutMs ?? 10_000, method === "POST", "Trello");
+/** A pasted key and token travel in the query string; an OAuth 2.0 access token goes in the Authorization header (decision 0062). */
+export type TrelloAuth = TrelloCredential | { bearer: string };
+export async function trelloCall(urls: ProviderUrls, cred: TrelloAuth, method: "GET" | "POST", path: string, body?: object) {
+  const query = "bearer" in cred ? "" : `${path.includes("?") ? "&" : "?"}key=${enc(cred.key)}&token=${enc(cred.token)}`;
+  const headers: Record<string, string> = { "content-type": "application/json", ...("bearer" in cred ? { authorization: `Bearer ${cred.bearer}` } : {}) };
+  const res = await call(`${urls.trello}/1/${path}${query}`, { method, headers, body: body && JSON.stringify(body) }, urls.timeoutMs ?? 10_000, method === "POST", "Trello");
   if (res.status === 200) return res.body;
   return recordFailure(res, "Trello", method === "POST", 10_000);
 }
 
-export async function trelloIdentity(urls: ProviderUrls, cred: TrelloCredential) {
+export async function trelloIdentity(urls: ProviderUrls, cred: TrelloAuth) {
   return { account: `@${String((await trelloCall(urls, cred, "GET", "members/me?fields=username")).username ?? "trello")}` };
 }
 
-export async function trelloList(urls: ProviderUrls, cred: TrelloCredential, listId: string) {
+export async function trelloList(urls: ProviderUrls, cred: TrelloAuth, listId: string) {
   const list = await trelloCall(urls, cred, "GET", `lists/${enc(listId)}?fields=name`);
   return { listId, listName: String(list.name ?? listId) };
 }
 
-export async function trelloAddCard(urls: ProviderUrls, cred: TrelloCredential, listId: string, name: string, desc: string) {
+export async function trelloAddCard(urls: ProviderUrls, cred: TrelloAuth, listId: string, name: string, desc: string) {
   const card = await trelloCall(urls, cred, "POST", "cards", { idList: listId, name, desc });
   return { cardId: String(card.id) };
 }
 
 // ---------------------------------------------------------------- Microsoft: Outlook through Graph, and Teams Workflows
-
-/** Delegated permissions for Outlook: send as the signed-in mailbox, keep access without a sign-in each time, read the address. */
-export const OUTLOOK_SCOPES = "offline_access https://graph.microsoft.com/Mail.Send https://graph.microsoft.com/User.Read";
-
-function microsoftApp(urls: ProviderUrls) {
-  if (!urls.microsoft || !urls.microsoftLogin) throw new ProviderError("Outlook is not set up on this installation. Set MICROSOFT_CLIENT_ID and MICROSOFT_CLIENT_SECRET.", "invalid");
-  return { ...urls.microsoft, base: `${urls.microsoftLogin}/${encodeURIComponent(urls.microsoft.tenant)}` };
-}
-
-/** The Microsoft sign-in and consent page, with PKCE (S256). */
-export function outlookAuthorizeUrl(urls: ProviderUrls, o: { redirectUri: string; state: string; codeChallenge: string }) {
-  const app = microsoftApp(urls);
-  const q = new URLSearchParams({
-    client_id: app.clientId,
-    response_type: "code",
-    redirect_uri: o.redirectUri,
-    response_mode: "query",
-    scope: OUTLOOK_SCOPES,
-    state: o.state,
-    code_challenge: o.codeChallenge,
-    code_challenge_method: "S256",
-    prompt: "select_account",
-  });
-  return `${app.base}/oauth2/v2.0/authorize?${q}`;
-}
-
-/** The page an administrator opens to approve Daloy for the whole organization. */
-export function outlookAdminConsentUrl(urls: ProviderUrls, redirectUri: string) {
-  const app = microsoftApp(urls);
-  const q = new URLSearchParams({ client_id: app.clientId, redirect_uri: redirectUri, scope: "https://graph.microsoft.com/Mail.Send https://graph.microsoft.com/User.Read" });
-  return `${app.base}/v2.0/adminconsent?${q}`;
-}
 
 /**
  * What a consent error on the way back means. Microsoft answers access_denied both when the person said no and when
@@ -617,35 +687,6 @@ export function consentOutcome(error: string, description = ""): "admin_required
   if (error === "access_denied" || error === "consent_required" || /AADSTS65004/.test(description)) return "declined";
   return "failed";
 }
-
-type MsTokens = { accessToken: string; refreshToken: string; expiresIn: number };
-
-/** The token endpoint, for the authorization code and for refresh. invalid_grant and friends mean the owner must reconnect. */
-async function microsoftToken(urls: ProviderUrls, params: Record<string, string>): Promise<MsTokens> {
-  const app = microsoftApp(urls);
-  const body = new URLSearchParams({ client_id: app.clientId, client_secret: app.clientSecret, scope: OUTLOOK_SCOPES, ...params });
-  const res = await call(`${app.base}/oauth2/v2.0/token`, { method: "POST", body }, urls.timeoutMs ?? 10_000, false, "Microsoft sign-in");
-  if (res.status === 200 && typeof res.body.access_token === "string" && typeof res.body.refresh_token === "string") {
-    return { accessToken: res.body.access_token, refreshToken: res.body.refresh_token, expiresIn: typeof res.body.expires_in === "number" ? res.body.expires_in : 3600 };
-  }
-  const error = String(res.body.error ?? "");
-  const description = String(res.body.error_description ?? "");
-  if (res.status === 429) throw new ProviderError("Microsoft sign-in is limiting requests right now. Daloy will try again.", "quota", retryAfter(res.headers));
-  if (res.status >= 500) throw new ProviderError(`Microsoft sign-in answered ${res.status}. Daloy will try again.`, "unavailable");
-  if (error === "invalid_client") throw new ProviderError("Microsoft rejected this installation's app settings (MICROSOFT_CLIENT_ID or MICROSOFT_CLIENT_SECRET).", "invalid");
-  if (consentOutcome(error, description) === "admin_required") {
-    throw new ProviderError("Your organization now requires an administrator to approve Daloy. Ask them to approve it, then reconnect Outlook.", "auth");
-  }
-  // invalid_grant (expired or revoked), interaction_required (password changed, policy), consent withdrawn.
-  throw new ProviderError("Microsoft no longer accepts Daloy's access to this mailbox. It may have been revoked or expired. Reconnect Outlook.", "auth");
-}
-
-export const outlookCodeTokens = (urls: ProviderUrls, code: string, codeVerifier: string, redirectUri: string) =>
-  microsoftToken(urls, { grant_type: "authorization_code", code, code_verifier: codeVerifier, redirect_uri: redirectUri });
-
-// Access tokens by refresh token hash, in memory, so a burst of deliveries signs in once. shortcut: per process.
-const msTokenCache = new Map<string, { token: string; expiresAt: number }>();
-const hash = (s: string) => createHash("sha256").update(s).digest("hex");
 
 function graphFailure(res: Reply, write: boolean): ProviderError {
   const err = (res.body.error ?? {}) as { code?: unknown; message?: unknown };
@@ -660,46 +701,23 @@ function graphFailure(res: Reply, write: boolean): ProviderError {
   return new ProviderError(`Outlook rejected the message${said || ` (${res.status})`}.`, "invalid");
 }
 
-/**
- * A Graph call as the connected mailbox. Signs in with the stored refresh token, saves the new one Microsoft hands
- * back (saveRefreshToken), and after a 401 (an access token that expired early) signs in once more.
- */
-async function graph(urls: ProviderUrls, refreshToken: string, saveRefreshToken: (t: string) => Promise<void>, path: string, init: RequestInit, write: boolean): Promise<Reply> {
-  let current = refreshToken;
-  for (let tries = 0; ; tries++) {
-    let cached = msTokenCache.get(hash(current));
-    if (!cached || cached.expiresAt < Date.now() + 60_000) {
-      const t = await microsoftToken(urls, { grant_type: "refresh_token", refresh_token: current });
-      cached = { token: t.accessToken, expiresAt: Date.now() + t.expiresIn * 1000 };
-      if (t.refreshToken !== current) {
-        await saveRefreshToken(t.refreshToken);
-        current = t.refreshToken;
-      }
-      msTokenCache.set(hash(current), cached);
-    }
-    const res = await call(`${urls.graph}${path}`, { ...init, headers: { ...init.headers, authorization: `Bearer ${cached.token}` } }, urls.timeoutMs ?? 10_000, write, "Outlook");
-    if (res.status === 200 || res.status === 202) return res;
-    if (res.status === 401 && tries === 0) {
-      msTokenCache.delete(hash(current));
-      continue;
-    }
-    throw graphFailure(res, write);
-  }
-}
-
-/** The mailbox the owner consented with: its address is what the connection shows and where the test email goes. */
+/** The mailbox the owner consented with: its address is what the connection shows, its id the account Daloy pins. */
 export async function outlookMailbox(urls: ProviderUrls, accessToken: string) {
-  const res = await call(`${urls.graph}/v1.0/me?$select=mail,userPrincipalName,displayName`, { headers: { authorization: `Bearer ${accessToken}` } }, urls.timeoutMs ?? 10_000, false, "Outlook");
+  const res = await call(`${urls.graph}/v1.0/me?$select=id,mail,userPrincipalName`, { headers: { authorization: `Bearer ${accessToken}` } }, urls.timeoutMs ?? 10_000, false, "Outlook");
   if (res.status !== 200) throw graphFailure(res, false);
-  return String(res.body.mail || res.body.userPrincipalName || "");
+  return { id: String(res.body.id ?? ""), mailbox: String(res.body.mail || res.body.userPrincipalName || "") };
 }
 
 export type OutlookMessage = { to: string; subject: string; text: string };
 
-/** sendMail answers 202 with no body and no message id, so there is nothing to look up afterwards. A copy goes to Sent Items. */
-export async function outlookSend(urls: ProviderUrls, refreshToken: string, saveRefreshToken: (t: string) => Promise<void>, m: OutlookMessage) {
+/**
+ * sendMail answers 202 with no body and no message id, so there is nothing to look up afterwards. A copy goes to Sent
+ * Items. A 401 is an auth refusal: withFreshToken refreshes once and calls this again (decision 0058).
+ */
+export async function outlookSend(urls: ProviderUrls, accessToken: string, m: OutlookMessage) {
   const message = { subject: m.subject, body: { contentType: "Text", content: m.text }, toRecipients: m.to.split(",").map((a) => ({ emailAddress: { address: a.trim() } })) };
-  await graph(urls, refreshToken, saveRefreshToken, "/v1.0/me/sendMail", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ message, saveToSentItems: true }) }, true);
+  const res = await call(`${urls.graph}/v1.0/me/sendMail`, { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${accessToken}` }, body: JSON.stringify({ message, saveToSentItems: true }) }, urls.timeoutMs ?? 10_000, true, "Outlook");
+  if (res.status !== 202 && res.status !== 200) throw graphFailure(res, true);
   return { to: m.to, sent: true };
 }
 

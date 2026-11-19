@@ -1,6 +1,7 @@
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 import { and, eq, sql } from "drizzle-orm";
 import type { Db } from "./index";
+import { blobTokens } from "./oauth/blob";
 import { retiredSecrets, secrets } from "./schema";
 
 export type EncryptedSecret = { ciphertext: string; iv: string; authTag: string };
@@ -53,11 +54,24 @@ export async function retireSecret(tx: Pick<Db, "select" | "insert" | "execute">
  * is either still current or already retired here, never missing from both (retest of 6e603de).
  */
 export async function secretValuesToHide(db: Db, key: Buffer, userId: string): Promise<string[]> {
-  const { rows } = await db.execute<EncryptedSecret & { name: string }>(sql`
-    select name, ciphertext, iv, auth_tag as "authTag" from secrets where user_id = ${userId}
+  const { rows } = await db.execute<EncryptedSecret & { name: string; oauth: boolean }>(sql`
+    select name, ciphertext, iv, auth_tag as "authTag", false as oauth from secrets where user_id = ${userId}
     union all
-    select name, ciphertext, iv, auth_tag as "authTag" from retired_secrets where user_id = ${userId}`);
-  return rows.map((r) => decryptSecret(key, userId, r.name, r));
+    select name, ciphertext, iv, auth_tag as "authTag", false from retired_secrets where user_id = ${userId}
+    union all
+    select 'connection:' || provider, credential_ciphertext, credential_iv, credential_auth_tag, true from connections where user_id = ${userId} and auth_method = 'oauth'
+    union all
+    select 'gmail_oauth', password_ciphertext, password_iv, password_auth_tag, true from mail_senders where user_id = ${userId} and auth_method = 'oauth' and password_ciphertext is not null`);
+  // OAuth access and refresh tokens too, as defense in depth: they should never reach history at all (decision 0058, R4).
+  // A token blob that does not decrypt was never usable, so it has nothing to hide and must not break every history page.
+  const tokens = (r: EncryptedSecret & { name: string }) => {
+    try {
+      return blobTokens(decryptSecret(key, userId, r.name, r));
+    } catch {
+      return [];
+    }
+  };
+  return rows.flatMap((r) => (r.oauth ? tokens(r) : [decryptSecret(key, userId, r.name, r)]));
 }
 
 /**

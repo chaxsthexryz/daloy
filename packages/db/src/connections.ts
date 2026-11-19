@@ -1,9 +1,12 @@
 import { and, eq, sql } from "drizzle-orm";
 import { decryptSecret, encryptSecret } from "./crypto";
 import type { Db } from "./index";
-import { connections, type Provider } from "./schema";
+import { connections, type AuthMethod, type Provider } from "./schema";
 
 export const PROVIDER_NAMES: Record<Provider, string> = { google_sheets: "Google Sheets", slack: "Slack", outlook: "Outlook", teams: "Microsoft Teams", telegram: "Telegram", google_calendar: "Google Calendar", google_drive: "Google Drive", paymongo: "PayMongo", airtable: "Airtable", notion: "Notion", trello: "Trello" };
+
+/** What a pasted credential is, by provider. An Outlook credential is always a Microsoft grant. */
+const PASTED: Record<Provider, AuthMethod> = { google_sheets: "service_account", google_calendar: "service_account", google_drive: "service_account", teams: "webhook_url", outlook: "oauth", slack: "token", telegram: "token", paymongo: "token", airtable: "token", notion: "token", trello: "token" };
 
 // The owner id is in the associated data (crypto.ts), so a credential copied to another owner's row does not decrypt.
 const secretName = (provider: Provider) => `connection:${provider}`;
@@ -20,6 +23,13 @@ export async function saveConnection(db: Db, key: Buffer, userId: string, provid
     destination: input.destination ?? null,
     lastError: null,
     updatedAt: new Date(),
+    // A pasted credential replaces any OAuth grant, so its OAuth fields go too (OAuth saves are in oauth/core.ts).
+    authMethod: PASTED[provider],
+    externalId: null,
+    scopes: null,
+    oauthClientId: null,
+    accessExpiresAt: null,
+    refreshedAt: null,
   };
   await db.insert(connections).values({ userId, provider, ...values }).onConflictDoUpdate({ target: [connections.userId, connections.provider], set: values });
 }
@@ -27,7 +37,7 @@ export async function saveConnection(db: Db, key: Buffer, userId: string, provid
 /** The owner's connections for the console. Credentials never leave this module. */
 export async function readConnections(db: Db, userId: string) {
   return db
-    .select({ provider: connections.provider, status: connections.status, account: connections.account, destination: connections.destination, lastError: connections.lastError, lastTestedAt: connections.lastTestedAt })
+    .select({ provider: connections.provider, status: connections.status, authMethod: connections.authMethod, account: connections.account, destination: connections.destination, lastError: connections.lastError, lastTestedAt: connections.lastTestedAt })
     .from(connections)
     .where(eq(connections.userId, userId));
 }
@@ -38,32 +48,12 @@ export async function connectionCredential(db: Db, key: Buffer, userId: string, 
   if (!row) return null;
   const credential = decryptSecret(key, userId, secretName(provider), { ciphertext: row.credentialCiphertext, iv: row.credentialIv, authTag: row.credentialAuthTag });
   // revision changes on every save (a new IV), so a late answer about this credential can be told from one about its replacement.
-  return { credential, status: row.status, account: row.account, destination: row.destination, revision: row.credentialIv };
+  return { credential, status: row.status, account: row.account, destination: row.destination, revision: row.credentialIv, authMethod: row.authMethod, externalId: row.externalId };
 }
 
-/**
- * Stores a credential the provider replaced, such as Microsoft's rotated refresh token, but only over the revision it
- * was rotated from: a late rotation for a mailbox the owner has since reconnected changes nothing (Astra, 283fa1a).
- * Returns the new revision, or null when the stored credential is no longer that one. Status and destination stay.
- */
-export async function updateCredential(db: Db, key: Buffer, userId: string, provider: Provider, credential: string, revision: string): Promise<string | null> {
-  const e = encryptSecret(key, userId, secretName(provider), credential);
-  const saved = await db
-    .update(connections)
-    .set({ credentialCiphertext: e.ciphertext, credentialIv: e.iv, credentialAuthTag: e.authTag, updatedAt: new Date() })
-    .where(and(eq(connections.userId, userId), eq(connections.provider, provider), eq(connections.credentialIv, revision)))
-    .returning({ revision: connections.credentialIv });
-  return saved[0]?.revision ?? null;
-}
-
-/** A save function for a provider that rotates its credential: it follows conn.revision, so later status writes match. */
-export const rotateInto = (db: Db, key: Buffer, userId: string, provider: Provider, conn: { revision: string }) => async (credential: string) => {
-  const next = await updateCredential(db, key, userId, provider, credential, conn.revision);
-  if (next) conn.revision = next;
-};
-
-export async function setDestination(db: Db, userId: string, provider: Provider, destination: Record<string, string>) {
-  await db.update(connections).set({ destination, updatedAt: new Date() }).where(and(eq(connections.userId, userId), eq(connections.provider, provider)));
+export async function setDestination(db: Db, userId: string, provider: Provider, destination: Record<string, string>, revision?: string) {
+  const changed = await db.update(connections).set({ destination, updatedAt: new Date() }).where(and(eq(connections.userId, userId), eq(connections.provider, provider), revision ? eq(connections.credentialIv, revision) : undefined)).returning({ userId: connections.userId });
+  return changed.length === 1;
 }
 
 /**

@@ -1,20 +1,21 @@
 import { useLanguage } from "./Language";
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { api } from "./api";
+import { ConnectPanel, Status, useAction } from "./ConnectPanel";
+import { RecordTargetPicker } from "./RecordTargetPicker";
+import { PaymongoSetup, TeamsSetup, TelegramSetup } from "./PasteSetups";
 
 export type Provider = "google_sheets" | "slack" | "outlook" | "teams" | "telegram" | "google_calendar" | "google_drive" | "paymongo" | "airtable" | "notion" | "trello";
-export type Connection = { provider: Provider; status: "active" | "failed"; account: string; destination: Record<string, string> | null; lastError: string | null; lastTestedAt: string | null };
-type TestResult = { ok: true; range?: string; channel?: string } | { ok: false; error: string };
+export type Connection = { provider: Provider; status: "active" | "failed"; authMethod?: "token" | "service_account" | "oauth" | "webhook_url"; account: string; destination: Record<string, string> | null; lastError: string | null; lastTestedAt: string | null };
+export type TestResult = { ok: true; range?: string; channel?: string } | { ok: false; error: string };
 export type OutlookSetup = { configured: boolean; adminConsentUrl?: string };
 type Channel = { id: string; name: string; isMember: boolean };
 
 const SERVICE_ACCOUNT_HELP = "https://cloud.google.com/iam/docs/service-accounts-create";
 const SLACK_APP_HELP = "https://api.slack.com/quickstart";
-const TELEGRAM_BOT_HELP = "https://core.telegram.org/bots/tutorial";
-const TEAMS_WORKFLOWS_HELP = "https://support.microsoft.com/en-us/workflows/send-messages-in-teams-using-incoming-webhooks";
 const MICROSOFT_CONSENT_HELP = "https://learn.microsoft.com/en-us/entra/identity/enterprise-apps/configure-user-consent";
 
-/** What the Outlook consent callback reported, by the code in #/settings/business/outlook-<code>. */
+/** What the Outlook consent callback reported, by the code in #/settings/business/outlook-<code> or #/apps/outlook-<code>. */
 const OUTLOOK_OUTCOMES: Record<string, { ok: boolean; text: string }> = {
   connected: { ok: true, text: "Outlook is connected. Send a test email to check it." },
   admin_approved: { ok: true, text: "An administrator approved Daloy for your organization. Connect Outlook now." },
@@ -24,36 +25,7 @@ const OUTLOOK_OUTCOMES: Record<string, { ok: boolean; text: string }> = {
   failed: { ok: false, text: "Microsoft did not finish connecting. Start again with Connect Outlook." },
 };
 
-function useAction(onChange: () => Promise<unknown>) {
-  const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
-  const act = async (fn: () => Promise<unknown>) => {
-    setError("");
-    setBusy(true);
-    try {
-      await fn();
-      await onChange();
-    } catch (err) {
-      setError((err as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  };
-  return { error, busy, act };
-}
-
-function Status({ conn, label }: { conn: Connection; label: string }) {
-  const { t } = useLanguage();
-  return (
-    <p className="in-use">
-      {t(label)} <strong>{conn.account}</strong>
-      <span className={`tag${conn.status === "active" ? " ok" : ""}`}>{conn.status === "active" ? t("Connected") : t("Needs reconnecting")}</span>
-      {conn.lastError && <span className="message error"> {conn.lastError}</span>}
-    </p>
-  );
-}
-
-function Outcome({ test, what }: { test: TestResult | null; what: string }) {
+export function Outcome({ test, what }: { test: TestResult | null; what: string }) {
   const { t } = useLanguage();
   if (!test) return null;
   return test.ok ? (
@@ -65,7 +37,8 @@ function Outcome({ test, what }: { test: TestResult | null; what: string }) {
   );
 }
 
-export function SheetsConnection({ conn, onChange }: { conn: Connection | null; onChange: () => Promise<unknown> }) {
+/** embedded: only the service account form, as the Advanced option under Connect with Google (decision 0060). */
+export function SheetsConnection({ conn, onChange, embedded }: { conn: Connection | null; onChange: () => Promise<unknown>; embedded?: boolean }) {
   const { t } = useLanguage();
   const { error, busy, act } = useAction(onChange);
   const [editing, setEditing] = useState(false);
@@ -88,16 +61,16 @@ export function SheetsConnection({ conn, onChange }: { conn: Connection | null; 
       setTest(null);
     });
   };
-  const showForm = !conn || editing;
+  const showForm = !conn || editing || embedded;
 
   return (
-    <div className="connection" aria-busy={busy} aria-labelledby="sheets-h">
-      <h3 id="sheets-h">Google Sheets</h3>
-      {conn && <Status conn={conn} label={t("Service account")} />}
-      {conn?.destination && (
+    <div className={embedded ? undefined : "connection"} aria-busy={busy} aria-labelledby={embedded ? undefined : "sheets-h"}>
+      {!embedded && <h3 id="sheets-h">Google Sheets</h3>}
+      {conn && !embedded && <Status conn={conn} label={t("Service account")} />}
+      {conn?.destination && !embedded && (
         <p>{t("Rows go to ")}<strong>{conn.destination.title}</strong>{t(", tab ")}<strong>{conn.destination.tab}</strong>{t(". Column A holds the request reference, column B the time.")}</p>
       )}
-      {conn && (
+      {conn && !embedded && (
         <div className="actions">
           <button type="button" disabled={busy} onClick={() => void act(async () => setTest(await api<TestResult>("POST", "/settings/connections/google-sheets/test")))}>{t("Add a test row")}</button>
           {!editing && (
@@ -131,7 +104,7 @@ export function SheetsConnection({ conn, onChange }: { conn: Connection | null; 
             <button type="submit" className="primary" disabled={busy}>
               {conn ? t("Save sheet") : t("Connect Google Sheets")}
             </button>
-            {conn && (
+            {conn && !embedded && (
               <button type="button" className="quiet" onClick={() => setEditing(false)}>{t("Cancel")}</button>
             )}
           </div>
@@ -144,7 +117,8 @@ export function SheetsConnection({ conn, onChange }: { conn: Connection | null; 
   );
 }
 
-export function DriveConnection({ conn, onChange }: { conn: Connection | null; onChange: () => Promise<unknown> }) {
+/** embedded: only the service account form, as the Advanced option under Connect with Google (decision 0060). */
+export function DriveConnection({ conn, onChange, embedded }: { conn: Connection | null; onChange: () => Promise<unknown>; embedded?: boolean }) {
   const { t } = useLanguage();
   const { error, busy, act } = useAction(onChange);
   const [editing, setEditing] = useState(false);
@@ -164,18 +138,18 @@ export function DriveConnection({ conn, onChange }: { conn: Connection | null; o
       setEditing(false);
     });
   };
-  const showForm = !conn || editing;
+  const showForm = !conn || editing || embedded;
 
   return (
-    <div className="connection" aria-busy={busy} aria-labelledby="drive-h">
-      <h3 id="drive-h">Google Drive</h3>
-      {conn && <Status conn={conn} label="Service account" />}
-      {conn?.destination && (
+    <div className={embedded ? undefined : "connection"} aria-busy={busy} aria-labelledby={embedded ? undefined : "drive-h"}>
+      {!embedded && <h3 id="drive-h">Google Drive</h3>}
+      {conn && !embedded && <Status conn={conn} label="Service account" />}
+      {conn?.destination && !embedded && (
         <p>
           {t("Files go to ")}<strong>{conn.destination.title}</strong>{t(". Files in a request are kept in Daloy for 7 days, so save them to Drive before then.")}
         </p>
       )}
-      {conn && (
+      {conn && !embedded && (
         <div className="actions">
           {!editing && (
             <button type="button" className="quiet" onClick={() => setEditing(true)}>
@@ -212,7 +186,7 @@ export function DriveConnection({ conn, onChange }: { conn: Connection | null; o
             <button type="submit" className="primary" disabled={busy}>
               {conn ? t("Save folder") : t("Connect Google Drive")}
             </button>
-            {conn && (
+            {conn && !embedded && (
               <button type="button" className="quiet" onClick={() => setEditing(false)}>
                 {t("Cancel")}
               </button>
@@ -227,7 +201,8 @@ export function DriveConnection({ conn, onChange }: { conn: Connection | null; o
   );
 }
 
-export function CalendarConnection({ conn, onChange }: { conn: Connection | null; onChange: () => Promise<unknown> }) {
+/** embedded: only the service account form, as the Advanced option under Connect with Google (decision 0064). */
+export function CalendarConnection({ conn, onChange, embedded }: { conn: Connection | null; onChange: () => Promise<unknown>; embedded?: boolean }) {
   const { t } = useLanguage();
   const { error, busy, act } = useAction(onChange);
   const [editing, setEditing] = useState(false);
@@ -249,18 +224,18 @@ export function CalendarConnection({ conn, onChange }: { conn: Connection | null
       setTest(null);
     });
   };
-  const showForm = !conn || editing;
+  const showForm = !conn || editing || embedded;
 
   return (
-    <div className="connection" aria-busy={busy} aria-labelledby="calendar-h">
-      <h3 id="calendar-h">Google Calendar</h3>
-      {conn && <Status conn={conn} label="Service account" />}
-      {conn?.destination && (
+    <div className={embedded ? undefined : "connection"} aria-busy={busy} aria-labelledby={embedded ? undefined : "calendar-h"}>
+      {!embedded && <h3 id="calendar-h">Google Calendar</h3>}
+      {conn && !embedded && <Status conn={conn} label="Service account" />}
+      {conn?.destination && !embedded && (
         <p>
           {t("Events go to ")}<strong>{conn.destination.title}</strong>{t(". An event follows its booking: moved when the booking is rescheduled, deleted when it is cancelled.")}
         </p>
       )}
-      {conn && (
+      {conn && !embedded && (
         <div className="actions">
           <button type="button" disabled={busy} onClick={() => void act(async () => setTest(await api<TestResult>("POST", "/settings/connections/google-calendar/test")))}>
             {t("Add a test event")}
@@ -301,7 +276,7 @@ export function CalendarConnection({ conn, onChange }: { conn: Connection | null
             <button type="submit" className="primary" disabled={busy}>
               {conn ? t("Save calendar") : t("Connect Google Calendar")}
             </button>
-            {conn && (
+            {conn && !embedded && (
               <button type="button" className="quiet" onClick={() => setEditing(false)}>
                 {t("Cancel")}
               </button>
@@ -316,7 +291,7 @@ export function CalendarConnection({ conn, onChange }: { conn: Connection | null
   );
 }
 
-export function SlackConnection({ conn, onChange }: { conn: Connection | null; onChange: () => Promise<unknown> }) {
+export function SlackConnection({ conn, configured, outcome, onChange }: { conn: Connection | null; configured: boolean; outcome?: string; onChange: () => Promise<unknown> }) {
   const { t } = useLanguage();
   const { error, busy, act } = useAction(onChange);
   const [token, setToken] = useState("");
@@ -335,76 +310,118 @@ export function SlackConnection({ conn, onChange }: { conn: Connection | null; o
   };
   const chosen = channels?.find((c) => c.id === channelId);
 
+  // The same pieces serve both layouts: with a Slack app on this installation (Connect Slack, the token under Advanced)
+  // and without one (the token form is the card, as before decision 0061).
+  const note = conn?.destination && (
+    <p>{t("Notes go to ")}<strong>#{conn.destination.channelName}</strong>{t(". They carry the reference and subject only: names and emails stay in Daloy.")}</p>
+  );
+  const channelButtons = (
+    <>
+      <button type="button" disabled={busy} onClick={() => void loadChannels()}>
+        {conn?.destination ? t("Change channel") : t("Pick a channel")}
+      </button>
+      {conn?.destination && (
+        <button type="button" disabled={busy} onClick={() => void act(async () => setTest(await api<TestResult>("POST", "/settings/connections/slack/test")))}>{t("Send a test message")}</button>
+      )}
+    </>
+  );
+  const picker = channels && (
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        void act(async () => {
+          await api("PUT", "/settings/connections/slack/channel", { channelId });
+          setChannels(null);
+        });
+      }}
+    >
+      <div className="field">
+        <label htmlFor="sl-channel">{t("Channel")}</label>
+        <select id="sl-channel" value={channelId} onChange={(e) => setChannelId(e.target.value)} required>
+          <option value="">{t("Choose a public channel")}</option>
+          {channels.map((c) => (
+            <option key={c.id} value={c.id}>
+              #{c.name}
+            </option>
+          ))}
+        </select>
+      </div>
+      {chosen && !chosen.isMember && <p className="muted">{t("The app is not in #")}{chosen.name}{t(" yet. Type /invite and the app's name in that channel, or posts will fail.")}</p>}
+      <div className="actions">
+        <button type="submit" className="primary" disabled={busy}>{t("Save channel")}</button>
+      </div>
+    </form>
+  );
+  const tokenForm = (
+    <form onSubmit={save}>
+      <p>{t("Create a Slack app for your workspace with the bot scopes ")}<code>chat:write</code>{t(" and ")}<code>channels:read</code>{t(", install it (your workspace may need an admin to approve it), and paste its Bot User OAuth Token.")}{" "}
+        <a href={SLACK_APP_HELP} target="_blank" rel="noreferrer">{t("How to create a Slack app")}</a>
+      </p>
+      <div className="field">
+        <label htmlFor="sl-token">{t("Bot token")}</label>
+        <input id="sl-token" type="password" value={token} onChange={(e) => setToken(e.target.value)} required placeholder="xoxb-…" autoComplete="off" />
+      </div>
+      <div className="actions">
+        <button type="submit" className="primary" disabled={busy}>
+          {conn || configured ? t("Save token") : t("Connect Slack")}
+        </button>
+        {conn && !configured && (
+          <button type="button" className="quiet" onClick={() => setEditing(false)}>{t("Cancel")}</button>
+        )}
+      </div>
+    </form>
+  );
+  const result = <Outcome test={test} what={t("Slack accepted a test message")} />;
+
+  if (configured) {
+    return (
+      <ConnectPanel
+        slug="slack"
+        name="Slack"
+        configured
+        conn={conn}
+        label="Workspace"
+        outcome={outcome}
+        onChange={onChange}
+        advancedLabel="Advanced: use your own Slack app token"
+        removeHint="Daloy deleted its access to Slack. Slack did not confirm that it removed the Daloy app, so also remove it in Slack under Manage apps."
+        intro={<p>{t("Slack will ask you to let Daloy post messages (chat:write) and list the public channels (channels:read) in your workspace. Daloy asks for nothing else. Your workspace may need an admin to approve the app.")}</p>}
+        actions={channelButtons}
+        after={
+          <>
+            {picker}
+            {result}
+            <p role="alert" className="message error" hidden={!error}>
+              {error}
+            </p>
+          </>
+        }
+        form={tokenForm}
+      >
+        {note}
+      </ConnectPanel>
+    );
+  }
+
   return (
     <div className="connection" aria-busy={busy} aria-labelledby="slack-h">
       <h3 id="slack-h">Slack</h3>
       {conn && <Status conn={conn} label={t("Workspace")} />}
-      {conn?.destination && (
-        <p>{t("Notes go to ")}<strong>#{conn.destination.channelName}</strong>{t(". They carry the reference and subject only: names and emails stay in Daloy.")}</p>
-      )}
+      {note}
       {conn && (
         <>
           <div className="actions">
-            <button type="button" disabled={busy} onClick={() => void loadChannels()}>
-              {conn.destination ? t("Change channel") : t("Pick a channel")}
-            </button>
-            {conn.destination && (
-              <button type="button" disabled={busy} onClick={() => void act(async () => setTest(await api<TestResult>("POST", "/settings/connections/slack/test")))}>{t("Send a test message")}</button>
-            )}
+            {channelButtons}
             {!editing && (
               <button type="button" className="quiet" onClick={() => setEditing(true)}>{t("Replace token")}</button>
             )}
             <button type="button" className="quiet" disabled={busy} onClick={() => window.confirm(t("Disconnect Slack? Automations stop sending there until you reconnect.")) && void act(() => api("DELETE", "/settings/connections/slack"))}>{t("Disconnect")}</button>
           </div>
-          {channels && (
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                void act(async () => {
-                  await api("PUT", "/settings/connections/slack/channel", { channelId });
-                  setChannels(null);
-                });
-              }}
-            >
-              <div className="field">
-                <label htmlFor="sl-channel">{t("Channel")}</label>
-                <select id="sl-channel" value={channelId} onChange={(e) => setChannelId(e.target.value)} required>
-                  <option value="">{t("Choose a public channel")}</option>
-                  {channels.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      #{c.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              {chosen && !chosen.isMember && <p className="muted">{t("The app is not in #")}{chosen.name}{t(" yet. Type /invite and the app's name in that channel, or posts will fail.")}</p>}
-              <div className="actions">
-                <button type="submit" className="primary" disabled={busy}>{t("Save channel")}</button>
-              </div>
-            </form>
-          )}
+          {picker}
         </>
       )}
-      <Outcome test={test} what={t("Slack accepted a test message")} />
-      {(!conn || editing) && (
-        <form onSubmit={save}>
-          <p>{t("Create a Slack app for your workspace with the bot scopes ")}<code>chat:write</code>{t(" and ")}<code>channels:read</code>{t(", install it (your workspace may need an admin to approve it), and paste its Bot User OAuth Token.")}{" "}
-            <a href={SLACK_APP_HELP} target="_blank" rel="noreferrer">{t("How to create a Slack app")}</a>
-          </p>
-          <div className="field">
-            <label htmlFor="sl-token">{t("Bot token")}</label>
-            <input id="sl-token" type="password" value={token} onChange={(e) => setToken(e.target.value)} required placeholder="xoxb-…" autoComplete="off" />
-          </div>
-          <div className="actions">
-            <button type="submit" className="primary" disabled={busy}>
-              {conn ? t("Save token") : t("Connect Slack")}
-            </button>
-            {conn && (
-              <button type="button" className="quiet" onClick={() => setEditing(false)}>{t("Cancel")}</button>
-            )}
-          </div>
-        </form>
-      )}
+      {result}
+      {(!conn || editing) && tokenForm}
       <p role="alert" className="message error" hidden={!error}>
         {error}
       </p>
@@ -417,16 +434,6 @@ export function PaymongoConnection({ conn, webhookBase, onChange }: { conn: Conn
   const { error, busy, act } = useAction(onChange);
   const [editing, setEditing] = useState(false);
   const [test, setTest] = useState<TestResult | null>(null);
-  const [form, setForm] = useState({ secretKey: "", webhookSecret: "" });
-  const save = (e: FormEvent) => {
-    e.preventDefault();
-    void act(async () => {
-      await api("PUT", "/settings/connections/paymongo", form);
-      setForm({ secretKey: "", webhookSecret: "" });
-      setEditing(false);
-      setTest(null);
-    });
-  };
 
   return (
     <div className="connection" aria-busy={busy} aria-labelledby="paymongo-h">
@@ -437,6 +444,7 @@ export function PaymongoConnection({ conn, webhookBase, onChange }: { conn: Conn
           <p>
             <strong>{conn.destination.mode === "live" ? t("Live mode") : t("Test mode")}</strong>
           </p>
+          {conn.destination.webhookPending && <p className="message error">{t("The webhook secret is not saved yet, so payment events are ignored. Use Replace key or secret to finish.")}</p>}
           <p>
             {t("In PayMongo → Developers → Webhooks, add this URL with the events checkout_session.payment.paid and payment.refunded, then paste the webhook secret here.")}
           </p>
@@ -464,29 +472,7 @@ export function PaymongoConnection({ conn, webhookBase, onChange }: { conn: Conn
         </div>
       )}
       <Outcome test={test} what={t("PayMongo accepted the key")} />
-      {(!conn || editing) && (
-        <form onSubmit={save}>
-          <p>{t("Paste your PayMongo secret key and the webhook secret. Both are stored encrypted and never shown again.")}</p>
-          <div className="field">
-            <label htmlFor="pm-key">{t("Secret key")}</label>
-            <input id="pm-key" type="password" value={form.secretKey} onChange={(e) => setForm({ ...form, secretKey: e.target.value })} required placeholder="sk_test_…" autoComplete="off" />
-          </div>
-          <div className="field">
-            <label htmlFor="pm-whsk">{t("Webhook secret")}</label>
-            <input id="pm-whsk" type="password" value={form.webhookSecret} onChange={(e) => setForm({ ...form, webhookSecret: e.target.value })} required placeholder="whsk_…" autoComplete="off" />
-          </div>
-          <div className="actions">
-            <button type="submit" className="primary" disabled={busy}>
-              {conn ? t("Save") : t("Connect PayMongo")}
-            </button>
-            {conn && (
-              <button type="button" className="quiet" onClick={() => setEditing(false)}>
-                {t("Cancel")}
-              </button>
-            )}
-          </div>
-        </form>
-      )}
+      {(!conn || editing) && <PaymongoSetup conn={conn} webhookBase={webhookBase} onChange={onChange} onClose={(result) => { setEditing(false); setTest(result ?? null); }} />}
       <p role="alert" className="message error" hidden={!error}>
         {error}
       </p>
@@ -499,16 +485,6 @@ export function TelegramConnection({ conn, onChange }: { conn: Connection | null
   const { error, busy, act } = useAction(onChange);
   const [editing, setEditing] = useState(false);
   const [test, setTest] = useState<TestResult | null>(null);
-  const [form, setForm] = useState({ token: "", chatId: conn?.destination?.chatId ?? "" });
-  const save = (e: FormEvent) => {
-    e.preventDefault();
-    void act(async () => {
-      await api("PUT", "/settings/connections/telegram", form);
-      setForm({ ...form, token: "" });
-      setEditing(false);
-      setTest(null);
-    });
-  };
 
   return (
     <div className="connection" aria-busy={busy} aria-labelledby="telegram-h">
@@ -535,34 +511,7 @@ export function TelegramConnection({ conn, onChange }: { conn: Connection | null
         </div>
       )}
       <Outcome test={test} what={t("Telegram accepted a test message")} />
-      {(!conn || editing) && (
-        <form onSubmit={save}>
-          <p>
-            {t("Create a bot with BotFather in Telegram, add it to the chat, and send any message there. Paste the bot token and the chat id.")}{" "}
-            <a href={TELEGRAM_BOT_HELP} target="_blank" rel="noreferrer">
-              {t("How to create a Telegram bot")}
-            </a>
-          </p>
-          <div className="field">
-            <label htmlFor="tg-token">{t("Bot token")}</label>
-            <input id="tg-token" type="password" value={form.token} onChange={(e) => setForm({ ...form, token: e.target.value })} required placeholder="123456789:AA…" autoComplete="off" />
-          </div>
-          <div className="field">
-            <label htmlFor="tg-chat">{t("Chat id")}</label>
-            <input id="tg-chat" value={form.chatId} onChange={(e) => setForm({ ...form, chatId: e.target.value })} required placeholder="-1001234567890 or @channelname" autoComplete="off" />
-          </div>
-          <div className="actions">
-            <button type="submit" className="primary" disabled={busy}>
-              {conn ? t("Save") : t("Connect Telegram")}
-            </button>
-            {conn && (
-              <button type="button" className="quiet" onClick={() => setEditing(false)}>
-                {t("Cancel")}
-              </button>
-            )}
-          </div>
-        </form>
-      )}
+      {(!conn || editing) && <TelegramSetup conn={conn} onChange={onChange} onClose={(result) => { setEditing(false); setTest(result ?? null); }} />}
       <p role="alert" className="message error" hidden={!error}>
         {error}
       </p>
@@ -574,49 +523,45 @@ export function OutlookConnection({ conn, setup, outcome, onChange }: { conn: Co
   const { t } = useLanguage();
   const { error, busy, act } = useAction(onChange);
   const [test, setTest] = useState<TestResult | null>(null);
-  const shown = outcome && setup.configured ? OUTLOOK_OUTCOMES[outcome] : undefined;
-  // A full page visit to Microsoft. The callback brings the browser back here with the outcome in the address.
-  const connect = () => act(async () => location.assign((await api<{ url: string }>("POST", "/settings/connections/outlook/start")).url));
 
+  // Outlook is on the shared OAuth core (decision 0058); it has no paste form, so without a client only the note shows.
   return (
-    <div className="connection" aria-busy={busy} aria-labelledby="outlook-h">
-      <h3 id="outlook-h">Outlook</h3>
-      {shown && (
-        <p role={shown.ok ? "status" : "alert"} className={shown.ok ? "" : "message error"}>
-          {t(shown.text)}
+    <ConnectPanel
+      slug="outlook"
+      name="Outlook"
+      configured={setup.configured}
+      conn={conn}
+      label="Mailbox"
+      outcome={outcome}
+      outcomes={OUTLOOK_OUTCOMES}
+      onChange={onChange}
+      removeHint="Daloy deleted its access to the mailbox. Microsoft has no way for Daloy to withdraw the permission itself, so also remove Daloy from the apps your Microsoft account allows."
+      unavailable={<p className="muted">{t("Outlook is not set up on this installation. The person who runs Daloy registers a free Microsoft Entra app and sets MICROSOFT_CLIENT_ID and MICROSOFT_CLIENT_SECRET (see the README). Email keeps going through the mail server in this installation's settings.")}</p>}
+      intro={
+        <p>{t("Microsoft will ask you to let Daloy send email as you (Mail.Send), keep that access without asking each time, and read your name and address. Many organizations only let an administrator approve a new app. If Microsoft says you need admin approval, send your administrator")}{" "}
+          {setup.adminConsentUrl && (
+            <a href={setup.adminConsentUrl} target="_blank" rel="noreferrer">{t("this approval link")}</a>
+          )}{t(", then connect again.")}{" "}
+          <a href={MICROSOFT_CONSENT_HELP} target="_blank" rel="noreferrer">{t("How organizations control app consent")}</a>
         </p>
-      )}
-      {!setup.configured ? (
-        <p className="muted">{t("Outlook is not set up on this installation. The person who runs Daloy registers a free Microsoft Entra app and sets MICROSOFT_CLIENT_ID and MICROSOFT_CLIENT_SECRET (see the README). Email keeps going through the mail server in this installation's settings.")}</p>
-      ) : (
+      }
+      actions={
+        conn && (
+          <button type="button" disabled={busy} onClick={() => void act(async () => setTest(await api<TestResult>("POST", "/settings/connections/outlook/test")))}>{t("Send a test email to {email}", { email: conn.account })}
+          </button>
+        )
+      }
+      after={
         <>
-          {conn && <Status conn={conn} label={t("Mailbox")} />}
-          {conn && <p>{t("Purchase request emails go out from this mailbox, with a copy in its Sent Items.")}</p>}
-          <p>{t("Microsoft will ask you to let Daloy send email as you (Mail.Send), keep that access without asking each time, and read your name and address. Many organizations only let an administrator approve a new app. If Microsoft says you need admin approval, send your administrator")}{" "}
-            {setup.adminConsentUrl && (
-              <a href={setup.adminConsentUrl} target="_blank" rel="noreferrer">{t("this approval link")}</a>
-            )}{t(", then connect again.")}{" "}
-            <a href={MICROSOFT_CONSENT_HELP} target="_blank" rel="noreferrer">{t("How organizations control app consent")}</a>
-          </p>
-          <div className="actions">
-            <button type="button" className={conn ? "" : "primary"} disabled={busy} onClick={() => void connect()}>
-              {conn ? t("Reconnect Outlook") : t("Connect Outlook")}
-            </button>
-            {conn && (
-              <>
-                <button type="button" disabled={busy} onClick={() => void act(async () => setTest(await api<TestResult>("POST", "/settings/connections/outlook/test")))}>{t("Send a test email to {email}", { email: conn.account })}
-                </button>
-                <button type="button" className="quiet" disabled={busy} onClick={() => window.confirm(t("Disconnect Outlook? Automations stop sending there until you reconnect.")) && void act(() => api("DELETE", "/settings/connections/outlook"))}>{t("Disconnect")}</button>
-              </>
-            )}
-          </div>
           <Outcome test={test} what={t("Outlook accepted a test email to the mailbox itself")} />
+          <p role="alert" className="message error" hidden={!error}>
+            {error}
+          </p>
         </>
-      )}
-      <p role="alert" className="message error" hidden={!error}>
-        {error}
-      </p>
-    </div>
+      }
+    >
+      {conn && <p>{t("Purchase request emails go out from this mailbox, with a copy in its Sent Items.")}</p>}
+    </ConnectPanel>
   );
 }
 
@@ -625,16 +570,6 @@ export function TeamsConnection({ conn, onChange }: { conn: Connection | null; o
   const { error, busy, act } = useAction(onChange);
   const [editing, setEditing] = useState(false);
   const [test, setTest] = useState<TestResult | null>(null);
-  const [form, setForm] = useState({ url: "", channelName: conn?.account ?? "" });
-  const save = (e: FormEvent) => {
-    e.preventDefault();
-    void act(async () => {
-      await api("PUT", "/settings/connections/teams", form);
-      setForm({ ...form, url: "" });
-      setEditing(false);
-      setTest(null);
-    });
-  };
 
   return (
     <div className="connection" aria-busy={busy} aria-labelledby="teams-h">
@@ -655,29 +590,7 @@ export function TeamsConnection({ conn, onChange }: { conn: Connection | null; o
       ) : (
         <Outcome test={test} what="" />
       )}
-      {(!conn || editing) && (
-        <form onSubmit={save}>
-          <p>{t("In Teams, open Workflows and create one from the template ")}<q>{t("Post to a channel when a webhook request is received")}</q>{t(". Choose the team and channel there, then copy the link it shows. Your organization may have to allow the Workflows app first; if the template is missing or blocked, ask your Teams administrator.")}{" "}
-            <a href={TEAMS_WORKFLOWS_HELP} target="_blank" rel="noreferrer">{t("How to create the workflow")}</a>
-          </p>
-          <div className="field">
-            <label htmlFor="tm-url">{t("Workflow link")}</label>
-            <input id="tm-url" type="password" value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} required autoComplete="off" placeholder="https://…logic.azure.com/…" />
-          </div>
-          <div className="field">
-            <label htmlFor="tm-channel">{t("Teams channel name, to show in Daloy")}</label>
-            <input id="tm-channel" value={form.channelName} onChange={(e) => setForm({ ...form, channelName: e.target.value })} required maxLength={100} placeholder={t("Purchasing")} />
-          </div>
-          <div className="actions">
-            <button type="submit" className="primary" disabled={busy}>
-              {conn ? t("Save link") : t("Connect Teams")}
-            </button>
-            {conn && (
-              <button type="button" className="quiet" onClick={() => setEditing(false)}>{t("Cancel")}</button>
-            )}
-          </div>
-        </form>
-      )}
+      {(!conn || editing) && <TeamsSetup conn={conn} onChange={onChange} onClose={(result) => { setEditing(false); setTest(result ?? null); }} />}
       <p role="alert" className="message error" hidden={!error}>
         {error}
       </p>
@@ -787,7 +700,7 @@ const RECORD_APPS: Record<"airtable" | "notion" | "trello", RecordApp> = {
       { key: "baseId", label: "Base id", placeholder: "app…" },
       { key: "tableId", label: "Table id", placeholder: "tbl…" },
     ],
-    goesTo: (d) => d.tableId ?? "",
+    goesTo: (d) => d.tableName ?? d.tableId ?? "",
     testButton: "Check the connection",
     testOk: "Airtable can read that table",
   },
@@ -820,13 +733,16 @@ const RECORD_APPS: Record<"airtable" | "notion" | "trello", RecordApp> = {
   },
 };
 
-export function RecordConnection({ app, conn, onChange }: { app: keyof typeof RECORD_APPS; conn: Connection | null; onChange: () => Promise<unknown> }) {
+export function RecordConnection({ app, conn, configured = false, outcome, onChange }: { app: keyof typeof RECORD_APPS; conn: Connection | null; configured?: boolean; outcome?: string; onChange: () => Promise<unknown> }) {
   const { t } = useLanguage();
   const cfg = RECORD_APPS[app];
   const { error, busy, act } = useAction(onChange);
   const [editing, setEditing] = useState(false);
+  const [pickerBusy, setPickerBusy] = useState(false);
   const [test, setTest] = useState<TestResult | null>(null);
   const [form, setForm] = useState<Record<string, string>>({});
+  const destinationKey = JSON.stringify(conn?.destination);
+  useEffect(() => setTest(null), [app, conn?.account, conn?.authMethod, destinationKey]);
   const save = (e: FormEvent) => {
     e.preventDefault();
     void act(async () => {
@@ -837,16 +753,14 @@ export function RecordConnection({ app, conn, onChange }: { app: keyof typeof RE
     });
   };
 
-  return (
-    <div className="connection" aria-busy={busy} aria-labelledby={`${app}-h`}>
-      <h3 id={`${app}-h`}>{cfg.name}</h3>
-      {conn && <Status conn={conn} label={t("Account")} />}
-      {conn?.destination && (
+  const pasteForm = <>
+      {!configured && conn && <Status conn={conn} label={t("Account")} />}
+      {!configured && conn?.destination && (
         <p>
           {t("Entries are added to")} <strong>{cfg.goesTo(conn.destination)}</strong>.
         </p>
       )}
-      {conn && (
+      {!configured && conn && (
         <div className="actions">
           <button type="button" disabled={busy} onClick={() => void act(async () => setTest(await api<TestResult>("POST", `/settings/connections/${app}/test`)))}>
             {t(cfg.testButton)}
@@ -861,9 +775,10 @@ export function RecordConnection({ app, conn, onChange }: { app: keyof typeof RE
           </button>
         </div>
       )}
-      <Outcome test={test} what={t(cfg.testOk)} />
-      {(!conn || editing) && (
+      {!configured && <Outcome test={test} what={t(cfg.testOk)} />}
+      {(configured || !conn || editing) && (
         <form onSubmit={save}>
+          <fieldset disabled={busy || pickerBusy}>
           <p>
             {t(cfg.help)}{" "}
             <a href={cfg.helpUrl} target="_blank" rel="noreferrer">
@@ -886,11 +801,20 @@ export function RecordConnection({ app, conn, onChange }: { app: keyof typeof RE
               </button>
             )}
           </div>
+          </fieldset>
         </form>
       )}
       <p role="alert" className="message error" hidden={!error}>
         {error}
       </p>
-    </div>
-  );
+  </>;
+  return <ConnectPanel slug={app} name={cfg.name} configured={configured} conn={conn} label="Account" outcome={outcome} onChange={onChange} disabled={busy || pickerBusy}
+    form={pasteForm}
+    intro={<p>{t(app === "airtable" ? "Allow Daloy to add records to the bases you select. After connecting, pick a base and table." : app === "notion" ? "On Notion's consent screen, select the pages that contain your database. After connecting, pick a shared database." : "Allow Daloy to read your boards and add cards. After connecting, pick a board and list.")}</p>}
+    actions={conn?.destination && <button type="button" disabled={busy || pickerBusy} onClick={() => void act(async () => setTest(await api<TestResult>("POST", `/settings/connections/${app}/test`)))}>{t(cfg.testButton)}</button>}
+    after={<><Outcome test={test} what={t(cfg.testOk)} /><p role="alert" className="message error" hidden={!error}>{error}</p></>}
+  >
+    {conn?.destination && <p>{t("Entries are added to")} <strong>{cfg.goesTo(conn.destination)}</strong>.</p>}
+    {conn?.authMethod === "oauth" && <RecordTargetPicker disabled={busy} hasDestination={!!conn.destination} key={`${app}:${conn.account}:${JSON.stringify(conn.destination)}`} app={app} onChange={onChange} onBusy={setPickerBusy} />}
+  </ConnectPanel>;
 }

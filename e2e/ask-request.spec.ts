@@ -12,8 +12,10 @@ test("an owner asks why a request stopped and only reads, nothing in the card ch
 
   await page.getByRole("link", { name: "Apps" }).first().click();
   await page.getByRole("button", { name: "Connect Slack" }).click();
+  // This installation has a Slack app (decision 0061), so the pasted token is under Advanced.
+  await page.getByText("Advanced: use your own Slack app token").click();
   await page.getByLabel("Bot token").fill(process.env.E2E_SLACK_TOKEN!);
-  await page.getByRole("button", { name: "Connect Slack" }).click();
+  await page.getByRole("button", { name: "Save token" }).click();
   await page.getByRole("button", { name: "Pick a channel" }).click();
   await page.getByLabel("Channel", { exact: true }).selectOption({ label: "#office-requests" });
   await page.getByRole("button", { name: "Save channel" }).click();
@@ -49,6 +51,8 @@ test("an owner asks why a request stopped and only reads, nothing in the card ch
 
     // Activity row link, then the run page region (decision 0049): no typing, the run's reference is loaded.
     await page.goto("/#/activity");
+    // Semgrep: built from a test-made reference, not user input.
+    // nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp
     await page.getByRole("row", { name: new RegExp(reference) }).getByRole("link", { name: "Ask what happened" }).click();
     await expect(page).toHaveURL(/#\/runs\/[0-9a-f-]{36}\/ask$/);
     const card = page.getByRole("region", { name: "Ask what happened" });

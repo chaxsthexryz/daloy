@@ -2,8 +2,11 @@ import "./workspace-admin.css";
 import { Text, useLanguage } from "./Language";
 import { useEffect, useState, type ReactNode } from "react";
 import { api } from "./api";
-import { PILL, SenderSection, type Settings } from "./BusinessSetup";
-import { CalendarConnection, DriveConnection,OutlookConnection, RecordConnection, PaymongoConnection, SheetsConnection, SlackConnection, TeamsConnection, TelegramConnection, type Connection, type OutlookSetup, type Provider } from "./Connections";
+import { GmailCard, PILL, type Settings } from "./BusinessSetup";
+import { OutlookConnection, RecordConnection, PaymongoConnection, SlackConnection, TeamsConnection, TelegramConnection, type Connection, type OutlookSetup, type Provider } from "./Connections";
+import { GoogleCalendarCard } from "./GoogleCalendar";
+import { SharedGrants } from "./ConnectPanel";
+import { GoogleDriveCard, GoogleSheetsCard } from "./GoogleConnect";
 import { Header } from "./Nav";
 
 type Key = "gmail" | Provider;
@@ -25,14 +28,17 @@ const APPS: { key: Key; name: string; line: string }[] = [
 
 /**
  * #/apps: one card per app Daloy can use, connected ones first. Connect or Manage opens that app's own setup below the
- * cards. The Outlook consent callback (#/settings/business/outlook-<code>) lands here with Outlook open.
+ * cards. The OAuth consent callback (#/apps/<slug>-<code>, and Outlook's older #/settings/business/outlook-<code>)
+ * lands here with that app open and its outcome shown (decision 0058).
  */
-export function AppsPage({ outlookOutcome }: { outlookOutcome?: string }) {
+export function AppsPage({ outcome }: { outcome?: { app: string; code: string } }) {
   const { t } = useLanguage();
   const [mail, setMail] = useState<Settings | null>(null);
-  const [conns, setConns] = useState<{ connections: Connection[]; outlook: OutlookSetup; paymongoWebhookBase: string } | null>(null);
+  const [conns, setConns] = useState<{ connections: Connection[]; outlook: OutlookSetup; oauth: string[]; shared: string[]; paymongoWebhookBase: string } | null>(null);
   const [error, setError] = useState("");
-  const [open, setOpen] = useState<Key | null>(outlookOutcome ? "outlook" : null);
+  // An app slug is its provider name with dashes (google-sheets is google_sheets). "oauth" means the flow was not found.
+  const landed = outcome && APPS.find((a) => a.key === outcome.app.replaceAll("-", "_"))?.key;
+  const [open, setOpen] = useState<Key | null>(landed ?? null);
   const [onlyConnected, setOnlyConnected] = useState(false);
   const [query, setQuery] = useState("");
   const load = async () => {
@@ -63,18 +69,18 @@ export function AppsPage({ outlookOutcome }: { outlookOutcome?: string }) {
   const more = found.filter((a) => !state(a.key));
   const total = APPS.filter((a) => state(a.key)).length;
   const setup: Record<Key, () => ReactNode> = {
-    gmail: () => <SenderSection data={mail} onChange={load} />,
-    google_sheets: () => <SheetsConnection conn={conn("google_sheets")} onChange={load} />,
-    slack: () => <SlackConnection conn={conn("slack")} onChange={load} />,
-    outlook: () => <OutlookConnection conn={conn("outlook")} setup={conns.outlook} outcome={outlookOutcome} onChange={load} />,
+    gmail: () => <GmailCard data={mail} google={conns.oauth.includes("gmail")} outcome={landed === "gmail" ? outcome?.code : undefined} onChange={load} />,
+    google_sheets: () => <GoogleSheetsCard conn={conn("google_sheets")} configured={conns.oauth.includes("google-sheets")} outcome={landed === "google_sheets" ? outcome?.code : undefined} onChange={load} />,
+    slack: () => <SlackConnection conn={conn("slack")} configured={conns.oauth.includes("slack")} outcome={landed === "slack" ? outcome?.code : undefined} onChange={load} />,
+    outlook: () => <OutlookConnection conn={conn("outlook")} setup={conns.outlook} outcome={landed === "outlook" ? outcome?.code : undefined} onChange={load} />,
     teams: () => <TeamsConnection conn={conn("teams")} onChange={load} />,
     telegram: () => <TelegramConnection conn={conn("telegram")} onChange={load} />,
-    google_calendar: () => <CalendarConnection conn={conn("google_calendar")} onChange={load} />,
-    google_drive: () => <DriveConnection conn={conn("google_drive")} onChange={load} />,
+    google_calendar: () => <GoogleCalendarCard conn={conn("google_calendar")} configured={conns.oauth.includes("google-calendar")} outcome={landed === "google_calendar" ? outcome?.code : undefined} onChange={load} />,
+    google_drive: () => <GoogleDriveCard conn={conn("google_drive")} configured={conns.oauth.includes("google-drive")} outcome={landed === "google_drive" ? outcome?.code : undefined} onChange={load} />,
     paymongo: () => <PaymongoConnection conn={conn("paymongo")} webhookBase={conns.paymongoWebhookBase} onChange={load} />,
-    airtable: () => <RecordConnection app="airtable" conn={conn("airtable")} onChange={load} />,
-    notion: () => <RecordConnection app="notion" conn={conn("notion")} onChange={load} />,
-    trello: () => <RecordConnection app="trello" conn={conn("trello")} onChange={load} />,
+    airtable: () => <RecordConnection key="airtable" app="airtable" conn={conn("airtable")} configured={conns.oauth.includes("airtable")} outcome={landed === "airtable" ? outcome?.code : undefined} onChange={load} />,
+    notion: () => <RecordConnection key="notion" app="notion" conn={conn("notion")} configured={conns.oauth.includes("notion")} outcome={landed === "notion" ? outcome?.code : undefined} onChange={load} />,
+    trello: () => <RecordConnection key="trello" app="trello" conn={conn("trello")} configured={conns.oauth.includes("trello")} outcome={landed === "trello" ? outcome?.code : undefined} onChange={load} />,
   };
   const card = (a: (typeof APPS)[number]) => {
     const s = state(a.key);
@@ -101,6 +107,7 @@ export function AppsPage({ outlookOutcome }: { outlookOutcome?: string }) {
   return (
     <main className="page workspace-admin admin-apps">
       <Header title={t("Apps")} />
+      {outcome && !landed && <p role="alert" className="message error">{t("That sign-in took too long or was started by someone else. Start again from the app's Connect button.")}</p>}
       <p className="muted">{t("Everything here is optional. Each app is used only by the automations you turn on, and the demo works without any of them.")}</p>
       <section aria-labelledby="email-in-setup">
         <h2 id="email-in-setup"><Text>Receive website form emails</Text></h2>
@@ -134,7 +141,7 @@ export function AppsPage({ outlookOutcome }: { outlookOutcome?: string }) {
       {(onlyConnected ? connected : found).length === 0 && <p className="muted">{onlyConnected && total === 0 ? t("Nothing is connected yet.") : t("No app matches.")}</p>}
       {open && (
         <section id="app-setup" className="app-setup" aria-label={t("{app} setup", { app: APPS.find((a) => a.key === open)!.name })}>
-          {setup[open]()}
+          <SharedGrants.Provider value={conns.shared}>{setup[open]()}</SharedGrants.Provider>
         </section>
       )}
     </main>

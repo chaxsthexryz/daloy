@@ -530,10 +530,28 @@ export const mailSenders = pgTable("mail_senders", {
   lastError: text("last_error"),
   lastTestedAt: ts("last_tested_at"),
   updatedAt: ts("updated_at").notNull().defaultNow(),
-}, (t) => [check("mail_senders_status", sql`${t.status} in ('unverified', 'active', 'failed', 'disconnected')`)]);
+  // Gmail through OAuth (managed OAuth plan, phase P5). For oauth the token blob reuses the password_* columns, so there
+  // is one set of encrypted columns.
+  authMethod: text("auth_method", { enum: ["app_password", "oauth"] }).notNull().default("app_password"),
+  externalId: text("external_id"),
+  scopes: text("scopes"),
+  accessExpiresAt: ts("access_expires_at"),
+  refreshedAt: ts("refreshed_at"),
+  // When the owner was last emailed that this Google sign-in stopped working (plan R8): at most once a day.
+  alertAt: ts("alert_at"),
+}, (t) => [
+  check("mail_senders_status", sql`${t.status} in ('unverified', 'active', 'failed', 'disconnected')`),
+  check("mail_senders_auth_method", sql`${t.authMethod} in ('app_password', 'oauth')`),
+]);
 
 export const PROVIDERS = ["google_sheets", "slack", "outlook", "teams", "telegram", "google_calendar", "paymongo", "airtable", "notion", "trello", "google_drive"] as const;
 export type Provider = (typeof PROVIDERS)[number];
+/** What a connection's credential is (decision 0058): a pasted token, a Google service account key, an OAuth token blob, or a webhook URL. */
+export const AUTH_METHODS = ["token", "service_account", "oauth", "webhook_url"] as const;
+export type AuthMethod = (typeof AUTH_METHODS)[number];
+/** What a consent flow can be for: a connections provider, or Gmail, whose grant lives on mail_senders (decision 0063). */
+export const OAUTH_FLOW_PROVIDERS = [...PROVIDERS, "gmail"] as const;
+export type OAuthFlowProvider = (typeof OAUTH_FLOW_PROVIDERS)[number];
 
 /**
  * An owner's Google Sheets, Slack, Outlook or Teams connection (roadmap phases 3 and 5, decisions 0021 and 0023). One per owner and provider. The
@@ -556,11 +574,51 @@ export const connections = pgTable(
     lastError: text("last_error"),
     lastTestedAt: ts("last_tested_at"),
     updatedAt: ts("updated_at").notNull().defaultNow(),
+    authMethod: text("auth_method", { enum: AUTH_METHODS }).notNull(),
+    // OAuth only (decision 0058): the provider's stable account id, the granted scopes, the client the grant came from,
+    // and when the stored access token expires and was last refreshed, readable without decrypting.
+    externalId: text("external_id"),
+    scopes: text("scopes"),
+    oauthClientId: text("oauth_client_id"),
+    accessExpiresAt: ts("access_expires_at"),
+    refreshedAt: ts("refreshed_at"),
+    // When the owner was last emailed that this grant stopped working (plan R8): at most once a day per connection.
+    alertAt: ts("alert_at"),
   },
   (t) => [
     primaryKey({ columns: [t.userId, t.provider] }),
+    // The same provider account connected elsewhere in Daloy (plan R14).
+    index("connections_external_id").on(t.externalId),
     check("connections_provider", sql`${t.provider} in ('google_sheets', 'slack', 'outlook', 'teams', 'telegram', 'google_calendar', 'paymongo', 'airtable', 'notion', 'trello', 'google_drive')`),
     check("connections_status", sql`${t.status} in ('active', 'failed')`),
+    check("connections_auth_method", sql`${t.authMethod} in ('token', 'service_account', 'oauth', 'webhook_url')`),
+  ],
+);
+
+/**
+ * One OAuth consent in progress (decision 0058). Only the SHA-256 of the random state is stored. The PKCE verifier is
+ * encrypted with the workspace and flow id bound in. The callback consumes the row once, with one guarded UPDATE, and
+ * only for the member and workspace that started it. Rows are deleted a day after they expire.
+ */
+export const oauthFlows = pgTable(
+  "oauth_flows",
+  {
+    id: id(),
+    stateHash: text("state_hash").notNull().unique(),
+    workspaceId: uuid("workspace_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    memberId: uuid("member_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    provider: text("provider", { enum: OAUTH_FLOW_PROVIDERS }).notNull(),
+    // Null for a provider without PKCE.
+    verifierCiphertext: text("verifier_ciphertext"),
+    verifierIv: text("verifier_iv"),
+    verifierAuthTag: text("verifier_auth_tag"),
+    expiresAt: ts("expires_at").notNull(),
+    consumedAt: ts("consumed_at"),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index("oauth_flows_expires").on(t.expiresAt),
+    check("oauth_flows_provider", sql`${t.provider} in ('google_sheets', 'slack', 'outlook', 'teams', 'telegram', 'google_calendar', 'paymongo', 'airtable', 'notion', 'trello', 'google_drive', 'gmail')`),
   ],
 );
 
@@ -596,6 +654,8 @@ export const deliveries = pgTable(
     // The connection's account and destination when the delivery was queued. Null: queued before pinning existed.
     pinnedAccount: text("pinned_account"),
     pinnedDestination: jsonb("pinned_destination").$type<Record<string, string>>(),
+    // The connection's provider account id (OAuth) when queued. Null: queued before it existed, or not OAuth.
+    pinnedExternalId: text("pinned_external_id"),
     // Sheets only: the developer metadata id and value that make the write happen once at Google (decision 0021).
     sheetMetaId: integer("sheet_meta_id"),
     sheetMetaValue: text("sheet_meta_value"),

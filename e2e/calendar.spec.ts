@@ -15,6 +15,8 @@ test("a booking's calendar event is created, moved and removed with the booking"
 
   await page.getByRole("link", { name: "Apps" }).first().click();
   await page.getByRole("button", { name: "Connect Google Calendar" }).click();
+  // Google sign-in is the main option in e2e (decision 0064); the service account form is under Advanced.
+  await page.getByText("Advanced: use a key or token instead").click();
   await page.getByLabel("Service account key file (JSON)").fill(process.env.E2E_SHEETS_KEY!);
   await page.getByLabel("Calendar id").fill(process.env.E2E_CALENDAR_ID!);
   await page.getByRole("button", { name: "Connect Google Calendar" }).click();

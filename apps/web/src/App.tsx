@@ -28,7 +28,7 @@ const RESET = /^#\/reset-password\/([A-Za-z0-9_-]{43})$/;
 const INVITE = /^#\/invite\/([A-Za-z0-9_-]{43})$/;
 
 /**
- * Hash routes (#/ is Automations, #/advanced the developer menu, #/w/<id>, #/w/<id>/runs, #/w/<id>/versions, #/runs/<id> (and #/runs/<id>/ask), #/tokens, #/secrets, #/settings, #/settings/ai, #/settings/business, #/apps, #/activity, #/new, #/ai (Build with AI), #/resources, #/bookings,
+ * Hash routes (#/ is Automations, #/advanced the developer menu, #/w/<id>, #/w/<id>/runs, #/w/<id>/versions, #/runs/<id> (and #/runs/<id>/ask), #/tokens, #/secrets, #/settings, #/settings/ai, #/settings/business, #/apps (and #/apps/<app>-<outcome>), #/activity, #/new, #/ai (Build with AI), #/resources, #/bookings,
  * #/verify-sender/<token> for the Gmail confirmation link, #/team, #/invite/<token> for an invite link,
  * #/forgot-password and #/reset-password/<token> before sign-in, #/account to change the password,
  * #/answer/<token> to sign in before a named approval (decision 0022),
@@ -106,9 +106,10 @@ function Route({ hash, user }: { hash: string; user: User }) {
   if (hash === "#/account") return <AccountPage />;
   if (hash === "#/settings/ai") return <AiModelPage />;
   if (hash === "#/apps") return <AppsPage />;
-  // #/settings/business/outlook-<outcome> is where the Outlook consent callback lands (decision 0023); Outlook is on Apps now.
-  const outlook = /^#\/settings\/business\/outlook-([a-z_]+)$/.exec(hash);
-  if (outlook) return <AppsPage outlookOutcome={outlook[1]} />;
+  // #/apps/<slug>-<outcome> is where the OAuth consent callback lands (decision 0058). Outlook's callback from decision
+  // 0023 still lands on #/settings/business/outlook-<outcome>.
+  const back = /^#\/apps\/([a-z-]+)-([a-z_]+)$/.exec(hash) ?? /^#\/settings\/business\/(outlook)-([a-z_]+)$/.exec(hash);
+  if (back) return <AppsPage outcome={{ app: back[1]!, code: back[2]! }} />;
   if (hash === "#/settings/business") return <BusinessSetupPage />;
   if (hash === "#/team" && user.role === "owner") return <TeamPage />;
   if (hash === "#/resources" && user.role === "owner") return <ResourcesPage />;
