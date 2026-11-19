@@ -20,6 +20,8 @@ export const GOOGLE_FEATURE_SCOPES = {
   drive: ["https://www.googleapis.com/auth/drive.file"],
   // Sensitive, not restricted (decision 0063): send only. Reading mail would need a restricted scope.
   gmail: ["https://www.googleapis.com/auth/gmail.send"],
+  // Daloy creates its own calendar and works only on calendars it created (decision 0064). Class unverified: see there.
+  calendar: ["https://www.googleapis.com/auth/calendar.app.created"],
 } as const satisfies Record<string, readonly string[]>;
 export type GoogleFeature = keyof typeof GOOGLE_FEATURE_SCOPES;
 
@@ -72,3 +74,4 @@ export function googleProvider(feature: GoogleFeature, provider: OAuthFlowProvid
 
 export const googleSheets = googleProvider("sheets", "google_sheets", "google-sheets", "Google Sheets");
 export const googleDrive = googleProvider("drive", "google_drive", "google-drive", "Google Drive");
+export const googleCalendar = googleProvider("calendar", "google_calendar", "google-calendar", "Google Calendar");

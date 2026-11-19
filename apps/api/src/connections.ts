@@ -206,7 +206,10 @@ export class ConnectionsController {
   @UseGuards(RateLimit(5))
   async testCalendar(@CurrentUser() user: SessionUser) {
     const conn = await this.connection(user.workspaceId, "google_calendar");
-    return this.test(user.workspaceId, "google_calendar", conn, () => calendarWriteTest(this.urls, JSON.parse(conn.credential) as ServiceAccount, conn.destination!.calendarId!));
+    // force: with a Google sign-in, a test proves the grant itself still works (decision 0058).
+    return this.test(user.workspaceId, "google_calendar", conn, () =>
+      withGoogle(this.db, this.config.secretsKey, this.urls, user.workspaceId, "google_calendar", conn, (auth) => calendarWriteTest(this.urls, auth, conn.destination!.calendarId!), { force: true }),
+    );
   }
 
   /** Connect or Reconnect Google Drive: a service account key, and a folder inside a shared drive that the account can add files to. Only the email and key are kept. */

@@ -1,4 +1,4 @@
-import { consumeFlow, finishFlow, ProviderError, startFlow, type Db, type OAuthOutcome, type OAuthProvider } from "@daloy/db";
+import { consumeFlow, ensureCalendar, finishFlow, ProviderError, startFlow, type Db, type OAuthOutcome, type OAuthProvider } from "@daloy/db";
 import { BadRequestException, Controller, Get, HttpCode, Inject, NotFoundException, Param, Post, Query, Req, Res, UseGuards } from "@nestjs/common";
 import type { Request, Response } from "express";
 import * as z from "zod";
@@ -70,7 +70,11 @@ export class OAuthCallbackController {
     if (!flow || !def) return done(unknown, "expired");
     if (str("error")) return done(def.slug, def.outcome(str("error"), str("error_description")));
     try {
-      return done(def.slug, await finishFlow(this.db, this.config.secretsKey, this.config.providers, this.config.publicUrl, def, user.workspaceId, str("code"), flow.verifier));
+      const outcome = await finishFlow(this.db, this.config.secretsKey, this.config.providers, this.config.publicUrl, def, user.workspaceId, str("code"), flow.verifier);
+      // Easy connect for Calendar (decision 0064): Daloy makes its own calendar. If Google refuses now, the connection
+      // stays and the card offers "Create the calendar".
+      if (outcome === "connected" && def.provider === "google_calendar") await ensureCalendar(this.db, this.config.secretsKey, this.config.providers, user.workspaceId).catch((err: unknown) => (err instanceof ProviderError ? undefined : Promise.reject(err)));
+      return done(def.slug, outcome);
     } catch (err) {
       if (!(err instanceof ProviderError)) throw err;
       return done(def.slug, "failed");

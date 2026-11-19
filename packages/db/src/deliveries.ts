@@ -5,7 +5,7 @@ import { connectionCredential, markConnectionFailed, PROVIDER_NAMES } from "./co
 import { withGoogle } from "./google-access";
 import { freshToken, oauthProvider, withFreshToken } from "./oauth";
 import type { Db } from "./index";
-import { airtableAdd, appendRowOnce, driveUpload, type DriveDestination, notionAddPage, trelloAddCard, type TrelloCredential, deleteSheetMarker, outlookSend, ProviderError, serviceAccountSchema, slackPost, syncCalendarEvent, teamsPost, telegramSend, type CalendarDestination, type OutlookMessage, type ProviderErrorKind, type ProviderUrls, type SheetDestination } from "./providers";
+import { airtableAdd, appendRowOnce, driveUpload, type DriveDestination, notionAddPage, trelloAddCard, type TrelloCredential, deleteSheetMarker, outlookSend, ProviderError, slackPost, syncCalendarEvent, teamsPost, telegramSend, type CalendarDestination, type OutlookMessage, type ProviderErrorKind, type ProviderUrls, type SheetDestination } from "./providers";
 import { bookingSuperseded, supersededSql } from "./bookings";
 import { bookingForCalendar } from "./calendar";
 import { bookings, calendarEvents, connections, deliveries, runs, type Provider } from "./schema";
@@ -111,7 +111,7 @@ async function attempt(db: Db, key: Buffer, urls: ProviderUrls, d: Delivery): Pr
     const pinned = await db.update(deliveries).set({ pinnedAccount: conn.account, pinnedDestination: conn.destination, pinnedExternalId: conn.externalId }).where(heldBy(d)).returning({ id: deliveries.id });
     // Another worker took the claim over while this one was pinning: that one pins and sends, this one must not (Astra, 8e2c5d8).
     if (pinned.length === 0) return null;
-  } else if ((!destinationOnly(d.provider) && !sameAccount(d, conn)) || !sameDestination(d.pinnedDestination, conn.destination)) {
+  } else if ((!destinationOnly(d.provider, conn.authMethod) && !sameAccount(d, conn)) || !sameDestination(d.pinnedDestination, conn.destination)) {
     return {
       state: "needs_review",
       error: d.provider === "google_calendar"
@@ -142,7 +142,8 @@ async function attempt(db: Db, key: Buffer, urls: ProviderUrls, d: Delivery): Pr
       const b = await bookingForCalendar(tx, d.userId, bookingId);
       if (!b) return { state: "failed", error: "The booking or its calendar event details are gone, so nothing was sent.", kind: "invalid" };
       const calendarId = (conn.destination as CalendarDestination).calendarId;
-      const out = await syncCalendarEvent(urls, serviceAccountSchema.parse(JSON.parse(conn.credential)), calendarId, bookingId, b, b);
+      // A service account key or a Google sign-in, by the connection's auth_method (decision 0064).
+      const out = await withGoogle(db, key, urls, d.userId, "google_calendar", conn, (auth) => syncCalendarEvent(urls, auth, calendarId, bookingId, b, b));
       await tx.update(calendarEvents).set({ account: conn.account, calendarId }).where(eq(calendarEvents.bookingId, bookingId));
       return { state: "delivered", result: { event: out.event, eventId: out.eventId } };
     }
@@ -230,10 +231,13 @@ function describe(provider: Provider, dest: Record<string, string>) {
 }
 
 /**
- * Sheets and Drive pin only where data lands: the same spreadsheet and tab, or the same folder, reached through another
- * Google account or a service account replaced by a Google sign-in, is the same place (plan R7, decision 0060).
+ * Sheets, Drive and Calendar pin only where data lands: the same spreadsheet and tab, folder or calendar id, reached
+ * through another Google account or a service account replaced by a Google sign-in, is the same place (plan R7,
+ * decisions 0060 and 0064). For Calendar this holds only while the connection is a Google sign-in, which can reach
+ * only calendars Daloy created; a service account still compares the account as before. A different calendar id still
+ * goes to review, so M11 holds.
  */
-const destinationOnly = (p: Provider) => p === "google_sheets" || p === "google_drive";
+const destinationOnly = (p: Provider, method: string) => p === "google_sheets" || p === "google_drive" || (p === "google_calendar" && method === "oauth");
 
 /** Same provider account: by its stable id when both sides have one (OAuth), otherwise by the account name as before. */
 const sameAccount = (d: Delivery, conn: { account: string; externalId: string | null }) =>

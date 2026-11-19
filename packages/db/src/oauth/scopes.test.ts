@@ -11,9 +11,11 @@ describe("scope manifest", () => {
       "google-drive": { scopes: ["openid", "email", "https://www.googleapis.com/auth/drive.file"], required: ["https://www.googleapis.com/auth/drive.file"], pkce: true },
       // Decision 0063: send only, a sensitive scope. Never a Gmail read, modify, compose or full mail scope.
       gmail: { scopes: ["openid", "email", "https://www.googleapis.com/auth/gmail.send"], required: ["https://www.googleapis.com/auth/gmail.send"], pkce: true },
+      // Decision 0064: only calendars Daloy creates. calendar.events and calendar.calendarlist.readonly are not asked for.
+      "google-calendar": { scopes: ["openid", "email", "https://www.googleapis.com/auth/calendar.app.created"], required: ["https://www.googleapis.com/auth/calendar.app.created"], pkce: true },
     });
-    // Decision 0060: Google scopes per feature live in one table. Gmail (P5) and Calendar (P6) add rows here.
-    expect(GOOGLE_FEATURE_SCOPES).toEqual({ sheets: ["https://www.googleapis.com/auth/drive.file"], drive: ["https://www.googleapis.com/auth/drive.file"], gmail: ["https://www.googleapis.com/auth/gmail.send"] });
+    // Decision 0060: Google scopes per feature live in one table.
+    expect(GOOGLE_FEATURE_SCOPES).toEqual({ sheets: ["https://www.googleapis.com/auth/drive.file"], drive: ["https://www.googleapis.com/auth/drive.file"], gmail: ["https://www.googleapis.com/auth/gmail.send"], calendar: ["https://www.googleapis.com/auth/calendar.app.created"] });
   });
 
   it("builds the same authorize URL for Outlook", () => {
@@ -52,6 +54,13 @@ describe("scope manifest", () => {
     expect(Object.values(GOOGLE_FEATURE_SCOPES).flat().filter((s) => (FORBIDDEN_SCOPES as readonly string[]).includes(s))).toEqual([]);
     const asked = OAUTH_PROVIDERS.flatMap((d) => d.scopes);
     expect(asked.filter((s) => (FORBIDDEN_SCOPES as readonly string[]).includes(s))).toEqual([]);
+  });
+
+  it("does not ask for the broader Calendar scopes whose class is unverified (decision 0064)", () => {
+    const asked = OAUTH_PROVIDERS.flatMap((d) => d.scopes);
+    expect(asked).not.toContain("https://www.googleapis.com/auth/calendar.events");
+    expect(asked).not.toContain("https://www.googleapis.com/auth/calendar.calendarlist.readonly");
+    expect(asked).not.toContain("https://www.googleapis.com/auth/calendar");
   });
 
   it("treats a grant as enough only when every required scope came back", () => {
