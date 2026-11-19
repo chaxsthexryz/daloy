@@ -6,9 +6,9 @@ The OAuth work (plan phases P0 to P8) is on branch `oauth-p8-integration`. Every
 
 Your Docker stack on `localhost:3000` holds QA data. The branch adds migrations 0037 to 0039, which are additive, but there is no rollback, so run the branch as its own Compose project with its own database instead of rebuilding your stack.
 
-1. Stop your stack (it keeps its data): in `C:\dev\balitos-portfolio\daloy`, run `docker compose stop`.
-2. Copy your `.env` into `C:\dev\balitos-portfolio\daloy-oauth-p8` and add the client values for the apps you want to try (section 2). Type secrets yourself; never paste them into a chat, an issue or a commit.
-3. In `C:\dev\balitos-portfolio\daloy-oauth-p8`, run `docker compose up -d --build`, then `docker compose exec api node_modules/.bin/tsx src/seed.ts`. The folder name makes Compose use a separate project and a separate database volume.
+1. Stop your stack (it keeps its data): in `<repo-root>`, run `docker compose stop`.
+2. Copy your `.env` into `../daloy-oauth-p8` and add the client values for the apps you want to try (section 2). Type secrets yourself; never paste them into a chat, an issue or a commit.
+3. In `../daloy-oauth-p8`, run `docker compose up -d --build`, then `docker compose exec api node_modules/.bin/tsx src/seed.ts`. The folder name makes Compose use a separate project and a separate database volume.
 4. Sign in at `http://localhost:3000` as `demo@daloy.local` (password `daloy-demo-2026`). Mailpit is at `http://localhost:8025`.
 5. When you are done: `docker compose down` in `daloy-oauth-p8` (add `-v` only if you want that test database gone), then `docker compose start` in `daloy` to get your stack back.
 

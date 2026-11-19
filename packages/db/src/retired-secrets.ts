@@ -1,14 +1,16 @@
-import { and, eq, inArray, isNotNull, lte, sql } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, isNotNull, lte, sql } from "drizzle-orm";
 import { decryptSecret, redactSecrets, secretForms } from "./crypto";
 import type { Db } from "./index";
 import { calendarEvents, connections, deliveries, emailSources, mailSenders, payments, requests, retiredSecrets, runs, stepRuns, workflows, workflowVersions } from "./schema";
 
 export const DEFAULT_RETIRED_SECRET_MAX_AGE_DAYS = 90;
+export const DEFAULT_RETIRED_SECRET_BATCH_SIZE = 200;
 const DAY_MS = 86_400_000;
 
 export type PurgeRetiredSecretsOptions = {
   maxAgeDays?: number;
   now?: Date;
+  batchSize?: number;
 };
 
 export type PurgeRetiredSecretsResult = {
@@ -64,72 +66,166 @@ function scrubUnknown(value: unknown, forms: string[]): { value: unknown; change
 
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
-async function scrubWorkspaceHistory(tx: Tx, userId: string, forms: string[]): Promise<number> {
-  if (forms.length === 0) return 0;
-  let scrubbed = 0;
-
-  const runRows = await tx
-    .select({ id: runs.id, triggerPayload: runs.triggerPayload, error: runs.error })
+async function hasInFlightWork(tx: Tx, userId: string): Promise<boolean> {
+  const [activeRun] = await tx
+    .select({ id: runs.id })
     .from(runs)
     .innerJoin(workflowVersions, eq(workflowVersions.id, runs.workflowVersionId))
     .innerJoin(workflows, eq(workflows.id, workflowVersions.workflowId))
-    .where(eq(workflows.userId, userId));
-  for (const row of runRows) {
-    const payload = scrubUnknown(row.triggerPayload, forms);
-    const error = scrubNullableString(row.error, forms);
-    if (payload.changed || error.changed) {
-      await tx.update(runs).set({ triggerPayload: payload.value, error: error.value }).where(eq(runs.id, row.id));
-      scrubbed++;
-    }
-  }
+    .where(and(eq(workflows.userId, userId), eq(runs.state, "running")))
+    .limit(1);
+  if (activeRun) return true;
 
-  const stepRows = await tx
-    .select({ id: stepRuns.id, input: stepRuns.input, output: stepRuns.output, error: stepRuns.error })
-    .from(stepRuns)
-    .innerJoin(runs, eq(runs.id, stepRuns.runId))
-    .innerJoin(workflowVersions, eq(workflowVersions.id, runs.workflowVersionId))
-    .innerJoin(workflows, eq(workflows.id, workflowVersions.workflowId))
-    .where(eq(workflows.userId, userId));
-  for (const row of stepRows) {
-    const input = scrubUnknown(row.input, forms);
-    const output = scrubUnknown(row.output, forms);
-    const error = scrubNullableString(row.error, forms);
-    if (input.changed || output.changed || error.changed) {
-      await tx.update(stepRuns).set({ input: input.value, output: output.value, error: error.value }).where(eq(stepRuns.id, row.id));
-      scrubbed++;
-    }
-  }
-
-  const deliveryRows = await tx
-    .select({ id: deliveries.id, payload: deliveries.payload, result: deliveries.result, lastError: deliveries.lastError, reference: deliveries.reference })
+  const [activeDelivery] = await tx
+    .select({ id: deliveries.id })
     .from(deliveries)
-    .where(eq(deliveries.userId, userId));
-  for (const row of deliveryRows) {
-    const payload = scrubUnknown(row.payload, forms);
-    const result = scrubUnknown(row.result, forms);
-    const lastError = scrubNullableString(row.lastError, forms);
-    const reference = scrubString(row.reference, forms);
-    if (payload.changed || result.changed || lastError.changed || reference.changed) {
-      await tx
-        .update(deliveries)
-        .set({
-          payload: payload.value as typeof deliveries.$inferInsert.payload,
-          result: result.value as typeof deliveries.$inferInsert.result,
-          lastError: lastError.value,
-          reference: reference.value,
-        })
-        .where(eq(deliveries.id, row.id));
-      scrubbed++;
+    .where(and(eq(deliveries.userId, userId), eq(deliveries.state, "sending")))
+    .limit(1);
+  return activeDelivery !== undefined;
+}
+
+async function scrubWorkspaceHistory(tx: Tx, userId: string, forms: string[], batchSize: number): Promise<number> {
+  if (forms.length === 0) return 0;
+  let scrubbed = 0;
+
+  for (let lastId: string | undefined; ; ) {
+    const batch = await tx
+      .select({ id: runs.id, triggerPayload: runs.triggerPayload, error: runs.error })
+      .from(runs)
+      .innerJoin(workflowVersions, eq(workflowVersions.id, runs.workflowVersionId))
+      .innerJoin(workflows, eq(workflows.id, workflowVersions.workflowId))
+      .where(lastId ? and(eq(workflows.userId, userId), gt(runs.id, lastId)) : eq(workflows.userId, userId))
+      .orderBy(asc(runs.id))
+      .limit(batchSize);
+    if (batch.length === 0) break;
+    for (const row of batch) {
+      if (!scrubUnknown(row.triggerPayload, forms).changed && !scrubNullableString(row.error, forms).changed) continue;
+      const [locked] = await tx
+        .select({ triggerPayload: runs.triggerPayload, error: runs.error })
+        .from(runs)
+        .where(eq(runs.id, row.id))
+        .for("update");
+      if (!locked) continue;
+      const payload = scrubUnknown(locked.triggerPayload, forms);
+      const error = scrubNullableString(locked.error, forms);
+      const patch: Partial<typeof runs.$inferInsert> = {};
+      if (payload.changed) patch.triggerPayload = payload.value;
+      if (error.changed) patch.error = error.value;
+      if (Object.keys(patch).length > 0) {
+        await tx.update(runs).set(patch).where(eq(runs.id, row.id));
+        scrubbed++;
+      }
     }
+    if (batch.length < batchSize) break;
+    lastId = batch[batch.length - 1]!.id;
   }
 
-  const requestRows = await tx.select({ id: requests.id, subject: requests.subject }).from(requests).where(eq(requests.userId, userId));
-  for (const row of requestRows) {
-    const subject = scrubString(row.subject, forms);
-    if (subject.changed) {
-      await tx.update(requests).set({ subject: subject.value }).where(eq(requests.id, row.id));
-      scrubbed++;
+  for (let lastId: string | undefined; ; ) {
+    const batch = await tx
+      .select({ id: stepRuns.id, input: stepRuns.input, output: stepRuns.output, error: stepRuns.error })
+      .from(stepRuns)
+      .innerJoin(runs, eq(runs.id, stepRuns.runId))
+      .innerJoin(workflowVersions, eq(workflowVersions.id, runs.workflowVersionId))
+      .innerJoin(workflows, eq(workflows.id, workflowVersions.workflowId))
+      .where(lastId ? and(eq(workflows.userId, userId), gt(stepRuns.id, lastId)) : eq(workflows.userId, userId))
+      .orderBy(asc(stepRuns.id))
+      .limit(batchSize);
+    if (batch.length === 0) break;
+    for (const row of batch) {
+      if (
+        !scrubUnknown(row.input, forms).changed &&
+        !scrubUnknown(row.output, forms).changed &&
+        !scrubNullableString(row.error, forms).changed
+      ) {
+        continue;
+      }
+      const [locked] = await tx
+        .select({ input: stepRuns.input, output: stepRuns.output, error: stepRuns.error })
+        .from(stepRuns)
+        .where(eq(stepRuns.id, row.id))
+        .for("update");
+      if (!locked) continue;
+      const input = scrubUnknown(locked.input, forms);
+      const output = scrubUnknown(locked.output, forms);
+      const error = scrubNullableString(locked.error, forms);
+      const patch: Partial<typeof stepRuns.$inferInsert> = {};
+      if (input.changed) patch.input = input.value;
+      if (output.changed) patch.output = output.value;
+      if (error.changed) patch.error = error.value;
+      if (Object.keys(patch).length > 0) {
+        await tx.update(stepRuns).set(patch).where(eq(stepRuns.id, row.id));
+        scrubbed++;
+      }
     }
+    if (batch.length < batchSize) break;
+    lastId = batch[batch.length - 1]!.id;
+  }
+
+  for (let lastId: string | undefined; ; ) {
+    const batch = await tx
+      .select({ id: deliveries.id, payload: deliveries.payload, result: deliveries.result, lastError: deliveries.lastError, reference: deliveries.reference })
+      .from(deliveries)
+      .where(lastId ? and(eq(deliveries.userId, userId), gt(deliveries.id, lastId)) : eq(deliveries.userId, userId))
+      .orderBy(asc(deliveries.id))
+      .limit(batchSize);
+    if (batch.length === 0) break;
+    for (const row of batch) {
+      if (
+        !scrubUnknown(row.payload, forms).changed &&
+        !scrubUnknown(row.result, forms).changed &&
+        !scrubNullableString(row.lastError, forms).changed &&
+        !scrubString(row.reference, forms).changed
+      ) {
+        continue;
+      }
+      const [locked] = await tx
+        .select({ payload: deliveries.payload, result: deliveries.result, lastError: deliveries.lastError, reference: deliveries.reference })
+        .from(deliveries)
+        .where(eq(deliveries.id, row.id))
+        .for("update");
+      if (!locked) continue;
+      const payload = scrubUnknown(locked.payload, forms);
+      const result = scrubUnknown(locked.result, forms);
+      const lastError = scrubNullableString(locked.lastError, forms);
+      const reference = scrubString(locked.reference, forms);
+      const patch: Partial<typeof deliveries.$inferInsert> = {};
+      if (payload.changed) patch.payload = payload.value as typeof deliveries.$inferInsert.payload;
+      if (result.changed) patch.result = result.value as typeof deliveries.$inferInsert.result;
+      if (lastError.changed) patch.lastError = lastError.value;
+      if (reference.changed) patch.reference = reference.value;
+      if (Object.keys(patch).length > 0) {
+        await tx.update(deliveries).set(patch).where(eq(deliveries.id, row.id));
+        scrubbed++;
+      }
+    }
+    if (batch.length < batchSize) break;
+    lastId = batch[batch.length - 1]!.id;
+  }
+
+  for (let lastId: string | undefined; ; ) {
+    const batch = await tx
+      .select({ id: requests.id, subject: requests.subject })
+      .from(requests)
+      .where(lastId ? and(eq(requests.userId, userId), gt(requests.id, lastId)) : eq(requests.userId, userId))
+      .orderBy(asc(requests.id))
+      .limit(batchSize);
+    if (batch.length === 0) break;
+    for (const row of batch) {
+      if (!scrubString(row.subject, forms).changed) continue;
+      const [locked] = await tx
+        .select({ subject: requests.subject })
+        .from(requests)
+        .where(eq(requests.id, row.id))
+        .for("update");
+      if (!locked) continue;
+      const subject = scrubString(locked.subject, forms);
+      if (subject.changed) {
+        await tx.update(requests).set({ subject: subject.value }).where(eq(requests.id, row.id));
+        scrubbed++;
+      }
+    }
+    if (batch.length < batchSize) break;
+    lastId = batch[batch.length - 1]!.id;
   }
 
   const connRows = await tx
@@ -137,24 +233,49 @@ async function scrubWorkspaceHistory(tx: Tx, userId: string, forms: string[]): P
     .from(connections)
     .where(and(eq(connections.userId, userId), isNotNull(connections.lastError)));
   for (const row of connRows) {
-    const lastError = scrubNullableString(row.lastError, forms);
+    if (!scrubNullableString(row.lastError, forms).changed) continue;
+    const [locked] = await tx
+      .select({ lastError: connections.lastError })
+      .from(connections)
+      .where(and(eq(connections.userId, userId), eq(connections.provider, row.provider)))
+      .for("update");
+    if (!locked) continue;
+    const lastError = scrubNullableString(locked.lastError, forms);
     if (lastError.changed) {
       await tx.update(connections).set({ lastError: lastError.value }).where(and(eq(connections.userId, userId), eq(connections.provider, row.provider)));
       scrubbed++;
     }
   }
 
-  const sourceRows = await tx
-    .select({ id: emailSources.id, lastError: emailSources.lastError })
-    .from(emailSources)
-    .innerJoin(workflows, eq(workflows.id, emailSources.workflowId))
-    .where(and(eq(workflows.userId, userId), isNotNull(emailSources.lastError)));
-  for (const row of sourceRows) {
-    const lastError = scrubNullableString(row.lastError, forms);
-    if (lastError.changed) {
-      await tx.update(emailSources).set({ lastError: lastError.value }).where(eq(emailSources.id, row.id));
-      scrubbed++;
+  for (let lastId: string | undefined; ; ) {
+    const batch = await tx
+      .select({ id: emailSources.id, lastError: emailSources.lastError })
+      .from(emailSources)
+      .innerJoin(workflows, eq(workflows.id, emailSources.workflowId))
+      .where(
+        lastId
+          ? and(eq(workflows.userId, userId), isNotNull(emailSources.lastError), gt(emailSources.id, lastId))
+          : and(eq(workflows.userId, userId), isNotNull(emailSources.lastError)),
+      )
+      .orderBy(asc(emailSources.id))
+      .limit(batchSize);
+    if (batch.length === 0) break;
+    for (const row of batch) {
+      if (!scrubNullableString(row.lastError, forms).changed) continue;
+      const [locked] = await tx
+        .select({ lastError: emailSources.lastError })
+        .from(emailSources)
+        .where(eq(emailSources.id, row.id))
+        .for("update");
+      if (!locked) continue;
+      const lastError = scrubNullableString(locked.lastError, forms);
+      if (lastError.changed) {
+        await tx.update(emailSources).set({ lastError: lastError.value }).where(eq(emailSources.id, row.id));
+        scrubbed++;
+      }
     }
+    if (batch.length < batchSize) break;
+    lastId = batch[batch.length - 1]!.id;
   }
 
   const senderRows = await tx
@@ -162,33 +283,74 @@ async function scrubWorkspaceHistory(tx: Tx, userId: string, forms: string[]): P
     .from(mailSenders)
     .where(and(eq(mailSenders.userId, userId), isNotNull(mailSenders.lastError)));
   for (const row of senderRows) {
-    const lastError = scrubNullableString(row.lastError, forms);
+    if (!scrubNullableString(row.lastError, forms).changed) continue;
+    const [locked] = await tx
+      .select({ lastError: mailSenders.lastError })
+      .from(mailSenders)
+      .where(eq(mailSenders.userId, userId))
+      .for("update");
+    if (!locked) continue;
+    const lastError = scrubNullableString(locked.lastError, forms);
     if (lastError.changed) {
       await tx.update(mailSenders).set({ lastError: lastError.value }).where(eq(mailSenders.userId, userId));
       scrubbed++;
     }
   }
 
-  const calendarRows = await tx
-    .select({ bookingId: calendarEvents.bookingId, title: calendarEvents.title, description: calendarEvents.description })
-    .from(calendarEvents)
-    .where(eq(calendarEvents.userId, userId));
-  for (const row of calendarRows) {
-    const title = scrubString(row.title, forms);
-    const description = scrubString(row.description, forms);
-    if (title.changed || description.changed) {
-      await tx.update(calendarEvents).set({ title: title.value, description: description.value }).where(eq(calendarEvents.bookingId, row.bookingId));
-      scrubbed++;
+  for (let lastBookingId: string | undefined; ; ) {
+    const batch = await tx
+      .select({ bookingId: calendarEvents.bookingId, title: calendarEvents.title, description: calendarEvents.description })
+      .from(calendarEvents)
+      .where(lastBookingId ? and(eq(calendarEvents.userId, userId), gt(calendarEvents.bookingId, lastBookingId)) : eq(calendarEvents.userId, userId))
+      .orderBy(asc(calendarEvents.bookingId))
+      .limit(batchSize);
+    if (batch.length === 0) break;
+    for (const row of batch) {
+      if (!scrubString(row.title, forms).changed && !scrubString(row.description, forms).changed) continue;
+      const [locked] = await tx
+        .select({ title: calendarEvents.title, description: calendarEvents.description })
+        .from(calendarEvents)
+        .where(eq(calendarEvents.bookingId, row.bookingId))
+        .for("update");
+      if (!locked) continue;
+      const title = scrubString(locked.title, forms);
+      const description = scrubString(locked.description, forms);
+      const patch: Partial<typeof calendarEvents.$inferInsert> = {};
+      if (title.changed) patch.title = title.value;
+      if (description.changed) patch.description = description.value;
+      if (Object.keys(patch).length > 0) {
+        await tx.update(calendarEvents).set(patch).where(eq(calendarEvents.bookingId, row.bookingId));
+        scrubbed++;
+      }
     }
+    if (batch.length < batchSize) break;
+    lastBookingId = batch[batch.length - 1]!.bookingId;
   }
 
-  const paymentRows = await tx.select({ id: payments.id, reference: payments.reference }).from(payments).where(eq(payments.userId, userId));
-  for (const row of paymentRows) {
-    const reference = scrubString(row.reference, forms);
-    if (reference.changed) {
-      await tx.update(payments).set({ reference: reference.value }).where(eq(payments.id, row.id));
-      scrubbed++;
+  for (let lastId: string | undefined; ; ) {
+    const batch = await tx
+      .select({ id: payments.id, reference: payments.reference })
+      .from(payments)
+      .where(lastId ? and(eq(payments.userId, userId), gt(payments.id, lastId)) : eq(payments.userId, userId))
+      .orderBy(asc(payments.id))
+      .limit(batchSize);
+    if (batch.length === 0) break;
+    for (const row of batch) {
+      if (!scrubString(row.reference, forms).changed) continue;
+      const [locked] = await tx
+        .select({ reference: payments.reference })
+        .from(payments)
+        .where(eq(payments.id, row.id))
+        .for("update");
+      if (!locked) continue;
+      const reference = scrubString(locked.reference, forms);
+      if (reference.changed) {
+        await tx.update(payments).set({ reference: reference.value }).where(eq(payments.id, row.id));
+        scrubbed++;
+      }
     }
+    if (batch.length < batchSize) break;
+    lastId = batch[batch.length - 1]!.id;
   }
 
   return scrubbed;
@@ -196,11 +358,15 @@ async function scrubWorkspaceHistory(tx: Tx, userId: string, forms: string[]): P
 
 /**
  * Permanently scrubs expired retired secret values (at or past maxAgeDays, default 90) from a workspace's stored
- * history and state tables, then deletes only those exact retired_secrets rows in the same transaction (decision 0067).
+ * history and state tables in bounded keyset batches with row-level locking and column-only updates, then deletes
+ * only those exact retired_secrets rows in the same transaction (decision 0067). Workspaces with in-flight runs
+ * or deliveries are skipped until the next sweep.
  */
 export async function purgeRetiredSecrets(db: Db, secretsKey: Buffer, opts: PurgeRetiredSecretsOptions = {}): Promise<PurgeRetiredSecretsResult> {
   const maxAgeDays = opts.maxAgeDays ?? retiredSecretMaxAgeDays();
   if (!Number.isInteger(maxAgeDays) || maxAgeDays < 1) throw new Error("maxAgeDays must be a positive integer");
+  const batchSize = opts.batchSize ?? DEFAULT_RETIRED_SECRET_BATCH_SIZE;
+  if (!Number.isInteger(batchSize) || batchSize < 1) throw new Error("batchSize must be a positive integer");
   const now = opts.now ?? new Date();
   const cutoff = new Date(now.getTime() - maxAgeDays * DAY_MS);
 
@@ -222,6 +388,9 @@ export async function purgeRetiredSecrets(db: Db, secretsKey: Buffer, opts: Purg
         .where(and(eq(retiredSecrets.userId, userId), lte(retiredSecrets.retiredAt, cutoff)));
       if (expired.length === 0) return { deleted: 0, scrubbed: 0 };
 
+      // Skip workspaces with active runs or deliveries so a live worker cannot write a retired secret after the scan.
+      if (await hasInFlightWork(tx, userId)) return { deleted: 0, scrubbed: 0 };
+
       const values: string[] = [];
       const deletableIds: string[] = [];
       for (const row of expired) {
@@ -235,7 +404,11 @@ export async function purgeRetiredSecrets(db: Db, secretsKey: Buffer, opts: Purg
       }
       if (deletableIds.length === 0) return { deleted: 0, scrubbed: 0 };
 
-      const scrubbed = await scrubWorkspaceHistory(tx, userId, secretForms(values));
+      const scrubbed = await scrubWorkspaceHistory(tx, userId, secretForms(values), batchSize);
+
+      // Re-check before deleting so work that started mid-sweep keeps the retired rows until a quiet sweep.
+      if (await hasInFlightWork(tx, userId)) return { deleted: 0, scrubbed: 0 };
+
       const deleted = await tx
         .delete(retiredSecrets)
         .where(and(eq(retiredSecrets.userId, userId), inArray(retiredSecrets.id, deletableIds)))

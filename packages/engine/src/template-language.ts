@@ -20,11 +20,11 @@ export function localizeGeneratedDefinition(definition: WorkflowDefinition, lang
   const messages: Record<string, Record<string, Message>> = {
     "office-request": {
       notify_office: { subject: "Bagong request {{trigger.reference}}: {{trigger.summary}}", text: `Nagpadala ng request si {{trigger.name}} ({{trigger.email}}).\n\n{{trigger.summary}}${more ? `\n${more}` : ""}\n\nReference: {{trigger.reference}}` },
-      send_receipt: { subject: "Natanggap namin ang request mo {{trigger.reference}}", text: "Hi {{trigger.name}},\n\nNatanggap namin ang request mo: {{trigger.summary}}\nAng reference mo ay {{trigger.reference}}. Banggitin ito kapag nagtatanong tungkol sa request." },
+      send_receipt: { subject: "Natanggap namin ang request mo {{trigger.reference}}", text: "Natanggap namin ang request mo.\nAng reference mo ay {{trigger.reference}}. Banggitin ito kapag nagtatanong tungkol sa request." },
       post_to_slack: { text: "Bagong office request {{trigger.reference}}: {{trigger.summary}}\nNasa Requests sa Daloy ang mga detalye." },
     },
     "purchase-request": {
-      send_receipt: requester("Natanggap namin ang purchase request mo {{trigger.reference}}", `Natanggap namin ang request mo para sa {{trigger.summary}} ({{trigger.cost}}). Si ${a} ang magdedesisyon. Ipapadala sa email ang resulta.`),
+      send_receipt: { subject: "Natanggap namin ang purchase request mo {{trigger.reference}}", text: `Natanggap namin ang purchase request mo. Si ${a} ang magdedesisyon. Ipapadala sa email ang resulta.\n\nReference: {{trigger.reference}}` },
       decide: { subject: "Purchase request {{trigger.reference}}: {{trigger.summary}}", message: "Gustong bilhin ni {{trigger.name}} ({{trigger.email}}):\n{{trigger.summary}}\nTinatayang halaga: {{trigger.cost}}\nDahilan: {{trigger.reason}}\n\nReference: {{trigger.reference}}" },
       tell_purchasing: { subject: "Na-approve na purchase {{trigger.reference}}: {{trigger.summary}}", text: `Inaprubahan ni ${a} ang purchase request na ito.\n\nItem: {{trigger.summary}}\nTinatayang halaga: {{trigger.cost}}\nHumiling: {{trigger.name}} ({{trigger.email}})\nDahilan: {{trigger.reason}}\n\nReference: {{trigger.reference}}` },
       tell_approved: requester("Na-approve ang purchase request mo {{trigger.reference}}", `Inaprubahan ni ${a} ang request mo para sa {{trigger.summary}}. Nasa purchasing na ito.`),
@@ -33,7 +33,7 @@ export function localizeGeneratedDefinition(definition: WorkflowDefinition, lang
       post_to_teams: { text: "Na-approve ang purchase request {{trigger.reference}}: {{trigger.summary}}\nNasa purchasing ang mga detalye. Ang nakatalagang approver lang ang magdedesisyon sa Daloy." },
     },
     "website-inquiry": {
-      reply_to_customer: { subject: `Salamat sa pag-contact sa ${values.businessName}`, text: `Hi {{trigger.name}},\n\nSalamat sa pagsulat sa ${values.businessName}. Natanggap namin ang mensahe mo at sasagot kami sa loob ng isang araw ng trabaho.\n\nMensahe mo:\n{{trigger.message}}` },
+      reply_to_customer: { subject: `Salamat sa pag-contact sa ${values.businessName}`, text: `Salamat sa pagsulat sa ${values.businessName}. Natanggap namin ang mensahe mo at sasagot kami sa loob ng isang araw ng trabaho.` },
       notify_business: { subject: "Bagong website inquiry mula kay {{trigger.name}}", text: "Sumulat si {{trigger.name}} ({{trigger.email}}) gamit ang website form:\n\n{{trigger.message}}\n\nSumagot sa: {{trigger.email}}" },
     },
     "inquiry-triage": {

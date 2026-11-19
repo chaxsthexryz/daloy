@@ -27,7 +27,9 @@ describe("generated email language", () => {
       expect(JSON.stringify(tagalog)).not.toEqual(JSON.stringify(english));
     }
     expect(JSON.stringify(websiteInquiryDefinition({ businessName: "Thanks for contacting Maria", inquiryEmail: "maria@example.test" }, "tl"))).toContain("Thanks for contacting Maria");
-    expect(previewOfficeRequest(office, { name: "Mia", email: "mia@example.test", summary: "User's English request" }, "tl").receipt.text).toContain("User's English request");
+    const officePreview = previewOfficeRequest(office, { name: "Mia", email: "mia@example.test", summary: "User's English request" }, "tl");
+    expect(officePreview.notification.text).toContain("User's English request");
+    expect(officePreview.receipt.text).not.toContain("User's English request");
   });
   it("localizes every starter email and preserves the English source", () => {
     const snapshot = JSON.stringify(TEMPLATES);

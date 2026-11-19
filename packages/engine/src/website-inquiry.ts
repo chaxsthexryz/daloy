@@ -58,7 +58,7 @@ export function websiteInquiryDefinition({ businessName, inquiryEmail }: { busin
         config: {
           to: "{{trigger.email}}",
           subject: `Thanks for contacting ${businessName}`,
-          text: `Hi {{trigger.name}},\n\nThanks for writing to ${businessName}. We received your message and will reply within one working day.\n\nYour message:\n{{trigger.message}}`,
+          text: `Thanks for writing to ${businessName}. We received your message and will reply within one working day.`,
         },
       },
       {

@@ -74,7 +74,12 @@ export function purchaseRequestDefinition(a: PurchaseRequestAnswers, language: L
       },
     },
     steps: [
-      toRequester("send_receipt", "We received your purchase request {{trigger.reference}}", `We received your request for {{trigger.summary}} ({{trigger.cost}}). ${a.approver} will decide, and you will hear back by email.`),
+      mail(
+        "send_receipt",
+        "{{trigger.email}}",
+        "We received your purchase request {{trigger.reference}}",
+        `We received your purchase request. ${a.approver} will decide, and you will hear back by email.\n\nReference: {{trigger.reference}}`,
+      ),
       {
         id: "decide",
         type: "approval",

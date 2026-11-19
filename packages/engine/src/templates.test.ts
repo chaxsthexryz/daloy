@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { definitionSchema, triggerFields } from "./definition";
+import { definitionSchema, triggerFields, type WorkflowDefinition } from "./definition";
 import { lintDefinition } from "./lint";
+import { defaultAnswers, officeRequestDefinition } from "./office-request";
+import { defaultPurchaseAnswers, purchaseRequestDefinition } from "./purchase-request";
 import { templatesForLanguage } from "./template-language";
 import { TEMPLATES } from "./templates";
+import { websiteInquiryDefinition } from "./website-inquiry";
 
 const SLUGS = ["inquiry-triage", "invoice-follow-up", "no-show-follow-up", "appointment-reminder", "request-to-sheets", "lead-to-booking", "order-to-sheets", "order-paid", "invoice-paymongo", "quote-deposit", "renewal-reminders", "store-orders", "receipt-expense"];
 const parse = (slug: string) => definitionSchema.parse(TEMPLATES.find((t) => t.slug === slug)!.definition);
@@ -40,7 +43,7 @@ describe("starter templates", () => {
   });
 
   // Steps reachable from a start step without crossing an approval step (an approval step itself counts as reached).
-  const reachBeforeApproval = (def: ReturnType<typeof parse>) => {
+  const reachBeforeApproval = (def: WorkflowDefinition) => {
     const hasIncoming = new Set(def.edges.map((e) => e.to));
     const seen = new Set<string>();
     const walk = (id: string) => {
@@ -60,6 +63,29 @@ describe("starter templates", () => {
     for (const s of reachBeforeApproval(def)) {
       if (s.type !== "email" || !/\{\{\s*trigger\./.test(String(s.config.to))) continue;
       expect(`${s.config.subject}\n${s.config.text}`, s.id).not.toMatch(/\{\{\s*trigger\./);
+    }
+  });
+
+  const guidedForms: [string, WorkflowDefinition, string[]][] = [
+    ["website-inquiry (en)", websiteInquiryDefinition({ businessName: "Lim Dental", inquiryEmail: "front@limdental.example" }, "en"), []],
+    ["website-inquiry (tl)", websiteInquiryDefinition({ businessName: "Lim Dental", inquiryEmail: "front@limdental.example" }, "tl"), []],
+    ["office-request (en)", officeRequestDefinition(defaultAnswers("office@example.com", "en"), "en"), ["reference"]],
+    ["office-request (tl)", officeRequestDefinition(defaultAnswers("office@example.com", "tl"), "tl"), ["reference"]],
+    ["purchase-request (en)", purchaseRequestDefinition(defaultPurchaseAnswers("boss@example.com", "en"), "en"), ["reference"]],
+    ["purchase-request (tl)", purchaseRequestDefinition(defaultPurchaseAnswers("boss@example.com", "tl"), "tl"), ["reference"]],
+    ["purchase-request outlook (en)", purchaseRequestDefinition({ ...defaultPurchaseAnswers("boss@example.com", "en"), outlook: true }, "en"), ["reference"]],
+    ["purchase-request outlook (tl)", purchaseRequestDefinition({ ...defaultPurchaseAnswers("boss@example.com", "tl"), outlook: true }, "tl"), ["reference"]],
+  ];
+
+  it.each(guidedForms)("guided %s sends no visitor text to the form's address before an approval", (_label, def, allowedTriggerFields) => {
+    const allowed = new Set(allowedTriggerFields);
+    for (const s of reachBeforeApproval(def)) {
+      if ((s.type !== "email" && s.type !== "outlook") || !/\{\{\s*trigger\./.test(String(s.config.to))) continue;
+      const body = `${s.config.subject}\n${s.config.text}`;
+      const used = [...body.matchAll(/\{\{\s*trigger\.([a-z0-9_]+)/g)].map((m) => m[1]!);
+      for (const field of used) {
+        expect(allowed.has(field), `${s.id} echoed trigger.${field}`).toBe(true);
+      }
     }
   });
 

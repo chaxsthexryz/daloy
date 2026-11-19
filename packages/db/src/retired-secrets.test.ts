@@ -1,11 +1,13 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { and, eq, sql } from "drizzle-orm";
+import { drizzle } from "drizzle-orm/node-postgres";
 import type { Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { freshDatabase } from "../../../test/db";
 import { decryptSecret, encryptSecret } from "./crypto";
 import type { Db } from "./index";
 import { DEFAULT_RETIRED_SECRET_MAX_AGE_DAYS, purgeRetiredSecrets, retiredSecretMaxAgeDays } from "./retired-secrets";
+import * as schema from "./schema";
 import { bookings, calendarEvents, connections, deliveries, emailSources, mailSenders, payments, requests, resources, retiredSecrets, runs, secrets, stepRuns, users, workflows, workflowVersions } from "./schema";
 
 let db: Db;
@@ -231,5 +233,231 @@ describe("purgeRetiredSecrets", () => {
     expect(await db.select().from(retiredSecrets).where(eq(retiredSecrets.id, retired.id))).toHaveLength(1);
     const [afterRun] = await db.select().from(runs).where(eq(runs.id, r!.id));
     expect(afterRun!.error).toBe(val);
+    // Clean up so later tests in this shared database do not pick up the rolled-back row.
+    await db.delete(retiredSecrets).where(eq(retiredSecrets.id, retired.id));
+  });
+
+  it("paginates all history tables across multiple bounded batches", async () => {
+    for (const bad of [0, -1, 1.5]) {
+      await expect(purgeRetiredSecrets(db, key, { batchSize: bad })).rejects.toThrow(/batchSize/);
+    }
+
+    const now = new Date("2026-11-19T12:00:00Z");
+    const ws = await makeWorkspace();
+    const val = `paged-sec-${randomBytes(4).toString("hex")}`;
+    await seedRetired(ws.userId, "paged", val, new Date(now.getTime() - 95 * DAY_MS));
+
+    const [res] = await db.insert(resources).values({ userId: ws.userId, name: "Paged Room" }).returning();
+    const runIds: string[] = [];
+    const stepIds: string[] = [];
+    const deliveryIds: string[] = [];
+    const requestIds: string[] = [];
+    const bookingIds: string[] = [];
+    const paymentIds: string[] = [];
+
+    for (let i = 0; i < 5; i++) {
+      const [r] = await db
+        .insert(runs)
+        .values({ workflowVersionId: ws.versionId, state: "failed", triggerPayload: { idx: i, leak: val }, error: `err-${i}-${val}` })
+        .returning();
+      runIds.push(r!.id);
+      const [s] = await db
+        .insert(stepRuns)
+        .values({ runId: r!.id, stepId: "s", attempt: 1, state: "failed", input: { leak: val }, output: { leak: val }, error: `step-${i}-${val}` })
+        .returning();
+      stepIds.push(s!.id);
+      const [d] = await db
+        .insert(deliveries)
+        .values({ userId: ws.userId, runId: r!.id, stepId: "d", provider: "slack", reference: `REF-${i}-${val}`, payload: { text: val }, state: "failed", lastError: val, result: { msg: val } })
+        .returning();
+      deliveryIds.push(d!.id);
+      const [req] = await db
+        .insert(requests)
+        .values({ userId: ws.userId, workflowId: ws.workflowId, runId: r!.id, reference: `REQ-PG-${seq}-${i}`, submissionKey: randomUUID(), subject: `subj-${i}-${val}` })
+        .returning();
+      requestIds.push(req!.id);
+      const startDay = i + 1;
+      const [bk] = await db
+        .insert(bookings)
+        .values({
+          userId: ws.userId,
+          test: false,
+          reference: `BK-PG-${seq}-${i}`,
+          resourceId: res!.id,
+          during: sql`tstzrange(now() + (${startDay} || ' days')::interval, now() + (${startDay} || ' days')::interval + interval '1 hour')` as unknown as string,
+          timezone: "UTC",
+          workflowId: ws.workflowId,
+          runId: r!.id,
+        })
+        .returning();
+      bookingIds.push(bk!.id);
+      await db.insert(calendarEvents).values({ bookingId: bk!.id, userId: ws.userId, title: `Title ${i} ${val}`, description: `Desc ${i} ${val}` });
+      const [pay] = await db
+        .insert(payments)
+        .values({ userId: ws.userId, workflowId: ws.workflowId, runId: r!.id, stepId: "pay", reference: `PAY-${i}-${val}`, amountCentavos: 1000, livemode: false, providerSessionId: `cs_pg_${seq}_${i}`, url: "https://pay.example/pg" })
+        .returning();
+      paymentIds.push(pay!.id);
+    }
+
+    const loggedQueries: { query: string; params: unknown[] }[] = [];
+    const loggedDb = drizzle(pool, {
+      schema,
+      logger: { logQuery: (query, params) => loggedQueries.push({ query, params }) },
+    });
+
+    const summary = await purgeRetiredSecrets(loggedDb, key, { now, batchSize: 2 });
+    expect(summary).toEqual({ workspaces: 1, retiredDeleted: 1, rowsScrubbed: 30 });
+    expect(await db.select().from(retiredSecrets).where(eq(retiredSecrets.userId, ws.userId))).toEqual([]);
+
+    // Verify each of the 6 history tables ran 3 keyset-paginated batches (2 + 2 + 1 = 5 rows).
+    for (const table of ['"runs"', '"step_runs"', '"deliveries"', '"requests"', '"calendar_events"', '"payments"']) {
+      const batchScans = loggedQueries.filter(
+        (q) => q.query.startsWith("select ") && q.query.includes(`from ${table}`) && q.query.includes("order by") && q.query.includes("limit") && q.params.includes(2),
+      );
+      expect(batchScans.length, `expected 3 paginated batches for ${table}`).toBe(3);
+    }
+
+    const allStored = [
+      ...(await db.select().from(runs).where(sql`${runs.id} = any(${sql.raw(`ARRAY[${runIds.map((id) => `'${id}'::uuid`).join(",")}]`)})`)),
+      ...(await db.select().from(stepRuns).where(sql`${stepRuns.id} = any(${sql.raw(`ARRAY[${stepIds.map((id) => `'${id}'::uuid`).join(",")}]`)})`)),
+      ...(await db.select().from(deliveries).where(sql`${deliveries.id} = any(${sql.raw(`ARRAY[${deliveryIds.map((id) => `'${id}'::uuid`).join(",")}]`)})`)),
+      ...(await db.select().from(requests).where(sql`${requests.id} = any(${sql.raw(`ARRAY[${requestIds.map((id) => `'${id}'::uuid`).join(",")}]`)})`)),
+      ...(await db.select().from(calendarEvents).where(sql`${calendarEvents.bookingId} = any(${sql.raw(`ARRAY[${bookingIds.map((id) => `'${id}'::uuid`).join(",")}]`)})`)),
+      ...(await db.select().from(payments).where(sql`${payments.id} = any(${sql.raw(`ARRAY[${paymentIds.map((id) => `'${id}'::uuid`).join(",")}]`)})`)),
+    ];
+    expect(allStored).toHaveLength(30);
+    expect(JSON.stringify(allStored)).not.toContain(val);
+    expect(JSON.stringify(allStored)).toContain("[secret]");
+  });
+
+  it("writes only modified columns and preserves concurrent updates to untouched columns under FOR UPDATE", async () => {
+    const now = new Date("2026-11-19T12:00:00Z");
+    const ws = await makeWorkspace();
+    const val = `col-sec-${randomBytes(4).toString("hex")}`;
+    await seedRetired(ws.userId, "colonly", val, new Date(now.getTime() - 100 * DAY_MS));
+
+    // Only error contains the secret; trigger_payload is clean and must not appear in UPDATE ... SET.
+    const [r] = await db
+      .insert(runs)
+      .values({ workflowVersionId: ws.versionId, state: "failed", triggerPayload: { clean: "v1" }, error: `boom ${val}` })
+      .returning();
+
+    // A Postgres BEFORE UPDATE OF trigger_payload trigger fires only if trigger_payload is named in UPDATE ... SET.
+    await db.execute(sql`
+      create or replace function test_forbid_payload_write() returns trigger as $$
+      begin
+        raise exception 'trigger_payload must not be written when unchanged';
+      end;
+      $$ language plpgsql;
+    `);
+    await db.execute(sql`create trigger test_forbid_payload_write_trg before update of trigger_payload on runs for each row execute function test_forbid_payload_write()`);
+
+    try {
+      const summary = await purgeRetiredSecrets(db, key, { now });
+      expect(summary).toEqual({ workspaces: 1, retiredDeleted: 1, rowsScrubbed: 1 });
+    } finally {
+      await db.execute(sql`drop trigger if exists test_forbid_payload_write_trg on runs`);
+      await db.execute(sql`drop function if exists test_forbid_payload_write()`);
+    }
+
+    const [after1] = await db.select().from(runs).where(eq(runs.id, r!.id));
+    expect(after1!.error).toBe("boom [secret]");
+    expect(after1!.triggerPayload).toEqual({ clean: "v1" });
+
+    // Now prove FOR UPDATE waits for a concurrent row update and re-computes on the locked row values.
+    const val2 = `lock-sec-${randomBytes(4).toString("hex")}`;
+    await seedRetired(ws.userId, "locktest", val2, new Date(now.getTime() - 100 * DAY_MS));
+    const [r2] = await db
+      .insert(runs)
+      .values({ workflowVersionId: ws.versionId, state: "failed", triggerPayload: { note: "before" }, error: `fail ${val2}` })
+      .returning();
+
+    const locker = await pool.connect();
+    try {
+      await locker.query("BEGIN");
+      await locker.query("UPDATE runs SET trigger_payload = $1 WHERE id = $2", [JSON.stringify({ note: "concurrent" }), r2!.id]);
+
+      const purgePromise = purgeRetiredSecrets(db, key, { now });
+      // Wait until purgeRetiredSecrets is actually waiting on the row lock held by locker.
+      const deadline = Date.now() + 5_000;
+      let waiting = false;
+      while (Date.now() < deadline) {
+        const res = await db.execute<{ cnt: string }>(sql`
+          select count(*)::text as cnt
+          from pg_stat_activity
+          where wait_event_type = 'Lock' and wait_event = 'transactionid'
+        `);
+        if (Number(res.rows[0]?.cnt ?? 0) > 0) {
+          waiting = true;
+          break;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      expect(waiting).toBe(true);
+
+      await locker.query("COMMIT");
+      const summary2 = await purgePromise;
+      expect(summary2).toEqual({ workspaces: 1, retiredDeleted: 1, rowsScrubbed: 1 });
+    } finally {
+      await locker.query("ROLLBACK").catch(() => {});
+      locker.release();
+    }
+
+    const [after2] = await db.select().from(runs).where(eq(runs.id, r2!.id));
+    expect(after2!.triggerPayload).toEqual({ note: "concurrent" });
+    expect(after2!.error).toBe("fail [secret]");
+  });
+
+  it("skips a workspace with an in-flight running run or sending delivery and purges it once work completes", async () => {
+    const now = new Date("2026-11-19T12:00:00Z");
+    const wsRun = await makeWorkspace();
+    const wsDel = await makeWorkspace();
+    const wsIdle = await makeWorkspace();
+
+    const runVal = `active-run-${randomBytes(4).toString("hex")}`;
+    const delVal = `active-del-${randomBytes(4).toString("hex")}`;
+    const idleVal = `idle-ws-${randomBytes(4).toString("hex")}`;
+
+    const retiredRun = await seedRetired(wsRun.userId, "k", runVal, new Date(now.getTime() - 100 * DAY_MS));
+    const retiredDel = await seedRetired(wsDel.userId, "k", delVal, new Date(now.getTime() - 100 * DAY_MS));
+    await seedRetired(wsIdle.userId, "k", idleVal, new Date(now.getTime() - 100 * DAY_MS));
+
+    const [activeRun] = await db
+      .insert(runs)
+      .values({ workflowVersionId: wsRun.versionId, state: "running", triggerPayload: { v: runVal }, error: runVal })
+      .returning();
+    const [delRun] = await db
+      .insert(runs)
+      .values({ workflowVersionId: wsDel.versionId, state: "succeeded", triggerPayload: { v: delVal } })
+      .returning();
+    const [activeDel] = await db
+      .insert(deliveries)
+      .values({ userId: wsDel.userId, runId: delRun!.id, stepId: "send", provider: "slack", reference: `REF-${delVal}`, payload: { text: delVal }, state: "sending", lastError: delVal })
+      .returning();
+    const [idleRun] = await db
+      .insert(runs)
+      .values({ workflowVersionId: wsIdle.versionId, state: "failed", triggerPayload: { v: idleVal }, error: idleVal })
+      .returning();
+
+    // First sweep: skips wsRun and wsDel, purges wsIdle cleanly.
+    const first = await purgeRetiredSecrets(db, key, { now });
+    expect(first).toEqual({ workspaces: 1, retiredDeleted: 1, rowsScrubbed: 1 });
+
+    expect(await db.select().from(retiredSecrets).where(eq(retiredSecrets.id, retiredRun.id))).toHaveLength(1);
+    expect(await db.select().from(retiredSecrets).where(eq(retiredSecrets.id, retiredDel.id))).toHaveLength(1);
+    expect(await db.select().from(retiredSecrets).where(eq(retiredSecrets.userId, wsIdle.userId))).toEqual([]);
+    expect((await db.select().from(runs).where(eq(runs.id, idleRun!.id)))[0]!.error).toBe("[secret]");
+
+    // Finish the active run and active delivery, then sweep again.
+    await db.update(runs).set({ state: "failed" }).where(eq(runs.id, activeRun!.id));
+    await db.update(deliveries).set({ state: "failed" }).where(eq(deliveries.id, activeDel!.id));
+
+    const second = await purgeRetiredSecrets(db, key, { now });
+    expect(second).toEqual({ workspaces: 2, retiredDeleted: 2, rowsScrubbed: 3 });
+
+    expect(await db.select().from(retiredSecrets).where(eq(retiredSecrets.userId, wsRun.userId))).toEqual([]);
+    expect(await db.select().from(retiredSecrets).where(eq(retiredSecrets.userId, wsDel.userId))).toEqual([]);
+    expect((await db.select().from(runs).where(eq(runs.id, activeRun!.id)))[0]!.error).toBe("[secret]");
+    expect((await db.select().from(deliveries).where(eq(deliveries.id, activeDel!.id)))[0]!.lastError).toBe("[secret]");
   });
 });

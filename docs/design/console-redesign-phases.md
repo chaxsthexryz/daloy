@@ -1,6 +1,6 @@
 # Daloy console redesign handoff
 
-Work in C:/dev/balitos-portfolio/daloy-homepage on branch `ui/automation-home`. Read PROJECT.md, AGENTS.md and the Automations homepage section of DESIGN.md before editing. The approved reference is `c92ddc7`. Current main through `9e03c03` has been integrated on the design branch. The target is the signed-in console, including its role-specific views. Preserve routes, permissions, localization, keyboard access and working actions. Use real state for metrics.
+Work in the `../daloy-homepage` worktree on branch `ui/automation-home`. Read PROJECT.md, AGENTS.md and the Automations homepage section of DESIGN.md before editing. The approved reference is `c92ddc7`. Current main through `9e03c03` has been integrated on the design branch. The target is the signed-in console, including its role-specific views. Preserve routes, permissions, localization, keyboard access and working actions. Use real state for metrics.
 
 ## Phase ledger
 

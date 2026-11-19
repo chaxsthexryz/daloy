@@ -90,7 +90,7 @@ export function officeRequestDefinition(answers: OfficeRequestAnswers, language:
         config: {
           to: "{{trigger.email}}",
           subject: "We received your request {{trigger.reference}}",
-          text: `Hi {{trigger.name}},\n\nWe received your request: {{trigger.summary}}\nYour reference is {{trigger.reference}}. Quote it if you ask about this request.`,
+          text: "We received your request.\nYour reference is {{trigger.reference}}. Quote it if you ask about this request.",
         },
       },
       ...extra,
