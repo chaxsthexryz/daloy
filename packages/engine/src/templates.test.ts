@@ -42,14 +42,17 @@ describe("starter templates", () => {
     expect(def.steps.find((s) => s.id === "is_billing")!.config).toEqual({ condition: { left: "{{steps.classify.output.label}}", op: "eq", right: "billing" } });
   });
 
-  // Steps reachable from a start step without crossing an approval step (an approval step itself counts as reached).
+  // Steps reachable without human action (including approval timeout branches, which fire automatically).
   const reachBeforeApproval = (def: WorkflowDefinition) => {
     const hasIncoming = new Set(def.edges.map((e) => e.to));
     const seen = new Set<string>();
     const walk = (id: string) => {
       if (seen.has(id)) return;
       seen.add(id);
-      if (def.steps.find((s) => s.id === id)?.type === "approval") return;
+      if (def.steps.find((s) => s.id === id)?.type === "approval") {
+        for (const e of def.edges) if (e.from === id && e.on === "timeout") walk(e.to);
+        return;
+      }
       for (const e of def.edges) if (e.from === id) walk(e.to);
     };
     for (const s of def.steps) if (!hasIncoming.has(s.id)) walk(s.id);
@@ -59,10 +62,13 @@ describe("starter templates", () => {
 
   // Not part of N11c-2: order-to-sheets belongs to another branch; the two reminders are wanted copies of the form's own details.
   const REMINDER_EXEMPT = ["order-to-sheets", "appointment-reminder", "renewal-reminders"];
-  it.each(formStarters.filter(([slug]) => !REMINDER_EXEMPT.includes(slug)))("%s sends no submitted text to the form's address before an approval", (_slug, def) => {
-    for (const s of reachBeforeApproval(def)) {
-      if (s.type !== "email" || !/\{\{\s*trigger\./.test(String(s.config.to))) continue;
-      expect(`${s.config.subject}\n${s.config.text}`, s.id).not.toMatch(/\{\{\s*trigger\./);
+  it.each(formStarters.filter(([slug]) => !REMINDER_EXEMPT.includes(slug)))("%s sends no submitted text to the form's address before an approval (including timeout)", (slug, def) => {
+    for (const lang of ["en", "tl"] as const) {
+      const localized = lang === "en" ? def : templatesForLanguage("tl").find((t) => t.slug === slug)!.definition;
+      for (const s of reachBeforeApproval(localized)) {
+        if (s.type !== "email" || !/\{\{\s*trigger\./.test(String(s.config.to))) continue;
+        expect(`${s.config.subject}\n${s.config.text}`, `${slug}:${lang}:${s.id}`).not.toMatch(/\{\{\s*(trigger|steps)\./);
+      }
     }
   });
 

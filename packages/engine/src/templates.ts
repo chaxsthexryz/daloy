@@ -514,7 +514,7 @@ export const TEMPLATES = [
         {
           id: "tell_no_decision",
           type: "email",
-          config: { to: "{{trigger.email}}", subject: "No decision on your expense yet", text: "Hi {{trigger.name}}, nobody has decided on your receipt from {{steps.read_receipt.output.shop}} yet. Please ask the owner." },
+          config: { to: "{{trigger.email}}", subject: "No decision on your expense yet", text: "Nobody has decided on your expense submission yet. Please ask the owner." },
         },
       ],
       edges: [

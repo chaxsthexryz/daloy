@@ -24,7 +24,7 @@ Fixed in `2988b78`: added `eq(connections.authMethod, "oauth")` to `connectionsS
 
 `websiteInquiryDefinition`, `officeRequestDefinition`, and `purchaseRequestDefinition` (plus Tagalog strings in `packages/engine/src/template-language.ts`) were missed by the earlier M10 fix and still echoed visitor-supplied `name`, `message`, `summary`, or `cost` into emails sent to visitor-supplied addresses.
 
-Fixed in `6caf0d2`: removed visitor fields from public receipt and customer reply steps across `packages/engine/src/website-inquiry.ts`, `office-request.ts`, `purchase-request.ts`, and `template-language.ts`, keeping fixed acknowledgement text and the opaque `{{trigger.reference}}` where tracked. Internal staff notifications still carry the submitted details. Covered by `packages/engine/src/templates.test.ts` and `packages/engine/src/email-language.test.ts`.
+Fixed in `6caf0d2` and the follow-up timeout fix: removed visitor fields from public receipt, customer reply, and unapproved `tell_no_decision` timeout steps across `packages/engine/src/website-inquiry.ts`, `office-request.ts`, `purchase-request.ts`, `templates.ts` (`receipt-expense`), and `template-language.ts`, keeping fixed acknowledgement text and the opaque `{{trigger.reference}}` where tracked. Internal staff notifications still carry the submitted details. `packages/engine/src/templates.test.ts` now traverses `on: "timeout"` edges on approval steps in both English and Tagalog. Covered by `packages/engine/src/templates.test.ts` and `packages/engine/src/email-language.test.ts`.
 
 ### M3. `purgeRetiredSecrets` loaded all workspace history in one unbounded query
 

@@ -92,7 +92,12 @@ export function purchaseRequestDefinition(a: PurchaseRequestAnswers, language: L
       },
       ...approved,
       toRequester("tell_rejected", "Your purchase request {{trigger.reference}} was not approved", `${a.approver} did not approve your request for {{trigger.summary}}. Ask them if you want to know more.`),
-      toRequester("tell_no_decision", "No decision on your purchase request {{trigger.reference}}", "Nobody decided on your request for {{trigger.summary}} within a week. Send it again if you still need it."),
+      mail(
+        "tell_no_decision",
+        "{{trigger.email}}",
+        "No decision on your purchase request {{trigger.reference}}",
+        "Nobody decided on your purchase request within a week. Send it again if you still need it.\n\nReference: {{trigger.reference}}",
+      ),
     ],
     edges: [
       { from: "send_receipt", to: "decide" },
