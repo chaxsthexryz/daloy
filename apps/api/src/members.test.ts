@@ -217,6 +217,8 @@ describe("role permissions", () => {
       ["get", "/settings/email", only],
       ["get", "/settings/connections", only],
       ["post", "/settings/connections/outlook/oauth/start", only],
+      ["post", "/settings/connections/gmail/oauth/start", only],
+      ["post", "/settings/email/disconnect", only],
       ["post", "/settings/connections/outlook/start", only],
       ["delete", "/settings/connections/trello", only],
       ["post", "/ai/draft", only, { description: "x" }],
