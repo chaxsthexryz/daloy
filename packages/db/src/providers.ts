@@ -46,6 +46,8 @@ export type ProviderUrls = {
   googleOAuth?: GoogleOAuthConfig;
   /** Gmail API base, for Gmail sent through a Google sign-in (decision 0063). Unset: such a sender is blocked. */
   gmail?: string;
+  /** The installation's own Slack app, for "Connect Slack" (decision 0061). Unset: the pasted bot token stays the main option. */
+  slackClient?: { clientId: string; clientSecret: string };
   timeoutMs?: number;
 };
 export type GoogleOAuthConfig = { clientId: string; clientSecret: string; authorize: string; token: string; revoke: string; userinfo: string; pickerApiKey?: string; projectNumber?: string };
@@ -82,6 +84,7 @@ export const providerUrls = (env: NodeJS.ProcessEnv = process.env): ProviderUrls
           projectNumber: env.GOOGLE_PROJECT_NUMBER || undefined,
         }
       : undefined,
+  slackClient: env.SLACK_CLIENT_ID && env.SLACK_CLIENT_SECRET ? { clientId: env.SLACK_CLIENT_ID, clientSecret: env.SLACK_CLIENT_SECRET } : undefined,
 });
 
 export type Reply = { status: number; headers: Headers; body: Record<string, unknown> };
@@ -487,10 +490,10 @@ async function slackCall(urls: ProviderUrls, token: string, method: string, para
   throw new ProviderError(`Slack said ${error}.`, "invalid");
 }
 
-/** auth.test: proves the token works and names the workspace. */
+/** auth.test: proves the token works and names the workspace (team) and its stable id (teamId). */
 export async function slackIdentity(urls: ProviderUrls, token: string) {
   const body = await slackCall(urls, token, "auth.test", {});
-  return { team: String(body.team ?? "Slack") };
+  return { team: String(body.team ?? "Slack"), teamId: String(body.team_id ?? "") };
 }
 
 /** Public channels, for the channel picker (channels:read). ponytail: first 200 only; page with next_cursor if a workspace has more. */

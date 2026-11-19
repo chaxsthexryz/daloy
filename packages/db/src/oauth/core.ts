@@ -70,6 +70,12 @@ export type OAuthProvider = {
   tokenParams?: Record<string, string>;
   /** Send a PKCE S256 challenge. */
   pkce: boolean;
+  /** Between scopes in the authorize URL. Default a space; Slack documents a comma. */
+  scopeSeparator?: string;
+  /** token_type values the token answer may carry, lower case. Default bearer; Slack says bot. */
+  tokenTypes?: readonly string[];
+  /** For a revoke call that answers 2xx even when it did not revoke (Slack's ok: false): whether the answer says it did. */
+  revokeAccepted?: (body: Record<string, unknown>) => boolean;
   /** The provider hands out refresh tokens: a code exchange without one is refused. */
   refreshTokens: boolean;
   /** The provider still accepts the previous refresh token after it rotated: retry a refused refresh once with it. */
@@ -119,7 +125,7 @@ const verifierName = (flowId: string) => `oauth-flow:${flowId}`;
 
 /** The provider's consent page. state is opaque; codeChallenge is the S256 of the verifier when the provider uses PKCE. */
 export function authorizeUrl(def: OAuthProvider, urls: ProviderUrls, o: { redirectUri: string; state: string; codeChallenge?: string }) {
-  const q = new URLSearchParams({ client_id: clientOf(def, urls).clientId, response_type: "code", redirect_uri: o.redirectUri, scope: def.scopes.join(" "), state: o.state });
+  const q = new URLSearchParams({ client_id: clientOf(def, urls).clientId, response_type: "code", redirect_uri: o.redirectUri, scope: def.scopes.join(def.scopeSeparator ?? " "), state: o.state });
   if (def.pkce && o.codeChallenge) {
     q.set("code_challenge", o.codeChallenge);
     q.set("code_challenge_method", "S256");
@@ -186,7 +192,7 @@ async function tokenRequest(def: OAuthProvider, urls: ProviderUrls, params: Reco
   const body = new URLSearchParams({ client_id: client.clientId, client_secret: client.clientSecret, ...def.tokenParams, ...params });
   const res = await call(def.tokenUrl(urls), { method: "POST", body }, urls.timeoutMs ?? 10_000, false, `${def.name} sign-in`);
   const b = res.body;
-  if (res.status === 200 && typeof b.access_token === "string" && b.access_token && String(b.token_type ?? "").toLowerCase() === "bearer") {
+  if (res.status === 200 && typeof b.access_token === "string" && b.access_token && (def.tokenTypes ?? ["bearer"]).includes(String(b.token_type ?? "").toLowerCase())) {
     return {
       accessToken: b.access_token,
       refreshToken: typeof b.refresh_token === "string" && b.refresh_token ? b.refresh_token : undefined,
@@ -399,7 +405,8 @@ export async function withFreshToken<T>(db: Db, key: Buffer, urls: ProviderUrls,
 export async function keepOAuthAlive(db: Db, key: Buffer, urls: ProviderUrls, defs: readonly OAuthProvider[], limit = 20) {
   let refreshed = 0;
   for (const def of defs) {
-    if (!def.client(urls) || refreshed >= limit) continue;
+    // A grant that never expires has no refresh token to use, and a forced refresh would mark it failed.
+    if (!def.client(urls) || !def.refreshTokens || refreshed >= limit) continue;
     const store = storeOf(def);
     const due = await store.due(db, def.keepaliveDays, limit - refreshed);
     for (const r of due) {
@@ -430,7 +437,7 @@ export async function disconnectOAuth(db: Db, key: Buffer, urls: ProviderUrls, w
     const token = blob.refreshToken ?? blob.accessToken;
     const body = new URLSearchParams({ token, token_type_hint: blob.refreshToken ? "refresh_token" : "access_token", client_id: client.clientId, client_secret: client.clientSecret });
     const res = await call(def.revokeUrl(urls), { method: "POST", body }, Math.min(5000, urls.timeoutMs ?? 5000), false, `${def.name} revoke`);
-    return { removed: true, revoked: res.status >= 200 && res.status < 300 };
+    return { removed: true, revoked: res.status >= 200 && res.status < 300 && (def.revokeAccepted?.(res.body) ?? true) };
   } catch {
     return { removed: true, revoked: false };
   }

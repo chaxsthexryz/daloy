@@ -12,8 +12,10 @@ test("an owner asks why a request stopped and only reads, nothing in the card ch
 
   await page.getByRole("link", { name: "Apps" }).first().click();
   await page.getByRole("button", { name: "Connect Slack" }).click();
+  // This installation has a Slack app (decision 0061), so the pasted token is under Advanced.
+  await page.getByText("Advanced: use your own Slack app token").click();
   await page.getByLabel("Bot token").fill(process.env.E2E_SLACK_TOKEN!);
-  await page.getByRole("button", { name: "Connect Slack" }).click();
+  await page.getByRole("button", { name: "Save token" }).click();
   await page.getByRole("button", { name: "Pick a channel" }).click();
   await page.getByLabel("Channel", { exact: true }).selectOption({ label: "#office-requests" });
   await page.getByRole("button", { name: "Save channel" }).click();

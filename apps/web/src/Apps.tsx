@@ -70,7 +70,7 @@ export function AppsPage({ outcome }: { outcome?: { app: string; code: string } 
   const setup: Record<Key, () => ReactNode> = {
     gmail: () => <GmailCard data={mail} google={conns.oauth.includes("gmail")} outcome={landed === "gmail" ? outcome?.code : undefined} onChange={load} />,
     google_sheets: () => <GoogleSheetsCard conn={conn("google_sheets")} configured={conns.oauth.includes("google-sheets")} outcome={landed === "google_sheets" ? outcome?.code : undefined} onChange={load} />,
-    slack: () => <SlackConnection conn={conn("slack")} onChange={load} />,
+    slack: () => <SlackConnection conn={conn("slack")} configured={conns.oauth.includes("slack")} outcome={landed === "slack" ? outcome?.code : undefined} onChange={load} />,
     outlook: () => <OutlookConnection conn={conn("outlook")} setup={conns.outlook} outcome={landed === "outlook" ? outcome?.code : undefined} onChange={load} />,
     teams: () => <TeamsConnection conn={conn("teams")} onChange={load} />,
     telegram: () => <TelegramConnection conn={conn("telegram")} onChange={load} />,

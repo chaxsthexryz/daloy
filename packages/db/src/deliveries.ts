@@ -3,7 +3,7 @@ import { backoffDelayMs, FILE_MIME, type FileRef, type RetryPolicy } from "@dalo
 import { and, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { connectionCredential, markConnectionFailed, PROVIDER_NAMES } from "./connections";
 import { withGoogle } from "./google-access";
-import { freshToken, oauthProvider, withFreshToken } from "./oauth";
+import { freshToken, oauthProvider, slackToken, withFreshToken } from "./oauth";
 import type { Db } from "./index";
 import { airtableAdd, appendRowOnce, driveUpload, type DriveDestination, notionAddPage, trelloAddCard, type TrelloCredential, deleteSheetMarker, outlookSend, ProviderError, slackPost, syncCalendarEvent, teamsPost, telegramSend, type CalendarDestination, type OutlookMessage, type ProviderErrorKind, type ProviderUrls, type SheetDestination } from "./providers";
 import { bookingSuperseded, supersededSql } from "./bookings";
@@ -175,7 +175,7 @@ async function attempt(db: Db, key: Buffer, urls: ProviderUrls, d: Delivery): Pr
     const text = p.text;
     if (d.provider === "teams") return { state: "delivered", result: await teamsPost(urls, conn.credential, text) };
     if (d.provider === "telegram") return { state: "delivered", result: await telegramSend(urls, conn.credential, destination.chatId!, text) };
-    return { state: "delivered", result: await slackPost(urls, conn.credential, destination.channelId!, text) };
+    return { state: "delivered", result: await slackPost(urls, slackToken(conn), destination.channelId!, text) };
   };
   try {
     // An expiring OAuth token is refreshed before the booking-lock transaction opens, so the common refresh never needs

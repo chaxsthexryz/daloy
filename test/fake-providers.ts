@@ -68,7 +68,7 @@ export async function startFakeProviders(port = 0) {
   const revoked = new Set<string>();
   const tokens = new Map<string, string>(); // access token -> email
   const sheets = new Map<string, { title: string; tabs: Map<string, string[][]>; editors: Set<string>; metadata: Map<number, SheetMeta> }>();
-  const slack = { token: "", team: "Lim Dental", channels: [{ id: "C0REQ", name: "office-requests", is_member: true }], messages: [] as { channel: string; text: string; ts: string }[], revoked: false };
+  const slack = { token: "", team: "Lim Dental", channels: [{ id: "C0REQ", name: "office-requests", is_member: true }], messages: [] as { channel: string; text: string; ts: string }[], revoked: false, installs: new Map<string, { teamId: string; team: string }>(), revokedInstalls: [] as string[] };
   const telegram = { token: "", bot: "daloy_test_bot", chats: [{ id: -1001234567890, title: "Office team" }] as { id: number; title: string }[], messages: [] as { chat: string; text: string; id: number }[], revoked: false };
   // Airtable, Notion and Trello (N15, decision 0046): a bearer or key/token check, one target each, and the records added.
   const airtable = { token: "", base: "appFAKEBASE000001", table: "tblFAKETABLE00001", records: [] as { id: string; fields: Record<string, unknown> }[], revoked: false };
@@ -98,7 +98,10 @@ export async function startFakeProviders(port = 0) {
   const teams = { flows: new Set(["flow-purchasing"]), posts: [] as { flow: string; text: string }[] };
   // Gmail API (decision 0063): messages sent with a Google OAuth access token, as the RFC 822 text Google received.
   const gmail = { sent: [] as { id: string; user: string; raw: string }[] };
-  const oauth: Record<string, ReturnType<typeof oauthApp>> = { test: oauthApp("test") };
+  // "v2" is Slack's "Connect Slack" install (/oauth/v2/authorize, and /api/oauth.v2.access below): bot tokens that never expire.
+  // Its user stands for the installing workspace: id is the team id and email the team name.
+  const oauth: Record<string, ReturnType<typeof oauthApp>> = { test: oauthApp("test"), v2: oauthApp("v2", { refresh: false, expiresIn: undefined }) };
+  oauth.v2!.user = { id: "T0INSTALL1", email: "Acme Dental" };
   const pending: { path: string; behaviour: Behaviour; skip: number }[] = [];
   const calls: string[] = [];
   const hanging = new Set<ServerResponse>();
@@ -156,8 +159,9 @@ export async function startFakeProviders(port = 0) {
     // For the e2e suite, whose tests run in other processes: read counts, and take the Slack app out of the channel.
     if (path === "/__control") {
       if (req.method === "POST") {
-        const c = JSON.parse(raw) as { slackMember?: boolean; microsoftConsent?: typeof microsoft.consent };
+        const c = JSON.parse(raw) as { slackMember?: boolean; slackConsent?: "grant" | "declined"; microsoftConsent?: typeof microsoft.consent };
         if (c.slackMember !== undefined) slack.channels[0]!.is_member = c.slackMember;
+        if (c.slackConsent) oauth.v2!.consent = c.slackConsent;
         if (c.microsoftConsent) microsoft.consent = c.microsoftConsent;
       }
       return json(res, 200, {
@@ -165,6 +169,8 @@ export async function startFakeProviders(port = 0) {
         calendarEvents: [...calendars.values()].flatMap((c) => [...c.events.values()]),
         sheetRows: [...sheets.values()].flatMap((s) => [...s.tabs.values()].flat()).length,
         slackMessages: slack.messages.map((m) => m.text),
+        slackInstalls: slack.installs.size,
+        slackRevokedInstalls: slack.revokedInstalls.length,
         outlookMessages: microsoft.sent,
         teamsPosts: teams.posts.map((p) => p.text),
         telegramMessages: telegram.messages.map((m) => m.text),
@@ -497,13 +503,36 @@ export async function startFakeProviders(port = 0) {
     }
 
     // Slack Web API: always HTTP 200 with ok false and an error code, except rate limits.
-    const slackMethod = /^\/api\/([a-zA-Z.]+)$/.exec(path)?.[1];
+    const slackMethod = /^\/api\/([\w.]+)$/.exec(path)?.[1];
+    if (slackMethod === "oauth.v2.access") {
+      // The install's code exchange: HTTP 200 with ok false for a bad code or client, a "bot" token otherwise (see the "v2" app).
+      const app = oauth.v2!;
+      const form = new URLSearchParams(raw);
+      app.tokenCalls++;
+      const c = app.codes.get(form.get("code") ?? "");
+      app.codes.delete(form.get("code") ?? "");
+      if (form.get("client_id") !== app.clientId || form.get("client_secret") !== app.clientSecret) return json(res, 200, { ok: false, error: "invalid_client_id" });
+      if (!c || c.redirectUri !== form.get("redirect_uri")) return json(res, 200, { ok: false, error: "invalid_code" });
+      const access = `xoxb-fake-install-${++seq}-${seq}abcdef`;
+      slack.installs.set(access, { teamId: c.user.id, team: c.user.email });
+      return answer(200, { ok: true, access_token: access, token_type: "bot", scope: c.scope.split(/[\s,]+/).filter(Boolean).join(","), bot_user_id: "U0BOT", app_id: "A0FAKE", team: { id: c.user.id, name: c.user.email }, authed_user: { id: "U0INSTALLER" } });
+    }
+    if (slackMethod === "auth.revoke") {
+      // The token comes as a form field (what Daloy sends) or as the bearer. app.revokeStatus other than 200 makes it answer ok false.
+      const form = new URLSearchParams(raw);
+      const token = form.get("token") ?? (req.headers.authorization ?? "").replace(/^Bearer /, "");
+      if (oauth.v2!.revokeStatus !== 200 || !slack.installs.has(token)) return json(res, 200, { ok: false, error: "invalid_auth" });
+      slack.installs.delete(token);
+      slack.revokedInstalls.push(token);
+      return answer(200, { ok: true, revoked: true });
+    }
     if (slackMethod) {
       const form = new URLSearchParams(raw);
       const token = (req.headers.authorization ?? "").replace(/^Bearer /, "");
-      if (!slack.token || token !== slack.token) return json(res, 200, { ok: false, error: "invalid_auth" });
+      const install = slack.installs.get(token);
+      if (!install && (!slack.token || token !== slack.token)) return json(res, 200, { ok: false, error: "invalid_auth" });
       if (slack.revoked) return json(res, 200, { ok: false, error: "token_revoked" });
-      if (slackMethod === "auth.test") return json(res, 200, { ok: true, team: slack.team, user: "daloy", team_id: "T0FAKE" });
+      if (slackMethod === "auth.test") return json(res, 200, { ok: true, team: install?.team ?? slack.team, user: "daloy", team_id: install?.teamId ?? "T0FAKE" });
       if (slackMethod === "conversations.list") return json(res, 200, { ok: true, channels: slack.channels });
       if (slackMethod === "chat.postMessage") {
         const channel = slack.channels.find((c) => c.id === form.get("channel"));
