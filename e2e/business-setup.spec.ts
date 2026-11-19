@@ -32,8 +32,10 @@ test("an owner sets up inquiry replies and a customer's inquiry reaches both inb
   // Connecting Gmail (on Apps) sends nothing; disconnecting pauses mail until the owner picks the local server again.
   await page.getByRole("link", { name: "Apps" }).first().click();
   await page.getByRole("button", { name: "Connect Gmail" }).click();
+  // The e2e stack has a Google client, so the app password form is under Advanced (decision 0063).
+  await page.getByText("Advanced: use a key or token instead").click();
   await page.getByLabel("Gmail address").fill(`lim.dental.${stamp}@gmail.com`);
-  await page.getByLabel("App password").fill("abcd efgh ijkl mnop");
+  await page.getByLabel("App password", { exact: true }).fill("abcd efgh ijkl mnop");
   await page.getByRole("button", { name: "Save Gmail sender" }).click();
   await expect(page.getByText("Waiting for you to confirm the test email")).toBeVisible();
   await page.getByRole("link", { name: "Business", exact: true }).first().click();

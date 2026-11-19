@@ -35,7 +35,10 @@ export function useAction(onChange: () => Promise<unknown>) {
   return { error, busy, act };
 }
 
-export function Status({ conn, label }: { conn: Connection; label: string }) {
+/** What the panel shows of a connection. Gmail passes its sender, which is not a connections row (decision 0063). */
+type Shown = Pick<Connection, "account" | "lastError"> & { status: string };
+
+export function Status({ conn, label }: { conn: Shown; label: string }) {
   const { t } = useLanguage();
   return (
     <p className="in-use">
@@ -55,7 +58,11 @@ export function ConnectPanel(p: {
   slug: string;
   name: string;
   configured: boolean;
-  conn: Connection | null;
+  conn: Shown | null;
+  /** Replaces the account line, for an app with states of its own (Gmail). */
+  status?: ReactNode;
+  /** Disconnect for an app that is not in connections (Gmail). Default: DELETE /settings/connections/<slug>. */
+  disconnect?: () => Promise<{ revoked: boolean } | undefined>;
   /** The main button's text before connecting, when it differs from "Connect <name>" (Google: "Connect with Google"). */
   connectLabel?: string;
   /** The label before the account, such as Mailbox or Account. */
@@ -86,7 +93,7 @@ export function ConnectPanel(p: {
   const disconnect = () =>
     window.confirm(t("Disconnect {app}? Automations stop sending there until you reconnect.", { app: p.name })) &&
     void act(async () => {
-      const out = await api<{ revoked: boolean } | undefined>("DELETE", `/settings/connections/${p.slug}`);
+      const out = await (p.disconnect ? p.disconnect() : api<{ revoked: boolean } | undefined>("DELETE", `/settings/connections/${p.slug}`));
       setRemoved(out?.revoked !== true);
     });
 
@@ -102,7 +109,7 @@ export function ConnectPanel(p: {
         (p.form ?? p.unavailable)
       ) : (
         <>
-          {p.conn && <Status conn={p.conn} label={t(p.label)} />}
+          {p.conn && (p.status ?? <Status conn={p.conn} label={t(p.label)} />)}
           {p.children}
           {p.intro}
           <div className="actions">

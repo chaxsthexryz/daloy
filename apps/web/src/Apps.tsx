@@ -1,7 +1,7 @@
 import { Text, useLanguage } from "./Language";
 import { useEffect, useState, type ReactNode } from "react";
 import { api } from "./api";
-import { PILL, SenderSection, type Settings } from "./BusinessSetup";
+import { GmailCard, PILL, type Settings } from "./BusinessSetup";
 import { CalendarConnection, OutlookConnection, RecordConnection, PaymongoConnection, SlackConnection, TeamsConnection, TelegramConnection, type Connection, type OutlookSetup, type Provider } from "./Connections";
 import { GoogleDriveCard, GoogleSheetsCard } from "./GoogleConnect";
 import { Header } from "./Nav";
@@ -66,7 +66,7 @@ export function AppsPage({ outcome }: { outcome?: { app: string; code: string } 
   const more = found.filter((a) => !state(a.key));
   const total = APPS.filter((a) => state(a.key)).length;
   const setup: Record<Key, () => ReactNode> = {
-    gmail: () => <SenderSection data={mail} onChange={load} />,
+    gmail: () => <GmailCard data={mail} google={conns.oauth.includes("gmail")} outcome={landed === "gmail" ? outcome?.code : undefined} onChange={load} />,
     google_sheets: () => <GoogleSheetsCard conn={conn("google_sheets")} configured={conns.oauth.includes("google-sheets")} outcome={landed === "google_sheets" ? outcome?.code : undefined} onChange={load} />,
     slack: () => <SlackConnection conn={conn("slack")} onChange={load} />,
     outlook: () => <OutlookConnection conn={conn("outlook")} setup={conns.outlook} outcome={landed === "outlook" ? outcome?.code : undefined} onChange={load} />,
