@@ -1,3 +1,20 @@
+# The managed OAuth clients, the same for the API and the worker (docs/oauth-setup.md). OAUTH_ENV must match PUBLIC_URL
+# once any client is set, or both refuse to start (decision 0058).
+x-oauth-clients: &oauth-clients
+  OAUTH_ENV: ${OAUTH_ENV:-}
+  GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID:-}
+  GOOGLE_OAUTH_CLIENT_SECRET: ${GOOGLE_OAUTH_CLIENT_SECRET:-}
+  GOOGLE_PICKER_API_KEY: ${GOOGLE_PICKER_API_KEY:-}
+  GOOGLE_PROJECT_NUMBER: ${GOOGLE_PROJECT_NUMBER:-}
+  SLACK_CLIENT_ID: ${SLACK_CLIENT_ID:-}
+  SLACK_CLIENT_SECRET: ${SLACK_CLIENT_SECRET:-}
+  AIRTABLE_CLIENT_ID: ${AIRTABLE_CLIENT_ID:-}
+  AIRTABLE_CLIENT_SECRET: ${AIRTABLE_CLIENT_SECRET:-}
+  NOTION_CLIENT_ID: ${NOTION_CLIENT_ID:-}
+  NOTION_CLIENT_SECRET: ${NOTION_CLIENT_SECRET:-}
+  TRELLO_CLIENT_ID: ${TRELLO_CLIENT_ID:-}
+  TRELLO_CLIENT_SECRET: ${TRELLO_CLIENT_SECRET:-}
+
 services:
   postgres:
     # Pinned by version and digest so a rebuild never picks up a new image silently. Update both together.
@@ -71,6 +88,8 @@ services:
       MICROSOFT_CLIENT_ID: ${MICROSOFT_CLIENT_ID:-}
       MICROSOFT_CLIENT_SECRET: ${MICROSOFT_CLIENT_SECRET:-}
       MICROSOFT_TENANT: ${MICROSOFT_TENANT:-organizations}
+      # Managed OAuth clients ("Connect with X", docs/oauth-setup.md). Empty means the app keeps its paste form.
+      <<: *oauth-clients
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
@@ -102,6 +121,8 @@ services:
       MICROSOFT_CLIENT_ID: ${MICROSOFT_CLIENT_ID:-}
       MICROSOFT_CLIENT_SECRET: ${MICROSOFT_CLIENT_SECRET:-}
       MICROSOFT_TENANT: ${MICROSOFT_TENANT:-organizations}
+      # Managed OAuth clients ("Connect with X", docs/oauth-setup.md). Empty means the app keeps its paste form.
+      <<: *oauth-clients
       # For the "Test" button on the AI model page. Same defaults as the worker.
       LLM_BASE_URL: ${LLM_BASE_URL:-http://host.docker.internal:11434}
       LLM_MODEL: ${LLM_MODEL:-llama3.2}
