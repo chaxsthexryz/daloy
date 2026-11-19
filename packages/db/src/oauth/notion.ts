@@ -17,6 +17,7 @@ export const notion: OAuthProvider = {
   authorizeUrl: (urls) => `${api(urls)}/authorize`,
   tokenUrl: (urls) => `${api(urls)}/token`,
   revokeUrl: (urls) => `${api(urls)}/revoke`,
+  revokeToken: "access",
   scopes: [],
   requiredScopes: [],
   // The owner who connects, not a workspace-wide install.
@@ -24,10 +25,10 @@ export const notion: OAuthProvider = {
   tokenAuth: "basic",
   tokenFormat: "json",
   tokenHeaders: { "notion-version": NOTION_VERSION },
-  // Notion's token answer has no PKCE support documented (unverified).
+  // The public integration authorization reference documents a code exchange without PKCE.
   pkce: false,
-  // Ordinary public integrations may issue a token that never expires, or an expiring one with a rotating refresh token
-  // (unverified which): both work. A refresh token is kept when one comes, and one that is missing is not an error.
+  // The token reference documents rotating refresh tokens without an expires_in field. Keep legacy
+  // nonexpiring grants usable too; a refresh token is retained whenever the provider returns one.
   refreshTokens: false,
   keepaliveDays: 30,
   identity: async (urls, accessToken) => {

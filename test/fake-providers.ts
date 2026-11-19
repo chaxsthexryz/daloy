@@ -250,6 +250,7 @@ export async function startFakeProviders(port = 0) {
         const token = form.get("token") ?? "";
         app.revoked.push(token);
         if (app.revokeStatus !== 200) return json(res, app.revokeStatus, { error: "server_error" });
+        if (app.name === "notion" && !app.accessTokens.has(token)) return json(res, 400, { error: "invalid_request" });
         app.refreshTokens.delete(token);
         app.accessTokens.delete(token);
         return json(res, 200, {});

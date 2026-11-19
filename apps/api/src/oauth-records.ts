@@ -1,5 +1,5 @@
-import { BadRequestException, NotFoundException } from "@nestjs/common";
-import { connectionCredential, markConnectionFailed, PROVIDER_NAMES, ProviderError, withRecordAuth, type Db, type Provider } from "@daloy/db";
+import { BadRequestException, ConflictException, NotFoundException } from "@nestjs/common";
+import { connectionCredential, markConnectionFailed, PROVIDER_NAMES, ProviderError, setDestination, withRecordAuth, type Db, type Provider } from "@daloy/db";
 import type { ApiConfig, SessionUser } from "./http";
 
 /**
@@ -29,3 +29,9 @@ export async function pickerCall<T>(db: Db, config: Config, user: SessionUser, p
 }
 
 export const notInList = (what: string) => new BadRequestException(`That ${what} is not in the list. Refresh the list and pick again.`);
+
+
+/** Save only against the credential that verified the list. Reconnecting during a picker read requires another pick. */
+export async function saveRecordTarget(db: Db, user: SessionUser, provider: Provider, conn: Awaited<ReturnType<typeof oauthConnection>>, destination: Record<string, string>) {
+  if (!(await setDestination(db, user.workspaceId, provider, destination, conn.revision))) throw new ConflictException("The connection changed while the list was loading. Refresh the list and pick again.");
+}

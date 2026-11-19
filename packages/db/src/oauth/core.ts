@@ -37,6 +37,8 @@ export type OAuthProvider = {
   tokenUrl: (urls: ProviderUrls) => string;
   /** Undefined: the provider has no revoke call Daloy can use, so the page says where to remove access. */
   revokeUrl?: (urls: ProviderUrls) => string;
+  /** Notion revokes an access token. Other providers prefer the refresh token when there is one. */
+  revokeToken?: "access";
   /** The scope manifest: what is asked for, in order. scopes.test.ts snapshots it. */
   scopes: readonly string[];
   /** What must come back granted, as the provider names it in the token answer. A narrower grant saves nothing. */
@@ -296,6 +298,7 @@ async function refreshLocked(db: Db, key: Buffer, urls: ProviderUrls, workspaceI
           throw again;
         }
       }
+      if (!grantedEnough(def, t.scope)) return refuse(new ProviderError(`${def.name} no longer grants the permissions Daloy needs. Reconnect ${def.name}.`, "auth"));
       const next: TokenBlob = {
         v: 1,
         accessToken: t.accessToken,
@@ -327,7 +330,8 @@ async function refreshLocked(db: Db, key: Buffer, urls: ProviderUrls, workspaceI
  */
 export async function freshToken(db: Db, key: Buffer, urls: ProviderUrls, workspaceId: string, def: OAuthProvider, conn: HeldConnection, o: { rejected?: string; force?: boolean } = {}) {
   const blob = readTokenBlob(conn.credential);
-  if (!o.force && o.rejected === undefined && fresh(blob)) return blob.accessToken;
+  // A nonexpiring grant with no refresh token can only be checked by calling the API itself.
+  if (o.rejected === undefined && fresh(blob) && (!o.force || (!blob.refreshToken && blob.accessExpiresAt === null))) return blob.accessToken;
   const held = await refreshLocked(db, key, urls, workspaceId, def, o);
   conn.credential = held.credential;
   conn.revision = held.revision;
@@ -392,7 +396,7 @@ export async function disconnectOAuth(db: Db, key: Buffer, urls: ProviderUrls, w
   try {
     const client = clientOf(def, urls);
     const blob = readTokenBlob(decryptSecret(key, workspaceId, `connection:${def.provider}`, { ciphertext: row.credentialCiphertext, iv: row.credentialIv, authTag: row.credentialAuthTag }));
-    const token = blob.refreshToken ?? blob.accessToken;
+    const token = def.revokeToken === "access" ? blob.accessToken : (blob.refreshToken ?? blob.accessToken);
     const init = clientRequest(def, client, { token, ...(def.tokenFormat === "json" ? {} : { token_type_hint: blob.refreshToken ? "refresh_token" : "access_token" }) });
     const res = await call(def.revokeUrl(urls), init, Math.min(5000, urls.timeoutMs ?? 5000), false, `${def.name} revoke`);
     return { removed: true, revoked: res.status >= 200 && res.status < 300 };

@@ -10,7 +10,7 @@ export const AIRTABLE_SCOPES = ["data.records:write", "schema.bases:read"];
 
 const login = (urls: ProviderUrls) => urls.airtableLogin ?? "https://airtable.com";
 
-/** Airtable on the shared core. PKCE is on (Airtable's reference requires it, per a forum post: unverified), the client secret goes in a Basic header. */
+/** Airtable's OAuth reference requires S256 PKCE and HTTP Basic client credentials. */
 export const airtable: OAuthProvider = {
   provider: "airtable",
   slug: "airtable",
@@ -18,13 +18,13 @@ export const airtable: OAuthProvider = {
   client: (urls) => urls.airtableClient,
   authorizeUrl: (urls) => `${login(urls)}/oauth2/v1/authorize`,
   tokenUrl: (urls) => `${login(urls)}/oauth2/v1/token`,
-  // No revokeUrl: no Airtable call that ends a grant for an app was found (unverified). The page tells the owner to remove Daloy in Airtable.
+  // Airtable documents manual revocation, with no dedicated OAuth refresh-token revoke endpoint.
   scopes: AIRTABLE_SCOPES,
   requiredScopes: AIRTABLE_SCOPES,
   tokenAuth: "basic",
   pkce: true,
   refreshTokens: true,
-  // A refresh token stops working after 60 days without use, and is revoked if used again after it rotated (official support page, per search): half of 60.
+  // Airtable invalidates idle refresh tokens after 60 days and rotates them on use: refresh halfway through.
   keepaliveDays: 30,
   identity: async (urls, accessToken) => {
     const me = await airtableCall(urls, accessToken, "GET", "meta/whoami");

@@ -1,9 +1,9 @@
-import { airtableBases, airtableTables, setDestination, type Db } from "@daloy/db";
+import { airtableBases, airtableTables, type Db } from "@daloy/db";
 import { Body, Controller, Get, HttpCode, Inject, Param, Put, UseGuards } from "@nestjs/common";
 import * as z from "zod";
 import { SessionGuard } from "./auth";
 import { Allow, CONFIG, CurrentUser, DB, MANAGE, RateLimit, ZodPipe, type SessionUser } from "./http";
-import { notInList, oauthConnection, pickerCall, type Config } from "./oauth-records";
+import { notInList, oauthConnection, pickerCall, saveRecordTarget, type Config } from "./oauth-records";
 
 // Airtable ids: a base is app..., a table is tbl... (a name is never accepted, security review M16).
 const baseParam = new ZodPipe(z.string().regex(/^app[A-Za-z0-9]{10,30}$/));
@@ -29,7 +29,10 @@ export class AirtableOAuthController {
   @UseGuards(RateLimit(20))
   async tables(@CurrentUser() user: SessionUser, @Param("baseId", baseParam) baseId: string) {
     const conn = await oauthConnection(this.db, this.config, user, "airtable");
-    return pickerCall(this.db, this.config, user, "airtable", conn, (t) => airtableTables(this.config.providers, t, baseId));
+    return pickerCall(this.db, this.config, user, "airtable", conn, async (t) => {
+      if (!(await airtableBases(this.config.providers, t)).some((base) => base.id === baseId)) throw notInList("base");
+      return airtableTables(this.config.providers, t, baseId);
+    });
   }
 
   /** Saves the target. The base and table must be in the lists read now with the connection's own token. */
@@ -44,6 +47,6 @@ export class AirtableOAuthController {
     });
     if (!base) throw notInList("base");
     if (!table) throw notInList("table");
-    await setDestination(this.db, user.workspaceId, "airtable", { baseId: base.id, tableId: table.id, baseName: base.name, tableName: table.name });
+    await saveRecordTarget(this.db, user, "airtable", conn, { baseId: base.id, tableId: table.id, baseName: base.name, tableName: table.name });
   }
 }

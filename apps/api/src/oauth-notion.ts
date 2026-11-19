@@ -1,9 +1,9 @@
-import { notionDatabase, notionDatabases, notionId, setDestination, type Db } from "@daloy/db";
+import { notionDatabase, notionDatabases, notionId, type Db } from "@daloy/db";
 import { Body, Controller, Get, HttpCode, Inject, Put, UseGuards } from "@nestjs/common";
 import * as z from "zod";
 import { SessionGuard } from "./auth";
 import { Allow, CONFIG, CurrentUser, DB, MANAGE, RateLimit, ZodPipe, type SessionUser } from "./http";
-import { notInList, oauthConnection, pickerCall, type Config } from "./oauth-records";
+import { notInList, oauthConnection, pickerCall, saveRecordTarget, type Config } from "./oauth-records";
 
 const targetInput = z.strictObject({ databaseId: z.string().regex(/^[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}$/i).transform(notionId) });
 
@@ -33,6 +33,6 @@ export class NotionOAuthController {
       (await notionDatabases(this.config.providers, t)).some((d) => d.id === body.databaseId) ? notionDatabase(this.config.providers, t, body.databaseId) : undefined,
     );
     if (!found) throw notInList("database");
-    await setDestination(this.db, user.workspaceId, "notion", { databaseId: found.databaseId, databaseTitle: found.databaseTitle, titleProperty: found.titleProperty });
+    await saveRecordTarget(this.db, user, "notion", conn, { databaseId: found.databaseId, databaseTitle: found.databaseTitle, titleProperty: found.titleProperty });
   }
 }

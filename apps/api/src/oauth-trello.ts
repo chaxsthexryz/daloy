@@ -1,9 +1,9 @@
-import { setDestination, trelloBoards, trelloLists, type Db } from "@daloy/db";
+import { trelloBoards, trelloLists, type Db } from "@daloy/db";
 import { Body, Controller, Get, HttpCode, Inject, Param, Put, UseGuards } from "@nestjs/common";
 import * as z from "zod";
 import { SessionGuard } from "./auth";
 import { Allow, CONFIG, CurrentUser, DB, MANAGE, RateLimit, ZodPipe, type SessionUser } from "./http";
-import { notInList, oauthConnection, pickerCall, type Config } from "./oauth-records";
+import { notInList, oauthConnection, pickerCall, saveRecordTarget, type Config } from "./oauth-records";
 
 const id24 = z.string().regex(/^[a-f0-9]{24}$/i);
 const boardParam = new ZodPipe(id24);
@@ -29,7 +29,11 @@ export class TrelloOAuthController {
   @UseGuards(RateLimit(20))
   async lists(@CurrentUser() user: SessionUser, @Param("boardId", boardParam) boardId: string) {
     const conn = await oauthConnection(this.db, this.config, user, "trello");
-    return pickerCall(this.db, this.config, user, "trello", conn, (t) => trelloLists(this.config.providers, { bearer: t }, boardId));
+    return pickerCall(this.db, this.config, user, "trello", conn, async (t) => {
+      const auth = { bearer: t };
+      if (!(await trelloBoards(this.config.providers, auth)).some((board) => board.id === boardId)) throw notInList("board");
+      return trelloLists(this.config.providers, auth, boardId);
+    });
   }
 
   /** Saves the list. The board and the list must be in the lists read now with the connection's own token. */
@@ -45,6 +49,6 @@ export class TrelloOAuthController {
     });
     if (!board) throw notInList("board");
     if (!list) throw notInList("list");
-    await setDestination(this.db, user.workspaceId, "trello", { boardId: board.id, boardName: board.name, listId: list.id, listName: list.name });
+    await saveRecordTarget(this.db, user, "trello", conn, { boardId: board.id, boardName: board.name, listId: list.id, listName: list.name });
   }
 }

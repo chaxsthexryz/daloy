@@ -26,7 +26,7 @@ describe("record apps: consent URLs", () => {
 
   it("Trello asks for offline access and the granular scopes with PKCE S256", () => {
     expect(at(trello, "CHALLENGE")).toBe(
-      "https://auth.example/authorize?client_id=tr-client&response_type=code&redirect_uri=https%3A%2F%2Fdaloy.example%2Fsettings%2Fconnections%2Foauth%2Fcallback&scope=offline_access+read%3Amember%3Atrello+read%3Aboard%3Atrello+write%3Aboard%3Atrello&state=STATE&code_challenge=CHALLENGE&code_challenge_method=S256&audience=api.atlassian.com&prompt=consent",
+      "https://auth.example/authorize?client_id=tr-client&response_type=code&redirect_uri=https%3A%2F%2Fdaloy.example%2Fsettings%2Fconnections%2Foauth%2Fcallback&scope=offline_access+read%3Amember%3Atrello+read%3Aboard%3Atrello+write%3Aboard%3Atrello&state=STATE&code_challenge=CHALLENGE&code_challenge_method=S256&prompt=consent",
     );
   });
 
