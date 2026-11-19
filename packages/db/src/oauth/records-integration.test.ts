@@ -160,7 +160,11 @@ describe("record apps with their provider definitions", () => {
       const credential = def === airtable ? fake.airtable.token : def === notion ? fake.notion.token : JSON.stringify({ key: fake.trello.key, token: fake.trello.token });
       await saveConnection(db, key, ws, def.provider, { account: "Pasted", credential, destination: target[def.slug as keyof typeof target] });
       const conn = await held(ws, def);
-      await withRecordAuth(db, key, urls, ws, def, conn, (t) => def === airtable ? airtableAdd(urls, t, target.airtable, { Notes: "Test" }) : def === notion ? notionAddPage(urls, t, target.notion, "Test", {}) : trelloAddCard(urls, trelloAuthOf(conn.authMethod, t), target.trello.listId, "Test", ""));
+      await withRecordAuth(db, key, urls, ws, def, conn, async (token) => {
+        if (def === airtable) await airtableAdd(urls, token, target.airtable, { Notes: "Test" });
+        else if (def === notion) await notionAddPage(urls, token, target.notion, "Test", {});
+        else await trelloAddCard(urls, trelloAuthOf(conn.authMethod, token), target.trello.listId, "Test", "");
+      });
     }
   });
 });
