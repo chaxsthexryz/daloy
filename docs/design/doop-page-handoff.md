@@ -48,6 +48,15 @@ Start verification with `e2e/build-with-ai.spec.ts` and `e2e/ai-draft.spec.ts`. 
 
 ## Phase 3. Activity and Bookings
 
+**Owner selections, 20 November 2026.** One option per page is Ready for dev in Doop.
+
+| Page | Selected design |
+| --- | --- |
+| O1. Activity / Workspace activity | Option A, [Run register](https://doop.design/c/xH-4xV7kGK?frame=iIHhpAQIUx) |
+| O2. Activity / Run detail | Option A, [Step timeline](https://doop.design/c/xH-4xV7kGK?frame=aquI2X-gdg) |
+| O3. Activity / Ask about a request | Option A, [Question reader](https://doop.design/c/xH-4xV7kGK?frame=jdE6cTyvay) |
+| O4. Bookings / Booking list | Option B, [Day agenda](https://doop.design/c/xH-4xV7kGK?frame=PtNZfoOj94) |
+
 | ID | Page and owner tab | Entry and files | Completion check |
 | --- | --- | --- | --- |
 | O1 | Activity / Workspace activity | `#/activity`, `Runs.tsx` | Find runs across automations, filter by status and open the correct detail. Verify CSV export where offered and role access. |
@@ -76,6 +85,35 @@ The directory and all twelve provider panels share `#/apps`. A panel is selected
 | P12 | Trello | Same record connection and picker | Select a board and list, then verify the sample card destination. |
 | P13 | Consent return | `#/apps/:slug-:outcome`, legacy `#/settings/business/outlook-:outcome`, `App.tsx`, `Apps.tsx` | Return to the matching panel. Cover success, refusal, expired/unknown flow and shared grants. |
 | P14 | Verify Gmail sender | `#/verify-sender/:token`, `VerifySenderPage` | The confirmation action distinguishes valid, expired and already-used links without exposing the token. |
+
+**Approved Phase 4 designs, 20 November 2026.** Every frame below is Ready for dev in Doop. On desktop a panel opens beside a narrow app list. On a phone it opens full screen with a back link to Apps. An app with any saved connection, including a failed one, is listed under Connected. The two panel templates and the unused P0 option B remain drafts.
+
+| ID | Desktop, main state | Desktop, failure or recovery | Phone |
+| --- | --- | --- | --- |
+| P0. Apps directory | [Status list](https://doop.design/c/xH-4xV7kGK?frame=YLXBiloA_n) | None | [Connected search with no match](https://doop.design/c/xH-4xV7kGK?frame=EnxeVPkBaL) |
+| P1. Gmail | [Connected and sending](https://doop.design/c/xH-4xV7kGK?frame=M6raw-Fbxh) | [App password rejected](https://doop.design/c/xH-4xV7kGK?frame=7XI9eIjksq) | [Connected](https://doop.design/c/xH-4xV7kGK?frame=o7MkIm2yLs) |
+| P2. Outlook | [Connected](https://doop.design/c/xH-4xV7kGK?frame=8pEDeDvK1S) | [Administrator approval needed](https://doop.design/c/xH-4xV7kGK?frame=x-Zz8x_3R1) | [Connected](https://doop.design/c/xH-4xV7kGK?frame=eMk6LHKCcO) |
+| P3. Google Sheets | [Destination and test row](https://doop.design/c/xH-4xV7kGK?frame=wph3f1e-ts) | [Test row failed](https://doop.design/c/xH-4xV7kGK?frame=RftPawva0a) | [Destination and test row](https://doop.design/c/xH-4xV7kGK?frame=kVzdSacSDZ) |
+| P4. Slack | [Channel and test](https://doop.design/c/xH-4xV7kGK?frame=5XTF9JWD8C) | [Needs reconnecting](https://doop.design/c/xH-4xV7kGK?frame=VfdSNUH7R2) | [Channel and test](https://doop.design/c/xH-4xV7kGK?frame=zTbWtcHyQn) |
+| P5. Microsoft Teams | [Link saved](https://doop.design/c/xH-4xV7kGK?frame=GwtqCAfjKX) | [Link failed](https://doop.design/c/xH-4xV7kGK?frame=F9aapBE9kA) | [Link saved](https://doop.design/c/xH-4xV7kGK?frame=iwbciuWQMk) |
+| P6. Telegram | [Bot and chat](https://doop.design/c/xH-4xV7kGK?frame=82M6iUd9IQ) | [Invalid token, chat not found](https://doop.design/c/xH-4xV7kGK?frame=ZLP6Moc2e5) | [Bot and chat](https://doop.design/c/xH-4xV7kGK?frame=Hb-s-5wTph) |
+| P7. Google Calendar | [Bookings calendar selected](https://doop.design/c/xH-4xV7kGK?frame=Ec-6oPBVgC) | [Permission declined](https://doop.design/c/xH-4xV7kGK?frame=UrVNfVlu6e) | [Bookings calendar selected](https://doop.design/c/xH-4xV7kGK?frame=QUWUYLzHku) |
+| P8. Google Drive | [Upload folder chosen](https://doop.design/c/xH-4xV7kGK?frame=SI8XD_kYlr) | [Needs reconnecting](https://doop.design/c/xH-4xV7kGK?frame=GUWAmnw-em) | [Upload folder chosen](https://doop.design/c/xH-4xV7kGK?frame=LPADMRXj7w) |
+| P9. PayMongo | [Connected in test mode](https://doop.design/c/xH-4xV7kGK?frame=Va7VX6GkeC) | [Webhook missing](https://doop.design/c/xH-4xV7kGK?frame=N-R2SL78ko) | [Connected in test mode](https://doop.design/c/xH-4xV7kGK?frame=vTwmQBsYiP) |
+| P10. Airtable | [Table selected, test verified](https://doop.design/c/xH-4xV7kGK?frame=JBLdPPVJSJ) | [Token rejected](https://doop.design/c/xH-4xV7kGK?frame=lei9_dEMNs) | [Table selected](https://doop.design/c/xH-4xV7kGK?frame=I7-giCjiQX) |
+| P11. Notion | [Database selected, test verified](https://doop.design/c/xH-4xV7kGK?frame=roKLz0IUYs) | [No database shared](https://doop.design/c/xH-4xV7kGK?frame=deLI9w6OXJ) | [Database selected](https://doop.design/c/xH-4xV7kGK?frame=l7c1hwhr5j) |
+| P12. Trello | [List selected, test verified](https://doop.design/c/xH-4xV7kGK?frame=vS_Xp2kgrC) | [Not connected](https://doop.design/c/xH-4xV7kGK?frame=m5blCCs1mW) | [List selected](https://doop.design/c/xH-4xV7kGK?frame=P0JCbIZa-G) |
+| P13. Consent return | [Success](https://doop.design/c/xH-4xV7kGK?frame=vwIIucyQvn) | [Declined](https://doop.design/c/xH-4xV7kGK?frame=EezHouuqa_), [Expired or unknown](https://doop.design/c/xH-4xV7kGK?frame=Z6JeRvSTZ-), [Shared Google sign-in](https://doop.design/c/xH-4xV7kGK?frame=fIJVR8vhlh) | [Success](https://doop.design/c/xH-4xV7kGK?frame=_hCHazxr4e) |
+| P14. Verify Gmail sender | [Ready to confirm](https://doop.design/c/xH-4xV7kGK?frame=zdWYOBSgPH) | [Expired link](https://doop.design/c/xH-4xV7kGK?frame=yFbDcNcdNd), [Already used link](https://doop.design/c/xH-4xV7kGK?frame=wNczSIDdw4) | [Ready to confirm](https://doop.design/c/xH-4xV7kGK?frame=tGJM8B_A4L) |
+
+These designs go beyond the current code in a few places. Plan them with the implementation:
+
+- P14 adds a Confirm button. The current page claims the token when it loads, so a mail scanner can use the link first.
+- P14 shows expired and already used links separately. The API returns one message for both today.
+- Several panels show which automations use an app and when it was last checked. The connection data has `lastTestedAt` but no usage list.
+- P13 lists the apps that share one Google sign-in. `conns.shared` holds app keys only.
+- The P9 payment status card has no data behind it yet.
+- Some error headings are new wording. The code shows the provider's `lastError` text.
 
 ## Phase 5. Workspace, account and Advanced
 
@@ -120,5 +158,7 @@ Q1 covers the integrated journey. Start at Automations, enter Build with AI, des
 | 2026-11-20 | Inventory checked at `14f457d`. Verified four Ready for dev frames: B1 and B2 on Build with AI, A1 on Automations, and A7 on Workflow editor. The two Website Inquiries explorations remain drafts. All implementation rows are open. No runtime tests were run for this planning handoff. | B1 |
 
 | 2026-11-20 | B1 and B2 implemented. The table follows graph edges and labels branches. 31 focused unit checks and nine builder browser tests passed with fake providers. | A0 |
+
+| 2026-11-20 | Doop design checkpoint. Phase 3 selections: O1 option A, O2 option A, O3 option A, O4 option B. Phase 4 Apps approved: P0 option A and 45 panel frames for P1 to P14, all Ready for dev. Design only. No code changed and no tests were run. | Phase 5, W1 Team |
 
 After each row, append the date, row ID, design/implementation status, frame link, branch and commit, checks actually run, open issues and next row. A future session can resume from the last entry without this chat.
