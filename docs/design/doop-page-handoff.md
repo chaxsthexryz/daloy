@@ -4,7 +4,7 @@ Updated 20 November 2026, Manila. Planning baseline: `design/paper-redesign` at 
 
 ## Start here
 
-**Next task: B1, Build with AI / Describe.** B1, B2, A1 and A7 have design approval. In Doop, Ready for dev means the owner approved that frame. Implementation and verification are open for every row in this ledger. For the other rows, compare the current page to the shared Daloy design and record whether it needs a new frame, a targeted change, or only verification. The sequence below is a proposed delivery order.
+**Next task: A0, shared console navigation.** B1, B2, A1 and A7 have design approval. In Doop, Ready for dev means the owner approved that frame. B1 and B2 are implemented on the design branch. For the other rows, compare the current page to the shared Daloy design and record whether it needs a new frame, a targeted change, or only verification. The sequence below is a proposed delivery order.
 
 | Owner decision | Reference |
 | --- | --- |
@@ -118,5 +118,7 @@ Q1 covers the integrated journey. Start at Automations, enter Build with AI, des
 | Date | Status and evidence | Next row |
 | --- | --- | --- |
 | 2026-11-20 | Inventory checked at `14f457d`. Verified four Ready for dev frames: B1 and B2 on Build with AI, A1 on Automations, and A7 on Workflow editor. The two Website Inquiries explorations remain drafts. All implementation rows are open. No runtime tests were run for this planning handoff. | B1 |
+
+| 2026-11-20 | B1 and B2 implemented. The table follows graph edges and labels branches. 31 focused unit checks and nine builder browser tests passed with fake providers. | A0 |
 
 After each row, append the date, row ID, design/implementation status, frame link, branch and commit, checks actually run, open issues and next row. A future session can resume from the last entry without this chat.
