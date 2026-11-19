@@ -99,6 +99,7 @@ export default async function setup() {
   // Fake Microsoft sign-in, Graph and Teams Workflows (roadmap phase 5). The flow URL is what Teams would show.
   process.env.E2E_TEAMS_URL = providers.teamsUrl("flow-purchasing");
 
+  const clients = providers.recordClients();
   const env = {
     DATABASE_URL: url,
     SECRETS_KEY: randomBytes(32).toString("base64"),
@@ -120,8 +121,16 @@ export default async function setup() {
     TELEGRAM_API_URL: providers.urls.telegram,
     PAYMONGO_API_URL: providers.urls.paymongo,
     AIRTABLE_API_URL: providers.urls.airtable,
+    AIRTABLE_LOGIN_URL: providers.urls.airtableLogin,
+    AIRTABLE_CLIENT_ID: clients.airtableClient.clientId,
+    AIRTABLE_CLIENT_SECRET: clients.airtableClient.clientSecret,
     NOTION_API_URL: providers.urls.notion,
+    NOTION_CLIENT_ID: clients.notionClient.clientId,
+    NOTION_CLIENT_SECRET: clients.notionClient.clientSecret,
     TRELLO_API_URL: providers.urls.trello,
+    TRELLO_LOGIN_URL: providers.urls.trelloLogin,
+    TRELLO_CLIENT_ID: clients.trelloClient.clientId,
+    TRELLO_CLIENT_SECRET: clients.trelloClient.clientSecret,
     MICROSOFT_CLIENT_ID: providers.microsoft.clientId,
     MICROSOFT_CLIENT_SECRET: providers.microsoft.clientSecret,
     MICROSOFT_LOGIN_URL: providers.urls.microsoftLogin,
