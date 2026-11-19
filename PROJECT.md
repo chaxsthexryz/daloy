@@ -296,3 +296,4 @@ DeepSeek's review is in `docs/roadmap-review-2026-11-18.md`. Claude's second opi
 - E-signature through Dropbox Sign: niche, and one more outside account.
 - GitHub and deploy alerts: developers are not the users, and the webhook trigger covers it.
 - Stripe: PayMongo is the Philippine choice.
+- [ ] Doop redesign phase 1. Build with AI, Describe and Review Plan. (claimed: codex, branch design/paper-redesign)
