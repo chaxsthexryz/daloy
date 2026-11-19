@@ -124,6 +124,7 @@ export class McpController {
           inputSchema: z.object({ runId: z.uuid() }),
         },
         async ({ runId }) => {
+          const hide = await historyHider(this.db, this.config.secretsKey, userId);
           const [run] = await this.db
             .select({ state: runs.state, error: runs.error, finishedAt: runs.finishedAt, definition: workflowVersions.definition })
             .from(runs)
@@ -138,7 +139,7 @@ export class McpController {
             .where(eq(stepRuns.runId, runId))
             .orderBy(desc(stepRuns.createdAt), desc(stepRuns.attempt))
             .limit(1);
-          return result({ runId, status: runStatus(run.state, last, run.definition), error: (await historyHider(this.db, this.config.secretsKey, userId))(run.error), finishedAt: run.finishedAt?.toISOString() ?? null });
+          return result({ runId, status: runStatus(run.state, last, run.definition), error: hide(run.error), finishedAt: run.finishedAt?.toISOString() ?? null });
         },
       );
     }

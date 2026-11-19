@@ -141,7 +141,9 @@ export class ConnectionsController {
     const ms = this.urls.microsoft ? { configured: true, adminConsentUrl: outlookAdminConsentUrl(this.urls, redirectUri(this.config.publicUrl, outlook)) } : { configured: false };
     // The providers with a Connect button: their client is configured on this installation (decision 0058).
     const oauth = this.config.oauthProviders.filter((d) => d.client(this.urls)).map((d) => d.slug);
-    return { connections: await readConnections(this.db, user.workspaceId), outlook: ms, oauth, shared: await sharedGrants(this.db, user.workspaceId), paymongoWebhookBase: `${this.config.publicUrl}/hooks/paymongo` };
+    const hide = await historyHider(this.db, this.config.secretsKey, user.workspaceId);
+    const list = (await readConnections(this.db, user.workspaceId)).map((c) => ({ ...c, lastError: hide(c.lastError) as string | null }));
+    return { connections: list, outlook: ms, oauth, shared: await sharedGrants(this.db, user.workspaceId), paymongoWebhookBase: `${this.config.publicUrl}/hooks/paymongo` };
   }
 
   /** The sheet and tab, checked with a read before saving. Shared by connect and "change sheet". */
@@ -455,7 +457,8 @@ export class ConnectionsController {
     } catch (err) {
       if (!(err instanceof ProviderError)) throw err;
       if (err.kind === "auth") await markConnectionFailed(this.db, userId, provider, err.message, conn.revision);
-      return { ok: false, error: err.message };
+      const hide = await historyHider(this.db, this.config.secretsKey, userId);
+      return { ok: false, error: hide(err.message) as string };
     }
   }
 }
@@ -472,7 +475,7 @@ export class DeliveriesController {
   @Get()
   async list(@CurrentUser() user: SessionUser, @Query("runId", uuid) runId: string) {
     const hide = await historyHider(this.db, this.config.secretsKey, user.workspaceId);
-    return (await listDeliveries(this.db, user.workspaceId, [runId])).map((d) => ({ ...d, lastError: hide(d.lastError), result: hide(d.result) }));
+    return (await listDeliveries(this.db, user.workspaceId, [runId])).map((d) => ({ ...d, reference: hide(d.reference) as string, lastError: hide(d.lastError), result: hide(d.result) }));
   }
 
   /** Queues a failed delivery again (the worker sends it within seconds). postAgain repeats a Slack post that may be in the channel already. */

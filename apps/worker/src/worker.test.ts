@@ -1,4 +1,5 @@
-import { bookings, createApproval, recordDecision, resources, runs, SCHEDULE_QUEUE, stepRuns, users, workflows, workflowVersions, type Db } from "@daloy/db";
+import { randomBytes } from "node:crypto";
+import { bookings, createApproval, encryptSecret, recordDecision, resources, retiredSecrets, runs, SCHEDULE_QUEUE, stepRuns, users, workflows, workflowVersions, type Db } from "@daloy/db";
 import { evaluateCondition, StepError } from "@daloy/engine";
 import { asc, eq, sql } from "drizzle-orm";
 import type { Pool } from "pg";
@@ -439,6 +440,38 @@ describe("schedule watchdog in a running worker (N17)", () => {
       expect(outbox).toHaveLength(1);
     } finally {
       await watched.stop();
+    }
+  });
+});
+
+describe("retired secret purge in a running worker (decision 0067)", () => {
+  it("scrubs and deletes expired retired secrets on startup even when deliveries are omitted", async () => {
+    const secretsKey = randomBytes(32);
+    const [user] = await db.insert(users).values({ email: `purge-w${++seq}@test.local`, passwordHash: "x" }).returning();
+    const [wf] = await db.insert(workflows).values({ userId: user!.id, name: "Purge", slug: `purge-w${seq}` }).returning();
+    const [version] = await db.insert(workflowVersions).values({ workflowId: wf!.id, version: 1, definition: flow({ id: "a" }), published: true }).returning();
+    const oldVal = `worker-old-${randomBytes(4).toString("hex")}`;
+    const recentVal = `worker-new-${randomBytes(4).toString("hex")}`;
+    const [run] = await db.insert(runs).values({ workflowVersionId: version!.id, state: "failed", triggerPayload: { oldVal, recentVal }, error: `failed ${oldVal}` }).returning();
+    await db.insert(retiredSecrets).values([
+      { userId: user!.id, name: "api_key", ...encryptSecret(secretsKey, user!.id, "api_key", oldVal), retiredAt: new Date(Date.now() - 95 * 86_400_000) },
+      { userId: user!.id, name: "api_key", ...encryptSecret(secretsKey, user!.id, "api_key", recentVal), retiredAt: new Date(Date.now() - 10 * 86_400_000) },
+    ]);
+
+    const maintenance = await startWorker({ connectionString: dbUrl, db, executor, secretsKey, pollingIntervalSeconds: 0.5, sweepMs: 60_000 });
+    try {
+      for (let i = 0; i < 100; i++) {
+        const left = await db.select().from(retiredSecrets).where(eq(retiredSecrets.userId, user!.id));
+        if (left.length === 1) break;
+        await new Promise((r) => setTimeout(r, 50));
+      }
+      const left = await db.select().from(retiredSecrets).where(eq(retiredSecrets.userId, user!.id));
+      expect(left).toHaveLength(1);
+      const [afterRun] = await db.select().from(runs).where(eq(runs.id, run!.id));
+      expect(afterRun!.error).toBe("failed [secret]");
+      expect(afterRun!.triggerPayload).toEqual({ oldVal: "[secret]", recentVal });
+    } finally {
+      await maintenance.stop();
     }
   });
 });

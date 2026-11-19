@@ -1,14 +1,39 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import type { AddressInfo } from "node:net";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
-import { deliveries, encryptSecret, requests, retireSecret, runs, secrets, smtpMailer, stepRuns, users, workflows, workflowVersions, type Db, type MailDeps } from "@daloy/db";
+import {
+  bookings,
+  connectionCredential,
+  connections,
+  createApproval,
+  deliveries,
+  emailSources,
+  encryptSecret,
+  mailSenders,
+  purgeRetiredSecrets,
+  readTokenBlob,
+  requests,
+  resources,
+  retiredSecrets,
+  retireSecret,
+  runs,
+  secrets,
+  smtpMailer,
+  stepRuns,
+  users,
+  workflows,
+  workflowVersions,
+  type Db,
+  type MailDeps,
+} from "@daloy/db";
 import type { INestApplication } from "@nestjs/common";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import type { Pool } from "pg";
 import { PgBoss } from "pg-boss";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { freshDatabase } from "../../../test/db";
+import { startFakeProviders, type FakeProviders } from "../../../test/fake-providers";
 import { createApp } from "./app";
 
 // Regression for the fec03cc report: run history must not reveal a secret in any encoding, including rows written
@@ -17,17 +42,41 @@ let app: INestApplication;
 let boss: PgBoss;
 let db: Db;
 let pool: Pool;
+let fake: FakeProviders;
 let server: Parameters<typeof request>[0];
 const key = randomBytes(32);
 let seq = 0;
+let echoSmtpSecret: string | undefined;
 
 beforeAll(async () => {
   let url: string;
   ({ url, db, pool } = await freshDatabase());
   boss = new PgBoss(url);
   await boss.start();
-  const mail: MailDeps = { installation: smtpMailer({}), gmail: () => smtpMailer({}).transport, sharedMail: "open" };
-  app = await createApp({ db, boss, secretsKey: key, secureCookies: false, mail, publicUrl: "https://daloy.example.com" });
+  fake = await startFakeProviders();
+  const baseTransport = smtpMailer({}).transport;
+  const mail: MailDeps = {
+    installation: smtpMailer({}),
+    gmail: (auth) =>
+      auth.user === "echo-error@test.local"
+        ? ({
+            sendMail: async () => {
+              throw new Error(`SMTP 500 echoed ${echoSmtpSecret ?? ""}`);
+            },
+          } as never)
+        : baseTransport,
+    sharedMail: "open",
+  };
+  const microsoft = { clientId: fake.microsoft.clientId, clientSecret: fake.microsoft.clientSecret, tenant: "organizations" };
+  app = await createApp({
+    db,
+    boss,
+    secretsKey: key,
+    secureCookies: false,
+    mail,
+    publicUrl: "https://daloy.example.com",
+    providers: { ...fake.urls, timeoutMs: 2000, microsoft },
+  });
   await app.init();
   server = app.getHttpServer();
 }, 120_000);
@@ -35,6 +84,7 @@ beforeAll(async () => {
 afterAll(async () => {
   await app?.close();
   await boss?.stop({ graceful: false });
+  await fake?.close();
   await pool?.end();
 });
 
@@ -69,7 +119,7 @@ describe("run history and secrets", () => {
 
     await db.insert(deliveries).values({ userId, runId: r!.id, stepId: "send", provider: "slack", reference: `HIST-${seq}`, payload: { text: "x" }, state: "failed", errorKind: "permission", lastError: `refused ${V1}` });
     await db.insert(requests).values({ userId, workflowId: wf!.id, runId: r!.id, reference: `HIST-${seq}`, submissionKey: randomUUID(), subject: "Old" });
-    await app.listen(0, "127.0.0.1");
+    if (!app.getHttpServer().listening) await app.listen(0, "127.0.0.1");
     const token = ((await agent.post("/tokens").send({ name: "claude", scopes: ["read"] }).expect(201)).body as { token: string }).token;
     const client = new Client({ name: "history-test", version: "1.0.0" });
     await client.connect(new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${(app.getHttpServer().address() as AddressInfo).port}/mcp`), { requestInit: { headers: { Authorization: `Bearer ${token}` } } }));
@@ -171,5 +221,191 @@ describe("run history and secrets", () => {
     await save([http({ url: "https://a.example/x/{{trigger.id}}", headers: { Authorization: "{{secrets.k}}", "content-type": "application/json" }, body: '{"amount": {{trigger.amount}}}' })]).expect(201);
     // A test run saves the draft too, so it gets the same check.
     await agent.post(`/workflows/${wf.id}/test-runs`).send({ definition: { trigger: { type: "manual", config: {} }, steps: [http({ url: "{{trigger.url}}", headers: { Authorization: "{{secrets.k}}" } })], edges: [] }, payload: {} }).expect(400);
+  });
+
+  it("hides current, retired and OAuth secrets across approvals, requests, deliveries, connections, email settings, email sources, CSV and bookings", async () => {
+    const { agent, userId } = await owner();
+    const secretVal = `audit-sec-${randomBytes(4).toString("hex")}/a+b`;
+    await agent.put("/secrets/audit_key").send({ value: secretVal }).expect(204);
+
+    // Connect Outlook through the fake Microsoft provider so we have live OAuth tokens and can test live test-error redaction too.
+    const startRes = await agent.post("/settings/connections/outlook/start").expect(200);
+    const back = new URL((await fetch(startRes.body.url as string, { redirect: "manual" })).headers.get("location")!);
+    await agent.get(back.pathname + back.search).expect(302);
+    const blob = readTokenBlob((await connectionCredential(db, key, userId, "outlook"))!.credential);
+    const oauthAccess = blob.accessToken;
+    const oauthRefresh = blob.refreshToken!;
+    await db
+      .update(connections)
+      .set({ lastError: `provider refused ${secretVal} and ${oauthAccess}` })
+      .where(and(eq(connections.userId, userId), eq(connections.provider, "outlook")));
+
+    // Seed an email source and mail sender whose lastError holds a secret.
+    const [wf] = await db.insert(workflows).values({ userId, name: "Audit", slug: `audit-${seq}` }).returning();
+    const [v] = await db.insert(workflowVersions).values({ workflowId: wf!.id, version: 1, definition: {}, published: true }).returning();
+    const [r] = await db.insert(runs).values({
+      workflowVersionId: v!.id,
+      state: "failed",
+      triggerPayload: { note: secretVal, oauth: oauthRefresh },
+      error: `run failed with ${secretVal}`,
+    }).returning();
+    const [step] = await db.insert(stepRuns).values({
+      runId: r!.id,
+      stepId: "approve",
+      attempt: 1,
+      state: "waiting",
+      input: { message: `Please approve request ${secretVal} (${encodeURIComponent(secretVal)}) ${oauthAccess}` },
+      output: { body: oauthRefresh },
+      error: `step err ${secretVal}`,
+    }).returning();
+
+    const approval = (await createApproval(db, step!.id, new Date(Date.now() + 600_000)))!;
+    await db.insert(requests).values({
+      userId,
+      workflowId: wf!.id,
+      runId: r!.id,
+      reference: `REQ-AUD${seq}`,
+      submissionKey: randomUUID(),
+      subject: `Invoice ${secretVal} / ${oauthAccess}`,
+      requestedBy: userId,
+    });
+    await db.insert(deliveries).values({
+      userId,
+      runId: r!.id,
+      stepId: "notify",
+      provider: "slack",
+      reference: `REF-${secretVal}-${oauthAccess}`,
+      payload: { text: secretVal },
+      state: "failed",
+      errorKind: "permission",
+      lastError: `slack refused ${secretVal}`,
+      result: { info: oauthRefresh },
+    });
+    const imapEnc = encryptSecret(key, userId, `imap:${wf!.id}`, "imap-pass");
+    await db.insert(emailSources).values({
+      workflowId: wf!.id,
+      host: "imap.office.example",
+      username: "inbox@office.example",
+      folder: "INBOX",
+      ...imapEnc,
+      status: "failed",
+      lastError: `imap refused ${secretVal} and ${oauthAccess}`,
+    });
+    const gmailEnc = encryptSecret(key, userId, "gmail_app_password", "app-pass");
+    await db.insert(mailSenders).values({
+      userId,
+      address: "echo-error@test.local",
+      status: "active",
+      authMethod: "app_password",
+      passwordCiphertext: gmailEnc.ciphertext,
+      passwordIv: gmailEnc.iv,
+      passwordAuthTag: gmailEnc.authTag,
+      verifiedAt: new Date(),
+      lastError: `smtp refused ${secretVal} and ${oauthAccess}`,
+    });
+    const [res] = await db.insert(resources).values({ userId, name: "Room A" }).returning();
+    await db.insert(bookings).values({
+      userId,
+      test: false,
+      reference: `BK-AUD${seq}`,
+      resourceId: res!.id,
+      during: sql`tstzrange(now() + interval '1 day', now() + interval '25 hours')` as unknown as string,
+      timezone: "UTC",
+      workflowId: wf!.id,
+      runId: r!.id,
+    });
+
+    if (!app.getHttpServer().listening) await app.listen(0, "127.0.0.1");
+    const token = ((await agent.post("/tokens").send({ name: "audit-mcp", scopes: ["read"] }).expect(201)).body as { token: string }).token;
+    const client = new Client({ name: "audit-test", version: "1.0.0" });
+    await client.connect(
+      new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${(app.getHttpServer().address() as AddressInfo).port}/mcp`), {
+        requestInit: { headers: { Authorization: `Bearer ${token}` } },
+      }),
+    );
+
+    const checkAll = async (stage: string) => {
+      echoSmtpSecret = secretVal;
+      const surfaces: Record<string, string> = {
+        approvalPage: (await request(server).get(`/approvals/${approval.token}`).expect(200)).text,
+        workflowRequests: (await agent.get(`/workflows/${wf!.id}/requests`).expect(200)).text,
+        myRequests: (await agent.get("/my/requests").expect(200)).text,
+        deliveries: (await agent.get(`/deliveries?runId=${r!.id}`).expect(200)).text,
+        connections: (await agent.get("/settings/connections").expect(200)).text,
+        emailSource: (await agent.get(`/workflows/${wf!.id}/email-source`).expect(200)).text,
+        emailSettings: (await agent.get("/settings/email").expect(200)).text,
+        emailTest: (await agent.post("/settings/email/test").expect(200)).text,
+        runsList: (await agent.get("/runs").expect(200)).text,
+        runDetail: (await agent.get(`/runs/${r!.id}`).expect(200)).text,
+        runsCsv: (await agent.get(`/runs/export.csv?workflowId=${wf!.id}`).expect(200)).text,
+        bookingsList: (await agent.get("/bookings").expect(200)).text,
+        bookingsCsv: (await agent.get("/bookings/export.csv").expect(200)).text,
+        mcpRunStatus: JSON.stringify(await client.callTool({ name: "get_run_status", arguments: { runId: r!.id } })),
+        mcpBookings: JSON.stringify(await client.callTool({ name: "list_bookings", arguments: {} })),
+      };
+      const mustHide = [...forms(secretVal), oauthAccess, oauthRefresh];
+      for (const [name, body] of Object.entries(surfaces)) {
+        const found = mustHide.filter((f) => body.includes(f) || body.includes(JSON.stringify(f).slice(1, -1)));
+        expect(found, `${stage}: ${name} leaked secret forms`).toEqual([]);
+      }
+      expect(surfaces.approvalPage).toContain("[secret]");
+      expect(surfaces.workflowRequests).toContain("[secret]");
+      expect(surfaces.myRequests).toContain("[secret]");
+      expect(surfaces.deliveries).toContain("[secret]");
+      expect(surfaces.connections).toContain("[secret]");
+      expect(surfaces.emailSource).toContain("[secret]");
+      expect(surfaces.emailSettings).toContain("[secret]");
+      expect(surfaces.emailTest).toContain("[secret]");
+    };
+
+    try {
+      await checkAll("current");
+      await agent.put("/secrets/audit_key").send({ value: "rotated-value" }).expect(204);
+      await checkAll("rotated");
+      await agent.delete("/secrets/audit_key").expect(204);
+      await checkAll("deleted");
+
+      // Connection test live error redaction: provider echoes both the retired secret and the refresh token.
+      fake.once("/me/sendMail", { status: 400, body: { error: { code: "ErrorInvalidRequest", message: `echo ${secretVal} and ${oauthRefresh}` } } });
+      const testOut = (await agent.post("/settings/connections/outlook/test").expect(200)).text;
+      expect(testOut).not.toContain(secretVal);
+      expect(testOut).not.toContain(oauthRefresh);
+      expect(testOut).toContain("[secret]");
+
+      // Age the retired secret past 90 days and run the scrub-then-delete purge: zero retired_secrets remain,
+      // yet every read surface still shows [secret] and never leaks any form of secretVal.
+      await db
+        .update(retiredSecrets)
+        .set({ retiredAt: new Date(Date.now() - 91 * 86_400_000) })
+        .where(eq(retiredSecrets.userId, userId));
+      const purged = await purgeRetiredSecrets(db, key);
+      expect(purged.retiredDeleted).toBeGreaterThanOrEqual(2);
+      expect(purged.rowsScrubbed).toBeGreaterThanOrEqual(6);
+      expect(await db.select().from(retiredSecrets).where(eq(retiredSecrets.userId, userId))).toEqual([]);
+
+      // Re-verify all stored read surfaces after retired_secrets is empty (exclude live SMTP echo since secretVal is purged).
+      echoSmtpSecret = "unrelated";
+      const afterPurge: Record<string, string> = {
+        approvalPage: (await request(server).get(`/approvals/${approval.token}`).expect(200)).text,
+        workflowRequests: (await agent.get(`/workflows/${wf!.id}/requests`).expect(200)).text,
+        myRequests: (await agent.get("/my/requests").expect(200)).text,
+        deliveries: (await agent.get(`/deliveries?runId=${r!.id}`).expect(200)).text,
+        connections: (await agent.get("/settings/connections").expect(200)).text,
+        emailSource: (await agent.get(`/workflows/${wf!.id}/email-source`).expect(200)).text,
+        emailSettings: (await agent.get("/settings/email").expect(200)).text,
+        runsList: (await agent.get("/runs").expect(200)).text,
+        runDetail: (await agent.get(`/runs/${r!.id}`).expect(200)).text,
+        runsCsv: (await agent.get(`/runs/export.csv?workflowId=${wf!.id}`).expect(200)).text,
+        mcpRunStatus: JSON.stringify(await client.callTool({ name: "get_run_status", arguments: { runId: r!.id } })),
+      };
+      for (const [name, body] of Object.entries(afterPurge)) {
+        const found = forms(secretVal).filter((f) => body.includes(f) || body.includes(JSON.stringify(f).slice(1, -1)));
+        expect(found, `post-purge: ${name} leaked secret forms`).toEqual([]);
+        expect(body, `post-purge: ${name} lost [secret] marker`).toContain("[secret]");
+      }
+    } finally {
+      echoSmtpSecret = undefined;
+      await client.close();
+    }
   });
 });

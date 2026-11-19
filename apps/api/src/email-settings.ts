@@ -24,6 +24,7 @@ import type { Response } from "express";
 import * as z from "zod";
 import { SessionGuard } from "./auth";
 import { Allow, CONFIG, CurrentUser, DB, RateLimit, ZodPipe, type ApiConfig, type SessionUser, MANAGE } from "./http";
+import { historyHider } from "./mask";
 
 const verifyInput = z.strictObject({ token: z.string().regex(/^[A-Za-z0-9_-]{43}$/) });
 /** Heuristic: the installation server is a local catcher (Mailpit, localhost), judged by host name only. */
@@ -41,9 +42,11 @@ export class EmailSettingsController {
 
   @Get()
   async get(@CurrentUser() user: SessionUser) {
+    const hide = await historyHider(this.db, this.config.secretsKey, user.workspaceId);
+    const sender = await readSender(this.db, user.workspaceId);
     return {
       profile: await readProfile(this.db, user.workspaceId),
-      sender: await readSender(this.db, user.workspaceId),
+      sender: sender ? { ...sender, lastError: hide(sender.lastError) as string | null } : null,
       // Shown when no Gmail is connected, so the owner knows which address their mail comes from.
       installationFrom: addressOf(this.config.mail.installation.from),
       // False when the shared server only sends for approved owners and this one is not approved (decision 0024).
@@ -63,7 +66,9 @@ export class EmailSettingsController {
   @Put("gmail")
   async putGmail(@CurrentUser() user: SessionUser, @Body(new ZodPipe(gmailInput)) body: z.output<typeof gmailInput>) {
     await connectGmail(this.db, this.config.secretsKey, user.workspaceId, body);
-    return readSender(this.db, user.workspaceId);
+    const hide = await historyHider(this.db, this.config.secretsKey, user.workspaceId);
+    const sender = await readSender(this.db, user.workspaceId);
+    return sender ? { ...sender, lastError: hide(sender.lastError) as string | null } : null;
   }
 
   /**
@@ -101,7 +106,8 @@ export class EmailSettingsController {
       const replyTo = (await readProfile(this.db, user.workspaceId))?.replyTo ?? undefined;
       return { ok: true, to, from: sent.from, ...(replyTo ? { replyTo } : {}), gmail: sent.gmail, needsConfirmation };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      const hide = await historyHider(this.db, this.config.secretsKey, user.workspaceId);
+      return { ok: false, error: hide(err instanceof Error ? err.message : String(err)) as string };
     }
   }
 

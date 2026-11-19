@@ -150,6 +150,7 @@ export class WorkflowsController {
   @Get(":id/requests")
   async listRequests(@CurrentUser() user: SessionUser, @Param("id", workflowId) id: string) {
     await this.owned(user.workspaceId, id);
+    const hide = await historyHider(this.db, this.config.secretsKey, user.workspaceId);
     const { id: requestId, reference, subject, createdAt, runId } = requests;
     const rows = await this.db
       .select({ id: requestId, reference, subject, createdAt, runId, runState: runs.state, runError: runs.error })
@@ -159,8 +160,12 @@ export class WorkflowsController {
       .orderBy(desc(createdAt))
       .limit(200);
     const all = await listDeliveries(this.db, user.workspaceId, rows.map((r) => r.runId));
-    const hide = await historyHider(this.db, this.config.secretsKey, user.workspaceId);
-    return rows.map((r) => ({ ...r, runError: hide(r.runError), deliveries: all.filter((d) => d.runId === r.runId).map((d) => ({ ...d, lastError: hide(d.lastError), result: hide(d.result) })) }));
+    return rows.map((r) => ({
+      ...r,
+      subject: hide(r.subject) as string,
+      runError: hide(r.runError),
+      deliveries: all.filter((d) => d.runId === r.runId).map((d) => ({ ...d, reference: hide(d.reference) as string, lastError: hide(d.lastError), result: hide(d.result) })),
+    }));
   }
 
   /** Pause: no trigger starts a new run until Resume. Runs already started finish. Repeating either call changes nothing (decision 0054). */

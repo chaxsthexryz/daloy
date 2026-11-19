@@ -4,6 +4,7 @@ import { and, desc, eq } from "drizzle-orm";
 import * as z from "zod";
 import { SessionGuard } from "./auth";
 import { Allow, ANY_MEMBER, CONFIG, CurrentUser, DB, MANAGE, RateLimit, ZodPipe, type ApiConfig, type SessionUser } from "./http";
+import { historyHider } from "./mask";
 
 const memberRole = z.enum(ROLES.filter((r) => r !== "owner") as ["operator", "approver", "requester"]);
 const inviteInput = z.object({ email: z.email().max(254).transform((s) => s.toLowerCase()), role: memberRole });
@@ -59,11 +60,15 @@ export class MembersController {
 @Controller("my")
 @UseGuards(SessionGuard, Allow(ANY_MEMBER))
 export class MyRequestsController {
-  constructor(@Inject(DB) private readonly db: Db) {}
+  constructor(
+    @Inject(DB) private readonly db: Db,
+    @Inject(CONFIG) private readonly config: ApiConfig,
+  ) {}
 
   @Get("requests")
-  mine(@CurrentUser() user: SessionUser) {
-    return this.db
+  async mine(@CurrentUser() user: SessionUser) {
+    const hide = await historyHider(this.db, this.config.secretsKey, user.workspaceId);
+    const rows = await this.db
       .select({ reference: requests.reference, subject: requests.subject, createdAt: requests.createdAt, automation: workflows.name, state: runs.state })
       .from(requests)
       .innerJoin(workflows, eq(workflows.id, requests.workflowId))
@@ -71,5 +76,6 @@ export class MyRequestsController {
       .where(and(eq(requests.requestedBy, user.id), eq(requests.userId, user.workspaceId)))
       .orderBy(desc(requests.createdAt))
       .limit(100);
+    return rows.map((r) => ({ ...r, subject: hide(r.subject) as string }));
   }
 }

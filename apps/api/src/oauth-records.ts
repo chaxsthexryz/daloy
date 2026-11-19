@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException, NotFoundException } from "@nestjs/common";
 import { connectionCredential, markConnectionFailed, PROVIDER_NAMES, ProviderError, setDestination, withRecordAuth, type Db, type Provider } from "@daloy/db";
 import type { ApiConfig, SessionUser } from "./http";
+import { historyHider } from "./mask";
 
 /**
  * What the Airtable, Notion and Trello pickers share (decision 0062). A picker needs the OAuth sign-in: a pasted
@@ -24,7 +25,8 @@ export async function pickerCall<T>(db: Db, config: Config, user: SessionUser, p
   } catch (err) {
     if (!(err instanceof ProviderError)) throw err;
     if (err.kind === "auth") await markConnectionFailed(db, user.workspaceId, provider, err.message, conn.revision);
-    throw new BadRequestException(err.message);
+    const hide = await historyHider(db, config.secretsKey, user.workspaceId);
+    throw new BadRequestException(hide(err.message) as string);
   }
 }
 

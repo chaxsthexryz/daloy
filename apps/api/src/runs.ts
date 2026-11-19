@@ -64,6 +64,8 @@ export class RunsController {
     @Query("state", new ZodPipe(z.enum(["problem", "waiting", "done"]).optional())) state?: keyof typeof STATES,
     @Query("q", new ZodPipe(z.string().trim().max(100).optional())) q?: string,
   ) {
+    // Load the hider before the rows, so a concurrent retired-secret purge cannot remove a secret between the two queries.
+    const hide = await historyHider(this.db, this.config.secretsKey, user.workspaceId);
     const rows = await this.owned()
       .where(
         and(
@@ -77,7 +79,6 @@ export class RunsController {
       )
       .orderBy(desc(runs.createdAt))
       .limit(50);
-    const hide = await historyHider(this.db, this.config.secretsKey, user.workspaceId);
     return rows.map((r) => ({ ...r, triggerPayload: hide(r.triggerPayload), error: hide(r.error) as string | null }));
   }
 
@@ -105,8 +106,8 @@ export class RunsController {
   @Header("Content-Type", "text/csv; charset=utf-8")
   @Header("Content-Disposition", 'attachment; filename="activity.csv"')
   async exportCsv(@CurrentUser() user: SessionUser, @Query("workflowId", uuid) workflowId: string) {
-    const rows = await this.owned().where(and(eq(workflows.userId, user.workspaceId), eq(workflows.id, workflowId))).orderBy(desc(runs.createdAt)).limit(5000);
     const hide = await historyHider(this.db, this.config.secretsKey, user.workspaceId);
+    const rows = await this.owned().where(and(eq(workflows.userId, user.workspaceId), eq(workflows.id, workflowId))).orderBy(desc(runs.createdAt)).limit(5000);
     const fields = rows.map((r) => {
       const p = hide(r.triggerPayload);
       return p !== null && typeof p === "object" && !Array.isArray(p) ? (p as Record<string, unknown>) : {};
@@ -136,10 +137,10 @@ export class RunsController {
 
   @Get(":id")
   async get(@CurrentUser() user: SessionUser, @Param("id", new ZodPipe(z.uuid())) id: string) {
+    const hide = await historyHider(this.db, this.config.secretsKey, user.workspaceId);
     const [run] = await this.owned().where(and(eq(workflows.userId, user.workspaceId), eq(runs.id, id)));
     if (!run) throw new NotFoundException();
     const steps = await this.db.select().from(stepRuns).where(eq(stepRuns.runId, id)).orderBy(asc(stepRuns.createdAt), asc(stepRuns.attempt));
-    const hide = await historyHider(this.db, this.config.secretsKey, user.workspaceId);
     return {
       ...run,
       triggerPayload: hide(run.triggerPayload),

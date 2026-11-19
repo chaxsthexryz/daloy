@@ -3,6 +3,7 @@ import { BadRequestException, Body, Controller, HttpCode, Inject, Post, UseGuard
 import * as z from "zod";
 import { SessionGuard } from "./auth";
 import { Allow, CONFIG, CurrentUser, DB, MANAGE, RateLimit, ZodPipe, type ApiConfig, type SessionUser } from "./http";
+import { historyHider } from "./mask";
 
 const input = z.strictObject({ again: z.boolean().default(false) });
 
@@ -22,9 +23,12 @@ export class GoogleCalendarController {
   @HttpCode(200)
   @UseGuards(RateLimit(5))
   async create(@CurrentUser() user: SessionUser, @Body(new ZodPipe(input)) body: z.output<typeof input>) {
-    return ensureCalendar(this.db, this.config.secretsKey, this.config.providers, user.workspaceId, body).catch((err: unknown) => {
-      if (err instanceof ProviderError) throw new BadRequestException(err.message);
-      throw err;
-    });
+    try {
+      return await ensureCalendar(this.db, this.config.secretsKey, this.config.providers, user.workspaceId, body);
+    } catch (err) {
+      if (!(err instanceof ProviderError)) throw err;
+      const hide = await historyHider(this.db, this.config.secretsKey, user.workspaceId);
+      throw new BadRequestException(hide(err.message) as string);
+    }
   }
 }

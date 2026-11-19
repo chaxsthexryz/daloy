@@ -22,6 +22,7 @@ export * from "./members";
 export * from "./oauth";
 export * from "./paymongo";
 export * from "./providers";
+export * from "./retired-secrets";
 export * from "./runs";
 export * from "./schema";
 export * from "./uploads";

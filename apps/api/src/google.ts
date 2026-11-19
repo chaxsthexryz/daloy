@@ -17,6 +17,7 @@ import type { HelmetOptions } from "helmet";
 import * as z from "zod";
 import { SessionGuard } from "./auth";
 import { Allow, CONFIG, CurrentUser, DB, MANAGE, RateLimit, ZodPipe, type ApiConfig, type SessionUser } from "./http";
+import { historyHider } from "./mask";
 
 /**
  * The Google Picker's hosts, and nothing else, added to the console's content security policy when the Picker is set
@@ -130,8 +131,14 @@ export class GoogleController {
     return { spreadsheetId, title, tabs, tab: chosen };
   }
 
-  private call<T>(workspaceId: string, provider: "google_sheets" | "google_drive", conn: GoogleConnection, fn: Parameters<typeof withGoogle<T>>[6]) {
-    return withGoogle(this.db, this.config.secretsKey, this.config.providers, workspaceId, provider, conn, fn).catch(asBadRequest);
+  private async call<T>(workspaceId: string, provider: "google_sheets" | "google_drive", conn: GoogleConnection, fn: Parameters<typeof withGoogle<T>>[6]) {
+    try {
+      return await withGoogle(this.db, this.config.secretsKey, this.config.providers, workspaceId, provider, conn, fn);
+    } catch (err) {
+      if (!(err instanceof ProviderError)) throw err;
+      const hide = await historyHider(this.db, this.config.secretsKey, workspaceId);
+      throw new BadRequestException(hide(err.message) as string);
+    }
   }
 
   /** The connection, which must be a Google sign-in: a service account cannot use drive.file picks or make files in My Drive. */

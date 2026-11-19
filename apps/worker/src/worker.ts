@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { hostname } from "node:os";
-import { clearSheetWriteKeys, createRun, deleteOldFlows, keepOAuthAlive, OAUTH_PROVIDERS, planOf, PLANS, publishedVersion, purgeUploads, runDueDeliveries, RUN_QUEUE, RUN_QUEUE_OPTIONS, runs, SCHEDULE_QUEUE, WorkflowPausedError, workflows, workflowVersions, type Db, type MailDeps, type ProviderUrls } from "@daloy/db";
+import { clearSheetWriteKeys, createRun, deleteOldFlows, keepOAuthAlive, OAUTH_PROVIDERS, planOf, PLANS, publishedVersion, purgeRetiredSecrets, purgeUploads, runDueDeliveries, RUN_QUEUE, RUN_QUEUE_OPTIONS, runs, SCHEDULE_QUEUE, WorkflowPausedError, workflows, workflowVersions, type Db, type MailDeps, type ProviderUrls } from "@daloy/db";
 import type { RetryPolicy } from "@daloy/engine";
 import { and, eq, gt, inArray, isNull, lt, lte, or, sql } from "drizzle-orm";
 import { PgBoss } from "pg-boss";
@@ -20,6 +20,10 @@ export type WorkerOptions = {
   retryPolicy?: RetryPolicy;
   /** false when connecting as the DML-only role: pg-boss then expects its schema installed already (migrate.ts). */
   migrate?: boolean;
+  /** Key for daily maintenance such as retired-secret scrub-and-purge. Falls back to deliveries/watchdog/emailIn keys when omitted. */
+  secretsKey?: Buffer;
+  /** Override retention days for retired_secrets purge (defaults to RETIRED_SECRETS_MAX_AGE_DAYS or 90). */
+  retiredSecretMaxAgeDays?: number;
   /** Delivers queued Sheets rows and Slack messages. Left out, deliveries wait in the table. */
   deliveries?: { secretsKey: Buffer; urls: ProviderUrls };
   /** Flags scheduled automations that missed a run and emails their owner (N17). Left out, nothing is checked. */
@@ -115,13 +119,20 @@ export async function startWorker(opts: WorkerOptions) {
   await sweep();
 
   // OAuth (decision 0058): keeps idle grants alive and deletes consent flows a day past expiry. At start, then daily.
-  const oauthSweep = () => {
-    if (!opts.deliveries) return;
-    keepOAuthAlive(db, opts.deliveries.secretsKey, opts.deliveries.urls, OAUTH_PROVIDERS).catch(() => console.error("oauth keepalive failed"));
-    deleteOldFlows(db).catch(() => console.error("oauth flow cleanup failed"));
+  // Retired secrets (decision 0067): scrubs and deletes rows past the retention window on the same daily sweep.
+  const maintenanceKey = opts.secretsKey ?? opts.deliveries?.secretsKey ?? opts.watchdog?.secretsKey ?? opts.emailIn?.secretsKey;
+  let purging: Promise<unknown> = Promise.resolve();
+  const dailySweep = () => {
+    if (opts.deliveries) {
+      keepOAuthAlive(db, opts.deliveries.secretsKey, opts.deliveries.urls, OAUTH_PROVIDERS).catch(() => console.error("oauth keepalive failed"));
+      deleteOldFlows(db).catch(() => console.error("oauth flow cleanup failed"));
+    }
+    if (maintenanceKey) {
+      purging = purgeRetiredSecrets(db, maintenanceKey, { maxAgeDays: opts.retiredSecretMaxAgeDays }).catch(() => console.error("retired secret purge failed"));
+    }
   };
-  oauthSweep();
-  const oauthTimer = setInterval(oauthSweep, 24 * 60 * 60_000);
+  dailySweep();
+  const dailyTimer = setInterval(dailySweep, 24 * 60 * 60_000);
 
   // Deliveries are rows, not jobs: each poll claims the due ones with SKIP LOCKED (packages/db/src/deliveries.ts).
   // One poll at a time per worker; several workers share the work through the claim.
@@ -163,7 +174,7 @@ export async function startWorker(opts: WorkerOptions) {
     /** Stops taking jobs and waits for the ones in progress, so their leases are released cleanly. */
     async stop() {
       clearInterval(sweepTimer);
-      clearInterval(oauthTimer);
+      clearInterval(dailyTimer);
       clearInterval(deliveryTimer);
       clearInterval(emailTimer);
       clearInterval(watchdogTimer);
@@ -172,6 +183,7 @@ export async function startWorker(opts: WorkerOptions) {
       await delivering;
       await readingMail;
       await checking;
+      await purging;
     },
   };
 }

@@ -12,6 +12,7 @@ import { and, eq } from "drizzle-orm";
 import * as z from "zod";
 import { SessionGuard } from "./auth";
 import { Allow, CONFIG, CurrentUser, DB, MANAGE, RateLimit, ZodPipe, type ApiConfig, type SessionUser } from "./http";
+import { historyHider } from "./mask";
 
 @Controller("workflows/:id/email-source")
 @UseGuards(SessionGuard, Allow(MANAGE))
@@ -24,7 +25,9 @@ export class EmailSourceController {
   @Get()
   async read(@CurrentUser() user: SessionUser, @Param("id", new ZodPipe(z.uuid())) id: string) {
     await this.owned(user.workspaceId, id);
-    return { source: await readEmailSource(this.db, id) };
+    const hide = await historyHider(this.db, this.config.secretsKey, user.workspaceId);
+    const source = await readEmailSource(this.db, id);
+    return { source: source ? { ...source, lastError: hide(source.lastError) as string | null } : null };
   }
 
   @Put()
@@ -35,7 +38,9 @@ export class EmailSourceController {
     @Body(new ZodPipe(emailSourceInputSchema)) body: z.output<typeof emailSourceInputSchema>,
   ) {
     await this.owned(user.workspaceId, id);
-    return { source: await saveEmailSource(this.db, this.config.secretsKey, user.workspaceId, id, body) };
+    const hide = await historyHider(this.db, this.config.secretsKey, user.workspaceId);
+    const source = await saveEmailSource(this.db, this.config.secretsKey, user.workspaceId, id, body);
+    return { source: { ...source, lastError: hide(source.lastError) as string | null } };
   }
 
   @Post("check")
@@ -43,9 +48,10 @@ export class EmailSourceController {
   @HttpCode(200)
   async check(@CurrentUser() user: SessionUser, @Param("id", new ZodPipe(z.uuid())) id: string) {
     await this.owned(user.workspaceId, id);
+    const hide = await historyHider(this.db, this.config.secretsKey, user.workspaceId);
     const source = await requestEmailSourceCheck(this.db, id);
     if (!source) throw new NotFoundException("connect a mailbox first");
-    return { source };
+    return { source: { ...source, lastError: hide(source.lastError) as string | null } };
   }
 
   @Delete()

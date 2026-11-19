@@ -5,7 +5,8 @@ import type { Request, Response } from "express";
 import type { PgBoss } from "pg-boss";
 import * as z from "zod";
 import { sessionUser } from "./auth";
-import { BOSS, DB, enqueueRun, RateLimit, ZodPipe, type SessionUser } from "./http";
+import { BOSS, CONFIG, DB, enqueueRun, RateLimit, ZodPipe, type ApiConfig, type SessionUser } from "./http";
+import { historyHider } from "./mask";
 import { escapeHtml, page } from "./public";
 
 const token = new ZodPipe(z.string().regex(/^[A-Za-z0-9_-]{43}$/));
@@ -38,6 +39,7 @@ export class ApprovalsController {
   constructor(
     @Inject(DB) private readonly db: Db,
     @Inject(BOSS) private readonly boss: PgBoss,
+    @Inject(CONFIG) private readonly config: Required<ApiConfig>,
   ) {}
 
   @Get(":token")
@@ -57,7 +59,9 @@ export class ApprovalsController {
     }
     const language = await workspaceLanguage(this.db, pending.workspaceId);
     const copy = publicCopy[language];
-    const message = String((pending.input as { message?: unknown } | null)?.message ?? "");
+    const hide = await historyHider(this.db, this.config.secretsKey, pending.workspaceId);
+    const input = hide(pending.input) as { message?: unknown } | null;
+    const message = String(input?.message ?? "");
     const who = access.user ? `<p class="muted">${copy.signedIn} ${escapeHtml(access.user.email)}</p>` : "";
     return page(
       `<h1>${copy.requested}</h1>${who}<p style="white-space:pre-wrap">${escapeHtml(message)}</p>` +
