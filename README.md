@@ -95,6 +95,8 @@ By default every email lands in Mailpit (http://localhost:8025) and nobody recei
 2. In the console, open **Business and email**, select **Connect Gmail** and enter the Gmail address and the app password.
 3. Select **Send a test email to me** and open the link in that email while signed in. Until then nothing is sent from the address.
 
+When the installation has a Google OAuth client (see `.env.example`), **Connect Gmail with Google** on Apps replaces these steps: Google confirms the address and Daloy sends through the Gmail API with the `gmail.send` permission only. The app password form moves under Advanced, and email-in automations still use an app password (decision 0063).
+
 From then on, that account's published workflows, approval emails and test runs set to "Live" send real mail from its address. Other accounts are not affected. **Disconnect** stops that account's mail until it reconnects; it never switches to another sender. Use your own addresses while testing. The steps for checking this against a real Gmail account are in [docs/live-gmail-check.md](docs/live-gmail-check.md).
 
 The `SMTP_*` settings in `.env` are the installation's own server, used by accounts that connected no Gmail. With Mailpit every account may use it. With any other server only accounts you approve can, each with a daily recipient limit (decision 0024):
@@ -180,7 +182,7 @@ Claude Code wrote the earlier phases. Codex wrote the email-in trigger and form 
 
 - Version 1 supports linear flows with branches only: no loops, no parallel branches, no sub-workflows.
 - One workspace per user.
-- Gmail is connected with an app password. Accounts that cannot create one (some work and school accounts) cannot send from their own address yet; there is no Google sign-in (OAuth) option.
+- Gmail is connected with an app password, or with a Google sign-in when the installation has a Google OAuth client. The Google sign-in is tested against a local fake only: the live check in [docs/live-gmail-oauth-check.md](docs/live-gmail-oauth-check.md) has not been run, and Google must review the `gmail.send` scope before more than 100 people can use it.
 - The automated tests use a fake SMTP server. The live Gmail check in [docs/live-gmail-check.md](docs/live-gmail-check.md) passed once by hand, on 15 November 2026 at commit 9df014d, with two real Gmail accounts.
 - When an account's Gmail stops working, its runs fail with "Reconnect Gmail". There is no button to retry only the failed email after reconnecting.
 - Google Sheets and Slack are tested against a local fake only. The live check in [docs/live-sheets-slack-check.md](docs/live-sheets-slack-check.md) has not been run.
