@@ -4,8 +4,8 @@ import { api } from "./api";
 import { ConnectPanel, Status, useAction } from "./ConnectPanel";
 
 export type Provider = "google_sheets" | "slack" | "outlook" | "teams" | "telegram" | "google_calendar" | "google_drive" | "paymongo" | "airtable" | "notion" | "trello";
-export type Connection = { provider: Provider; status: "active" | "failed"; account: string; destination: Record<string, string> | null; lastError: string | null; lastTestedAt: string | null };
-type TestResult = { ok: true; range?: string; channel?: string } | { ok: false; error: string };
+export type Connection = { provider: Provider; status: "active" | "failed"; authMethod?: "token" | "service_account" | "oauth" | "webhook_url"; account: string; destination: Record<string, string> | null; lastError: string | null; lastTestedAt: string | null };
+export type TestResult = { ok: true; range?: string; channel?: string } | { ok: false; error: string };
 export type OutlookSetup = { configured: boolean; adminConsentUrl?: string };
 type Channel = { id: string; name: string; isMember: boolean };
 
@@ -25,7 +25,7 @@ const OUTLOOK_OUTCOMES: Record<string, { ok: boolean; text: string }> = {
   failed: { ok: false, text: "Microsoft did not finish connecting. Start again with Connect Outlook." },
 };
 
-function Outcome({ test, what }: { test: TestResult | null; what: string }) {
+export function Outcome({ test, what }: { test: TestResult | null; what: string }) {
   const { t } = useLanguage();
   if (!test) return null;
   return test.ok ? (
@@ -37,7 +37,8 @@ function Outcome({ test, what }: { test: TestResult | null; what: string }) {
   );
 }
 
-export function SheetsConnection({ conn, onChange }: { conn: Connection | null; onChange: () => Promise<unknown> }) {
+/** embedded: only the service account form, as the Advanced option under Connect with Google (decision 0060). */
+export function SheetsConnection({ conn, onChange, embedded }: { conn: Connection | null; onChange: () => Promise<unknown>; embedded?: boolean }) {
   const { t } = useLanguage();
   const { error, busy, act } = useAction(onChange);
   const [editing, setEditing] = useState(false);
@@ -60,16 +61,16 @@ export function SheetsConnection({ conn, onChange }: { conn: Connection | null; 
       setTest(null);
     });
   };
-  const showForm = !conn || editing;
+  const showForm = !conn || editing || embedded;
 
   return (
-    <div className="connection" aria-labelledby="sheets-h">
-      <h3 id="sheets-h">Google Sheets</h3>
-      {conn && <Status conn={conn} label={t("Service account")} />}
-      {conn?.destination && (
+    <div className={embedded ? undefined : "connection"} aria-labelledby={embedded ? undefined : "sheets-h"}>
+      {!embedded && <h3 id="sheets-h">Google Sheets</h3>}
+      {conn && !embedded && <Status conn={conn} label={t("Service account")} />}
+      {conn?.destination && !embedded && (
         <p>{t("Rows go to ")}<strong>{conn.destination.title}</strong>{t(", tab ")}<strong>{conn.destination.tab}</strong>{t(". Column A holds the request reference, column B the time.")}</p>
       )}
-      {conn && (
+      {conn && !embedded && (
         <div className="actions">
           <button type="button" disabled={busy} onClick={() => void act(async () => setTest(await api<TestResult>("POST", "/settings/connections/google-sheets/test")))}>{t("Add a test row")}</button>
           {!editing && (
@@ -103,7 +104,7 @@ export function SheetsConnection({ conn, onChange }: { conn: Connection | null; 
             <button type="submit" className="primary" disabled={busy}>
               {conn ? t("Save sheet") : t("Connect Google Sheets")}
             </button>
-            {conn && (
+            {conn && !embedded && (
               <button type="button" className="quiet" onClick={() => setEditing(false)}>{t("Cancel")}</button>
             )}
           </div>
@@ -116,7 +117,8 @@ export function SheetsConnection({ conn, onChange }: { conn: Connection | null; 
   );
 }
 
-export function DriveConnection({ conn, onChange }: { conn: Connection | null; onChange: () => Promise<unknown> }) {
+/** embedded: only the service account form, as the Advanced option under Connect with Google (decision 0060). */
+export function DriveConnection({ conn, onChange, embedded }: { conn: Connection | null; onChange: () => Promise<unknown>; embedded?: boolean }) {
   const { t } = useLanguage();
   const { error, busy, act } = useAction(onChange);
   const [editing, setEditing] = useState(false);
@@ -136,18 +138,18 @@ export function DriveConnection({ conn, onChange }: { conn: Connection | null; o
       setEditing(false);
     });
   };
-  const showForm = !conn || editing;
+  const showForm = !conn || editing || embedded;
 
   return (
-    <div className="connection" aria-labelledby="drive-h">
-      <h3 id="drive-h">Google Drive</h3>
-      {conn && <Status conn={conn} label="Service account" />}
-      {conn?.destination && (
+    <div className={embedded ? undefined : "connection"} aria-labelledby={embedded ? undefined : "drive-h"}>
+      {!embedded && <h3 id="drive-h">Google Drive</h3>}
+      {conn && !embedded && <Status conn={conn} label="Service account" />}
+      {conn?.destination && !embedded && (
         <p>
           {t("Files go to ")}<strong>{conn.destination.title}</strong>{t(". Files in a request are kept in Daloy for 7 days, so save them to Drive before then.")}
         </p>
       )}
-      {conn && (
+      {conn && !embedded && (
         <div className="actions">
           {!editing && (
             <button type="button" className="quiet" onClick={() => setEditing(true)}>
@@ -184,7 +186,7 @@ export function DriveConnection({ conn, onChange }: { conn: Connection | null; o
             <button type="submit" className="primary" disabled={busy}>
               {conn ? t("Save folder") : t("Connect Google Drive")}
             </button>
-            {conn && (
+            {conn && !embedded && (
               <button type="button" className="quiet" onClick={() => setEditing(false)}>
                 {t("Cancel")}
               </button>

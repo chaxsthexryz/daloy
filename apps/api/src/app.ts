@@ -13,6 +13,7 @@ import { ApprovalsController } from "./approvals";
 import { AuthController, SessionGuard } from "./auth";
 import { ConnectionsController, DeliveriesController } from "./connections";
 import { OAuthCallbackController, OAuthStartController } from "./oauth";
+import { consoleHeaders, GoogleController } from "./google";
 import { EmailSettingsController } from "./email-settings";
 import { EmailSourceController } from "./email-source";
 import { BOSS, CONFIG, DB, RateLimit, type ApiConfig } from "./http";
@@ -40,7 +41,7 @@ export async function createApp({ db, boss, ...config }: AppOptions) {
   await boss.createQueue(SCHEDULE_QUEUE);
 
   @Module({
-    controllers: [AuthController, WorkflowsController, CatalogController, SecretsController, ResourcesController, BookingsController, TokensController, RunsController, HooksController, PaymongoHooksController, FormsController, ApprovalsController, McpController, SettingsController, LanguageController, EmailSettingsController, EmailSourceController, ConnectionsController, OAuthStartController, OAuthCallbackController, DeliveriesController, AiDraftController, AiChatController, MembersController, MyRequestsController, UsageController, BrandController, BrandLogoController],
+    controllers: [AuthController, WorkflowsController, CatalogController, SecretsController, ResourcesController, BookingsController, TokensController, RunsController, HooksController, PaymongoHooksController, FormsController, ApprovalsController, McpController, SettingsController, LanguageController, EmailSettingsController, EmailSourceController, ConnectionsController, OAuthStartController, OAuthCallbackController, GoogleController, DeliveriesController, AiDraftController, AiChatController, MembersController, MyRequestsController, UsageController, BrandController, BrandLogoController],
     providers: [
       { provide: DB, useValue: db },
       { provide: BOSS, useValue: boss },
@@ -59,7 +60,8 @@ export async function createApp({ db, boss, ...config }: AppOptions) {
   if (config.trustProxy) app.set("trust proxy", config.trustProxy);
   app.useBodyParser("json", { limit: "256kb" });
   app.useBodyParser("urlencoded", { limit: "64kb", extended: false });
-  const standardHeaders = helmet();
+  // The console policy gains the Google Picker hosts only when the Picker is set up (decision 0060).
+  const standardHeaders = helmet(consoleHeaders(config.providers ?? providerUrls()));
   const embedHeaders = helmet({
     xFrameOptions: false,
     contentSecurityPolicy: { directives: { frameAncestors: ["'self'", "https:", "http:"] } },

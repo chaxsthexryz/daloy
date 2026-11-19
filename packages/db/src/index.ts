@@ -12,6 +12,7 @@ export * from "./calendar";
 export * from "./connections";
 export * from "./crypto";
 export * from "./deliveries";
+export * from "./google-access";
 export * from "./email-sources";
 export * from "./language";
 export * from "./mail";

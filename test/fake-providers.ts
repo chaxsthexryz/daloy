@@ -17,6 +17,10 @@ import type { AddressInfo } from "node:net";
  *
  * Drive: a folder is in a shared drive (sharedDriveId) or not. Like Google, a service account cannot own files, so an upload to a folder with no shared drive fails with 403 storageQuotaExceeded.
  *
+ * Google OAuth (decision 0060): add the app with addOAuthApp("google"). Its access tokens work on the Sheets and Drive
+ * fakes as that user, with drive.file rules: a file the user did not pick (is not an editor of) answers 404, and an
+ * upload may go to My Drive. Creating a spreadsheet or folder makes the user its editor, like a file the app created.
+ *
  * Sheets developer metadata follows Google: a spreadsheets.batchUpdate is all or nothing, and creating metadata with an
  * id that already exists in the spreadsheet fails the whole batch with 400.
  */
@@ -99,6 +103,14 @@ export async function startFakeProviders(port = 0) {
     res.writeHead(status, { "content-type": "application/json", ...headers }).end(JSON.stringify(body));
   };
   const googleError = (res: ServerResponse, code: number, status: string, message: string) => json(res, code, { error: { code, status, message } });
+  /** Who a Google bearer token belongs to: a service account, or a user of the Google OAuth app (drive.file). */
+  const googleCaller = (req: IncomingMessage) => {
+    const token = (req.headers.authorization ?? "").replace(/^Bearer /, "");
+    const sa = tokens.get(token);
+    if (sa) return { email: sa, oauth: false };
+    const user = oauth.google?.accessTokens.get(token);
+    return user ? { email: user.email, oauth: true } : null;
+  };
 
   async function body(req: IncomingMessage) {
     const chunks: Buffer[] = [];
@@ -314,9 +326,17 @@ export async function startFakeProviders(port = 0) {
 
     // Google Drive API v3: read a folder, and multipart/related upload into one.
     const driveGet = /^\/drive\/v3\/files\/([^/]+)$/.exec(path)?.[1];
-    if (driveGet || path === "/upload/drive/v3/files") {
-      const email = tokens.get((req.headers.authorization ?? "").replace(/^Bearer /, ""));
-      if (!email) return googleError(res, 401, "UNAUTHENTICATED", "Invalid Credentials");
+    if (driveGet || path === "/upload/drive/v3/files" || (path === "/drive/v3/files" && req.method === "POST")) {
+      const caller = googleCaller(req);
+      if (!caller) return googleError(res, 401, "UNAUTHENTICATED", "Invalid Credentials");
+      const email = caller.email;
+      if (path === "/drive/v3/files") {
+        const meta = JSON.parse(raw) as { name?: string; mimeType?: string };
+        if (meta.mimeType !== "application/vnd.google-apps.folder") return googleError(res, 400, "INVALID_ARGUMENT", "Only folders here.");
+        const id = `drivefolder${String(++seq).padStart(8, "0")}`;
+        driveFolders.set(id, { name: meta.name ?? "Untitled folder", editors: new Set([email]), sharedDriveId: null });
+        return answer(200, { id, name: meta.name });
+      }
       const driveError = (code: number, reason: string, message: string) => json(res, code, { error: { code, message, errors: [{ reason, message }] } });
       if (driveGet) {
         const f = driveFolders.get(driveGet);
@@ -337,7 +357,7 @@ export async function startFakeProviders(port = 0) {
       const data = bytes.subarray(head2 + 4, end);
       const folder = driveFolders.get(meta.parents?.[0] ?? "");
       if (!folder || !folder.editors.has(email)) return googleError(res, 404, "NOT_FOUND", "File not found.");
-      if (!folder.sharedDriveId) return driveError(403, "storageQuotaExceeded", "Service Accounts do not have storage quota. Leverage shared drives instead.");
+      if (!folder.sharedDriveId && !caller.oauth) return driveError(403, "storageQuotaExceeded", "Service Accounts do not have storage quota. Leverage shared drives instead.");
       const id = `drivefile${String(++seq).padStart(8, "0")}`;
       driveFiles.push({ id, name: meta.name ?? "", parent: meta.parents![0]!, mimeType: meta.mimeType ?? "", size: data.length, sha256: createHash("sha256").update(data).digest("hex") });
       return answer(200, { id, name: meta.name });
@@ -378,11 +398,11 @@ export async function startFakeProviders(port = 0) {
     const batchPath = /^\/v4\/spreadsheets\/([^/:]+):batchUpdate$/.exec(path);
     const metaPath = /^\/v4\/spreadsheets\/([^/]+)\/developerMetadata\/(\d+)$/.exec(path);
     if (batchPath || metaPath) {
-      const email = tokens.get((req.headers.authorization ?? "").replace(/^Bearer /, ""));
-      if (!email) return googleError(res, 401, "UNAUTHENTICATED", "Request had invalid authentication credentials.");
+      const caller = googleCaller(req);
+      if (!caller) return googleError(res, 401, "UNAUTHENTICATED", "Request had invalid authentication credentials.");
       const sheet = sheets.get((batchPath ?? metaPath)![1]!);
-      if (!sheet) return googleError(res, 404, "NOT_FOUND", "Requested entity was not found.");
-      if (!sheet.editors.has(email)) return googleError(res, 403, "PERMISSION_DENIED", "The caller does not have permission");
+      if (!sheet || (caller.oauth && !sheet.editors.has(caller.email))) return googleError(res, 404, "NOT_FOUND", "Requested entity was not found.");
+      if (!sheet.editors.has(caller.email)) return googleError(res, 403, "PERMISSION_DENIED", "The caller does not have permission");
       if (metaPath) {
         const meta = sheet.metadata.get(Number(metaPath[2]));
         return meta ? answer(200, meta) : googleError(res, 404, "NOT_FOUND", `No developer metadata with ID: ${metaPath[2]}`);
@@ -419,13 +439,23 @@ export async function startFakeProviders(port = 0) {
     }
 
     // Google Sheets API v4.
+    // spreadsheets.create: a new spreadsheet with one tab, owned by the caller.
+    if (path === "/v4/spreadsheets" && req.method === "POST") {
+      const caller = googleCaller(req);
+      if (!caller) return googleError(res, 401, "UNAUTHENTICATED", "Request had invalid authentication credentials.");
+      const title = (JSON.parse(raw) as { properties?: { title?: string } }).properties?.title ?? "Untitled spreadsheet";
+      const id = `created-sheet-${String(++seq).padStart(8, "0")}`;
+      sheets.set(id, { title, tabs: new Map([["Sheet1", [] as string[][]]]), editors: new Set([caller.email]), metadata: new Map<number, SheetMeta>() });
+      return answer(200, { spreadsheetId: id, properties: { title }, sheets: [{ properties: { sheetId: 1, title: "Sheet1" } }] });
+    }
+
     const sheetPath = /^\/v4\/spreadsheets\/([^/]+)(?:\/values\/(.+?)(:append)?)?$/.exec(path);
     if (sheetPath) {
-      const email = tokens.get((req.headers.authorization ?? "").replace(/^Bearer /, ""));
-      if (!email) return googleError(res, 401, "UNAUTHENTICATED", "Request had invalid authentication credentials.");
+      const caller = googleCaller(req);
+      if (!caller) return googleError(res, 401, "UNAUTHENTICATED", "Request had invalid authentication credentials.");
       const sheet = sheets.get(sheetPath[1]!);
-      if (!sheet) return googleError(res, 404, "NOT_FOUND", "Requested entity was not found.");
-      if (!sheet.editors.has(email)) return googleError(res, 403, "PERMISSION_DENIED", "The caller does not have permission");
+      if (!sheet || (caller.oauth && !sheet.editors.has(caller.email))) return googleError(res, 404, "NOT_FOUND", "Requested entity was not found.");
+      if (!sheet.editors.has(caller.email)) return googleError(res, 403, "PERMISSION_DENIED", "The caller does not have permission");
       if (!sheetPath[2]) return answer(200, { properties: { title: sheet.title }, sheets: [...sheet.tabs.keys()].map((title, i) => ({ properties: { title, sheetId: i + 1 } })) });
       const tabName = /^'?(.*?)'?!/.exec(sheetPath[2])?.[1]?.replaceAll("''", "'") ?? "";
       const tab = sheet.tabs.get(tabName);
@@ -562,6 +592,10 @@ export async function startFakeProviders(port = 0) {
       sheets.set(id, s);
       return s;
     },
+    /** A spreadsheet by id, such as one Daloy created through the API. */
+    sheet: (id: string) => sheets.get(id),
+    /** A Drive folder by id, such as one Daloy created through the API. */
+    driveFolder: (id: string) => driveFolders.get(id),
     addCalendar: (id: string, title: string, editors: string[]) => {
       const c = { title, editors: new Set(editors), events: new Map<string, CalendarEvent>() };
       calendars.set(id, c);

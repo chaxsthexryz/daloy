@@ -4,6 +4,7 @@ import { controlsTranslations } from "./locale-controls";
 import { builderTranslations } from "./locale-builder";
 import { guidedTranslations } from "./locale-guided";
 import { viewTranslations } from "./locale-views";
+import { googleTranslations } from "./locale-google";
 export type Language = "en" | "tl";
 
 const tagalog: Record<string, string> = {
@@ -13,6 +14,7 @@ const tagalog: Record<string, string> = {
   ...viewTranslations,
   ...brandTranslations,
   ...controlsTranslations,
+  ...googleTranslations,
   "Plan: {plan}": "Plan: {plan}",
   "{used}, no limit": "{used}, walang limit",
   "{used} of {limit}": "{used} sa {limit}",

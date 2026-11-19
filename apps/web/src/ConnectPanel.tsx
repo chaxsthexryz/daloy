@@ -56,6 +56,8 @@ export function ConnectPanel(p: {
   name: string;
   configured: boolean;
   conn: Connection | null;
+  /** The main button's text before connecting, when it differs from "Connect <name>" (Google: "Connect with Google"). */
+  connectLabel?: string;
   /** The label before the account, such as Mailbox or Account. */
   label: string;
   outcome?: string;
@@ -105,7 +107,7 @@ export function ConnectPanel(p: {
           {p.intro}
           <div className="actions">
             <button type="button" className={p.conn ? "" : "primary"} disabled={busy} onClick={() => void connect()}>
-              {p.conn ? t("Reconnect {app}", { app: p.name }) : t("Connect {app}", { app: p.name })}
+              {p.conn ? t("Reconnect {app}", { app: p.name }) : t(p.connectLabel ?? "Connect {app}", { app: p.name })}
             </button>
             {p.conn && (
               <>

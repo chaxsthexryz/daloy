@@ -19,6 +19,7 @@ import {
   disconnectOAuth,
   removeConnection,
   withFreshToken,
+  withGoogle,
   outlookSend,
   checkPaymongoKey,
   paymongoMode,
@@ -165,6 +166,7 @@ export class ConnectionsController {
   @UseGuards(RateLimit(10))
   async putSheetDestination(@CurrentUser() user: SessionUser, @Body(new ZodPipe(destinationInput)) body: z.output<typeof destinationInput>) {
     const conn = await this.connection(user.workspaceId, "google_sheets");
+    if (conn.authMethod === "oauth") throw new BadRequestException("This connection uses a Google sign-in. Pick or create the sheet instead.");
     await setDestination(this.db, user.workspaceId, "google_sheets", await this.destination(JSON.parse(conn.credential) as ServiceAccount, body));
   }
 
@@ -175,8 +177,9 @@ export class ConnectionsController {
   async testSheets(@CurrentUser() user: SessionUser) {
     const conn = await this.connection(user.workspaceId, "google_sheets");
     const stamp = new Date().toISOString();
+    // force: with a Google sign-in, a test proves the grant itself still works (decision 0058).
     return this.test(user.workspaceId, "google_sheets", conn, () =>
-      appendRow(this.urls, JSON.parse(conn.credential) as ServiceAccount, conn.destination as SheetDestination, [`TEST-${stamp}`, stamp, "Test row from Daloy. You can delete this row."]),
+      withGoogle(this.db, this.config.secretsKey, this.urls, user.workspaceId, "google_sheets", conn, (auth) => appendRow(this.urls, auth, conn.destination as SheetDestination, [`TEST-${stamp}`, stamp, "Test row from Daloy. You can delete this row."]), { force: true }),
     );
   }
 

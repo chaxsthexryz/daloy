@@ -42,8 +42,11 @@ export type ProviderUrls = {
   teamsHosts?: string[];
   /** The installation's own Microsoft Entra app, for Outlook consent. Unset: Outlook is not offered (decision 0023). */
   microsoft?: { clientId: string; clientSecret: string; tenant: string };
+  /** The installation's Google OAuth client and endpoints (decision 0060). Unset: Google keeps its service account form. */
+  googleOAuth?: GoogleOAuthConfig;
   timeoutMs?: number;
 };
+export type GoogleOAuthConfig = { clientId: string; clientSecret: string; authorize: string; token: string; revoke: string; userinfo: string; pickerApiKey?: string; projectNumber?: string };
 const trim = (url: string) => url.replace(/\/+$/, "");
 export const providerUrls = (env: NodeJS.ProcessEnv = process.env): ProviderUrls => ({
   googleToken: env.GOOGLE_TOKEN_URL ?? "https://oauth2.googleapis.com/token",
@@ -62,6 +65,19 @@ export const providerUrls = (env: NodeJS.ProcessEnv = process.env): ProviderUrls
   microsoft:
     env.MICROSOFT_CLIENT_ID && env.MICROSOFT_CLIENT_SECRET
       ? { clientId: env.MICROSOFT_CLIENT_ID, clientSecret: env.MICROSOFT_CLIENT_SECRET, tenant: env.MICROSOFT_TENANT || "organizations" }
+      : undefined,
+  googleOAuth:
+    env.GOOGLE_OAUTH_CLIENT_ID && env.GOOGLE_OAUTH_CLIENT_SECRET
+      ? {
+          clientId: env.GOOGLE_OAUTH_CLIENT_ID,
+          clientSecret: env.GOOGLE_OAUTH_CLIENT_SECRET,
+          authorize: env.GOOGLE_AUTHORIZE_URL ?? "https://accounts.google.com/o/oauth2/v2/auth",
+          token: env.GOOGLE_OAUTH_TOKEN_URL ?? "https://oauth2.googleapis.com/token",
+          revoke: env.GOOGLE_REVOKE_URL ?? "https://oauth2.googleapis.com/revoke",
+          userinfo: env.GOOGLE_USERINFO_URL ?? "https://openidconnect.googleapis.com/v1/userinfo",
+          pickerApiKey: env.GOOGLE_PICKER_API_KEY || undefined,
+          projectNumber: env.GOOGLE_PROJECT_NUMBER || undefined,
+        }
       : undefined,
 });
 
@@ -103,6 +119,16 @@ export const serviceAccountSchema = z.object({
   private_key: z.string().includes("PRIVATE KEY"),
 });
 export type ServiceAccount = z.infer<typeof serviceAccountSchema>;
+/**
+ * What a Sheets or Drive call signs in with: a service account (JWT grant, cached here) or an OAuth access token that
+ * withFreshToken already made fresh (decision 0060). A 401 on an OAuth token is an auth error, so withFreshToken refreshes once.
+ */
+export type GoogleAuth = ServiceAccount | { accessToken: string };
+const isOAuth = (auth: GoogleAuth): auth is { accessToken: string } => "accessToken" in auth;
+const bearer = (urls: ProviderUrls, auth: GoogleAuth, scope: string) => (isOAuth(auth) ? Promise.resolve(auth.accessToken) : accessToken(urls, auth, scope));
+// Under drive.file Google answers 404 (or 403) for any file the owner did not pick and Daloy did not create, and after a reconnect a picked file may need picking again.
+const PICK_SHEET_AGAIN = "Daloy cannot open this spreadsheet with your Google connection. In Apps, pick the sheet again (Google lets Daloy reach only sheets you picked or Daloy created).";
+const PICK_FOLDER_AGAIN = "Daloy cannot open this Drive folder with your Google connection. In Apps, pick the folder again (Google lets Daloy reach only folders you picked or Daloy created).";
 export type SheetDestination = { spreadsheetId: string; tab: string };
 
 /** Takes a sheet link (https://docs.google.com/spreadsheets/d/<id>/edit) or the id itself. */
@@ -142,10 +168,11 @@ async function accessToken(urls: ProviderUrls, sa: ServiceAccount, scope = SHEET
   return res.body.access_token;
 }
 
-function sheetsFailure(res: Reply, sa: ServiceAccount, write: boolean): ProviderError {
+function sheetsFailure(res: Reply, auth: GoogleAuth, write: boolean): ProviderError {
   const message = String((res.body.error as { message?: unknown } | undefined)?.message ?? "");
-  const share = `Share the sheet with ${sa.client_email} as an Editor.`;
   if (res.status === 401) return new ProviderError("Google did not accept Daloy's access. Connect Google Sheets again.", "auth");
+  if (isOAuth(auth) && (res.status === 403 || res.status === 404)) return new ProviderError(PICK_SHEET_AGAIN, "permission");
+  const share = isOAuth(auth) ? "" : `Share the sheet with ${auth.client_email} as an Editor.`;
   if (res.status === 403) return new ProviderError(`Google Sheets refused access. ${share}${message ? ` Google said: ${message}` : ""}`, "permission");
   if (res.status === 404) return new ProviderError(`The spreadsheet was not found. Check the link, and ${share.charAt(0).toLowerCase()}${share.slice(1)}`, "permission");
   if (res.status === 429) return new ProviderError("Google Sheets is limiting requests right now. Daloy will try again.", "quota", retryAfter(res.headers));
@@ -154,17 +181,17 @@ function sheetsFailure(res: Reply, sa: ServiceAccount, write: boolean): Provider
   return new ProviderError(`Google Sheets rejected the request${message ? `: ${message}` : ` (${res.status})`}.`, "invalid");
 }
 
-/** A Sheets API call with the cached token. A 401 drops the token and tries once with a new one (expired access). */
-async function sheets(urls: ProviderUrls, sa: ServiceAccount, path: string, init: RequestInit, write: boolean): Promise<Record<string, unknown>> {
+/** A Sheets API call. A service account's 401 drops the cached token and tries once more; an OAuth 401 goes back to withFreshToken. */
+async function sheets(urls: ProviderUrls, auth: GoogleAuth, path: string, init: RequestInit, write: boolean): Promise<Record<string, unknown>> {
   for (let tries = 0; ; tries++) {
-    const token = await accessToken(urls, sa);
+    const token = await bearer(urls, auth, SHEETS_SCOPE);
     const res = await call(`${urls.sheets}${path}`, { ...init, headers: { ...init.headers, authorization: `Bearer ${token}` } }, urls.timeoutMs ?? 10_000, write, "Google Sheets");
     if (res.status === 200) return res.body;
-    if (res.status === 401 && tries === 0) {
-      tokenCache.delete(cacheKey(sa, SHEETS_SCOPE));
+    if (res.status === 401 && tries === 0 && !isOAuth(auth)) {
+      tokenCache.delete(cacheKey(auth, SHEETS_SCOPE));
       continue;
     }
-    throw sheetsFailure(res, sa, write);
+    throw sheetsFailure(res, auth, write);
   }
 }
 
@@ -172,8 +199,8 @@ async function sheets(urls: ProviderUrls, sa: ServiceAccount, path: string, init
 const range = (tab: string, cells: string) => encodeURIComponent(`'${tab.replaceAll("'", "''")}'!${cells}`);
 
 /** The spreadsheet's title and tab names, to check access when connecting. Reads only. */
-export async function sheetInfo(urls: ProviderUrls, sa: ServiceAccount, spreadsheetId: string) {
-  const body = await sheets(urls, sa, `/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}?fields=properties.title,sheets.properties.title`, {}, false);
+export async function sheetInfo(urls: ProviderUrls, auth: GoogleAuth, spreadsheetId: string) {
+  const body = await sheets(urls, auth, `/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}?fields=properties.title,sheets.properties.title`, {}, false);
   const tabs = ((body.sheets as { properties: { title: string } }[] | undefined) ?? []).map((s) => s.properties.title);
   return { title: String((body.properties as { title?: unknown } | undefined)?.title ?? ""), tabs };
 }
@@ -182,9 +209,9 @@ export async function sheetInfo(urls: ProviderUrls, sa: ServiceAccount, spreadsh
  * Adds the row under the last one in the tab. RAW keeps every value as typed, so form text such as "=IMPORTXML(...)"
  * is stored as text and never runs as a formula.
  */
-export async function appendRow(urls: ProviderUrls, sa: ServiceAccount, dest: SheetDestination, row: string[]) {
+export async function appendRow(urls: ProviderUrls, auth: GoogleAuth, dest: SheetDestination, row: string[]) {
   const path = `/v4/spreadsheets/${encodeURIComponent(dest.spreadsheetId)}/values/${range(dest.tab, "A1")}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`;
-  const body = await sheets(urls, sa, path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ values: [row] }) }, true);
+  const body = await sheets(urls, auth, path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ values: [row] }) }, true);
   return { range: String((body.updates as { updatedRange?: unknown } | undefined)?.updatedRange ?? "") };
 }
 
@@ -193,17 +220,17 @@ export type SheetWriteKey = { id: number; value: string };
 const MARKER_KEY = "daloy";
 const json = { "content-type": "application/json" };
 
-async function sheetIdOf(urls: ProviderUrls, sa: ServiceAccount, dest: SheetDestination): Promise<number> {
-  const body = await sheets(urls, sa, `/v4/spreadsheets/${encodeURIComponent(dest.spreadsheetId)}?fields=sheets.properties(sheetId,title)`, {}, false);
+async function sheetIdOf(urls: ProviderUrls, auth: GoogleAuth, dest: SheetDestination): Promise<number> {
+  const body = await sheets(urls, auth, `/v4/spreadsheets/${encodeURIComponent(dest.spreadsheetId)}?fields=sheets.properties(sheetId,title)`, {}, false);
   const tab = ((body.sheets as { properties: { sheetId: number; title: string } }[] | undefined) ?? []).find((s) => s.properties.title === dest.tab);
   if (!tab) throw new ProviderError(`The tab "${dest.tab}" is no longer in the spreadsheet. Pick the tab again in Apps, then retry.`, "invalid");
   return tab.properties.sheetId;
 }
 
 /** The value of our marker with this id, "" for someone else's metadata under that id, or null when there is none. */
-async function markerAt(urls: ProviderUrls, sa: ServiceAccount, spreadsheetId: string, id: number): Promise<string | null> {
+async function markerAt(urls: ProviderUrls, auth: GoogleAuth, spreadsheetId: string, id: number): Promise<string | null> {
   try {
-    const body = await sheets(urls, sa, `/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}/developerMetadata/${id}`, {}, false);
+    const body = await sheets(urls, auth, `/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}/developerMetadata/${id}`, {}, false);
     return body.metadataKey === MARKER_KEY ? String(body.metadataValue ?? "") : "";
   } catch (err) {
     // 404 comes back as "permission" (spreadsheet or entry not found); the spreadsheet was just reachable, so: no entry.
@@ -219,18 +246,18 @@ async function markerAt(urls: ProviderUrls, sa: ServiceAccount, spreadsheetId: s
  * request cannot add the row twice. Once the marker is deleted that no longer holds (decision 0021). A refused batch is
  * checked against the marker: ours means the row is already in. Cells are string values, never formulas.
  */
-export async function appendRowOnce(urls: ProviderUrls, sa: ServiceAccount, dest: SheetDestination, row: string[], key: SheetWriteKey): Promise<{ sheet: string; reconciled?: true }> {
-  const sheetId = await sheetIdOf(urls, sa, dest);
+export async function appendRowOnce(urls: ProviderUrls, auth: GoogleAuth, dest: SheetDestination, row: string[], key: SheetWriteKey): Promise<{ sheet: string; reconciled?: true }> {
+  const sheetId = await sheetIdOf(urls, auth, dest);
   const requests = [
     { createDeveloperMetadata: { developerMetadata: { metadataId: key.id, metadataKey: MARKER_KEY, metadataValue: key.value, location: { sheetId }, visibility: "PROJECT" } } },
     { appendCells: { sheetId, rows: [{ values: row.map((v) => ({ userEnteredValue: { stringValue: v } })) }], fields: "userEnteredValue" } },
   ];
   try {
-    await sheets(urls, sa, `/v4/spreadsheets/${encodeURIComponent(dest.spreadsheetId)}:batchUpdate`, { method: "POST", headers: json, body: JSON.stringify({ requests }) }, true);
+    await sheets(urls, auth, `/v4/spreadsheets/${encodeURIComponent(dest.spreadsheetId)}:batchUpdate`, { method: "POST", headers: json, body: JSON.stringify({ requests }) }, true);
     return { sheet: dest.tab };
   } catch (err) {
     if (!(err instanceof ProviderError) || err.kind !== "invalid") throw err;
-    const found = await markerAt(urls, sa, dest.spreadsheetId, key.id);
+    const found = await markerAt(urls, auth, dest.spreadsheetId, key.id);
     if (found === key.value) return { sheet: dest.tab, reconciled: true };
     if (found !== null) throw new ProviderError(`Something else in this spreadsheet already uses Daloy's marker ${key.id}, so Daloy cannot tell whether this row was added. Check the sheet, then choose Mark as posted or Post again.`, "review");
     throw err;
@@ -242,9 +269,9 @@ export async function appendRowOnce(urls: ProviderUrls, sa: ServiceAccount, dest
  * our key and our value, and Google deletes only metadata matching all three, so metadata another tool keeps under the
  * same id (a marker collision) is never touched. Deleting a missing one is fine.
  */
-export async function deleteSheetMarker(urls: ProviderUrls, sa: ServiceAccount, spreadsheetId: string, key: SheetWriteKey) {
+export async function deleteSheetMarker(urls: ProviderUrls, auth: GoogleAuth, spreadsheetId: string, key: SheetWriteKey) {
   const requests = [{ deleteDeveloperMetadata: { dataFilter: { developerMetadataLookup: { metadataId: key.id, metadataKey: MARKER_KEY, metadataValue: key.value } } } }];
-  await sheets(urls, sa, `/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}:batchUpdate`, { method: "POST", headers: json, body: JSON.stringify({ requests }) }, false);
+  await sheets(urls, auth, `/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}:batchUpdate`, { method: "POST", headers: json, body: JSON.stringify({ requests }) }, false);
 }
 
 // ---------------------------------------------------------------- Google Calendar
@@ -352,48 +379,55 @@ export function driveFolderIdFrom(input: string): string | null {
 
 const SHARED_DRIVE = (sa: ServiceAccount) => `Service accounts can only save files in a shared drive. Move the folder into a shared drive and add ${sa.client_email} as Content manager.`;
 
-function driveFailure(res: Reply, sa: ServiceAccount, write: boolean): ProviderError {
+function driveFailure(res: Reply, auth: GoogleAuth, write: boolean): ProviderError {
   const error = (res.body.error ?? {}) as { message?: unknown; errors?: { reason?: unknown }[] };
   const message = String(error.message ?? "");
   const reason = String(error.errors?.[0]?.reason ?? "");
-  const share = `Share the folder with ${sa.client_email} as Content manager.`;
   if (res.status === 401) return new ProviderError("Google did not accept Daloy's access. Connect Google Drive again.", "auth");
-  if (res.status === 403 && reason === "storageQuotaExceeded") return new ProviderError(SHARED_DRIVE(sa), "permission");
+  if (res.status === 403 && reason === "storageQuotaExceeded") {
+    return new ProviderError(isOAuth(auth) ? "The Google account's Drive storage is full. Free up space in Drive, then retry." : SHARED_DRIVE(auth), "permission");
+  }
   if (res.status === 429 || (res.status === 403 && /rateLimitExceeded|userRateLimitExceeded/i.test(reason))) {
     return new ProviderError("Google Drive is limiting requests right now. Daloy will try again.", "quota", retryAfter(res.headers));
   }
+  if (isOAuth(auth) && (res.status === 403 || res.status === 404)) return new ProviderError(PICK_FOLDER_AGAIN, "permission");
+  const share = isOAuth(auth) ? "" : `Share the folder with ${auth.client_email} as Content manager.`;
   if (res.status === 403) return new ProviderError(`Google Drive refused access. ${share}${message ? ` Google said: ${message}` : ""}`, "permission");
   if (res.status === 404) return new ProviderError(`The Drive folder was not found. Check the folder link, and ${share.charAt(0).toLowerCase()}${share.slice(1)}`, "permission");
   if (res.status >= 500) return new ProviderError(`Google Drive answered ${res.status}.`, write ? "ambiguous" : "unavailable");
   return new ProviderError(`Google Drive rejected the request${message ? `: ${message}` : ` (${res.status})`}.`, "invalid");
 }
 
-/** A Drive API call with the cached token. A 401 drops the token and tries once more. */
-async function drive(urls: ProviderUrls, sa: ServiceAccount, path: string, init: RequestInit, write: boolean): Promise<Reply> {
+/** A Drive API call. A service account's 401 drops the cached token and tries once more; an OAuth 401 goes back to withFreshToken. */
+async function drive(urls: ProviderUrls, auth: GoogleAuth, path: string, init: RequestInit, write: boolean): Promise<Reply> {
   for (let tries = 0; ; tries++) {
-    const token = await accessToken(urls, sa, DRIVE_SCOPE);
+    const token = await bearer(urls, auth, DRIVE_SCOPE);
     const res = await call(`${urls.drive}${path}`, { ...init, headers: { ...init.headers, authorization: `Bearer ${token}` } }, urls.timeoutMs ?? 30_000, write, "Google Drive");
     if (res.status === 200) return res;
-    if (res.status === 401 && tries === 0) {
-      tokenCache.delete(cacheKey(sa, DRIVE_SCOPE));
+    if (res.status === 401 && tries === 0 && !isOAuth(auth)) {
+      tokenCache.delete(cacheKey(auth, DRIVE_SCOPE));
       continue;
     }
-    throw driveFailure(res, sa, write);
+    throw driveFailure(res, auth, write);
   }
 }
+/** For the OAuth-only calls in google-access.ts (create a sheet or folder). */
+export { sheets as sheetsApi, drive as driveApi };
 
-/** Checks the folder when connecting: it must be a folder inside a shared drive that the account can add files to. Reads only. */
-export async function driveFolderInfo(urls: ProviderUrls, sa: ServiceAccount, folderId: string) {
-  const res = await drive(urls, sa, `/drive/v3/files/${encodeURIComponent(folderId)}?supportsAllDrives=true&fields=${encodeURIComponent("id,name,mimeType,driveId,capabilities/canAddChildren")}`, {}, false);
+/** Checks the folder when connecting: a folder the account can add files to, inside a shared drive for a service account (OAuth may use My Drive). Reads only. */
+export async function driveFolderInfo(urls: ProviderUrls, auth: GoogleAuth, folderId: string) {
+  const res = await drive(urls, auth, `/drive/v3/files/${encodeURIComponent(folderId)}?supportsAllDrives=true&fields=${encodeURIComponent("id,name,mimeType,driveId,capabilities/canAddChildren")}`, {}, false);
   const b = res.body as { name?: unknown; mimeType?: unknown; driveId?: unknown; capabilities?: { canAddChildren?: unknown } };
   if (b.mimeType !== "application/vnd.google-apps.folder") throw new ProviderError("That link is not a Drive folder. Open the folder in Drive and copy its link.", "invalid");
-  if (!b.driveId) throw new ProviderError(SHARED_DRIVE(sa), "permission");
-  if (b.capabilities?.canAddChildren !== true) throw new ProviderError(`Daloy cannot add files to that folder. Share it with ${sa.client_email} as Content manager.`, "permission");
+  if (!b.driveId && !isOAuth(auth)) throw new ProviderError(SHARED_DRIVE(auth), "permission");
+  if (b.capabilities?.canAddChildren !== true) {
+    throw new ProviderError(isOAuth(auth) ? "Your Google account cannot add files to that folder. Pick a folder you can edit." : `Daloy cannot add files to that folder. Share it with ${auth.client_email} as Content manager.`, "permission");
+  }
   return { title: String(b.name ?? folderId) };
 }
 
 /** Saves one file in the folder. Hand-built multipart/related: the JSON metadata, then the bytes. Not repeatable: a lost answer may mean the file is there. */
-export async function driveUpload(urls: ProviderUrls, sa: ServiceAccount, folderId: string, file: { name: string; mimeType: string; data: Buffer }): Promise<{ id: string }> {
+export async function driveUpload(urls: ProviderUrls, auth: GoogleAuth, folderId: string, file: { name: string; mimeType: string; data: Buffer }): Promise<{ id: string }> {
   const boundary = `daloy${randomBytes(16).toString("hex")}`;
   const meta = JSON.stringify({ name: file.name, parents: [folderId], mimeType: file.mimeType });
   const body = Buffer.concat([
@@ -401,7 +435,7 @@ export async function driveUpload(urls: ProviderUrls, sa: ServiceAccount, folder
     file.data,
     Buffer.from(`\r\n--${boundary}--`),
   ]);
-  const res = await drive(urls, sa, "/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true&fields=id,name", { method: "POST", headers: { "content-type": `multipart/related; boundary=${boundary}` }, body }, true);
+  const res = await drive(urls, auth, "/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true&fields=id,name", { method: "POST", headers: { "content-type": `multipart/related; boundary=${boundary}` }, body }, true);
   const id = res.body.id;
   if (typeof id !== "string" || !id) throw new ProviderError("Google Drive answered without a file id, so Daloy cannot tell whether the file was saved.", "ambiguous");
   return { id };
