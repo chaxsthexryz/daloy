@@ -854,3 +854,13 @@ Why it is built this way: the page keeps every request it made before (`GET /run
 Edge cases: a run with no steps yet says so. A run that cannot load shows Retry. A refresh that fails keeps the last copy and says it is trying again. When the explanation has not loaded, the raw error is shown in the same "Why it stopped" region.
 
 Tests: `e2e/history.spec.ts` (masked trigger field, step input, back to Activity), `e2e/navigation.spec.ts` and `e2e/explain.spec.ts` (why it stopped), `e2e/review.spec.ts` and `e2e/run-controls.spec.ts` (recovery controls), `e2e/form-files.spec.ts` (file download), `e2e/run-animation.spec.ts` (path diagram).
+
+### Ask about a request (O3)
+
+What it does: `#/runs/<id>/ask` follows Doop frame jdE6cTyvay. A Questions card (What happened?, Why did it stop?, What do I do now?) sits beside the Recorded answer: the run's state, the headline, its lines, when it started, the fix link, a "Simpler wording" disclosure with the one-AI-action reword and its language, and a link back to the run. `#/activity/ask` is the same page without a run: type a reference or pick one of the five newest problem requests.
+
+Why it is built this way: the answers still come from `GET /runs/ask` (decision 0041), which returns fixed text only. That reply has no state, so the run page reads `GET /runs/:id` and `GET /deliveries?runId=` once and shows the pill from `plainState()`, counting a failed delivery as a problem. The run detail page passes delivery failures to its pill the same way. Both routes need the Ask feature flag and an owner or operator, checked in `App.tsx`; without them `#/runs/<id>/ask` shows the run page and `#/activity/ask` falls back to Automations. The API refuses the same calls with 404 when the flag is off.
+
+Edge cases: an unknown reference says "No request with that reference in this office." A run with no request reference says there is nothing to ask about and links to the run. A reword that fails or hits the AI limit shows the error under the button and leaves the fixed answer in place.
+
+Tests: `e2e/ask-request.spec.ts` (questions from an Activity row, pressed state, run link, no recovery buttons, reference lookup from `#/activity/ask`, unknown reference), `apps/api/src/ask-api.test.ts` (flag, role and quota on the API).

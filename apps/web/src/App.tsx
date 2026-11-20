@@ -5,7 +5,7 @@ import { LanguageContext } from "./Language";
 import type { Language } from "./lib/locale";
 import { Editor } from "./Editor";
 import { RunPage, RunsPage } from "./Runs";
-import { AskPage } from "./AskRequest";
+import { AskPage, AskRunPage } from "./AskRequest";
 import { AdvancedPage } from "./Advanced";
 import { Automations } from "./Automations";
 import { NewAutomationPage } from "./NewAutomation";
@@ -93,7 +93,8 @@ function Route({ hash, user }: { hash: string; user: User }) {
   if (page?.[2] === "versions") return <VersionsPage key={page[1]} workflowId={page[1]!} />;
   if (page) return <Editor key={page[1]} id={page[1]!} />;
   const run = /^#\/runs\/([0-9a-f-]{36})(\/ask)?$/.exec(hash);
-  if (run) return <RunPage key={run[1]} runId={run[1]!} owner={user.role === "owner"} ask={canAsk} openAsk={!!run[2]} />;
+  if (run?.[2] && canAsk) return <AskRunPage key={run[1]} runId={run[1]!} />;
+  if (run) return <RunPage key={run[1]} runId={run[1]!} owner={user.role === "owner"} ask={canAsk} />;
   const guided = /^#\/a\/([0-9a-f-]{36})$/.exec(hash);
   if (guided) return <OfficeRequestPage key={guided[1]} id={guided[1]!} />;
   if (hash === "#/activity" && (user.role === "owner" || user.role === "operator")) return <RunsPage ask={canAsk} />;

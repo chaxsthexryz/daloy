@@ -3,7 +3,6 @@ import { useEffect, useState, type ReactNode } from "react";
 import { api, ApiError, type Run, type RunSummary, type Version, type Workflow } from "./api";
 import { DeliveryList, type Delivery } from "./Connections";
 import { AutomationTabs } from "./Nav";
-import { AskRequest } from "./AskRequest";
 import { RunFlow, TYPE_NAMES } from "./FlowCanvas";
 import { runFlow, STATUS } from "./lib/run-flow";
 import "./operations.css";
@@ -114,7 +113,7 @@ export function RunResult({ run }: { run: Run }) {
 const FILTERS = { all: "", live: "&test=false", test: "&test=true", review: "&review=true", problem: "&state=problem", waiting: "&state=waiting" } as const;
 
 /** A run's owner-facing state as a coloured pill (Done, Waiting, Needs you, Problem, Working). */
-export function StatePill({ run, note }: { run: { state: string; createdAt: string; needsReview: boolean; superseded?: boolean }; note?: boolean }) {
+export function StatePill({ run, note }: { run: { state: string; createdAt: string; needsReview: boolean; superseded?: boolean; deliveryFailed?: boolean }; note?: boolean }) {
   const { t } = useLanguage();
   const s = plainState(run);
   return (
@@ -351,14 +350,15 @@ function RunPanel({ runId, overview }: { runId: string | null; overview: string 
 const STEP_STATE: Record<string, string> = { succeeded: "Done", failed: "Failed", running: "Working", pending: "Working", waiting: "Waiting", needs_review: "Needs you", cancelled: "Cancelled", skipped: "Skipped" };
 
 /** #/runs/<id> (O2, Doop frame aquI2X-gdg): the run's step timeline beside its outcome and recovery controls. Polls until the run finishes. */
-export function RunPage({ runId, owner, ask, openAsk }: { runId: string; owner: boolean; ask?: boolean; openAsk?: boolean }) {
+export function RunPage({ runId, owner, ask }: { runId: string; owner: boolean; ask?: boolean }) {
   const { t } = useLanguage();
   const [reload, setReload] = useState(0);
+  const [deliveryFailed, setDeliveryFailed] = useState(false);
   const { run, error } = useRun(runId, reload);
   if (!run) {
     return (
       <main className="page act">
-        <PageHead crumbs={[{ label: "Daloy", href: "#/" }, { label: t("Activity"), href: "#/activity" }]} title={t("Run")} />
+        <PageHead crumbs={[{ label: "Daloy", href: "#/" }, { label: t("Activity"), href: "#/activity" }]} title={t("Activity")} />
         <div className="act-body">
           {error ? (
             <p role="alert" className="act-alert error">
@@ -390,7 +390,6 @@ export function RunPage({ runId, owner, ask, openAsk }: { runId: string; owner: 
       <div className="act-body act-run motion-page">
         {error && <p role="alert" className="act-alert error">{t("Couldn't refresh. Trying again.")}</p>}
         {working && takingLonger(run.createdAt) && <p className="act-alert">{t(TAKING_LONGER)}</p>}
-        {openAsk && ask && run.reference && <AskRequest reference={run.reference} />}
         <section className="act-card" aria-labelledby="timeline-h">
           <h2 id="timeline-h">{t("Run timeline")}</h2>
           <RunTimeline run={run} />
@@ -402,11 +401,11 @@ export function RunPage({ runId, owner, ask, openAsk }: { runId: string; owner: 
         <section className="act-card" aria-labelledby="outcome-h">
           <h2 id="outcome-h">{t("Delivery outcome")}</h2>
           <p aria-live="polite">
-            <StatePill run={run} note />
+            <StatePill run={{ ...run, deliveryFailed }} note />
           </p>
           {run.superseded && <p className="act-alert">{t(SUPERSEDED)}</p>}
           <RunWhy run={run} owner={owner} />
-          <RunDeliveries runId={runId} />
+          <RunDeliveries runId={runId} onLoad={(l) => setDeliveryFailed(l.some((d) => d.state === "failed"))} />
           <dl className="act-facts">
             <div>
               <dt>{t("Started")}</dt>
@@ -603,7 +602,7 @@ function RunPath({ run }: { run: Run }) {
 }
 
 /** Sheets rows and Slack notes this run queued. They are delivered apart from the run, so they have their own state. */
-function RunDeliveries({ runId }: { runId: string }) {
+function RunDeliveries({ runId, onLoad }: { runId: string; onLoad?: (list: Delivery[]) => void }) {
   const { t } = useLanguage();
   const [list, setList] = useState<Delivery[]>([]);
   const [failed, setFailed] = useState(false);
@@ -612,6 +611,7 @@ function RunDeliveries({ runId }: { runId: string }) {
       (l) => {
         setFailed(false);
         setList(l);
+        onLoad?.(l);
       },
       () => setFailed(true),
     );
