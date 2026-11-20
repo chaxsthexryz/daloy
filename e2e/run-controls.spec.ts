@@ -37,9 +37,11 @@ test("pausing stops a signed webhook, resuming starts it again, and a waiting ru
 
   // Pause from Home.
   await page.reload();
-  const card = page.locator(".card", { has: page.getByRole("link", { name: "Nightly sync" }) });
+  await page.getByRole("row", { name: /Nightly sync/ }).getByRole("button", { name: "Nightly sync" }).click();
+  const card = page.getByRole("complementary", { name: "Nightly sync" });
   await card.getByRole("button", { name: "Pause" }).click();
-  await expect(card.locator(".tag", { hasText: "Paused" })).toBeVisible();
+  await expect(card.locator(".panel-status", { hasText: "Paused" })).toBeVisible();
+  await expect(page.getByRole("row", { name: /Nightly sync/ })).toContainText("Paused on");
   await expect(card).toContainText("starts no new runs");
   const refused = await call();
   expect(refused.status()).toBe(409);

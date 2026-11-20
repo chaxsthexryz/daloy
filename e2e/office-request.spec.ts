@@ -31,8 +31,8 @@ test("a beginner previews, sets up, turns on and receives one office request", a
   await page.getByRole("button", { name: "Next" }).click();
   await expect(page.getByRole("heading", { name: "Where requests and alerts go" })).toBeVisible();
   await page.getByRole("button", { name: "Save and finish later" }).click();
-  await page.locator("summary", { hasText: "Drafts (1)" }).click();
-  await page.getByRole("link", { name: "Office requests: continue setup" }).click();
+  await page.getByRole("row", { name: /Office requests/ }).getByRole("button", { name: "Office requests" }).click();
+  await page.getByRole("link", { name: "Continue setup" }).click();
   await expect(page.getByRole("heading", { name: "Where requests and alerts go" })).toBeVisible();
   await page.getByRole("button", { name: "Next" }).click();
   await expect(page.getByRole("heading", { name: "Review" })).toBeVisible();
