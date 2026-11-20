@@ -9,7 +9,7 @@ const sha = (b: Buffer) => createHash("sha256").update(b).digest("hex");
 
 async function signUp(page: Page, prefix: string) {
   await page.goto("/");
-  await page.getByRole("button", { name: "Create an account instead" }).click();
+  await page.getByRole("button", { name: "Create an account", exact: true }).click();
   await page.getByLabel("Email").fill(`${prefix}-${Date.now()}@test.local`);
   await page.getByLabel("Password").fill("e2e test password 1");
   await page.getByRole("button", { name: "Create account" }).click();

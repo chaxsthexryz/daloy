@@ -3,7 +3,7 @@ import { expect, test } from "@playwright/test";
 // N10a: a failed preview run explains itself in plain words; the owner can ask the fake model to reword it.
 async function failedRun(page: import("@playwright/test").Page) {
   await page.goto("/");
-  await page.getByRole("button", { name: "Create an account instead" }).click();
+  await page.getByRole("button", { name: "Create an account", exact: true }).click();
   await page.getByLabel("Email").fill(`explain-${Date.now()}-${Math.floor(Math.random() * 1e6)}@test.local`);
   await page.getByLabel("Password").fill("e2e test password 1");
   await page.getByRole("button", { name: "Create account" }).click();

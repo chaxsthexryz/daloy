@@ -4,7 +4,10 @@ import "./workspace.css";
 import { Text, useLanguage } from "./Language";
 import { useEffect, useState, type FormEvent } from "react";
 import { api } from "./api";
+import { AuthLayout, AuthNote, Brand } from "./AuthLayout";
 import { Sheet, usePhone } from "./Sheet";
+import { checkNewPassword } from "./lib/password";
+import { requestStatus, sentOn } from "./lib/my-requests";
 import { canChangeRole, canInvite, canRemove, groupMembers, memberRoles, type Member, type MemberRole, type Role } from "./lib/team";
 
 export type { Role };
@@ -194,102 +197,103 @@ function RoleSheet({ member, phone, onClose, onSave, onRemove }: { member: Membe
   );
 }
 
-/** The page behind an invite link. A new person sets a password; someone with an account in no workspace enters theirs. */
+/** The page behind an invite link (Doop row E5). A new person sets a password; someone with an account in no workspace enters theirs. */
 export function AcceptInvitePage({ token, onDone }: { token: string; onDone: (u: User) => void }) {
-  const { t } = useLanguage();
   const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
   const submit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    const password = String(new FormData(e.currentTarget).get("password"));
+    // The API holds the same limits for a new and an existing account, so they are checked first.
+    const issue = checkNewPassword(password);
+    if (issue) return setError(issue === "too-short" ? "Password must be at least 12 characters." : "Password can have at most 200 characters.");
     setError("");
+    setBusy(true);
     try {
-      const user = await api<User>("POST", `/auth/invites/${token}/accept`, { password: new FormData(e.currentTarget).get("password") });
+      const user = await api<User>("POST", `/auth/invites/${token}/accept`, { password });
       location.hash = "#/";
       onDone(user);
     } catch (err) {
       setError((err as Error).message);
+      setBusy(false);
     }
   };
   return (
-    <main className="page narrow request-page access-page">
-      <h1 className="brand">
-        <img src="/logo.svg" alt="" width="32" height="32" />
-        Daloy
-      </h1>
-      <form onSubmit={submit}>
-        <h2>{t("Join your team")}</h2>
-        <p className="muted">{t("Choose a password for your account. If this email already has a Daloy account, enter its password.")}</p>
-        <div className="field">
-          <label htmlFor="invite-password">{t("Password ")}<span className="muted">{t("(at least 12 characters)")}</span>
-          </label>
-          <input id="invite-password" name="password" type="password" autoComplete="new-password" minLength={12} required />
+    <AuthLayout title="Join your team">
+      <p className="au-lead">Choose a password for your account. If this email already has a Daloy account, enter its password.</p>
+      <form onSubmit={submit} className="au-fields">
+        <div className="au-field">
+          <div className="au-label-row"><label htmlFor="invite-password">Password <span>(at least 12 characters)</span></label></div>
+          <input id="invite-password" name="password" type="password" autoComplete="new-password" placeholder="Password" required aria-invalid={!!error} aria-describedby={error ? "invite-error" : undefined} />
+          {error && <AuthNote kind="error" id="invite-error">{error}</AuthNote>}
         </div>
-        <p role="alert" className="message error" hidden={!error}>
-          {error}
-        </p>
-        <div className="actions">
-          <button className="primary">{t("Join")}</button>
-        </div>
+        <button className="au-button" disabled={busy}>Join</button>
       </form>
-    </main>
+    </AuthLayout>
   );
 }
 
 type MyRequest = { reference: string; subject: string; createdAt: string; automation: string; state: string };
 
-/** The home page of approvers and requesters: requests they sent while signed in. */
+/** The home page of approvers and requesters (Doop row E6): requests they sent while signed in. */
 export function MyRequestsPage({ user, onSignOut }: { user: User; onSignOut: () => void }) {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const [list, setList] = useState<MyRequest[] | null>(null);
   const [error, setError] = useState("");
   useEffect(() => {
     api<MyRequest[]>("GET", "/my/requests").then(setList, (e: Error) => setError(e.message));
   }, []);
   return (
-    <main className="page request-page my-requests">
-      <header className="toolbar plain">
-        <img src="/logo.svg" alt="Daloy" width="28" height="28" />
-        <h1>{t("My requests")}</h1>
-        <span className="muted">
+    <div className="mr">
+      <header className="mr-bar">
+        <Brand dark={false} />
+        <span className="mr-who">
           {user.email} ({t(user.role)})
         </span>
         <a href="#/account">{t("Account")}</a>
-        <button type="button" className="quiet" onClick={onSignOut}>{t("Sign out")}</button>
+        <button type="button" className="mr-out" onClick={onSignOut}>{t("Sign out")}</button>
       </header>
-      {user.role === "approver" && <p>{t("Approval requests come to your email. Open the link while signed in as {email} to answer.", { email: user.email })}</p>}
-      <p className="muted">{t("Requests you send through your office's request form while signed in show up here.")}</p>
-      <p role="alert" className="message error" hidden={!error}>
-        {error}
-      </p>
-      {list === null ? (
-        <p>{t("Loading…")}</p>
-      ) : list.length === 0 ? (
-        <p className="muted">{t("None yet.")}</p>
-      ) : (
-        <div className="table-wrap">
-          <table className="table cards">
-            <thead>
-              <tr>
-                <th scope="col"><Text>Reference</Text></th>
-                <th scope="col">{t("Subject")}</th>
-                <th scope="col">{t("Automation")}</th>
-                <th scope="col">{t("Sent")}</th>
-                <th scope="col"><Text>Status</Text></th>
-              </tr>
-            </thead>
-            <tbody>
-              {list.map((r) => (
-                <tr key={r.reference}>
-                  <td data-label={t("Reference")}>{r.reference}</td>
-                  <td data-label={t("Subject")}>{r.subject}</td>
-                  <td data-label={t("Automation")}>{r.automation}</td>
-                  <td data-label={t("Sent")}>{new Date(r.createdAt).toLocaleString()}</td>
-                  <td data-label={t("Status")}>{t(r.state)}</td>
+      <main className="mr-body motion-page">
+        <h1>{t("My requests")}</h1>
+        {user.role === "approver" && <p className="mr-approver">{t("Approval requests come to your email. Open the link while signed in as {email} to answer.", { email: user.email })}</p>}
+        <p className="mr-sub">{t("Requests you send through your office's request form while signed in show up here.")}</p>
+        <p role="alert" className="au-note error" hidden={!error}>
+          {error}
+        </p>
+        <div className="mr-card">
+          {list === null ? (
+            error ? null : <p className="mr-empty">{t("Loading…")}</p>
+          ) : list.length === 0 ? (
+            <p className="mr-empty">{t("None yet.")}</p>
+          ) : (
+            <table className="mr-table">
+              <thead>
+                <tr>
+                  <th scope="col"><Text>Reference</Text></th>
+                  <th scope="col">{t("Subject")}</th>
+                  <th scope="col">{t("Automation")}</th>
+                  <th scope="col">{t("Sent")}</th>
+                  <th scope="col"><Text>Status</Text></th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {list.map((r) => {
+                  const status = requestStatus(r.state);
+                  return (
+                    <tr key={r.reference}>
+                      <td className="ref mr-ref">{r.reference}</td>
+                      <td className="subject">{r.subject}</td>
+                      <td className="automation">{r.automation}</td>
+                      <td className="sent">{sentOn(r.createdAt, language)}</td>
+                      <td className="status"><span className={`mr-pill ${status.kind}`}>{t(status.label)}</span></td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
         </div>
-      )}
-    </main>
+      </main>
+    </div>
   );
 }

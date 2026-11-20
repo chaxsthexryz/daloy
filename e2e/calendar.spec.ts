@@ -7,7 +7,7 @@ const events = async () => ((await (await fetch(`${process.env.E2E_PROVIDERS_URL
 
 test("a booking's calendar event is created, moved and removed with the booking", async ({ page }) => {
   await page.goto("/");
-  await page.getByRole("button", { name: "Create an account instead" }).click();
+  await page.getByRole("button", { name: "Create an account", exact: true }).click();
   await page.getByLabel("Email").fill(`cal-${Date.now()}@test.local`);
   await page.getByLabel("Password").fill("e2e test password 1");
   await page.getByRole("button", { name: "Create account" }).click();

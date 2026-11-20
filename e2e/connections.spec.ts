@@ -9,7 +9,7 @@ const control = async (body?: { slackMember: boolean }) => {
 
 test("an owner connects Sheets and Slack, and retries only the Slack note that failed", async ({ page, context }) => {
   await page.goto("/");
-  await page.getByRole("button", { name: "Create an account instead" }).click();
+  await page.getByRole("button", { name: "Create an account", exact: true }).click();
   await page.getByLabel("Email").fill(`lim-${Date.now()}@test.local`);
   await page.getByLabel("Password").fill("e2e test password 1");
   await page.getByRole("button", { name: "Create account" }).click();

@@ -4,7 +4,7 @@ import { expect, test } from "@playwright/test";
 // PayMongo (fake API from e2e/global-setup.ts): connect through the console, make a checkout link from a run, then a signed paid webhook starts a payment-triggered run once.
 test("an owner connects PayMongo, a run makes a payment link, and the paid webhook starts a run once", async ({ page }) => {
   await page.goto("/");
-  await page.getByRole("button", { name: "Create an account instead" }).click();
+  await page.getByRole("button", { name: "Create an account", exact: true }).click();
   await page.getByLabel("Email").fill(`pm-${Date.now()}@test.local`);
   await page.getByLabel("Password").fill("e2e test password 1");
   await page.getByRole("button", { name: "Create account" }).click();

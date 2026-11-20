@@ -4,7 +4,7 @@ import { expect, test } from "@playwright/test";
 // the public form. The server reads the time in the field's zone and stores the therapist with its name (decision 0031).
 test("an owner adds a resource and a customer books it on the public form", async ({ page }) => {
   await page.goto("/");
-  await page.getByRole("button", { name: "Create an account instead" }).click();
+  await page.getByRole("button", { name: "Create an account", exact: true }).click();
   await page.getByLabel("Email").fill(`spa-${Date.now()}@test.local`);
   await page.getByLabel("Password").fill("e2e test password 1");
   await page.getByRole("button", { name: "Create account" }).click();

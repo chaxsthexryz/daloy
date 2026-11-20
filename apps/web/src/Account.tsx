@@ -1,100 +1,88 @@
-import "./request-access.css";
 import "./workspace-admin.css";
 import "./workspace.css";
 import { useState, type FormEvent } from "react";
 import { api } from "./api";
 import { useLanguage } from "./Language";
-import { checkPasswordChange, type PasswordIssue } from "./lib/password";
-
-const Brand = () => (
-  <h1 className="brand">
-    <img src="/logo.svg" alt="" width="32" height="32" />
-    Daloy
-  </h1>
-);
+import { AuthLayout, AuthNote } from "./AuthLayout";
+import { checkNewPassword, checkPasswordChange, type PasswordIssue } from "./lib/password";
 
 /** Pre-login, so plain English like the sign-in page. Always the same answer, whether or not the account exists. */
 export function ForgotPasswordPage() {
   const [sent, setSent] = useState(false);
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const submit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setError("");
+    setBusy(true);
     try {
       await api("POST", "/auth/password-reset", { email: new FormData(e.currentTarget).get("email") });
       setSent(true);
     } catch (err) {
       setError((err as Error).message);
     }
+    setBusy(false);
   };
   return (
-    <main className="page narrow request-page access-page">
-      <Brand />
-      <form onSubmit={submit}>
-        <h2>Forgot your password?</h2>
-        {sent ? (
-          <p role="status" className="message ok">If an account exists for that email, we sent a link to set a new password. It works once, for 30 minutes.</p>
-        ) : (
-          <>
-            <div className="field">
-              <label htmlFor="forgot-email">Email</label>
-              <input id="forgot-email" name="email" type="email" autoComplete="email" required />
-            </div>
-            <p role="alert" className="message error" hidden={!error}>
-              {error}
-            </p>
-            <div className="actions">
-              <button className="primary">Send link</button>
-            </div>
-          </>
-        )}
-        <p><a href="#/">Back to sign in</a></p>
-      </form>
-    </main>
+    <AuthLayout title="Forgot your password?">
+      {sent ? (
+        <AuthNote kind="ok">If an account exists for that email, we sent a link to set a new password. It works once, for 30 minutes.</AuthNote>
+      ) : (
+        <form onSubmit={submit} className="au-fields">
+          <div className="au-field">
+            <div className="au-label-row"><label htmlFor="forgot-email">Email</label></div>
+            <input id="forgot-email" name="email" type="email" autoComplete="email" placeholder="you@example.com" required aria-invalid={!!error} aria-describedby={error ? "forgot-error" : undefined} />
+            {error && <AuthNote kind="error" id="forgot-error">{error}</AuthNote>}
+          </div>
+          <button className="au-button" disabled={busy}>Send link</button>
+        </form>
+      )}
+      <p className="au-aside"><a className="au-link" href="#/">Back to sign in</a></p>
+    </AuthLayout>
   );
 }
 
-/** The page behind the link in the reset email. */
+/** The page behind the link in the reset email. An expired or used link shows the API's message beside the field. */
 export function ResetPasswordPage({ token }: { token: string }) {
   const [done, setDone] = useState(false);
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const submit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    const password = String(new FormData(e.currentTarget).get("password"));
+    const issue = checkNewPassword(password);
+    if (issue) return setError(issue === "too-short" ? "Password must be at least 12 characters." : "Password can have at most 200 characters.");
     setError("");
+    setBusy(true);
     try {
-      await api("POST", `/auth/password-reset/${token}`, { password: new FormData(e.currentTarget).get("password") });
+      await api("POST", `/auth/password-reset/${token}`, { password });
       setDone(true);
     } catch (err) {
       setError((err as Error).message);
     }
+    setBusy(false);
   };
   return (
-    <main className="page narrow request-page access-page">
-      <Brand />
-      <form onSubmit={submit}>
-        <h2>Set a new password</h2>
-        {done ? (
-          <>
-            <p role="status" className="message ok">Password changed. Sign in with your new password.</p>
-            <p><a href="#/">Sign in</a></p>
-          </>
-        ) : (
-          <>
-            <div className="field">
-              <label htmlFor="reset-password">New password <span className="muted">(at least 12 characters)</span></label>
-              <input id="reset-password" name="password" type="password" autoComplete="new-password" minLength={12} maxLength={200} required />
+    <AuthLayout title="Set a new password">
+      {done ? (
+        <>
+          <AuthNote kind="ok">Password changed. Sign in with your new password.</AuthNote>
+          <p className="au-aside"><a className="au-link" href="#/">Sign in</a></p>
+        </>
+      ) : (
+        <>
+          <form onSubmit={submit} className="au-fields">
+            <div className="au-field">
+              <div className="au-label-row"><label htmlFor="reset-password">New password <span>(at least 12 characters)</span></label></div>
+              <input id="reset-password" name="password" type="password" autoComplete="new-password" placeholder="New password" required aria-invalid={!!error} aria-describedby={error ? "reset-error" : undefined} />
+              {error && <AuthNote kind="error" id="reset-error">{error}</AuthNote>}
             </div>
-            <p role="alert" className="message error" hidden={!error}>
-              {error}
-            </p>
-            <div className="actions">
-              <button className="primary">Change password</button>
-            </div>
-            <p><a href="#/forgot-password">Send a new link</a></p>
-          </>
-        )}
-      </form>
-    </main>
+            <button className="au-button" disabled={busy}>Change password</button>
+          </form>
+          <p className="au-aside"><a className="au-link" href="#/forgot-password">Send a new link</a></p>
+        </>
+      )}
+    </AuthLayout>
   );
 }
 

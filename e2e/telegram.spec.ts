@@ -3,7 +3,7 @@ import { expect, test } from "@playwright/test";
 // Phase N14: connect a Telegram bot (fake Bot API from e2e/global-setup.ts) and post a message to its chat.
 test("an owner connects a Telegram bot and sends a test message", async ({ page }) => {
   await page.goto("/");
-  await page.getByRole("button", { name: "Create an account instead" }).click();
+  await page.getByRole("button", { name: "Create an account", exact: true }).click();
   await page.getByLabel("Email").fill(`tg-${Date.now()}@test.local`);
   await page.getByLabel("Password").fill("e2e test password 1");
   await page.getByRole("button", { name: "Create account" }).click();

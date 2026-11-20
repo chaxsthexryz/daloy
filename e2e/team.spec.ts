@@ -10,7 +10,7 @@ test("an invited approver answers a named approval; the owner and a signed-out v
   page.on("dialog", (d) => void d.accept());
   const approver = `approver-${Date.now()}@test.local`;
   await page.goto("/");
-  await page.getByRole("button", { name: "Create an account instead" }).click();
+  await page.getByRole("button", { name: "Create an account", exact: true }).click();
   await page.getByLabel("Email").fill(`owner-${Date.now()}@test.local`);
   await page.getByLabel("Password").fill(PASSWORD);
   await page.getByRole("button", { name: "Create account" }).click();

@@ -3,7 +3,7 @@ import { expect, test, type Page } from "@playwright/test";
 // Build a draft in the Build with AI tab (#/ai), save it, then change it in the editor's chat. The e2e stack answers with a fake model.
 async function buildDraft(page: Page, prefix: string, description: string, review: string) {
   await page.goto("/");
-  await page.getByRole("button", { name: "Create an account instead" }).click();
+  await page.getByRole("button", { name: "Create an account", exact: true }).click();
   await page.getByLabel("Email").fill(`${prefix}-${Date.now()}@test.local`);
   await page.getByLabel("Password").fill("e2e test password 1");
   await page.getByRole("button", { name: "Create account" }).click();

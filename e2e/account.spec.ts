@@ -21,7 +21,7 @@ async function resetLink(to: string): Promise<string> {
 
 async function register(page: Page, email: string) {
   await page.goto("/");
-  await page.getByRole("button", { name: "Create an account instead" }).click();
+  await page.getByRole("button", { name: "Create an account", exact: true }).click();
   await page.getByLabel("Email").fill(email);
   await page.getByLabel("Password").fill(OLD);
   await page.getByRole("button", { name: "Create account" }).click();
