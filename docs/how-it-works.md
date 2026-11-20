@@ -885,6 +885,25 @@ Edge cases: version 1 has nothing to compare and says so. An automation with onl
 
 Tests: `apps/web/src/lib/diff.test.ts` (diff), `e2e/history.spec.ts` (live version selected, diff text, rollback creates version 3 and selects it).
 
+### Steps editor (A7, `#/w/<id>`, `Editor.tsx`, `FlowCanvas.tsx`, `lib/editor.ts`, `editor.css`)
+
+What it does: the editor opens the newest saved version of an automation (published or draft) and lets the owner change the trigger and the steps, then Test run, Save or Publish from the header. The header shows the name, a Draft or Live chip and a status line ("Unsaved changes", "Version 3 (live)", "Version 4, draft"). Below it, a banner counts the apps the steps still need ("0 of 1 apps connected") with a link to Apps. The canvas shows the steps as numbered cards joined by square edges, with the branch name (approved, rejected, true, false and so on) as a coloured pill on each edge, and a zoom bar. A Diagram and List switch chooses the view. The panel beside it holds the trigger or step form, the data references the step can use (each copies to the clipboard), "What happens next" for the selected step, the "Check before publishing" advice, Add step, an Ask AI box that proposes a changed draft (applying it also refreshes the sample payload), and the test run controls.
+
+Why it is built that way: the diagram is for seeing the shape, the list is for doing the work. React Flow nodes are not draggable or connectable, because the graph is always the one `lib/graph.ts` derives from the saved steps, so a drag could never change anything. Every edit goes through `addStep` and `removeStep` in `lib/graph.ts`, which keep the edges consistent, and the editor only holds the resulting draft in state until Save posts it as a new version. The list view is the keyboard and screen reader route to every step, and it is the first view on a phone, since a whole diagram fitted to 360px is too small to read. `lib/editor.ts` holds the three rules that are not drawing: `nextPaths` (what follows a step, branch by branch), `insertables` (which `{{trigger.x}}` and `{{steps.id.output}}` references a step may use) and `setupLeft` (which apps the draft needs and whether each is connected). They are unit tested apart from the page.
+
+Edge cases:
+- `nextPaths` stops at a step it has already listed, so a loop or a join cannot repeat forever, and returns no path at the end of a flow. The trigger's path starts at the entry step.
+- `insertables` offers only steps that run before the selected one, found by walking the edges backwards. A step on another branch is not offered, because it may never have run. An email trigger offers from, subject and text, a form or webhook trigger offers its declared fields, a manual trigger offers none. An AI step offers one reference per key of its output.
+- `setupLeft` lists each app once, in step order, even when several steps use it (PayMongo serves both payment steps). Only connections with status active count as connected. When the connection list cannot be read, the banner is hidden and no card is marked, because a guess would be wrong more often than silence. A step whose app is missing shows "Not connected" on its card.
+- Changing the trigger type refreshes the sample payload, so a test run of a new form trigger does not fail on fields the old sample lacked. File fields are left out of the sample, because a test run takes no files.
+- Save, Test run and Publish are off while the draft has no steps or a request is running. Publish asks for confirmation, since it replaces the live version at once, and the server still checks connections, approvers and signing secrets when it publishes.
+- The advice checks (`lintDefinition`) run only when the draft already parses. A draft that does not parse yet is a work in progress and gets no warnings (decision 0033). They never block saving.
+- Delete on a selected card removes the step through `removeStep`. The trigger card cannot be deleted.
+- Reduced motion: scrolling to the run result and the edge animation use no motion when the visitor asked for less.
+- A failed save, test run or publish shows "Save failed: <reason>" in the status line and leaves the draft as it was.
+
+Tests: `apps/web/src/lib/editor.test.ts` (branch paths, loops, references by trigger type and branch, apps needed and connected), `e2e/editor.spec.ts` (create, change the trigger, add approval steps on two branches, the missing Sheets banner, copy a reference, four diagram nodes, zoom, mocked test run, save, publish after dropping the sheet). `Editor.tsx` itself has no component test, so the form fields are covered by the e2e flow only.
+
 ## Guided pages (Doop rows A2 to A6, decision 0071)
 
 `apps/web/src/NewAutomation.tsx`, `OfficeRequests.tsx`, `guided-pages.css`, `lib/locale-setup.ts`.
