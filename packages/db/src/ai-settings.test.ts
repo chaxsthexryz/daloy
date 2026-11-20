@@ -178,7 +178,7 @@ it("lists the image types each preset reads", async () => {
   expect(await types("gemini")).toEqual(["jpeg", "png", "webp", "heic"]);
   expect(await types("openai")).toEqual(["jpeg", "png", "webp"]);
   expect(await types("openrouter")).toEqual(["jpeg", "png", "webp"]);
-  expect(await types("deepseek")).toBeUndefined();
+  expect(await types("deepseek")).toEqual(["jpeg", "png", "webp"]);
 });
 
 it("reads images on the local server only when the operator turns LLM_VISION on", async () => {
