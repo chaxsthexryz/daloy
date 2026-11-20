@@ -2,7 +2,7 @@ import "./workspace.css";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { api } from "./api";
 import { useLanguage } from "./Language";
-import { countActiveTokens, isToday, shortDate, tokenStatus } from "./lib/advanced";
+import { countActiveTokens, isToday, shortDate, shortTime, tokenStatus } from "./lib/advanced";
 import { ConfirmSheet, Sheet, usePhone } from "./Sheet";
 
 type Token = { id: string; name: string; createdAt: string; lastUsedAt: string | null; revokedAt: string | null; scopes: string[]; expiresAt: string | null };
@@ -34,7 +34,7 @@ export function TokensPage() {
   const load = () => api<Token[]>("GET", "/tokens").then(setList, (e: Error) => setError(e.message));
   const scopeText = (ids: string[]) => ids.map((id) => t(SCOPES.find((s) => s.id === id)?.label ?? id)).join(", ");
   const expiry = (iso: string | null | undefined) => (!iso ? t("Never expires") : new Date(iso) < new Date() ? t("Expired") : t("Expires {date}", { date: new Date(iso).toLocaleDateString() }));
-  const used = (iso: string | null) => (!iso ? t("never") : isToday(iso) ? t("Today, {time}", { time: new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) }) : shortDate(iso));
+  const used = (iso: string | null) => (!iso ? t("never") : isToday(iso) ? t("Today, {time}", { time: shortTime(iso) }) : shortDate(iso));
   useEffect(() => {
     load();
   }, []);
@@ -99,8 +99,8 @@ export function TokensPage() {
           </div>
         </section>
       )}
-      <section className="wk-card" aria-labelledby="tokens-heading">
-        <h2 className="wk-card-head" id="tokens-heading"><b>{t("Your tokens")}</b><span>{t("The token value is never shown again after it is created.")}</span></h2>
+      <section className="wk-card" aria-label={t("Your tokens")}>
+        <h2 className="wk-card-head"><b>{t("Your tokens")}</b><span>{t("The token value is never shown again after it is created.")}</span></h2>
         {list === null ? (
           <p className="wk-body wk-sub" role="status">{t("Loading…")}</p>
         ) : list.length === 0 ? (

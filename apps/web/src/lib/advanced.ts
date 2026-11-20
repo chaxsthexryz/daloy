@@ -15,9 +15,21 @@ export const countResources = (list: { active: boolean }[]) => {
   return { active, archived: list.length - active };
 };
 
-/** "12 Nov 2026". The locale and zone are only passed by tests. */
-export const shortDate = (iso: string, opts: { locale?: string; timeZone?: string } = {}) =>
-  new Date(iso).toLocaleDateString(opts.locale, { day: "numeric", month: "short", year: "numeric", timeZone: opts.timeZone });
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+/** "12 Nov 2026" in the device's time zone. Fixed month names, so the text matches the frames in every browser locale. */
+export const shortDate = (iso: string) => {
+  const d = new Date(iso);
+  return `${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
+};
+
+/** "10:14 AM" in the device's time zone. */
+export const shortTime = (iso: string) => {
+  const d = new Date(iso);
+  return `${d.getHours() % 12 || 12}:${String(d.getMinutes()).padStart(2, "0")} ${d.getHours() < 12 ? "AM" : "PM"}`;
+};
 
 /** True when `iso` falls on the same local calendar day as `now`. */
 export const isToday = (iso: string, now = new Date()) => new Date(iso).toDateString() === now.toDateString();
+
+/** "3 Sep 2026, 10:14 AM". */
+export const shortDateTime = (iso: string) => `${shortDate(iso)}, ${shortTime(iso)}`;

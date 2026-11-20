@@ -28,4 +28,13 @@ export const advancedTranslations: Record<string, string> = {
   "The token value is never shown again after it is created.": "Hindi na ipapakita ulit ang token pagkatapos itong magawa.",
   "Today, {time}": "Ngayong araw, {time}",
   "Clients using it stop working, and a revoked token cannot be turned back on.": "Titigil sa paggana ang mga client na gumagamit nito, at hindi na maibabalik ang binawing token.",
+  "Replacing ": "Pinapalitan ang ",
+  ". The old value stops working as soon as you save.": ". Titigil sa paggana ang lumang value paglabas ng save.",
+  "{count} saved": "{count} naka-save",
+  "Add secret": "Magdagdag ng secret",
+  "Replace a secret": "Palitan ang isang secret",
+  "Values are write-only. Nothing here can show one.": "Pang-sulat lang ang mga value. Walang makapagpapakita ng value dito.",
+  "Delete {name}?": "Burahin ang {name}?",
+  "Anything that uses it stops working, and the value cannot be recovered. To keep the name and change the value, use Replace instead.": "Titigil sa paggana ang lahat ng gumagamit nito, at hindi na mababawi ang value. Para panatilihin ang pangalan at palitan lang ang value, gamitin ang Replace.",
+  "Delete secret": "Burahin ang secret",
 };

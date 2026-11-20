@@ -329,3 +329,31 @@ main.page.wk { display: flex; flex-direction: column; gap: 16px; width: 100%; ma
   .wk-token-table tr.fresh { box-shadow: inset 3px 0 var(--w-accent); padding-left: 10px; }
   .wk-copyrow { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* Secrets (W9): frames ba7D0fgHk-, THcJmCHB9a, z-C5TXL2fk, EnTFjYkruA. Names are monospace; values never appear. */
+.wk-mono, .wk input.wk-mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.wk-secret-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; gap: 12px; align-items: end; }
+.wk-secret-form .wk-button.blue { min-height: 38px; }
+.wk-secret-form code, .wk-sub code { font: 12px/18px ui-monospace, SFMono-Regular, Menlo, monospace; }
+.wk-replacing { margin: -6px 0 0; font-size: 13px; }
+.wk-replacing b { color: var(--w-ink); }
+.wk-secret-table .wk-name { font-weight: 700; }
+.wk-secret-table .wk-when { color: var(--w-muted); }
+.wk-secret-table tr.fresh td { background: var(--w-select); }
+.wk-secret-table th:nth-child(3) { width: 200px; }
+.wk-secrets .wk-back { display: block; line-height: 18px; text-decoration: none; }
+@media (max-width: 799.98px) {
+  .wk-secret-row { grid-template-columns: minmax(0, 1fr); }
+  .wk-secrets .wk-card { border: 0; border-radius: 0; background: none; overflow: visible; }
+  .wk-secrets .wk-card-head { padding: 0; border: 0; background: none; }
+  .wk-secrets .wk-card-head b, .wk-secret-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .wk-secrets .wk-card-head span { display: none; }
+  .wk-secret-table, .wk-secret-table tbody { display: block; }
+  .wk-secret-table tr { display: grid; gap: 4px; padding: 14px 0; border-bottom: 1px solid var(--w-line); }
+  .wk-secret-table td, .wk-secret-table tr.fresh td { display: block; padding: 0; border: 0; background: none; }
+  .wk-secret-table .wk-name { font-size: 16px; }
+  .wk-secret-table .wk-when { font-size: 13px; }
+  .wk-secret-table .wk-when::before { content: attr(data-label) " "; }
+  .wk-secret-table .wk-acts { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 8px; }
+  .wk-secret-table .wk-acts .wk-button { margin: 0; min-height: 44px; font-weight: 600; }
+}
