@@ -874,3 +874,13 @@ Why it is built this way: the page calls the same routes as before (decision 003
 Edge cases: no bookings shows the empty note. A booking whose run failed or waits for review keeps its Active status with a "needs attention" pill and note. Cancelled and no-show bookings show only the actions that still apply.
 
 Tests: `apps/web/src/lib/agenda.test.ts` (grouping, zoned day, 12-hour times), `e2e/bookings.spec.ts` (pick, reschedule, cancel, phone sheet with Escape), `e2e/calendar.spec.ts` (reschedule and cancel update the calendar event).
+
+### Versions (A9)
+
+What it does: `#/w/<id>/versions` follows Doop frame RKizMLFkzD under the automation's tabs. The Version history table lists published versions with when each was saved and whether it is live, and a "Show draft versions" disclosure lists versions that were saved or test-run but never published. Selecting a version fills the panel beside it: "Version 3 compared with version 2", its status, the list of changed paths from `jsonDiff()`, and Roll back for any version that is not live. On a phone the panel follows the table.
+
+Why it is built this way: the data and the rollback are unchanged (see Run history and versions above). Rollback posts the old definition as a new published version, so the panel says that the earlier history stays as it is. The frame's Change column holds a summary the API does not store, so the table shows status there and the panel shows the actual diff for the selected version.
+
+Edge cases: version 1 has nothing to compare and says so. An automation with only drafts opens the drafts disclosure. A failed load or rollback shows the error in the status line.
+
+Tests: `apps/web/src/lib/diff.test.ts` (diff), `e2e/history.spec.ts` (live version selected, diff text, rollback creates version 3 and selects it).

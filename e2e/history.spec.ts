@@ -54,9 +54,12 @@ test("open the run history, diff two versions and roll back", async ({ page }) =
   await page.getByRole("link", { name: "Versions" }).click();
   await expect(page.getByRole("heading", { name: "Version 2" })).toBeVisible();
   await expect(page.getByLabel("Changes")).toContainText('steps[condition_1].config.condition.op changed "gt" → "lt"');
-  await page.getByRole("button", { name: /^v1/ }).click();
+  await expect(page.getByRole("button", { name: /^Version 2 Live/ })).toHaveAttribute("aria-pressed", "true");
+  await page.getByRole("button", { name: /^Version 1/ }).click();
+  await expect(page.getByText("Version 1 compared with")).toBeHidden();
   await page.getByRole("button", { name: "Roll back to v1" }).click();
-  await expect(page.getByRole("status")).toHaveText("Version 3 is live, with the definition of version 1.");
-  await expect(page.getByRole("button", { name: /^v3 live/ })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("status").filter({ hasText: "is live" })).toHaveText("Version 3 is live, with the definition of version 1.");
+  await expect(page.getByRole("button", { name: /^Version 3 Live/ })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByText("Version 3 compared with version 2")).toBeVisible();
   await expect(page.getByLabel("Changes")).toContainText('op changed "lt" → "gt"');
 });

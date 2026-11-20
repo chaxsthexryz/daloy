@@ -245,3 +245,20 @@ main.page.act { max-width: none; width: 100%; margin: 0; padding: 0; min-height:
   .act-booking[data-sheet] { animation: act-sheet var(--dur-base) var(--ease); }
 }
 @keyframes act-sheet { from { transform: translateY(100%); } }
+
+/* A9 Versions: the version table beside the comparison panel. On a phone the panel follows the list. */
+.act-version { display: inline-flex; align-items: center; gap: 8px; min-height: 0; padding: 0; border: 0; background: transparent; color: var(--a-ink); font: 700 15px/20px inherit; box-shadow: none; }
+.act-version:hover:not(:disabled), .act-version[aria-pressed="true"] { background: transparent; color: var(--a-ink); box-shadow: none; }
+.act-version:hover > span:first-child, .act-version[aria-pressed="true"] > span:first-child { text-decoration: underline; text-underline-offset: 3px; }
+.act-drafts { padding: 14px 18px; border: 1px solid var(--a-line); border-radius: 10px; }
+.act-drafts > * + * { margin-top: 10px; }
+.act-drafts summary { font-size: 15px; cursor: pointer; }
+.act-diff > div { display: flex; flex-direction: column; gap: 14px; }
+.act-changes { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; }
+.act-changes li { padding: 12px 0; border-bottom: 1px solid var(--a-line); font-size: 13px; overflow-wrap: anywhere; }
+.act-changes code { display: block; margin-bottom: 4px; font-weight: 600; white-space: pre-wrap; }
+.act-changes .before { color: var(--a-red); }
+.act-changes .after { color: var(--a-green); }
+@media (max-width: 799.98px) {
+  .act-panel.act-diff { display: flex; border-left: 0; border-top: 1px solid var(--a-line); padding: 20px 16px 32px; }
+}
