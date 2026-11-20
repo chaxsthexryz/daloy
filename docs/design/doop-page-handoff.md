@@ -16,6 +16,23 @@ Updated 20 November 2026, Manila. Planning baseline: `design/paper-redesign` at 
 
 The invoice conversation and sample run are prototype fixtures. Bind the UI to the current builder, configured model, draft definition and connection states. The Grok mark is a visual choice. Model selection still belongs to Advanced / AI model. Describe and Review are states of the owner-only `#/ai` route. App connections belong under **Apps**. A trigger mailbox, selected steps, run history and versions belong to an individual **automation**.
 
+## Design source of truth and motion
+
+Build from the approved Doop frames. Where an approved frame and `DESIGN.md` differ, the frame wins: the Inter font, the near-black ink and text, the neutral grey page background, the cards, and the desktop navigation (the dark 64px rail that expands on hover). Take colours, sizes and radii from the Doop canvas tokens (`--daloy-*`, read with the Doop `get_tokens` tool for canvas xH-4xV7kGK). The brand-kit tokens `--brand-sample-*` and `--brand-alt-*` are sample businesses only; on public pages use the workspace's own accent and logo. Keep `DESIGN.md` for what a still frame cannot show: the motion tokens, the run animation, reduced motion and the contrast rules.
+
+Motion for the parts added in the Doop round, using the `DESIGN.md` tokens `--ease`, `--dur-fast` and `--dur-base`:
+
+| Part | Motion |
+| --- | --- |
+| Rail expand (A0 update) | Opens after a 150ms hover delay, or at once on keyboard focus. The width grows from 64px to 232px over `--dur-base` with `--ease` and the page column moves with it. Labels fade in over the second half. It closes the same way on pointer leave or Escape. |
+| Apps setup panel (P1 to P14) | The panel content fades in and rises 8px over `--dur-base`. The app list beside it does not move. |
+| Phone bottom sheets | The sheet rises from the bottom over `--dur-base` while the dimmed backdrop fades in. Closing reverses it. |
+| Dialogs | Fade in and scale from 0.98 to 1 over `--dur-base`. |
+| Saved, Copied and test results | The message fades in over `--dur-fast`, is announced with `role="status"` and stays until the next action. It does not slide or bounce. |
+| Status labels | A label that changes state changes colour over `--dur-fast`. Only the existing Working node pulses. |
+
+Under `prefers-reduced-motion: reduce` all of these take 0s, as `DESIGN.md` already says. The rail still opens and closes; it only stops animating.
+
 ## How to run a phase
 
 Pick one row per chat. Check the current target branch, working tree, `AGENTS.md`, the parent `CLAUDE.md` when present, `PROJECT.md` claims and the current Doop approval before edits. Plan the named page and wait for the owner's go under the repository rules. These IDs are design work packages. Keep project-roadmap claims separate. Recheck `App.tsx`, `Nav.tsx` and the relevant file on the implementation base because the planning worktree and local main have diverged. Web source filenames below are relative to `apps/web/src/`.
