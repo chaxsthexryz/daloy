@@ -954,3 +954,27 @@ Language (owner only), Appearance (every role, saved on the device), Your accoun
 ### Account (W4, `#/account`)
 
 Change password for any signed-in role. `lib/password.ts` (`checkPasswordChange`) applies the API's limits (a current password, 12 to 200 characters for the new one) before any request, so the reason shows beside the right field and nothing is sent. The API's "current password is wrong" (a 400, not a 401, so the console does not sign the person out) marks the current-password field. On success the form is cleared and the page says other sessions are signed out. A requester or approver has no rail, so the page links back to My requests. Forgot and reset password pages in the same file are unchanged. Tests: `lib/password.test.ts`, `e2e/workspace-pages.spec.ts`, `e2e/account.spec.ts`.
+
+## Advanced pages (Doop rows W5 to W9, decision 0073)
+
+What it does: Advanced, AI model, Resources, API tokens and Secrets follow the approved Phase 5 frames and share the `.wk` styles and `Sheet` from the workspace pages. Counts, status pills and dates come from `lib/advanced.ts` (`tokenStatus`, `countActiveTokens`, `countResources`, `shortDate`, `shortDateTime`, `isToday`), so the pages and the unit tests use one definition. The page text for the Taglish language is in `lib/locale-advanced.ts`.
+
+### Advanced (W5, `#/advanced`)
+
+The owner sees the four tools (AI model, API tokens, Secrets, Resources) as rows with an icon and a one-line note, then every automation with a Versions link. The whole row opens its page, and Menu returns to Settings. Anyone who is not the owner never reaches the page: `App.tsx` falls through to Automations, the same as for an unknown address. Tests: `e2e/workspace-advanced.spec.ts` (owner rows and links, phone list, operator fallback).
+
+### AI model (W6, `#/settings/ai`)
+
+Provider choices sit on the left; the model, key, the three buttons, the status line and the test result sit on the right. Save and test saves first, then makes one call on a sample inquiry, and the result card says Working or Not working with the model's own error and what to do next. A saved key is never sent back: the field is empty with dots as a placeholder and the page only knows `hasKey`. The e2e test uses the fake local model, which answers the sample inquiry and refuses the model name `fake-broken`, so no provider is contacted. Tests: `e2e/workspace-ai.spec.ts`, `e2e/settings.spec.ts`, and `apps/api/src/settings.test.ts` for the server side of masking.
+
+### Resources (W7, `#/resources`)
+
+Add, rename, archive and restore. The title shows "N active, M archived". Archived rows are marked and struck through but keep their record, so past bookings still point at them. Rename opens a dialog (a bottom sheet on a phone) in place of `prompt()`. Tests: `lib/advanced.test.ts`, `e2e/workspace-resources.spec.ts`.
+
+### API tokens (W8, `#/tokens`)
+
+A new token is created with a name, access scopes and an expiry. The API returns the value once. The page keeps it in memory in a panel with a Copy button and drops it on reload or when the next token is made; the list route never carries a value. Each row has a pill (Active, Expired or Revoked, where revoked wins over expired). Revoke asks in a dialog that names the token. Tests: `lib/advanced.test.ts` (status rules), `e2e/workspace-tokens.spec.ts` (copy, shown once, revoke), `e2e/mcp.spec.ts` (the token works against MCP until revoked).
+
+### Secrets (W9, `#/secrets`)
+
+Write-only values. The value field is a password field, is cleared after every save (successful or not), and no code on the page reads a value back because the API does not return one. Replace fills in the name and says the old value stops working as soon as the form is saved; typing an existing name says the same. Delete asks in a dialog that names the secret. Tests: `e2e/workspace-secrets.spec.ts` and `e2e/secrets.spec.ts` check that a synthetic value is absent from the page HTML and from the API list.
