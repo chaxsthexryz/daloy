@@ -21,7 +21,7 @@ test("an owner signs in to Notion, picks a database and delivers a page", async 
 // Phase N15: connect a Notion database (fake API from e2e/global-setup.ts) and add a test page to it.
 test("an owner connects a Notion database and adds a test page", async ({ page }) => {
   await page.goto("/");
-  await page.getByRole("button", { name: "Create an account instead" }).click();
+  await page.getByRole("button", { name: "Create an account", exact: true }).click();
   await page.getByLabel("Email").fill(`notion-${Date.now()}@test.local`);
   await page.getByLabel("Password").fill("e2e test password 1");
   await page.getByRole("button", { name: "Create account" }).click();

@@ -6,7 +6,7 @@ const VALUE = "sk-never-show-me-0123456789";
 // N26: secrets are write-only. The value goes in, is cleared at once, and never appears on the page or in what the API returns.
 test("an owner adds, replaces and deletes a secret and its value never shows", async ({ page }) => {
   await page.goto("/");
-  await page.getByRole("button", { name: "Create an account instead" }).click();
+  await page.getByRole("button", { name: "Create an account", exact: true }).click();
   await page.getByLabel("Email").fill(`owner-${Date.now()}@test.local`);
   await page.getByLabel("Password").fill(PASSWORD);
   await page.getByRole("button", { name: "Create account" }).click();

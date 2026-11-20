@@ -1,5 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { checkPasswordChange } from "./password";
+import { checkNewPassword, checkPasswordChange } from "./password";
+
+describe("checkNewPassword", () => {
+  it("accepts 12 to 200 characters", () => {
+    expect(checkNewPassword("123456789012")).toBeNull();
+    expect(checkNewPassword("x".repeat(200))).toBeNull();
+  });
+  it("refuses fewer than 12 and more than 200", () => {
+    expect(checkNewPassword("")).toBe("too-short");
+    expect(checkNewPassword("12345678901")).toBe("too-short");
+    expect(checkNewPassword("x".repeat(201))).toBe("too-long");
+  });
+});
 
 describe("checkPasswordChange", () => {
   it("accepts a current password and a new one of 12 characters", () => {

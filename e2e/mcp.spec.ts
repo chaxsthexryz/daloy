@@ -10,7 +10,7 @@ const connect = async (token: string) => {
 // An MCP client starts a published form workflow with a token made in the console, and loses access when it is revoked.
 test("create an API token, run a workflow as an MCP tool, then revoke the token", async ({ page }) => {
   await page.goto("/");
-  await page.getByRole("button", { name: "Create an account instead" }).click();
+  await page.getByRole("button", { name: "Create an account", exact: true }).click();
   await page.getByLabel("Email").fill(`mcp-${Date.now()}@test.local`);
   await page.getByLabel("Password").fill("e2e test password 1");
   await page.getByRole("button", { name: "Create account" }).click();

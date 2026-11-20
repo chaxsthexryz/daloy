@@ -3,7 +3,7 @@ import { expect, test } from "@playwright/test";
 // Picking the AI model: a hosted choice needs a key, the key is kept but never shown again.
 test("pick Gemini with a key, then come back and see the key is saved", async ({ page }) => {
   await page.goto("/");
-  await page.getByRole("button", { name: "Create an account instead" }).click();
+  await page.getByRole("button", { name: "Create an account", exact: true }).click();
   await page.getByLabel("Email").fill(`settings-${Date.now()}@test.local`);
   await page.getByLabel("Password").fill("e2e test password 1");
   await page.getByRole("button", { name: "Create account" }).click();

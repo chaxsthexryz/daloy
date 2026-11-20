@@ -7,7 +7,7 @@ test("a live run waits for approval, and the emailed link approves it once", asy
   page.on("dialog", (d) => void d.accept());
   const approver = `boss-${Date.now()}@test.local`;
   await page.goto("/");
-  await page.getByRole("button", { name: "Create an account instead" }).click();
+  await page.getByRole("button", { name: "Create an account", exact: true }).click();
   await page.getByLabel("Email").fill(`approval-${Date.now()}@test.local`);
   await page.getByLabel("Password").fill("e2e test password 1");
   await page.getByRole("button", { name: "Create account" }).click();

@@ -1,0 +1,119 @@
+/*
+ * Signed-out pages and My requests (Doop rows E1 to E6). Sizes follow the approved frames G1dk1dFL1u, D3VaFGGyyk,
+ * SJmJ8JyTVb, lo-SW81rNR, YjGdnlhsRr, GgoY9QuYpL, fI0vKLwxWJ and the phone frames 2eXiWhUFMx and YXHsR0XKXq.
+ * These pages are light only, as the sign-in page was before: a person has no saved theme before signing in.
+ */
+.au, .mr {
+  color-scheme: light;
+  --a-ink: #0a0b0f;
+  --a-muted: #5b6170;
+  --a-line: #e3e6ec;
+  --a-field: #d5d9e2;
+  --a-accent: #1b45c9;
+  --a-red: #b42318;
+  --a-green: #12803f;
+  font-family: "Inter", var(--font-sans);
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--a-ink);
+  overflow-wrap: anywhere;
+}
+.au :focus-visible, .mr :focus-visible { outline: 2px solid var(--a-accent); outline-offset: 2px; }
+.au :where(h1, p, ul), .mr :where(h1, p) { margin: 0; }
+
+/* Split page. */
+.au { display: grid; grid-template-columns: 560px minmax(0, 1fr); min-height: 100vh; min-height: 100dvh; background: #fff; }
+.au-side { display: flex; flex-direction: column; padding: 48px 56px; background: #0a0b0f; color: #fff; }
+.au-brand { display: inline-flex; align-items: center; gap: 10px; font-size: 20px; line-height: 30px; font-weight: 700; letter-spacing: -0.02em; }
+.au-brand.light { color: var(--a-ink); font-size: 16px; }
+.au-mark { width: 30px; height: 30px; flex: none; }
+.au-pitch { flex: 1; display: flex; flex-direction: column; justify-content: center; max-width: 400px; padding-bottom: 64px; }
+.au-headline { font-size: 32px; line-height: 40px; font-weight: 700; letter-spacing: -0.02em; }
+.au-pitch ul { margin-top: 24px; padding: 0; list-style: none; display: grid; gap: 14px; color: #b6bac6; }
+.au-pitch li { position: relative; padding-left: 18px; }
+.au-pitch li::before { content: ""; position: absolute; left: 0; top: 8px; width: 6px; height: 6px; border-radius: 50%; background: #3b6bff; }
+
+.au-main { display: grid; place-items: center; padding: 40px 32px; }
+.au-form { width: min(400px, 100%); }
+.au-title { margin: 0 0 16px; font-size: 28px; line-height: 34px; font-weight: 700; letter-spacing: -0.02em; }
+.au-form > .au-note + .au-title { margin-top: 16px; }
+.au-lead { margin-bottom: 16px; color: var(--a-muted); }
+.au-fields { display: grid; gap: 16px; }
+.au-field { min-width: 0; }
+.au-label-row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 6px; }
+.au-label-row label { font-size: 13px; line-height: 18px; font-weight: 700; }
+.au-label-row label span { font-weight: 400; color: var(--a-muted); }
+.au-field input { box-sizing: border-box; width: 100%; height: 42px; padding: 0 12px; border: 1px solid var(--a-field); border-radius: 6px; background: #fff; color: var(--a-ink); font: inherit; transition: border-color var(--dur-fast) var(--ease); }
+.au-field input::placeholder { color: #8a90a0; }
+.au-field input[aria-invalid="true"] { border-color: var(--a-red); }
+.au-link { color: var(--a-accent); font-size: 13px; line-height: 18px; font-weight: 600; text-decoration: none; }
+.au-link:hover { text-decoration: underline; text-underline-offset: 3px; }
+button.au-link, button.au-link:hover:not(:disabled) { min-height: 0; padding: 0; border: 0; background: none; color: var(--a-accent); font-family: inherit; cursor: pointer; }
+.au-button { box-sizing: border-box; width: 100%; height: 44px; margin-top: 16px; border: 0; border-radius: 6px; background: #0a0b0f; color: #fff; font: inherit; font-weight: 700; cursor: pointer; transition: background-color var(--dur-fast) var(--ease); }
+.au-button:hover:not(:disabled) { background: #232634; color: #fff; }
+.au-button:disabled { border: 0; background: #0a0b0f; color: #fff; opacity: 0.6; cursor: default; }
+.au-aside { margin-top: 16px; color: var(--a-muted); font-size: 13px; line-height: 18px; }
+.au-aside button.au-link { margin-left: 4px; }
+.au-forgot-below { display: none; }
+
+.au-note { display: flex; gap: 10px; align-items: flex-start; font-size: 13px; line-height: 18px; }
+.au-note.info, .au-note.ok { padding: 10px 14px; border-radius: 6px; }
+.au-note.info { background: #e8eeff; color: #1b3fb0; }
+.au-note.ok { background: #e6f4ea; color: var(--a-green); }
+.au-note.error { margin-top: 8px; color: var(--a-red); gap: 8px; }
+.au-icon { width: 16px; height: 16px; flex: none; margin-top: 1px; }
+
+@media (max-width: 800px) {
+  .au { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
+  .au-side { padding: 20px; }
+  .au-pitch { padding: 14px 0 0; max-width: none; }
+  .au-pitch ul { display: none; }
+  .au-headline { font-size: 24px; line-height: 28px; }
+  .au-main { place-items: start center; padding: 24px 20px; }
+  .au-title { font-size: 24px; line-height: 30px; }
+  .au-forgot-inline { display: none; }
+  .au-forgot-below { display: block; margin-top: 16px; }
+  .au-forgot-below + .au-aside { padding-top: 16px; border-top: 1px solid var(--a-line); }
+}
+
+/* My requests (E6): a top bar over one bordered card. */
+.mr { min-height: 100vh; min-height: 100dvh; background: #f5f6f8; }
+.mr-bar { display: flex; align-items: center; gap: 18px; min-height: 60px; padding: 0 40px; background: #fff; border-bottom: 1px solid var(--a-line); }
+.mr-bar .au-brand { margin-right: auto; }
+.mr-who { color: var(--a-muted); font-size: 13px; }
+.mr-bar a { color: var(--a-accent); font-size: 13px; font-weight: 600; text-decoration: none; }
+.mr-bar a:hover { text-decoration: underline; text-underline-offset: 3px; }
+.mr-out { min-height: 0; height: 32px; padding: 0 12px; border: 1px solid var(--a-field); border-radius: 6px; background: #fff; color: var(--a-ink); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; transition: background-color var(--dur-fast) var(--ease); }
+.mr-out:hover:not(:disabled) { background: #f5f6f8; color: var(--a-ink); }
+.mr-body { box-sizing: border-box; width: 100%; max-width: 1080px; margin: 0 auto; padding: 40px 40px 56px; display: grid; gap: 10px; }
+.mr-body h1 { font-size: 24px; line-height: 30px; font-weight: 700; letter-spacing: -0.02em; }
+.mr-sub { color: var(--a-muted); font-size: 13px; }
+.mr-approver { font-size: 14px; }
+.mr-card { margin-top: 10px; border: 1px solid var(--a-line); border-radius: 12px; overflow: hidden; background: #fff; }
+.mr-empty { padding: 48px 16px; text-align: center; color: var(--a-muted); }
+.mr-table { width: 100%; border-collapse: collapse; }
+.mr-table th { padding: 12px 20px; background: #f9fafb; border-bottom: 1px solid var(--a-line); text-align: left; color: var(--a-muted); font-size: 11px; line-height: 16px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
+.mr-table td { padding: 15px 20px; border-top: 1px solid var(--a-line); vertical-align: middle; }
+.mr-table tbody tr:first-child td { border-top: 0; }
+.mr-ref { font-weight: 700; white-space: nowrap; }
+.mr-pill { display: inline-block; padding: 3px 8px; border-radius: 5px; background: #eef0f4; color: var(--a-muted); font-size: 12px; line-height: 16px; font-weight: 700; white-space: nowrap; transition: background-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease); }
+.mr-pill.done { background: #e6f4ea; color: var(--a-green); }
+.mr-pill.problem { background: #fde7e4; color: var(--a-red); }
+.mr-pill.working { background: #e8eeff; color: var(--a-accent); }
+
+@media (max-width: 800px) {
+  .mr-bar { flex-wrap: wrap; gap: 4px 16px; padding: 14px 16px; }
+  .mr-who { order: 5; flex-basis: 100%; }
+  .mr-body { padding: 20px 16px 32px; }
+  .mr-card { border: 0; background: none; overflow: visible; margin-top: 6px; }
+  .mr-table, .mr-table tbody { display: grid; gap: 14px; }
+  .mr-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .mr-table tr { display: grid; grid-template-columns: auto auto 1fr; grid-template-areas: "ref ref status" "subject subject subject" "automation sent sent"; gap: 6px 0; padding: 14px 16px; border: 1px solid var(--a-line); border-radius: 10px; background: #fff; }
+  .mr-table td { display: block; padding: 0; border: 0; }
+  .mr-table td.ref { grid-area: ref; }
+  .mr-table td.status { grid-area: status; justify-self: end; }
+  .mr-table td.subject { grid-area: subject; }
+  .mr-table td.automation { grid-area: automation; color: var(--a-muted); font-size: 13px; }
+  .mr-table td.sent { grid-area: sent; color: var(--a-muted); font-size: 13px; }
+  .mr-table td.sent::before { content: "\00b7"; margin: 0 6px; }
+}

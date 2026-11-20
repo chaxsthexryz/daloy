@@ -8,7 +8,7 @@ const mail = () => readFileSync(process.env.E2E_MAIL_FILE!, "utf8").split("\n").
 test("a beginner previews, sets up, turns on and receives one office request", async ({ page, context }) => {
   const staff = `staff-${Date.now()}@test.local`;
   await page.goto("/");
-  await page.getByRole("button", { name: "Create an account instead" }).click();
+  await page.getByRole("button", { name: "Create an account", exact: true }).click();
   await page.getByLabel("Email").fill(`ana-${Date.now()}@test.local`);
   await page.getByLabel("Password").fill("e2e test password 1");
   await page.getByRole("button", { name: "Create account" }).click();

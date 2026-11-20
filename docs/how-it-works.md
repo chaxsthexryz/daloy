@@ -978,3 +978,23 @@ A new token is created with a name, access scopes and an expiry. The API returns
 ### Secrets (W9, `#/secrets`)
 
 Write-only values. The value field is a password field, is cleared after every save (successful or not), and no code on the page reads a value back because the API does not return one. Replace fills in the name and says the old value stops working as soon as the form is saved; typing an existing name says the same. Delete asks in a dialog that names the secret. Tests: `e2e/workspace-secrets.spec.ts` and `e2e/secrets.spec.ts` check that a synthetic value is absent from the page HTML and from the API list.
+
+## Entry pages (Doop rows E1 to E6, decision 0076)
+
+What it does: sign in, registration, forgot password, reset password and accept invitation share one split page (`apps/web/src/AuthLayout.tsx`, styles in `auth.css`): a dark panel with the pitch and a white form side, which stacks below 800px. My requests is a light page with a top bar and one table card, and the rows become cards on a phone. These pages are light only.
+
+### Sign in and registration (E1, E2, `SignIn.tsx`)
+
+Wrong credentials show "Wrong email or password." under the password field. A visitor who arrives from an approval email (`#/answer/<token>`) sees a note that an approval is waiting; after sign in `App.tsx` sends the browser to `/approvals/<token>`, where the server checks that this person is the named approver (decision 0022). Registration refuses a password under 12 characters in the browser (`checkNewPassword` in `lib/password.ts`) and names an existing email with the API's "email already registered", marking the email field. Tests: `lib/password.test.ts`, `e2e/entry.spec.ts`, `e2e/account.spec.ts`.
+
+### Forgot and reset password (E3, E4, `Account.tsx`)
+
+The forgot page always answers with the same message, whether or not the account exists, and the request is unchanged. The reset page checks the length first, then the API decides: a link works once and expires after 30 minutes, and a used or expired link shows the API's message with a "Send a new link" link. After a change the page offers Sign in. Tests: `e2e/entry.spec.ts` (same answer for a known and an unknown email, reuse of a link), `apps/api/src/password.test.ts` (expiry and single use on the server).
+
+### Accept invitation (E5, `Team.tsx`)
+
+A new person chooses a password. Someone whose email already has an account in no workspace must enter that account's password, and a wrong one shows "this email already has an account: enter its password". A used or expired link shows the API's "this invite is not valid" message under the field. The role comes from the invite, so an operator lands in the console and a requester or approver on My requests. Tests: `e2e/entry.spec.ts` (role, one-time link, existing account), `e2e/team.spec.ts` (named approver), `apps/api/src/members.test.ts` (expiry).
+
+### My requests (E6, `Team.tsx`)
+
+Approvers and requesters see requests they sent while signed in: reference, subject, automation, when it was sent and a status in words from `requestStatus` in `lib/my-requests.ts`. An approver also sees where approval requests arrive. An empty list says "None yet.", a failed load shows the error, and Account and Sign out sit in the top bar. Tests: `lib/my-requests.test.ts`, `lib/locale-entry.test.ts`, `e2e/entry.spec.ts` (empty, rows with phone cards, approver note, failed load).

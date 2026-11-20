@@ -4,7 +4,7 @@ import { expect, test } from "@playwright/test";
 // Set up for my office reopens the draft instead of adding another, and a failed load says so and offers Retry.
 test("a double click on Next and Turn on acts once, setup resumes the draft, and a failed load can be retried", async ({ page, context }) => {
   await page.goto("/");
-  await page.getByRole("button", { name: "Create an account instead" }).click();
+  await page.getByRole("button", { name: "Create an account", exact: true }).click();
   await page.getByLabel("Email").fill(`dc-${Date.now()}@test.local`);
   await page.getByLabel("Password").fill("e2e test password 1");
   await page.getByRole("button", { name: "Create account" }).click();

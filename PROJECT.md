@@ -310,5 +310,6 @@ DeepSeek's review is in `docs/roadmap-review-2026-11-18.md`. Claude's second opi
 - [x] Doop A1 to A9 and O1 to O4 (Automations, setup pages, editor, Activity, run detail, Ask, Bookings, Versions) merged into main. All 68 e2e pass locally. CI and the clean Docker start are pending.
 - [x] Doop W1, W3 and W4 (Team, Settings, Account).
 - [x] Doop W5 to W9 (Advanced pages) merged into main. 78 e2e pass locally.
-- [ ] Doop E1 to E11 (sign in and public pages).
+- [x] Doop E1 to E6 (sign in, registration, forgot and reset password, accept invitation, My requests).
+- [ ] Doop E7 to E11 (public form, embed, booking form, approval page, browser demo).
 - [ ] Doop Q1 walkthrough and clean Docker start.
