@@ -14,3 +14,10 @@ export const countResources = (list: { active: boolean }[]) => {
   const active = list.filter((r) => r.active).length;
   return { active, archived: list.length - active };
 };
+
+/** "12 Nov 2026". The locale and zone are only passed by tests. */
+export const shortDate = (iso: string, opts: { locale?: string; timeZone?: string } = {}) =>
+  new Date(iso).toLocaleDateString(opts.locale, { day: "numeric", month: "short", year: "numeric", timeZone: opts.timeZone });
+
+/** True when `iso` falls on the same local calendar day as `now`. */
+export const isToday = (iso: string, now = new Date()) => new Date(iso).toDateString() === now.toDateString();
