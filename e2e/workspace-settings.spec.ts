@@ -28,5 +28,9 @@ test("Settings shows the cards for each role and keeps the theme after a reload"
   await expect(operator.getByRole("region", { name: "Language" })).toHaveCount(0);
   await expect(operator.getByRole("region", { name: "Your office" })).toHaveCount(0);
   await expect(operator.getByText("Language and office settings are managed by the owner.")).toBeVisible();
+  // W5: an operator who types #/advanced lands on Automations and sees none of the owner's tools.
+  await operator.goto("/#/advanced");
+  await expect(operator.getByRole("heading", { name: "Automations", level: 1 })).toBeVisible();
+  await expect(operator.getByRole("heading", { name: "Advanced", level: 1 })).toHaveCount(0);
   await operator.context().close();
 });

@@ -1,9 +1,10 @@
 import { expect, test } from "@playwright/test";
-import { joinAs, registerOwner } from "./workspace";
+import { registerOwner } from "./workspace";
 
-// W5: the owner reaches each tool from the directory and comes back; an operator who types #/advanced lands on
-// Automations and sees none of it. The phone list keeps the same links.
-test("Advanced lists the owner's tools and the automations, and hides them from an operator", async ({ page, browser }) => {
+// W5: the owner reaches each tool from the directory and comes back; the phone list keeps the same links. The
+// operator fallback is checked in workspace-settings.spec.ts, which already invites one (invite accepts are limited
+// to 10 a minute per address, and the full run is close to that).
+test("Advanced lists the owner tools and the automations, and keeps the phone list", async ({ page }) => {
   await registerOwner(page);
   const stamp = Date.now();
   const wf = await (await page.request.post("/workflows", { data: { name: "Contact form", slug: `contact-${stamp}` } })).json();
@@ -38,11 +39,4 @@ test("Advanced lists the owner's tools and the automations, and hides them from 
   await page.goto("/#/advanced");
   await expect(page.getByRole("heading", { name: "Advanced", level: 1 })).toBeVisible();
   await expect(page.locator(".wk-dir-name a")).toHaveCount(4);
-
-  await page.setViewportSize({ width: 1280, height: 720 });
-  const operator = await joinAs(browser, page, "Operator", { width: 1280, height: 720 });
-  await operator.goto("/#/advanced");
-  await expect(operator.getByRole("heading", { name: "Automations", level: 1 })).toBeVisible();
-  await expect(operator.getByRole("heading", { name: "Advanced", level: 1 })).toHaveCount(0);
-  await operator.context().close();
 });
