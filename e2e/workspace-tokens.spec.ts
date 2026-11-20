@@ -61,5 +61,5 @@ test("API tokens: create, copy once, list and revoke", async ({ page, context })
   await sheet.getByLabel("Name", { exact: true }).fill("Phone check");
   await sheet.getByRole("button", { name: "Create token" }).click();
   await expect(page.getByRole("status").getByRole("heading", { name: "Token created for Phone check" })).toBeVisible();
-  await expect(page.getByRole("row").filter({ hasText: "Phone check" }).locator("td[data-label]").first()).toBeVisible();
+  await expect(page.getByRole("row").filter({ hasText: "Phone check" }).locator("td[data-label=\"Access\"]")).toBeVisible();
 });
