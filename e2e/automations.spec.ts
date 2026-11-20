@@ -81,7 +81,7 @@ test("on a phone the menu collapses, nothing scrolls sideways, and the activity 
   const definition = { trigger: { type: "manual", config: {} }, steps: [{ id: "pause", type: "delay", config: { seconds: 1 } }], edges: [] };
   expect((await page.request.post(`/workflows/${wf.id}/test-runs`, { data: { definition, payload: {} } })).status()).toBe(202);
   await page.goto(`/#/w/${wf.id}/runs`);
-  const row = page.locator(".table.cards tbody tr").first();
+  const row = page.locator(".act-table tbody tr").first();
   await expect(row).toBeVisible({ timeout: 30_000 });
   expect(await row.evaluate((e) => getComputedStyle(e).display)).toBe("block");
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);

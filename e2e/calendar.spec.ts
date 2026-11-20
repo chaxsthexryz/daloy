@@ -52,7 +52,9 @@ test("a booking's calendar event is created, moved and removed with the booking"
   expect((await mine())[0]).toMatchObject({ status: "confirmed", start: { dateTime: `${year}-01-20T06:00:00.000Z`, timeZone: "Asia/Manila" } });
 
   await page.getByRole("link", { name: "Bookings" }).click();
-  const row = page.getByRole("row", { name: /Ana/ });
+  // O4: pick the booking in the day agenda; its card holds the actions.
+  await page.getByRole("region", { name: "Day agenda" }).getByRole("button", { name: /Ana/ }).click();
+  const row = page.getByRole("region", { name: "Ana" });
   await row.getByRole("button", { name: "Reschedule" }).click();
   await page.getByLabel("New time (Asia/Manila)").fill(`${year}-01-20T16:00`);
   await page.getByRole("button", { name: "Move" }).click();
@@ -61,8 +63,8 @@ test("a booking's calendar event is created, moved and removed with the booking"
   expect(await mine()).toHaveLength(1);
 
   page.once("dialog", (d) => void d.accept());
-  await row.getByRole("button", { name: "Cancel" }).click();
-  await expect(row).toContainText("cancelled");
+  await row.getByRole("button", { name: "Cancel booking" }).click();
+  await expect(row).toContainText("Cancelled");
   await expect.poll(async () => (await mine())[0]?.status, { timeout: 30_000 }).toBe("cancelled");
   expect(await mine()).toHaveLength(1);
 

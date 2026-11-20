@@ -25,7 +25,7 @@ test("open the run history, diff two versions and roll back", async ({ page }) =
 
   // The run page shows the trigger data with the secret-looking field masked, and the step's resolved input.
   await page.getByRole("link", { name: "Open this run in the run history" }).click();
-  await expect(page.getByRole("heading", { name: "What happened", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Run timeline" })).toBeVisible();
   await page.getByText("Details for a technician").click();
   const trigger = page.getByLabel("Trigger data");
   await expect(trigger).toContainText('"amount": 250');
@@ -36,9 +36,10 @@ test("open the run history, diff two versions and roll back", async ({ page }) =
   await expect(page.locator(".run")).toContainText("condition_1 → true");
 
   // The run list links back to the same run.
-  await page.getByRole("main").getByRole("link", { name: "Activity" }).click();
+  // The head's Activity button (the breadcrumb's Activity link comes first) opens this automation's activity.
+  await page.getByRole("main").getByRole("link", { name: "Activity" }).last().click();
   await expect(page.getByRole("table")).toContainText("Real run");
-  await page.getByLabel("Show").selectOption("test");
+  await page.getByLabel("Status").selectOption("test");
   await expect(page.getByText("Nothing has happened yet.")).toBeVisible();
 
   // Version 2 changes the operator.
@@ -53,9 +54,12 @@ test("open the run history, diff two versions and roll back", async ({ page }) =
   await page.getByRole("link", { name: "Versions" }).click();
   await expect(page.getByRole("heading", { name: "Version 2" })).toBeVisible();
   await expect(page.getByLabel("Changes")).toContainText('steps[condition_1].config.condition.op changed "gt" → "lt"');
-  await page.getByRole("button", { name: /^v1/ }).click();
+  await expect(page.getByRole("button", { name: /^Version 2 Live/ })).toHaveAttribute("aria-pressed", "true");
+  await page.getByRole("button", { name: /^Version 1/ }).click();
+  await expect(page.getByText("Version 1 compared with")).toBeHidden();
   await page.getByRole("button", { name: "Roll back to v1" }).click();
-  await expect(page.getByRole("status")).toHaveText("Version 3 is live, with the definition of version 1.");
-  await expect(page.getByRole("button", { name: /^v3 live/ })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("status").filter({ hasText: "is live" })).toHaveText("Version 3 is live, with the definition of version 1.");
+  await expect(page.getByRole("button", { name: /^Version 3 Live/ })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByText("Version 3 compared with version 2")).toBeVisible();
   await expect(page.getByLabel("Changes")).toContainText('op changed "lt" → "gt"');
 });

@@ -834,3 +834,53 @@ Why it is built this way: the page uses only data the API already sends. `GET /w
 Edge cases: a paused automation is listed as Paused and counts under Needs you only if a run in review is still waiting. A missed schedule counts as a problem unless the last run needs a person. A draft is a row with the status Draft and a Continue setup action. A failed list load shows Retry. A failed run, usage or detail request leaves only that figure out. The Owner column and the Owner and App filters from the design are left out because the list has no owner or app data.
 
 Tests: `apps/web/src/lib/automations.test.ts` (filters, counts, trigger labels), `apps/web/src/lib/ops-stats.test.ts` (day buckets, success rate, the 50 run limit), `apps/web/src/lib/locale-ops.test.ts` (Tagalog placeholders), and `e2e/navigation.spec.ts`, `e2e/automations.spec.ts`, `e2e/run-controls.spec.ts`, `e2e/office-request.spec.ts` (filter, select, next action, pause and resume, draft).
+
+### Activity pages (A8 and O1)
+
+What it does: `#/activity` (O1, Doop frame iIHhpAQIUx) is the workspace run register: the newest 50 runs of every automation in one card with a search box, a status filter, and columns for reference, automation, started, time taken and status. `#/w/<id>/runs` (A8, Doop frame fqwMyRZslq) shows one automation's runs beside a run details panel. Selecting a row, or moving keyboard focus onto it, lists that run's steps in the panel, and the reference link opens the full run. The O1 header button opens `#/activity/ask`, where you type or pick a request reference.
+
+Why it is built this way: both pages read `GET /runs` exactly as before (with `workflowId`, `q` and the filter parameters), and the panel polls `GET /runs/:id` through `useRun`. The status pill uses `plainState()` from `lib/states.ts`, so it says the same as the Automations table. Times read "Today, 10:42 AM" or "Yesterday, 4:34 PM" (`startedAt()` in `lib/activity.ts`). The frame's "Last step" column shows the time taken instead, because the run list has no step data. A list endpoint that returns each run's last step would bring it back. The Versions tab sits beside the shared automation tabs because `Nav.tsx` owns those tabs.
+
+Edge cases: a run without a reference is named by its kind ("Real run", "Preview (nothing sent)"). An empty list says "Nothing has happened yet.", and an empty search says "Nothing matches.". On a phone the rows stack and the panel is hidden, so the link opens the run page instead. The Ask link and button appear only when the Ask feature is on and the person is an owner or operator.
+
+Tests: `apps/web/src/lib/activity.test.ts` (day words, times, Tagalog placeholders), `e2e/history.spec.ts` (status filter), `e2e/automations.spec.ts` (phone cards), `e2e/navigation.spec.ts` (table alignment), `e2e/office-request.spec.ts` (search by reference on a phone), `e2e/ask-request.spec.ts` (Ask link from a row).
+
+### Run detail (O2)
+
+What it does: `#/runs/<id>` follows Doop frame aquI2X-gdg. The head names the automation and the run, with an Activity button back to that automation's activity and, where Ask is on, an Ask what happened button. The Run timeline card numbers each step attempt with its state, branch, attempt, approvals, errors and start time, and a closed "Masked request fields" disclosure holds the trigger data. The Delivery outcome card shows the state, why the run stopped, where it was sent, when it started, how long it took, and the recovery controls (Retry, Cancel run, or the three answers for a run that needs you). The path diagram, the files and the technician details follow underneath.
+
+Why it is built this way: the page keeps every request it made before (`GET /runs/:id` polling, `/explanation`, `/deliveries`, the version for the diagram) and only moves them into the frame's two cards. Trigger data reaches the page already masked by `maskSecrets()` and `historyHider()` in `apps/api/src/mask.ts`, so the disclosure shows `[secret]` in place of secret-looking values. The recovery controls stay open in the outcome card instead of the frame's disclosure, so a failed or parked run shows what you can do without another click.
+
+Edge cases: a run with no steps yet says so. A run that cannot load shows Retry. A refresh that fails keeps the last copy and says it is trying again. When the explanation has not loaded, the raw error is shown in the same "Why it stopped" region.
+
+Tests: `e2e/history.spec.ts` (masked trigger field, step input, back to Activity), `e2e/navigation.spec.ts` and `e2e/explain.spec.ts` (why it stopped), `e2e/review.spec.ts` and `e2e/run-controls.spec.ts` (recovery controls), `e2e/form-files.spec.ts` (file download), `e2e/run-animation.spec.ts` (path diagram).
+
+### Ask about a request (O3)
+
+What it does: `#/runs/<id>/ask` follows Doop frame jdE6cTyvay. A Questions card (What happened?, Why did it stop?, What do I do now?) sits beside the Recorded answer: the run's state, the headline, its lines, when it started, the fix link, a "Simpler wording" disclosure with the one-AI-action reword and its language, and a link back to the run. `#/activity/ask` is the same page without a run: type a reference or pick one of the five newest problem requests.
+
+Why it is built this way: the answers still come from `GET /runs/ask` (decision 0041), which returns fixed text only. That reply has no state, so the run page reads `GET /runs/:id` and `GET /deliveries?runId=` once and shows the pill from `plainState()`, counting a failed delivery as a problem. The run detail page passes delivery failures to its pill the same way. Both routes need the Ask feature flag and an owner or operator, checked in `App.tsx`; without them `#/runs/<id>/ask` shows the run page and `#/activity/ask` falls back to Automations. The API refuses the same calls with 404 when the flag is off.
+
+Edge cases: an unknown reference says "No request with that reference in this office." A run with no request reference says there is nothing to ask about and links to the run. A reword that fails or hits the AI limit shows the error under the button and leaves the fixed answer in place.
+
+Tests: `e2e/ask-request.spec.ts` (questions from an Activity row, pressed state, run link, no recovery buttons, reference lookup from `#/activity/ask`, unknown reference), `apps/api/src/ask-api.test.ts` (flag, role and quota on the API).
+
+### Bookings day agenda (O4)
+
+What it does: `#/bookings` follows Doop frame PtNZfoOj94 (option B). The Day agenda lists every booking under its own day, by start time, with its reference, resource, time and status. Picking one fills the Selected booking card: resource, date and time in the booking's time zone, status, a link to its run, and the actions Reschedule, Cancel booking, Mark no-show (once the start time has passed) and Undo no-show. Download CSV is in the head. On a phone the agenda fills the page and the selected booking opens as a sheet that Close, the backdrop or Escape dismiss.
+
+Why it is built this way: the page calls the same routes as before (decision 0032), and each change still sends the version shown, so a change made by someone else in between is refused. `byDay()` and `ampm()` in `lib/agenda.ts` read the date and time from the zoned `start` string, so a 23:30 booking in Manila stays on its own day whatever the viewer's zone. The frame shows a guest name, but the booking list has none, so the card and agenda name the resource and reference.
+
+Edge cases: no bookings shows the empty note. A booking whose run failed or waits for review keeps its Active status with a "needs attention" pill and note. Cancelled and no-show bookings show only the actions that still apply.
+
+Tests: `apps/web/src/lib/agenda.test.ts` (grouping, zoned day, 12-hour times), `e2e/bookings.spec.ts` (pick, reschedule, cancel, phone sheet with Escape), `e2e/calendar.spec.ts` (reschedule and cancel update the calendar event).
+
+### Versions (A9)
+
+What it does: `#/w/<id>/versions` follows Doop frame RKizMLFkzD under the automation's tabs. The Version history table lists published versions with when each was saved and whether it is live, and a "Show draft versions" disclosure lists versions that were saved or test-run but never published. Selecting a version fills the panel beside it: "Version 3 compared with version 2", its status, the list of changed paths from `jsonDiff()`, and Roll back for any version that is not live. On a phone the panel follows the table.
+
+Why it is built this way: the data and the rollback are unchanged (see Run history and versions above). Rollback posts the old definition as a new published version, so the panel says that the earlier history stays as it is. The frame's Change column holds a summary the API does not store, so the table shows status there and the panel shows the actual diff for the selected version.
+
+Edge cases: version 1 has nothing to compare and says so. An automation with only drafts opens the drafts disclosure. A failed load or rollback shows the error in the status line.
+
+Tests: `apps/web/src/lib/diff.test.ts` (diff), `e2e/history.spec.ts` (live version selected, diff text, rollback creates version 3 and selects it).

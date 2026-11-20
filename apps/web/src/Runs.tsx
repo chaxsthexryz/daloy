@@ -1,12 +1,13 @@
 import { useLanguage } from "./Language";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { api, ApiError, type Run, type RunSummary, type Version, type Workflow } from "./api";
 import { DeliveryList, type Delivery } from "./Connections";
-import { AutomationTabs, Header } from "./Nav";
-import { AskRequest } from "./AskRequest";
+import { AutomationTabs } from "./Nav";
 import { RunFlow, TYPE_NAMES } from "./FlowCanvas";
 import { runFlow, STATUS } from "./lib/run-flow";
 import "./operations.css";
+import "./activity.css";
+import { clock, longDate, startedAt } from "./lib/activity";
 import type { Draft } from "./lib/graph";
 import { pollDelay, takingLonger } from "./lib/poll";
 import { fileRefs, fileSize } from "./lib/run-files";
@@ -56,17 +57,6 @@ const SUPERSEDED = "Superseded: its booking was rescheduled or cancelled. It sto
 const kind = (r: { test: boolean; live: boolean; aiLive?: boolean }) => (r.test ? (r.live ? "test run, live calls" : r.aiLive ? "test run, real AI, other calls mocked" : "test run, mocked calls") : "live run");
 const json = (v: unknown) => JSON.stringify(v, null, 2);
 
-/** The owner-facing state of a run (Done, Waiting, Needs you, Problem, Working), with its note. The raw state stays in the technician block. */
-function StateLabel({ run }: { run: { state: string; createdAt: string; needsReview: boolean; superseded?: boolean } }) {
-  const { t } = useLanguage();
-  const s = plainState(run);
-  return (
-    <>
-      <span className={`state ${s.key}`}>{t(s.label)}</span>
-      {s.note && <span className="muted"> {t(s.note)}</span>}
-    </>
-  );
-}
 // A named approval's step output holds who answered and when (decision 0022).
 function decided(output: unknown, t: ReturnType<typeof useLanguage>["t"]): string | null {
   const o = output as { decidedBy?: unknown; decidedAt?: unknown } | null;
@@ -122,14 +112,72 @@ export function RunResult({ run }: { run: Run }) {
 
 const FILTERS = { all: "", live: "&test=false", test: "&test=true", review: "&review=true", problem: "&state=problem", waiting: "&state=waiting" } as const;
 
-/** #/activity: the latest 50 runs of every automation, or #/w/<id>/runs: of one, under its tabs. */
-export function RunsPage({ workflowId, ask }: { workflowId?: string; ask?: boolean }) {
+/** A run's owner-facing state as a coloured pill (Done, Waiting, Needs you, Problem, Working). */
+export function StatePill({ run, note }: { run: { state: string; createdAt: string; needsReview: boolean; superseded?: boolean; deliveryFailed?: boolean }; note?: boolean }) {
   const { t } = useLanguage();
+  const s = plainState(run);
+  return (
+    <>
+      <span className={`act-pill ${s.key}`} title={s.note ? t(s.note) : undefined}>{t(s.label)}</span>
+      {note && s.note && <span className="act-muted"> {t(s.note)}</span>}
+    </>
+  );
+}
+
+/** The white title strip of the Activity, run, Ask, Bookings and Versions pages: breadcrumb, title, subtitle, actions, tabs. */
+export function PageHead({ crumbs, title, sub, actions, tabs }: { crumbs: { label: string; href?: string }[]; title: string; sub?: ReactNode; actions?: ReactNode; tabs?: ReactNode }) {
+  const { t } = useLanguage();
+  return (
+    <header className={tabs ? "act-head tabbed" : "act-head"}>
+      <nav className="act-crumbs" aria-label={t("Breadcrumb")}>
+        <ol>
+          {crumbs.map((c, i) => (
+            <li key={i}>{c.href ? <a href={c.href}>{c.label}</a> : <span aria-current="page">{c.label}</span>}</li>
+          ))}
+        </ol>
+      </nav>
+      <div>
+        <h1>{title}</h1>
+        {sub && <p className="act-sub">{sub}</p>}
+      </div>
+      {actions && <div className="act-actions">{actions}</div>}
+      {tabs}
+    </header>
+  );
+}
+
+/** One automation's head (A8, A9): Automations / name, the name, and the automation's tabs. */
+export function WorkflowHead({ workflowId, wf, here, actions }: { workflowId: string; wf: (Workflow & { live: unknown }) | null; here: "activity" | "versions"; actions?: ReactNode }) {
+  const { t } = useLanguage();
+  const name = wf?.name ?? t("Automation");
+  return (
+    <PageHead
+      crumbs={[{ label: t("Automations"), href: "#/" }, { label: name }]}
+      title={name}
+      actions={actions}
+      tabs={
+        // Nav.tsx owns AutomationTabs (Overview, Activity, Steps); Versions sits beside it until that tab is added there.
+        // On Versions no AutomationTabs entry is current, so `here` names none of its keys.
+        <div className="act-tabs">
+          <AutomationTabs id={workflowId} here={here as "activity"} overview={!!wf?.setup && !!wf.live} />
+          <nav className="tabs" aria-label={t("History")}>
+            <a href={`#/w/${workflowId}/versions`} aria-current={here === "versions" ? "page" : undefined}>{t("Versions")}</a>
+          </nav>
+        </div>
+      }
+    />
+  );
+}
+
+/** #/activity (O1): the latest 50 runs of every automation, or #/w/<id>/runs (A8): of one, beside its run details. */
+export function RunsPage({ workflowId, ask }: { workflowId?: string; ask?: boolean }) {
+  const { t, language } = useLanguage();
   const [wf, setWf] = useState<(Workflow & { live: unknown }) | null>(null);
   const [filter, setFilter] = useState<keyof typeof FILTERS>("all");
   const [query, setQuery] = useState("");
   const [list, setList] = useState<RunSummary[] | null>(null);
   const [error, setError] = useState("");
+  const [picked, setPicked] = useState<string | null>(null);
   useEffect(() => {
     if (workflowId) api<Workflow & { live: unknown }>("GET", `/workflows/${workflowId}`).then(setWf, (e: Error) => setError(e.message));
   }, [workflowId]);
@@ -146,149 +194,276 @@ export function RunsPage({ workflowId, ask }: { workflowId?: string; ask?: boole
     };
   }, [workflowId, filter, query]);
 
+  const select = (
+    <select aria-label={t("Status")} value={filter} onChange={(e) => setFilter(e.target.value as keyof typeof FILTERS)}>
+      <option value="all">{t("All statuses")}</option>
+      <option value="live">{t("Real runs")}</option>
+      <option value="test">{t("Previews")}</option>
+      <option value="review">{t("Needs you")}</option>
+      <option value="problem">{t("Problem")}</option>
+      <option value="waiting">{t("Waiting")}</option>
+    </select>
+  );
+  const caption = list && list.length > 0 && (
+    <caption className="act-sr">{list.length === 1 ? t("1 item") : t("Latest {count} items, newest first", { count: list.length })}</caption>
+  );
+  const empty = list === null ? <p className="act-empty" role="status">{t("Loading…")}</p> : list.length === 0 ? <p className="act-empty">{t(query.trim() ? "Nothing matches." : "Nothing has happened yet.")}</p> : null;
+  const alert = <p role="alert" className="act-alert error" hidden={!error}>{error}</p>;
+
+  if (!workflowId) {
+    return (
+      <main className="page act">
+        <PageHead
+          crumbs={[{ label: "Daloy", href: "#/" }, { label: t("Activity") }]}
+          title={t("Workspace activity")}
+          sub={longDate(Date.now(), language)}
+          actions={ask && <a className="act-button" href="#/activity/ask">{t("Ask about a request")}</a>}
+        />
+        <div className="act-body motion-page">
+          <section className="act-card" aria-labelledby="runs-h">
+            <h2 id="runs-h">{t("Recent runs")}</h2>
+            <div className="act-filters">
+              <input type="search" aria-label={t("Find a request or automation")} placeholder={t("Search reference or automation")} value={query} maxLength={100} onChange={(e) => setQuery(e.target.value)} />
+              {select}
+            </div>
+            {alert}
+            {empty ?? (
+              <table className="act-table">
+                {caption}
+                <thead>
+                  <tr>
+                    <th scope="col">{t("Reference")}</th>
+                    <th scope="col">{t("Automation")}</th>
+                    <th scope="col">{t("Started")}</th>
+                    <th scope="col">{t("Took")}</th>
+                    <th scope="col">{t("Status")}</th>
+                    {ask && <th scope="col"><span className="act-sr">{t("Ask")}</span></th>}
+                  </tr>
+                </thead>
+                <tbody>
+                  {list!.map((r) => (
+                    <tr key={r.id}>
+                      <td className="ref"><a href={`#/runs/${r.id}`}>{r.reference ?? t(runKind(r))}</a></td>
+                      <td className="strong" data-label={t("Automation")}>{r.workflowName}</td>
+                      <td data-label={t("Started")}><time dateTime={r.createdAt}>{startedAt(r.createdAt, Date.now(), language)}</time></td>
+                      <td data-label={t("Took")}>{t(duration(r.createdAt, r.finishedAt))}</td>
+                      <td className="bare"><StatePill run={r} /></td>
+                      {ask && <td className="bare">{r.reference && <a href={`#/runs/${r.id}/ask`}>{t("Ask what happened")}</a>}</td>}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </section>
+        </div>
+      </main>
+    );
+  }
+
+  const chosen = list?.find((r) => r.id === picked) ?? list?.[0] ?? null;
   return (
-    <main className="page operations-page activity-page">
-      {workflowId ? (
-        <>
-          <p>
-            <a href="#/">{t("Automations")}</a>
-          </p>
-          <h1>{wf?.name ?? t("Activity")}</h1>
-          <AutomationTabs id={workflowId} here="activity" overview={!!wf?.setup && !!wf.live} />
-          <p>
-            <a className="operations-export" href={`/runs/export.csv?workflowId=${workflowId}`} download>{t("Download CSV")}</a>
-          </p>
-        </>
-      ) : (
-        <Header title={t("Activity")} />
-      )}
-      <div className="operations-filters">
-        {!workflowId && (
-          <div className="field operations-search">
-            <label htmlFor="run-find">{t("Find a request or automation")}</label>
-            <input id="run-find" type="search" value={query} maxLength={100} onChange={(e) => setQuery(e.target.value)} />
+    <main className="page act">
+      <WorkflowHead workflowId={workflowId} wf={wf} here="activity" actions={<a className="act-button" href={`/runs/export.csv?workflowId=${workflowId}`} download>{t("Download CSV")}</a>} />
+      <div className="act-split">
+        <section className="act-list motion-page" aria-labelledby="runs-h">
+          <div className="act-list-head">
+            <div>
+              <h2 id="runs-h">{t("Activity")}</h2>
+              <p>{t("Recent submissions, test runs and delivery outcomes for {name}.", { name: wf?.name ?? t("this automation") })}</p>
+            </div>
+            <div className="act-filters">{select}</div>
           </div>
-        )}
-        <div className="field inline">
-          <label htmlFor="run-filter">{t("Show")}</label>
-          <select id="run-filter" value={filter} onChange={(e) => setFilter(e.target.value as keyof typeof FILTERS)}>
-            <option value="all">{t("Everything")}</option>
-            <option value="live">{t("Real runs")}</option>
-            <option value="test">{t("Previews")}</option>
-            <option value="review">{t("Needs you")}</option>
-            <option value="problem">{t("Problem")}</option>
-            <option value="waiting">{t("Waiting")}</option>
-          </select>
-        </div>
-      </div>
-      <p role="alert" className="message error" hidden={!error}>
-        {error}
-      </p>
-      {list === null ? (
-        <p className="operations-empty" role="status">{t("Loading…")}</p>
-      ) : list.length === 0 ? (
-        <p className="muted operations-empty">{t(query.trim() ? "Nothing matches." : "Nothing has happened yet.")}</p>
-      ) : (
-        <div className="table-wrap operations-table">
-          <table className="table cards">
-            <caption className="muted">{list.length === 1 ? t("1 item") : t("Latest {count} items, newest first", { count: list.length })}</caption>
-            <thead>
-              <tr>
-                <th scope="col">{t("Started")}</th>
-                {!workflowId && <th scope="col">{t("Automation")}</th>}
-                {!workflowId && <th scope="col">{t("Request")}</th>}
-                <th scope="col">{t("Result")}</th>
-                <th scope="col">{t("Kind")}</th>
-                <th scope="col">{t("Took")}</th>
-                {ask && <th scope="col">{t("Ask")}</th>}
-              </tr>
-            </thead>
-            <tbody>
-              {list.map((r) => (
-                <tr key={r.id}>
-                  <td data-label={t("Started")}>
-                    <a href={`#/runs/${r.id}`}>{new Date(r.createdAt).toLocaleString()}</a>
-                  </td>
-                  {!workflowId && <td data-label={t("Automation")}>{r.workflowName}</td>}
-                  {!workflowId && <td className="operations-reference" data-label={t("Request")}>{r.reference ?? ""}</td>}
-                  <td data-label={t("Result")}>
-                    <StateLabel run={r} />
-                  </td>
-                  <td data-label={t("Kind")}>{t(runKind(r))}</td>
-                  <td data-label={t("Took")}>{t(duration(r.createdAt, r.finishedAt))}</td>
-                  {ask && <td data-label={t("Ask")}>{r.reference && <a href={`#/runs/${r.id}/ask`}>{t("Ask what happened")}</a>}</td>}
+          {alert}
+          {empty ?? (
+            <table className="act-table">
+              {caption}
+              <thead>
+                <tr>
+                  <th scope="col">{t("Request")}</th>
+                  <th scope="col">{t("Started")}</th>
+                  <th scope="col">{t("Source")}</th>
+                  <th scope="col">{t("Outcome")}</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+              </thead>
+              <tbody>
+                {list!.map((r) => (
+                  // Pointer or keyboard focus on a row shows its steps in the panel; the link opens the full run.
+                  <tr key={r.id} data-selected={r.id === chosen?.id || undefined} onClick={() => setPicked(r.id)} onFocus={() => setPicked(r.id)}>
+                    <td className="ref">
+                      <a href={`#/runs/${r.id}`}>{r.reference ?? t(runKind(r))}</a>
+                      <span className="sub">{t(duration(r.createdAt, r.finishedAt))}</span>
+                    </td>
+                    <td data-label={t("Started")}><time dateTime={r.createdAt}>{startedAt(r.createdAt, Date.now(), language)}</time></td>
+                    <td data-label={t("Source")}>{t(runKind(r))}</td>
+                    <td className="bare">
+                      <StatePill run={r} />
+                      {ask && r.reference && <> <a href={`#/runs/${r.id}/ask`}>{t("Ask what happened")}</a></>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </section>
+        <RunPanel runId={chosen?.id ?? null} overview={wf?.setup && wf.live ? `#/a/${workflowId}` : null} />
+      </div>
     </main>
   );
 }
 
-/** #/runs/<id>: one run with its trigger payload and every step attempt. Polls until the run finishes. */
-export function RunPage({ runId, owner, ask, openAsk }: { runId: string; owner: boolean; ask?: boolean; openAsk?: boolean }) {
+/** A8's right-hand panel: the selected run's steps, numbered, with links to the full run. Hidden on a phone. */
+function RunPanel({ runId, overview }: { runId: string | null; overview: string | null }) {
+  const { t, language } = useLanguage();
+  const { run, error } = useRun(runId);
+  if (!runId) return <aside className="act-panel" aria-label={t("Run details")} />;
+  return (
+    <aside className="act-panel motion-drawer" key={runId} aria-label={t("Run details")}>
+      <p className="act-eyebrow">{t("Run details")}</p>
+      {!run ? (
+        <p className="act-muted" role="status">{t(error ? "Couldn't load this run. Trying again." : "Loading…")}</p>
+      ) : (
+        <>
+          <h2>{run.reference ?? t(runKind(run))}</h2>
+          <p className="act-muted">{startedAt(run.createdAt, Date.now(), language)} · {t(runKind(run))}</p>
+          {run.steps.length === 0 ? (
+            <p className="act-muted">{t("No steps have run yet.")}</p>
+          ) : (
+            <ol className="act-steps">
+              {run.steps.map((s, i) => (
+                <li key={s.id}>
+                  <span className="act-num" aria-hidden="true">{i + 1}</span>
+                  <span className="title">{s.stepId}</span>
+                  <span className="note">{t(STEP_STATE[s.state] ?? s.state)} · {t(duration(s.createdAt, s.finishedAt))}</span>
+                </li>
+              ))}
+            </ol>
+          )}
+          <p><a href={`#/runs/${run.id}`}>{t("Open run detail")}</a></p>
+          {overview && <p><a href={overview}>{t("Back to overview")}</a></p>}
+        </>
+      )}
+    </aside>
+  );
+}
+
+// A step attempt's raw state in the owner's words. Unknown states show as they are.
+const STEP_STATE: Record<string, string> = { succeeded: "Done", failed: "Failed", running: "Working", pending: "Working", waiting: "Waiting", needs_review: "Needs you", cancelled: "Cancelled", skipped: "Skipped" };
+
+/** #/runs/<id> (O2, Doop frame aquI2X-gdg): the run's step timeline beside its outcome and recovery controls. Polls until the run finishes. */
+export function RunPage({ runId, owner, ask }: { runId: string; owner: boolean; ask?: boolean }) {
   const { t } = useLanguage();
-  const [asking, setAsking] = useState(!!openAsk);
   const [reload, setReload] = useState(0);
+  const [deliveryFailed, setDeliveryFailed] = useState(false);
   const { run, error } = useRun(runId, reload);
   if (!run) {
     return (
-      <main className="page operations-page run-detail">
-        {error ? (
-          <>
-            <p role="alert">{t("Couldn't load this run. Trying again.")}</p>
-            <button type="button" onClick={() => setReload((n) => n + 1)}>
-              {t("Retry")}
-            </button>
-          </>
-        ) : (
-          t("Loading…")
-        )}
+      <main className="page act">
+        <PageHead crumbs={[{ label: "Daloy", href: "#/" }, { label: t("Activity"), href: "#/activity" }]} title={t("Activity")} />
+        <div className="act-body">
+          {error ? (
+            <p role="alert" className="act-alert error">
+              {t("Couldn't load this run. Trying again.")}{" "}
+              <button type="button" className="act-button" onClick={() => setReload((n) => n + 1)}>{t("Retry")}</button>
+            </p>
+          ) : (
+            <p className="act-muted" role="status">{t("Loading…")}</p>
+          )}
+        </div>
       </main>
     );
   }
   const working = run.state === "pending" || run.state === "running" || run.state === "queued";
+  const activity = `#/w/${run.workflowId}/runs`;
   return (
-    <main className="page operations-page run-detail">
-      <header className="toolbar plain">
-        <a href={`#/w/${run.workflowId}/runs`}>{t("Activity")}</a>
-        <h1>{t("What happened")}</h1>
-      </header>
-      {error && <p role="alert" className="message error">{t("Couldn't refresh. Trying again.")}</p>}
-      {working && takingLonger(run.createdAt) && <p className="message">{t(TAKING_LONGER)}</p>}
-      <p className="operations-run-status" aria-live="polite">
-        <StateLabel run={run} /> <span className="muted">{t(runKind(run))} · {t("started {time}", { time: new Date(run.createdAt).toLocaleString() })} · {t(duration(run.createdAt, run.finishedAt))}</span>
-      </p>
-      {run.superseded && <p className="message">{t(SUPERSEDED)}</p>}
-      <RunWhy run={run} owner={owner} />
-      {ask && run.reference && (
-        <>
-          <p>
-            <button type="button" aria-expanded={asking} onClick={() => setAsking(!asking)}>
-              {t("Ask what happened")}
-            </button>
+    <main className="page act run-detail">
+      <PageHead
+        crumbs={[{ label: "Daloy", href: "#/" }, { label: t("Activity"), href: "#/activity" }, { label: run.reference ?? t(runKind(run)) }]}
+        title={run.workflowName}
+        sub={[run.reference && t("Run {reference}", { reference: run.reference }), t(runKind(run))].filter(Boolean).join(" · ")}
+        actions={
+          <>
+            <a className="act-button" href={activity}>{t("Activity")}</a>
+            {ask && run.reference && <a className="act-button blue" href={`#/runs/${run.id}/ask`}>{t("Ask what happened")}</a>}
+          </>
+        }
+      />
+      <div className="act-body act-run motion-page">
+        {error && <p role="alert" className="act-alert error">{t("Couldn't refresh. Trying again.")}</p>}
+        {working && takingLonger(run.createdAt) && <p className="act-alert">{t(TAKING_LONGER)}</p>}
+        <section className="act-card" aria-labelledby="timeline-h">
+          <h2 id="timeline-h">{t("Run timeline")}</h2>
+          <RunTimeline run={run} />
+          <details className="act-fields">
+            <summary>{t("Masked request fields")}</summary>
+            <pre aria-label={t("Request fields")}>{json(run.triggerPayload)}</pre>
+          </details>
+        </section>
+        <section className="act-card" aria-labelledby="outcome-h">
+          <h2 id="outcome-h">{t("Delivery outcome")}</h2>
+          <p aria-live="polite">
+            <StatePill run={{ ...run, deliveryFailed }} note />
           </p>
-          {asking && <AskRequest reference={run.reference} />}
-        </>
-      )}
-      <RunActions run={run} onDone={() => setReload((n) => n + 1)} />
-      <RunDeliveries runId={runId} />
-      <RunFiles runId={runId} payload={run.triggerPayload} />
-      <RunPath run={run} />
-      <details className="technician">
-        <summary>{t("Details for a technician")}</summary>
-        <p className="muted">
-          {t("Raw state: {state} · version v{version} · {kind}", { state: run.state, version: run.version, kind: t(kind(run)) })}
-        </p>
-        {run.error && <pre aria-label={t("Full error")}>{run.error}</pre>}
-        <h2>{t("Trigger data")}</h2>
-        <pre aria-label={t("Trigger data")}>{json(run.triggerPayload)}</pre>
-        <h2>{t("Steps")}</h2>
-        <RunResult run={run} />
-      </details>
+          {run.superseded && <p className="act-alert">{t(SUPERSEDED)}</p>}
+          <RunWhy run={run} owner={owner} />
+          <RunDeliveries runId={runId} onLoad={(l) => setDeliveryFailed(l.some((d) => d.state === "failed"))} />
+          <dl className="act-facts">
+            <div>
+              <dt>{t("Started")}</dt>
+              <dd>{new Date(run.createdAt).toLocaleString()}</dd>
+            </div>
+            <div>
+              <dt>{t("Elapsed time")}</dt>
+              <dd>{t(duration(run.createdAt, run.finishedAt))}</dd>
+            </div>
+          </dl>
+          <RunActions run={run} onDone={() => setReload((n) => n + 1)} />
+        </section>
+        <RunFiles runId={runId} payload={run.triggerPayload} />
+        <RunPath run={run} />
+        <details className="act-card technician">
+          <summary>{t("Details for a technician")}</summary>
+          <p className="act-muted">
+            {t("Raw state: {state} · version v{version} · {kind}", { state: run.state, version: run.version, kind: t(kind(run)) })}
+          </p>
+          {run.error && <pre aria-label={t("Full error")}>{run.error}</pre>}
+          <h3>{t("Trigger data")}</h3>
+          <pre aria-label={t("Trigger data")}>{json(run.triggerPayload)}</pre>
+          <h3>{t("Steps")}</h3>
+          <RunResult run={run} />
+        </details>
+      </div>
     </main>
+  );
+}
+
+/** O2's numbered step list: each attempt's step, what happened to it, and when it started (hh:mm:ss). */
+function RunTimeline({ run }: { run: Run }) {
+  const { t } = useLanguage();
+  if (run.steps.length === 0) return <p className="act-muted">{t("No steps have run yet.")}</p>;
+  return (
+    <ol className="act-timeline">
+      {run.steps.map((s, i) => {
+        const notes = [
+          s.attempt > 1 ? t("attempt {count}", { count: s.attempt }) : "",
+          s.branch ? `→ ${s.branch}` : "",
+          decided(s.output, t) ?? "",
+          skipped(s.output, t) ?? "",
+          s.outcome ? t("Outcome: {outcome}", { outcome: s.outcome.replace("_", " ") }) : "",
+          s.resolvedBy && s.resolvedAt ? t("Answered by {name} at {time}", { name: s.resolvedBy, time: new Date(s.resolvedAt).toLocaleString() }) : "",
+        ].filter(Boolean);
+        return (
+          <li key={s.id}>
+            <span className="act-num" aria-hidden="true">{i + 1}</span>
+            <div>
+              <p className="title">{s.stepId} <span className={`act-step ${s.state}`}>{t(STEP_STATE[s.state] ?? s.state)}</span></p>
+              {notes.length > 0 && <p className="act-muted">{notes.join(" · ")}</p>}
+              {s.error && <p className="act-alert error">{ownerError(s.error)}</p>}
+            </div>
+            <time dateTime={s.createdAt}>{clock(s.createdAt, true)}</time>
+          </li>
+        );
+      })}
+    </ol>
   );
 }
 
@@ -298,7 +473,7 @@ function RunFiles({ runId, payload }: { runId: string; payload: unknown }) {
   const files = fileRefs(payload);
   if (files.length === 0) return null;
   return (
-    <section aria-labelledby="run-files-h">
+    <section className="act-card" aria-labelledby="run-files-h">
       <h2 id="run-files-h">{t("Files")}</h2>
       <ul>
         {files.map((f) => (
@@ -337,7 +512,7 @@ function RunWhy({ run, owner }: { run: Run; owner: boolean }) {
       live = false;
     };
   }, [run.id, stopped, key, language]);
-  if (!fixed) return run.error ? <RunError error={run.error} owner={owner} /> : null;
+  if (!fixed) return run.error ? <section aria-label={t("Why it stopped")}><RunError error={run.error} owner={owner} /></section> : null;
   const ask = () => {
     setAsking(true);
     api<{ text: string }>("POST", `/runs/${run.id}/explanation/reword`, {})
@@ -411,7 +586,7 @@ function RunPath({ run }: { run: Run }) {
   if (!draft) return null;
   const states = runFlow(draft, run).nodes;
   return (
-    <section className="run-path" aria-label={t("Path it took")}>
+    <section className="act-card run-path" aria-label={t("Path it took")}>
       <h2>{t("Path it took")}</h2>
       <RunFlow draft={draft} run={run} />
       <ol className="operations-path-list">
@@ -427,7 +602,7 @@ function RunPath({ run }: { run: Run }) {
 }
 
 /** Sheets rows and Slack notes this run queued. They are delivered apart from the run, so they have their own state. */
-function RunDeliveries({ runId }: { runId: string }) {
+function RunDeliveries({ runId, onLoad }: { runId: string; onLoad?: (list: Delivery[]) => void }) {
   const { t } = useLanguage();
   const [list, setList] = useState<Delivery[]>([]);
   const [failed, setFailed] = useState(false);
@@ -436,6 +611,7 @@ function RunDeliveries({ runId }: { runId: string }) {
       (l) => {
         setFailed(false);
         setList(l);
+        onLoad?.(l);
       },
       () => setFailed(true),
     );
@@ -444,7 +620,7 @@ function RunDeliveries({ runId }: { runId: string }) {
   if (list.length === 0) return null;
   return (
     <>
-      <h2>{t("Where it was sent")}</h2>
+      <h3>{t("Where it was sent")}</h3>
       <DeliveryList deliveries={list} onChange={load} />
     </>
   );
@@ -504,7 +680,7 @@ function RunActions({ run, onDone }: { run: Run; onDone: () => void }) {
   }
   return (
     <section aria-label={t("Needs you")} className="review">
-      <h2>{t("Needs you")}</h2>
+      <h3>{t("Needs you")}</h3>
       {/* Nothing was sent (a daily send cap): there is nothing to confirm, so "It went through" is not offered. */}
       <p>{notSent ? t("Nothing was sent. Choose what to do.") : t("A message or delivery may or may not have reached its destination, and Daloy cannot tell. Check whether it arrived, then choose.")}</p>
       {last?.error && <p className="message error">{last.error}</p>}

@@ -1,7 +1,9 @@
-import "./creation.css";
-import { Text, useLanguage } from "./Language";
+import { useLanguage } from "./Language";
 import { useEffect, useState } from "react";
 import { api, type Version, type VersionSummary, type Workflow } from "./api";
+import { WorkflowHead } from "./Runs";
+import "./activity.css";
+import { startedAt } from "./lib/activity";
 import { jsonDiff, type Change } from "./lib/diff";
 
 type Opened = Workflow & { live: Version | null };
@@ -20,14 +22,13 @@ function ChangeLine({ c }: { c: Change }) {
 }
 
 /**
- * #/w/<id>/versions: every saved version, the changes each one made against the version before it,
- * and rollback. A rollback publishes the old definition as a new version, so history is never rewritten.
+ * #/w/<id>/versions (A9, Doop frame RKizMLFkzD): every saved version, the changes the selected one made against the
+ * version before it, and rollback. A rollback publishes the old definition as a new version, so history is never rewritten.
  */
 export function VersionsPage({ workflowId }: { workflowId: string }) {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const [wf, setWf] = useState<Opened | null>(null);
   const [list, setList] = useState<VersionSummary[] | null>(null);
-  const [showDrafts, setShowDrafts] = useState(false);
   const [selected, setSelected] = useState<number | null>(null);
   const [diff, setDiff] = useState<{ version: Version; changes: Change[] } | null>(null);
   const [message, setMessage] = useState({ text: "", error: false });
@@ -66,60 +67,99 @@ export function VersionsPage({ workflowId }: { workflowId: string }) {
   };
 
   const liveVersion = wf?.live?.version;
-  const shown = list?.filter((v) => showDrafts || v.published) ?? [];
+  const published = list?.filter((v) => v.published) ?? [];
+  const drafts = list?.filter((v) => !v.published) ?? [];
+  const table = (rows: VersionSummary[], label: string) => (
+    <table className="act-table" aria-label={label}>
+      <thead>
+        <tr>
+          <th scope="col">{t("Version")}</th>
+          <th scope="col">{t("Saved")}</th>
+          <th scope="col">{t("Status")}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((v) => (
+          <tr key={v.id} data-selected={v.version === selected || undefined}>
+            <td className="bare">
+              <button type="button" className="act-version" aria-pressed={v.version === selected} onClick={() => setSelected(v.version)}>
+                <span>{t("Version {version}", { version: v.version })}</span>
+                {v.version === liveVersion && <span className="act-pill done">{t("Live")}</span>}
+              </button>
+            </td>
+            <td data-label={t("Saved")}><time dateTime={v.createdAt}>{startedAt(v.createdAt, Date.now(), language)}</time></td>
+            <td data-label={t("Status")}>{t(v.version === liveVersion ? "Live" : v.published ? "Published" : "Draft")}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
 
   return (
-    <main className="page creation-page creation-versions">
-      <header className="toolbar plain">
-        <a href={`#/w/${workflowId}`}>{wf?.name ?? t("Workflow")}</a>
-        <h1>{t("Versions")}</h1>
-        <a href={`#/w/${workflowId}/runs`}>{t("Run history")}</a>
-      </header>
-      <p role="status" className={`message ${message.error ? "error" : "ok"}`} hidden={!message.text}>
-        {message.text}
-      </p>
-      <label className="check">
-        <input type="checkbox" checked={showDrafts} onChange={(e) => setShowDrafts(e.target.checked)} />{t("Show drafts (versions saved or test-run but never published)")}</label>
-      {list === null ? (
-        <p><Text>Loading…</Text></p>
-      ) : shown.length === 0 ? (
-        <p className="muted">{list.length === 0 ? t("Nothing saved yet.") : t("No published versions yet.")}</p>
-      ) : (
-        <div className="versions">
-          <ul className="outline" aria-label={t("Versions")}>
-            {shown.map((v) => (
-              <li key={v.id}>
-                <button type="button" aria-pressed={v.version === selected} onClick={() => setSelected(v.version)}>{"v"}{v.version} <span className="muted">{v.version === liveVersion ? t("live") : v.published ? t("published") : t("draft")}</span>
-                </button>
-              </li>
-            ))}
-          </ul>
-          <section className="creation-diff" aria-labelledby="diff-heading">
-            <h2 id="diff-heading">{selected === null ? t("Version") : t("Version {version}", { version: selected })}</h2>
-            {!diff ? (
-              <p><Text>Loading…</Text></p>
-            ) : (
-              <>
-                <p className="muted">
-                  {diff.version.published ? t("Published") : t("Draft")}{t(", saved ")}{new Date(diff.version.createdAt).toLocaleString()}.
-                  {selected === 1 ? t(" The first version.") : t(diff.changes.length === 1 ? " {count} change against version {version}." : " {count} changes against version {version}.", { count: diff.changes.length, version: selected! - 1 })}
-                </p>
-                {diff.changes.length > 0 && (
-                  <ul className="changes" aria-label={t("Changes")}>
-                    {diff.changes.map((c) => (
-                      <ChangeLine key={`${c.kind}:${c.path}`} c={c} />
-                    ))}
-                  </ul>
-                )}
-                {selected !== liveVersion && (
-                  <button type="button" className="primary" onClick={rollback}>{t("Roll back to v{version}", { version: selected ?? "" })}
-                  </button>
-                )}
-              </>
-            )}
-          </section>
-        </div>
-      )}
+    <main className="page act">
+      <WorkflowHead workflowId={workflowId} wf={wf} here="versions" />
+      <div className="act-split">
+        <section className="act-list motion-page" aria-labelledby="versions-h">
+          <div className="act-list-head">
+            <div>
+              <h2 id="versions-h">{t("Version history")}</h2>
+              <p>{t("Compare a saved version with the one before it.")}</p>
+            </div>
+          </div>
+          <p role="status" className={`act-alert ${message.error ? "error" : "ok"}`} hidden={!message.text}>
+            {message.text}
+          </p>
+          {list === null ? (
+            <p className="act-muted" role="status">{t("Loading…")}</p>
+          ) : list.length === 0 ? (
+            <p className="act-muted">{t("Nothing saved yet.")}</p>
+          ) : (
+            <>
+              {published.length === 0 ? <p className="act-muted">{t("No published versions yet.")}</p> : table(published, t("Versions"))}
+              {drafts.length > 0 && (
+                <details className="act-drafts" open={published.length === 0}>
+                  <summary>{t("Show draft versions ({count})", { count: drafts.length })}</summary>
+                  <p className="act-muted">{t("Saved or test-run, never published.")}</p>
+                  {table(drafts, t("Draft versions"))}
+                </details>
+              )}
+            </>
+          )}
+        </section>
+        <aside className="act-panel act-diff" aria-labelledby="diff-heading">
+          {selected !== null && (
+            <div className="motion-drawer" key={selected}>
+              <p className="act-eyebrow">
+                {selected > 1 ? t("Version {version} compared with version {previous}", { version: selected, previous: selected - 1 }) : t("The first version")}
+              </p>
+              <h2 id="diff-heading">{t("Version {version}", { version: selected })}</h2>
+              {!diff ? (
+                <p className="act-muted" role="status">{t("Loading…")}</p>
+              ) : (
+                <>
+                  <p>
+                    <span className={`act-pill ${diff.version.published ? "done" : ""}`}>{t(diff.version.version === liveVersion ? "Live" : diff.version.published ? "Published" : "Draft")}</span>
+                  </p>
+                  <p className="act-muted">
+                    {selected === 1 ? t("Nothing to compare: this is where the automation started.") : t(diff.changes.length === 1 ? "{count} change against version {version}." : "{count} changes against version {version}.", { count: diff.changes.length, version: selected - 1 })}
+                  </p>
+                  {diff.changes.length > 0 && (
+                    <ul className="act-changes" aria-label={t("Changes")}>
+                      {diff.changes.map((c) => (
+                        <ChangeLine key={`${c.kind}:${c.path}`} c={c} />
+                      ))}
+                    </ul>
+                  )}
+                  {selected !== liveVersion && (
+                    <button type="button" className="act-button blue" onClick={rollback}>{t("Roll back to v{version}", { version: selected })}</button>
+                  )}
+                  <p className="act-muted">{t("Rolling back publishes that definition as a new version. The earlier history stays as it is.")}</p>
+                </>
+              )}
+            </div>
+          )}
+        </aside>
+      </div>
     </main>
   );
 }
