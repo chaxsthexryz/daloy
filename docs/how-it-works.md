@@ -834,3 +834,17 @@ Why it is built this way: the page uses only data the API already sends. `GET /w
 Edge cases: a paused automation is listed as Paused and counts under Needs you only if a run in review is still waiting. A missed schedule counts as a problem unless the last run needs a person. A draft is a row with the status Draft and a Continue setup action. A failed list load shows Retry. A failed run, usage or detail request leaves only that figure out. The Owner column and the Owner and App filters from the design are left out because the list has no owner or app data.
 
 Tests: `apps/web/src/lib/automations.test.ts` (filters, counts, trigger labels), `apps/web/src/lib/ops-stats.test.ts` (day buckets, success rate, the 50 run limit), `apps/web/src/lib/locale-ops.test.ts` (Tagalog placeholders), and `e2e/navigation.spec.ts`, `e2e/automations.spec.ts`, `e2e/run-controls.spec.ts`, `e2e/office-request.spec.ts` (filter, select, next action, pause and resume, draft).
+
+## Guided pages (Doop rows A2 to A6, decision 0071)
+
+`apps/web/src/NewAutomation.tsx`, `OfficeRequests.tsx`, `guided-pages.css`, `lib/locale-setup.ts`.
+
+### New automation (A2, `#/new`)
+
+What it does: a table of the three templates (Track an office request, Purchase request with approval, Reply to a website inquiry) with a Set up button each, a blank workflow card (Name, Start from, Create and open editor), Build with AI in the page head, and a side panel that previews the Office requests template with a Try the preview link to `#/try/office-request`. The website inquiry row links to Business setup because inquiry replies need the business details first.
+
+Why it is built that way: the Set up buttons call the same single-flight `startOfficeSetup` and `startPurchaseSetup` as before, so two clicks, or coming back later, reopen one draft. The page also disables all three starts while one is running, which the old page did not do for the blank form: a repeated Create click used to be able to send two requests. The visible button text is short ("Set up"); its accessible name keeps the full phrase, so a screen reader and the e2e specs still hear "Set up for my office".
+
+Edge cases: a name already in use shows "An automation with that name already exists." and re-enables the form. A failed guided start shows its message and re-enables the buttons.
+
+Tests: `e2e/office-request.spec.ts`, `e2e/wizard-double-click.spec.ts` (double click makes one draft), `e2e/editor.spec.ts`, `e2e/email-in.spec.ts`, `e2e/business-setup.spec.ts` (the three paths from this page), `lib/locale-setup.test.ts` (Tagalog keeps every braced value).

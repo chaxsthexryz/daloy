@@ -15,7 +15,7 @@ test("a beginner previews, sets up, turns on and receives one office request", a
 
   // Preview: worked out in the browser, so nothing is recorded or sent.
   await page.getByRole("link", { name: "New automation" }).first().click();
-  await page.getByRole("link", { name: "Try an example" }).click();
+  await page.getByRole("link", { name: "Try the preview" }).click();
   await expect(page.getByRole("heading", { name: "Preview only", level: 1 })).toBeVisible();
   await page.getByRole("button", { name: "Try with sample details" }).click();
   const preview = page.getByRole("region", { name: "Preview result" });
