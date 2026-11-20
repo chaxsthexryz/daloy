@@ -217,3 +217,5 @@ Q1 covers the integrated journey. Start at Automations, enter Build with AI, des
 | 2026-11-20 | Doop design checkpoint. Phases 5 and 6 approved: W1 to W9, E1 to E11 including the brand-kit frames, and the hover-expanding rail (A0 update). Design only. No code changed and no tests were run. | Phase 7, walkthrough |
 
 After each row, append the date, row ID, design/implementation status, frame link, branch and commit, checks actually run, open issues and next row. A future session can resume from the last entry without this chat.
+
+20 November 2026. A0 is implemented locally on `design/doop-a0` at `2bd7927`, based on `def5280`. See the [desktop rail](https://doop.design/c/xH-4xV7kGK?frame=gDOrJNUuQK) and [phone menu](https://doop.design/c/xH-4xV7kGK?frame=FTr3sdPWhr). Lint, typecheck and 15 Chromium cases passed across navigation, Build with AI, language and team. Docker Desktop's Linux engine was unavailable. CI and owner integration are pending. Next is A1. Its existing uncommitted edits are in the separate design worktree.
