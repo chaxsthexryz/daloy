@@ -3,7 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { freshDatabase } from "../../../../test/db";
 import type { Db } from "../index";
 import { connections, mailSenders, users, type Provider } from "../schema";
-import { sharedGrants } from "./shared";
+import { sharedGoogleApps, sharedGrants } from "./shared";
 
 // Plan R14: a provider may keep one grant per account and client, so a revoke in one place can end Daloy's access in another.
 let db: Db;
@@ -64,6 +64,11 @@ describe("shared grants", () => {
     await gmail(b, "sub-2");
     expect((await sharedGrants(db, a)).sort()).toEqual(["google_calendar", "google_drive", "google_sheets"]);
     expect(await sharedGrants(db, b)).toEqual(["gmail"]);
+    expect(await sharedGoogleApps(db, a)).toEqual({ google_calendar: ["google_sheets"], google_sheets: ["google_calendar"] });
+    expect(await sharedGoogleApps(db, b)).toEqual({});
+    await gmail(a, "sub-1");
+    expect((await sharedGoogleApps(db, a)).gmail).toEqual(["google_calendar", "google_sheets"]);
+    expect((await sharedGoogleApps(db, a)).google_sheets).toEqual(["gmail", "google_calendar"]);
   });
 
   it("does not match a Google account id against another provider's id", async () => {

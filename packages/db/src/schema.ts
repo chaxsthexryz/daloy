@@ -744,7 +744,7 @@ export const paymongoEvents = pgTable(
 );
 
 /**
- * Normalized GCash or bank receipt reference numbers seen in live runs per workspace (decision 0069).
+ * Normalized GCash or bank receipt reference numbers seen in live runs per workspace (decision 0075).
  * Flags reused receipt screenshots across distinct messages; retries of firstRunId are not flagged.
  */
 export const receiptReferences = pgTable(

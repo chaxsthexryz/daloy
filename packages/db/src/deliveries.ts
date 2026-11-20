@@ -30,7 +30,7 @@ export type Delivery = typeof deliveries.$inferSelect;
 export type DeliveryPayload = Delivery["payload"];
 /** What the last failure was, as a closed value (decision 0039). */
 export type DeliveryErrorKind = ProviderErrorKind | "not_connected" | "reconnect" | "no_destination" | "destination_changed" | "queued_before_pin" | "booking_changed" | "plan_quota";
-/** Sentinel pinnedAccount for deliveries sent through the operator's shared UniSMS key (decision 0068). */
+/** Sentinel pinnedAccount for deliveries sent through the operator's shared UniSMS key (decision 0074). */
 const SHARED_UNISMS_ACCOUNT = "__operator_shared__";
 
 export const DELIVERY_POLICY: RetryPolicy = { maxAttempts: 5, baseDelayMs: 2000, maxDelayMs: 10 * 60_000 };

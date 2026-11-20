@@ -90,6 +90,8 @@ test("a draft with warnings waits, and a change carries it", async ({ page }) =>
   // A warning holds it here: nothing is created yet.
   expect(await count(page)).toBe(before);
 
+  await expect(review.getByRole("table")).toBeVisible();
+  await page.getByRole("button", { name: "Change something" }).click();
   await page.getByLabel("What should change?").fill("Wait one day before the email.");
   await page.getByRole("button", { name: "Send", exact: true }).click();
   await expect(page.getByRole("button", { name: "Turn it on", exact: true })).toBeVisible();

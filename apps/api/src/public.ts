@@ -232,7 +232,7 @@ export class PaymongoHooksController {
 }
 
 /**
- * Meta Messenger and Instagram DM webhook (decision 0069).
+ * Meta Messenger and Instagram DM webhook (decision 0075).
  * GET answers Meta's hub.challenge verification after constant-time verify_token check.
  * POST verifies X-Hub-Signature-256 against the raw body, deduplicates by message id (mid) via run_keys,
  * safely downloads verified image attachments from allowlisted Meta CDN hosts, and starts matching meta_dm runs.

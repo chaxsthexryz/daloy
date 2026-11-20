@@ -35,17 +35,25 @@ test("Home shows each automation's state and last event, and a Needs you strip",
   const test = await page.request.post(`/workflows/${orders.id}/test-runs`, { data: { definition: orderDef, payload: {}, choices: { post: { fail: "unknown" } } } });
   expect(test.status()).toBe(202);
 
-  const card = page.locator(".card", { has: page.getByRole("link", { name: "Contact form" }) });
+  // A row is a button that selects the automation; its panel beside the table has the status, the recent runs and the next actions.
+  const row = page.getByRole("row", { name: /Contact form/ });
+  const panel = page.getByRole("complementary", { name: "Contact form" });
   await expect(async () => {
     await page.reload();
-    await expect(card.locator(".state")).toHaveText("Done", { timeout: 1000 });
-    await expect(page.locator(".needs-you")).toContainText("1 request needs you", { timeout: 1000 });
+    await row.getByRole("button", { name: "Contact form" }).click();
+    await expect(panel.getByText("Done", { exact: true })).toBeVisible({ timeout: 1000 });
+    await expect(page.locator(".ops-alert.attn")).toContainText("1 request needs you", { timeout: 1000 });
   }).toPass({ timeout: 60_000 });
-  await expect(card).toContainText("On");
-  await expect(card).toContainText("Last ran");
-  await expect(card.getByRole("button", { name: "Copy form link" })).toBeVisible();
-  await expect(card.getByRole("link", { name: "Activity" })).toHaveAttribute("href", `#/w/${form.id}/runs`);
-  await expect(page.locator(".card", { has: page.getByRole("link", { name: "Orders" }) })).toContainText("No activity yet");
+  await expect(row.getByRole("cell", { name: "Form", exact: true })).toBeVisible();
+  await expect(panel).toContainText("On");
+  await expect(row).toContainText(/ago|just now/);
+  await expect(panel.getByRole("button", { name: "Copy form link" })).toBeVisible();
+  await expect(panel.getByRole("link", { name: "View all" })).toHaveAttribute("href", `#/w/${form.id}/runs`);
+  await expect(panel.getByRole("link", { name: "Open steps" })).toHaveAttribute("href", `#/w/${form.id}`);
+  const orderRow = page.getByRole("row", { name: /Orders/ });
+  await expect(orderRow).toContainText("Never");
+  await orderRow.getByRole("button", { name: "Orders" }).click();
+  await expect(page.getByRole("complementary", { name: "Orders" })).toContainText("No activity yet");
 
   // Developer pages are behind Advanced, and the strip opens the run.
   await page.getByRole("link", { name: "Advanced" }).click();
@@ -73,7 +81,7 @@ test("on a phone the menu collapses, nothing scrolls sideways, and the activity 
   const definition = { trigger: { type: "manual", config: {} }, steps: [{ id: "pause", type: "delay", config: { seconds: 1 } }], edges: [] };
   expect((await page.request.post(`/workflows/${wf.id}/test-runs`, { data: { definition, payload: {} } })).status()).toBe(202);
   await page.goto(`/#/w/${wf.id}/runs`);
-  const row = page.locator(".table.cards tbody tr").first();
+  const row = page.locator(".act-table tbody tr").first();
   await expect(row).toBeVisible({ timeout: 30_000 });
   expect(await row.evaluate((e) => getComputedStyle(e).display)).toBe("block");
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);

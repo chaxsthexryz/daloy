@@ -1,0 +1,75 @@
+import { mockAiOutput, type Step } from "@daloy/engine";
+import { entryOf, type Draft } from "./graph";
+
+/** What happens after a step: one path per outgoing edge, each the chain of steps until a fork, a join already listed, or the end. */
+export function nextPaths(draft: Draft, id: string): { on?: string; steps: Step[] }[] {
+  const byId = new Map(draft.steps.map((s) => [s.id, s]));
+  const outgoing = (from: string) => draft.edges.filter((e) => e.from === from);
+  const starts = id === "trigger" ? (entryOf(draft) ? [{ on: undefined, to: entryOf(draft)!.id }] : []) : outgoing(id).map((e) => ({ on: e.on, to: e.to }));
+  return starts.map(({ on, to }) => {
+    const steps: Step[] = [];
+    for (let at: string | undefined = to; at && byId.has(at) && !steps.some((s) => s.id === at); ) {
+      steps.push(byId.get(at)!);
+      const next = outgoing(at);
+      at = next.length === 1 ? next[0]!.to : undefined;
+    }
+    return { on, steps };
+  });
+}
+
+const EMAIL_FIELDS = ["from", "subject", "text"];
+const META_DM_FIELDS = ["channel", "senderId", "messageId", "text", "timestamp"];
+
+/** The template references a step can use: the trigger's fields, then the output of each step that runs before it, in step order. */
+export function insertables(draft: Draft, id: string): string[] {
+  const trigger = draft.trigger;
+  const fields = trigger.type === "email" ? EMAIL_FIELDS : trigger.type === "meta_dm" ? META_DM_FIELDS : trigger.type === "form" || trigger.type === "webhook" ? (trigger.config.fields ?? []).map((f) => f.name) : [];
+  const before = new Set<string>();
+  const queue = [id];
+  while (queue.length) {
+    const to = queue.pop()!;
+    for (const e of draft.edges) {
+      if (e.to !== to || before.has(e.from)) continue;
+      before.add(e.from);
+      queue.push(e.from);
+    }
+  }
+  const outputs = draft.steps
+    .filter((s) => before.has(s.id) && s.id !== id)
+    .flatMap((s) => (s.type === "ai" ? Object.keys(mockAiOutput(s.config)).map((k) => `steps.${s.id}.output.${k}`) : [`steps.${s.id}.output`]));
+  return [...fields.map((f) => `trigger.${f}`), ...outputs].map((r) => `{{${r}}}`);
+}
+
+/** Step types that need a connected app, with the provider name GET /settings/connections uses. */
+// ponytail: copy of NEEDS in BuildWithAi.tsx; share one map when that file is next open for edits.
+const NEEDS: Record<string, { provider: string; label: string }> = {
+  sheets: { provider: "google_sheets", label: "Google Sheet" },
+  slack: { provider: "slack", label: "Slack" },
+  outlook: { provider: "outlook", label: "Outlook" },
+  teams: { provider: "teams", label: "Teams" },
+  drive: { provider: "google_drive", label: "Google Drive" },
+  calendar: { provider: "google_calendar", label: "Google Calendar" },
+  telegram: { provider: "telegram", label: "Telegram" },
+  airtable: { provider: "airtable", label: "Airtable" },
+  notion: { provider: "notion", label: "Notion" },
+  trello: { provider: "trello", label: "Trello" },
+  paymongo_link: { provider: "paymongo", label: "PayMongo" },
+  payment_status: { provider: "paymongo", label: "PayMongo" },
+  sms: { provider: "unisms", label: "UniSMS" },
+  meta_reply: { provider: "meta_messenger", label: "Facebook Messenger & Instagram" },
+};
+
+export type AppNeed = { provider: string; label: string; connected: boolean; steps: string[] };
+
+/** Each app the draft's steps need, once, in step order, with whether the workspace has it connected. */
+export function setupLeft(draft: Draft, connected: ReadonlySet<string>): AppNeed[] {
+  const needs = new Map<string, AppNeed>();
+  for (const s of draft.steps) {
+    const app = NEEDS[s.type];
+    if (!app) continue;
+    const need = needs.get(app.provider) ?? { ...app, connected: connected.has(app.provider), steps: [] };
+    need.steps.push(s.id);
+    needs.set(app.provider, need);
+  }
+  return [...needs.values()];
+}

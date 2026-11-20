@@ -113,13 +113,28 @@ describe("email settings", () => {
     const token = lastLink()!;
     expect(lastText()).toContain("https://daloy.example.com/#/verify-sender/");
 
-    await agent.post("/settings/email/verify").send({ token }).expect(204);
+    expect((await agent.post("/settings/email/verify/status").send({ token }).expect(200)).body).toMatchObject({ state: "ready" });
+    expect(await readSender(db, userId)).toMatchObject({ status: "unverified" });
+    const attempts = await Promise.all([1, 2].map(() => agent.post("/settings/email/verify").send({ token })));
+    expect(attempts.map((result) => result.status).sort()).toEqual([204, 409]);
     expect(await readSender(db, userId)).toMatchObject({ status: "active" });
     // One use only.
-    await agent.post("/settings/email/verify").send({ token }).expect(400);
+    await agent.post("/settings/email/verify").send({ token }).expect(409);
+    expect((await agent.post("/settings/email/verify/status").send({ token })).body.state).toBe("used");
     // A confirmed sender's next test carries no link.
     expect((await agent.post("/settings/email/test").expect(200)).body).toMatchObject({ ok: true, needsConfirmation: false });
     expect(lastText()).not.toContain("verify-sender");
+  });
+
+  it("previews an expired link without activating the sender", async () => {
+    const { agent, userId } = await signedIn();
+    await agent.put("/settings/email/gmail").send({ address: "expired@gmail.com", appPassword: "aaaa bbbb cccc dddd" }).expect(200);
+    await agent.post("/settings/email/test").expect(200);
+    const token = lastLink()!;
+    await db.update(mailSenders).set({ verifyExpiresAt: new Date(0) }).where(eq(mailSenders.userId, userId));
+    expect((await agent.post("/settings/email/verify/status").send({ token })).body.state).toBe("expired");
+    await agent.post("/settings/email/verify").send({ token }).expect(410);
+    expect(await readSender(db, userId)).toMatchObject({ status: "unverified" });
   });
 
   it("a link sent to one owner cannot confirm another owner's sender", async () => {
@@ -129,6 +144,7 @@ describe("email settings", () => {
     await b.agent.put("/settings/email/gmail").send({ address: "b.shop@gmail.com", appPassword: "bbbb bbbb bbbb bbbb" }).expect(200);
     await a.agent.post("/settings/email/test").expect(200);
     const token = lastLink()!;
+    expect((await b.agent.post("/settings/email/verify/status").send({ token }).expect(200)).body).toEqual({ state: "invalid" });
     await b.agent.post("/settings/email/verify").send({ token }).expect(400);
     expect(await readSender(db, b.userId)).toMatchObject({ status: "unverified" });
     await request(server).post("/settings/email/verify").send({ token }).expect(401);

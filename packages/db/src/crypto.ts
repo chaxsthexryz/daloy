@@ -66,7 +66,7 @@ export async function secretValuesToHide(db: Pick<Db, "execute">, key: Buffer, u
     select 'connection:' || provider, credential_ciphertext, credential_iv, credential_auth_tag, 'meta' as kind from connections where user_id = ${userId} and provider = 'meta_messenger'
     union all
     select 'gmail_oauth', password_ciphertext, password_iv, password_auth_tag, 'oauth' as kind from mail_senders where user_id = ${userId} and auth_method = 'oauth' and password_ciphertext is not null`);
-  // OAuth, UniSMS, and Meta tokens too, as defense in depth: they should never reach history at all (decisions 0058, 0068, 0069).
+  // OAuth, UniSMS, and Meta tokens too, as defense in depth: they should never reach history at all (decisions 0058, 0074, 0075).
   // A token blob that does not decrypt was never usable, so it has nothing to hide and must not break every history page.
   const tokens = (r: EncryptedSecret & { name: string }) => {
     try {

@@ -3,9 +3,9 @@ import { useLanguage } from "./Language";
 import { useEffect, useReducer, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { api } from "./api";
 import { saveDraft } from "./AiDraft";
-import { PlanList } from "./AiFlow";
+import "./ai-workspace.css";
 import { approvalWanted, chatStep, connectedApps, wire, type ChatReply, type ChatState } from "./lib/ai-chat";
-import { closestTemplate, plainDraft, withLabels, withPeople } from "./lib/ai-build";
+import { closestTemplate, draftPlan, warningForLanguage, withLabels, withPeople } from "./lib/ai-build";
 import { Header } from "./Nav";
 import { startOfficeSetup, startPurchaseSetup } from "./OfficeRequests";
 
@@ -15,6 +15,39 @@ const NEEDS: Record<string, { provider: string; label: string }> = {
   slack: { provider: "slack", label: "Slack" },
   outlook: { provider: "outlook", label: "Outlook" },
   teams: { provider: "teams", label: "Teams" },
+  drive: { provider: "google_drive", label: "Google Drive" },
+  calendar: { provider: "google_calendar", label: "Google Calendar" },
+  telegram: { provider: "telegram", label: "Telegram" },
+  airtable: { provider: "airtable", label: "Airtable" },
+  notion: { provider: "notion", label: "Notion" },
+  trello: { provider: "trello", label: "Trello" },
+  paymongo_link: { provider: "paymongo", label: "PayMongo" },
+  payment_status: { provider: "paymongo", label: "PayMongo" },
+  sms: { provider: "unisms", label: "UniSMS" },
+  meta_reply: { provider: "meta_messenger", label: "Facebook Messenger & Instagram" },
+};
+const OUTPUT: Record<string, string> = {
+  approval: "Approval decision",
+  condition: "Selected branch",
+  email: "Email delivery",
+  outlook: "Email delivery",
+  slack: "Channel message",
+  teams: "Channel message",
+  telegram: "Chat message",
+  sms: "SMS delivery",
+  meta_reply: "DM reply",
+  ai: "AI result",
+  delay: "Resume time",
+  sheets: "Spreadsheet row",
+  drive: "Saved file",
+  http: "HTTP response",
+  booking: "Booking result",
+  calendar: "Calendar event",
+  paymongo_link: "Payment link",
+  payment_status: "Payment status",
+  airtable: "Table record",
+  notion: "Database page",
+  trello: "Board card",
 };
 const WHY: Record<string, string> = {
   "purchase-request": "You asked for an approval first. This one asks a person you name to approve each purchase.",
@@ -44,20 +77,24 @@ export function BuildWithAiPage({ email }: { email: string }) {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
   const [setupError, setSetupError] = useState("");
+  const [view, setView] = useState<"describe" | "review">("describe");
   const bottom = useRef<HTMLDivElement>(null);
   const box = useRef<HTMLTextAreaElement>(null);
   const busy = phase === "thinking" || phase === "turning-on";
   const reviewing = draft !== null && (phase === "summary" || phase === "turning-on");
 
   useEffect(() => {
-    api<{ connections: { provider: string; status: string }[] }>("GET", "/settings/connections").then(
+    const refresh = () => api<{ connections: { provider: string; status: string }[] }>("GET", "/settings/connections").then(
       (r) => setConnected(new Set(r.connections.filter((c) => c.status === "active").map((c) => c.provider))),
       () => setConnected(new Set()),
     );
+    void refresh();
+    window.addEventListener("focus", refresh);
+    return () => window.removeEventListener("focus", refresh);
   }, []);
   useEffect(() => {
     // The composer is sticky at the bottom, so scroll the page to its end to keep the newest message above it.
-    if (bottom.current) window.scrollTo({ top: document.documentElement.scrollHeight });
+    bottom.current?.scrollIntoView({ block: "nearest" });
   }, [turns, phase]);
 
   /** Only the owner's press gets here. A refused publish (an app it needs is not connected) returns to the summary. */
@@ -77,6 +114,7 @@ export function BuildWithAiPage({ email }: { email: string }) {
     if (busy) return;
     dispatch({ type: "send", text });
     setInput("");
+    setView("describe");
     setSaveError("");
     try {
       const reply = await api<ChatReply>("POST", "/ai/chat", {
@@ -85,6 +123,7 @@ export function BuildWithAiPage({ email }: { email: string }) {
         current: draft ? withLabels(draft.definition, { owner: email }) : undefined,
         apps: connectedApps(connected),
       });
+      if (reply.kind === "draft") setView("review");
       dispatch({ type: "reply", reply: reply.kind === "draft" ? { ...reply, definition: withPeople(reply.definition, { owner: email }) } : reply });
     } catch (err) {
       dispatch({ type: "failed", message: (err as Error).message });
@@ -117,7 +156,13 @@ export function BuildWithAiPage({ email }: { email: string }) {
     }
   }
 
+  function describe() {
+    setView("describe");
+    requestAnimationFrame(() => box.current?.focus());
+  }
+
   function startOver() {
+    setView("describe");
     dispatch({ type: "reset" });
     setInput("");
     setSaveError("");
@@ -133,8 +178,10 @@ export function BuildWithAiPage({ email }: { email: string }) {
   const empty = turns.length === 0;
   const template = closestTemplate({ approve: approvalWanted(turns) ? "yes" : "" }, turns.find((x) => x.role === "user")?.text ?? "");
   const setup = template.action ?? "link";
-  const plan = draft ? plainDraft(draft.definition, language) : null;
+  const plan = draft ? draftPlan(draft.definition, language) : null;
 
+  const showReview = reviewing && view === "review";
+  const firstRequest = turns.find(turn => turn.role === "user")?.text;
   const composer = (
     <form className="composer" onSubmit={send}>
       <label htmlFor="chat-text" className="composer-label">
@@ -171,12 +218,62 @@ export function BuildWithAiPage({ email }: { email: string }) {
 
   return (
     <main className="page creation-page creation-chat">
-      <Header title={t("Build with AI")} />
+      <header className="builder-head"><a href="#/">{t("Automations")}</a><Header title={t("Build with AI")} />
+        <nav className="builder-tabs" aria-label={t("Build with AI")}>
+          <button aria-current={!showReview ? "page" : undefined} onClick={describe}>{t("Describe")}</button>
+          <button aria-current={showReview ? "page" : undefined} disabled={!reviewing} onClick={() => setView("review")}>{t("Review plan")}</button>
+        </nav>
+      </header>
+      {showReview && draft && plan ? (
+        <section className="builder-split" aria-labelledby="review-title">
+          <div className="plan-body"><h2 id="review-title">{t("Check the draft: {name}", { name: draft.name })}</h2><p>{draft.summary}</p>
+            <table className="plan-table"><caption className="visually-hidden">{t("Review plan")}</caption><thead><tr>{["Step", "Action", "App", "Output"].map(label => <th key={label}>{t(label)}</th>)}</tr></thead>
+              <tbody><tr><th scope="row">{t("When")}</th><td>{plan.when}</td><td>{t(draft.definition.trigger.type)}</td><td>{t("Trigger data")}</td></tr>
+                {plan.rows.map(({ step, action }, index) => <tr key={step.id}><th scope="row">{index + 1}</th><td>{action}</td><td>{t(NEEDS[step.type]?.label ?? step.type)}</td><td>{t(OUTPUT[step.type] ?? "Run result")}</td></tr>)}
+              </tbody>
+            </table>
+            <h3>{t("Check before turning on")}</h3>
+            {draft.warnings.length ? <ul>{draft.warnings.map(w => <li key={w}>{warningForLanguage(w, language)}</li>)}</ul> : <p>{t("The checker found nothing to fix.")}</p>}
+          </div>
+          <aside className="builder-details"><h2>{t("Sample run")}</h2><p>{plan.when}</p>{plan.rows[0] && <><h3>{t("First action")}</h3><p>{plan.rows[0].action}</p></>}<h3>{t("Your request")}</h3><p>{firstRequest}</p>
+                <h3>{t("Apps this needs")}</h3>
+                {Object.keys(NEEDS).some((kind) => draft.definition.steps.some((s) => s.type === kind)) ? (
+                  <ul className="list">
+                    {Object.entries(NEEDS)
+                      .filter(([kind]) => draft.definition.steps.some((s) => s.type === kind))
+                      .map(([kind, app]) => (
+                        <li key={kind}>
+                          {t(app.label)}: {connected.has(app.provider) ? t("Connected") : <a href="#/apps" target="_blank" rel="noopener">{t("Connect in Apps")}</a>}
+                        </li>
+                      ))}
+                  </ul>
+                ) : (
+                  <p>{t("No apps are needed.")}</p>
+                )}
+                <div className="actions">
+                  <button type="button" disabled={saving || phase !== "summary"} onClick={() => void turnOn()}>
+                    {t("Turn it on")}
+                  </button>
+                  <button type="button" disabled={busy} onClick={describe}>
+                    {t("Change something")}
+                  </button>
+                  <button type="button" className="primary" disabled={saving || busy} onClick={save}>
+                    {t("Save as draft")}
+                  </button>
+                </div>
+                <p role="alert" className="message error" hidden={!saveError && !(phase === "summary" && error)}>
+                  {saveError || (error && `${t("It is built, but it could not be turned on: ")}${error}`)}
+                </p>
+
+          </aside>
+        </section>
+      ) : <div className="builder-split"><div className="describe-body"><h2>{t("Describe your automation")}</h2>
       <div className={`ai-build${empty ? " ai-empty" : ""}`}>
         {!empty && (
           <section className="chat" aria-label={t("Conversation")} role="log" aria-live="polite">
             {turns.map((turn, i) => (
               <div key={i} className={`chat-line ${turn.role}`}>
+                {turn.role === "assistant" && <div className="assistant-id"><img src="/grok.svg" alt="" />{t("AI assistant")}</div>}
                 <p>{turn.text}</p>
                 {turn.choices && turn.choices.length > 0 && (
                   <ul className="chat-chips" aria-label={t("Answers")}>
@@ -201,59 +298,11 @@ export function BuildWithAiPage({ email }: { email: string }) {
                 {phase === "turning-on" ? t("Turning it on...") : t("Thinking...")}
               </div>
             )}
-            {reviewing && draft && plan && (
-              <section className="chat-line assistant chat-draft" aria-labelledby="review-title">
-                <h2 id="review-title">{t("Check the draft: {name}", { name: draft.name })}</h2>
-                <p>{draft.summary}</p>
-                <PlanList lead={plan.when} steps={plan.steps} warnings={draft.warnings} cleanNote="The checker found nothing to fix." />
-                <h3>{t("Apps this needs")}</h3>
-                {Object.keys(NEEDS).some((kind) => draft.definition.steps.some((s) => s.type === kind)) ? (
-                  <ul className="list">
-                    {Object.entries(NEEDS)
-                      .filter(([kind]) => draft.definition.steps.some((s) => s.type === kind))
-                      .map(([kind, app]) => (
-                        <li key={kind}>
-                          {t(app.label)}: {connected.has(app.provider) ? t("Connected") : <a href="#/apps">{t("Connect in Apps")}</a>}
-                        </li>
-                      ))}
-                  </ul>
-                ) : (
-                  <p>{t("No apps are needed.")}</p>
-                )}
-                <div className="actions">
-                  <button type="button" className="primary" disabled={saving || phase !== "summary"} onClick={() => void turnOn()}>
-                    {t("Turn it on")}
-                  </button>
-                  <button type="button" disabled={busy} onClick={() => box.current?.focus()}>
-                    {t("Change something")}
-                  </button>
-                  <button type="button" disabled={saving || busy} onClick={save}>
-                    {t("Save as draft")}
-                  </button>
-                </div>
-                <p role="alert" className="message error" hidden={!saveError && !(phase === "summary" && error)}>
-                  {saveError || (error && `${t("It is built, but it could not be turned on: ")}${error}`)}
-                </p>
-              </section>
-            )}
             <div ref={bottom} />
           </section>
         )}
 
         {composer}
-
-        {empty && (
-          <ul className="demo-starters ai-starters" aria-label={t("Examples")}>
-            {STARTERS.map((x) => (
-              <li key={x.role}>
-                <button type="button" onClick={() => starter(t(x.text))}>
-                  <strong>{t(x.role)}</strong>
-                  <span className="muted">{t(x.text)}</span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
 
         {phase === "error" && (
           <>
@@ -282,7 +331,21 @@ export function BuildWithAiPage({ email }: { email: string }) {
             </section>
           </>
         )}
-      </div>
+      </div></div><aside className="builder-details"><h2>{t("Conversation details")}</h2>
+        {firstRequest && <><h3>{t("Your request")}</h3><p>{firstRequest}</p></>}
+        {draft && <><h3>{draft.name}</h3><p>{draft.summary}</p><button disabled={!reviewing} onClick={() => setView("review")}>{t("Review plan")}</button></>}
+        {empty && <><h3>{t("Examples")}</h3>
+          <ul className="demo-starters ai-starters" aria-label={t("Examples")}>
+            {STARTERS.map((x) => (
+              <li key={x.role}>
+                <button type="button" onClick={() => starter(t(x.text))}>
+                  <strong>{t(x.role)}</strong>
+                  <span className="muted">{t(x.text)}</span>
+                </button>
+              </li>
+            ))}
+          </ul></>}
+      </aside></div>}
     </main>
   );
 }

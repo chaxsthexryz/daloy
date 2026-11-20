@@ -264,6 +264,8 @@ describe("PayMongo webhook", () => {
     await post(pathB, body).expect(200);
     expect((await post(pathA, body).expect(200)).body).toEqual({ ok: true });
     expect(await statusOf(p.id)).toBe("paid");
+    expect((await a.agent.get("/settings/connections")).body.latestPayment).toMatchObject({ status: "paid", live: false });
+    expect((await b.agent.get("/settings/connections")).body.latestPayment).toBeNull();
   });
 
   it("keeps a refund that arrives first, and a later paid event ends refunded without starting paid listeners (M5)", async () => {

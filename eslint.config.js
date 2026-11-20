@@ -3,7 +3,7 @@ import { defineConfig } from "eslint/config";
 import tseslint from "typescript-eslint";
 
 export default defineConfig([
-  { ignores: ["**/node_modules", "**/dist", "**/coverage", "docs/design", "site/demo"] },
+  { ignores: ["**/node_modules", "**/dist", "**/coverage", "docs/design", "site/demo", ".claude"] },
   js.configs.recommended,
   tseslint.configs.recommended,
   // The landing page's one hand-written script runs in the browser.

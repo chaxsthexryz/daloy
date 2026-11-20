@@ -14,3 +14,5 @@ ebe0ab7867bec1d5dff066b2d18ebae0c6812ad9:packages/db/src/paymongo.test.ts:stripe
 6d4983f018c905a10f108ceda962210dbd6692e1:docs/manual-test-workflows.md:curl-auth-header:26
 # Synthetic marker value that the Ask test checks never reaches the model.
 40d2427a66ce958537a6732d07bd244fee614b8d:apps/api/src/ask-api.test.ts:stripe-access-token:82
+# Synthetic Gemini key in the AI model settings e2e test that checks the key is masked and never echoed.
+d66125f5db811092e23a68f5289bee8954a740f7:e2e/workspace-ai.spec.ts:generic-api-key:39

@@ -1,7 +1,7 @@
 import { translate, type Language } from "./lib/locale";
 import { useLanguage } from "./Language";
 import type { Step } from "@daloy/engine";
-import { BaseEdge, Background, Controls, getBezierPath, Handle, Position, ReactFlow, type Edge, type EdgeProps, type Node, type NodeProps } from "@xyflow/react";
+import { BaseEdge, Background, Controls, EdgeLabelRenderer, getBezierPath, getSmoothStepPath, Handle, Panel, Position, ReactFlow, useReactFlow, useViewport, type Edge, type EdgeProps, type Node, type NodeProps } from "@xyflow/react";
 import { useEffect, useMemo, useState } from "react";
 import { toFlow, type Draft, type RunEdgeData, type StepNodeData } from "./lib/graph";
 import { runFlow, STATUS, type FlowRun } from "./lib/run-flow";
@@ -127,6 +127,98 @@ function RunEdge({ id, sourceX, sourceY, targetX, targetY, sourcePosition, targe
         </circle>
       )}
     </>
+  );
+}
+
+/** Editor node data: the shared node data plus the step's place in the list and an app it still needs. */
+export type EditorNodeData = StepNodeData & { index?: number; needsApp?: string };
+
+function EditorTriggerNode({ data }: NodeProps<Node<EditorNodeData, "trigger">>) {
+  const { t } = useLanguage();
+  return (
+    <div className={nodeClass("node a7-node trigger-node", data.status)}>
+      <span className="a7-node-row">
+        <span className="a7-node-kicker a7-when">{t("When")}</span>
+        <span className="a7-node-note">{t(data.trigger!.type)}</span>
+      </span>
+      <span className="node-title">{t("Trigger")}</span>
+      <Status status={data.status} />
+      <Handle type="source" position={Position.Bottom} isConnectable={false} />
+    </div>
+  );
+}
+
+function EditorStepNode({ data }: NodeProps<Node<EditorNodeData, "step">>) {
+  const { t, language } = useLanguage();
+  const step = data.step!;
+  return (
+    <div className={nodeClass(`node a7-node${data.needsApp ? " a7-needs-app" : ""}`, data.status)}>
+      <Handle type="target" position={Position.Top} isConnectable={false} />
+      <span className="a7-node-row">
+        <span className="a7-node-kicker">
+          {data.index} · {t(TYPE_NAMES[step.type]!)}
+        </span>
+        {data.needsApp && <span className="a7-node-note a7-warn">{t("Not connected")}</span>}
+      </span>
+      <span className="node-title">{step.id}</span>
+      <span className="node-summary">{summary(step, language)}</span>
+      <Status status={data.status} />
+      {data.branches ? (
+        data.branches.map((b, i) => (
+          <Handle key={b} id={b} type="source" position={Position.Bottom} isConnectable={false} style={{ left: `${((i + 1) / (data.branches!.length + 1)) * 100}%` }} />
+        ))
+      ) : (
+        <Handle type="source" position={Position.Bottom} isConnectable={false} />
+      )}
+    </div>
+  );
+}
+
+/** The editor's edge: square corners, the branch as a coloured pill, and the run state when a test run is drawn. */
+function EditorEdge({ id, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, label, data }: EdgeProps<Edge<Partial<RunEdgeData> & { on?: string }>>) {
+  const [path, labelX, labelY] = getSmoothStepPath({ sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, borderRadius: 0 });
+  const reduced = useReducedMotion();
+  const state = data?.state;
+  return (
+    <>
+      <BaseEdge id={id} path={path} className={state ? `run-edge ${state}` : "a7-edge"} data-state={state} />
+      {label && (
+        <EdgeLabelRenderer>
+          <span className="a7-branch nodrag nopan" data-branch={data?.on} style={{ transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)` }}>
+            {label}
+          </span>
+        </EdgeLabelRenderer>
+      )}
+      {state === "flowing" && !reduced && (
+        <circle r={4} className="run-dot">
+          <animateMotion dur="1.2s" repeatCount="indefinite" path={path} calcMode="linear" />
+        </circle>
+      )}
+    </>
+  );
+}
+
+export const editorNodeTypes = { trigger: EditorTriggerNode, step: EditorStepNode };
+export const editorEdgeTypes = { editor: EditorEdge };
+
+/** Zoom out, the zoom level, zoom in and fit, in the canvas's bottom-left corner. */
+export function ZoomBar() {
+  const { t } = useLanguage();
+  const { zoomIn, zoomOut, fitView } = useReactFlow();
+  const { zoom } = useViewport();
+  return (
+    <Panel position="bottom-left" className="a7-zoom">
+      <button type="button" aria-label={t("Zoom Out")} onClick={() => void zoomOut()}>
+        <span aria-hidden="true">−</span>
+      </button>
+      <span className="a7-zoom-level">{Math.round(zoom * 100)}%</span>
+      <button type="button" aria-label={t("Zoom In")} onClick={() => void zoomIn()}>
+        <span aria-hidden="true">+</span>
+      </button>
+      <button type="button" className="a7-fit" onClick={() => void fitView({ maxZoom: 1 })}>
+        {t("Fit")}
+      </button>
+    </Panel>
   );
 }
 

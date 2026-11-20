@@ -19,7 +19,7 @@ export function GoogleCalendarCard({ conn, configured, outcome, onChange }: { co
 
   return (
     <ConnectPanel
-      slug="google-calendar"
+      slug="google-calendar" sectionLabel="Booking calendar"
       name="Google Calendar"
       connectLabel="Connect with Google"
       configured

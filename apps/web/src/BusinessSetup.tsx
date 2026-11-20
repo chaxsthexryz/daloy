@@ -1,7 +1,8 @@
 import "./workspace-admin.css";
+import "./apps-design.css";
 import { Text } from "./Language";
 import { useLanguage } from "./Language";
-import { WEBSITE_INQUIRY_SLUG, websiteInquiryDefinition } from "@daloy/engine";
+import { inkFor, WEBSITE_INQUIRY_SLUG, websiteInquiryDefinition } from "@daloy/engine";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { api, ApiError, type Workflow } from "./api";
 import { ConnectPanel, useAction } from "./ConnectPanel";
@@ -31,7 +32,7 @@ export function BusinessSetupPage() {
   useEffect(() => void load(), []);
 
   return (
-    <main className="page narrow workspace-admin admin-business">
+    <main className="page workspace-admin admin-business motion-page">
       <header className="toolbar plain">
         {back}
         <h1><Text>Business</Text></h1>
@@ -43,8 +44,8 @@ export function BusinessSetupPage() {
         <p><Text>Loading…</Text></p>
       ) : (
         <>
-          <ProfileForm profile={data.profile} onSaved={load} />
-          <BrandKit />
+          <div className="business-grid"><ProfileForm profile={data.profile} onSaved={load} />
+          <BrandKit name={data.profile?.businessName} /></div>
           <InquiryForm data={data} />
         </>
       )}
@@ -52,10 +53,10 @@ export function BusinessSetupPage() {
   );
 }
 
-type Brand = { accent: string | null; logo: boolean };
+type Brand = { logoUrl?: string; accent: string | null; logo: boolean };
 
 /** Logo and accent colour (decision 0050). The server checks type, size and colour again; this only saves a round trip. */
-function BrandKit() {
+function BrandKit({ name }: { name?: string | null }) {
   const { t } = useLanguage();
   const [brand, setBrand] = useState<Brand | null>(null);
   const [colour, setColour] = useState("#1a73e8");
@@ -63,7 +64,7 @@ function BrandKit() {
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
   const file = useRef<HTMLInputElement>(null);
-  const load = () => api<Brand>("GET", "/settings/brand").then((b) => { setBrand(b); if (b.accent) setColour(b.accent); }, (e: Error) => setError(e.message));
+  const load = () => api<Brand>("GET", "/settings/brand").then((b) => { setBrand(b); setColour(b.accent ?? "#1a73e8"); }, (e: Error) => setError(e.message));
   useEffect(() => void load(), []);
   const run = async (done: string, fn: () => Promise<unknown>) => {
     setError("");
@@ -111,6 +112,13 @@ function BrandKit() {
       <div className="actions">
         <button type="button" onClick={() => void run("Colour saved.", () => api("PUT", "/settings/brand", { accent: colour }))}><Text>Save colour</Text></button>
         {brand?.accent && <button type="button" onClick={() => void run("Colour cleared.", () => api("PUT", "/settings/brand", { accent: null }))}><Text>Clear colour</Text></button>}
+      </div>
+      <div className="brand-preview">
+        <h3>{t("How your public form will look")}</h3>
+        {brand?.logo && <img src={preview || brand.logoUrl} alt="" />}
+        <strong>{name || t("Your business")}</strong>
+        <p>{t("Your email")}</p><div className="example-field">you@example.com</div>
+        <span className="preview-send" style={{ background: colour, color: inkFor(colour) }}>{t("Send")}</span>
       </div>
       <p role="status">{t(status)}</p>
       <p role="alert" className="message error" hidden={!error}>{error}</p>
@@ -286,7 +294,7 @@ function Paused({ sender }: { sender: Sender | null }) {
  * password card as before.
  */
 export function GmailCard({ data, google, outcome, onChange }: { data: Settings; google: boolean; outcome?: string; onChange: () => Promise<void> }) {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const [test, setTest] = useState<TestResult | null>(null);
   const { error, busy, act } = useAction(onChange);
   if (!google) return <SenderSection data={data} onChange={onChange} />;
@@ -294,23 +302,34 @@ export function GmailCard({ data, google, outcome, onChange }: { data: Settings;
   const live = sender && sender.status !== "disconnected" ? sender : null;
   return (
     <ConnectPanel
-      slug="gmail"
+      slug="gmail" sectionLabel="Email sender"
       name="Gmail"
       configured
       connectLabel="Connect Gmail with Google"
       label="Gmail:"
       conn={live && { account: live.address, status: live.status, lastError: live.lastError }}
-      status={live && <SenderLine sender={live} />}
+      status={live && <>
+        <p className="in-use">Gmail: <strong>{live.address}</strong> <span className="tag">{t(PILL[live.status])}</span></p>
+        {live.status !== "failed" && <p>{t(live.authMethod === "oauth" ? "Connected with Google. Daloy can send email as you. Daloy cannot read your mail." : "Connected with an app password.")}</p>}
+      </>}
       outcome={outcome}
       intro={!live && <p><Text>Google will ask you to let Daloy send email as you. Daloy cannot read your mail. Automations that receive email still connect their inbox with an app password.</Text></p>}
-      after={test && <TestOutcome test={test} />}
+
       disconnect={() => api("POST", "/settings/email/disconnect")}
       removeHint="Daloy deleted its access to Gmail. If Google did not confirm it, or you made an app password for Daloy, remove Daloy in your Google account's security settings too."
       form={<GmailForm address={sender?.address ?? ""} title={t("Use an app password instead")} onSaved={async () => { setTest(null); await onChange(); }} />}
       onChange={onChange}
     >
       {!sender && <InstallationNote data={data} />}
+      {live && <>
+        <p>{t(live.status === "failed" && live.authMethod === "oauth" ? "Google no longer accepts Daloy's access" : STATUS[live.status])}</p>
+        {live.verifiedAt && <p>{t("Confirmed on {date}", { date: new Date(live.verifiedAt).toLocaleDateString(language === "tl" ? "fil-PH" : "en-PH") })}</p>}
+        {data.profile?.replyTo && <p>{t("Replies go to {address}", { address: data.profile.replyTo })}</p>}
+        {live.lastError && <p className="message error">{live.lastError}</p>}
+      </>}
       <Paused sender={sender} />
+      <h4>{t("Test email")}</h4>
+      {test && <TestOutcome test={test} />}
       <div className="actions">
         <button type="button" disabled={busy || sender?.status === "disconnected"} onClick={() => void act(async () => setTest(await api<TestResult>("POST", "/settings/email/test")))}>
           <Text>Send a test email to me</Text>
@@ -454,6 +473,7 @@ function InquiryForm({ data }: { data: Settings }) {
   return (
     <section aria-labelledby="inquiry-h">
       <h2 id="inquiry-h"><Text>Reply to website inquiries</Text></h2>
+      <a href="#/apps"><Text>Manage sender in Apps</Text></a>
       <p><Text>A visitor fills in your inquiry form. They get a thank-you reply, and the inquiry goes to your inbox. No AI is involved.</Text></p>
       {!ready ? (
         <p className="muted"><Text>Save a business name and an inbox for new inquiries above first.</Text></p>
@@ -526,32 +546,52 @@ function FormLink({ link, local, workflowId }: { link: string; local: boolean; w
 
 /** Opened from the link in the test email. The API checks that the signed-in owner is the one it was sent to. */
 export function VerifySenderPage({ token }: { token: string }) {
-  const [state, setState] = useState<"working" | "done" | string>("working");
-  // The link works once, and React runs effects twice in development, so claim it only once per page load.
-  const claimed = useRef(false);
+  const { t } = useLanguage();
+  type LinkState = "loading" | "ready" | "expired" | "used" | "invalid" | "working" | "done" | "error";
+  const [state, setState] = useState<LinkState>("loading");
+  const [address, setAddress] = useState("");
+  const [error, setError] = useState("");
   useEffect(() => {
-    if (claimed.current) return;
-    claimed.current = true;
-    api("POST", "/settings/email/verify", { token }).then(
-      () => setState("done"),
-      (e: Error) => setState(e.message),
+    let active = true;
+    api<{ state: "ready" | "expired" | "used" | "invalid"; address?: string }>("POST", "/settings/email/verify/status", { token }).then(
+      (result) => { if (active) { setState(result.state); setAddress(result.address ?? ""); } },
+      (err: Error) => { if (active) { setState("error"); setError(err.message); } },
     );
+    return () => { active = false; };
   }, [token]);
+  async function confirm() {
+    setState("working");
+    setError("");
+    try {
+      await api("POST", "/settings/email/verify", { token });
+      setState("done");
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 409) setState("used");
+      else if (err instanceof ApiError && err.status === 410) setState("expired");
+      else if (err instanceof ApiError && err.status === 400) setState("invalid");
+      else { setState("ready"); setError((err as Error).message); }
+    }
+  }
+  const message: Record<LinkState, string> = {
+    loading: "Loading…", ready: "Confirm this address to send customer emails from it. This link works once and lasts 30 minutes.",
+    working: "Confirming…", done: "Confirmed. Your automations now send from your Gmail address.",
+    expired: "This link has expired. Open Gmail in Apps and send a new test email.",
+    used: "This link was already used. Check your sender status in Apps.",
+    invalid: "This link is unavailable. Send a new test email.", error: "",
+  };
   return (
-    <main className="page narrow">
-      <h1><Text>Confirm your Gmail sender</Text></h1>
-      {state === "working" ? (
-        <p><Text>Confirming…</Text></p>
-      ) : state === "done" ? (
-        <p role="status"><Text>Confirmed. Your automations now send from your Gmail address.</Text></p>
-      ) : (
-        <p role="alert" className="message error">
-          {state}
-        </p>
-      )}
-      <p>
-        <a href="#/apps"><Text>Back to Apps</Text></a>
-      </p>
+    <main className="page workspace-admin verify-sender">
+      <article className="verify-card motion-page">
+        <span className="app-tile" aria-hidden="true">G</span>
+        <h1><Text>Confirm your Gmail sender</Text></h1>
+        <p role="status">{t(message[state])}</p>
+        {address && <p><strong>{address}</strong></p>}
+        {error && <p role="alert" className="message error">{t(error)}</p>}
+        <div className="actions">
+          {(state === "ready" || state === "working") && <button type="button" className="primary" disabled={state === "working"} onClick={() => void confirm()}>{t("Confirm sender")}</button>}
+          <a href="#/apps"><Text>Back to Apps</Text></a>
+        </div>
+      </article>
     </main>
   );
 }

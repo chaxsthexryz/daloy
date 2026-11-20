@@ -9,12 +9,13 @@ import { chromium, expect } from "@playwright/test";
 import { makeFixtures } from "./fixtures.mjs";
 import { checkNavigationAndActions, screens } from "./screens.mjs";
 
+const apps = process.env.DALOY_REVIEW === "apps" ? await import("./apps.mjs") : null;
 const dist = fileURLToPath(new URL("../../apps/web/dist", import.meta.url));
 const output = resolve(process.argv[2] ?? fileURLToPath(new URL("../../test-results/console-review/console-review.html", import.meta.url)));
 const origin = "http://127.0.0.1:17881";
-const layouts = [{ width: 1180, height: 883 }, { width: 390, height: 844 }];
+const layouts = [{ width: apps ? 1440 : 1180, height: apps ? 900 : 883 }, { width: 390, height: 844 }];
 const languages = ["en", "tl"];
-const browser = await chromium.launch();
+const browser = await chromium.launch({ executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH });
 
 try {
   const context = await browser.newContext({ reducedMotion: "reduce", timezoneId: "Asia/Manila", serviceWorkers: "block" });
@@ -50,7 +51,7 @@ try {
   });
 
   async function open(screen, language = "en") {
-    fixture = makeFixtures({ ...screen, language });
+    fixture = (apps?.fixtures ?? makeFixtures)({ ...screen, language });
     // A fresh document reloads the simulated sign-in and clears in-page state.
     await page.goto("about:blank");
     const response = await page.goto(origin + (screen.url ?? `/#/${screen.path}`));
@@ -62,7 +63,7 @@ try {
   for (const layout of layouts) {
     await page.setViewportSize(layout);
     for (const [index, language] of languages.entries()) {
-      for (const screen of screens.filter(({ title }) => title[index])) {
+      for (const screen of (apps?.screens ?? screens).filter(({ title }) => title[index])) {
         sample = `${screen.name}, ${language}, ${layout.width}px`;
         try {
           await open(screen, language);
@@ -83,12 +84,14 @@ try {
   }
 
   sample = "Keyboard and fixture actions";
-  await checkNavigationAndActions(page, open);
+  if (apps) await apps.checkActions(page, open);
+  else await checkNavigationAndActions(page, open);
   assert.deepEqual(issues, []);
-  console.info("Passed navigation, keyboard focus, no-show, archive and hosted form submission checks");
+  console.info("Passed interactive checks");
   await context.close();
 
-  const template = await readFile(new URL("./walkthrough.html", import.meta.url), "utf8");
+  const source = await readFile(new URL("./walkthrough.html", import.meta.url), "utf8");
+  const template = apps ? source.replaceAll("1180", "1440").replaceAll("Daloy console review", "Daloy Apps and Business walkthrough") : source;
   const commit = process.env.GITHUB_SHA ?? "";
   const data = JSON.stringify({ captures, commit }).replaceAll("<", "\\u003c");
   await mkdir(dirname(output), { recursive: true });

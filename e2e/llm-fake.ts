@@ -36,7 +36,11 @@ export function startLlmFake(port: number) {
       if (req.method === "GET" && req.url === "/api/tags") return res.end(JSON.stringify({ models: [{ name: "fake-model" }] }));
       if (req.method === "GET" && req.url === "/__control") return res.end(JSON.stringify({ aiRequests }));
       if (req.method !== "POST") return res.writeHead(404).end("{}");
-      const body = JSON.parse(raw) as { messages: { role?: string; content: string; images?: string[] }[] };
+      const body = JSON.parse(raw) as { model?: string; messages: { role?: string; content: string; images?: string[] }[] };
+      // W6: the AI model page's test. The model "fake-broken" is refused; the sample inquiry gets a label for any other.
+      if (body.model === "fake-broken") return res.writeHead(404).end(JSON.stringify({ error: "model 'fake-broken' not found" }));
+      if (body.messages.some((m) => m.content.includes("charged twice for my March invoice")))
+        return res.end(JSON.stringify({ message: { content: JSON.stringify({ label: "billing" }) }, prompt_eval_count: 40, eval_count: 3 }));
       // An AI step (buildPrompt): record the images and the user text, and answer an extract task.
       if (body.messages.some((m) => m.role === "system" && m.content.startsWith("You are one step in an automated workflow"))) {
         const user = body.messages.filter((m) => m.role === "user");

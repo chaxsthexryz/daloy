@@ -34,27 +34,32 @@ test("an owner starts from the top button, narrows the list, deletes a draft and
 
   // Problem filter and search, with the failed automation sorted first.
   await page.getByRole("link", { name: "Automations", exact: true }).first().click();
-  const cards = page.locator("ul.cards > li");
+  const rows = page.locator("tbody tr.ops-row");
   await expect(async () => {
     await page.reload();
-    await expect(cards.first()).toContainText("Problem", { timeout: 1000 });
+    await expect(rows.first()).toContainText("Problem", { timeout: 1000 });
   }).toPass({ timeout: 30_000 });
-  await page.getByRole("button", { name: "Problem", exact: true }).click();
-  await expect(cards).toHaveCount(1);
-  await expect(cards).toContainText("Broken");
-  await page.getByRole("button", { name: "All" }).click();
+  await page.getByLabel("Status:").selectOption("problem");
+  await expect(rows).toHaveCount(1);
+  await expect(rows).toContainText("Broken");
+  await page.getByLabel("Status:").selectOption("all");
   await page.getByLabel("Find an automation").fill("fin");
-  await expect(cards).toHaveCount(1);
-  await expect(cards).toContainText("Fine");
+  await expect(rows).toHaveCount(1);
+  await expect(rows).toContainText("Fine");
   await page.getByLabel("Find an automation").fill("");
 
-  // The draft is not a card; it sits under Drafts and can be deleted.
-  await expect(cards).toHaveCount(2);
-  await page.locator("summary", { hasText: "Drafts (1)" }).click();
+  // The draft is a row with the status Draft; its panel has Continue setup and Delete.
+  await expect(rows).toHaveCount(3);
+  await page.getByLabel("Status:").selectOption("draft");
+  await expect(rows).toHaveCount(1);
+  await rows.first().getByRole("button").click();
+  await expect(page.getByRole("link", { name: "Continue setup" })).toHaveAttribute("href", /#\/a\//);
   page.once("dialog", (d) => void d.accept());
   await page.getByRole("button", { name: "Delete" }).click();
-  await expect(page.locator("summary", { hasText: "Drafts" })).toHaveCount(0);
+  await expect(rows).toHaveCount(0);
   expect(await (await page.request.get("/workflows")).json()).toHaveLength(2);
+  await page.getByRole("button", { name: "Clear filters" }).click();
+  await expect(rows).toHaveCount(2);
 
   // On desktop the Activity table is a table: its heading row sits above the first row, at the same left edge.
   await page.goto(`/#/w/${broken}/runs`);
@@ -83,7 +88,7 @@ test("Settings in the menu sets light or dark on this device, and System follows
   const surface = page.getByRole("main");
   const background = () => surface.evaluate((el) => getComputedStyle(el).backgroundColor);
   expect(await theme()).toBe("light");
-  await expect(page.locator(".shell-main")).toHaveCSS("background-color", "rgb(241, 241, 239)");
+  await expect(page.locator(".shell-main")).toHaveCSS("background-color", "rgb(242, 245, 252)");
 
   await page.getByRole("link", { name: "Settings", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Settings", level: 1 })).toBeVisible();
@@ -101,11 +106,12 @@ test("Settings in the menu sets light or dark on this device, and System follows
   await expect(page.getByLabel("Dark")).toBeChecked();
   await expect.poll(background).not.toBe(light);
 
-  // The approved homepage stays light even when this device is set to Dark.
+  // The Automations table follows the theme too: Dark gives the dark surface and dark panel colours.
   await page.getByRole("link", { name: "Automations", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Automations", exact: true })).toBeVisible();
   expect(await theme()).toBe("dark");
-  await expect(page.locator(".shell-main")).toHaveCSS("background-color", "rgb(241, 241, 239)");
+  await expect(page.locator(".shell-main")).toHaveCSS("background-color", "rgb(11, 16, 32)");
+  await expect(page.locator("main.ops")).toHaveCSS("background-color", "rgb(19, 26, 48)");
   await page.getByRole("link", { name: "Settings", exact: true }).click();
   await expect(page.getByLabel("Dark")).toBeChecked();
   await expect.poll(background).not.toBe(light);
@@ -137,4 +143,96 @@ test("Apps lists each app as a card, and Connect opens that app's own setup", as
   await expect(page.getByRole("button", { name: "Close Slack" })).toHaveAttribute("aria-expanded", "true");
   await page.getByRole("button", { name: "Connected 0" }).click();
   await expect(page.getByText("Nothing is connected yet.")).toBeVisible();
+});
+
+test("desktop rail pushes the page, supports keyboard dismissal and respects reduced motion", async ({ page }) => {
+  await signUp(page);
+  const rail = page.locator(".sidebar");
+  const main = page.locator(".shell-main");
+  await page.mouse.move(500, 600);
+  await expect(rail).toHaveCSS("width", "64px");
+  const left = () => main.evaluate(node => node.getBoundingClientRect().left);
+  expect(await left()).toBe(64);
+  await page.screenshot({ path: test.info().outputPath("desktop-collapsed.png") });
+  // Advance the hover timer deterministically before allowing browser animations to run.
+  await page.clock.install();
+  await page.clock.pauseAt(new Date(Date.now() + 1000));
+  await page.mouse.move(20, 130);
+  await page.clock.runFor(149);
+  await expect(rail).not.toHaveAttribute("data-expanded", "true");
+  await page.mouse.move(500, 600);
+  await page.clock.runFor(200);
+  await expect(rail).not.toHaveAttribute("data-expanded", "true");
+  await page.clock.resume();
+  await rail.hover();
+  await expect(rail).toHaveCSS("width", "232px");
+  expect(await left()).toBe(232);
+  await page.mouse.move(600, 600);
+  await expect(rail).toHaveCSS("width", "64px");
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  const team = rail.getByRole("link", { name: "Team", exact: true });
+  await rail.getByRole("link", { name: "Build with AI", exact: true }).focus();
+  await page.keyboard.press("Tab");
+  await expect(team).toBeFocused();
+  await expect(rail).toHaveCSS("width", "232px");
+  await expect(rail).toHaveCSS("transition-duration", "0s");
+  await page.keyboard.press("Escape");
+  await expect(rail).toHaveCSS("width", "64px");
+  await expect(team).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(team).toHaveAttribute("aria-current", "page");
+  await page.mouse.move(20, 90);
+  await expect(rail).toHaveCSS("width", "232px");
+  await page.screenshot({ path: test.info().outputPath("desktop-team.png") });
+});
+
+test("phone menu closes with Escape, Close and route changes, including Back", async ({ page }) => {
+  await signUp(page);
+  await page.setViewportSize({width: 390, height: 844});
+  const menu = page.getByRole("button", { name: "Menu", exact: true });
+  const nav = page.locator("#main-menu");
+  await menu.click();
+  await expect(nav).toBeVisible();
+  await page.screenshot({ path: test.info().outputPath("phone-menu.png"), animations: "disabled" });
+  await page.keyboard.press("Escape");
+  await expect(menu).toBeFocused();
+  await menu.click();
+  await page.getByRole("button", { name: "Close", exact: true }).click();
+  await expect(menu).toBeFocused();
+  await menu.click();
+  await nav.getByRole("link", { name: "Team" }).click();
+  await expect(menu).toHaveAttribute("aria-expanded","false");
+  await menu.click();
+  await page.goBack();
+  await expect(nav).toBeHidden();
+});
+
+test("operator navigation and restricted landings stay scoped to their roles", async ({ page, browser }) => {
+  await signUp(page);
+  for (const role of ["operator", "requester", "approver"]) {
+    const response = await page.request.post("/workspace/invites", { data: { email: role + "@test.local", role } });
+    expect(response.ok()).toBe(true);
+    const member = await browser.newPage();
+    try {
+      await member.goto((await response.json()).link);
+      await member.getByLabel(/Password/).fill("e2e test password 1");
+      await member.getByRole("button", { name: "Join" }).click();
+      await expect(member.getByRole("heading", { name: role === "operator" ? "Automations" : "My requests", exact: true })).toBeVisible();
+      await expect(member.getByRole("link", { name: "Build with AI", exact: true })).toHaveCount(0);
+      if (role === "operator") {
+        const rail = member.locator(".sidebar");
+        await rail.hover();
+        await rail.getByRole("link", { name: "Bookings", exact: true }).click();
+        await expect(rail.getByRole("link", { name: "Bookings" })).toHaveAttribute("aria-current", "page");
+        await rail.getByRole("link", { name: "Account", exact: true }).click();
+        await expect(member).toHaveURL(/#\/account$/);
+        await rail.getByRole("button", { name: "Sign out" }).click();
+        await expect(member.getByRole("button", { name: "Sign in", exact: true })).toBeVisible();
+      } else {
+        await expect(member.locator(".sidebar")).toHaveCount(0);
+      }
+    } finally {
+      await member.close();
+    }
+  }
 });

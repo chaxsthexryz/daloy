@@ -37,7 +37,7 @@ export type ProviderUrls = {
   unisms?: string;
   /** PayMongo API base. Unset in test fakes: paymongo.ts falls back to the real one. */
   paymongo?: string;
-  /** Meta Graph API base and test-only CDN override for Messenger and Instagram DMs (decision 0069). */
+  /** Meta Graph API base and test-only CDN override for Messenger and Instagram DMs (decision 0075). */
   meta?: string;
   metaCdn?: string;
   airtable: string;
@@ -775,7 +775,7 @@ export async function teamsPost(urls: ProviderUrls, webhookUrl: string, text: st
   throw new ProviderError(`Teams rejected the card (${res.status}). Check that the workflow posts the card it receives.`, "invalid");
 }
 
-// ---------------------------------------------------------------- UniSMS (Philippine SMS, phase N7, decision 0068)
+// ---------------------------------------------------------------- UniSMS (Philippine SMS, phase N7, decision 0074)
 
 export type UnismsMessage = { recipient: string; content: string; senderId?: string; metadata?: Record<string, string> };
 

@@ -1,33 +1,56 @@
-import { Text, useLanguage } from "./Language";
-import { useEffect, useState } from "react";
-import { api, type RunSummary, type Workflow } from "./api";
-import { isDraft } from "./lib/drafts";
-import { Header } from "./Nav";
+import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import type { WorkflowDefinition } from "@daloy/engine";
+import { useLanguage } from "./Language";
+import { api, getUsage, type RunSummary, type Usage, type Workflow } from "./api";
+import { draftPlan } from "./lib/ai-build";
+import { arrange, counts, stateKey, statusOf, triggerLabel, withTrigger, type Filter } from "./lib/automations";
+import { dayBars, runStats, RUN_LIMIT } from "./lib/ops-stats";
+import { ago, plainState } from "./lib/states";
 import { FormEmbed } from "./FormEmbed";
-import "./automation-home.css";
-import { arrange, type Filter } from "./lib/automations";
-import { lastEvent, plainState } from "./lib/states";
 import type { User } from "./Team";
+import "./automations-ops.css";
 
-const FILTERS: [Filter, string][] = [
-  ["all", "All"],
+const STATUS_FILTERS: [Filter, string][] = [
+  ["all", "Any"],
   ["needs_you", "Needs you"],
   ["problem", "Problem"],
   ["waiting", "Waiting"],
+  ["on", "On"],
+  ["paused", "Paused"],
   ["off", "Off"],
+  ["draft", "Draft"],
 ];
 
-/** Home: one card per automation with its state, last event and the few things an owner does with it. */
+/** What GET /workflows/:id adds to a list row: the trigger, the published version and the newest version. */
+type Detail = {
+  trigger: { type: string } | null;
+  live: { version: number; createdAt: string; definition: WorkflowDefinition } | null;
+  latest: { version: number; definition: WorkflowDefinition } | null;
+};
+
+const PANEL_STEPS = 6;
+
+/** Home: the ops table. One row per automation, a strip of real counts above it and the selected one's next actions beside it. */
 export function Automations({ user }: { user: User }) {
-  const { t, language } = useLanguage();
+  const { t } = useLanguage();
   const owner = user.role === "owner";
   const [list, setList] = useState<Workflow[] | null>(null);
   const [listError, setListError] = useState(false);
-  const [review, setReview] = useState<RunSummary[]>([]);
+  const [runs, setRuns] = useState<RunSummary[] | null>(null);
+  const [review, setReview] = useState<RunSummary[] | null>(null);
+  const [usage, setUsage] = useState<Usage | null>(null);
+  const [details, setDetails] = useState<Record<string, Detail | null>>({});
   const [copied, setCopied] = useState("");
   const [error, setError] = useState("");
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
+  const [trigger, setTrigger] = useState("any");
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [sheet, setSheet] = useState(false);
+  const asked = useRef(new Set<string>());
+  const opener = useRef<HTMLElement | null>(null);
+  const closeButton = useRef<HTMLButtonElement>(null);
+
   const load = () => {
     api<Workflow[]>("GET", "/workflows").then(
       (l) => {
@@ -36,10 +59,37 @@ export function Automations({ user }: { user: User }) {
       },
       () => setListError(true),
     );
-    // Best effort: the strip is a pointer, so a failure here leaves it out instead of blocking the page.
-    api<RunSummary[]>("GET", "/runs?review=true").then(setReview, () => setReview([]));
+    // The figures around the table are best effort: a failure leaves that figure out instead of blocking the page.
+    api<RunSummary[]>("GET", "/runs?test=false").then(setRuns, () => setRuns(null));
+    api<RunSummary[]>("GET", "/runs?review=true").then(setReview, () => setReview(null));
+    getUsage().then(setUsage, () => setUsage(null));
   };
   useEffect(load, []);
+
+  // Triggers, versions and steps are not in the list, so each row's detail loads after it, four at a time.
+  useEffect(() => {
+    if (!list) return;
+    const todo = list.map((w) => w.id).filter((id) => !asked.current.has(id));
+    todo.forEach((id) => asked.current.add(id));
+    const worker = async () => {
+      for (let id = todo.shift(); id !== undefined; id = todo.shift()) {
+        const d = await api<Detail>("GET", `/workflows/${id}`).catch(() => null);
+        setDetails((prev) => ({ ...prev, [id]: d }));
+      }
+    };
+    void Promise.all([worker(), worker(), worker(), worker()]);
+  }, [list]);
+
+  const all = list ?? [];
+  const now = Date.now();
+  const total = counts(all);
+  const typeOf = useMemo(() => Object.fromEntries(Object.entries(details).flatMap(([id, d]) => (d?.trigger ? [[id, d.trigger.type]] : []))) as Record<string, string>, [details]);
+  const triggerTypes = [...new Set(Object.values(typeOf))].sort();
+  const shown = withTrigger(arrange(all, query, filter).shown, trigger, typeOf);
+  const selected = shown.find((w) => w.id === selectedId) ?? shown[0] ?? null;
+  const stats = runs ? runStats(runs, now) : null;
+  const reviewOf = (id: string) => (review ?? []).filter((r) => r.workflowId === id);
+  const filtered = query.trim() !== "" || filter !== "all" || trigger !== "any";
 
   const copy = (id: string, formId: string) => {
     const link = `${location.origin}/forms/${formId}`;
@@ -69,145 +119,360 @@ export function Automations({ user }: { user: User }) {
       setError((e as Error).message);
     }
   };
-  const all = list ?? [];
-  const statuses = [
-    { label: "On", color: "on", count: all.filter(w => w.live && !w.pausedAt).length },
-    { label: "Paused", color: "paused", count: all.filter(w => !!w.pausedAt).length },
-    { label: "Off", color: "off", count: all.filter(w => !w.pausedAt && !w.live && !isDraft(w)).length },
-    { label: "Drafts", color: "draft", count: all.filter(w => !w.pausedAt && isDraft(w)).length },
-  ];
-  const recent = all.flatMap(w => w.last ? [{ id: w.id, name: w.name, last: w.last }] : [])
-    .sort((a, b) => Date.parse(b.last.createdAt) - Date.parse(a.last.createdAt)).slice(0, 3);
 
-  const { shown, drafts } = arrange(list ?? [], query, filter);
+  const pick = (w: Workflow, from: HTMLElement | null) => {
+    setSelectedId(w.id);
+    // On a phone the details open as a sheet over the list; on a desktop they are always beside it.
+    if (matchMedia("(max-width: 799.98px)").matches) {
+      opener.current = from;
+      setSheet(true);
+    }
+  };
+  const closeSheet = () => setSheet(false);
+  // The list is inert while the sheet is open, so focus goes back to the row only after that has rendered.
+  const wasOpen = useRef(false);
+  useEffect(() => {
+    if (sheet) closeButton.current?.focus();
+    else if (wasOpen.current) opener.current?.focus();
+    wasOpen.current = sheet;
+  }, [sheet]);
+  useEffect(() => {
+    if (!sheet) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && closeSheet();
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [sheet]);
 
-  return (
-    <main className="page automation-home">
-      <Header title={t("Automations")} action={owner && <><a href="#/ai">{t("Build with AI")}</a><a className="primary" href="#/new"><Text>New automation</Text></a></>} />
-      {list && !listError && (
-        <div className="home-overview">
-          <section className="home-status">
-            <div className="home-panel-title"><h2>{t("Automation status")}</h2><span className="home-total">{list.length}</span></div>
-            <div className="home-meter" aria-hidden="true">{statuses.filter(s => s.count > 0).map(s => <i key={s.label} className={s.color} style={{flexGrow:s.count}} />)}</div>
-            <dl className="home-stats">{statuses.map(s => <div key={s.label}><dt><i className={s.color} />{t(s.label)}</dt><dd>{s.count}</dd></div>)}</dl>
-          </section>
+  const clear = () => {
+    setQuery("");
+    setFilter("all");
+    setTrigger("any");
+  };
+  const percent = (n: number) => `${(n * 100).toFixed(1)}%`;
+  const partial = t("Newest {count} runs only", { count: RUN_LIMIT });
 
-          <section className="home-attention"><h2>{t("Work queue")}</h2>
-            {(["needs_you", "problem", "waiting"] as const).map(key => (
-              <button key={key} type="button" aria-pressed={filter === key} onClick={() => {setQuery(""); setFilter(key); document.getElementById("find")?.focus();}}>
-                <span>{t(FILTERS.find(([value]) => value === key)![1])}</span><b>{arrange(list, "", key).shown.length}</b>
-              </button>
-            ))}
-          </section>
-          <section className="home-recent">
-            <div className="home-panel-title"><h2>{t("Recent activity")}</h2><a href="#/activity">{t("View all")} ↗</a></div>
-            {recent.length === 0 ? <p className="muted">{t("No activity yet")}</p> : <ul>{recent.map(({id,name,last}) => <li key={id}>
-              <a href={`#/runs/${last.runId}`}><strong>{name}</strong><time dateTime={last.createdAt}>{new Date(last.createdAt).toLocaleString(language === "tl" ? "fil-PH" : "en", {month:"short",day:"numeric",hour:"numeric",minute:"2-digit"})}</time></a>
-            </li>)}</ul>}
-          </section>
+  const needsYou = review ? (review.length >= RUN_LIMIT ? `${RUN_LIMIT}+` : String(review.length)) : String(total.needs_you);
 
+  const head = (
+    <header className="ops-head">
+      <div className="ops-title">
+        <h1>{t("Automations")}</h1>
+        {list && !listError && <span>{t("{count} total", { count: list.length })}</span>}
+      </div>
+      {owner && (
+        <div className="ops-actions">
+          <a className="ops-button" href="#/ai">{t("Build with AI")}</a>
+          <a className="ops-button dark" href="#/new">{t("New automation")}</a>
         </div>
       )}
-      {review.length > 0 && (
-        <p role="status" className="needs-you">
-          <strong>{review.length >= 50 ? t("50 or more") : review.length}</strong> {t(review.length === 1 ? "request needs you." : "requests need you.")}{" "}
-          <a href={`#/runs/${review[review.length - 1]!.id}`}><Text>Open the oldest</Text></a>
-        </p>
-      )}
-      <p role="status" className="muted" hidden={!copied}>
-        {copied}
-      </p>
+    </header>
+  );
+
+  return (
+    <main className="page ops">
+      {!(list && list.length > 0 && !listError) && head}
+
       {listError && (
-        <p role="alert" className="message error">
-          {t("Couldn't load your automations.")} <button type="button" onClick={load}><Text>Retry</Text></button>
+        <p role="alert" className="ops-alert error">
+          {t("Couldn't load your automations.")} <button type="button" onClick={load}>{t("Retry")}</button>
         </p>
       )}
-      <p role="alert" className="message error" hidden={!error}>
-        {error}
-      </p>
       {list === null ? (
-        listError ? null : <p><Text>Loading…</Text></p>
+        listError ? null : <p className="ops-muted">{t("Loading…")}</p>
       ) : list.length === 0 ? (
-        <p className="muted">{owner ? <>{t("No automations yet.")} <a href="#/new"><Text>Add your first one</Text></a>.</> : t("No automations yet.")}</p>
+        <p className="ops-muted">{owner ? <>{t("No automations yet.")} <a href="#/new">{t("Add your first one")}</a>.</> : t("No automations yet.")}</p>
       ) : (
-        <>
-          <div className="filters">
-            <div className="field">
-              <label htmlFor="find"><Text>Find an automation</Text></label>
-              <input id="find" type="search" value={query} onChange={(e) => setQuery(e.target.value)} />
+        <div className="ops-layout">
+          <div className="ops-main" inert={sheet}>
+            {head}
+            <section className="ops-kpis" aria-label={t("Overview")}>
+              <div>
+                <span>{t("Runs today")}</span>
+                <b>{stats ? stats.today : t("n/a")}</b>
+                {stats?.cappedToday && <small>{partial}</small>}
+              </div>
+              <div>
+                <span>{t("Success, 7 days")}</span>
+                <b>{stats ? (stats.rate === null ? t("n/a") : percent(stats.rate)) : t("n/a")}</b>
+                {stats?.cappedWeek && <small>{partial}</small>}
+              </div>
+              <button type="button" className="needs" aria-pressed={filter === "needs_you"} onClick={() => setFilter(filter === "needs_you" ? "all" : "needs_you")}>
+                <span>{t("Needs you")}</span>
+                <b>{needsYou}</b>
+              </button>
+              <button type="button" className="problems" aria-pressed={filter === "problem"} onClick={() => setFilter(filter === "problem" ? "all" : "problem")}>
+                <span>{t("Problems")}</span>
+                <b>{total.problem}</b>
+              </button>
+              {usage && (
+                <div>
+                  <span>{t("Live automations")}</span>
+                  <b>{usage.automations.live} {usage.automations.limit !== null && <i>{t("of {limit}", { limit: usage.automations.limit })}</i>}</b>
+                </div>
+              )}
+            </section>
+
+            {review && review.length > 0 && (
+              <p role="status" className="ops-alert attn">
+                <strong>{review.length >= RUN_LIMIT ? t("50 or more") : review.length}</strong> {t(review.length === 1 ? "request needs you." : "requests need you.")}{" "}
+                <a href={`#/runs/${review[review.length - 1]!.id}`}>{t("Open the oldest")}</a>
+              </p>
+            )}
+            <p role="status" className="ops-muted" hidden={!copied}>{copied}</p>
+            <p role="alert" className="ops-alert error" hidden={!error}>{error}</p>
+
+            <div className="ops-filters">
+              <label className="ops-search">
+                <span className="ops-sr">{t("Find an automation")}</span>
+                <svg width="13" height="13" viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="5" fill="none" stroke="currentColor" strokeWidth="1.6" /><path d="m11 11 3.5 3.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" /></svg>
+                <input type="search" value={query} placeholder={t("Search")} onChange={(e) => setQuery(e.target.value)} />
+              </label>
+              <label className="ops-select">
+                <span>{t("Status:")}</span>
+                <select value={filter} onChange={(e) => setFilter(e.target.value as Filter)}>
+                  {STATUS_FILTERS.map(([key, label]) => <option key={key} value={key}>{t(label)}</option>)}
+                </select>
+              </label>
+              <label className="ops-select">
+                <span>{t("Trigger:")}</span>
+                <select value={trigger} onChange={(e) => setTrigger(e.target.value)}>
+                  <option value="any">{t("Any")}</option>
+                  {triggerTypes.map((type) => <option key={type} value={type}>{t(triggerLabel(type))}</option>)}
+                  {trigger !== "any" && !triggerTypes.includes(trigger) && <option value={trigger}>{t(triggerLabel(trigger))}</option>}
+                </select>
+              </label>
+              {filtered && <button type="button" className="ops-link" onClick={clear}>{t("Clear filters")}</button>}
             </div>
-            <div className="actions" role="group" aria-label={t("Show")}>
-              {FILTERS.map(([key, label]) => (
-                <button key={key} type="button" aria-pressed={filter === key} onClick={() => setFilter(key)}>
-                  {t(label)}
-                </button>
-              ))}
-            </div>
+
+            <table className="ops-table">
+              <thead>
+                <tr>
+                  <th scope="col" className="c-dot"><span className="ops-sr">{t("Status")}</span></th>
+                  <th scope="col">{t("Name")}</th>
+                  <th scope="col" className="c-trigger">{t("Trigger")}</th>
+                  <th scope="col" className="c-bars">{t("7 days")}</th>
+                  <th scope="col" className="c-rate">{t("Success")}</th>
+                  <th scope="col" className="c-last">{t("Last run")}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {shown.length === 0 ? (
+                  <tr><td colSpan={6} className="ops-empty">{t("None match.")}</td></tr>
+                ) : (
+                  shown.map((w) => (
+                    <Row
+                      key={w.id}
+                      w={w}
+                      selected={selected?.id === w.id}
+                      reviewCount={reviewOf(w.id).length}
+                      runs={runs}
+                      detail={details[w.id]}
+                      loaded={w.id in details}
+                      now={now}
+                      onPick={pick}
+                    />
+                  ))
+                )}
+              </tbody>
+            </table>
+            {stats?.cappedWeek && <p className="ops-note">{t("The 7-day bars and success rates use the newest {count} runs only.", { count: RUN_LIMIT })}</p>}
           </div>
-          {shown.length === 0 ? (
-            <p className="muted"><Text>None match.</Text></p>
-          ) : (
-            <ul className="cards">
-              {shown.map((w) => (
-                <Card key={w.id} w={w} onCopy={copy} owner={owner} onPause={setPaused} />
-              ))}
-            </ul>
+
+          {selected && (
+            <>
+              {sheet && <div className="ops-backdrop" onClick={closeSheet} aria-hidden="true" />}
+              <Panel
+                key={selected.id}
+                w={selected}
+                owner={owner}
+                detail={details[selected.id]}
+                runs={runs}
+                review={reviewOf(selected.id)}
+                now={now}
+                sheet={sheet}
+                closeRef={closeButton}
+                onClose={closeSheet}
+                onCopy={copy}
+                onPause={setPaused}
+                onDelete={remove}
+              />
+            </>
           )}
-          {drafts.length > 0 && (
-            <details className="drafts">
-              <summary>{t("Drafts ({count})", { count: drafts.length })}</summary>
-              <ul className="list">
-                {drafts.map((w) => (
-                  <li key={w.id}>
-                    <a href={`#/a/${w.id}`}>{t("{name}: continue setup", { name: w.name })}</a> <span className="muted">{t("started {date}", { date: new Date(w.createdAt).toLocaleDateString() })}</span>{" "}
-                    {owner && (
-                      <button type="button" className="quiet" onClick={() => void remove(w)}>
-                        Delete
-                      </button>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            </details>
-          )}
-        </>
+        </div>
       )}
     </main>
   );
 }
 
-function Card({ w, onCopy, owner, onPause }: { w: Workflow; onCopy: (id: string, formId: string) => void; owner: boolean; onPause: (w: Workflow, paused: boolean) => void }) {
+function Row({ w, selected, reviewCount, runs, detail, loaded, now, onPick }: {
+  w: Workflow;
+  selected: boolean;
+  reviewCount: number;
+  runs: RunSummary[] | null;
+  detail: Detail | null | undefined;
+  loaded: boolean;
+  now: number;
+  onPick: (w: Workflow, from: HTMLElement | null) => void;
+}) {
   const { t, language } = useLanguage();
-  const state = w.last ? plainState(w.last) : null;
+  const status = statusOf(w);
+  const key = stateKey(w);
+  const tone = reviewCount > 0 || key === "needs_you" ? "needs" : key === "problem" ? "problem" : status;
+  const state = w.last ? plainState(w.last, now) : null;
+  const bars = runs ? dayBars(runs, w.id, now) : null;
+  const weekTotal = bars?.reduce((n, b) => n + b.total, 0) ?? 0;
+  const mine = (runs ?? []).filter((r) => r.workflowId === w.id && now - Date.parse(r.createdAt) < 7 * 86_400_000);
+  const done = mine.filter((r) => r.state === "succeeded").length;
+  const finished = done + mine.filter((r) => r.state === "failed").length;
+  const peak = Math.max(1, ...(bars ?? []).map((b) => b.total));
+
+  const note =
+    reviewCount > 0
+      ? { text: t(reviewCount === 1 ? "1 request needs you" : "{count} requests need you", { count: reviewCount }), kind: "needs" }
+      : status === "paused"
+        ? { text: t("Paused on {date}", { date: new Date(w.pausedAt!).toLocaleDateString(language === "tl" ? "fil-PH" : "en", { month: "short", day: "numeric" }) }), kind: "paused" }
+        : status === "draft"
+          ? { text: t("Draft, setup not finished"), kind: "" }
+          : status === "off"
+            ? { text: t(w.last ? "Off" : "Off, set up, never turned on"), kind: "" }
+            : w.scheduleMissedAt
+              ? { text: t("Missed its schedule"), kind: "problem" }
+              : state && state.key !== "done"
+                ? { text: t(state.note ?? state.label), kind: state.key === "problem" ? "problem" : state.key === "needs_you" ? "needs" : "" }
+                : null;
+
   return (
-    <li className="card">
-      <div className="card-head">
-        <h2>
-          <a href={w.setup ? `#/a/${w.id}` : `#/w/${w.id}`}>{w.name}</a>
-        </h2>
-        {w.pausedAt ? <span className="tag">{t("Paused")}</span> : <span className={`tag${w.live ? " ok" : ""}`}>{t(w.live ? "On" : "Off")}</span>}
-        {state && <span className={`state ${state.key}`}>{t(state.label)}</span>}
-        {w.scheduleMissedAt && <span className="state problem">{t("Missed its schedule")}</span>}
+    <tr className="ops-row" data-selected={selected || undefined} onClick={(e) => {
+      if (!(e.target as HTMLElement).closest("button")) onPick(w, e.currentTarget.querySelector("button"));
+    }}>
+      <td className="c-dot"><i className={`dot ${tone}`} aria-hidden="true" /></td>
+      <th scope="row" className="c-name">
+        <button type="button" aria-current={selected ? "true" : undefined} onClick={(e) => onPick(w, e.currentTarget)}>{w.name}</button>
+        {note && <span className={`sub ${note.kind}`}>{note.text}</span>}
+      </th>
+      <td className="c-trigger">{loaded ? (detail?.trigger ? t(triggerLabel(detail.trigger.type)) : <span className="dash">-</span>) : "…"}</td>
+      <td className="c-bars">
+        {bars === null ? t("n/a") : weekTotal === 0 ? <span className="ops-muted">{t(w.last ? "No runs this week" : "No runs")}</span> : (
+          <span className="bars" role="img" aria-label={t("{count} runs in the last 7 days", { count: weekTotal })}>
+            {bars.map((b, i) => <i key={i} className={b.failed ? "bad" : b.total === 0 ? "none" : undefined} style={{ height: b.total === 0 ? 2 : 4 + Math.round((b.total / peak) * 20) }} />)}
+          </span>
+        )}
+      </td>
+      <td className="c-rate">{runs === null ? t("n/a") : finished === 0 ? <span className="ops-muted">{t("n/a")}</span> : `${Math.round((done / finished) * 100)}%`}</td>
+      <td className="c-last">{w.last ? <time dateTime={w.last.createdAt}>{ago(w.last.createdAt, now, language)}</time> : <span className="ops-muted">{t("Never")}</span>}</td>
+    </tr>
+  );
+}
+
+function Panel({ w, owner, detail, runs, review, now, sheet, closeRef, onClose, onCopy, onPause, onDelete }: {
+  w: Workflow;
+  owner: boolean;
+  detail: Detail | null | undefined;
+  runs: RunSummary[] | null;
+  review: RunSummary[];
+  now: number;
+  sheet: boolean;
+  closeRef: RefObject<HTMLButtonElement | null>;
+  onClose: () => void;
+  onCopy: (id: string, formId: string) => void;
+  onPause: (w: Workflow, paused: boolean) => void;
+  onDelete: (w: Workflow) => void;
+}) {
+  const { t, language } = useLanguage();
+  const status = statusOf(w);
+  const guided = !!w.setup;
+  const oldest = review[review.length - 1];
+  const date = (iso: string) => new Date(iso).toLocaleDateString(language === "tl" ? "fil-PH" : "en", { month: "short", day: "numeric" });
+  const primary =
+    status === "draft"
+      ? { href: `#/a/${w.id}`, label: t("Continue setup") }
+      : oldest
+        ? { href: `#/runs/${oldest.id}`, label: t(review.length === 1 ? "Review 1 request" : "Review {count} requests", { count: review.length }) }
+        : guided
+          ? { href: `#/a/${w.id}`, label: t("Open") }
+          : { href: `#/w/${w.id}`, label: t("Open steps") };
+  const editable = owner && status !== "draft" && primary.href !== `#/w/${w.id}`;
+  const definition = detail?.live?.definition ?? detail?.latest?.definition;
+  const plan = (() => {
+    try {
+      return definition ? draftPlan(definition, language) : null;
+    } catch {
+      return null;
+    }
+  })();
+  const mine = (runs ?? []).filter((r) => r.workflowId === w.id);
+  const week = mine.filter((r) => now - Date.parse(r.createdAt) < 7 * 86_400_000).length;
+  const statusLabel = { on: "On", paused: "Paused", off: "Off", draft: "Draft" }[status];
+
+  return (
+    <aside className="ops-panel" aria-labelledby="ops-panel-title" data-sheet={sheet || undefined} role={sheet ? "dialog" : undefined} aria-modal={sheet || undefined}>
+      <div className="panel-top">
+        <span className={`panel-status ${status}`}><i className="dot" aria-hidden="true" />{t(statusLabel)}</span>
+        <span className="panel-version">
+          {detail?.live ? t("v{version} · published {date}", { version: detail.live.version, date: date(detail.live.createdAt) }) : detail?.latest ? t("v{version} · not published", { version: detail.latest.version }) : ""}
+        </span>
+        <button type="button" className="panel-close" ref={closeRef} onClick={onClose}>{t("Close")}</button>
       </div>
-      <p className="muted">
-        {lastEvent(w.last ?? null, Date.now(), language)}
-        {state?.note ? `. ${t(state.note)}` : ""}
-      </p>
-      {w.pausedAt && <p className="muted">{t("Paused: it starts no new runs from a form, link, email or schedule. Runs already started finish.")}</p>}
-      <div className="actions">
+      <h2 id="ops-panel-title">{w.name}</h2>
+      {w.pausedAt && <p className="panel-note">{t("Paused: it starts no new runs from a form, link, email or schedule. Runs already started finish.")}</p>}
+
+      <div className="panel-actions">
+        <a className="ops-button blue" href={primary.href}>{primary.label}</a>
+        {editable && <a className="ops-button" href={`#/w/${w.id}`}>{t("Edit")}</a>}
+        {owner && w.live && <button type="button" className="ops-button" onClick={() => onPause(w, !w.pausedAt)}>{t(w.pausedAt ? "Resume" : "Pause")}</button>}
+        {owner && status === "draft" && <button type="button" className="ops-button danger" onClick={() => onDelete(w)}>{t("Delete")}</button>}
+      </div>
+
+      {plan && plan.rows.length > 0 && (
+        <section className="panel-card">
+          <h3>{t("How it runs")}</h3>
+          <p className="panel-when">{plan.when}</p>
+          <ol>
+            {plan.rows.slice(0, PANEL_STEPS).map((r, i) => <li key={r.step.id}><b aria-hidden="true">{i + 1}</b><span>{r.action}</span></li>)}
+          </ol>
+          {plan.rows.length > PANEL_STEPS && <a href={`#/w/${w.id}`}>{t("{count} more steps", { count: plan.rows.length - PANEL_STEPS })}</a>}
+        </section>
+      )}
+
+      <section className="panel-runs">
+        <div className="panel-runs-head">
+          <h3>{t("Recent runs")}</h3>
+          <a href={`#/w/${w.id}/runs`}>{t("View all")}</a>
+        </div>
+        {runs === null ? (
+          <p className="ops-muted">{t("Runs could not be loaded.")}</p>
+        ) : mine.length === 0 ? (
+          <p className="ops-muted">{t("No activity yet")}</p>
+        ) : (
+          <ul>
+            {mine.slice(0, 4).map((r) => {
+              const s = plainState(r, now);
+              return (
+                <li key={r.id}>
+                  <a href={`#/runs/${r.id}`}>
+                    <span className={`run-state ${s.key}`}>{t(s.label)}</span>
+                    <span className="run-name">{r.reference ?? date(r.createdAt)}</span>
+                    <time dateTime={r.createdAt}>{ago(r.createdAt, now, language)}</time>
+                  </a>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </section>
+
+      <dl className="panel-facts">
+        <div><dt>{t("Runs in 7 days")}</dt><dd>{runs === null ? t("n/a") : week}</dd></div>
         {w.live && w.formId && (
-          <>
-            <button type="button" onClick={() => onCopy(w.id, w.formId!)}><Text>Copy form link</Text></button>
-            <FormEmbed link={`${location.origin}/forms/${w.formId}`} />
-          </>
+          <div className="panel-form">
+            <dt>{t("Public form")}</dt>
+            <dd>
+              <button type="button" className="ops-link" onClick={() => onCopy(w.id, w.formId!)}>{t("Copy form link")}</button>
+              <FormEmbed link={`${location.origin}/forms/${w.formId}`} />
+            </dd>
+          </div>
         )}
-        <a href={`#/w/${w.id}/runs`}><Text>Activity</Text></a>
-        {owner && w.live && (
-          <button type="button" className="quiet" onClick={() => onPause(w, !w.pausedAt)}>
-            {t(w.pausedAt ? "Resume" : "Pause")}
-          </button>
-        )}
-      </div>
-    </li>
+      </dl>
+    </aside>
   );
 }

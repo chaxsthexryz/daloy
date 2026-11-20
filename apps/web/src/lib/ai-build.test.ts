@@ -1,6 +1,6 @@
 import type { WorkflowDefinition } from "@daloy/engine";
 import { describe, expect, it } from "vitest";
-import { PEOPLE, closestTemplate, plainDraft, warningForLanguage, withLabels, withPeople } from "./ai-build";
+import { PEOPLE, closestTemplate, draftPlan, plainDraft, warningForLanguage, withLabels, withPeople } from "./ai-build";
 
 
 const def: WorkflowDefinition = {
@@ -107,6 +107,8 @@ describe("plainDraft", () => {
         { from: "yes", to: "then" },
       ],
     };
+    expect(draftPlan(d).rows.map(row => row.step.id)).toEqual(["first", "ask", "no", "yes", "then"]);
+    expect(draftPlan(d).rows[2]?.action).toMatch(/^If rejected:/);
     expect(plainDraft(d).steps).toEqual([
       "Wait 1 minute",
       "Ask boss@x.test to approve: Buy",

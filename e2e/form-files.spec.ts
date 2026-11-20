@@ -56,7 +56,7 @@ test("a form file is saved to Drive and downloaded from the run, and an SVG is r
   expect(runs).toHaveLength(1);
   await page.goto(`/#/runs/${runs[0]!.id}`);
   const link = page.getByRole("link", { name: /Download/ });
-  await expect(page.getByText("id front.png").first()).toBeVisible();
+  await expect(page.getByRole("region", { name: "Files" }).getByText("id front.png")).toBeVisible();
   const href = (await link.getAttribute("href"))!;
   expect(await link.getAttribute("download")).not.toBeNull();
   const file = await page.request.get(href);

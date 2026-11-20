@@ -14,10 +14,11 @@ test("sign in to the seeded demo and browse its workflows and runs", async ({ pa
   await page.getByLabel("Email").fill("demo@daloy.local");
   await page.getByLabel("Password").fill("daloy-demo-2026");
   await page.getByRole("button", { name: "Sign in" }).click();
-  for (const name of ["Inquiry triage", "Invoice follow-up", "Booking no-show follow-up"]) await expect(page.getByRole("link", { name })).toBeVisible();
+  for (const name of ["Inquiry triage", "Invoice follow-up", "Booking no-show follow-up"]) await expect(page.getByRole("button", { name })).toBeVisible();
   await shot(page, "workflows");
 
-  await page.getByRole("link", { name: "Inquiry triage" }).click();
+  await page.getByRole("button", { name: "Inquiry triage" }).click();
+  await page.getByRole("link", { name: "Open steps" }).click();
   // The trigger and five steps.
   await expect(page.locator(".react-flow__node")).toHaveCount(6);
   await shot(page, "editor");
@@ -31,7 +32,7 @@ test("sign in to the seeded demo and browse its workflows and runs", async ({ pa
   await shot(page, "run-history");
 
   await page.getByRole("table").getByRole("link").first().click();
-  await expect(page.getByRole("heading", { name: "What happened", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Run timeline" })).toBeVisible();
   await page.getByText("Details for a technician").click();
   await shot(page, "run");
 });

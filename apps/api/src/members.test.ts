@@ -271,6 +271,7 @@ describe("role permissions", () => {
       ["put", "/settings/email/gmail", only, {}],
       ["post", "/settings/email/test", only, {}],
       ["post", "/settings/email/verify", only, {}],
+      ["post", "/settings/email/verify/status", only, {}],
       ["post", "/settings/email/disconnect", only, {}],
       ["delete", "/settings/email/gmail", only],
       ["put", "/settings/connections/google-sheets", only, {}],

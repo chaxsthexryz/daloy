@@ -71,7 +71,7 @@ describe("sender resolution", () => {
     const [row] = await db.select().from(mailSenders).where(eq(mailSenders.userId, a));
     expect(JSON.stringify(row)).not.toContain("aaaabbbbccccdddd");
     // A ciphertext copied to another owner's row does not decrypt.
-    await db.insert(mailSenders).values({ ...row!, userId: b });
+    await db.insert(mailSenders).values({ ...row!, userId: b, verifyTokenHash: null });
     await expect(resolveSender(db, key, b)).rejects.toThrow();
   });
 

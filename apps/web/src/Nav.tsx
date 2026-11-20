@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import "./console-shell.css";
+import "./motion.css";
 import { useLanguage } from "./Language";
 import type { User } from "./Team";
 
@@ -25,74 +26,121 @@ function section(hash: string) {
 export function Shell({ user, hash, onSignOut, children }: { user: User; hash: string; onSignOut: () => void; children: ReactNode }) {
   const { t } = useLanguage();
   const [open, setOpen] = useState(false);
+  const [closing, setClosing] = useState(false);
   const menuButton = useRef<HTMLButtonElement>(null);
   const menu = useRef<HTMLElement>(null);
   const owner = user.role === "owner";
   const here = section(hash);
   // The phone menu closes on any page change, the browser's Back button included.
-  useEffect(() => setOpen(false), [hash]);
+  useEffect(() => { setOpen(false); setClosing(false); }, [hash]);
   useEffect(() => {
-    if (open) menu.current?.querySelector<HTMLAnchorElement>("a")?.focus();
-  }, [open]);
-  // `name` is the section the link marks, when its text differs from it (the bottom bar says "AI").
-  const link = (href: string, text: string, className?: string, name = text) => (
-    <a href={href} className={className} aria-current={here === name ? "page" : undefined} onClick={() => setOpen(false)}>
-      {t(text)}
-    </a>
-  );
+    if (open && !closing) menu.current?.querySelector<HTMLAnchorElement>("a")?.focus();
+  }, [open, closing]);
+  useEffect(() => {
+    if (!closing) return;
+    const reduced = matchMedia("(prefers-reduced-motion: reduce)");
+    const finish = () => { if (reduced.matches) { setOpen(false); setClosing(false); } };
+    reduced.addEventListener("change", finish);
+    finish();
+    return () => reduced.removeEventListener("change", finish);
+  }, [closing]);
+  const [hovered, setHovered] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const hoverTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => {
+    const wide = matchMedia("(min-width: 800px)");
+    const reset = () => {
+      clearTimeout(hoverTimer.current);
+      setHovered(false);
+      setFocused(false);
+      setOpen(false);
+      setClosing(false);
+    };
+    wide.addEventListener("change", reset);
+    return () => { clearTimeout(hoverTimer.current); wide.removeEventListener("change", reset); };
+  }, []);
+  function closePhone() {
+    menuButton.current?.focus();
+    if (matchMedia("(prefers-reduced-motion: reduce)").matches) setOpen(false);
+    else setClosing(true);
+  }
+  function link(href: string, text: string, icon?: string, name = text) {
+    return <a href={href} aria-current={here === name ? "page" : undefined} onClick={() => setOpen(false)}>
+      {icon && <svg className="rail-icon" aria-hidden="true"><use href={`/navigation.svg#${icon}`} /></svg>}
+      <span className={icon ? "rail-label" : undefined}>{t(text)}</span>
+    </a>;
+  }
   return (
-    <div className="shell console-shell">
-      <aside className="sidebar console-header">
+    <div className="shell console-shell" data-phone-open={open || undefined} onKeyDown={event => {
+      if (event.key !== "Escape") return;
+      clearTimeout(hoverTimer.current);
+      setHovered(false);
+      setFocused(false);
+      if (open) closePhone();
+    }}>
+      <aside className="sidebar console-header" data-expanded={hovered || focused || undefined}
+        data-closing={closing || undefined} inert={closing}
+        onAnimationEnd={event => {
+          if (event.animationName === "rail-sheet-out") { setOpen(false); setClosing(false); }
+        }}
+        onPointerEnter={event => {
+          if (event.pointerType === "touch" || !matchMedia("(min-width: 800px)").matches) return;
+          clearTimeout(hoverTimer.current);
+          if (matchMedia("(prefers-reduced-motion: reduce)").matches) setHovered(true);
+          else hoverTimer.current = setTimeout(() => setHovered(true), 150);
+        }}
+        onPointerLeave={event => {
+          clearTimeout(hoverTimer.current);
+          setHovered(false);
+          if (!event.currentTarget.querySelector(":focus-visible")) setFocused(false);
+        }}
+        onFocusCapture={() => setFocused(true)}
+        onBlurCapture={event => { if (!event.currentTarget.contains(event.relatedTarget)) setFocused(false); }}>
         <div className="sidebar-top">
-          <img src="/logo.svg" alt="Daloy" width="28" height="28" />
-          <span className="sidebar-name">Daloy</span>
-          {owner && (
-            <a href="#/new" className="primary top-new">
-              {t("New")}
-            </a>
-          )}
+          <svg className="rail-brand" aria-label="Daloy" role="img"><use href="/navigation.svg#mark" /></svg>
+          <span className="sidebar-name rail-label">Daloy</span>
+          {open
+            ? <button type="button" className="quiet phone-close" onClick={closePhone}>{t("Close")}</button>
+            : owner && <a href="#/new" className="primary top-new">{t("New")}</a>}
         </div>
-        <nav ref={menu} id="main-menu" aria-label={t("Main")} className={open ? "open" : undefined} onKeyDown={(event) => {
-          if (event.key === "Escape" && open) {
-            setOpen(false);
-            menuButton.current?.focus();
-          }
-        }}>
-          <span className="shell-nav-label">{t("Work")}</span>
-          {link("#/", "Automations")}
-          {(owner || user.role === "operator") && link("#/activity", "Activity")}
-          {(owner || user.role === "operator") && link("#/bookings", "Bookings")}
-          {owner && (
-            <>
-              <span className="shell-nav-label">{t("Build")}</span>
-              {link("#/new", "New automation")}
-              {link("#/ai", "Build with AI")}
-              <span className="shell-nav-label">{t("Workspace")}</span>
-              {link("#/team", "Team")}
-              {link("#/apps", "Apps")}
-              {link("#/settings/business", "Business")}
-              {link("#/advanced", "Advanced")}
-            </>
-          )}
-          {!owner && <span className="shell-nav-label">{t("Workspace")}</span>}
-          {link("#/settings", "Settings")}
-          <span className="muted who">{user.email}</span>
-          {link("#/account", "Account")}
-          <button type="button" className="quiet" onClick={onSignOut}>
-            {t("Sign out")}
-          </button>
+        <nav ref={menu} id="main-menu" aria-label={t("Main")} className={open ? "open" : undefined}>
+          <span className="shell-nav-label rail-label">{t("Work")}</span>
+          {link("#/", "Automations", "automations")}
+          {link("#/activity", "Activity", "activity")}
+          {link("#/bookings", "Bookings", "bookings")}
+          {owner && <>
+            <span className="shell-nav-label rail-label">{t("Build")}</span>
+            {link("#/new", "New automation", "new")}
+            {link("#/ai", "Build with AI", "ai")}
+          </>}
+          <span className="shell-nav-label rail-label">{t("Workspace")}</span>
+          {owner && <>
+            {link("#/team", "Team", "team")}
+            {link("#/apps", "Apps", "apps")}
+            {link("#/settings/business", "Business", "business")}
+            {link("#/advanced", "Advanced", "advanced")}
+          </>}
+          {link("#/settings", "Settings", "settings")}
+          <div className="rail-account">
+            <span className="who rail-label">{user.email}</span>
+            <a className="account-link" href="#/account" aria-current={here === "Account" ? "page" : undefined} onClick={() => setOpen(false)}>
+              <span className="rail-avatar" aria-hidden="true">{user.email.slice(0, 1).toUpperCase()}</span>
+              <span className="rail-label">{t("Account")}</span>
+            </a>
+            <button type="button" className="quiet sign-out" onClick={onSignOut}>{t("Sign out")}</button>
+          </div>
         </nav>
       </aside>
-      {/* Under 800 px: the main places within thumb reach, and the button that opens the whole menu above it. */}
       <nav className="bottom-bar" aria-label={t("Quick")}>
         {link("#/", "Automations")}
-        {(owner || user.role === "operator") && link("#/activity", "Activity")}
+        {link("#/activity", "Activity")}
         {owner && link("#/ai", "AI", undefined, "Build with AI")}
-        <button ref={menuButton} type="button" className="quiet menu-button" aria-expanded={open} aria-controls="main-menu" onClick={() => setOpen(!open)}>
+        <button ref={menuButton} type="button" className="quiet menu-button" aria-expanded={open && !closing} aria-controls="main-menu"
+          onClick={() => { if (open && !closing) closePhone(); else { setClosing(false); setOpen(true); } }}>
           {t("Menu")}
         </button>
       </nav>
-      <div className="shell-main">{children}</div>
+      <div className="shell-main" inert={open}>{children}</div>
     </div>
   );
 }

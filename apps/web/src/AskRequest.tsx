@@ -1,6 +1,9 @@
 import { useLanguage } from "./Language";
 import { useEffect, useState, type FormEvent } from "react";
-import { api, ApiError } from "./api";
+import { api, ApiError, type Run } from "./api";
+import type { Delivery } from "./Connections";
+import { PageHead, StatePill } from "./Runs";
+import { startedAt } from "./lib/activity";
 
 type Answer = { headline: string; lines: string[]; fix: { href: string; label: string } | null };
 type Reply = { runId: string; reference: string; workflowName: string; answers: { happened: Answer; why: Answer | null; next: Answer } };
@@ -13,8 +16,13 @@ const QUESTIONS: { key: Which; label: string }[] = [
   { key: "next", label: "What do I do now?" },
 ];
 
-/** AI_ASK (decision 0041): read Daloy's fixed answers for a request. With `reference` (from a run) nothing is typed; without it you pick one. Links only; the optional reword costs one AI action and changes no run. */
-export function AskRequest({ reference }: { reference?: string } = {}) {
+/**
+ * AI_ASK (decision 0041), O3 Doop frame jdE6cTyvay: a Questions card beside the Recorded answer. With `reference` (from a
+ * run) nothing is typed; without it you type or pick one. Links only; the optional reword costs one AI action and changes no run.
+ */
+type AskedRun = Run & { deliveryFailed: boolean };
+
+export function AskRequest({ reference, run }: { reference?: string; run?: AskedRun } = {}) {
   const { t, language: workspaceLanguage } = useLanguage();
   const [recent, setRecent] = useState<Recent[]>([]);
   const [text, setText] = useState("");
@@ -75,99 +83,141 @@ export function AskRequest({ reference }: { reference?: string } = {}) {
 
   const shown = reply ? (reply.answers[which] ?? reply.answers.happened) : null;
   return (
-    <section className="demo-card request-help" aria-labelledby="ask-title">
-      <h2 id="ask-title">{reference ? t("Ask what happened") : t("Ask about a request")}</h2>
-      {!reference && (
-      <form onSubmit={submit}>
-        <div className="field">
-          <label htmlFor="ask-reference">{t("Request reference")}</label>
-          <input id="ask-reference" value={text} maxLength={40} onChange={(e) => setText(e.target.value)} />
-        </div>
-        {recent.length > 0 && (
-          <>
-            <p className="muted">{t("Or pick a request that ran into a problem:")}</p>
-            <ul className="demo-starters">
-              {recent.map((r) => (
-                <li key={r.id}>
-                  <button type="button" onClick={() => void load(r.reference!)}>
-                    {r.reference}, {r.workflowName}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </>
+    <div className="act-ask">
+      <section className="act-card" aria-labelledby="ask-questions-h">
+        <h2 id="ask-questions-h">{t("Questions")}</h2>
+        {!reference && (
+          <form className="act-ask-find" onSubmit={submit}>
+            <label htmlFor="ask-reference">{t("Request reference")}</label>
+            <div className="act-filters">
+              <input id="ask-reference" value={text} maxLength={40} onChange={(e) => setText(e.target.value)} />
+              <button className="act-button blue" disabled={busy || !text.trim()}>{t("Ask")}</button>
+            </div>
+            {recent.length > 0 && (
+              <>
+                <p className="act-muted">{t("Or pick a request that ran into a problem:")}</p>
+                <ul className="act-picks">
+                  {recent.map((r) => (
+                    <li key={r.id}>
+                      <button type="button" className="act-link" onClick={() => void load(r.reference!)}>
+                        {r.reference}, {r.workflowName}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
+          </form>
         )}
-        <div className="actions">
-          <button className="primary" disabled={busy || !text.trim()}>
-            {t("Ask")}
-          </button>
-        </div>
-      </form>
-      )}
-      <p role="status" className="muted">
-        {busy ? t("Looking up the request...") : ""}
-      </p>
-      <p role="alert" className="message error" hidden={!error}>
-        {error}
-      </p>
-      {reply && shown && (
-        <div>
-          <h3>
-            {reply.reference}, {reply.workflowName}
-          </h3>
-          <div className="actions" role="group" aria-label={t("Question")}>
+        {reply && (
+          <div className="act-questions" role="group" aria-label={t("Question")}>
             {QUESTIONS.filter((q) => q.key !== "why" || reply.answers.why).map((q) => (
-              <button key={q.key} type="button" className={which === q.key ? "primary" : undefined} aria-pressed={which === q.key} onClick={() => choose(q.key)}>
+              <button key={q.key} type="button" aria-pressed={which === q.key} onClick={() => choose(q.key)}>
                 {t(q.label)}
               </button>
             ))}
           </div>
-          <p>
-            <strong>{shown.headline}</strong>
-          </p>
-          {shown.lines.length > 0 && (
-            <ul className="list">
-              {shown.lines.map((l, i) => (
-                <li key={i}>{l}</li>
-              ))}
-            </ul>
-          )}
-          <p>
-            {shown.fix && (
-              <>
-                <a href={shown.fix.href}>{shown.fix.label}</a>
-                {" · "}
-              </>
+        )}
+        <p role="status" className="act-muted">{busy ? t("Looking up the request...") : ""}</p>
+        <p role="alert" className="act-alert error" hidden={!error}>{error}</p>
+      </section>
+
+      <section className="act-card" aria-labelledby="ask-answer-h">
+        <h2 id="ask-answer-h">{t("Recorded answer")}</h2>
+        {!reply || !shown ? (
+          <p className="act-muted">{t(reference ? "Loading…" : "Type or pick a request to read what happened.")}</p>
+        ) : (
+          <>
+            {run && <p><StatePill run={run} /></p>}
+            <p className="act-headline">{shown.headline}</p>
+            {shown.lines.map((l, i) => (
+              <p key={i}>{l}</p>
+            ))}
+            {run && (
+              <p className="act-source">
+                {t("Started")} · {startedAt(run.createdAt, Date.now(), workspaceLanguage)}
+              </p>
             )}
-            <a href={`#/runs/${reply.runId}`}>{t("Open this request")}</a>
+            {shown.fix && <p><a href={shown.fix.href}>{shown.fix.label}</a></p>}
+            <details className="act-reword">
+              <summary>{t("Simpler wording")}</summary>
+              <div className="act-filters">
+                <button type="button" className="act-button" disabled={wording.busy} onClick={() => void reword()}>
+                  {t("Say it in simpler words (uses 1 AI action)")}
+                </button>
+                <select aria-label={t("Language")} value={language} onChange={(e) => setLanguage(e.target.value as "en" | "tl")}>
+                  <option value="en">English</option>
+                  <option value="tl">Tagalog</option>
+                </select>
+              </div>
+              <p role="status" className="act-muted">{wording.busy ? t("Asking the AI model...") : ""}</p>
+              {wording.text && (
+                <>
+                  <h3>{t("Written by the AI model")}</h3>
+                  <p>{wording.text}</p>
+                </>
+              )}
+              <p role="alert" className="act-alert error" hidden={!wording.error}>{wording.error}</p>
+            </details>
+            <p className="act-ask-foot">
+              <a href={`#/runs/${reply.runId}`}>{t("Open run detail")}</a>
+            </p>
+            <p className="act-muted">{t("Answers come from Daloy's own rules. Nothing here changes the request.")}</p>
+          </>
+        )}
+      </section>
+    </div>
+  );
+}
+
+const askHead = (t: ReturnType<typeof useLanguage>["t"], last: string, sub?: string) => (
+  <PageHead
+    crumbs={[{ label: "Daloy", href: "#/" }, { label: t("Activity"), href: "#/activity" }, { label: last }]}
+    title={t("Ask about a request")}
+    sub={sub}
+    actions={<a className="act-button" href="#/activity">{t("Workspace activity")}</a>}
+  />
+);
+
+/** #/activity/ask (O3 without a run): type or pick a request reference, then read the answers. */
+export function AskPage() {
+  const { t } = useLanguage();
+  return (
+    <main className="page act">
+      {askHead(t, t("Ask"))}
+      <div className="act-body motion-page">
+        <AskRequest />
+      </div>
+    </main>
+  );
+}
+
+/** #/runs/<id>/ask (O3): the answers for this run's request. The run and its deliveries are read once for the state pill and start time. */
+export function AskRunPage({ runId }: { runId: string }) {
+  const { t } = useLanguage();
+  const [run, setRun] = useState<AskedRun | null>(null);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    Promise.all([api<Run>("GET", `/runs/${runId}`), api<Delivery[]>("GET", `/deliveries?runId=${runId}`).catch(() => [])]).then(
+      ([r, deliveries]) => setRun({ ...r, deliveryFailed: deliveries.some((d) => d.state === "failed") }),
+      (e: Error) => setError(e.message),
+    );
+  }, [runId]);
+  return (
+    <main className="page act">
+      {askHead(t, run?.reference ?? "…", run ? [run.workflowName, run.reference].filter(Boolean).join(" · ") : undefined)}
+      <div className="act-body motion-page">
+        <p role="alert" className="act-alert error" hidden={!error}>{error}</p>
+        {!run ? (
+          !error && <p className="act-muted" role="status">{t("Loading…")}</p>
+        ) : run.reference ? (
+          <AskRequest reference={run.reference} run={run} />
+        ) : (
+          <p>
+            {t("This run was not started by a request, so there is nothing to ask about.")} <a href={`#/runs/${run.id}`}>{t("Open run detail")}</a>
           </p>
-          <div className="actions">
-            <button type="button" disabled={wording.busy} onClick={() => void reword()}>
-              {t("Say it in simpler words (uses 1 AI action)")}
-            </button>
-            <label htmlFor="ask-language" className="muted">
-              {t("Language")}
-            </label>
-            <select id="ask-language" value={language} onChange={(e) => setLanguage(e.target.value as "en" | "tl")}>
-              <option value="en">English</option>
-              <option value="tl">Tagalog</option>
-            </select>
-          </div>
-          <p role="status" className="muted">
-            {wording.busy ? t("Asking the AI model...") : ""}
-          </p>
-          {wording.text && (
-            <>
-              <h4>{t("Written by the AI model")}</h4>
-              <p>{wording.text}</p>
-            </>
-          )}
-          <p role="alert" className="message error" hidden={!wording.error}>
-            {wording.error}
-          </p>
-          <p className="muted">{t("Answers come from Daloy's own rules. Nothing here changes the request.")}</p>
-        </div>
-      )}
-    </section>
+        )}
+      </div>
+    </main>
   );
 }

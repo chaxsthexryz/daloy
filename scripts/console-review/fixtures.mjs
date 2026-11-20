@@ -49,7 +49,7 @@ const members = roles.map((role, index) => ({ userId: `sample-user-${index}`, em
 const meter = { used: 0, limit: null, resetsOn: "2027-01-01" };
 const getFixtures = new Map([
   ["/workspace/members", members],
-  ["/settings/connections", { connections: [], outlook: { enabled: false }, paymongoWebhookBase: "https://example.test" }],
+  ["/settings/connections", { connections: [], oauth: [], shared: [], outlook: { configured: false }, paymongoWebhookBase: "https://example.test" }],
   ["/settings/email", mail],
   ["/settings/brand", { logo: null, accent: null }],
   ["/settings/ai", {

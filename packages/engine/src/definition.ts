@@ -82,7 +82,7 @@ export const outlookConfigSchema = emailConfigSchema;
 export const teamsConfigSchema = slackConfigSchema;
 // A Telegram message goes to the one chat picked in Apps, as plain text (decision 0042). Queued like Slack.
 export const telegramConfigSchema = slackConfigSchema;
-// Philippine SMS through UniSMS (phase N7, decision 0068). Queued as a delivery with needs_review on unknown outcomes.
+// Philippine SMS through UniSMS (phase N7, decision 0074). Queued as a delivery with needs_review on unknown outcomes.
 export const smsConfigSchema = z.object({
   to: template(500).min(1).describe("Philippine mobile number (+639XXXXXXXXX, 639XXXXXXXXX or 09XXXXXXXXX) or a template such as {{trigger.phone}}."),
   message: template(2500).min(1).describe("SMS text. The rendered message must be at most 670 characters."),
@@ -105,7 +105,7 @@ export const paymentStatusConfigSchema = z.object({ link: stepId });
 // Saves the files a form collected into the Google Drive folder picked in Apps. It takes no settings: the files are
 // the form's file fields. Queued like Sheets.
 export const driveConfigSchema = z.object({}).default({});
-// Replies to a Facebook Messenger or Instagram DM within Meta's 24-hour messaging window (decision 0069). Queued like Slack.
+// Replies to a Facebook Messenger or Instagram DM within Meta's 24-hour messaging window (decision 0075). Queued like Slack.
 export const metaReplyConfigSchema = z.object({
   recipientId: template(200).min(1).default("{{trigger.senderId}}"),
   channel: template(100).min(1).default("{{trigger.channel}}"),
@@ -218,7 +218,7 @@ const triggerSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("form"), config: z.object({ fields: fieldList }) }),
   // Starts a run when PayMongo reports a payment (paid by default). The run gets the payment as its trigger payload.
   z.object({ type: z.literal("payment"), config: z.object({ events: z.array(z.enum(["paid", "refunded"])).min(1).default(["paid"]) }).default({ events: ["paid"] }) }),
-  // Starts a run when a Facebook Messenger or Instagram DM arrives on the connected Page or Instagram account (decision 0069).
+  // Starts a run when a Facebook Messenger or Instagram DM arrives on the connected Page or Instagram account (decision 0075).
   z.object({
     type: z.literal("meta_dm"),
     config: z

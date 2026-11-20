@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Usage } from "../api";
-import { day, usageLines } from "./usage";
+import { day, shortDay, usageLines } from "./usage";
 
 const usage = (ai: number, live = 1, sms = { used: 0, limit: 50, resetsOn: "2026-12-17" }): Usage => ({
   plan: "pilot",
@@ -16,6 +16,10 @@ const usage = (ai: number, live = 1, sms = { used: 0, limit: 50, resetsOn: "2026
 
 describe("usageLines", () => {
   it("formats the day", () => expect(day("2026-12-07")).toBe("7 December"));
+  it("formats the day short, with or without the year", () => {
+    expect(shortDay("2026-12-01")).toBe("1 Dec 2026");
+    expect(shortDay("2026-11-21", false)).toBe("21 Nov");
+  });
   it("is quiet below 80%", () => expect(usageLines(usage(399))).toEqual([]));
   it("stays quiet for preview sms limit 0", () => expect(usageLines(usage(0, 1, { used: 0, limit: 0, resetsOn: "2026-12-17" }))).toEqual([]));
   it("warns at 80% for sms", () => expect(usageLines(usage(0, 1, { used: 40, limit: 50, resetsOn: "2026-12-17" }))).toEqual(["You have used 40 of 50 SMS messages. They come back on 17 December."]));

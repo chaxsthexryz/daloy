@@ -4,6 +4,8 @@ This file explains each core module in plain language: what it does, why it is b
 
 ## Reviewing the console design
 
+Owners and operators use a 64px navigation rail on screens at least 800px wide. Holding the pointer over it for 150ms shows the labels and expands the rail to 232px. Keyboard focus opens it immediately. Escape collapses it and keeps the focused link available. Reduced motion removes the hover delay and transitions. On a phone, Menu opens the role's links above the bottom bar. Close and Escape return focus to Menu, and changing routes closes the menu. Approvers and requesters keep their own My requests entry. The desktop, phone and role cases in `e2e/navigation.spec.ts` cover these paths.
+
 Staff start on Automations to see which workflows need attention. Activity opens the run behind a status, and Bookings lists appointments staff can change. The sidebar groups daily work, creation and workspace settings. On a phone, the bottom navigation and Menu expose the pages available to the signed-in role. The [offline walkthrough](design/console-review.html) shows these screens with sample records. Open it in a browser and switch between Desktop and Phone. The [phase ledger](design/console-redesign-phases.md) records which actions were tested separately.
 
 ## Layout
@@ -453,7 +455,7 @@ Tests: `packages/db/src/deliveries.test.ts` (Telegram: send, chat changed, revok
 
 What it does: Apps has a UniSMS card where an owner saves a write-only Secret Key and a Sender ID (default `Unisoft`), sends a test SMS to a Philippine mobile number, or disconnects. The `sms` step sends confirmations and reminders to `+639XXXXXXXXX`, `639XXXXXXXXX`, or `09XXXXXXXXX` numbers (normalized to `+639XXXXXXXXX`), capped at 670 rendered characters. Settings shows monthly SMS usage alongside AI actions.
 
-How it works: like Telegram and Outlook, `sms` steps queue a `unisms` delivery row delivered apart from the run (decision 0068). Before sending, the worker re-checks the run's linked booking version under a share lock (N2b) so cancelled or rescheduled bookings stop cleanly without texting the customer or spending SMS quota. It then claims 1 `sms` monthly quota unit atomically under key `delivery:<id>` inside the transaction (`preview: 0`, `pilot: 50`, `business: 300`, `business_plus: 1500`; unlimited when `plan` is null). UniSMS calls use `POST /api/sms` with HTTP Basic Auth, `redirect: "error"`, and a 10-second timeout. 429 honours `Retry-After` and retries without double-charging; 400 fails without retry; 401/403 fails and marks a workspace connection failed (fenced by credential IV); 5xx, timeouts, and stale worker takeovers park in `needs_review` so Daloy never blindly double-sends a paid SMS. If a workspace has no `unisms` connection, `SHARED_UNISMS_KEY=open` with `UNISMS_SECRET_KEY` and `UNISMS_SENDER_ID` set, and the workspace has a paid plan (`pilot`, `business`, or `business_plus`), Daloy falls back to the operator's UniSMS credentials; preview plans, failed connections, and deliveries pinned to a disconnected workspace connection never fall back.
+How it works: like Telegram and Outlook, `sms` steps queue a `unisms` delivery row delivered apart from the run (decision 0074). Before sending, the worker re-checks the run's linked booking version under a share lock (N2b) so cancelled or rescheduled bookings stop cleanly without texting the customer or spending SMS quota. It then claims 1 `sms` monthly quota unit atomically under key `delivery:<id>` inside the transaction (`preview: 0`, `pilot: 50`, `business: 300`, `business_plus: 1500`; unlimited when `plan` is null). UniSMS calls use `POST /api/sms` with HTTP Basic Auth, `redirect: "error"`, and a 10-second timeout. 429 honours `Retry-After` and retries without double-charging; 400 fails without retry; 401/403 fails and marks a workspace connection failed (fenced by credential IV); 5xx, timeouts, and stale worker takeovers park in `needs_review` so Daloy never blindly double-sends a paid SMS. If a workspace has no `unisms` connection, `SHARED_UNISMS_KEY=open` with `UNISMS_SECRET_KEY` and `UNISMS_SENDER_ID` set, and the workspace has a paid plan (`pilot`, `business`, or `business_plus`), Daloy falls back to the operator's UniSMS credentials; preview plans, failed connections, and deliveries pinned to a disconnected workspace connection never fall back.
 
 Tests: `packages/engine/src/phone.test.ts`, `packages/db/src/usage.test.ts`, `packages/db/src/unisms.test.ts`, `apps/worker/src/steps/sms.test.ts`, `apps/api/src/connections.test.ts`, `apps/api/src/members.test.ts`, and `apps/web/src/lib/management-locale.test.ts`. All automated tests use `test/fake-providers.ts`. The manual check against a real UniSMS account is [live UniSMS check](live-unisms-check.md), not run yet.
 
@@ -827,8 +829,165 @@ What it does: every API and MCP read surface that returns stored history, reques
 Purge policy: `purgeRetiredSecrets` (`packages/db/src/retired-secrets.ts`) runs on the worker's daily maintenance sweep at startup and every 24 hours (`apps/worker/src/worker.ts`). Retention defaults to 90 days (`DEFAULT_RETIRED_SECRET_MAX_AGE_DAYS = 90`) and can be set to another positive integer with `RETIRED_SECRETS_MAX_AGE_DAYS`. For each workspace with rows at or past the cutoff, one transaction guarded by `pg_advisory_xact_lock` checks for any in-flight `runs` (`state = 'running'`) or `deliveries` (`state = 'sending'`) and skips the workspace until the next sweep if any are active, decrypts each expired row safely (skipping undecryptable rows without deleting them), scans `runs`, `step_runs`, `deliveries`, `requests`, `email_sources`, `calendar_events`, and `payments` in bounded keyset batches (`DEFAULT_RETIRED_SECRET_BATCH_SIZE = 200`, configurable via `batchSize`, alongside `connections` and `mail_senders`), locks each matching row with `FOR UPDATE`, re-computes scrubbing of all four encoded forms (`secretForms`) on the locked row, updates only the specific columns that changed, re-checks for in-flight work, and deletes only the exact captured expired ids. Newer retired copies for the same secret name and other workspaces stay untouched, and any mid-transaction failure rolls back so no retired secret is deleted before its history is scrubbed.
 
 Tests: `packages/db/src/retired-secrets.test.ts` (env parsing, 90-day boundary, all four encodings across all scrubbed tables, workspace isolation, newer retired copy preserved, undecryptable row skipped safely, atomic rollback via a real Postgres trigger, keyset pagination across bounded batches, `FOR UPDATE` locking and column-only updates, and skipping workspaces with active runs or deliveries until they finish), `apps/api/src/secrets-history.test.ts` (all read surfaces before and after rotation, deletion, and purge), and `apps/worker/src/worker.test.ts` (daily sweep runs on startup even when deliveries are omitted).
+### Build with AI review
 
-## Facebook Messenger and Instagram DM intake and replies (N16, decision 0069)
+Owners describe an automation in a conversation at #/ai. A generated definition opens Review plan. The table follows workflow edges and labels conditional paths. Change something returns to the conversation with the draft. App setup opens separately so the draft stays available. Saving opens an unpublished version in Steps. Turning it on requests publication. The assistant mark identifies the conversation UI. The configured AI model still answers it.
+
+### Automations table (A1, decision 0068)
+
+What it does: `#/` lists every automation as a table row with its status, trigger, a seven day bar chart, success rate and last run. A strip above shows runs today, success over seven days, requests that need you, automations with problems and live automations. The row you select fills the panel beside the table: status and published version, the main next action, the steps in plain words, recent runs and the form link. On a phone the panel opens as a sheet.
+
+Why it is built this way: the page uses only data the API already sends. `GET /workflows` gives the rows, `GET /runs?test=false` gives the newest 50 real runs for the strip and the bars, `GET /runs?review=true` gives the requests that wait for a person, and `GET /workflows/:id` gives each row's trigger and steps (four at a time after the list shows). The bars and rates carry a note when 50 runs came back and the oldest is still inside the seven days, because older runs may be missing. A tile never disagrees with its list: `counts()` in `lib/automations.ts` and the status filter share one rule.
+
+Edge cases: a paused automation is listed as Paused and counts under Needs you only if a run in review is still waiting. A missed schedule counts as a problem unless the last run needs a person. A draft is a row with the status Draft and a Continue setup action. A failed list load shows Retry. A failed run, usage or detail request leaves only that figure out. The Owner column and the Owner and App filters from the design are left out because the list has no owner or app data.
+
+Tests: `apps/web/src/lib/automations.test.ts` (filters, counts, trigger labels), `apps/web/src/lib/ops-stats.test.ts` (day buckets, success rate, the 50 run limit), `apps/web/src/lib/locale-ops.test.ts` (Tagalog placeholders), and `e2e/navigation.spec.ts`, `e2e/automations.spec.ts`, `e2e/run-controls.spec.ts`, `e2e/office-request.spec.ts` (filter, select, next action, pause and resume, draft).
+
+### Activity pages (A8 and O1)
+
+What it does: `#/activity` (O1, Doop frame iIHhpAQIUx) is the workspace run register: the newest 50 runs of every automation in one card with a search box, a status filter, and columns for reference, automation, started, time taken and status. `#/w/<id>/runs` (A8, Doop frame fqwMyRZslq) shows one automation's runs beside a run details panel. Selecting a row, or moving keyboard focus onto it, lists that run's steps in the panel, and the reference link opens the full run. The O1 header button opens `#/activity/ask`, where you type or pick a request reference.
+
+Why it is built this way: both pages read `GET /runs` exactly as before (with `workflowId`, `q` and the filter parameters), and the panel polls `GET /runs/:id` through `useRun`. The status pill uses `plainState()` from `lib/states.ts`, so it says the same as the Automations table. Times read "Today, 10:42 AM" or "Yesterday, 4:34 PM" (`startedAt()` in `lib/activity.ts`). The frame's "Last step" column shows the time taken instead, because the run list has no step data. A list endpoint that returns each run's last step would bring it back. The Versions tab sits beside the shared automation tabs because `Nav.tsx` owns those tabs.
+
+Edge cases: a run without a reference is named by its kind ("Real run", "Preview (nothing sent)"). An empty list says "Nothing has happened yet.", and an empty search says "Nothing matches.". On a phone the rows stack and the panel is hidden, so the link opens the run page instead. The Ask link and button appear only when the Ask feature is on and the person is an owner or operator.
+
+Tests: `apps/web/src/lib/activity.test.ts` (day words, times, Tagalog placeholders), `e2e/history.spec.ts` (status filter), `e2e/automations.spec.ts` (phone cards), `e2e/navigation.spec.ts` (table alignment), `e2e/office-request.spec.ts` (search by reference on a phone), `e2e/ask-request.spec.ts` (Ask link from a row).
+
+### Run detail (O2)
+
+What it does: `#/runs/<id>` follows Doop frame aquI2X-gdg. The head names the automation and the run, with an Activity button back to that automation's activity and, where Ask is on, an Ask what happened button. The Run timeline card numbers each step attempt with its state, branch, attempt, approvals, errors and start time, and a closed "Masked request fields" disclosure holds the trigger data. The Delivery outcome card shows the state, why the run stopped, where it was sent, when it started, how long it took, and the recovery controls (Retry, Cancel run, or the three answers for a run that needs you). The path diagram, the files and the technician details follow underneath.
+
+Why it is built this way: the page keeps every request it made before (`GET /runs/:id` polling, `/explanation`, `/deliveries`, the version for the diagram) and only moves them into the frame's two cards. Trigger data reaches the page already masked by `maskSecrets()` and `historyHider()` in `apps/api/src/mask.ts`, so the disclosure shows `[secret]` in place of secret-looking values. The recovery controls stay open in the outcome card instead of the frame's disclosure, so a failed or parked run shows what you can do without another click.
+
+Edge cases: a run with no steps yet says so. A run that cannot load shows Retry. A refresh that fails keeps the last copy and says it is trying again. When the explanation has not loaded, the raw error is shown in the same "Why it stopped" region.
+
+Tests: `e2e/history.spec.ts` (masked trigger field, step input, back to Activity), `e2e/navigation.spec.ts` and `e2e/explain.spec.ts` (why it stopped), `e2e/review.spec.ts` and `e2e/run-controls.spec.ts` (recovery controls), `e2e/form-files.spec.ts` (file download), `e2e/run-animation.spec.ts` (path diagram).
+
+### Ask about a request (O3)
+
+What it does: `#/runs/<id>/ask` follows Doop frame jdE6cTyvay. A Questions card (What happened?, Why did it stop?, What do I do now?) sits beside the Recorded answer: the run's state, the headline, its lines, when it started, the fix link, a "Simpler wording" disclosure with the one-AI-action reword and its language, and a link back to the run. `#/activity/ask` is the same page without a run: type a reference or pick one of the five newest problem requests.
+
+Why it is built this way: the answers still come from `GET /runs/ask` (decision 0041), which returns fixed text only. That reply has no state, so the run page reads `GET /runs/:id` and `GET /deliveries?runId=` once and shows the pill from `plainState()`, counting a failed delivery as a problem. The run detail page passes delivery failures to its pill the same way. Both routes need the Ask feature flag and an owner or operator, checked in `App.tsx`; without them `#/runs/<id>/ask` shows the run page and `#/activity/ask` falls back to Automations. The API refuses the same calls with 404 when the flag is off.
+
+Edge cases: an unknown reference says "No request with that reference in this office." A run with no request reference says there is nothing to ask about and links to the run. A reword that fails or hits the AI limit shows the error under the button and leaves the fixed answer in place.
+
+Tests: `e2e/ask-request.spec.ts` (questions from an Activity row, pressed state, run link, no recovery buttons, reference lookup from `#/activity/ask`, unknown reference), `apps/api/src/ask-api.test.ts` (flag, role and quota on the API).
+
+### Bookings day agenda (O4)
+
+What it does: `#/bookings` follows Doop frame PtNZfoOj94 (option B). The Day agenda lists every booking under its own day, by start time, with its reference, resource, time and status. Picking one fills the Selected booking card: resource, date and time in the booking's time zone, status, a link to its run, and the actions Reschedule, Cancel booking, Mark no-show (once the start time has passed) and Undo no-show. Download CSV is in the head. On a phone the agenda fills the page and the selected booking opens as a sheet that Close, the backdrop or Escape dismiss.
+
+Why it is built this way: the page calls the same routes as before (decision 0032), and each change still sends the version shown, so a change made by someone else in between is refused. `byDay()` and `ampm()` in `lib/agenda.ts` read the date and time from the zoned `start` string, so a 23:30 booking in Manila stays on its own day whatever the viewer's zone. The frame shows a guest name, but the booking list has none, so the card and agenda name the resource and reference.
+
+Edge cases: no bookings shows the empty note. A booking whose run failed or waits for review keeps its Active status with a "needs attention" pill and note. Cancelled and no-show bookings show only the actions that still apply.
+
+Tests: `apps/web/src/lib/agenda.test.ts` (grouping, zoned day, 12-hour times), `e2e/bookings.spec.ts` (pick, reschedule, cancel, phone sheet with Escape), `e2e/calendar.spec.ts` (reschedule and cancel update the calendar event).
+
+### Versions (A9)
+
+What it does: `#/w/<id>/versions` follows Doop frame RKizMLFkzD under the automation's tabs. The Version history table lists published versions with when each was saved and whether it is live, and a "Show draft versions" disclosure lists versions that were saved or test-run but never published. Selecting a version fills the panel beside it: "Version 3 compared with version 2", its status, the list of changed paths from `jsonDiff()`, and Roll back for any version that is not live. On a phone the panel follows the table.
+
+Why it is built this way: the data and the rollback are unchanged (see Run history and versions above). Rollback posts the old definition as a new published version, so the panel says that the earlier history stays as it is. The frame's Change column holds a summary the API does not store, so the table shows status there and the panel shows the actual diff for the selected version.
+
+Edge cases: version 1 has nothing to compare and says so. An automation with only drafts opens the drafts disclosure. A failed load or rollback shows the error in the status line.
+
+Tests: `apps/web/src/lib/diff.test.ts` (diff), `e2e/history.spec.ts` (live version selected, diff text, rollback creates version 3 and selects it).
+
+## Guided pages (Doop rows A2 to A6, decision 0071)
+
+`apps/web/src/NewAutomation.tsx`, `OfficeRequests.tsx`, `guided-pages.css`, `lib/locale-setup.ts`.
+
+### New automation (A2, `#/new`)
+
+What it does: a table of the three templates (Track an office request, Purchase request with approval, Reply to a website inquiry) with a Set up button each, a blank workflow card (Name, Start from, Create and open editor), Build with AI in the page head, and a side panel that previews the Office requests template with a Try the preview link to `#/try/office-request`. The website inquiry row links to Business setup because inquiry replies need the business details first.
+
+Why it is built that way: the Set up buttons call the same single-flight `startOfficeSetup` and `startPurchaseSetup` as before, so two clicks, or coming back later, reopen one draft. The page also disables all three starts while one is running, which the old page did not do for the blank form. The visible button text is short ("Set up"); its accessible name keeps the full phrase, so a screen reader and the e2e specs still hear "Set up for my office".
+
+Edge cases: a name already in use shows "An automation with that name already exists." and re-enables the form. A failed guided start shows its message and re-enables the buttons.
+
+Tests: `e2e/office-request.spec.ts`, `e2e/wizard-double-click.spec.ts` (double click makes one draft), `e2e/editor.spec.ts`, `e2e/email-in.spec.ts`, `e2e/business-setup.spec.ts` (the three paths from this page), `lib/locale-setup.test.ts` (Tagalog keeps every braced value).
+
+### Office request preview (A3, `#/try/office-request`)
+
+What it does: a four field sample form (requester name, email, subject, request details) filled from the engine's `SAMPLE_REQUEST`. Try with sample details fills the side panel with the reference, the request list, who the office notification and the requester receipt go to, and the two messages in full, plus the Sheets row and Slack note when the answers include them. Use this template starts the guided setup.
+
+Why it is built that way: everything comes from `previewOfficeRequest` in the engine, run in the browser. The page makes no API call, so nothing is sent and no request is recorded, whatever the person types. The panel says so in words. The preview waits for the Try button instead of updating on every key, so a person sees the result of a deliberate action. Use this template reuses the single-flight start and disables itself while it runs.
+
+Edge cases: the email field must be a valid address and every field has a length limit. A failed start shows its message and enables the button again. The location line in the sample message stays at the engine's sample value, since the frame has no location field.
+
+Tests: `e2e/office-request.spec.ts` (the preview shows REQ-SAMPLE and the receipt text, no mail is written, then the setup starts), `e2e/ask-request.spec.ts`, `e2e/connections.spec.ts`, `e2e/wizard-double-click.spec.ts` (all reach setup through this page).
+
+### Guided setups (A4 office requests, A5 purchase requests, `#/a/:id` while the automation is a draft)
+
+What it does: both setups share one frame (`useWizard` in `OfficeRequests.tsx`). The head shows Automations / Guided setup, the saved name and a Draft tag. The form shows "Step n of N", a segmented bar, the step, then Next (or Turn on on the last step), Save and finish later and Back. Beside it a Setup steps list marks each step Complete, Current step or Upcoming (`stepStates` in `lib/guided.ts`). The last step is a Setting and Selected value table with an Edit link per row that opens the step which sets it. The approval step of a purchase setup explains what the approver receives and has a Preview the approval email block. Example messages stay in a closed block on the review step.
+
+Why it is built that way: nothing about saving changed. Every step saves its answers through `PATCH /workflows/:id/setup`, so leaving and coming back resumes the saved step. Next, Save and finish later and Turn on share one busy flag, so a double click saves once and publishes one version. Turn on still publishes the definition built from the answers, and the API still refuses it while a chosen app or the named approver is missing, with the message shown above the buttons.
+
+Edge cases: the side list reflects the step on screen, not how far the person got earlier, so after Back a later step reads Upcoming even if it was answered. The purchase setup keeps four steps and the purchasing inbox on the destinations step (decision 0071). A failed save keeps the person on the step and shows the error.
+
+Tests: `lib/guided.test.ts` (step states, one current step, an index outside the list), `e2e/office-request.spec.ts` (name, fields, destinations, Save and finish later, resume, review table, Turn on), `e2e/purchase-request.spec.ts` (approver and purchasing rows, Outlook and Teams), `e2e/connections.spec.ts` (Optional apps row lists Google Sheets and Slack), `e2e/wizard-double-click.spec.ts` (Step 2 of 4 after resume, one version from a double click).
+
+### Live overview (A6, `#/a/:id` once the automation is on)
+
+What it does: the head shows the name and an Accepting requests tag, with the tabs Overview, Activity and Steps under it. The page has a Request form card (the link, Copy form link, Copy embed code, Open form, and the local-address warning), then Requests with Refresh and View activity, three figures (Received today, Waiting, Completed), and a table of reference, request subject, time received and a status tag. Selecting a row fills the Selected request panel: reference, subject, time, progress, each delivery with its Retry or Mark as sent buttons, and See run history. On a phone the panel is a sheet that opens when a row is tapped and closes with Close, Escape or a tap outside, and focus returns to the row.
+
+Why it is built that way: `requestKind`, `requestCounts` and `needsAttention` in `lib/guided.ts` hold the rules, so they are unit tested apart from the page. A request counts as Completed when its run succeeded and as Waiting when its run waits for a person. A failed or unclear delivery turns the row's tag red and adds "A delivery needs attention", whatever the run says, so a request whose run finished but whose Slack note failed is not shown as plainly done. The deliveries moved from the table cells into the selected panel because the approved frame has no room for them in a row; the newest request is selected when the page opens, so the most recent deliveries are visible without a click.
+
+Edge cases: a failed load shows Retry. No requests shows the three figures at zero and "No requests yet. Open the form and send one." A run still going after 60 seconds says "Taking longer than usual". "Today" is the viewer's calendar day, so 23:59 yesterday does not count.
+
+Tests: `lib/guided.test.ts` (status mapping, the 60 second rule, today across midnight, counts, delivery attention), `e2e/office-request.spec.ts` (one request, Processed), `e2e/connections.spec.ts` (Sheet row added, Slack note failed, then Retry in the panel), `e2e/purchase-request.spec.ts` (Waiting for a decision, then Finished, with the Outlook and Teams deliveries), `e2e/ask-request.spec.ts`, `e2e/wizard-double-click.spec.ts` (See run history, then a failed deliveries list and its Retry).
+
+### Apps directory and Business
+
+Apps groups saved connections together, including ones that need reconnecting. Select an app to open its settings beside the directory on desktop or full screen on a phone. Used by lists the current published automations in this workspace. The date comes from the saved connection check. PayMongo shows the most recent recorded payment and whether it used test or live mode. Business shows a preview of the public form branding and the inquiry form link and embed code.
+
+Opening a Gmail app-password verification link shows its status. The owner presses Confirm sender to use the link. Google sign-in can verify the address through consent as before. When Google apps in one workspace share a provider account, Apps names the other apps on that sign-in. A connection outside the workspace can trigger the existing general disconnect warning.
+
+## Workspace pages (Doop rows W1, W3, W4, decision 0072)
+
+What it does: Team, Settings and Account follow the approved Phase 5 frames. They share `apps/web/src/workspace.css` (scope `.wk`: cards with a pale header strip, Inter, light values from the frames and dark mapped onto the console theme variables) and the `Sheet` dialog in `apps/web/src/Sheet.tsx`.
+
+### Team (W1, `#/team`)
+
+The owner sees an invite card, then one card per role (Owner, Operators, Approvers, Requesters) with the role's help line and a count. A group with nobody in it is hidden. The owner row has no actions. Change role opens a dialog with the three member roles and Save. Remove asks in a dialog that says the person is signed out and that approvals naming them can no longer be answered. Below 800px the page is one flat list: the role button shows the current role and opens the sheet, which also holds Remove, and Invite in the header opens the form in a sheet.
+
+Why it is built this way: `lib/team.ts` holds the rules the page mirrors (`groupMembers`, `canInvite`, `canChangeRole`, `canRemove`), so the buttons and the tests share one definition. The API stays the authority: the routes need the owner role, and `setMemberRole` and `removeMember` refuse the owner row in SQL.
+
+Edge cases: an owner can never be given as an invite role or a new role; a non-owner sees no invite form and no buttons; a second invite link replaces the first on screen only after the new one arrives. Tests: `lib/team.test.ts`, `e2e/workspace-team.spec.ts` (invite, change role, remove, owner row, phone sheets) and `e2e/team.spec.ts` (named approval).
+
+### Settings (W3, `#/settings`)
+
+Language (owner only), Appearance (every role, saved on the device), Your account, Plan and usage (owner and operator, hidden when `/usage` cannot be read) and, for the owner, the Your office link grid. An operator sees a line saying language and office settings belong to the owner. On a phone the cards stack, the subtitle shows the email and role, and the usage dates drop the year. `shortDay` in `lib/usage.ts` formats them without a time zone shift. Tests: `lib/usage.test.ts`, `e2e/workspace-pages.spec.ts`, `e2e/language.spec.ts`, `e2e/usage.spec.ts`.
+
+### Account (W4, `#/account`)
+
+Change password for any signed-in role. `lib/password.ts` (`checkPasswordChange`) applies the API's limits (a current password, 12 to 200 characters for the new one) before any request, so the reason shows beside the right field and nothing is sent. The API's "current password is wrong" (a 400, not a 401, so the console does not sign the person out) marks the current-password field. On success the form is cleared and the page says other sessions are signed out. A requester or approver has no rail, so the page links back to My requests. Forgot and reset password pages in the same file are unchanged. Tests: `lib/password.test.ts`, `e2e/workspace-pages.spec.ts`, `e2e/account.spec.ts`.
+
+## Advanced pages (Doop rows W5 to W9, decision 0073)
+
+What it does: Advanced, AI model, Resources, API tokens and Secrets follow the approved Phase 5 frames and share the `.wk` styles and `Sheet` from the workspace pages. Counts, status pills and dates come from `lib/advanced.ts` (`tokenStatus`, `countActiveTokens`, `countResources`, `shortDate`, `shortDateTime`, `isToday`), so the pages and the unit tests use one definition. The page text for the Taglish language is in `lib/locale-advanced.ts`.
+
+### Advanced (W5, `#/advanced`)
+
+The owner sees the four tools (AI model, API tokens, Secrets, Resources) as rows with an icon and a one-line note, then every automation with a Versions link. The whole row opens its page, and Menu returns to Settings. Anyone who is not the owner never reaches the page: `App.tsx` falls through to Automations, the same as for an unknown address. Tests: `e2e/workspace-advanced.spec.ts` (owner rows and links, phone list, operator fallback).
+
+### AI model (W6, `#/settings/ai`)
+
+Provider choices sit on the left; the model, key, the three buttons, the status line and the test result sit on the right. Save and test saves first, then makes one call on a sample inquiry, and the result card says Working or Not working with the model's own error and what to do next. A saved key is never sent back: the field is empty with dots as a placeholder and the page only knows `hasKey`. The e2e test uses the fake local model, which answers the sample inquiry and refuses the model name `fake-broken`, so no provider is contacted. Tests: `e2e/workspace-ai.spec.ts`, `e2e/settings.spec.ts`, and `apps/api/src/settings.test.ts` for the server side of masking.
+
+### Resources (W7, `#/resources`)
+
+Add, rename, archive and restore. The title shows "N active, M archived". Archived rows are marked and struck through but keep their record, so past bookings still point at them. Rename opens a dialog (a bottom sheet on a phone) in place of `prompt()`. Tests: `lib/advanced.test.ts`, `e2e/workspace-resources.spec.ts`.
+
+### API tokens (W8, `#/tokens`)
+
+A new token is created with a name, access scopes and an expiry. The API returns the value once. The page keeps it in memory in a panel with a Copy button and drops it on reload or when the next token is made; the list route never carries a value. Each row has a pill (Active, Expired or Revoked, where revoked wins over expired). Revoke asks in a dialog that names the token. Tests: `lib/advanced.test.ts` (status rules), `e2e/workspace-tokens.spec.ts` (copy, shown once, revoke), `e2e/mcp.spec.ts` (the token works against MCP until revoked).
+
+### Secrets (W9, `#/secrets`)
+
+Write-only values. The value field is a password field, is cleared after every save (successful or not), and no code on the page reads a value back because the API does not return one. Replace fills in the name and says the old value stops working as soon as the form is saved; typing an existing name says the same. Delete asks in a dialog that names the secret. Tests: `e2e/workspace-secrets.spec.ts` and `e2e/secrets.spec.ts` check that a synthetic value is absent from the page HTML and from the API list.
+
+## Facebook Messenger and Instagram DM intake and replies (N16, decision 0075)
 
 What it does: owners connect a Facebook Page and optional Instagram Business Account in Apps (`PUT /settings/connections/meta-messenger`, `POST /settings/connections/meta-messenger/test`, `DELETE /settings/connections/meta-messenger`). Daloy generates one random 32-byte `webhookPath` per workspace and keeps it across credential updates. Incoming DMs arrive at `POST /hooks/meta/:path` (verified by `GET /hooks/meta/:path` for Meta's `hub.challenge`), start matching published `meta_dm` workflows, and can reply within Meta's 24-hour messaging window using the `meta_reply` step.
 

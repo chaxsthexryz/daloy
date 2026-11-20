@@ -81,7 +81,7 @@ services:
       LLM_API_KEY: ${LLM_API_KEY:-}
       # open lets accounts without their own AI key use LLM_API_KEY. Leave it off on a public installation (decision 0035).
       SHARED_LLM_KEY: ${SHARED_LLM_KEY:-off}
-      # Optional operator UniSMS fallback for paid plans without their own UniSMS connection (decision 0068).
+      # Optional operator UniSMS fallback for paid plans without their own UniSMS connection (decision 0074).
       UNISMS_SECRET_KEY: ${UNISMS_SECRET_KEY:-}
       UNISMS_SENDER_ID: ${UNISMS_SENDER_ID:-}
       SHARED_UNISMS_KEY: ${SHARED_UNISMS_KEY:-off}

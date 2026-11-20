@@ -1,14 +1,15 @@
-import "./creation.css";
+import "./editor.css";
 import { useLanguage } from "./Language";
 import { definitionSchema, lintDefinition, type FormField, type Step, type Trigger } from "@daloy/engine";
-import { Background, Controls, ReactFlow, type NodeChange } from "@xyflow/react";
+import { Background, ReactFlow, type NodeChange } from "@xyflow/react";
 import { useEffect, useId, useMemo, useState } from "react";
 import { AskAi } from "./AiDraft";
 import { FormEmbed } from "./FormEmbed";
 import { api, type Version, type Workflow } from "./api";
-import { edgeTypes, flowAriaLabels, nodeTypes, TYPE_NAMES } from "./FlowCanvas";
+import { editorEdgeTypes, editorNodeTypes, flowAriaLabels, summary, TYPE_NAMES, ZoomBar } from "./FlowCanvas";
 import { RunResult, useRun } from "./Runs";
 import { ADDABLE, addStep, blankDraft, removeStep, toFlow, type AddableType, type Draft } from "./lib/graph";
+import { insertables, nextPaths, setupLeft } from "./lib/editor";
 import { warningForLanguage } from "./lib/ai-build";
 import { runFlow } from "./lib/run-flow";
 import { AutomationTabs } from "./Nav";
@@ -52,6 +53,11 @@ export function Editor({ id }: { id: string }) {
   const [choices, setChoices] = useState<Record<string, string>>({});
   const [runId, setRunId] = useState<string | null>(null);
   const { run } = useRun(runId);
+  // null until GET /settings/connections answers; a refused or failed read leaves it null and hides the setup banner.
+  const [connected, setConnected] = useState<ReadonlySet<string> | null>(null);
+  // A phone shows the list first: the whole diagram fitted to 360px is too small to read.
+  const [view, setView] = useState<"diagram" | "list">(() => (matchMedia("(max-width: 599.98px)").matches ? "list" : "diagram"));
+  const [copied, setCopied] = useState<string | null>(null);
 
   const reload = async () => {
     const w = await api<Loaded>("GET", `/workflows/${id}`);
@@ -68,6 +74,10 @@ export function Editor({ id }: { id: string }) {
         setCatalog(c);
       })
       .catch((e: Error) => setMessage({ kind: "error", text: e.message }));
+    api<{ connections: { provider: string; status: string }[] }>("GET", "/settings/connections").then(
+      (r) => setConnected(new Set(r.connections.filter((c) => c.status === "active").map((c) => c.provider))),
+      () => setConnected(null),
+    );
   }, [id]);
 
   const update = (next: Draft) => {
@@ -80,7 +90,15 @@ export function Editor({ id }: { id: string }) {
     const parsed = definitionSchema.safeParse(draft);
     return parsed.success ? lintDefinition(parsed.data) : [];
   }, [draft]);
-  const nodes = flow.nodes.map((n) => (measured[n.id] ? { ...n, measured: measured[n.id] } : n));
+  const apps = useMemo(() => (connected ? setupLeft(draft, connected) : []), [draft, connected]);
+  const missingApp = new Map(apps.filter((a) => !a.connected).flatMap((a) => a.steps.map((s) => [s, a.label] as const)));
+  const nodes = flow.nodes.map((n) => ({
+    ...n,
+    ...(measured[n.id] && { measured: measured[n.id] }),
+    data: { ...n.data, index: draft.steps.findIndex((s) => s.id === n.id) + 1, needsApp: missingApp.get(n.id) },
+  }));
+  // Every editor edge uses the square editor edge; it carries the branch so the pill can take its colour.
+  const edges = flow.edges.map((e) => ({ ...e, type: "editor", data: { ...e.data, on: e.sourceHandle ?? undefined } }));
 
   const onNodesChange = (changes: NodeChange[]) => {
     for (const c of changes) {
@@ -140,23 +158,57 @@ export function Editor({ id }: { id: string }) {
       setRunId(r.id);
     });
 
-  if (!wf || !catalog) return <main className="page creation-page">{message ? <p role="alert">{message.text}</p> : <p>{t("Loading…")}</p>}</main>;
+  if (!wf || !catalog) return <main className="page a7-loading">{message ? <p role="alert">{message.text}</p> : <p>{t("Loading…")}</p>}</main>;
 
   const step = draft.steps.find((s) => s.id === selected);
   const status = dirty ? t("Unsaved changes") : wf.latest ? t("Version {version}{state}", { version: wf.latest.version, state: t(wf.latest.published ? " (live)" : ", draft") }) : t("Not saved yet");
+  const isLive = !dirty && !!wf.latest?.published;
+  const missing = apps.filter((a) => !a.connected);
+  const select = (next: string | null) => {
+    setSelected(next);
+    setCopied(null);
+  };
+  const editStep = (config: unknown) => update({ ...draft, steps: draft.steps.map((s) => (s.id === step!.id ? ({ ...s, config } as Step) : s)) });
+  const copy = (reference: string) =>
+    navigator.clipboard.writeText(reference).then(
+      () => setCopied(t("Copied {reference}", { reference })),
+      () => setCopied(t("Copy failed. Type {reference} into a text field.", { reference })),
+    );
+  const showRun = () => document.getElementById("run-heading")?.scrollIntoView({ block: "start", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
 
   return (
-    <div className="editor creation-page creation-editor">
-      <header className="toolbar creation-editor-header">
-        <a href="#/">{t("Automations")}</a>
-        <h1>{wf.name}</h1>
-        <AutomationTabs id={id} here="steps" overview={!!wf.setup && !!wf.live} />
-        <a href={`#/w/${id}/versions`}>{t("Versions")}</a>
-        <span className="muted status" aria-live="polite">
-          {status}
-          {wf.live && !wf.latest?.published && t(" · version {version} is live", { version: wf.live.version })}
-        </span>
-        <div className="actions">
+    <div className="a7-editor">
+      <header className="a7-head">
+        <div className="a7-head-main">
+          <p className="a7-crumb">
+            <a href="#/">{t("Automations")}</a> / {t(wf.live ? "Live" : "Drafts")}
+          </p>
+          <div className="a7-title">
+            <h1>{wf.name}</h1>
+            <span className="a7-chip" data-live={isLive || undefined}>
+              {t(isLive ? "Live" : "Draft")}
+            </span>
+            <span className="a7-meta status" aria-live="polite">
+              {status}
+              {wf.live && !wf.latest?.published && t(" · version {version} is live", { version: wf.live.version })}
+            </span>
+          </div>
+          <div className="a7-tabs">
+            <AutomationTabs id={id} here="steps" overview={!!wf.setup && !!wf.live} />
+            <a href={`#/w/${id}/versions`}>{t("Versions")}</a>
+          </div>
+        </div>
+        <div className="a7-actions">
+          <button
+            type="button"
+            onClick={() => {
+              showRun();
+              void testRun();
+            }}
+            disabled={busy || draft.steps.length === 0}
+          >
+            {t("Test run")}
+          </button>
           <button type="button" onClick={() => save(false)} disabled={busy || draft.steps.length === 0}>
             {t("Save")}
           </button>
@@ -165,94 +217,111 @@ export function Editor({ id }: { id: string }) {
           </button>
         </div>
       </header>
-      <main className="workspace">
-        <section className="canvas" aria-label={t("Workflow diagram. Tab to a step and press Enter to select it, Delete to remove it.")}>
-          <ReactFlow
-            ariaLabelConfig={flowAriaLabels(language)}
-            nodes={nodes}
-            edges={flow.edges}
-            nodeTypes={nodeTypes}
-            edgeTypes={edgeTypes}
-            onNodesChange={onNodesChange}
-            onPaneClick={() => setSelected(null)}
-            nodesDraggable={false}
-            nodesConnectable={false}
-            deleteKeyCode="Delete"
-            colorMode="light"
-            fitView
-            fitViewOptions={{ maxZoom: 1 }}
+      <div className="a7-body">
+        <section className="a7-canvas" aria-label={t("Workflow diagram. Tab to a step and press Enter to select it, Delete to remove it.")}>
+          {missing.length > 0 && (
+            <div className="a7-setup">
+              <p className="a7-setup-count">{t("{done} of {total} apps connected", { done: apps.length - missing.length, total: apps.length })}</p>
+              <span className="a7-setup-bars" aria-hidden="true">
+                {apps.map((a) => (
+                  <span key={a.provider} data-done={a.connected || undefined} />
+                ))}
+              </span>
+              <p className="a7-setup-left">{t("Left: connect {apps}", { apps: missing.map((a) => t(a.label)).join(", ") })}</p>
+              <a className="a7-setup-action" href="#/apps">
+                {t("Connect {app}", { app: t(missing[0]!.label) })}
+              </a>
+            </div>
+          )}
+          <div className="a7-view" role="group" aria-label={t("Show steps as")}>
+            <button type="button" aria-pressed={view === "diagram"} onClick={() => setView("diagram")}>
+              {t("Diagram")}
+            </button>
+            <button type="button" aria-pressed={view === "list"} onClick={() => setView("list")}>
+              {t("List")}
+            </button>
+          </div>
+          {view === "diagram" ? (
+            <div className="a7-flow">
+              <ReactFlow
+                ariaLabelConfig={flowAriaLabels(language)}
+                nodes={nodes}
+                edges={edges}
+                nodeTypes={editorNodeTypes}
+                edgeTypes={editorEdgeTypes}
+                onNodesChange={onNodesChange}
+                onPaneClick={() => select(null)}
+                nodesDraggable={false}
+                nodesConnectable={false}
+                deleteKeyCode="Delete"
+                colorMode={document.documentElement.dataset.theme === "dark" ? "dark" : "light"}
+                proOptions={{ hideAttribution: true }}
+                fitView
+                fitViewOptions={{ maxZoom: 1 }}
+              >
+                <Background gap={18} size={1.5} />
+                <ZoomBar />
+              </ReactFlow>
+            </div>
+          ) : (
+            <StepList draft={draft} selected={selected} onSelect={select} />
+          )}
+          <button
+            type="button"
+            className="a7-add"
+            onClick={() => {
+              const field = document.getElementById("add-step-type");
+              field?.scrollIntoView({ block: "center" });
+              field?.focus();
+            }}
           >
-            <Background />
-            <Controls showInteractive={false} />
-          </ReactFlow>
+            <span aria-hidden="true">+</span> {t("Add step")}
+          </button>
         </section>
-        <aside className="panel creation-editor-panel">
+        <aside className="a7-panel">
           {message && (
             <p role={message.kind === "error" ? "alert" : "status"} className={`message ${message.kind}`}>
               {message.text}
             </p>
           )}
-          {warnings.length > 0 && (
-            <section className="creation-checks" aria-labelledby="checks-heading">
-              <h2 id="checks-heading">{t("Check before publishing")}</h2>
-              <ul>
-                {warnings.map((w) => (
-                  <li key={w}>{warningForLanguage(w, language)}</li>
-                ))}
-              </ul>
-            </section>
-          )}
-          <AskAi
-            workflowId={id}
-            draft={draft}
-            onApply={(d) => {
-              update(d);
-              setSelected(null);
-              setPayload(samplePayload(d.trigger, firstResource));
-            }}
-          />
-          <nav aria-label={t("Steps")}>
-            <h2>{t("Steps")}</h2>
-            <ol className="outline">
-              <li>
-                <button type="button" aria-pressed={selected === "trigger"} onClick={() => setSelected("trigger")}>
-                  {t("Trigger: {type}", { type: t(draft.trigger.type) })}
-                </button>
-              </li>
-              {draft.steps.map((s) => (
-                <li key={s.id}>
-                  <button type="button" aria-pressed={selected === s.id} onClick={() => setSelected(s.id)}>
-                    {s.id} <span className="muted">{t(TYPE_NAMES[s.type]!)}</span>
-                  </button>
-                </li>
-              ))}
-            </ol>
-          </nav>
-          <AddStep
-            draft={draft}
-            after={step}
-            branches={step ? catalog.branches[step.type] : undefined}
-            onAdd={(type, on) => {
-              const r = addStep(draft, type, step ? { id: step.id, on } : undefined, language);
-              update(r.draft);
-              setSelected(r.id);
-            }}
-          />
-          {selected === "trigger" && <TriggerPanel trigger={draft.trigger} wf={wf} onChange={(trigger) => update({ ...draft, trigger })} />}
-          {step && (
-            <section aria-labelledby="step-heading">
-              <h2 id="step-heading">
-                {t(TYPE_NAMES[step.type]!)}: {step.id}
-              </h2>
-              <p className="muted hint">
-                {t("Use {trigger}, {step} and {secret} in text fields.", { trigger: "{{trigger.field}}", step: "{{steps.step_id.output.field}}", secret: "{{secrets.name}}" })}
-              </p>
-              <SchemaForm
-                key={step.id}
-                schema={step.type === "ai" ? withoutFiles(catalog.schemas.ai!) : catalog.schemas[step.type]!}
-                value={step.config as Record<string, unknown>}
-                onChange={(config) => update({ ...draft, steps: draft.steps.map((s) => (s.id === step.id ? ({ ...s, config } as Step) : s)) })}
+          {selected === "trigger" && (
+            <div className="a7-inspector">
+              <p className="a7-kicker a7-when">{t("When")}</p>
+              <TriggerPanel
+                trigger={draft.trigger}
+                wf={wf}
+                onChange={(trigger) => {
+                  // A new trigger type gets matching sample data; edits within a type keep what the user typed.
+                  if (trigger.type !== draft.trigger.type) setPayload(samplePayload(trigger, firstResource));
+                  update({ ...draft, trigger });
+                }}
               />
+              <NextUp draft={draft} id="trigger" />
+            </div>
+          )}
+          {step && (
+            <section className="a7-inspector" aria-labelledby="step-heading">
+              <div className="a7-kicker-row">
+                <p className="a7-kicker">{t("Step {number} · {type}", { number: draft.steps.indexOf(step) + 1, type: t(TYPE_NAMES[step.type]!) })}</p>
+                <button
+                  type="button"
+                  className="a7-delete"
+                  onClick={() => {
+                    update(removeStep(draft, step.id));
+                    select(null);
+                  }}
+                >
+                  {t("Delete step")}
+                </button>
+              </div>
+              <h2 id="step-heading">{step.id}</h2>
+              <p className="a7-lead">{summary(step, language)}</p>
+              {missingApp.get(step.id) && (
+                <p className="a7-warn-note">
+                  {t("{app} is not connected yet.", { app: t(missingApp.get(step.id)!) })} <a href="#/apps">{t("Connect in Apps")}</a>
+                </p>
+              )}
+              <SchemaForm key={step.id} schema={step.type === "ai" ? withoutFiles(catalog.schemas.ai!) : catalog.schemas[step.type]!} value={step.config as Record<string, unknown>} onChange={editStep} />
               {step.type === "ai" &&
                 ((draft.trigger.type === "form" && draft.trigger.config.fields.some((f) => f.type === "file")) || draft.trigger.type === "meta_dm") && (
                 <fieldset>
@@ -268,8 +337,7 @@ export function Editor({ id }: { id: string }) {
                         onChange={(e) => {
                           const { files = [], ...rest } = step.config as { files?: string[] };
                           const next = e.target.checked ? [...files, f.name] : files.filter((n) => n !== f.name);
-                          const config = next.length ? { ...rest, files: next } : rest;
-                          update({ ...draft, steps: draft.steps.map((s) => (s.id === step.id ? ({ ...s, config } as Step) : s)) });
+                          editStep(next.length ? { ...rest, files: next } : rest);
                         }}
                       />
                       {f.label}
@@ -278,19 +346,67 @@ export function Editor({ id }: { id: string }) {
                   <p className="muted hint">{t("Checked files are sent to the AI model you picked on the AI model page. Photos need Gemini, OpenAI or OpenRouter.")}</p>
                 </fieldset>
               )}
-              <button
-                type="button"
-                className="danger"
-                onClick={() => {
-                  update(removeStep(draft, step.id));
-                  setSelected(null);
-                }}
-              >
-                {t("Delete step")}
-              </button>
+              <section className="a7-group" aria-labelledby="insert-heading">
+                <h3 id="insert-heading">{t("Insert data from earlier steps")}</h3>
+                <p className="muted hint">
+                  {t("Use {trigger}, {step} and {secret} in text fields.", { trigger: "{{trigger.field}}", step: "{{steps.step_id.output.field}}", secret: "{{secrets.name}}" })}
+                </p>
+                <ul className="a7-chips">
+                  {insertables(draft, step.id).map((r) => (
+                    <li key={r}>
+                      <button type="button" onClick={() => void copy(r)} aria-label={t("Copy {reference}", { reference: r })}>
+                        {r.slice(2, -2).replace(/^steps\.|\.output/g, "")}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+                {copied && (
+                  <p role="status" className="a7-copied">
+                    {copied}
+                  </p>
+                )}
+              </section>
+              <NextUp draft={draft} id={step.id} />
             </section>
           )}
-          <section className="creation-test" aria-labelledby="run-heading">
+          {!selected && (
+            <div className="a7-overview">
+              <h2>{t("Steps")}</h2>
+              <p className="muted">{t("Select a step in the diagram or the list to change it.")}</p>
+            </div>
+          )}
+          {warnings.length > 0 && (
+            <section className="a7-checks" aria-labelledby="checks-heading">
+              <h2 id="checks-heading">{t("Check before publishing")}</h2>
+              <ul>
+                {warnings.map((w) => (
+                  <li key={w}>{warningForLanguage(w, language)}</li>
+                ))}
+              </ul>
+            </section>
+          )}
+          <AddStep
+            draft={draft}
+            after={step}
+            branches={step ? catalog.branches[step.type] : undefined}
+            onAdd={(type, on) => {
+              const r = addStep(draft, type, step ? { id: step.id, on } : undefined, language);
+              update(r.draft);
+              select(r.id);
+            }}
+          />
+          <div className="a7-ai">
+            <AskAi
+              workflowId={id}
+              draft={draft}
+              onApply={(d) => {
+                update(d);
+                select(null);
+                setPayload(samplePayload(d.trigger, firstResource));
+              }}
+            />
+          </div>
+          <section className="a7-test" aria-labelledby="run-heading">
             <h2 id="run-heading">{t("Run")}</h2>
             <div className="field">
               <label htmlFor="payload">{t("Sample trigger data (JSON)")}</label>
@@ -323,8 +439,66 @@ export function Editor({ id }: { id: string }) {
             )}
           </section>
         </aside>
-      </main>
+      </div>
     </div>
+  );
+}
+
+/** The accessible list: every step as a button, in order, with the branch that leads to it. */
+function StepList({ draft, selected, onSelect }: { draft: Draft; selected: string | null; onSelect: (id: string) => void }) {
+  const { t } = useLanguage();
+  return (
+    <ol className="a7-list" aria-label={t("Steps")}>
+      <li>
+        <button type="button" aria-pressed={selected === "trigger"} onClick={() => onSelect("trigger")}>
+          {t("Trigger: {type}", { type: t(draft.trigger.type) })}
+        </button>
+      </li>
+      {draft.steps.map((s, i) => {
+        const into = draft.edges.filter((e) => e.to === s.id && e.on);
+        return (
+          <li key={s.id}>
+            <button type="button" aria-pressed={selected === s.id} onClick={() => onSelect(s.id)}>
+              {/* The id comes first so the button's name starts with it; CSS puts the kicker before it. */}
+              <span className="a7-list-id">{s.id}</span>{" "}
+              <span className="a7-list-kicker">
+                {i + 1} · {t(TYPE_NAMES[s.type]!)}
+              </span>
+              {into.map((e) => (
+                <span key={e.from} className="a7-branch" data-branch={e.on}>
+                  {t("{from} on {branch}", { from: e.from, branch: t(e.on!) })}
+                </span>
+              ))}
+            </button>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
+/** What runs after this step, branch by branch. */
+function NextUp({ draft, id }: { draft: Draft; id: string }) {
+  const { t } = useLanguage();
+  const paths = nextPaths(draft, id);
+  return (
+    <section className="a7-group" aria-labelledby={`next-${id}`}>
+      <h3 id={`next-${id}`}>{t("What happens next")}</h3>
+      {paths.length === 0 ? (
+        <p className="muted">{t("The run ends here.")}</p>
+      ) : (
+        <dl className="a7-next">
+          {paths.map((p) => (
+            <div key={p.on ?? "next"}>
+              <dt className="a7-branch-text" data-branch={p.on}>
+                {p.on ? t(p.on) : t("Next")}
+              </dt>
+              <dd>{p.steps.map((s) => s.id).join(", ")}</dd>
+            </div>
+          ))}
+        </dl>
+      )}
+    </section>
   );
 }
 
@@ -332,14 +506,13 @@ function AddStep({ draft, after, branches, onAdd }: { draft: Draft; after?: Step
   const { t } = useLanguage();
   const [type, setType] = useState<AddableType>("http");
   const [on, setOn] = useState("");
-  const id = useId();
   const where = after ? t("after {id}", { id: after.id }) : t(draft.steps.length ? "at the start" : "as the first step");
   return (
     <div className="add-step">
       <div className="field">
-        <label htmlFor={`${id}-type`}>{t("Add a step {where}", { where })}</label>
+        <label htmlFor="add-step-type">{t("Add a step {where}", { where })}</label>
         <div className="row">
-          <select id={`${id}-type`} value={type} onChange={(e) => setType(e.target.value as AddableType)}>
+          <select id="add-step-type" value={type} onChange={(e) => setType(e.target.value as AddableType)}>
             {ADDABLE.map((kind) => (
               <option key={kind} value={kind}>
                 {t(TYPE_NAMES[kind]!)}

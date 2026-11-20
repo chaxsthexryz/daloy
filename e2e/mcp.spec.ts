@@ -46,8 +46,8 @@ test("create an API token, run a workflow as an MCP tool, then revoke the token"
 
   await page.reload();
   await expect(page.getByRole("cell", { name: "never" })).toHaveCount(0);
-  page.once("dialog", (d) => d.accept());
   await page.getByRole("button", { name: "Revoke e2e client" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Revoke", exact: true }).click();
   await expect(page.getByText(/^Revoked/)).toBeVisible();
   await expect(connect(token)).rejects.toThrow();
 });

@@ -28,7 +28,7 @@ export const withPeople = (def: WorkflowDefinition, real: { owner: string; membe
 export const withLabels = (def: WorkflowDefinition, real: { owner: string; member1?: string }): WorkflowDefinition =>
   swap(def, [[real.owner, PEOPLE.owner], ...(real.member1 ? ([[real.member1, PEOPLE.member1]] as [string, string][]) : [])]);
 
-const WHEN: Record<string, string> = { form: "When someone fills the form", webhook: "When another system sends a web request", manual: "When you run it by hand", meta_dm: "When a Messenger or Instagram DM arrives" };
+const WHEN: Record<string, string> = { email: "When an email arrives", payment: "When a payment event arrives", form: "When someone fills the form", webhook: "When another system sends a web request", manual: "When you run it by hand", meta_dm: "When a Messenger or Instagram DM arrives" };
 const BRANCH: Record<string, string> = {
   approved: "If approved:",
   rejected: "If rejected:",
@@ -90,6 +90,8 @@ function sentence(step: WorkflowDefinition["steps"][number], language: Language)
       return t("Send a web request to {host}", { host: /^(?:[a-z]+:\/\/)?([^/?#]+)/i.exec(text(c.url, ""))?.[1] ?? t("another system") });
     case "booking":
       return t("Hold the booked time");
+    case "sms":
+      return t("Send an SMS to {recipient}", { recipient: who(c.to) });
     case "meta_reply":
       return t("Reply on Messenger or Instagram");
     default:
@@ -97,11 +99,11 @@ function sentence(step: WorkflowDefinition["steps"][number], language: Language)
   }
 }
 
-export function plainDraft(def: WorkflowDefinition, language: Language = "en"): { when: string; steps: string[] } {
+export function draftPlan(def: WorkflowDefinition, language: Language = "en") {
   const t = (source: string, values?: Record<string, string | number>) => translate(language, source, values);
   const trigger = def.trigger;
   const when = trigger.type === "schedule" ? t("On a schedule ({cron})", { cron: trigger.config.cron }) : t(WHEN[trigger.type] ?? "When you run it by hand");
-  const steps: string[] = [];
+  const rows: { step: WorkflowDefinition["steps"][number]; action: string }[] = [];
   const seen = new Set<string>();
   const targets = new Set(def.edges.map((e) => e.to));
   // The unlabelled edge carries on the main line; labelled ones are walked once the line ends, under their label.
@@ -111,7 +113,7 @@ export function plainDraft(def: WorkflowDefinition, language: Language = "en"): 
       seen.add(id);
       const step = def.steps.find((s) => s.id === id);
       if (!step) break;
-      steps.push(prefix + sentence(step, language));
+      rows.push({ step, action: prefix + sentence(step, language) });
       const out = def.edges.filter((e) => e.from === id);
       for (const e of out) if (e.on !== undefined) later.push({ to: e.to, on: e.on });
       id = out.find((e) => e.on === undefined)?.to;
@@ -119,7 +121,12 @@ export function plainDraft(def: WorkflowDefinition, language: Language = "en"): 
     for (const b of later) walk(b.to, `${BRANCH[b.on] ? t(BRANCH[b.on]!) : t("If {branch}:", { branch: b.on })} `);
   };
   walk(def.steps.find((s) => !targets.has(s.id))?.id, "");
-  return { when, steps };
+  return { when, rows };
+}
+
+export function plainDraft(def: WorkflowDefinition, language: Language = "en") {
+  const { when, rows } = draftPlan(def, language);
+  return { when, steps: rows.map(row => row.action) };
 }
 
 export type TemplateChoice = { slug: string; label: string; href?: string; action?: "office" | "purchase" };

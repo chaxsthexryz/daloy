@@ -376,7 +376,7 @@ export function SlackConnection({ conn, configured, outcome, onChange }: { conn:
   if (configured) {
     return (
       <ConnectPanel
-        slug="slack"
+        slug="slack" sectionLabel="Channel"
         name="Slack"
         configured
         conn={conn}
@@ -438,12 +438,13 @@ export function PaymongoConnection({ conn, webhookBase, onChange }: { conn: Conn
   return (
     <div className="connection" aria-busy={busy} aria-labelledby="paymongo-h">
       <h3 id="paymongo-h">PayMongo</h3>
-      {conn && <Status conn={conn} label="Key" />}
+      {conn && <><h4>{t("Credentials")}</h4><Status conn={conn} label="Key" /></>}
       {conn?.destination && (
         <>
           <p>
             <strong>{conn.destination.mode === "live" ? t("Live mode") : t("Test mode")}</strong>
           </p>
+          <h4>{t("Webhook setup")}</h4>
           {conn.destination.webhookPending && <p className="message error">{t("The webhook secret is not saved yet, so payment events are ignored. Use Replace key or secret to finish.")}</p>}
           <p>
             {t("In PayMongo → Developers → Webhooks, add this URL with the events checkout_session.payment.paid and payment.refunded, then paste the webhook secret here.")}
@@ -1042,7 +1043,7 @@ export function RecordConnection({ app, conn, configured = false, outcome, onCha
         {error}
       </p>
   </>;
-  return <ConnectPanel slug={app} name={cfg.name} configured={configured} conn={conn} label="Account" outcome={outcome} onChange={onChange} disabled={busy || pickerBusy}
+  return <ConnectPanel slug={app} name={cfg.name} sectionLabel="Destination" configured={configured} conn={conn} label="Account" outcome={outcome} onChange={onChange} disabled={busy || pickerBusy}
     form={pasteForm}
     intro={<p>{t(app === "airtable" ? "Allow Daloy to add records to the bases you select. After connecting, pick a base and table." : app === "notion" ? "On Notion's consent screen, select the pages that contain your database. After connecting, pick a shared database." : "Allow Daloy to read your boards and add cards. After connecting, pick a board and list.")}</p>}
     actions={conn?.destination && <button type="button" disabled={busy || pickerBusy} onClick={() => void act(async () => setTest(await api<TestResult>("POST", `/settings/connections/${app}/test`)))}>{t(cfg.testButton)}</button>}
