@@ -4,7 +4,7 @@ import { useLanguage } from "./Language";
 import { api, getUsage, type RunSummary, type Usage, type Workflow } from "./api";
 import { draftPlan } from "./lib/ai-build";
 import { arrange, counts, stateKey, statusOf, triggerLabel, withTrigger, type Filter } from "./lib/automations";
-import { dayBars, runStats, RUN_LIMIT } from "./lib/ops-stats";
+import { RUN_LIMIT, successRate, totals, type OverviewEntry } from "./lib/ops-stats";
 import { ago, plainState } from "./lib/states";
 import { FormEmbed } from "./FormEmbed";
 import type { User } from "./Team";
@@ -36,7 +36,9 @@ export function Automations({ user }: { user: User }) {
   const owner = user.role === "owner";
   const [list, setList] = useState<Workflow[] | null>(null);
   const [listError, setListError] = useState(false);
-  const [runs, setRuns] = useState<RunSummary[] | null>(null);
+  const [overview, setOverview] = useState<Record<string, OverviewEntry> | null | undefined>(undefined);
+  // The selected automation's newest runs, for its panel. Undefined while loading, null when the call failed.
+  const [recent, setRecent] = useState<RunSummary[] | null | undefined>(undefined);
   const [review, setReview] = useState<RunSummary[] | null>(null);
   const [usage, setUsage] = useState<Usage | null>(null);
   const [details, setDetails] = useState<Record<string, Detail | null>>({});
@@ -47,7 +49,6 @@ export function Automations({ user }: { user: User }) {
   const [trigger, setTrigger] = useState("any");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [sheet, setSheet] = useState(false);
-  const asked = useRef(new Set<string>());
   const opener = useRef<HTMLElement | null>(null);
   const closeButton = useRef<HTMLButtonElement>(null);
 
@@ -60,35 +61,44 @@ export function Automations({ user }: { user: User }) {
       () => setListError(true),
     );
     // The figures around the table are best effort: a failure leaves that figure out instead of blocking the page.
-    api<RunSummary[]>("GET", "/runs?test=false").then(setRuns, () => setRuns(null));
+    // Counts come from the server for every automation and every run, in the viewer's own time zone.
+    const tz = encodeURIComponent(Intl.DateTimeFormat().resolvedOptions().timeZone);
+    api<OverviewEntry[]>("GET", `/workflows/overview?tz=${tz}`).then(
+      (o) => setOverview(Object.fromEntries(o.map((e) => [e.id, e]))),
+      () => setOverview(null),
+    );
     api<RunSummary[]>("GET", "/runs?review=true").then(setReview, () => setReview(null));
     getUsage().then(setUsage, () => setUsage(null));
   };
   useEffect(load, []);
 
-  // Triggers, versions and steps are not in the list, so each row's detail loads after it, four at a time.
-  useEffect(() => {
-    if (!list) return;
-    const todo = list.map((w) => w.id).filter((id) => !asked.current.has(id));
-    todo.forEach((id) => asked.current.add(id));
-    const worker = async () => {
-      for (let id = todo.shift(); id !== undefined; id = todo.shift()) {
-        const d = await api<Detail>("GET", `/workflows/${id}`).catch(() => null);
-        setDetails((prev) => ({ ...prev, [id]: d }));
-      }
-    };
-    void Promise.all([worker(), worker(), worker(), worker()]);
-  }, [list]);
-
   const all = list ?? [];
   const now = Date.now();
   const total = counts(all);
-  const typeOf = useMemo(() => Object.fromEntries(Object.entries(details).flatMap(([id, d]) => (d?.trigger ? [[id, d.trigger.type]] : []))) as Record<string, string>, [details]);
+  const typeOf = useMemo(() => Object.fromEntries(Object.entries(overview ?? {}).flatMap(([id, o]) => (o.trigger ? [[id, o.trigger]] : []))) as Record<string, string>, [overview]);
   const triggerTypes = [...new Set(Object.values(typeOf))].sort();
   const shown = withTrigger(arrange(all, query, filter).shown, trigger, typeOf);
   const selected = shown.find((w) => w.id === selectedId) ?? shown[0] ?? null;
-  const stats = runs ? runStats(runs, now) : null;
+  const stats = overview ? totals(Object.values(overview).map((o) => o.runs)) : null;
   const reviewOf = (id: string) => (review ?? []).filter((r) => r.workflowId === id);
+  // The steps and versions of the selected automation, and its newest runs, load when it is selected and again after a change.
+  const selectedKey = selected?.id;
+  useEffect(() => {
+    if (!selectedKey) return;
+    let current = true;
+    setRecent(undefined);
+    api<Detail>("GET", `/workflows/${selectedKey}`).then(
+      (d) => current && setDetails((prev) => ({ ...prev, [selectedKey]: d })),
+      () => current && setDetails((prev) => ({ ...prev, [selectedKey]: null })),
+    );
+    api<RunSummary[]>("GET", `/runs?workflowId=${selectedKey}&test=false`).then(
+      (r) => current && setRecent(r),
+      () => current && setRecent(null),
+    );
+    return () => {
+      current = false;
+    };
+  }, [selectedKey, list]);
   const filtered = query.trim() !== "" || filter !== "all" || trigger !== "any";
 
   const copy = (id: string, formId: string) => {
@@ -149,7 +159,6 @@ export function Automations({ user }: { user: User }) {
     setTrigger("any");
   };
   const percent = (n: number) => `${(n * 100).toFixed(1)}%`;
-  const partial = t("Newest {count} runs only", { count: RUN_LIMIT });
 
   const needsYou = review ? (review.length >= RUN_LIMIT ? `${RUN_LIMIT}+` : String(review.length)) : String(total.needs_you);
 
@@ -189,12 +198,10 @@ export function Automations({ user }: { user: User }) {
               <div>
                 <span>{t("Runs today")}</span>
                 <b>{stats ? stats.today : t("n/a")}</b>
-                {stats?.cappedToday && <small>{partial}</small>}
               </div>
               <div>
                 <span>{t("Success, 7 days")}</span>
                 <b>{stats ? (stats.rate === null ? t("n/a") : percent(stats.rate)) : t("n/a")}</b>
-                {stats?.cappedWeek && <small>{partial}</small>}
               </div>
               <button type="button" className="needs" aria-pressed={filter === "needs_you"} onClick={() => setFilter(filter === "needs_you" ? "all" : "needs_you")}>
                 <span>{t("Needs you")}</span>
@@ -265,9 +272,8 @@ export function Automations({ user }: { user: User }) {
                       w={w}
                       selected={selected?.id === w.id}
                       reviewCount={reviewOf(w.id).length}
-                      runs={runs}
-                      detail={details[w.id]}
-                      loaded={w.id in details}
+                      entry={overview?.[w.id]}
+                      loading={overview === undefined}
                       now={now}
                       onPick={pick}
                     />
@@ -275,7 +281,6 @@ export function Automations({ user }: { user: User }) {
                 )}
               </tbody>
             </table>
-            {stats?.cappedWeek && <p className="ops-note">{t("The 7-day bars and success rates use the newest {count} runs only.", { count: RUN_LIMIT })}</p>}
           </div>
 
           {selected && (
@@ -286,7 +291,8 @@ export function Automations({ user }: { user: User }) {
                 w={selected}
                 owner={owner}
                 detail={details[selected.id]}
-                runs={runs}
+                entry={overview?.[selected.id]}
+                runs={recent}
                 review={reviewOf(selected.id)}
                 now={now}
                 sheet={sheet}
@@ -304,13 +310,12 @@ export function Automations({ user }: { user: User }) {
   );
 }
 
-function Row({ w, selected, reviewCount, runs, detail, loaded, now, onPick }: {
+function Row({ w, selected, reviewCount, entry, loading, now, onPick }: {
   w: Workflow;
   selected: boolean;
   reviewCount: number;
-  runs: RunSummary[] | null;
-  detail: Detail | null | undefined;
-  loaded: boolean;
+  entry: OverviewEntry | undefined;
+  loading: boolean;
   now: number;
   onPick: (w: Workflow, from: HTMLElement | null) => void;
 }) {
@@ -319,11 +324,9 @@ function Row({ w, selected, reviewCount, runs, detail, loaded, now, onPick }: {
   const key = stateKey(w);
   const tone = reviewCount > 0 || key === "needs_you" ? "needs" : key === "problem" ? "problem" : status;
   const state = w.last ? plainState(w.last, now) : null;
-  const bars = runs ? dayBars(runs, w.id, now) : null;
-  const weekTotal = bars?.reduce((n, b) => n + b.total, 0) ?? 0;
-  const mine = (runs ?? []).filter((r) => r.workflowId === w.id && now - Date.parse(r.createdAt) < 7 * 86_400_000);
-  const done = mine.filter((r) => r.state === "succeeded").length;
-  const finished = done + mine.filter((r) => r.state === "failed").length;
+  const bars = entry?.runs.days ?? null;
+  const weekTotal = entry?.runs.week ?? 0;
+  const rate = entry ? successRate(entry.runs) : null;
   const peak = Math.max(1, ...(bars ?? []).map((b) => b.total));
 
   const note =
@@ -350,7 +353,7 @@ function Row({ w, selected, reviewCount, runs, detail, loaded, now, onPick }: {
         <button type="button" aria-current={selected ? "true" : undefined} onClick={(e) => onPick(w, e.currentTarget)}>{w.name}</button>
         {note && <span className={`sub ${note.kind}`}>{note.text}</span>}
       </th>
-      <td className="c-trigger">{loaded ? (detail?.trigger ? t(triggerLabel(detail.trigger.type)) : <span className="dash">-</span>) : "…"}</td>
+      <td className="c-trigger">{loading ? "…" : entry?.trigger ? t(triggerLabel(entry.trigger)) : <span className="dash">-</span>}</td>
       <td className="c-bars">
         {bars === null ? t("n/a") : weekTotal === 0 ? <span className="ops-muted">{t(w.last ? "No runs this week" : "No runs")}</span> : (
           <span className="bars" role="img" aria-label={t("{count} runs in the last 7 days", { count: weekTotal })}>
@@ -358,17 +361,18 @@ function Row({ w, selected, reviewCount, runs, detail, loaded, now, onPick }: {
           </span>
         )}
       </td>
-      <td className="c-rate">{runs === null ? t("n/a") : finished === 0 ? <span className="ops-muted">{t("n/a")}</span> : `${Math.round((done / finished) * 100)}%`}</td>
+      <td className="c-rate">{rate === null ? <span className="ops-muted">{t("n/a")}</span> : `${Math.round(rate * 100)}%`}</td>
       <td className="c-last">{w.last ? <time dateTime={w.last.createdAt}>{ago(w.last.createdAt, now, language)}</time> : <span className="ops-muted">{t("Never")}</span>}</td>
     </tr>
   );
 }
 
-function Panel({ w, owner, detail, runs, review, now, sheet, closeRef, onClose, onCopy, onPause, onDelete }: {
+function Panel({ w, owner, detail, entry, runs, review, now, sheet, closeRef, onClose, onCopy, onPause, onDelete }: {
   w: Workflow;
   owner: boolean;
   detail: Detail | null | undefined;
-  runs: RunSummary[] | null;
+  entry: OverviewEntry | undefined;
+  runs: RunSummary[] | null | undefined;
   review: RunSummary[];
   now: number;
   sheet: boolean;
@@ -400,8 +404,7 @@ function Panel({ w, owner, detail, runs, review, now, sheet, closeRef, onClose, 
       return null;
     }
   })();
-  const mine = (runs ?? []).filter((r) => r.workflowId === w.id);
-  const week = mine.filter((r) => now - Date.parse(r.createdAt) < 7 * 86_400_000).length;
+  const mine = runs ?? [];
   const statusLabel = { on: "On", paused: "Paused", off: "Off", draft: "Draft" }[status];
 
   return (
@@ -439,7 +442,9 @@ function Panel({ w, owner, detail, runs, review, now, sheet, closeRef, onClose, 
           <h3>{t("Recent runs")}</h3>
           <a href={`#/w/${w.id}/runs`}>{t("View all")}</a>
         </div>
-        {runs === null ? (
+        {runs === undefined ? (
+          <p className="ops-muted">…</p>
+        ) : runs === null ? (
           <p className="ops-muted">{t("Runs could not be loaded.")}</p>
         ) : mine.length === 0 ? (
           <p className="ops-muted">{t("No activity yet")}</p>
@@ -462,7 +467,7 @@ function Panel({ w, owner, detail, runs, review, now, sheet, closeRef, onClose, 
       </section>
 
       <dl className="panel-facts">
-        <div><dt>{t("Runs in 7 days")}</dt><dd>{runs === null ? t("n/a") : week}</dd></div>
+        <div><dt>{t("Runs in 7 days")}</dt><dd>{entry ? entry.runs.week : t("n/a")}</dd></div>
         {w.live && w.formId && (
           <div className="panel-form">
             <dt>{t("Public form")}</dt>
