@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import {
   claimVerifyToken,
+  verifyLinkStatus,
   connectGmail,
   disconnectOAuth,
   gmail,
@@ -18,7 +19,7 @@ import {
   type Db,
 } from "@daloy/db";
 import { builtInEmailCopy, gmailInput, profileInput } from "@daloy/engine";
-import { BadRequestException, Body, Controller, Delete, Get, HttpCode, Inject, NotFoundException, Post, Put, Res, UseGuards } from "@nestjs/common";
+import { BadRequestException, Body, ConflictException, GoneException, Controller, Delete, Get, HttpCode, Inject, NotFoundException, Post, Put, Res, UseGuards } from "@nestjs/common";
 import { eq } from "drizzle-orm";
 import type { Response } from "express";
 import * as z from "zod";
@@ -111,13 +112,24 @@ export class EmailSettingsController {
     }
   }
 
+  // Keep the token in the body and out of request URLs, including the read-only preview.
+  @Post("verify/status")
+  @HttpCode(200)
+  @UseGuards(RateLimit(30))
+  async verifyStatus(@CurrentUser() user: SessionUser, @Body(new ZodPipe(verifyInput)) body: z.output<typeof verifyInput>) {
+    return verifyLinkStatus(this.db, user.workspaceId, body.token);
+  }
+
   /** Claims the link from the test email. Only the signed-in owner it was sent to can use it, once, within 30 minutes. */
   @Post("verify")
   @HttpCode(204)
   @UseGuards(RateLimit(10))
   async verify(@CurrentUser() user: SessionUser, @Body(new ZodPipe(verifyInput)) body: z.output<typeof verifyInput>) {
     if (!(await claimVerifyToken(this.db, user.workspaceId, body.token))) {
-      throw new BadRequestException("This link was used already, has expired, or belongs to another account. Send a new test email.");
+      const { state } = await verifyLinkStatus(this.db, user.workspaceId, body.token);
+      if (state === "used") throw new ConflictException("This link has already been used.");
+      if (state === "expired") throw new GoneException("This link has expired.");
+      throw new BadRequestException("This link is unavailable. Send a new test email.");
     }
   }
 

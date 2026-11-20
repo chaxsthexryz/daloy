@@ -219,3 +219,7 @@ Q1 covers the integrated journey. Start at Automations, enter Build with AI, des
 After each row, append the date, row ID, design/implementation status, frame link, branch and commit, checks actually run, open issues and next row. A future session can resume from the last entry without this chat.
 
 20 November 2026. A0 is implemented locally on `design/doop-a0` at `2bd7927`, based on `def5280`. See the [desktop rail](https://doop.design/c/xH-4xV7kGK?frame=gDOrJNUuQK) and [phone menu](https://doop.design/c/xH-4xV7kGK?frame=FTr3sdPWhr). Lint, typecheck and 15 Chromium cases passed across navigation, Build with AI, language and team. Docker Desktop's Linux engine was unavailable. CI and owner integration are pending. Next is A1. Its existing uncommitted edits are in the separate design worktree.
+
+### Reproduce the Apps and Business walkthrough
+
+Build the console with `pnpm --filter @daloy/web build`. Run `DALOY_REVIEW=apps pnpm --filter @daloy/api exec tsx --tsconfig ../../tsconfig.json ../../scripts/console-review/capture.mjs` from the repository root. The capture opens the built application with local fixtures, checks overflow at 390 and 1440 pixels in English and Tagalog, then reopens every image offline. The output is `test-results/console-review/console-review.html`.

@@ -824,3 +824,9 @@ Tests: `packages/db/src/retired-secrets.test.ts` (env parsing, 90-day boundary, 
 ### Build with AI review
 
 Owners describe an automation in a conversation at #/ai. A generated definition opens Review plan. The table follows workflow edges and labels conditional paths. Change something returns to the conversation with the draft. App setup opens separately so the draft stays available. Saving opens an unpublished version in Steps. Turning it on requests publication. The assistant mark identifies the conversation UI. The configured AI model still answers it.
+
+### Apps directory and Business
+
+Apps groups saved connections together, including ones that need reconnecting. Select an app to open its settings beside the directory on desktop or full screen on a phone. Used by lists the current published automations in this workspace. The date comes from the saved connection check. PayMongo shows the most recent recorded payment and whether it used test or live mode. Business shows a preview of the public form branding and the inquiry form link and embed code.
+
+Opening a Gmail app-password verification link shows its status. The owner presses Confirm sender to use the link. Google sign-in can verify the address through consent as before. When Google apps in one workspace share a provider account, Apps names the other apps on that sign-in. A connection outside the workspace can trigger the existing general disconnect warning.

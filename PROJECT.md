@@ -304,5 +304,6 @@ DeepSeek's review is in `docs/roadmap-review-2026-11-18.md`. Claude's second opi
 - GitHub and deploy alerts: developers are not the users, and the webhook trigger covers it.
 - Stripe: PayMongo is the Philippine choice.
 - [x] Doop redesign phase 1. Build with AI, Describe and Review Plan. (claimed: codex, branch design/paper-redesign)
+- [x] Doop Apps P0 to P14 and Business W2 implemented on `design/doop-apps`. Owner walkthrough and merge review pending.
 - [ ] Doop redesign phase 2. Shared console and Automations pages. (claimed: codex, branch design/paper-redesign)
 - [x] A0 implementation and local browser checks. The shared rail and phone menu follow the approved Doop frames on branch `design/doop-a0`. Integration, CI and the clean Docker start are pending.

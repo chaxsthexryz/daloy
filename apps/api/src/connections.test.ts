@@ -1,5 +1,5 @@
 import { generateKeyPairSync, randomBytes, randomUUID } from "node:crypto";
-import { BOOKING_CHANGED, bookings, connections, deliveries, queueDelivery, requests, resources, runs, users, workflowVersions, type Db } from "@daloy/db";
+import { BOOKING_CHANGED, bookings, connections, deliveries, queueDelivery, requests, resources, runs, users, workflows, workflowVersions, type Db } from "@daloy/db";
 import { defaultAnswers, officeRequestDefinition } from "@daloy/engine";
 import type { INestApplication } from "@nestjs/common";
 import { eq, sql } from "drizzle-orm";
@@ -52,6 +52,21 @@ function keyFile(email: string) {
   const pem = privateKey.export({ type: "pkcs8", format: "pem" }).toString();
   return { pem, json: JSON.stringify({ type: "service_account", project_id: "office", private_key_id: "abc", private_key: pem, client_email: email }) };
 }
+
+it("lists apps used by the latest published version in this workspace", async () => {
+  const { agent, userId } = await signedIn();
+  const other = await signedIn();
+  for (const owner of [userId, other.userId]) {
+    const [flow] = await db.insert(workflows).values({ userId: owner, name: owner === userId ? "Inquiries" : "Private", slug: "inquiries" }).returning();
+    for (const [version, type] of ["slack", "sheets", "teams"].entries()) {
+      await db.insert(workflowVersions).values({ workflowId: flow!.id, version: version + 1, published: version < 2,
+        definition: { steps: [{ id: "sample", type }] } });
+    }
+  }
+  const { body } = await agent.get("/settings/connections").expect(200);
+  expect(body.usage).toEqual({ google_sheets: [{ id: expect.any(String), name: "Inquiries" }] });
+  expect(body.latestPayment).toBeNull();
+});
 
 describe("Google Sheets", () => {
   it("connects with a key file and a sheet link, and never shows or stores the key in the clear", async () => {

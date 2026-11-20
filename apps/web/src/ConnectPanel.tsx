@@ -92,6 +92,7 @@ export function ConnectPanel(p: {
   /** After Disconnect, when the provider did not confirm it removed Daloy's access. */
   removeHint?: string;
   onChange: () => Promise<unknown>;
+  sectionLabel?: string;
   children?: ReactNode;
 }) {
   const { t } = useLanguage();
@@ -124,22 +125,26 @@ ${sharedText}` : "")) &&
         (p.form ?? p.unavailable)
       ) : (
         <>
-          {p.conn && (p.status ?? <Status conn={p.conn} label={t(p.label)} />)}
-          {shared && <p className="muted">{sharedText}</p>}
-          {p.children}
-          {p.intro}
-          <div className="actions">
-            <button type="button" className={p.conn ? "" : "primary"} disabled={busy || p.disabled} onClick={() => void connect()}>
-              {p.conn ? t("Reconnect {app}", { app: p.name }) : t(p.connectLabel ?? "Connect {app}", { app: p.name })}
-            </button>
-            {p.conn && (
-              <>
-                {p.actions}
-                <button type="button" className="quiet" disabled={busy || p.disabled} onClick={disconnect}>{t("Disconnect")}</button>
-              </>
-            )}
-          </div>
-          {p.after}
+          <section className="connection-block">
+            <h4>{t(p.conn ? "Account connection" : "Connect")}</h4>
+            {p.conn && (p.status ?? <Status conn={p.conn} label={t(p.label)} />)}
+            {shared && <p className="muted">{sharedText}</p>}
+            {p.intro}
+            <div className="actions">
+              <button type="button" className={p.conn ? "" : "primary"} disabled={busy || p.disabled} onClick={() => void connect()}>
+                {p.conn ? t("Reconnect {app}", { app: p.name }) : t(p.connectLabel ?? "Connect {app}", { app: p.name })}
+              </button>
+              {p.conn && <button type="button" className="quiet" disabled={busy || p.disabled} onClick={disconnect}>{t("Disconnect")}</button>}
+            </div>
+          </section>
+          {p.children && <section className="connection-block">
+            {p.conn && p.sectionLabel && <h4>{t(p.sectionLabel)}</h4>}
+            {p.children}
+          </section>}
+          {((p.conn && p.actions) || p.after) && <section className="connection-block">
+            {p.conn && p.actions && <div className="actions">{p.actions}</div>}
+            {p.after}
+          </section>}
           {removed && !p.conn && <p role="status">{t(p.removeHint ?? "Daloy deleted its access to {app}. {app} did not confirm that it removed Daloy, so remove Daloy in your {app} account settings too.", { app: p.name })}</p>}
           {p.form && (
             <details>
