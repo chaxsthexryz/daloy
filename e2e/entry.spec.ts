@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { resetLink } from "./mail";
-import { PASSWORD, registerOwner } from "./workspace";
+import { joinAs, PASSWORD, registerOwner } from "./workspace";
 
 // Doop rows E1 to E6: the signed-out pages and My requests.
 const PHONE = { width: 390, height: 844 };
@@ -256,4 +256,67 @@ test("E5 on a phone: no sideways scroll", async ({ browser }) => {
   await expect(page.getByRole("heading", { name: "Join your team" })).toBeVisible();
   await noSideScroll(page);
   await context.close();
+});
+
+const ROWS = [
+  { reference: "REQ-0189", subject: "Replace the oven door gasket", automation: "Office requests", createdAt: "2026-11-19T06:41:00Z", state: "waiting" },
+  { reference: "PUR-0231", subject: "Order 20 kg of bread flour", automation: "Purchase requests", createdAt: "2026-11-18T01:05:00Z", state: "succeeded" },
+  { reference: "PUR-0226", subject: "New card reader for the second till", automation: "Purchase requests", createdAt: "2026-11-11T02:30:00Z", state: "failed" },
+  { reference: "REQ-0171", subject: "Fix the leaking tap in the back kitchen", automation: "Office requests", createdAt: "2026-11-04T00:48:00Z", state: "needs_review" },
+];
+
+test("E6: a requester with no requests sees the empty card, reaches Account and signs out", async ({ page, browser }) => {
+  await registerOwner(page);
+  const requester = await joinAs(browser, page, "Requester", { width: 1280, height: 800 });
+  await expect(requester.getByRole("heading", { name: "My requests" })).toBeVisible();
+  await expect(requester.getByText("None yet.")).toBeVisible();
+  await expect(requester.getByText("Approval requests come to your email")).toHaveCount(0);
+  await expect(requester.getByText(/\(requester\)$/)).toBeVisible();
+  await requester.getByRole("link", { name: "Account", exact: true }).click();
+  await expect(requester.getByRole("heading", { name: "Account", exact: true })).toBeVisible();
+  await requester.getByRole("link", { name: "My requests" }).click();
+  await requester.getByRole("button", { name: "Sign out" }).click();
+  await expect(requester.getByRole("heading", { name: "Sign in" })).toBeVisible();
+});
+
+test("E6: the table shows each request with words for its state, and phone width turns rows into cards", async ({ page, browser }) => {
+  await registerOwner(page);
+  const requester = await joinAs(browser, page, "Requester", { width: 1280, height: 800 });
+  await requester.route("**/my/requests", (route) => route.fulfill({ json: ROWS }));
+  await requester.reload();
+  const table = requester.getByRole("table");
+  await expect(table.getByRole("columnheader")).toHaveText(["Reference", "Subject", "Automation", "Sent", "Status"]);
+  await expect(table.getByRole("row")).toHaveCount(5);
+  const first = table.getByRole("row").nth(1);
+  await expect(first).toContainText("REQ-0189");
+  await expect(first).toContainText("Replace the oven door gasket");
+  await expect(first).toContainText("Waiting");
+  await expect(table.getByRole("row").nth(2)).toContainText("Succeeded");
+  await expect(table.getByRole("row").nth(3)).toContainText("Failed");
+  await expect(table.getByRole("row").nth(4)).toContainText("Needs review");
+
+  await requester.setViewportSize({ width: 390, height: 844 });
+  await expect(table.getByRole("columnheader").first()).not.toBeInViewport();
+  await expect(first.getByText("Waiting")).toBeVisible();
+  await expect(first.getByText("Office requests")).toBeVisible();
+  await noSideScroll(requester);
+  await requester.context().close();
+});
+
+test("E6: an approver is told where approvals arrive, and a failed load says so", async ({ page, browser }) => {
+  await registerOwner(page);
+  const email = `entry-approver-${Date.now()}@test.local`;
+  const link = await inviteLink(page, email, "Approver");
+  const ctx = await browser.newContext();
+  const approver = await ctx.newPage();
+  await approver.goto(link);
+  await approver.getByLabel(/Password/).fill(PASSWORD);
+  await approver.getByRole("button", { name: "Join" }).click();
+  await expect(approver.getByRole("heading", { name: "My requests" })).toBeVisible();
+  await expect(approver.getByText(`Approval requests come to your email. Open the link while signed in as ${email} to answer.`)).toBeVisible();
+
+  await approver.route("**/my/requests", (route) => route.fulfill({ status: 500, json: { message: "could not load requests" } }));
+  await approver.reload();
+  await expect(approver.getByRole("alert")).toHaveText("could not load requests");
+  await ctx.close();
 });
