@@ -78,7 +78,7 @@ describe("parseDraftReply", () => {
     const bad = {
       name: "Bad",
       summary: "x",
-      definition: { trigger: { type: "manual", config: {} }, steps: [{ id: "a", type: "sms", config: {} }, { id: "b", type: "delay", config: { seconds: 5 } }], edges: [{ from: "b", to: "zzz" }] },
+      definition: { trigger: { type: "manual", config: {} }, steps: [{ id: "a", type: "fax", config: {} }, { id: "b", type: "delay", config: { seconds: 5 } }], edges: [{ from: "b", to: "zzz" }] },
     };
     const r = parseDraftReply(reply(bad));
     expect(r.ok).toBe(false);

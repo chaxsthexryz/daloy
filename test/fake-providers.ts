@@ -76,6 +76,7 @@ export async function startFakeProviders(port = 0) {
   const sheets = new Map<string, { title: string; tabs: Map<string, string[][]>; editors: Set<string>; metadata: Map<number, SheetMeta> }>();
   const slack = { token: "", team: "Lim Dental", channels: [{ id: "C0REQ", name: "office-requests", is_member: true }], messages: [] as { channel: string; text: string; ts: string }[], revoked: false, installs: new Map<string, { teamId: string; team: string }>(), revokedInstalls: [] as string[] };
   const telegram = { token: "", bot: "daloy_test_bot", chats: [{ id: -1001234567890, title: "Office team" }] as { id: number; title: string }[], updates: [] as Record<string, unknown>[], webhook: false, messages: [] as { chat: string; text: string; id: number }[], revoked: false };
+  const unisms = { secretKey: "", messages: [] as { id: string; recipient: string; content: string; senderId: string; metadata?: Record<string, unknown> }[], revoked: false };
   // Airtable, Notion and Trello (N15, decision 0046): a bearer or key/token check, one target each, and the records added.
   // The OAuth pickers (decision 0062) list what is here: bases and tables for Airtable, databases for Notion, boards and lists for Trello.
   const airtable = {
@@ -224,6 +225,7 @@ export async function startFakeProviders(port = 0) {
         outlookMessages: microsoft.sent,
         teamsPosts: teams.posts.map((p) => p.text),
         telegramMessages: telegram.messages.map((m) => m.text),
+        unismsMessages: unisms.messages,
         paymongoSessions: paymongo.sessions,
         airtableRecords: airtable.records.map((r) => r.fields),
         notionPages: notion.pages.map((p) => p.properties),
@@ -564,6 +566,23 @@ export async function startFakeProviders(port = 0) {
       return answer(200, { values: tab });
     }
 
+    // UniSMS REST API (POST /api/sms): HTTP Basic Auth with "<secretKey>:", JSON body { recipient, content, sender_id, metadata }.
+    // Placed before Slack's /api/<method> wildcard so /api/sms routes here.
+    if (path === "/api/sms" && req.method === "POST") {
+      const m = /^Basic (.+)$/.exec(req.headers.authorization ?? "");
+      const decoded = m ? Buffer.from(m[1]!, "base64").toString("utf8") : "";
+      const [keyOnly, pass] = decoded.split(":");
+      if (unisms.revoked || !unisms.secretKey || keyOnly !== unisms.secretKey || pass !== "") {
+        return json(res, 401, { error: "unauthorized" });
+      }
+      const b = JSON.parse(raw || "{}") as { recipient?: string; content?: string; sender_id?: string; metadata?: Record<string, unknown> };
+      if (!b.recipient || !b.content) return json(res, 400, { error: "invalid_request", message: "recipient and content are required" });
+      const id = `sms-${++seq}`;
+      const senderId = b.sender_id ?? "Unisoft";
+      unisms.messages.push({ id, recipient: b.recipient, content: b.content, senderId, ...(b.metadata ? { metadata: b.metadata } : {}) });
+      return answer(200, { success: true, id, recipient: b.recipient, sender_id: senderId, status: "queued" });
+    }
+
     // Slack Web API: always HTTP 200 with ok false and an error code, except rate limits.
     const slackMethod = /^\/api\/([\w.]+)$/.exec(path)?.[1];
     if (slackMethod === "oauth.v2.access") {
@@ -728,7 +747,7 @@ export async function startFakeProviders(port = 0) {
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 
   return {
-    urls: { googleToken: `${base}/token`, sheets: base, calendar: base, drive: base, paymongo: base, airtable: base, notion: base, trello: base, slack: base, telegram: base, microsoftLogin: `${base}/ms`, graph: `${base}/graph`, gmail: base, airtableLogin: `${base}/airtable-login`, trelloLogin: `${base}/atlassian`, teamsHosts: ["127.0.0.1"] },
+    urls: { googleToken: `${base}/token`, sheets: base, calendar: base, drive: base, paymongo: base, airtable: base, notion: base, trello: base, slack: base, telegram: base, unisms: base, microsoftLogin: `${base}/ms`, graph: `${base}/graph`, gmail: base, airtableLogin: `${base}/airtable-login`, trelloLogin: `${base}/atlassian`, teamsHosts: ["127.0.0.1"] },
     /** The installation's OAuth clients for the record apps, as providerUrls() would read them from env (decision 0062). */
     recordClients: () => ({
       airtableClient: { clientId: oauth.airtable!.clientId, clientSecret: oauth.airtable!.clientSecret },
@@ -738,6 +757,7 @@ export async function startFakeProviders(port = 0) {
     calls,
     slack,
     telegram,
+    unisms,
     airtable,
     notion,
     trello,

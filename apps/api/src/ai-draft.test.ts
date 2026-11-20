@@ -20,7 +20,7 @@ let llm: Server;
 let replies: string[] = [];
 const asked: { messages: { role: string; content: string }[] }[] = [];
 const valid = JSON.stringify({ name: "Contact form triage", summary: "Thanks the sender and sorts billing questions.", definition: TEMPLATES[0]!.definition });
-const invalid = JSON.stringify({ name: "Broken", summary: "x", definition: { trigger: { type: "manual", config: {} }, steps: [{ id: "a", type: "sms", config: {} }], edges: [] } });
+const invalid = JSON.stringify({ name: "Broken", summary: "x", definition: { trigger: { type: "manual", config: {} }, steps: [{ id: "a", type: "fax", config: {} }], edges: [] } });
 
 beforeAll(async () => {
   const fresh = await freshDatabase();

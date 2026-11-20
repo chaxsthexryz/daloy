@@ -6,7 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 import { toFlow, type Draft, type RunEdgeData, type StepNodeData } from "./lib/graph";
 import { runFlow, STATUS, type FlowRun } from "./lib/run-flow";
 
-export const TYPE_NAMES: Record<string, string> = { condition: "Condition", http: "HTTP request", email: "Send email", delay: "Delay", ai: "AI task", approval: "Approval", sheets: "Add to Google Sheets", drive: "Save files to Google Drive", slack: "Post to Slack", outlook: "Send from Outlook", teams: "Post to Teams", telegram: "Send to Telegram", calendar: "Add to Google Calendar", paymongo_link: "Create payment link", payment_status: "Check payment", airtable: "Add to Airtable", notion: "Add to Notion", trello: "Add to Trello", booking: "Booking" };
+export const TYPE_NAMES: Record<string, string> = { condition: "Condition", http: "HTTP request", email: "Send email", delay: "Delay", ai: "AI task", approval: "Approval", sheets: "Add to Google Sheets", drive: "Save files to Google Drive", slack: "Post to Slack", outlook: "Send from Outlook", teams: "Post to Teams", telegram: "Send to Telegram", sms: "Send SMS", calendar: "Add to Google Calendar", paymongo_link: "Create payment link", payment_status: "Check payment", airtable: "Add to Airtable", notion: "Add to Notion", trello: "Add to Trello", booking: "Booking" };
 
 export function summary(step: Step, language: Language = "en"): string {
   const t = (source: string, values?: Record<string, string | number>) => translate(language, source, values);
@@ -17,6 +17,7 @@ export function summary(step: Step, language: Language = "en"): string {
       return `${step.config.method} ${step.config.url}`;
     case "email":
     case "outlook":
+    case "sms":
       return t("to {recipient}", { recipient: String(step.config.to) });
     case "delay": {
       const { seconds, until, offsetSeconds } = step.config;

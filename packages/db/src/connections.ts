@@ -3,10 +3,19 @@ import { decryptSecret, encryptSecret } from "./crypto";
 import type { Db } from "./index";
 import { connections, type AuthMethod, type Provider } from "./schema";
 
-export const PROVIDER_NAMES: Record<Provider, string> = { google_sheets: "Google Sheets", slack: "Slack", outlook: "Outlook", teams: "Microsoft Teams", telegram: "Telegram", google_calendar: "Google Calendar", google_drive: "Google Drive", paymongo: "PayMongo", airtable: "Airtable", notion: "Notion", trello: "Trello" };
+export const PROVIDER_NAMES: Record<Provider, string> = { google_sheets: "Google Sheets", slack: "Slack", outlook: "Outlook", teams: "Microsoft Teams", telegram: "Telegram", google_calendar: "Google Calendar", google_drive: "Google Drive", paymongo: "PayMongo", airtable: "Airtable", notion: "Notion", trello: "Trello", unisms: "UniSMS" };
 
 /** What a pasted credential is, by provider. An Outlook credential is always a Microsoft grant. */
-const PASTED: Record<Provider, AuthMethod> = { google_sheets: "service_account", google_calendar: "service_account", google_drive: "service_account", teams: "webhook_url", outlook: "oauth", slack: "token", telegram: "token", paymongo: "token", airtable: "token", notion: "token", trello: "token" };
+const PASTED: Record<Provider, AuthMethod> = { google_sheets: "service_account", google_calendar: "service_account", google_drive: "service_account", teams: "webhook_url", outlook: "oauth", slack: "token", telegram: "token", paymongo: "token", airtable: "token", notion: "token", trello: "token", unisms: "token" };
+
+/** Operator shared UniSMS fallback from env, enabled only when SHARED_UNISMS_KEY=open with both key and sender id set. */
+export function sharedUnismsConfig(env: NodeJS.ProcessEnv = process.env): { secretKey: string; senderId: string } | null {
+  if (env.SHARED_UNISMS_KEY !== "open") return null;
+  const secretKey = env.UNISMS_SECRET_KEY?.trim();
+  const senderId = env.UNISMS_SENDER_ID?.trim();
+  if (!secretKey || !senderId) return null;
+  return { secretKey, senderId };
+}
 
 // The owner id is in the associated data (crypto.ts), so a credential copied to another owner's row does not decrypt.
 const secretName = (provider: Provider) => `connection:${provider}`;

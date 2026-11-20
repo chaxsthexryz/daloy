@@ -1,4 +1,5 @@
 import { createHash, createSign, randomBytes } from "node:crypto";
+import { normalizePhMobile, SMS_MAX_CHARS } from "@daloy/engine";
 import * as z from "zod";
 
 /**
@@ -31,6 +32,8 @@ export type ProviderUrls = {
   drive: string;
   slack: string;
   telegram: string;
+  /** UniSMS API base. Unset in test fakes: unismsSend falls back to https://unismsapi.com. */
+  unisms?: string;
   /** PayMongo API base. Unset in test fakes: paymongo.ts falls back to the real one. */
   paymongo?: string;
   airtable: string;
@@ -65,6 +68,7 @@ export const providerUrls = (env: NodeJS.ProcessEnv = process.env): ProviderUrls
   drive: trim(env.GOOGLE_DRIVE_URL ?? "https://www.googleapis.com"),
   slack: trim(env.SLACK_API_URL ?? "https://slack.com"),
   telegram: trim(env.TELEGRAM_API_URL ?? "https://api.telegram.org"),
+  unisms: trim(env.UNISMS_API_URL ?? "https://unismsapi.com"),
   paymongo: trim(env.PAYMONGO_API_URL ?? "https://api.paymongo.com"),
   airtable: trim(env.AIRTABLE_API_URL ?? "https://api.airtable.com"),
   notion: trim(env.NOTION_API_URL ?? "https://api.notion.com"),
@@ -764,4 +768,56 @@ export async function teamsPost(urls: ProviderUrls, webhookUrl: string, text: st
   if (res.status === 429) throw new ProviderError("Teams is limiting requests right now. Daloy will try again.", "quota", retryAfter(res.headers));
   if (res.status >= 500) throw new ProviderError(`Teams answered ${res.status}.`, "ambiguous");
   throw new ProviderError(`Teams rejected the card (${res.status}). Check that the workflow posts the card it receives.`, "invalid");
+}
+
+// ---------------------------------------------------------------- UniSMS (Philippine SMS, phase N7, decision 0068)
+
+export type UnismsMessage = { recipient: string; content: string; senderId?: string; metadata?: Record<string, string> };
+
+function redactUnisms(text: string, secretKey: string): string {
+  let out = text;
+  if (secretKey) {
+    out = out.replaceAll(secretKey, "[secret]");
+    const b64 = Buffer.from(`${secretKey}:`).toString("base64");
+    if (b64) out = out.replaceAll(b64, "[secret]");
+  }
+  return out.replace(/\bBasic\s+[A-Za-z0-9+/=]{6,}/gi, "Basic [secret]");
+}
+
+/**
+ * Sends one Philippine SMS via UniSMS REST API (POST /api/sms with HTTP Basic Auth).
+ * - 429 -> quota (honours Retry-After)
+ * - 401/403 -> auth (marks workspace connection failed, fenced by credential IV)
+ * - 400/4xx -> invalid (never retried)
+ * - 5xx / timeout / dropped connection after connect -> ambiguous (parks in needs_review, never blindly double-sent)
+ */
+export async function unismsSend(urls: ProviderUrls, secretKey: string, sms: UnismsMessage) {
+  const phone = normalizePhMobile(sms.recipient);
+  if (!phone.ok) throw new ProviderError(phone.error, "invalid");
+  const content = sms.content.trim();
+  if (!content) throw new ProviderError("SMS message cannot be empty.", "invalid");
+  if (content.length > SMS_MAX_CHARS) throw new ProviderError(`SMS message is ${content.length} characters, above the ${SMS_MAX_CHARS}-character limit.`, "invalid");
+  const senderId = sms.senderId?.trim() || "Unisoft";
+  const base = trim(urls.unisms ?? "https://unismsapi.com");
+  const auth = `Basic ${Buffer.from(`${secretKey}:`).toString("base64")}`;
+  const body: Record<string, unknown> = { recipient: phone.value, content, sender_id: senderId };
+  if (sms.metadata && Object.keys(sms.metadata).length > 0) body.metadata = sms.metadata;
+  const res = await call(
+    `${base}/api/sms`,
+    { method: "POST", headers: { "content-type": "application/json", authorization: auth }, body: JSON.stringify(body) },
+    urls.timeoutMs ?? 10_000,
+    true,
+    "UniSMS",
+  );
+  if (res.status === 429) throw new ProviderError("UniSMS is limiting requests right now. Daloy will try again.", "quota", retryAfter(res.headers));
+  if (res.status === 401 || res.status === 403) {
+    throw new ProviderError("UniSMS rejected the secret key or account access. Check your UniSMS credentials in Apps.", "auth");
+  }
+  if (res.status >= 500) throw new ProviderError(`UniSMS answered ${res.status}.`, "ambiguous");
+  if (res.status >= 200 && res.status < 300 && res.body.success !== false) {
+    return { id: String(res.body.id ?? res.body.message_id ?? res.body.reference_id ?? ""), recipient: phone.value, senderId, sent: true };
+  }
+  const rawMsg = typeof res.body.message === "string" ? res.body.message : typeof res.body.error === "string" ? res.body.error : "";
+  const cleanMsg = redactUnisms(rawMsg, secretKey).slice(0, 200);
+  throw new ProviderError(`UniSMS rejected the SMS${cleanMsg ? `: ${cleanMsg}` : ` (${res.status})`}.`, "invalid");
 }

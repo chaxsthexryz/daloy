@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { workspaceLanguage, aiConnection, bookFromStep, checkRecipients, claimTimeout, claimUsage, createApproval, findPaymentForStep, findApprover, queueCalendarEvent, queueDelivery, readSecrets, redactSecrets, secretForms, sendAs, type Db, type MailDeps, type Provider } from "@daloy/db";
-import { approvalEmailBody, type FileRef, bookingStartField, conditionBranch, parseZoned, type TestChoice, type Trigger, declaresJson, parseInstant, isRetryable, mockAiOutput, parseJsonTemplate, resolveJsonTemplate, resolveTemplate, StepError, usesSecrets, type ExpressionContext, type Step } from "@daloy/engine";
+import { approvalEmailBody, type FileRef, bookingStartField, conditionBranch, normalizePhMobile, parseZoned, SMS_MAX_CHARS, type TestChoice, type Trigger, declaresJson, parseInstant, isRetryable, mockAiOutput, parseJsonTemplate, resolveJsonTemplate, resolveTemplate, StepError, usesSecrets, type ExpressionContext, type Step } from "@daloy/engine";
 import type { StepExecutor, StepResult } from "../advance";
 import { runAi } from "./ai";
 import { loadAiFiles } from "./ai-files";
@@ -46,6 +46,7 @@ type AiInput = { input: string };
 type ApprovalInput = { to?: string; approver?: string; subject: string; message: string; timeoutSeconds: number };
 type SheetsInput = { columns: string[] };
 type SlackInput = { text: string };
+type SmsInput = { to: string; message: string; senderId?: string };
 type CalendarInput = { title: string; description: string };
 type RecordInput = { fields?: Record<string, string>; title?: string; name?: string; desc?: string };
 
@@ -92,6 +93,10 @@ function resolveInput(step: Step, ctx: ExpressionContext): Record<string, unknow
     case "teams":
     case "telegram":
       return { text: text(step.config.text, ctx) } satisfies SlackInput;
+    case "sms": {
+      const { to, message, senderId } = step.config;
+      return { to: text(to, ctx), message: text(message, ctx), ...(senderId ? { senderId } : {}) } satisfies SmsInput;
+    }
     case "calendar":
       return { title: text(step.config.title, ctx), description: step.config.description === undefined ? "" : text(step.config.description, ctx) } satisfies CalendarInput;
     case "payment_status":
@@ -262,6 +267,20 @@ async function runStep(deps: FullDeps, step: Step, input: unknown, ctx: Expressi
       const reference = typeof ref === "string" ? ref : runId;
       const d = await queueDelivery(deps.db, { userId, runId, stepId: step.id, provider: "google_drive", reference, payload: { files } });
       return { output: { deliveryId: d.id, reference, state: d.state, files: files.length } };
+    }
+    case "sms": {
+      const cfg = input as SmsInput;
+      const phone = normalizePhMobile(cfg.to);
+      if (!phone.ok) throw new StepError(phone.error, false);
+      const message = cfg.message.trim();
+      if (!message) throw new StepError("SMS message cannot be empty.", false);
+      if (message.length > SMS_MAX_CHARS) throw new StepError(`SMS message is ${message.length} characters, above the ${SMS_MAX_CHARS}-character limit.`, false);
+      const ref = (ctx.trigger as { reference?: unknown } | null)?.reference;
+      const reference = typeof ref === "string" ? ref : runId;
+      const payload = { to: phone.value, message, ...(cfg.senderId ? { senderId: cfg.senderId } : {}) };
+      if (mock) return { output: { mocked: true, reference, ...payload } };
+      const d = await queueDelivery(deps.db, { userId, runId, stepId: step.id, provider: "unisms", reference, payload });
+      return { output: { deliveryId: d.id, reference, to: phone.value, state: d.state } };
     }
     case "sheets":
     case "slack":

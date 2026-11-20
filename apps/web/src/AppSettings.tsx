@@ -35,6 +35,11 @@ function PlanAndUsage() {
         <li>
           {t("AI actions: {count} this month", { count: ofLimit(u.ai, t) })} <span className="muted">{t("(back on {day})", { day: day(u.ai.resetsOn) })}</span>
         </li>
+        {u.sms && (
+          <li>
+            {t("SMS messages: {count} this month", { count: ofLimit(u.sms, t) })} <span className="muted">{t("(back on {day})", { day: day(u.sms.resetsOn) })}</span>
+          </li>
+        )}
         <li>
           {t("Emails: {count} today", { count: ofLimit(u.email, t) })} <span className="muted">{t("(back on {day})", { day: day(u.email.resetsOn) })}</span>
         </li>

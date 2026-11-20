@@ -20,3 +20,4 @@ export * from "./brand";
 export * from "./email-copy";
 export * from "./template-language";
 export * from "./file-type";
+export * from "./phone";

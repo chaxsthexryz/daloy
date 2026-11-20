@@ -1,6 +1,7 @@
 import * as z from "zod";
 import { aiConfigSchema } from "./ai";
 import { FILES_PER_FIELD, type FileRef } from "./file-type";
+import { SENDER_ID_RE } from "./phone";
 import { isTimeZone, parseZoned } from "./zoned";
 
 // Ids end up inside expression paths ({{steps.<id>.output}}), so keep them to a safe charset.
@@ -81,6 +82,13 @@ export const outlookConfigSchema = emailConfigSchema;
 export const teamsConfigSchema = slackConfigSchema;
 // A Telegram message goes to the one chat picked in Apps, as plain text (decision 0042). Queued like Slack.
 export const telegramConfigSchema = slackConfigSchema;
+// Philippine SMS through UniSMS (phase N7, decision 0068). Queued as a delivery with needs_review on unknown outcomes.
+export const smsConfigSchema = z.object({
+  to: template(500).min(1).describe("Philippine mobile number (+639XXXXXXXXX, 639XXXXXXXXX or 09XXXXXXXXX) or a template such as {{trigger.phone}}."),
+  message: template(2500).min(1).describe("SMS text. The rendered message must be at most 670 characters."),
+  senderId: z.string().trim().min(1).max(11).regex(SENDER_ID_RE, "Sender ID uses up to 11 letters, digits, spaces, - or _").optional().describe("Optional registered Sender ID. Leave empty to use the connected default."),
+});
+export type SmsConfig = z.infer<typeof smsConfigSchema>;
 // A calendar event for the run's booking, in the one calendar picked in Apps (decision 0044). It follows the booking: moved when it is rescheduled, deleted when it is cancelled.
 export const calendarConfigSchema = z.object({ title: template(300).min(1), description: template(3000).optional() });
 // A PayMongo checkout link for the amount in pesos (text, so a template works), sent on by a later step (decision 0045). Idempotent per run and step.
@@ -138,6 +146,7 @@ const stepSchema = z.discriminatedUnion("type", [
   z.object({ id: stepId, type: z.literal("outlook"), config: outlookConfigSchema }),
   z.object({ id: stepId, type: z.literal("teams"), config: teamsConfigSchema }),
   z.object({ id: stepId, type: z.literal("telegram"), config: telegramConfigSchema }),
+  z.object({ id: stepId, type: z.literal("sms"), config: smsConfigSchema }),
   z.object({ id: stepId, type: z.literal("calendar"), config: calendarConfigSchema }),
   z.object({ id: stepId, type: z.literal("airtable"), config: airtableConfigSchema }),
   z.object({ id: stepId, type: z.literal("notion"), config: notionConfigSchema }),

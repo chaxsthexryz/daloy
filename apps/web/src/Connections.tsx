@@ -5,7 +5,7 @@ import { ConnectPanel, Status, useAction } from "./ConnectPanel";
 import { RecordTargetPicker } from "./RecordTargetPicker";
 import { PaymongoSetup, TeamsSetup, TelegramSetup } from "./PasteSetups";
 
-export type Provider = "google_sheets" | "slack" | "outlook" | "teams" | "telegram" | "google_calendar" | "google_drive" | "paymongo" | "airtable" | "notion" | "trello";
+export type Provider = "google_sheets" | "slack" | "outlook" | "teams" | "telegram" | "unisms" | "google_calendar" | "google_drive" | "paymongo" | "airtable" | "notion" | "trello";
 export type Connection = { provider: Provider; status: "active" | "failed"; authMethod?: "token" | "service_account" | "oauth" | "webhook_url"; account: string; destination: Record<string, string> | null; lastError: string | null; lastTestedAt: string | null };
 export type TestResult = { ok: true; range?: string; channel?: string } | { ok: false; error: string };
 export type OutlookSetup = { configured: boolean; adminConsentUrl?: string };
@@ -519,6 +519,96 @@ export function TelegramConnection({ conn, onChange }: { conn: Connection | null
   );
 }
 
+export function UnismsConnection({ conn, onChange }: { conn: Connection | null; onChange: () => Promise<unknown> }) {
+  const { t } = useLanguage();
+  const { error, busy, act } = useAction(onChange);
+  const [editing, setEditing] = useState(false);
+  const [test, setTest] = useState<TestResult | null>(null);
+  const [form, setForm] = useState({ secretKey: "", senderId: conn?.destination?.senderId ?? "Unisoft" });
+  const [testPhone, setTestPhone] = useState("");
+  const save = (e: FormEvent) => {
+    e.preventDefault();
+    void act(async () => {
+      const payload = form.secretKey.trim()
+        ? { secretKey: form.secretKey.trim(), senderId: form.senderId.trim() || "Unisoft" }
+        : { senderId: form.senderId.trim() || "Unisoft" };
+      await api("PUT", "/settings/connections/unisms", payload);
+      setForm({ secretKey: "", senderId: payload.senderId });
+      setEditing(false);
+      setTest(null);
+    });
+  };
+  const sendTest = (e: FormEvent) => {
+    e.preventDefault();
+    void act(async () => setTest(await api<TestResult>("POST", "/settings/connections/unisms/test", { to: testPhone })));
+  };
+  const showForm = !conn || editing;
+
+  return (
+    <div className="connection" aria-busy={busy} aria-labelledby="unisms-h">
+      <h3 id="unisms-h">UniSMS</h3>
+      {conn && <Status conn={conn} label={t("Sender ID")} />}
+      {conn?.destination && (
+        <p>
+          {t("SMS messages go out with Sender ID")} <strong>{conn.destination.senderId ?? "Unisoft"}</strong>.
+        </p>
+      )}
+      <p className="muted">
+        {t("UniSMS's default test Sender ID (Unisoft) reaches only Globe and DITO and blocks links. A registered custom Sender ID reaches Globe, Smart, DITO, Sun, and TNT.")}
+      </p>
+      {conn && (
+        <>
+          <form onSubmit={sendTest} className="row">
+            <div className="field">
+              <label htmlFor="unisms-test-phone">{t("Test mobile number")}</label>
+              <input id="unisms-test-phone" value={testPhone} onChange={(e) => setTestPhone(e.target.value)} required placeholder="+639171234567" />
+            </div>
+            <div className="actions">
+              <button type="submit" disabled={busy}>
+                {t("Send a test SMS")}
+              </button>
+              {!editing && (
+                <button type="button" className="quiet" onClick={() => { setForm({ secretKey: "", senderId: conn.destination?.senderId ?? "Unisoft" }); setEditing(true); }}>
+                  {t("Replace key or Sender ID")}
+                </button>
+              )}
+              <button type="button" className="quiet" disabled={busy} onClick={() => window.confirm(t("Disconnect UniSMS? Automations stop sending SMS until you reconnect.")) && void act(() => api("DELETE", "/settings/connections/unisms"))}>
+                {t("Disconnect")}
+              </button>
+            </div>
+          </form>
+        </>
+      )}
+      <Outcome test={test} what={t("UniSMS accepted a test SMS")} />
+      {showForm && (
+        <form onSubmit={save}>
+          <div className="field">
+            <label htmlFor="unisms-key">{t("Secret Key")}{conn ? t(", leave empty to keep the current key") : ""}</label>
+            <input id="unisms-key" type="password" value={form.secretKey} onChange={(e) => setForm({ ...form, secretKey: e.target.value })} required={!conn} autoComplete="off" spellCheck={false} />
+          </div>
+          <div className="field">
+            <label htmlFor="unisms-sender">{t("Sender ID")}</label>
+            <input id="unisms-sender" value={form.senderId} onChange={(e) => setForm({ ...form, senderId: e.target.value })} maxLength={11} placeholder="Unisoft" />
+          </div>
+          <div className="actions">
+            <button type="submit" className="primary" disabled={busy}>
+              {conn ? t("Save UniSMS") : t("Connect UniSMS")}
+            </button>
+            {conn && (
+              <button type="button" className="quiet" onClick={() => setEditing(false)}>
+                {t("Cancel")}
+              </button>
+            )}
+          </div>
+        </form>
+      )}
+      <p role="alert" className="message error" hidden={!error}>
+        {error}
+      </p>
+    </div>
+  );
+}
+
 export function OutlookConnection({ conn, setup, outcome, onChange }: { conn: Connection | null; setup: OutlookSetup; outcome?: string; onChange: () => Promise<unknown> }) {
   const { t } = useLanguage();
   const { error, busy, act } = useAction(onChange);
@@ -611,25 +701,27 @@ export type Delivery = {
   lastError: string | null;
 };
 
-const NAMES: Record<Provider, string> = { google_sheets: "Sheet row", slack: "Slack note", outlook: "Outlook email", teams: "Teams note", telegram: "Telegram message", google_calendar: "Calendar event", google_drive: "Drive file", paymongo: "PayMongo", airtable: "Airtable record", notion: "Notion page", trello: "Trello card" };
+const NAMES: Record<Provider, string> = { google_sheets: "Sheet row", slack: "Slack note", outlook: "Outlook email", teams: "Teams note", telegram: "Telegram message", unisms: "SMS message", google_calendar: "Calendar event", google_drive: "Drive file", paymongo: "PayMongo", airtable: "Airtable record", notion: "Notion page", trello: "Trello card" };
 
 function describe(d: Delivery, t: ReturnType<typeof useLanguage>["t"]): string {
+  const sent = d.provider === "outlook" || d.provider === "unisms";
   switch (d.state) {
     case "queued":
       return d.attempts > 0 ? t("waiting to try again ({error})", { error: d.lastError ?? t("temporary problem") }) : t("queued");
     case "sending":
       return t("sending");
     case "delivered":
-      if (d.result?.confirmedBy === "operator") return t(d.provider === "outlook" ? "marked as sent" : "marked as posted");
+      if (d.result?.confirmedBy === "operator") return t(sent ? "marked as sent" : "marked as posted");
       // Older rows carry the range they were written to; newer ones the tab (decision 0021).
       if (d.result?.reconciled) return t("already in the sheet ({sheet}), not written twice", { sheet: String(d.result.sheet ?? d.result.range) });
       if (d.provider === "google_sheets") return t("added to {sheet}", { sheet: String(d.result?.sheet ?? d.result?.range ?? t("the sheet")) });
       if (d.provider === "google_calendar") return t(d.result?.event === "deleted" ? "event removed from the calendar" : d.result?.event === "updated" ? "event updated on the calendar" : "event added to the calendar");
       if (d.provider === "google_drive") return t("saved to {folder}", { folder: String(d.result?.folder ?? t("the folder")) });
       if (d.provider === "outlook") return t("sent to {email}", { email: String(d.result?.to ?? "") });
+      if (d.provider === "unisms") return t("sent to {phone}", { phone: String(d.result?.recipient ?? "") });
       return t(d.provider === "teams" ? "accepted by Teams" : "posted");
     case "needs_review":
-      return d.lastError ?? t(d.provider === "outlook" ? "may have been sent" : "may have been posted");
+      return d.lastError ?? t(sent ? "may have been sent" : "may have been posted");
     case "failed":
       return d.lastError ?? t("failed");
   }
@@ -642,33 +734,40 @@ export function DeliveryList({ deliveries, onChange }: { deliveries: Delivery[];
   if (deliveries.length === 0) return null;
   return (
     <ul className="deliveries">
-      {deliveries.map((d) => (
-        <li key={d.id} data-state={d.state}>
-          {t(NAMES[d.provider])}: {describe(d, t)}{" "}
-          {d.state === "failed" && (
-            <button type="button" className="quiet" disabled={busy} onClick={() => void act(() => api("POST", `/deliveries/${d.id}/retry`, {}))}>
-              {d.checkFirst ? t("Check and retry") : t("Retry")}
-            </button>
-          )}
-          {d.state === "needs_review" && (
-            <>
-              <button type="button" className="quiet" disabled={busy} onClick={() => void act(() => api("POST", `/deliveries/${d.id}/confirm`))}>{t(d.provider === "outlook" ? "Mark as sent" : "Mark as posted")}
+      {deliveries.map((d) => {
+        const sent = d.provider === "outlook" || d.provider === "unisms";
+        return (
+          <li key={d.id} data-state={d.state}>
+            {t(NAMES[d.provider])}: {describe(d, t)}{" "}
+            {d.state === "failed" && (
+              <button type="button" className="quiet" disabled={busy} onClick={() => void act(() => api("POST", `/deliveries/${d.id}/retry`, {}))}>
+                {d.checkFirst ? t("Check and retry") : t("Retry")}
               </button>
-              <button
-                type="button"
-                className="quiet"
-                disabled={busy}
-                onClick={() => {
-                  const ask = d.provider === "outlook" ? "Send this email again? If it already went out, the recipient gets it twice." : "Post this note again? If it is already in the channel, people will see it twice.";
-                  if (window.confirm(t(ask))) void act(() => api("POST", `/deliveries/${d.id}/retry`, { postAgain: true }));
-                }}
-              >
-                {d.provider === "outlook" ? t("Send again") : t("Post again")}
-              </button>
-            </>
-          )}
-        </li>
-      ))}
+            )}
+            {d.state === "needs_review" && (
+              <>
+                <button type="button" className="quiet" disabled={busy} onClick={() => void act(() => api("POST", `/deliveries/${d.id}/confirm`))}>{t(sent ? "Mark as sent" : "Mark as posted")}
+                </button>
+                <button
+                  type="button"
+                  className="quiet"
+                  disabled={busy}
+                  onClick={() => {
+                    const ask = d.provider === "outlook"
+                      ? "Send this email again? If it already went out, the recipient gets it twice."
+                      : d.provider === "unisms"
+                        ? "Send this SMS again? If it already went out, the recipient gets it twice."
+                        : "Post this note again? If it is already in the channel, people will see it twice.";
+                    if (window.confirm(t(ask))) void act(() => api("POST", `/deliveries/${d.id}/retry`, { postAgain: true }));
+                  }}
+                >
+                  {sent ? t("Send again") : t("Post again")}
+                </button>
+              </>
+            )}
+          </li>
+        );
+      })}
       {error && (
         <li role="alert" className="message error">
           {error}

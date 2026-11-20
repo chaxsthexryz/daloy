@@ -12,12 +12,13 @@ export const day = (iso: string, t: Translator = (source, values) => translate("
 
 const METERS = [
   { key: "ai", what: "AI actions", period: "", stopped: "Steps that need AI stop" },
+  { key: "sms", what: "SMS messages", period: "", stopped: "Steps that send SMS stop" },
   { key: "email", what: "emails", period: " today", stopped: "Steps that send email stop" },
   { key: "http", what: "web requests", period: " today", stopped: "Steps that call a website stop" },
 ] as const;
 
-const meterLine = (m: Meter, what: string, period: string, stopped: string, t: Translator) => {
-  if (m.limit === null || m.used < m.limit * 0.8) return null;
+const meterLine = (m: Meter | undefined, what: string, period: string, stopped: string, t: Translator) => {
+  if (!m || m.limit === null || m.limit === 0 || m.used < m.limit * 0.8) return null;
   const subject = what.charAt(0).toUpperCase() + what.slice(1);
   return m.used >= m.limit
     ? t("{subject} are used up until {day}. {stopped}, and you can press Retry on those runs then.", { subject: t(subject), day: day(m.resetsOn, t), stopped: t(stopped) })

@@ -156,6 +156,15 @@ The demo page (`apps/web/demo`, published as `site/demo/` on Cloudflare Pages) a
 - Chat discovery (guided setup): `POST /settings/connections/telegram/chats` takes a pasted token, calls `getMe` and `getUpdates`, and returns the bot name and up to 20 recently seen chats (id, type, title). Titles can be personal: a private chat's title is the person's name. They go only to the signed-in owner who pasted the token, are not stored or logged, and message text and sender details are never read into the answer. The route is owner only and limited to 10 calls a minute. `getUpdates` is called without an offset, so it does not remove updates the bot has not processed. Anyone who holds the token can already read the same updates from Telegram, so the route adds no new reach. Unverified against the live Bot API.
 - A bot token that leaks lets someone message the bot's chats. Replace it in BotFather (/revoke), then Replace token in Apps.
 
+## UniSMS Philippine SMS (decision 0068)
+
+- Each workspace's UniSMS Secret Key is encrypted with AES-256-GCM bound to workspace and provider, never returned by the API, included in read-side secret redaction (`secretValuesToHide`), and scrubbed along with its Base64 Basic Auth header from provider error text before anything is stored or returned.
+- The UniSMS API base URL is fixed (`https://unismsapi.com`) or set only by server env (`UNISMS_API_URL`) for local tests, with `redirect: "error"` and a 10-second timeout, preventing SSRF and credential forwarding on redirects.
+- Monthly `sms` quotas (`preview: 0`, `pilot: 50`, `business: 300`, `business_plus: 1500`) are enforced atomically in Postgres before sending, keyed per delivery so retries never double-bill. Preview sign-ups (`sms: 0`) and unplanned workspaces (`plan: null`) can never spend the operator's `UNISMS_SECRET_KEY`, and a failed or disconnected workspace connection never silently falls back to operator credits.
+- Recipient numbers are restricted to valid Philippine mobile numbers (`+639XXXXXXXXX`) and messages to 670 rendered characters, blocking international SMS toll fraud and oversized multi-part message abuse.
+- Unknown send outcomes (timeouts, dropped connections, 5xx, stale worker takeover) park in `needs_review` instead of retrying automatically, preventing duplicate paid SMS sends. Cancelled or rescheduled bookings stop queued SMS deliveries under the booking share lock before quota is claimed or UniSMS is called.
+- All UniSMS connection routes (`PUT /settings/connections/unisms`, `POST /settings/connections/unisms/test`, `DELETE /settings/connections/unisms`) are owner-only and rate limited.
+
 ## Google Calendar (decision 0044)
 
 - The service account key is stored encrypted like Sheets, bound to the owner and provider, and never returned or logged. The scope is `calendar.events`. The account sees only calendars their owner shared with it, so a leaked key can read and change those calendars' events, nothing else.

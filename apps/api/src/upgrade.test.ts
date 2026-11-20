@@ -184,8 +184,9 @@ describe("upgrade to the shared OAuth core (0036 to 0037), with every provider c
       notion: "ntn_synthetic0123456789abcdefghij",
       trello: JSON.stringify({ key: "0".repeat(32), token: "t".repeat(64) }),
     });
+    const pre37Providers = PROVIDERS.filter((provider) => provider !== "unisms");
     const dest: Partial<Record<Provider, Record<string, string>>> = { outlook: { mailbox: "ana@contoso.example" }, slack: { channelId: "C0REQ", channelName: "office-requests" }, teams: { channelName: "Purchasing" } };
-    for (const provider of PROVIDERS) {
+    for (const provider of pre37Providers) {
       const e = encryptSecret(key, owner, `connection:${provider}`, creds[provider]);
       await p.query("insert into connections (user_id, provider, status, account, credential_ciphertext, credential_iv, credential_auth_tag, destination) values ($1, $2, 'active', $3, $4, $5, $6, $7)", [owner, provider, provider === "outlook" ? "ana@contoso.example" : `${provider} account`, e.ciphertext, e.iv, e.authTag, dest[provider] ?? null]);
     }
@@ -214,7 +215,7 @@ describe("upgrade to the shared OAuth core (0036 to 0037), with every provider c
       google_sheets: "service_account", google_calendar: "service_account", google_drive: "service_account", teams: "webhook_url", outlook: "oauth",
       slack: "token", telegram: "token", paymongo: "token", airtable: "token", notion: "token", trello: "token",
     });
-    for (const provider of PROVIDERS) expect((await connectionCredential(d, key, owner, provider))!.credential).toBe(creds[provider]);
+    for (const provider of PROVIDERS.filter((pr) => pr !== "unisms")) expect((await connectionCredential(d, key, owner, provider))!.credential).toBe(creds[provider]);
     const { rows: pins } = await p.query("select pinned_account, pinned_destination, pinned_external_id from deliveries where id = $1", [delivery]);
     expect(pins[0]).toEqual({ pinned_account: "ana@contoso.example", pinned_destination: { mailbox: "ana@contoso.example" }, pinned_external_id: null });
   });

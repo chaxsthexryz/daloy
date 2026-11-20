@@ -167,6 +167,7 @@ describe("usage", () => {
       label: "Business",
       limits: PLANS.business,
       ai: { used: 7, limit: 500, resetsOn: "2026-11-20" },
+      sms: { used: 0, limit: 300, resetsOn: "2026-11-20" },
       email: { used: 3, limit: 300, resetsOn: "2026-11-18" },
       http: { used: 0, limit: 1000, resetsOn: "2026-11-18" },
       upload: { used: 0, limit: 500, resetsOn: "2026-11-18" },
@@ -174,7 +175,34 @@ describe("usage", () => {
       minScheduleMinutes: 15,
     });
     const none = await newUser(null);
-    expect(await usageSummary(db, none, noon)).toMatchObject({ plan: null, label: null, limits: null, ai: { used: 0, limit: null }, automations: { live: 0, limit: null }, minScheduleMinutes: null });
+    expect(await usageSummary(db, none, noon)).toMatchObject({ plan: null, label: null, limits: null, ai: { used: 0, limit: null }, sms: { used: 0, limit: null }, automations: { live: 0, limit: null }, minScheduleMinutes: null });
+  });
+
+  it("enforces monthly sms limits per plan and allows unlimited sms when plan is null", async () => {
+    expect(PLANS.preview.sms).toBe(0);
+    expect(PLANS.pilot.sms).toBe(50);
+    expect(PLANS.business.sms).toBe(300);
+    expect(PLANS.business_plus.sms).toBe(1500);
+
+    const prev = await newUser("preview", "2026-11-17");
+    const errPrev = await claimUsage(db, prev, "sms", { now: noon }).catch((e: unknown) => e);
+    expect(errPrev).toBeInstanceOf(QuotaError);
+    expect(errPrev).toMatchObject({ retryable: false, outcome: "not_sent", kind: "sms" });
+    expect(await used(prev, "sms")).toEqual([]);
+
+    const pilot = await newUser("pilot", "2026-10-20");
+    await claimUsage(db, pilot, "sms", { n: 50, key: "sms:batch", now: noon });
+    // Retry with same key does not double-charge.
+    await claimUsage(db, pilot, "sms", { n: 50, key: "sms:batch", now: noon });
+    expect(await used(pilot, "sms")).toEqual(["2026-10-20:50"]);
+    await expect(claimUsage(db, pilot, "sms", { now: noon })).rejects.toBeInstanceOf(QuotaError);
+    // Resets on next monthly cycle anchor.
+    await claimUsage(db, pilot, "sms", { now: new Date("2026-11-20T04:00:00Z") });
+    expect(await used(pilot, "sms")).toEqual(["2026-10-20:50", "2026-11-20:1"]);
+
+    const unplanned = await newUser(null);
+    await claimUsage(db, unplanned, "sms", { n: 5, now: noon });
+    expect(await used(unplanned, "sms")).toEqual(["2026-11-01:5"]);
   });
 });
 

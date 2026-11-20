@@ -20,8 +20,9 @@ export type JsonSchema = {
 };
 type Obj = Record<string, unknown>;
 
-const LABELS: Record<string, string> = { amount: "Amount (pesos)", reference: "Order reference", op: "Operator", url: "URL", to: "To (comma-separated)", text: "Message", left: "Value", right: "Compare with", timeoutSeconds: "Timeout (seconds)", seconds: "Wait (seconds)", offsetSeconds: "Offset (seconds)" };
-const label = (key: string) => LABELS[key] ?? key.charAt(0).toUpperCase() + key.slice(1);
+const LABELS: Record<string, string> = { amount: "Amount (pesos)", reference: "Order reference", op: "Operator", url: "URL", to: "To (comma-separated)", text: "Message", message: "Message", senderId: "Sender ID", left: "Value", right: "Compare with", timeoutSeconds: "Timeout (seconds)", seconds: "Wait (seconds)", offsetSeconds: "Offset (seconds)" };
+const label = (key: string, schema?: JsonSchema) =>
+  key === "to" && schema?.description?.includes("Philippine mobile") ? "Recipient phone" : (LABELS[key] ?? key.charAt(0).toUpperCase() + key.slice(1));
 
 export function SchemaForm({ schema, value, onChange }: { schema: JsonSchema; value: Obj; onChange: (v: Obj) => void }) {
   return (
@@ -95,7 +96,7 @@ function Field({ name, schema, required, value, onChange }: { name: string; sche
   return (
     <div className="field">
       <label htmlFor={id}>
-        {t(label(name))}
+        {t(label(name, schema))}
         {!required && <span className="muted">{t(" (optional)")}</span>}
       </label>
       {input}

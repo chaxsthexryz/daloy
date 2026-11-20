@@ -1,15 +1,16 @@
 import { randomBytes } from "node:crypto";
 import { backoffDelayMs, FILE_MIME, type FileRef, type RetryPolicy } from "@daloy/engine";
 import { and, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
-import { connectionCredential, markConnectionFailed, PROVIDER_NAMES } from "./connections";
+import { connectionCredential, markConnectionFailed, PROVIDER_NAMES, sharedUnismsConfig } from "./connections";
 import { withGoogle } from "./google-access";
 import { freshToken, oauthProvider, slackToken, trelloAuthOf, withFreshToken, withRecordAuth } from "./oauth";
 import type { Db } from "./index";
-import { airtableAdd, appendRowOnce, driveUpload, type DriveDestination, notionAddPage, trelloAddCard, deleteSheetMarker, outlookSend, ProviderError, slackPost, syncCalendarEvent, teamsPost, telegramSend, type CalendarDestination, type OutlookMessage, type ProviderErrorKind, type ProviderUrls, type SheetDestination } from "./providers";
+import { airtableAdd, appendRowOnce, driveUpload, type DriveDestination, notionAddPage, trelloAddCard, deleteSheetMarker, outlookSend, ProviderError, slackPost, syncCalendarEvent, teamsPost, telegramSend, unismsSend, type CalendarDestination, type OutlookMessage, type ProviderErrorKind, type ProviderUrls, type SheetDestination } from "./providers";
 import { bookingSuperseded, supersededSql } from "./bookings";
 import { bookingForCalendar } from "./calendar";
 import { bookings, calendarEvents, connections, deliveries, runs, type Provider } from "./schema";
 import { readUpload } from "./uploads";
+import { claimUsageInTx, planOf, QuotaError } from "./usage";
 
 /**
  * Sheets rows, Slack and Teams notes and Outlook emails, delivered by the worker apart from the run that asked for them
@@ -27,7 +28,9 @@ import { readUpload } from "./uploads";
 export type Delivery = typeof deliveries.$inferSelect;
 export type DeliveryPayload = Delivery["payload"];
 /** What the last failure was, as a closed value (decision 0039). */
-export type DeliveryErrorKind = ProviderErrorKind | "not_connected" | "reconnect" | "no_destination" | "destination_changed" | "queued_before_pin" | "booking_changed";
+export type DeliveryErrorKind = ProviderErrorKind | "not_connected" | "reconnect" | "no_destination" | "destination_changed" | "queued_before_pin" | "booking_changed" | "plan_quota";
+/** Sentinel pinnedAccount for deliveries sent through the operator's shared UniSMS key (decision 0068). */
+const SHARED_UNISMS_ACCOUNT = "__operator_shared__";
 
 export const DELIVERY_POLICY: RetryPolicy = { maxAttempts: 5, baseDelayMs: 2000, maxDelayMs: 10 * 60_000 };
 /** A delivery still "sending" after this long belongs to a worker that died mid-call. Well above a call's timeouts. */
@@ -99,10 +102,36 @@ type Outcome =
  */
 async function attempt(db: Db, key: Buffer, urls: ProviderUrls, d: Delivery): Promise<Outcome | null> {
   const name = PROVIDER_NAMES[d.provider];
-  const conn = await connectionCredential(db, key, d.userId, d.provider);
+  let conn = await connectionCredential(db, key, d.userId, d.provider);
+  let usingShared = false;
+  if (!conn && d.provider === "unisms") {
+    // Never silently fall back to the operator key if this delivery was pinned to a workspace connection that was disconnected.
+    if (d.pinnedAccount && d.pinnedAccount !== SHARED_UNISMS_ACCOUNT) {
+      return { state: "failed", error: `${name} is not connected. Connect it in Apps, then retry.`, kind: "not_connected" };
+    }
+    const shared = sharedUnismsConfig();
+    if (!shared) return { state: "failed", error: `${name} is not connected. Connect it in Apps, then retry.`, kind: "not_connected" };
+    const { plan } = await planOf(db, d.userId);
+    if (plan === "preview") {
+      return { state: "failed", error: "SMS sending is not included on the Preview plan. Ask Daloy to move you to a paid plan.", kind: "plan_quota" };
+    }
+    if (plan === null) {
+      return { state: "failed", error: `${name} is not connected. Connect it in Apps, then retry.`, kind: "not_connected" };
+    }
+    usingShared = true;
+    conn = {
+      credential: shared.secretKey,
+      status: "active",
+      account: SHARED_UNISMS_ACCOUNT,
+      destination: { senderId: shared.senderId },
+      revision: "",
+      authMethod: "token",
+      externalId: null,
+    };
+  }
   if (!conn) return { state: "failed", error: `${name} is not connected. Connect it in Apps, then retry.`, kind: "not_connected" };
   if (conn.status === "failed") return { state: "failed", error: `${name} needs to be connected again (${conn.account}). Reconnect it in Apps, then retry.`, kind: "reconnect" };
-  if (!conn.destination) return { state: "failed", error: `No ${d.provider === "google_sheets" ? "sheet" : d.provider === "google_calendar" ? "calendar" : d.provider === "google_drive" ? "folder" : d.provider === "telegram" ? "chat" : d.provider === "airtable" ? "table" : d.provider === "notion" ? "database" : d.provider === "trello" ? "list" : "channel"} is chosen for ${name}. Pick one in Apps, then retry.`, kind: "no_destination" };
+  if (!conn.destination) return { state: "failed", error: `No ${d.provider === "google_sheets" ? "sheet" : d.provider === "google_calendar" ? "calendar" : d.provider === "google_drive" ? "folder" : d.provider === "telegram" ? "chat" : d.provider === "airtable" ? "table" : d.provider === "notion" ? "database" : d.provider === "trello" ? "list" : d.provider === "unisms" ? "Sender ID" : "channel"} is chosen for ${name}. Pick one in Apps, then retry.`, kind: "no_destination" };
   if (d.pinnedAccount === null) {
     return { state: "needs_review", error: `This was queued before Daloy recorded where deliveries go, so it cannot confirm the ${name} destination. Choose Post again to send it to ${describe(d.provider, conn.destination)}, or Mark as posted.`, kind: "queued_before_pin" };
   }
@@ -116,7 +145,7 @@ async function attempt(db: Db, key: Buffer, urls: ProviderUrls, d: Delivery): Pr
       state: "needs_review",
       error: d.provider === "google_calendar"
         ? `The calendar connection changed since this event was created: it is still in ${describe(d.provider, d.pinnedDestination ?? {})}, and ${describe(d.provider, conn.destination)} is chosen now. Nothing was written to the new one. Choose Post again to write this change to the new calendar, or Mark as posted.`
-        : `The ${name} connection changed since this was queued (it was for ${describe(d.provider, d.pinnedDestination ?? {})}, now ${describe(d.provider, conn.destination)}). Nothing was sent to the new one. Choose Post again to send it there, or Mark as posted.`,
+        : `The ${name} connection changed since this was queued (it was for ${describe(d.provider, d.pinnedDestination ?? {})}, now ${describe(d.provider, conn.destination)}). Nothing was sent to the new one. Choose ${d.provider === "unisms" || d.provider === "outlook" ? "Send again" : "Post again"} to send it there, or ${d.provider === "unisms" || d.provider === "outlook" ? "Mark as sent" : "Mark as posted"}.`,
       kind: "destination_changed",
     };
   }
@@ -124,27 +153,44 @@ async function attempt(db: Db, key: Buffer, urls: ProviderUrls, d: Delivery): Pr
   if (d.provider === "airtable" && !conn.destination.tableId?.startsWith("tbl")) {
     return { state: "failed", kind: "reconnect", error: "Airtable is connected by table name, which can point to another table after a rename. Reconnect Airtable with the table id (it starts with tbl), then retry." };
   }
-  // Slack, Teams and Outlook have no read access to check with, so after a call that may have arrived a person decides.
+  // Slack, Teams, Outlook and UniSMS have no read access to check with, so after a call that may have arrived a person decides.
   if (d.checkFirst && !repeatable(d.provider)) {
     return { state: "needs_review", error: `${name} may have ${verb(d.provider)} this before the connection dropped. ${reviewHint(d.provider, conn.destination)}`, kind: "ambiguous" };
   }
-  const destination = conn.destination;
-  const oauth = conn.authMethod === "oauth" ? oauthProvider(d.provider) : undefined;
+  const activeConn = conn;
+  const destination = activeConn.destination!;
+  const oauth = activeConn.authMethod === "oauth" ? oauthProvider(d.provider) : undefined;
   // null: the claim was lost partway through a Drive save, so the new holder owns what happens next.
-  const send = async (tx: Pick<Db, "select" | "update">): Promise<Outcome | null> => {
+  const send = async (tx: Pick<Db, "select" | "update" | "insert">): Promise<Outcome | null> => {
+    if (d.provider === "unisms") {
+      // Claim 1 SMS unit atomically inside the booking-locked transaction, keyed by delivery id so retries never double-bill.
+      await claimUsageInTx(tx, d.userId, "sms", { n: 1, key: `delivery:${d.id}` });
+      const p = d.payload as { to: string; message: string; senderId?: string };
+      const senderId = p.senderId || destination.senderId || "Unisoft";
+      try {
+        const res = await unismsSend(urls, activeConn.credential, { recipient: p.to, content: p.message, senderId, metadata: { reference: d.reference, deliveryId: d.id } });
+        return { state: "delivered", result: res };
+      } catch (err) {
+        // Keep the quota claim committed when UniSMS may have sent the SMS (timeout / 5xx after connect).
+        if (err instanceof ProviderError && err.kind === "ambiguous") {
+          return { state: "needs_review", error: `${err.message} ${name} may have ${verb(d.provider)} it. ${reviewHint(d.provider, destination)}`, kind: err.kind };
+        }
+        throw err;
+      }
+    }
     if (d.provider === "google_sheets") {
       // Retrying the same marked write is safe: Google adds the row at most once (decision 0021).
-      const out = await withGoogle(db, key, urls, d.userId, "google_sheets", conn, (auth) => appendRowOnce(urls, auth, conn.destination as SheetDestination, (d.payload as { row: string[] }).row, { id: d.sheetMetaId!, value: d.sheetMetaValue! }));
+      const out = await withGoogle(db, key, urls, d.userId, "google_sheets", activeConn, (auth) => appendRowOnce(urls, auth, destination as SheetDestination, (d.payload as { row: string[] }).row, { id: d.sheetMetaId!, value: d.sheetMetaValue! }));
       return { state: "delivered", result: out.reconciled ? { sheet: out.sheet, reconciled: true } : { sheet: out.sheet } };
     }
     if (d.provider === "google_calendar") {
       const { bookingId } = d.payload as { bookingId: string };
       const b = await bookingForCalendar(tx, d.userId, bookingId);
       if (!b) return { state: "failed", error: "The booking or its calendar event details are gone, so nothing was sent.", kind: "invalid" };
-      const calendarId = (conn.destination as CalendarDestination).calendarId;
+      const calendarId = (destination as CalendarDestination).calendarId;
       // A service account key or a Google sign-in, by the connection's auth_method (decision 0064).
-      const out = await withGoogle(db, key, urls, d.userId, "google_calendar", conn, (auth) => syncCalendarEvent(urls, auth, calendarId, bookingId, b, b));
-      await tx.update(calendarEvents).set({ account: conn.account, calendarId }).where(eq(calendarEvents.bookingId, bookingId));
+      const out = await withGoogle(db, key, urls, d.userId, "google_calendar", activeConn, (auth) => syncCalendarEvent(urls, auth, calendarId, bookingId, b, b));
+      await tx.update(calendarEvents).set({ account: activeConn.account, calendarId }).where(eq(calendarEvents.bookingId, bookingId));
       return { state: "delivered", result: { event: out.event, eventId: out.eventId } };
     }
     if (d.provider === "google_drive") {
@@ -156,7 +202,7 @@ async function attempt(db: Db, key: Buffer, urls: ProviderUrls, d: Delivery): Pr
         if (saved[f.id]) continue;
         const up = await readUpload(db, { userId: d.userId, runId: d.runId, id: f.id });
         if (!up) return { state: "failed", error: `The file ${f.name} was removed after 7 days, so it cannot be saved now.`, kind: "invalid" };
-        saved[f.id] = (await withGoogle(db, key, urls, d.userId, "google_drive", conn, (auth) => driveUpload(urls, auth, folderId, { name: `${d.reference} ${up.name}`, mimeType: FILE_MIME[up.type], data: up.data }))).id;
+        saved[f.id] = (await withGoogle(db, key, urls, d.userId, "google_drive", activeConn, (auth) => driveUpload(urls, auth, folderId, { name: `${d.reference} ${up.name}`, mimeType: FILE_MIME[up.type], data: up.data }))).id;
         // Written through db, not the transaction this runs in, so what is saved survives a later throw or rollback.
         const held = await db.update(deliveries).set({ result: { saved }, updatedAt: sql`now()` }).where(heldBy(d)).returning({ id: deliveries.id });
         if (held.length === 0) return null;
@@ -165,24 +211,24 @@ async function attempt(db: Db, key: Buffer, urls: ProviderUrls, d: Delivery): Pr
     }
     if (d.provider === "outlook") {
       // Outlook is always an OAuth grant (migration 0037), so oauth is set.
-      return { state: "delivered", result: await withFreshToken(db, key, urls, d.userId, oauth!, conn, (token) => outlookSend(urls, token, d.payload as OutlookMessage)) };
+      return { state: "delivered", result: await withFreshToken(db, key, urls, d.userId, oauth!, activeConn, (token) => outlookSend(urls, token, d.payload as OutlookMessage)) };
     }
     // Airtable, Notion and Trello add one record, page or card. None can be asked "did this land?", so an unknown outcome is a person's call.
     const p = d.payload as { text: string; fields: Record<string, string>; title: string; name: string; desc?: string };
     // A pasted credential is used as it is stored; an OAuth grant is refreshed first and its access token sent (decision 0062).
-    const auth = <T>(fn: (credential: string) => Promise<T>) => withRecordAuth(db, key, urls, d.userId, oauth, conn, fn);
+    const auth = <T>(fn: (credential: string) => Promise<T>) => withRecordAuth(db, key, urls, d.userId, oauth, activeConn, fn);
     if (d.provider === "airtable") return { state: "delivered", result: await auth((t) => airtableAdd(urls, t, destination as { baseId: string; tableId: string }, p.fields)) };
     if (d.provider === "notion") return { state: "delivered", result: await auth((t) => notionAddPage(urls, t, destination as { databaseId: string; titleProperty: string }, p.title, p.fields)) };
-    if (d.provider === "trello") return { state: "delivered", result: await auth((t) => trelloAddCard(urls, trelloAuthOf(conn.authMethod, t), destination.listId!, p.name, p.desc ?? "")) };
+    if (d.provider === "trello") return { state: "delivered", result: await auth((t) => trelloAddCard(urls, trelloAuthOf(activeConn.authMethod, t), destination.listId!, p.name, p.desc ?? "")) };
     const text = p.text;
-    if (d.provider === "teams") return { state: "delivered", result: await teamsPost(urls, conn.credential, text) };
-    if (d.provider === "telegram") return { state: "delivered", result: await telegramSend(urls, conn.credential, destination.chatId!, text) };
-    return { state: "delivered", result: await slackPost(urls, slackToken(conn), destination.channelId!, text) };
+    if (d.provider === "teams") return { state: "delivered", result: await teamsPost(urls, activeConn.credential, text) };
+    if (d.provider === "telegram") return { state: "delivered", result: await telegramSend(urls, activeConn.credential, destination.chatId!, text) };
+    return { state: "delivered", result: await slackPost(urls, slackToken(activeConn), destination.channelId!, text) };
   };
   try {
     // An expiring OAuth token is refreshed before the booking-lock transaction opens, so the common refresh never needs
     // a second pool connection while the transaction holds one (decision 0058).
-    if (oauth) await freshToken(db, key, urls, d.userId, oauth, conn);
+    if (oauth) await freshToken(db, key, urls, d.userId, oauth, activeConn);
     // The run's booking link as it is now (its own booking step may have moved it), checked under a share lock held
     // until the provider answers: a cancel or reschedule either committed before this check (nothing is sent) or waits
     // for the call to return (decision 0032).
@@ -196,10 +242,13 @@ async function attempt(db: Db, key: Buffer, urls: ProviderUrls, d: Delivery): Pr
       return send(tx);
     });
   } catch (err) {
+    if (err instanceof QuotaError) {
+      return { state: "failed", error: err.message, kind: "plan_quota" };
+    }
     const e = err instanceof ProviderError ? err : new ProviderError(err instanceof Error ? err.message : String(err), "unavailable");
     switch (e.kind) {
       case "auth":
-        await markConnectionFailed(db, d.userId, d.provider, e.message, conn.revision);
+        if (!usingShared) await markConnectionFailed(db, d.userId, d.provider, e.message, activeConn.revision);
         return { state: "failed", error: e.message, kind: e.kind };
       case "permission":
       case "invalid":
@@ -207,7 +256,7 @@ async function attempt(db: Db, key: Buffer, urls: ProviderUrls, d: Delivery): Pr
       case "review":
         return { state: "needs_review", error: e.message, kind: e.kind };
       case "ambiguous":
-        if (!repeatable(d.provider)) return { state: "needs_review", error: `${e.message} ${name} may have ${verb(d.provider)} it. ${reviewHint(d.provider, conn.destination)}`, kind: e.kind };
+        if (!repeatable(d.provider)) return { state: "needs_review", error: `${e.message} ${name} may have ${verb(d.provider)} it. ${reviewHint(d.provider, destination)}`, kind: e.kind };
         return { state: "queued", error: e.message, kind: e.kind, checkFirst: true };
       case "quota":
       case "unavailable":
@@ -216,7 +265,7 @@ async function attempt(db: Db, key: Buffer, urls: ProviderUrls, d: Delivery): Pr
   }
 }
 
-const verb = (p: Provider) => (p === "outlook" ? "sent" : p === "google_drive" ? "saved" : "posted");
+const verb = (p: Provider) => (p === "outlook" || p === "unisms" ? "sent" : p === "google_drive" ? "saved" : "posted");
 
 /** The destination as a person would name it, for review messages. */
 function describe(provider: Provider, dest: Record<string, string>) {
@@ -226,6 +275,7 @@ function describe(provider: Provider, dest: Record<string, string>) {
   if (provider === "slack") return `#${dest.channelName ?? dest.channelId}`;
   if (provider === "telegram") return `the Telegram chat ${dest.chatTitle ?? dest.chatId}`;
   if (provider === "outlook") return dest.mailbox ?? "the Outlook mailbox";
+  if (provider === "unisms") return `UniSMS (Sender ID: ${dest.senderId ?? "Unisoft"})`;
   if (provider === "airtable") return `the Airtable table ${dest.tableName ?? dest.tableId}`;
   if (provider === "notion") return `the Notion database ${dest.databaseTitle ?? dest.databaseId}`;
   if (provider === "trello") return `the Trello list ${dest.listName ?? dest.listId}`;
@@ -250,12 +300,13 @@ const DESTINATION_ONLY = new Set<Provider>(["airtable", "notion", "trello"]);
 
 /** Same place: the fields that pick where a delivery lands. Display names may change without moving anything. */
 function sameDestination(a: Record<string, string> | null, b: Record<string, string>) {
-  const where = (d: Record<string, string> | null) => JSON.stringify([d?.spreadsheetId, d?.calendarId, d?.folderId, d?.tab, d?.channelId, d?.chatId, d?.baseId, d?.tableId, d?.databaseId, d?.listId, d?.mailbox, d?.channelName]);
+  const where = (d: Record<string, string> | null) => JSON.stringify([d?.spreadsheetId, d?.calendarId, d?.folderId, d?.tab, d?.channelId, d?.chatId, d?.baseId, d?.tableId, d?.databaseId, d?.listId, d?.mailbox, d?.channelName, d?.senderId]);
   return where(a) === where(b);
 }
 
 function reviewHint(provider: Provider, dest: Record<string, string>) {
   if (provider === "outlook") return `Look in Sent Items of ${dest.mailbox ?? "the mailbox"}, then choose Mark as sent or Send again.`;
+  if (provider === "unisms") return `Check your UniSMS delivery logs (Sender ID ${dest.senderId ?? "Unisoft"}), then choose Mark as sent or Send again.`;
   return `Check ${describe(provider, dest)}, then choose Mark as posted or Post again.`;
 }
 

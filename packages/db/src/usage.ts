@@ -3,18 +3,18 @@ import { and, eq, exists, sql } from "drizzle-orm";
 import type { Db } from "./index";
 import { usageClaims, usageCounts, users, workflows, workflowVersions } from "./schema";
 
-/** What each plan allows. ai counts per monthly cycle; email recipients, http requests and uploaded files per Manila day. */
+/** What each plan allows. ai and sms count per monthly cycle; email recipients, http requests and uploaded files per Manila day. */
 export const PLANS = {
-  preview: { label: "Preview", automations: 1, ai: 20, email: 20, http: 50, upload: 20, minScheduleMinutes: 60 },
-  pilot: { label: "Pilot", automations: 1, ai: 100, email: 100, http: 200, upload: 100, minScheduleMinutes: 60 },
-  business: { label: "Business", automations: 5, ai: 500, email: 300, http: 1000, upload: 500, minScheduleMinutes: 15 },
-  business_plus: { label: "Business Plus", automations: 15, ai: 2000, email: 1000, http: 5000, upload: 2000, minScheduleMinutes: 5 },
+  preview: { label: "Preview", automations: 1, ai: 20, sms: 0, email: 20, http: 50, upload: 20, minScheduleMinutes: 60 },
+  pilot: { label: "Pilot", automations: 1, ai: 100, sms: 50, email: 100, http: 200, upload: 100, minScheduleMinutes: 60 },
+  business: { label: "Business", automations: 5, ai: 500, sms: 300, email: 300, http: 1000, upload: 500, minScheduleMinutes: 15 },
+  business_plus: { label: "Business Plus", automations: 15, ai: 2000, sms: 1500, email: 1000, http: 5000, upload: 2000, minScheduleMinutes: 5 },
 } as const;
 export type Plan = keyof typeof PLANS;
 /** Files a hosted form takes a day when the operator has set no plan. Other kinds stay unlimited without a plan. */
 export const UPLOADS_WITHOUT_PLAN = 20;
 /** "mailbox": recipients of mail sent through the owner's own Gmail or Outlook, a cap that does not depend on the plan (N11b). */
-export type UsageKind = "ai" | "email" | "http" | "upload" | "mailbox";
+export type UsageKind = "ai" | "sms" | "email" | "http" | "upload" | "mailbox";
 /** Per workspace per Manila day. Under Gmail's own daily limit, so a busy automation cannot get the owner's mailbox suspended. */
 export const mailboxCap = (env: NodeJS.ProcessEnv = process.env) => {
   const n = Number(env.MAILBOX_DAILY_CAP);
@@ -64,17 +64,50 @@ export async function planOf(db: Pick<Db, "select">, userId: string) {
   return { plan: (row?.plan ?? null) as Plan | null, startedOn: row?.startedOn ?? null };
 }
 
-/** The AI cycle's anchor: the plan start, or the first of the Manila month when there is none. */
+/** The AI and SMS cycle's anchor: the plan start, or the first of the Manila month when there is none. */
 const anchor = (startedOn: string | null, today: string) => startedOn ?? `${today.slice(0, 8)}01`;
-const periodOf = (kind: UsageKind, startedOn: string | null, today: string) => (kind === "ai" ? cycleStart(anchor(startedOn, today), today) : today);
-const resetsOn = (kind: UsageKind, startedOn: string | null, today: string) => (kind === "ai" ? nextCycleStart(anchor(startedOn, today), today) : tomorrow(today));
+const monthly = (kind: UsageKind) => kind === "ai" || kind === "sms";
+const periodOf = (kind: UsageKind, startedOn: string | null, today: string) => (monthly(kind) ? cycleStart(anchor(startedOn, today), today) : today);
+const resetsOn = (kind: UsageKind, startedOn: string | null, today: string) => (monthly(kind) ? nextCycleStart(anchor(startedOn, today), today) : tomorrow(today));
 
 function quotaMessage(kind: UsageKind, limit: number, reset: string) {
   if (kind === "ai") return `This office used its ${limit} AI actions for this month. They come back on ${longDate(reset)}, Manila time. To get more now, ask Daloy to move you to a larger plan.`;
+  if (kind === "sms") {
+    if (limit === 0) return "SMS sending is not included on the Preview plan. Ask Daloy to move you to a paid plan.";
+    return `This office used its ${limit} SMS messages for this month. They come back on ${longDate(reset)}, Manila time. To get more now, ask Daloy to move you to a larger plan.`;
+  }
   if (kind === "mailbox") return `This office reached today's limit of ${limit} recipients through its Gmail or Outlook. Nothing was sent. Choose Send again after it resets (tomorrow, Manila time), or Stop.`;
   if (kind === "email") return `This office reached today's limit of ${limit} email recipients. Sending starts again tomorrow, Manila time. Press Retry on this run then.`;
   if (kind === "upload") return `This office reached today's limit of ${limit} files. Forms take files again tomorrow, Manila time.`;
   return `This office reached today's limit of ${limit} web requests. They start again tomorrow, Manila time. Press Retry on this run then.`;
+}
+
+/**
+ * Counts n units of work inside an existing transaction. Caller must let QuotaError roll back the transaction so any
+ * claim key written before the limit check is never left behind.
+ */
+export async function claimUsageInTx(tx: Pick<Db, "select" | "insert">, userId: string, kind: UsageKind, opts: { n?: number; key?: string; now?: Date } = {}) {
+  const n = opts.n ?? 1;
+  const today = manilaDay(opts.now);
+  const { plan, startedOn } = await planOf(tx, userId);
+  const limit = limitFor(plan, kind);
+  const period = periodOf(kind, startedOn, today);
+  const over = () => new QuotaError(quotaMessage(kind, limit!, resetsOn(kind, startedOn, today)), kind);
+  if (opts.key !== undefined) {
+    const fresh = await tx.insert(usageClaims).values({ userId, kind, key: opts.key }).onConflictDoNothing().returning({ key: usageClaims.key });
+    if (fresh.length === 0) return;
+  }
+  if (limit !== null && n > limit) throw over();
+  const counted = await tx
+    .insert(usageCounts)
+    .values({ userId, kind, period, used: n })
+    .onConflictDoUpdate({
+      target: [usageCounts.userId, usageCounts.kind, usageCounts.period],
+      set: { used: sql`${usageCounts.used} + ${n}` },
+      ...(limit === null ? {} : { setWhere: sql`${usageCounts.used} + ${n} <= ${limit}` }),
+    })
+    .returning({ used: usageCounts.used });
+  if (counted.length === 0) throw over();
 }
 
 /**
@@ -83,29 +116,7 @@ function quotaMessage(kind: UsageKind, limit: number, reset: string) {
  * limit it throws a QuotaError and rolls the key back. A workspace with no plan is counted without a limit, except for uploads (UPLOADS_WITHOUT_PLAN).
  */
 export async function claimUsage(db: Pick<Db, "select" | "transaction">, userId: string, kind: UsageKind, opts: { n?: number; key?: string; now?: Date } = {}) {
-  const n = opts.n ?? 1;
-  const today = manilaDay(opts.now);
-  const { plan, startedOn } = await planOf(db, userId);
-  const limit = limitFor(plan, kind);
-  const period = periodOf(kind, startedOn, today);
-  const over = () => new QuotaError(quotaMessage(kind, limit!, resetsOn(kind, startedOn, today)), kind);
-  if (limit !== null && n > limit) throw over();
-  await db.transaction(async (tx) => {
-    if (opts.key !== undefined) {
-      const fresh = await tx.insert(usageClaims).values({ userId, kind, key: opts.key }).onConflictDoNothing().returning({ key: usageClaims.key });
-      if (fresh.length === 0) return;
-    }
-    const counted = await tx
-      .insert(usageCounts)
-      .values({ userId, kind, period, used: n })
-      .onConflictDoUpdate({
-        target: [usageCounts.userId, usageCounts.kind, usageCounts.period],
-        set: { used: sql`${usageCounts.used} + ${n}` },
-        ...(limit === null ? {} : { setWhere: sql`${usageCounts.used} + ${n} <= ${limit}` }),
-      })
-      .returning({ used: usageCounts.used });
-    if (counted.length === 0) throw over();
-  });
+  await db.transaction((tx) => claimUsageInTx(tx, userId, kind, opts));
 }
 
 /** What the console shows: plan, limits, use so far and when each counter resets. */
@@ -126,6 +137,7 @@ export async function usageSummary(db: Db, userId: string, now = new Date()) {
     label: limits?.label ?? null,
     limits,
     ai: meter("ai"),
+    sms: meter("sms"),
     email: meter("email"),
     http: meter("http"),
     upload: meter("upload"),

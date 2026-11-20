@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { createKeyedRun, deliveries, emailSources, findApprover, listDeliveries, PLANS, PROVIDER_NAMES, type Provider, publishedVersion, readConnections, requests, runs, SCHEDULE_QUEUE, secrets, setPaused, supersededSql, syncEmailSourceOnPublish, triggers, users, workflows, workflowVersions, type Db } from "@daloy/db";
+import { createKeyedRun, deliveries, emailSources, findApprover, listDeliveries, planOf, PLANS, PROVIDER_NAMES, type Provider, publishedVersion, readConnections, requests, runs, SCHEDULE_QUEUE, secrets, setPaused, sharedUnismsConfig, supersededSql, syncEmailSourceOnPublish, triggers, users, workflows, workflowVersions, type Db } from "@daloy/db";
 import { BRANCHES, choiceProblems, definitionSchema, testChoicesSchema, testModeSchema, guidedSetupInput, OFFICE_REQUEST, saveProblems, stepJsonSchemas, templatesForLanguage, triggerFields, type Trigger, type WorkflowDefinition } from "@daloy/engine";
 import {
   BadRequestException,
@@ -287,9 +287,9 @@ export class WorkflowsController {
     return { id: runId, versionId: ran!.versionId, mode: ran!.live ? "live" : ran!.aiLive ? "ai" : "mock", duplicate };
   }
 
-  /** Turning on a workflow with Sheets, Slack, Outlook or Teams steps needs that connection working with a destination. Drafts do not. */
+  /** Turning on a workflow with Sheets, Slack, Outlook, Teams or SMS steps needs that connection working with a destination. Drafts do not. */
   private async checkConnections(userId: string, definition: WorkflowDefinition) {
-    const providers: Partial<Record<string, Provider>> = { sheets: "google_sheets", slack: "slack", outlook: "outlook", teams: "teams", telegram: "telegram", calendar: "google_calendar", airtable: "airtable", notion: "notion", trello: "trello" };
+    const providers: Partial<Record<string, Provider>> = { sheets: "google_sheets", slack: "slack", outlook: "outlook", teams: "teams", telegram: "telegram", sms: "unisms", calendar: "google_calendar", airtable: "airtable", notion: "notion", trello: "trello" };
     const needed = new Set(definition.steps.flatMap((s) => providers[s.type] ?? []));
     if (needed.size === 0) return;
     const conns = await readConnections(this.db, userId);
@@ -297,6 +297,10 @@ export class WorkflowsController {
       const c = conns.find((x) => x.provider === provider);
       const name = PROVIDER_NAMES[provider];
       const where = provider === "slack" ? " and pick a channel" : provider === "telegram" ? " and choose a chat" : provider === "google_sheets" ? " and pick a sheet" : provider === "google_calendar" ? " and choose a calendar" : provider === "airtable" || provider === "notion" || provider === "trello" ? " and choose where it goes" : "";
+      if (!c && provider === "unisms" && sharedUnismsConfig()) {
+        const { plan } = await planOf(this.db, userId);
+        if (plan !== null && plan !== "preview") continue;
+      }
       if (!c || !c.destination) throw new BadRequestException(`Connect ${name}${where} in Apps before turning this on.`);
       if (c.status !== "active") throw new BadRequestException(`${name} needs to be connected again in Apps before turning this on.`);
     }

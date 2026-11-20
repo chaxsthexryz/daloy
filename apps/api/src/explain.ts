@@ -31,7 +31,7 @@ type FactsInput = {
 const REASONS: [Reason, RegExp][] = [
   ["mail_sender", /gmail|mail server/i],
   ["ai_model", /api key|ai model/i],
-  ["quota", /AI actions for this month|limit of \d+ (email recipients|web requests)/i],
+  ["quota", /AI actions for this month|SMS messages for this month|SMS sending is not included|limit of \d+ (email recipients|web requests)/i],
   ["booking_changed", /booking was rescheduled or cancelled/i],
   ["worker_stopped", /worker stopped while sending/i],
   ["preview_choice", /^Test run: this step was set to fail/],
@@ -87,7 +87,7 @@ export function askFacts(input: FactsInput): AskFacts {
   return { ...failureFacts(input), plainState, steps };
 }
 
-const APPS: Record<string, string> = { google_sheets: "Google Sheets", slack: "Slack", outlook: "Outlook", teams: "Microsoft Teams", google_calendar: "Google Calendar", google_drive: "Google Drive", airtable: "Airtable", notion: "Notion", trello: "Trello" };
+const APPS: Record<string, string> = { google_sheets: "Google Sheets", slack: "Slack", outlook: "Outlook", teams: "Microsoft Teams", telegram: "Telegram", unisms: "UniSMS", google_calendar: "Google Calendar", google_drive: "Google Drive", airtable: "Airtable", notion: "Notion", trello: "Trello" };
 const APPS_FIX = { href: "#/apps", label: "Check the connection" };
 // Retry, Send again and Mark as posted are on the run page itself, so these need no link.
 const ACTIVITY_FIX = null;
@@ -111,11 +111,11 @@ const PERMISSION: Record<string, string> = {
 
 function ofDelivery(d: Facts["deliveries"][number]): Explanation | null {
   const app = APPS[d.provider] ?? "The other app";
-  const outlook = d.provider === "outlook";
-  const where = d.provider === "google_sheets" ? "sheet" : d.provider === "google_calendar" ? "calendar" : "channel";
-  const done = outlook ? "Mark as sent" : "Mark as posted";
-  const again = outlook ? "Send again" : "Post again";
-  const check = outlook ? "Check Sent Items" : `Check ${app}`;
+  const sent = d.provider === "outlook" || d.provider === "unisms";
+  const where = d.provider === "google_sheets" ? "sheet" : d.provider === "google_calendar" ? "calendar" : d.provider === "unisms" ? "Sender ID" : "channel";
+  const done = sent ? "Mark as sent" : "Mark as posted";
+  const again = sent ? "Send again" : "Post again";
+  const check = d.provider === "outlook" ? "Check Sent Items" : `Check ${app}`;
   const review = (why: string) => ({ headline: "This needs you before it goes on.", lines: [why, `${check}. If it is there, press ${done}. If not, press ${again}.`], fix: ACTIVITY_FIX });
   switch (d.errorKind) {
     case "auth":
@@ -127,6 +127,8 @@ function ofDelivery(d: Facts["deliveries"][number]): Explanation | null {
       return { headline: `${app} refused Daloy.`, lines: [PERMISSION[d.provider] ?? "Give the connected account access, then press Retry."], fix: APPS_FIX };
     case "no_destination":
       return { headline: `No ${where} is chosen for ${app}.`, lines: [`Pick a ${where} in Apps, then press Retry.`], fix: { href: "#/apps", label: `Pick a ${where}` } };
+    case "plan_quota":
+      return { headline: "The plan limit was reached.", lines: ["This office used up what its plan allows for now. Press Retry when the limit resets."], fix: { href: "#/settings", label: "See usage" } };
     case "quota":
     case "unavailable":
       return { headline: `${app} is busy or limiting requests.`, lines: [`Daloy will try again on its own. Nothing needs to be done now (${d.attempts} ${d.attempts === 1 ? "try" : "tries"} so far).`], fix: null };
@@ -181,7 +183,7 @@ export function explainFailure(facts: Facts, language: "en" | "tl" = "en"): Expl
 }
 
 // The console's names for step types (apps/web/src/FlowCanvas.tsx TYPE_NAMES), plus booking.
-const TYPE_NAMES: Record<string, string> = { condition: "Condition", http: "HTTP request", email: "Send email", delay: "Delay", ai: "AI task", approval: "Approval", sheets: "Add to Google Sheets", drive: "Save files to Google Drive", slack: "Post to Slack", outlook: "Send from Outlook", teams: "Post to Teams", calendar: "Add to Google Calendar", paymongo_link: "Create payment link", payment_status: "Check payment", airtable: "Add to Airtable", notion: "Add to Notion", trello: "Add to Trello", booking: "Booking" };
+const TYPE_NAMES: Record<string, string> = { condition: "Condition", http: "HTTP request", email: "Send email", delay: "Delay", ai: "AI task", approval: "Approval", sheets: "Add to Google Sheets", drive: "Save files to Google Drive", slack: "Post to Slack", outlook: "Send from Outlook", teams: "Post to Teams", telegram: "Send to Telegram", sms: "Send SMS", calendar: "Add to Google Calendar", paymongo_link: "Create payment link", payment_status: "Check payment", airtable: "Add to Airtable", notion: "Add to Notion", trello: "Add to Trello", booking: "Booking" };
 const HEADLINES = { "needs you": "This request needs you before it goes on.", done: "This request is done.", problem: "This request stopped with a problem.", waiting: "This request is waiting.", "in progress": "This request is still going." };
 const OPEN_ACTIVITY = "Open the request in Activity to see every step.";
 

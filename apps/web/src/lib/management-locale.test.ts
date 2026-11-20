@@ -5,7 +5,7 @@ import type { Usage } from "../api";
 import { createElement, type ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { LanguageContext } from "../Language";
-import { CalendarConnection, DeliveryList, PaymongoConnection, SheetsConnection, type Delivery } from "../Connections";
+import { CalendarConnection, DeliveryList, PaymongoConnection, SheetsConnection, UnismsConnection, type Delivery } from "../Connections";
 import { SchemaForm } from "../SchemaForm";
 import { FormEmbed } from "../FormEmbed";
 
@@ -61,5 +61,14 @@ describe("management interface language", () => {
     expect(payment).toContain("Ikonekta ang PayMongo");
     expect(payment).toContain("Gamitin muna ang test mode");
     expect(render(createElement(PaymongoConnection, { conn: null, webhookBase: "https://example.test", onChange: async () => undefined }), "en")).toContain("Connect PayMongo");
+    const unismsEn = render(createElement(UnismsConnection, { conn: null, onChange: async () => undefined }), "en");
+    expect(unismsEn).toContain("Connect UniSMS");
+    expect(unismsEn).toContain("Globe and DITO");
+    const unismsTl = render(createElement(UnismsConnection, { conn: null, onChange: async () => undefined }), "tl");
+    expect(unismsTl).toContain("Ikonekta ang UniSMS");
+    expect(unismsTl).toContain("Globe at DITO");
+    const smsDelivery: Delivery = { id: "delivery-sms", provider: "unisms", stepId: "send_sms", state: "needs_review", checkFirst: false, attempts: 1, result: null, lastError: null };
+    expect(render(createElement(DeliveryList, { deliveries: [smsDelivery], onChange: async () => undefined }), "en")).toContain("Mark as sent");
+    expect(render(createElement(DeliveryList, { deliveries: [smsDelivery], onChange: async () => undefined }), "tl")).toContain("Markahang naipadala");
   });
 });

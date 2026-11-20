@@ -144,6 +144,9 @@ async function runNext(deps: AdvanceDeps, run: Run): Promise<void> {
     // The wake-up time has passed (checked above), or an approver answered, so the waiting step is done and the run carries on.
     const waiting = def.steps.find((s) => s.id === last!.stepId)!;
     const resumed = await db.transaction(async (tx) => {
+      // Lock the run row first (runs -> step_runs -> approvals), matching cancelRun and the waiting transition below,
+      // so a concurrent cancelRun and delay wake-up cannot deadlock (Postgres 40P01).
+      await tx.select({ id: runs.id }).from(runs).where(eq(runs.id, run.id)).for("update");
       const extra: Partial<typeof stepRuns.$inferSelect> = { finishedAt: new Date() };
       if (waiting.type === "approval") {
         // The recorded decision, or "timeout" if nobody answered by the deadline (decision 0009).

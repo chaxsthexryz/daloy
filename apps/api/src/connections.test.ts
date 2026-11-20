@@ -274,3 +274,62 @@ describe("turning on and retrying", () => {
     await agent.post(`/deliveries/not-a-uuid/retry`).send({}).expect(400);
   });
 });
+
+describe("UniSMS", () => {
+  it("saves Secret Key encrypted and Sender ID, never returns the key, sends a test SMS, charges quota, redacts errors, and disconnects", async () => {
+    const { agent, userId } = await signedIn();
+    // Give the workspace a paid plan so SMS quota allows sending (preview has sms: 0).
+    await db.update(users).set({ plan: "pilot", planStartedOn: "2026-11-01" }).where(eq(users.id, userId));
+    const secretKey = `unisms_synth_api_key_${seq}_abcd`; // gitleaks:allow
+    fake.unisms.secretKey = secretKey;
+    fake.unisms.messages.length = 0;
+
+    // Invalid Sender ID or missing key is refused.
+    await agent.put("/settings/connections/unisms").send({ secretKey: "short" }).expect(400);
+    await agent.put("/settings/connections/unisms").send({ secretKey, senderId: "Bad!SenderID" }).expect(400);
+
+    const saved = await agent.put("/settings/connections/unisms").send({ secretKey, senderId: "LimDental" }).expect(200);
+    expect(saved.body.connections).toEqual([expect.objectContaining({ provider: "unisms", status: "active", destination: { senderId: "LimDental" } })]);
+    expect(JSON.stringify(saved.body)).not.toContain(secretKey);
+    const [row] = await db.select().from(connections).where(eq(connections.userId, userId));
+    expect(JSON.stringify(row)).not.toContain(secretKey);
+
+    // Invalid phone number on test is refused with 400.
+    await agent.post("/settings/connections/unisms/test").send({ to: "+14155550100" }).expect(400);
+
+    // Valid PH number sends one test SMS and counts 1 sms unit in /usage.
+    const test = await agent.post("/settings/connections/unisms/test").send({ to: "09171234567" }).expect(200);
+    expect(test.body).toMatchObject({ ok: true, recipient: "+639171234567", senderId: "LimDental" });
+    expect(fake.unisms.messages).toHaveLength(1);
+    const usage = await agent.get("/usage").expect(200);
+    expect(usage.body.sms).toMatchObject({ used: 1, limit: 50 });
+
+    // Error echoing secret is redacted through historyHider, and 401 marks connection failed.
+    fake.once("/api/sms", { status: 400, body: { error: `rejected ${secretKey}` } });
+    const bad = await agent.post("/settings/connections/unisms/test").send({ to: "+639171234567" }).expect(200);
+    expect(bad.body.ok).toBe(false);
+    expect(bad.body.error).not.toContain(secretKey);
+
+    fake.once("/api/sms", { status: 401, body: { error: "unauthorized" } });
+    const unauth = await agent.post("/settings/connections/unisms/test").send({ to: "+639171234567" }).expect(200);
+    expect(unauth.body.ok).toBe(false);
+    const after401 = await agent.get("/settings/connections").expect(200);
+    expect(after401.body.connections).toEqual([expect.objectContaining({ provider: "unisms", status: "failed" })]);
+
+    // Disconnect via DELETE /settings/connections/unisms.
+    await agent.delete("/settings/connections/unisms").expect(204);
+    const afterDel = await agent.get("/settings/connections").expect(200);
+    expect(afterDel.body.connections).toEqual([]);
+  });
+
+  it("blocks test SMS with 429 on preview plan (sms: 0)", async () => {
+    const { agent, userId } = await signedIn();
+    await db.update(users).set({ plan: "preview", planStartedOn: "2026-11-01" }).where(eq(users.id, userId));
+    const secretKey = `unisms_synth_prev_key_${seq}_abcd`; // gitleaks:allow
+    fake.unisms.secretKey = secretKey;
+    fake.unisms.messages.length = 0;
+    await agent.put("/settings/connections/unisms").send({ secretKey }).expect(200);
+    await agent.post("/settings/connections/unisms/test").send({ to: "09171234567" }).expect(429);
+    expect(fake.unisms.messages).toHaveLength(0);
+  });
+});

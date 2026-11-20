@@ -61,6 +61,8 @@ export async function secretValuesToHide(db: Pick<Db, "execute">, key: Buffer, u
     union all
     select 'connection:' || provider, credential_ciphertext, credential_iv, credential_auth_tag, true from connections where user_id = ${userId} and auth_method = 'oauth'
     union all
+    select 'connection:' || provider, credential_ciphertext, credential_iv, credential_auth_tag, false from connections where user_id = ${userId} and provider = 'unisms'
+    union all
     select 'gmail_oauth', password_ciphertext, password_iv, password_auth_tag, true from mail_senders where user_id = ${userId} and auth_method = 'oauth' and password_ciphertext is not null`);
   // OAuth access and refresh tokens too, as defense in depth: they should never reach history at all (decision 0058, R4).
   // A token blob that does not decrypt was never usable, so it has nothing to hide and must not break every history page.

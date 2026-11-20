@@ -22,7 +22,7 @@ const asked: { messages: { role: string; content: string }[] }[] = [];
 
 const draft = JSON.stringify({ kind: "draft", name: "Contact thanks", summary: "Thanks the sender.", definition: TEMPLATES[0]!.definition });
 const question = JSON.stringify({ kind: "question", text: "What starts it?", choices: ["Someone fills a form", "On a schedule"] });
-const invalid = JSON.stringify({ kind: "draft", name: "Broken", summary: "x", definition: { trigger: { type: "manual", config: {} }, steps: [{ id: "a", type: "sms", config: {} }], edges: [] } });
+const invalid = JSON.stringify({ kind: "draft", name: "Broken", summary: "x", definition: { trigger: { type: "manual", config: {} }, steps: [{ id: "a", type: "fax", config: {} }], edges: [] } });
 
 beforeAll(async () => {
   const fresh = await freshDatabase();

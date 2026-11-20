@@ -80,7 +80,7 @@ describe("parseChatReply", () => {
   });
 
   it("lists readable errors for an invalid definition", () => {
-    const bad = { kind: "draft", name: "Bad", summary: "x", definition: { trigger: { type: "manual", config: {} }, steps: [{ id: "a", type: "sms", config: {} }], edges: [] } };
+    const bad = { kind: "draft", name: "Bad", summary: "x", definition: { trigger: { type: "manual", config: {} }, steps: [{ id: "a", type: "fax", config: {} }], edges: [] } };
     const r = parseChatReply(reply(bad));
     expect(r.ok).toBe(false);
     if (r.ok) return;

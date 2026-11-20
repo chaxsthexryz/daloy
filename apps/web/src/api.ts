@@ -77,6 +77,7 @@ export type Usage = {
   label: string | null;
   limits: Record<string, number> | null;
   ai: Meter;
+  sms?: Meter;
   email: Meter;
   http: Meter;
   automations: { live: number; limit: number | null };

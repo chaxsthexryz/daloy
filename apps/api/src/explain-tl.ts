@@ -8,7 +8,7 @@ const lint: Record<LintRule, string> = {
   number_no_invalid: "May number check na walang kasunod na hakbang kapag hindi numero ang halaga, kaya doon matatapos ang automation.",
   unreachable_step: "May bahagi ng automation na hindi maaabot, kaya hindi ito tatakbo.",
 };
-const apps: Record<string, string> = { google_sheets: "Google Sheets", slack: "Slack", outlook: "Outlook", teams: "Microsoft Teams", google_calendar: "Google Calendar", google_drive: "Google Drive", airtable: "Airtable", notion: "Notion", trello: "Trello" };
+const apps: Record<string, string> = { google_sheets: "Google Sheets", slack: "Slack", outlook: "Outlook", teams: "Microsoft Teams", telegram: "Telegram", unisms: "UniSMS", google_calendar: "Google Calendar", google_drive: "Google Drive", airtable: "Airtable", notion: "Notion", trello: "Trello" };
 const appsFix = { href: "#/apps", label: "Tingnan ang koneksyon" };
 const booking: Explanation = { headline: "Isinara ito dahil nagbago ang booking.", lines: ["Na-reschedule o nakansela ang booking, kaya wala nang ipapadala."], fix: null };
 const permission: Record<string, string> = {
@@ -23,17 +23,18 @@ const permission: Record<string, string> = {
 };
 function delivery(d: Facts["deliveries"][number]): Explanation | null {
   const app = apps[d.provider] ?? "Ang kabilang app";
-  const outlook = d.provider === "outlook";
-  const where = d.provider === "google_sheets" ? "sheet" : d.provider === "google_calendar" ? "calendar" : "channel";
-  const done = outlook ? "Markahang naipadala" : "Markahang nai-post";
-  const again = outlook ? "Ipadala ulit" : "I-post ulit";
-  const check = outlook ? "Tingnan ang Sent Items" : `Tingnan ang ${app}`;
+  const sent = d.provider === "outlook" || d.provider === "unisms";
+  const where = d.provider === "google_sheets" ? "sheet" : d.provider === "google_calendar" ? "calendar" : d.provider === "unisms" ? "Sender ID" : "channel";
+  const done = sent ? "Markahang naipadala" : "Markahang nai-post";
+  const again = sent ? "Ipadala ulit" : "I-post ulit";
+  const check = d.provider === "outlook" ? "Tingnan ang Sent Items" : `Tingnan ang ${app}`;
   const review = (why: string): Explanation => ({ headline: "Kailangan mo itong tingnan bago magpatuloy.", lines: [why, `${check}. Kung naroon, pindutin ang ${done}. Kung wala, pindutin ang ${again}.`], fix: null });
   switch (d.errorKind) {
     case "auth": case "reconnect": return { headline: `Kailangang ikonekta muli ang ${app}.`, lines: [`Hindi na tinatanggap ng ${app} ang access ng Daloy. Ikonekta muli ito sa Apps, saka pindutin ang Subukan ulit.`], fix: appsFix };
     case "not_connected": return { headline: `Hindi nakakonekta ang ${app}.`, lines: [`Ikonekta ang ${app} sa Apps, saka pindutin ang Subukan ulit.`], fix: { href: "#/apps", label: `Ikonekta ang ${app}` } };
     case "permission": return { headline: `Tinanggihan ng ${app} ang Daloy.`, lines: [permission[d.provider] ?? "Bigyan ng access ang nakakonektang account, saka pindutin ang Subukan ulit."], fix: appsFix };
     case "no_destination": return { headline: `Walang napiling ${where} para sa ${app}.`, lines: [`Pumili ng ${where} sa Apps, saka pindutin ang Subukan ulit.`], fix: { href: "#/apps", label: `Pumili ng ${where}` } };
+    case "plan_quota": return { headline: "Naabot na ang limit ng plan.", lines: ["Naubos na ng opisina ang kasalukuyang pinapayagan ng plan nito. Pindutin ang Subukan ulit kapag nag-reset na ang limit."], fix: { href: "#/settings", label: "Tingnan ang nagamit" } };
     case "quota": case "unavailable": return { headline: `Abala ang ${app} o nililimitahan nito ang mga request.`, lines: [`Kusang susubok muli ang Daloy. Wala ka munang kailangang gawin (${d.attempts} beses nang sinubukan).`], fix: null };
     case "ambiguous": case "review": return review(`Hindi malinaw ang sagot ng ${app} kung natuloy ito.`);
     case "destination_changed": return review(`Nabago ang ${where} para sa ${app} matapos itong mailagay sa pila, kaya hindi ito ipinadala ng Daloy.`);
@@ -66,7 +67,7 @@ export function explainFailureTl(facts: Facts): Explanation {
   const base = facts.deliveries.map(delivery).find(Boolean) ?? (facts.step ? step(facts.step) : null) ?? { headline: "Hindi matukoy ng Daloy kung bakit ito huminto.", lines: ["Nasa detalye para sa technician sa ibaba ang buong tala."], fix: null };
   return { ...base, lines: [...base.lines, ...facts.lint.map((l) => lint[l.rule])] };
 }
-const types: Record<string, string> = { condition: "Kondisyon", http: "HTTP request", email: "Magpadala ng email", delay: "Paghihintay", ai: "AI task", approval: "Pag-apruba", sheets: "Idagdag sa Google Sheets", drive: "I-save ang mga file sa Google Drive", slack: "I-post sa Slack", outlook: "Ipadala mula sa Outlook", teams: "I-post sa Teams", calendar: "Idagdag sa Google Calendar", paymongo_link: "Gumawa ng payment link", payment_status: "Tingnan ang bayad", airtable: "Idagdag sa Airtable", notion: "Idagdag sa Notion", trello: "Idagdag sa Trello", booking: "Booking" };
+const types: Record<string, string> = { condition: "Kondisyon", http: "HTTP request", email: "Magpadala ng email", delay: "Paghihintay", ai: "AI task", approval: "Pag-apruba", sheets: "Idagdag sa Google Sheets", drive: "I-save ang mga file sa Google Drive", slack: "I-post sa Slack", outlook: "Ipadala mula sa Outlook", teams: "I-post sa Teams", telegram: "Ipadala sa Telegram", sms: "Magpadala ng SMS", calendar: "Idagdag sa Google Calendar", paymongo_link: "Gumawa ng payment link", payment_status: "Tingnan ang bayad", airtable: "Idagdag sa Airtable", notion: "Idagdag sa Notion", trello: "Idagdag sa Trello", booking: "Booking" };
 const headlines = { "needs you": "Kailangan mong tingnan ang request na ito bago magpatuloy.", done: "Tapos na ang request na ito.", problem: "Huminto ang request na ito dahil may problema.", waiting: "Naghihintay ang request na ito.", "in progress": "Tumatakbo pa ang request na ito." };
 export function answerAllTl(facts: AskFacts): { happened: Explanation; why: Explanation | null; next: Explanation } {
   const happened = [facts.steps.length ? `${facts.steps.length} hakbang ang tumakbo.` : "Wala pang tumatakbong hakbang."];
