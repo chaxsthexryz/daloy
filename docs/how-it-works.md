@@ -238,7 +238,7 @@ Validation: every body, path parameter and query value goes through `ZodPipe` wi
 
 Sessions: logging in creates 32 random bytes, sent as an httpOnly, SameSite=Lax cookie, marked Secure when `SECURE_COOKIES=true` or `NODE_ENV=production`. Only the SHA-256 of the cookie is stored, so a database leak does not hand out live sessions. Passwords are hashed with argon2id. A login with an unknown email still runs a hash check, so response time does not reveal which emails exist.
 
-Changes from another origin: a signed-in POST, PUT, PATCH or DELETE is refused with 403 when the browser's `Origin` header is neither the `PUBLIC_URL` origin nor the host the request was sent to (`SessionGuard`, decision 0066). SameSite=Lax alone does not stop a sibling origin of the same site. A request with no `Origin` passes, so tokens, scripts and tests are unchanged.
+Changes from another origin: a signed-in POST, PUT, PATCH or DELETE is refused with 403 when the browser's `Origin` header is neither the `PUBLIC_URL` origin nor the host the request was sent to (`SessionGuard`, decision 0078). SameSite=Lax alone does not stop a sibling origin of the same site. A request with no `Origin` passes, so tokens, scripts and tests are unchanged.
 
 Ownership: every console query filters on the signed-in user, and another user's workflow returns 404, the same as one that does not exist.
 
@@ -669,7 +669,7 @@ What it does: a form can have file fields. A visitor attaches photos or PDFs, an
 How it works (decision 0051):
 
 - Limits: 5 MB per file, 3 files per field, 5 files per submission. The type comes from the file's first bytes (JPEG, PNG, WebP, HEIC or HEIF, PDF). The browser's type and the file name's extension are ignored, so SVG, HTML and anything else are refused even when renamed `.jpg`.
-- The per-IP limit of 10 posts a minute is a guard, and Nest runs guards before the upload parser, so a blocked address never gets its body read. Next to it, `UploadBudget` checks the form and the declared `Content-Length` before the parser reads anything, and reserves those bytes from a shared 128 MB budget until the response closes (decision 0066). Full budget: 503 with `Retry-After: 5`. No length: 411. More than one submission can hold: 413. A form with no file field: 415.
+- The per-IP limit of 10 posts a minute is a guard, and Nest runs guards before the upload parser, so a blocked address never gets its body read. Next to it, `UploadBudget` checks the form and the declared `Content-Length` before the parser reads anything, and reserves those bytes from a shared 128 MB budget until the response closes (decision 0078). Full budget: 503 with `Retry-After: 5`. No length: 411. More than one submission can hold: 413. A form with no file field: 415.
 - The files are stored in Postgres (`uploads`) in the same transaction as the run. An invalid post stores nothing, and a replayed submission key stores no second copy. The worker's sweep deletes files 7 days after upload.
 - The run's trigger data holds only references (`id`, `name`, `type`, `size`) under each file field. File contents never enter trigger data, step input or output, so templates, failure explanations and Ask cannot read them. The AI step reads a file only when the owner lists its field in the step's `files` (decision 0052, see the AI step). Only the form handler sets a file field: a value sent through a webhook, MCP, a test run or the Run button is dropped.
 - Each workspace may store a number of files per Manila day: Pilot 100, Business 500, Business Plus 2000, and 20 without a plan. Over the limit, a submission with files gets a plain refusal. One without files goes through. On a tracked form the allowance is claimed in the transaction that creates the request, its run and its files. A repeat with the same submission key returns the first reference before any claim, and a duplicate that loses the unique index rolls its claim back (decision 0057, M15; test in `apps/api/src/public-intake.test.ts`). Preview workspaces get 20.
@@ -801,7 +801,7 @@ Tests: every file listed in the sections above runs together on the integration 
 
 ## Pre-release checks (N11d: packages/llm-ts, apps/api/src/auth.ts, public.ts, members.test.ts, order-fulfilment.test.ts)
 
-What it does: closes the "Before release" list of the 19 November review, as far as it can be checked without the owner's VM or provider accounts. Decision 0066 has the plan and what was skipped.
+What it does: closes the "Before release" list of the 19 November review, as far as it can be checked without the owner's VM or provider accounts. Decision 0078 has the plan and what was skipped.
 
 How it works:
 
