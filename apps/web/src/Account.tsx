@@ -1,8 +1,10 @@
 import "./request-access.css";
 import "./workspace-admin.css";
+import "./workspace.css";
 import { useState, type FormEvent } from "react";
 import { api } from "./api";
 import { useLanguage } from "./Language";
+import { checkPasswordChange, type PasswordIssue } from "./lib/password";
 
 const Brand = () => (
   <h1 className="brand">
@@ -96,51 +98,64 @@ export function ResetPasswordPage({ token }: { token: string }) {
   );
 }
 
+const ISSUES: Record<PasswordIssue, { field: "currentPassword" | "newPassword"; message: string }> = {
+  "current-required": { field: "currentPassword", message: "Enter your current password." },
+  "too-short": { field: "newPassword", message: "The new password needs at least 12 characters." },
+  "too-long": { field: "newPassword", message: "The new password can have at most 200 characters." },
+};
+
 /** Change password for any signed-in role. The API signs out every other session. */
 export function AccountPage({ backToRequests }: { backToRequests?: boolean }) {
   const { t } = useLanguage();
   const [done, setDone] = useState(false);
-  const [error, setError] = useState("");
+  const [error, setError] = useState<{ message: string; field: "currentPassword" | "newPassword" } | null>(null);
   const submit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    setError("");
+    setError(null);
     setDone(false);
     const form = e.currentTarget;
     const data = new FormData(form);
+    const currentPassword = String(data.get("currentPassword"));
+    const newPassword = String(data.get("newPassword"));
+    const issue = checkPasswordChange(currentPassword, newPassword);
+    if (issue) return setError({ field: ISSUES[issue].field, message: t(ISSUES[issue].message) });
     try {
-      await api("POST", "/auth/password", { currentPassword: data.get("currentPassword"), newPassword: data.get("newPassword") });
+      await api("POST", "/auth/password", { currentPassword, newPassword });
       form.reset();
       setDone(true);
     } catch (err) {
-      setError((err as Error).message);
+      const message = (err as Error).message;
+      setError({ message, field: /current password/i.test(message) ? "currentPassword" : "newPassword" });
     }
   };
   return (
-    <main className="page narrow workspace-admin admin-account">
-      <header className="toolbar plain">
-        {backToRequests && <a href="#/">{t("My requests")}</a>}
-        <h1>{t("Account")}</h1>
+    <main className="page wk wk-account">
+      <header className="wk-head">
+        <div>
+          {backToRequests && <a className="wk-back" href="#/">{t("My requests")}</a>}
+          <div className="wk-title-row"><h1>{t("Account")}</h1></div>
+        </div>
       </header>
-      <form onSubmit={submit}>
-        <h2>{t("Change password")}</h2>
-        <div className="field">
-          <label htmlFor="current-password">{t("Current password")}</label>
-          <input id="current-password" name="currentPassword" type="password" autoComplete="current-password" required />
-        </div>
-        <div className="field">
-          <label htmlFor="new-password">{t("New password")} <span className="muted">{t("(at least 12 characters)")}</span></label>
-          <input id="new-password" name="newPassword" type="password" autoComplete="new-password" minLength={12} maxLength={200} required />
-        </div>
-        <p role="status" className="message ok" hidden={!done}>
-          {done && t("Password changed. Your other sessions are signed out.")}
-        </p>
-        <p role="alert" className="message error" hidden={!error}>
-          {error}
-        </p>
-        <div className="actions">
-          <button className="primary">{t("Change password")}</button>
-        </div>
-      </form>
+      <section className="wk-card wk-narrow" aria-labelledby="change-password">
+        <h2 className="wk-card-head" id="change-password"><b>{t("Change password")}</b></h2>
+        <form className="wk-body wk-fields" onSubmit={submit} noValidate>
+          <div>
+            <label htmlFor="current-password">{t("Current password")}</label>
+            <input id="current-password" name="currentPassword" type="password" autoComplete="current-password" aria-invalid={error?.field === "currentPassword"} aria-describedby={error?.field === "currentPassword" ? "password-error" : undefined} />
+          </div>
+          <div>
+            <label htmlFor="new-password">{t("New password")} <span className="wk-muted">{t("(at least 12 characters)")}</span></label>
+            <input id="new-password" name="newPassword" type="password" autoComplete="new-password" aria-invalid={error?.field === "newPassword"} aria-describedby={error?.field === "newPassword" ? "password-error" : undefined} />
+          </div>
+          <p role="status" className="wk-note ok" hidden={!done}>
+            {done && t("Password changed. Your other sessions are signed out.")}
+          </p>
+          <p role="alert" id="password-error" className="wk-note bad" hidden={!error}>
+            {error?.message}
+          </p>
+          <button className="wk-button blue">{t("Change password")}</button>
+        </form>
+      </section>
     </main>
   );
 }

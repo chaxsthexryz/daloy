@@ -28,7 +28,7 @@ test("an invited approver answers a named approval; the owner and a signed-out v
   await expect(joinPage.getByRole("heading", { name: "My requests" })).toBeVisible();
   await joining.close();
   await page.reload();
-  await expect(page.getByRole("cell", { name: approver, exact: true })).toBeVisible();
+  await expect(page.getByText(approver, { exact: true })).toBeVisible();
 
   // An approval step named to them.
   await page.goto("/#/new");

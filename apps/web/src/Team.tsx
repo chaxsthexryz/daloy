@@ -1,27 +1,84 @@
 import "./request-access.css";
 import "./workspace-admin.css";
+import "./workspace.css";
 import { Text, useLanguage } from "./Language";
 import { useEffect, useState, type FormEvent } from "react";
 import { api } from "./api";
+import { Sheet, usePhone } from "./Sheet";
+import { canChangeRole, canInvite, canRemove, groupMembers, memberRoles, type Member, type MemberRole, type Role } from "./lib/team";
 
-export type Role = "owner" | "operator" | "approver" | "requester";
+export type { Role };
 export type User = { id: string; email: string; workspaceId: string; role: Role; language?: "en" | "tl"; ask?: boolean };
-type Member = { userId: string; email: string; role: Role; createdAt: string };
 
-const ROLE_HELP: Record<Exclude<Role, "owner">, string> = {
-  operator: "sees automations, runs and requests, and retries deliveries",
-  approver: "answers approvals that name them",
-  requester: "sends requests and follows their own",
+const ROLE_LABEL: Record<Role, string> = { owner: "Owner", operator: "Operator", approver: "Approver", requester: "Requester" };
+const GROUP_LABEL: Record<Role, string> = { owner: "Owner", operator: "Operators", approver: "Approvers", requester: "Requesters" };
+const ROLE_HELP: Record<Role, string> = {
+  owner: "Runs the workspace. Only the owner invites, changes roles and removes people.",
+  operator: "See automations, runs and requests, and retry deliveries.",
+  approver: "Answer approvals that name them.",
+  requester: "Send requests and follow their own.",
 };
-const MEMBER_ROLES = Object.keys(ROLE_HELP) as Exclude<Role, "owner">[];
+const joined = (iso: string) => new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
 
-/** The owner's Team page: who is in the workspace, their roles, and invite links (decision 0022). */
-export function TeamPage() {
+type Invite = { email: string; link: string };
+
+/** The invite form and, once a link exists, the link to send. Nothing is emailed (decision 0022). */
+function InviteForm({ onDone }: { onDone?: () => void }) {
   const { t } = useLanguage();
-  const [list, setList] = useState<Member[] | null>(null);
   const [email, setEmail] = useState("");
-  const [role, setRole] = useState<Exclude<Role, "owner">>("approver");
-  const [invite, setInvite] = useState<{ email: string; link: string } | null>(null);
+  const [role, setRole] = useState<MemberRole>("approver");
+  const [invite, setInvite] = useState<Invite | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [error, setError] = useState("");
+  const send = async (e: FormEvent) => {
+    e.preventDefault();
+    setError("");
+    setCopied(false);
+    try {
+      setInvite(await api<Invite>("POST", "/workspace/invites", { email, role }));
+      setEmail("");
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  };
+  const copy = () => {
+    void navigator.clipboard?.writeText(invite!.link);
+    setCopied(true);
+  };
+  return (
+    <form onSubmit={send} className="wk-invite">
+      <div className="wk-invite-row">
+        <input id="invite-email" type="email" aria-label={t("Email")} placeholder="name@example.com" value={email} onChange={(e) => setEmail(e.target.value)} required maxLength={254} />
+        <select id="invite-role" aria-label={t("Role")} value={role} onChange={(e) => setRole(e.target.value as MemberRole)}>
+          {memberRoles.map((r) => (
+            <option key={r} value={r}>{t(ROLE_LABEL[r])}</option>
+          ))}
+        </select>
+        <button className="wk-button blue">{t("Create invite link")}</button>
+      </div>
+      {invite && (
+        <div role="status" className="wk-note ok">
+          <p>
+            <b>{t("Send this link to {email}.", { email: invite.email })}</b> {t("It works once and expires in seven days.")}
+          </p>
+          <code aria-label={t("Invite link")}>{invite.link}</code>
+          <button type="button" className="wk-button" onClick={copy}>{copied ? t("Copied") : t("Copy link")}</button>
+        </div>
+      )}
+      <p role="alert" className="wk-note bad" hidden={!error}>{error}</p>
+      {onDone && <button type="button" className="wk-button wk-sheet-cancel" onClick={onDone}>{t("Close")}</button>}
+    </form>
+  );
+}
+
+type Dialog = { kind: "invite" } | { kind: "role"; member: Member } | { kind: "remove"; member: Member };
+
+/** The owner's Team page: who is in the workspace, grouped by role, with invite links (decision 0022). */
+export function TeamPage({ user }: { user: User }) {
+  const { t } = useLanguage();
+  const phone = usePhone();
+  const [list, setList] = useState<Member[] | null>(null);
+  const [dialog, setDialog] = useState<Dialog | null>(null);
   const [error, setError] = useState("");
   const load = () => api<Member[]>("GET", "/workspace/members").then(setList, (e: Error) => setError(e.message));
   useEffect(() => {
@@ -35,103 +92,105 @@ export function TeamPage() {
     } catch (err) {
       setError((err as Error).message);
     }
+    setDialog(null);
   };
-
-  const send = (e: FormEvent) => {
-    e.preventDefault();
-    return run(async () => {
-      setInvite(await api<{ email: string; link: string }>("POST", "/workspace/invites", { email, role }));
-      setEmail("");
-    });
-  };
-  const remove = (m: Member) => {
-    if (!confirm(t("Remove {email}? They are signed out, and approvals that name them can no longer be answered.", { email: m.email }))) return;
-    return run(() => api("DELETE", `/workspace/members/${m.userId}`));
-  };
+  const actor = user.role;
+  const groups = groupMembers(list ?? []);
 
   return (
-    <main className="page workspace-admin admin-team">
-      <header className="toolbar plain">
-        <h1><Text>Team</Text></h1>
+    <main className="page wk wk-team">
+      <header className="wk-head">
+        <div>
+          {phone && <p className="wk-eyebrow"><Text>Workspace</Text></p>}
+          <div className="wk-title-row">
+            <h1>{t("Team")}</h1>
+            {list && <span className="wk-sub">{list.length === 1 ? t("1 member") : t("{count} members", { count: list.length })}</span>}
+          </div>
+        </div>
+        {phone && canInvite(actor) && <button type="button" className="wk-button blue wk-head-action" onClick={() => setDialog({ kind: "invite" })}>{t("Invite")}</button>}
       </header>
-      <form onSubmit={send} className="create">
-        <h2>{t("Invite someone")}</h2>
-        <div className="row">
-          <div className="field">
-            <label htmlFor="invite-email"><Text>Email</Text></label>
-            <input id="invite-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required maxLength={254} />
+      {!phone && canInvite(actor) && (
+        <section className="wk-card" aria-labelledby="invite-heading">
+          <div className="wk-body">
+            <h2 id="invite-heading" className="wk-card-title">{t("Invite someone")}</h2>
+            <InviteForm />
           </div>
-          <div className="field">
-            <label htmlFor="invite-role">{t("Role")}</label>
-            <select id="invite-role" value={role} onChange={(e) => setRole(e.target.value as Exclude<Role, "owner">)}>
-              {MEMBER_ROLES.map((r) => (
-                <option key={r} value={r}>
-                  {t(r)}: {t(ROLE_HELP[r])}
-                </option>
-              ))}
-            </select>
-          </div>
-          <button className="primary">{t("Create invite link")}</button>
-        </div>
-        {invite && (
-          <div role="status">
-            <p className="message ok">{t("Send this link to {email}. It works once and expires in seven days.", { email: invite.email })}</p>
-            <pre className="token" aria-label={t("Invite link")}>
-              {invite.link}
-            </pre>
-            <button type="button" onClick={() => navigator.clipboard?.writeText(invite.link)}>{t("Copy link")}</button>
-          </div>
-        )}
-        <p role="alert" className="message error" hidden={!error}>
-          {error}
-        </p>
-      </form>
-      <h2>{t("Members")}</h2>
+        </section>
+      )}
+      <p role="alert" className="wk-note bad" hidden={!error}>{error}</p>
       {list === null ? (
-        <p>{t("Loading…")}</p>
+        <p className="wk-sub">{t("Loading…")}</p>
       ) : (
-        <div className="table-wrap">
-          <table className="table cards admin-table">
-            <thead>
-              <tr>
-                <th scope="col"><Text>Email</Text></th>
-                <th scope="col">{t("Role")}</th>
-                <th scope="col">{t("Joined")}</th>
-                <th scope="col">
-                  <span className="sr-only"><Text>Actions</Text></span>
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {list.map((m) => (
-                <tr key={m.userId}>
-                  <td data-label={t("Email")}>{m.email}</td>
-                  <td data-label={t("Role")}>
-                    {m.role === "owner" ? (
-                      t("owner")
-                    ) : (
-                      <select aria-label={t("Role of {email}", { email: m.email })} value={m.role} onChange={(e) => run(() => api("PATCH", `/workspace/members/${m.userId}`, { role: e.target.value }))}>
-                        {MEMBER_ROLES.map((r) => (
-                          <option key={r} value={r}>
-                            {t(r)}
-                          </option>
-                        ))}
-                      </select>
-                    )}
-                  </td>
-                  <td data-label={t("Joined")}>{new Date(m.createdAt).toLocaleDateString()}</td>
-                  <td data-label={t("Actions")}>
-                    {m.role !== "owner" && (
-                      <button type="button" onClick={() => remove(m)} aria-label={t("Remove {name}", { name: m.email })}>{t("Remove")}</button>
-                    )}
-                  </td>
-                </tr>
+        groups.map(({ role, members }) => (
+          <section key={role} className="wk-card wk-group" aria-labelledby={`group-${role}`}>
+            <h2 className="wk-card-head" id={`group-${role}`}>
+              <b>{role === "owner" ? t(GROUP_LABEL[role]) : `${t(GROUP_LABEL[role])} · ${members.length}`}</b>
+              <span>{t(ROLE_HELP[role])}</span>
+            </h2>
+            <ul className="wk-rows">
+              {members.map((m) => (
+                <li key={m.userId} className="wk-row">
+                  <span className="wk-email">{m.email}</span>
+                  <small>{t("Joined {date}", { date: joined(m.createdAt) })}</small>
+                  {m.role === "owner" ? (
+                    <span className="wk-chip">{t("Owner")}</span>
+                  ) : (
+                    <>
+                      {canChangeRole(actor, m) && (
+                        <button type="button" className="wk-button wk-role" aria-label={t("Change role of {email}", { email: m.email })} onClick={() => setDialog({ kind: "role", member: m })}>
+                          {phone ? t(ROLE_LABEL[m.role]) : t("Change role")}
+                        </button>
+                      )}
+                      {canRemove(actor, m) && !phone && (
+                        <button type="button" className="wk-button" aria-label={t("Remove {name}", { name: m.email })} onClick={() => setDialog({ kind: "remove", member: m })}>{t("Remove")}</button>
+                      )}
+                    </>
+                  )}
+                </li>
               ))}
-            </tbody>
-          </table>
-        </div>
+            </ul>
+          </section>
+        ))
+      )}
+      {dialog?.kind === "invite" && (
+        <Sheet title={t("Invite someone")} onClose={() => setDialog(null)}>
+          <InviteForm onDone={() => setDialog(null)} />
+        </Sheet>
+      )}
+      {dialog?.kind === "role" && <RoleSheet member={dialog.member} phone={phone} onClose={() => setDialog(null)} onSave={(role) => run(() => api("PATCH", `/workspace/members/${dialog.member.userId}`, { role }))} onRemove={() => setDialog({ kind: "remove", member: dialog.member })} />}
+      {dialog?.kind === "remove" && (
+        <Sheet title={t("Remove {email}?", { email: dialog.member.email })} onClose={() => setDialog(null)}>
+          <p className="wk-sheet-text">{t("They are signed out, and approvals that name them can no longer be answered.")}</p>
+          <div className="wk-sheet-actions">
+            <button type="button" className="wk-button danger" onClick={() => run(() => api("DELETE", `/workspace/members/${dialog.member.userId}`))}>{t("Remove")}</button>
+            <button type="button" className="wk-button" onClick={() => setDialog(null)}>{t("Cancel")}</button>
+          </div>
+        </Sheet>
       )}
     </main>
+  );
+}
+
+function RoleSheet({ member, phone, onClose, onSave, onRemove }: { member: Member; phone: boolean; onClose: () => void; onSave: (role: MemberRole) => void; onRemove: () => void }) {
+  const { t } = useLanguage();
+  const [role, setRole] = useState<MemberRole>(member.role as MemberRole);
+  return (
+    <Sheet title={t("Change role of {email}", { email: member.email })} onClose={onClose}>
+      <fieldset className="wk-roles">
+        <legend className="wk-sr">{t("Role")}</legend>
+        {memberRoles.map((r) => (
+          <label key={r} className="wk-radio">
+            <input type="radio" name="member-role" value={r} checked={role === r} onChange={() => setRole(r)} />
+            <span><b>{t(ROLE_LABEL[r])}</b> <small>{t(ROLE_HELP[r])}</small></span>
+          </label>
+        ))}
+      </fieldset>
+      <div className="wk-sheet-actions">
+        <button type="button" className="wk-button blue" onClick={() => onSave(role)}>{t("Save")}</button>
+        <button type="button" className="wk-button" onClick={onClose}>{t("Cancel")}</button>
+        {phone && <button type="button" className="wk-button danger-quiet" onClick={onRemove}>{t("Remove {name}", { name: member.email })}</button>}
+      </div>
+    </Sheet>
   );
 }
 
