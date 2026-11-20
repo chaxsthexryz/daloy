@@ -1,3 +1,5 @@
+import "./automations-ops.css";
+import "./guided-pages.css";
 import "./request-access.css";
 import { Text } from "./Language";
 import { useLanguage } from "./Language";
@@ -67,45 +69,125 @@ async function createOrResume(slug: string, setup: Start) {
 
 const back = <a href="#/"><Text>Automations</Text></a>;
 
-/** The sample run with no side effects: everything below is worked out in the browser. */
+/** The sample run with no side effects: everything below is worked out in the browser (Doop frame TXcO7tiI-c). */
 export function TryOfficeRequest({ email }: { email: string }) {
-  const { language } = useLanguage();
-  const [summary, setSummary] = useState(SAMPLE_REQUEST.summary);
-  const [shown, setShown] = useState<string | null>(null);
+  const { language, t } = useLanguage();
+  const [form, setForm] = useState({ name: SAMPLE_REQUEST.name, email: SAMPLE_REQUEST.email, summary: SAMPLE_REQUEST.summary, details: SAMPLE_REQUEST.details });
+  const [shown, setShown] = useState<typeof form | null>(null);
   const [error, setError] = useState("");
+  // One start at a time: startOfficeSetup joins a start already running, and the button waits for it.
+  const [starting, setStarting] = useState(false);
+  const field = (key: keyof typeof form, label: string, max: number, props: { type?: string; multiline?: boolean } = {}) => (
+    <div className="gp-field">
+      <label htmlFor={`try-${key}`}>{t(label)}</label>
+      {props.multiline ? (
+        <textarea id={`try-${key}`} value={form[key]} onChange={(e) => setForm({ ...form, [key]: e.target.value })} maxLength={max} />
+      ) : (
+        <input id={`try-${key}`} type={props.type} value={form[key]} onChange={(e) => setForm({ ...form, [key]: e.target.value })} required maxLength={max} />
+      )}
+    </div>
+  );
+  const p = shown ? previewOfficeRequest(defaultAnswers("office@example.com", language), { ...SAMPLE_REQUEST, ...shown }, language) : null;
+
   return (
-    <main className="page request-page guided-request">
-      <p>{back}</p>
-      <h1><Text>Preview only</Text></h1>
-      <p className="muted"><Text>Try an example of Track an office request. Nothing is sent and no request is recorded.</Text></p>
-      <form
-        className="create"
-        onSubmit={(e) => {
-          e.preventDefault();
-          setShown(summary);
-        }}
-      >
-        <h2><Text>Sample form</Text></h2>
-        <p className="muted">
-          {SAMPLE_REQUEST.name}, {SAMPLE_REQUEST.email}, {SAMPLE_REQUEST.location}
-        </p>
-        <div className="field">
-          <label htmlFor="try-summary"><Text>What needs attention?</Text></label>
-          <input id="try-summary" value={summary} onChange={(e) => setSummary(e.target.value)} required maxLength={500} />
+    <main className="page ops gp motion-page">
+      <header className="ops-head">
+        <div className="gp-title">
+          <p className="gp-crumb">
+            <a href="#/"><Text>Automations</Text></a> / <a href="#/new"><Text>New automation</Text></a>
+          </p>
+          <h1><Text>Preview an office request</Text></h1>
         </div>
-        <div className="actions">
-          <button className="primary"><Text>Try with sample details</Text></button>
-        </div>
-      </form>
-      {shown && <PreviewResult answers={defaultAnswers("office@example.com", language)} sample={{ ...SAMPLE_REQUEST, summary: shown }} />}
-      <div className="actions">
-        <button type="button" className="primary" onClick={() => startOfficeSetup(email, language).catch((e: Error) => setError(e.message))}>
-          Set up for my office
-        </button>
+        <span className="gp-tag"><Text>Preview only</Text></span>
+      </header>
+      <div className="ops-layout">
+        <form
+          className="ops-main"
+          onSubmit={(e) => {
+            e.preventDefault();
+            setShown(form);
+          }}
+        >
+          <div className="gp-section">
+            <h2><Text>Sample request form</Text></h2>
+            <p className="gp-lead"><Text>Use the example to see what the office and requester would receive. Nothing is sent and no request is recorded.</Text></p>
+          </div>
+          <div className="gp-fields">
+            {field("name", "Requester name", 200)}
+            {field("email", "Email", 254, { type: "email" })}
+            {field("summary", "Subject", 500)}
+            {field("details", "Request details", 2000, { multiline: true })}
+          </div>
+          <div className="gp-actions">
+            <button className="ops-button"><Text>Try with sample details</Text></button>
+            <button
+              type="button"
+              className="ops-button blue"
+              disabled={starting}
+              onClick={() => {
+                setStarting(true);
+                setError("");
+                startOfficeSetup(email, language).catch((e: Error) => {
+                  setError(e.message);
+                  setStarting(false);
+                });
+              }}
+            >
+              {t("Use this template")}
+            </button>
+          </div>
+          <p role="alert" className="gp-error" hidden={!error}>
+            {error}
+          </p>
+        </form>
+
+        <section className="ops-panel" aria-label={t("Preview result")}>
+          <p className="gp-eyebrow"><Text>Sample result</Text></p>
+          {p ? (
+            <>
+              <h2><Text>Office request received</Text></h2>
+              <p className="gp-lead"><Text>This preview uses sample data. It sends no emails and adds no rows.</Text></p>
+              <dl className="gp-facts">
+                <div>
+                  <dt><Text>Reference</Text></dt>
+                  <dd>{p.reference}</dd>
+                </div>
+                <div>
+                  <dt><Text>Request list</Text></dt>
+                  <dd>{p.record.list}</dd>
+                </div>
+                <div>
+                  <dt><Text>Office notification</Text></dt>
+                  <dd>{p.notification.to}</dd>
+                </div>
+                <div>
+                  <dt><Text>Requester receipt</Text></dt>
+                  <dd>{p.receipt.to}</dd>
+                </div>
+              </dl>
+              <Message title={t("Notification to the office")} mail={p.notification} />
+              <Message title={t("Receipt to the employee")} mail={p.receipt} />
+              {p.sheetRow && (
+                <>
+                  <h3><Text>Row added to your Google Sheet</Text></h3>
+                  <pre>{p.sheetRow.join(" | ")}</pre>
+                </>
+              )}
+              {p.slackMessage && (
+                <>
+                  <h3><Text>Note posted to your Slack channel</Text></h3>
+                  <pre>{p.slackMessage}</pre>
+                </>
+              )}
+            </>
+          ) : (
+            <>
+              <h2><Text>Nothing sent yet</Text></h2>
+              <p className="gp-lead"><Text>Choose Try with sample details to see the request, the office notification and the receipt this template would produce.</Text></p>
+            </>
+          )}
+        </section>
       </div>
-      <p role="alert" className="message error" hidden={!error}>
-        {error}
-      </p>
     </main>
   );
 }

@@ -23,7 +23,7 @@ test("an owner asks why a request stopped and only reads, nothing in the card ch
 
   await page.getByRole("link", { name: "New automation" }).first().click();
   await page.getByRole("link", { name: "Try the preview" }).click();
-  await page.getByRole("button", { name: "Set up for my office" }).click();
+  await page.getByRole("button", { name: "Use this template" }).click();
   await page.getByRole("button", { name: "Next" }).click();
   await page.getByRole("button", { name: "Next" }).click();
   await expect(page.getByRole("heading", { name: "Where requests and alerts go" })).toBeVisible();

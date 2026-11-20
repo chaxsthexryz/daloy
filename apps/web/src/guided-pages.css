@@ -35,10 +35,10 @@
 .gp-name { display: block; font-size: 15px; line-height: 20px; font-weight: 700; color: var(--o-ink); }
 .gp-sub { display: block; font-size: 13px; line-height: 18px; color: var(--o-muted); }
 
-.gp-fields { display: flex; flex-direction: column; gap: 14px; }
+.gp-fields { display: flex; flex-direction: column; gap: 14px; max-width: 720px; }
 .gp-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .gp-field > label, .gp-field > span.gp-label { font-size: 13px; line-height: 16px; font-weight: 700; color: var(--o-ink); }
-.gp :is(input:not([type="checkbox"]):not([type="radio"]), select, textarea) { width: 100%; max-width: 100%; min-height: 40px; padding: 9px 12px; border: 1px solid var(--o-field); border-radius: 8px; background: var(--o-bg); color: var(--o-ink); font: 400 14px/20px inherit; box-shadow: none; }
+.gp :is(input:not([type="checkbox"]):not([type="radio"]), select, textarea) { width: 100%; max-width: 100%; min-height: 40px; padding: 9px 12px; border: 1px solid var(--o-field); border-radius: 8px; background: var(--o-bg); color: var(--o-ink); font-family: inherit; font-size: 14px; line-height: 20px; font-weight: 400; box-shadow: none; }
 .gp textarea { min-height: 84px; resize: vertical; }
 .gp :is(input, select, textarea):focus-visible { outline: 2px solid var(--o-focus); outline-offset: 2px; }
 .gp-inline { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; }
@@ -73,3 +73,11 @@
   .gp-table .c-act { grid-column: 2; grid-row: 1 / span 2; width: auto; }
   .gp .ops-button, .gp-actions .ops-button { min-height: var(--target); }
 }
+
+/* Result panel of the preview (A3): the facts, then the messages the template would send. */
+.gp-facts { display: flex; flex-direction: column; margin: 0; }
+.gp-facts > div { display: flex; flex-direction: column; gap: 2px; padding: 10px 0; border-bottom: 1px solid var(--o-line); }
+.gp-facts dt { font-size: 12px; line-height: 16px; color: var(--o-muted); }
+.gp-facts dd { margin: 0; font-size: 15px; line-height: 20px; font-weight: 700; color: var(--o-ink); overflow-wrap: anywhere; }
+.gp .ops-panel p.muted { margin: 0; font-size: 13px; line-height: 18px; color: var(--o-muted); }
+.gp .ops-panel pre { margin: 0; padding: 12px; border: 1px solid var(--o-line); border-radius: 8px; background: var(--o-bg); color: var(--o-ink); font: 400 12px/18px var(--font-mono, ui-monospace, monospace); white-space: pre-wrap; overflow-wrap: anywhere; }

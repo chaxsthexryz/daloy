@@ -16,14 +16,14 @@ test("a beginner previews, sets up, turns on and receives one office request", a
   // Preview: worked out in the browser, so nothing is recorded or sent.
   await page.getByRole("link", { name: "New automation" }).first().click();
   await page.getByRole("link", { name: "Try the preview" }).click();
-  await expect(page.getByRole("heading", { name: "Preview only", level: 1 })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Preview an office request", level: 1 })).toBeVisible();
   await page.getByRole("button", { name: "Try with sample details" }).click();
   const preview = page.getByRole("region", { name: "Preview result" });
-  await expect(preview).toContainText("Sample reference: REQ-SAMPLE");
+  await expect(preview).toContainText("REQ-SAMPLE");
   await expect(preview).toContainText("We received your request REQ-SAMPLE");
 
   // Setup: two steps, then leave and come back to the same step.
-  await page.getByRole("button", { name: "Set up for my office" }).click();
+  await page.getByRole("button", { name: "Use this template" }).click();
   await expect(page.getByLabel("Automation name")).toHaveValue("Office requests");
   await page.getByRole("button", { name: "Next" }).click();
   await expect(page.getByRole("heading", { name: "Fields staff fill in" })).toBeVisible();

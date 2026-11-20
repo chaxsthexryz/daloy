@@ -843,8 +843,18 @@ Tests: `apps/web/src/lib/automations.test.ts` (filters, counts, trigger labels),
 
 What it does: a table of the three templates (Track an office request, Purchase request with approval, Reply to a website inquiry) with a Set up button each, a blank workflow card (Name, Start from, Create and open editor), Build with AI in the page head, and a side panel that previews the Office requests template with a Try the preview link to `#/try/office-request`. The website inquiry row links to Business setup because inquiry replies need the business details first.
 
-Why it is built that way: the Set up buttons call the same single-flight `startOfficeSetup` and `startPurchaseSetup` as before, so two clicks, or coming back later, reopen one draft. The page also disables all three starts while one is running, which the old page did not do for the blank form: a repeated Create click used to be able to send two requests. The visible button text is short ("Set up"); its accessible name keeps the full phrase, so a screen reader and the e2e specs still hear "Set up for my office".
+Why it is built that way: the Set up buttons call the same single-flight `startOfficeSetup` and `startPurchaseSetup` as before, so two clicks, or coming back later, reopen one draft. The page also disables all three starts while one is running, which the old page did not do for the blank form. The visible button text is short ("Set up"); its accessible name keeps the full phrase, so a screen reader and the e2e specs still hear "Set up for my office".
 
 Edge cases: a name already in use shows "An automation with that name already exists." and re-enables the form. A failed guided start shows its message and re-enables the buttons.
 
 Tests: `e2e/office-request.spec.ts`, `e2e/wizard-double-click.spec.ts` (double click makes one draft), `e2e/editor.spec.ts`, `e2e/email-in.spec.ts`, `e2e/business-setup.spec.ts` (the three paths from this page), `lib/locale-setup.test.ts` (Tagalog keeps every braced value).
+
+### Office request preview (A3, `#/try/office-request`)
+
+What it does: a four field sample form (requester name, email, subject, request details) filled from the engine's `SAMPLE_REQUEST`. Try with sample details fills the side panel with the reference, the request list, who the office notification and the requester receipt go to, and the two messages in full, plus the Sheets row and Slack note when the answers include them. Use this template starts the guided setup.
+
+Why it is built that way: everything comes from `previewOfficeRequest` in the engine, run in the browser. The page makes no API call, so nothing is sent and no request is recorded, whatever the person types. The panel says so in words. The preview waits for the Try button instead of updating on every key, so a person sees the result of a deliberate action. Use this template reuses the single-flight start and disables itself while it runs.
+
+Edge cases: the email field must be a valid address and every field has a length limit. A failed start shows its message and enables the button again. The location line in the sample message stays at the engine's sample value, since the frame has no location field.
+
+Tests: `e2e/office-request.spec.ts` (the preview shows REQ-SAMPLE and the receipt text, no mail is written, then the setup starts), `e2e/ask-request.spec.ts`, `e2e/connections.spec.ts`, `e2e/wizard-double-click.spec.ts` (all reach setup through this page).
