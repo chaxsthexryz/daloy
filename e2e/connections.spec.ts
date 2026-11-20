@@ -68,7 +68,7 @@ test("an owner connects Sheets and Slack, and retries only the Slack note that f
   await form.getByRole("button", { name: "Send" }).click();
   await expect(form.getByRole("heading", { name: "Request received" })).toBeVisible();
 
-  const row = page.locator("tbody tr").first();
+  const row = page.getByRole("complementary", { name: "Selected request" });
   await expect(async () => {
     await page.getByRole("button", { name: "Refresh" }).click();
     await expect(row).toContainText("Sheet row: added", { timeout: 1000 });

@@ -1,4 +1,4 @@
-# 0071. Guided pages follow the Doop frames, with five recorded deviations
+# 0071. Guided pages follow the Doop frames, with six recorded deviations
 
 ## Context
 
@@ -13,11 +13,12 @@ Rows A2 to A6 of the Doop round (New automation, the office request preview, the
 
 Option 2. The pages reuse the A1 classes in `automations-ops.css` (tokens, buttons, KPI strip, table, side panel) and add `guided-pages.css`. Deviations:
 
-1. The blank workflow button reads "Create and open editor", not "Open editor". It sits next to the Name field and the Start from list, which the frame leaves out. Nine e2e specs create workflows through this form and find the button by "Create".
+1. The blank workflow button reads "Create and open editor", not "Open editor". It sits next to the Name field and the Start from list, which the frame leaves out. Several e2e specs create workflows through this form and find the button by "Create".
 2. The purchase setup keeps its four steps (Name, Who decides, Where approved requests go, Review). The frame has a fifth, "Purchase form", that nothing in the engine backs. The purchasing inbox stays on the destinations step, so saved drafts resume on the same step.
 3. The live overview keeps the tabs Overview, Activity and Steps. The frame shows Versions instead of Steps, and `AutomationTabs` lives in `Nav.tsx`, which another session owns.
 4. Request rows show reference, subject and time. The frame also shows the requester's name, which `GET /workflows/:id/requests` does not return.
-5. The frame's sample values (REQ-0042, Nina Santos) are not used. The preview shows the engine's sample request and the setup shows the saved answers.
+5. Deliveries (Sheet row, Slack note, Outlook email, Teams note) sit in the selected request's panel and the table row shows one status tag. The frame has no delivery detail in a row. Form link, Copy, Embed and Open form stay in a card above the list because the row's check needs them and the frame omits them.
+6. The frame's sample values (REQ-0042, Nina Santos) are not used. The preview shows the engine's sample request and the setup shows the saved answers.
 
 ## Consequences
 

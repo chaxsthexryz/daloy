@@ -9,8 +9,7 @@
 .gp-crumb { margin: 0; font-size: 13px; line-height: 16px; color: var(--o-muted); }
 .gp-crumb a { color: var(--o-muted); text-decoration: none; }
 .gp-crumb a:hover { color: var(--o-ink); text-decoration: underline; text-underline-offset: 3px; }
-.gp .ops-head { border-bottom: 1px solid var(--o-line); padding: 18px 28px; }
-.gp > .ops-head { padding: 18px 28px; }
+.gp > .ops-head { border-bottom: 1px solid var(--o-line); padding: 18px 28px; }
 
 .gp-tag { display: inline-flex; align-items: center; min-height: 22px; padding: 2px 8px; border-radius: 6px; background: var(--o-canvas); color: var(--o-muted); font-size: 12px; line-height: 16px; font-weight: 700; white-space: nowrap; transition: color var(--dur-fast) var(--ease), background-color var(--dur-fast) var(--ease); }
 .gp-tag.ok { background: color-mix(in srgb, var(--o-green) 12%, var(--o-bg)); color: var(--o-green); }
@@ -59,7 +58,7 @@
 .gp-steps li > span { font-size: 13px; line-height: 18px; color: var(--o-muted); }
 
 @media (max-width: 799.98px) {
-  .gp .ops-head, .gp > .ops-head { padding: 16px; }
+  .gp > .ops-head { padding: 16px; }
   .gp-title h1 { font-size: 22px; line-height: 28px; }
   /* The side panel is content on these pages, not a sheet: it stacks under the main column. */
   .gp .ops-panel { display: flex; border-left: 0; border-top: 1px solid var(--o-line); padding: 16px; }
@@ -127,4 +126,45 @@
   .gp-review tbody td:not(.c-edit) { grid-column: 1; grid-row: 2; }
   .gp-review .c-edit { grid-column: 2; grid-row: 1 / span 2; width: auto; }
   .gp-actions .ops-button { flex: 1 1 auto; }
+}
+
+/* Live overview (A6): tabs under the head, the request list and the selected request's panel. */
+.gp-status { margin: 0; font-size: 13px; line-height: 18px; color: var(--o-muted); }
+.gp-live > .tabs { display: flex; gap: 22px; margin: 0; padding: 0 28px; border-bottom: 1px solid var(--o-line); background: var(--o-bg); }
+.gp-live > .tabs a { display: inline-flex; align-items: center; min-height: 40px; padding: 0; border-bottom: 2px solid transparent; color: var(--o-muted); font-size: 14px; line-height: 18px; font-weight: 500; text-decoration: none; }
+.gp-live > .tabs a:hover { color: var(--o-ink); }
+.gp-live > .tabs a[aria-current="page"] { color: var(--o-ink); border-bottom-color: var(--o-accent); font-weight: 600; }
+.gp-live .ops-main .ops-head { padding: 0; }
+.gp-live .ops-main .ops-head h2 { font-size: 22px; line-height: 28px; }
+.gp-card code { font-size: 13px; overflow-wrap: anywhere; }
+.gp-requests { margin-top: 2px; }
+.gp-requests th, .gp-requests td { padding: 0 10px; }
+.gp-requests tbody tr { border-bottom: 1px solid var(--o-line); cursor: pointer; transition: background-color var(--dur-fast) var(--ease); }
+.gp-requests tbody tr:hover { background: var(--o-canvas); }
+.gp-requests tbody tr[data-selected] { background: var(--o-select); box-shadow: inset 3px 0 0 var(--o-accent); }
+.gp-requests tbody td { height: 62px; padding-block: 10px; }
+.gp-requests .c-ref { width: 150px; }
+.gp-requests .c-when { width: 190px; color: var(--o-muted); }
+.gp-requests .c-state { width: 190px; }
+.gp-requests .c-ref button { min-height: 0; padding: 0; border: 0; background: transparent; box-shadow: none; color: var(--o-ink); font: inherit; font-size: 13px; line-height: 16px; text-align: left; cursor: pointer; }
+.gp-requests .c-ref button:hover { text-decoration: underline; text-underline-offset: 3px; }
+.gp-requests .c-state .gp-sub { margin-top: 4px; color: var(--o-red); }
+.gp-link { font-size: 13px; line-height: 16px; font-weight: 600; color: var(--o-accent); text-underline-offset: 3px; }
+.gp .ops-panel .deliveries { margin: 0; padding: 0; list-style: none; font-size: 13px; line-height: 18px; color: var(--o-ink); }
+.gp .ops-panel .deliveries li { padding: 8px 0; border-bottom: 1px solid var(--o-line); }
+
+@media (max-width: 799.98px) {
+  .gp-live > .tabs { padding: 0 16px; }
+  .gp-live .ops-main { gap: 14px; }
+  .gp.gp-live .ops-panel { display: none; }
+  .gp.gp-live .ops-panel[data-sheet] { display: flex; }
+  .gp-requests, .gp-requests tbody { display: block; }
+  .gp-requests thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .gp-requests tbody tr { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: 10px; row-gap: 4px; padding: 12px 0; }
+  .gp-requests tbody tr[data-selected] { background: transparent; box-shadow: none; }
+  .gp-requests tbody td { height: auto; padding: 0; width: auto; }
+  .gp-requests .c-ref { grid-column: 1; grid-row: 1; }
+  .gp-requests .c-state { grid-column: 2; grid-row: 1 / span 3; text-align: right; }
+  .gp-requests .c-req { grid-column: 1; grid-row: 2; font-size: 14px; }
+  .gp-requests .c-when { grid-column: 1; grid-row: 3; font-size: 12px; }
 }

@@ -53,7 +53,6 @@ export const setupTranslations: Record<string, string> = {
   "Form fields": "Mga field ng form",
   "Review and turn on": "Suriin at i-on",
   "Selected value": "Napiling halaga",
-  "Request form": "Request form",
   "Office inbox": "Inbox ng opisina",
   "Receipt to the requester": "Resibo sa nag-request",
   "Receipt with the request reference": "Resibo na may reference ng request",
@@ -71,4 +70,11 @@ export const setupTranslations: Record<string, string> = {
   "The mail server in this installation's settings": "Ang mail server sa settings ng installation na ito",
   "If rejected, or no decision in a week": "Kung tinanggihan, o walang desisyon sa loob ng isang linggo",
   "The employee is told": "Sasabihan ang empleyado",
+  // A6 Live overview
+  "Received today": "Natanggap ngayong araw",
+  "Completed": "Tapos na",
+  "Delivery": "Padala",
+  "Selected request": "Napiling request",
+  "See run history": "Tingnan ang kasaysayan ng run",
+  "A delivery needs attention": "May padalang kailangang tingnan",
 };

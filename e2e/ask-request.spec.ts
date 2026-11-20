@@ -43,7 +43,7 @@ test("an owner asks why a request stopped and only reads, nothing in the card ch
     await expect(form.getByRole("heading", { name: "Request received" })).toBeVisible();
     const reference = /REQ-[0-9A-Z]{6}/.exec(await form.locator("strong").innerText())![0];
 
-    const row = page.locator("tbody tr").first();
+    const row = page.getByRole("complementary", { name: "Selected request" });
     await expect(async () => {
       await page.getByRole("button", { name: "Refresh" }).click();
       await expect(row).toContainText("Slack note: The Slack app is not in that channel", { timeout: 1000 });

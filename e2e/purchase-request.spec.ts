@@ -90,10 +90,11 @@ test("a purchase request goes from the form to the named approver, then to purch
 
   // The owner sees it waiting for the approver, with the receipt sent from Outlook.
   const row = page.locator("tbody tr").filter({ hasText: reference });
+  const selected = page.getByRole("complementary", { name: "Selected request" });
   await expect(async () => {
     await page.getByRole("button", { name: "Refresh" }).click();
     await expect(row).toContainText("Waiting for a decision", { timeout: 1000 });
-    await expect(row).toContainText("Outlook email: sent to marco@test.local", { timeout: 1000 });
+    await expect(selected).toContainText("Outlook email: sent to marco@test.local", { timeout: 1000 });
   }).toPass({ timeout: 30_000 });
 
   // The named approver signs in from the emailed link and approves.
@@ -114,8 +115,8 @@ test("a purchase request goes from the form to the named approver, then to purch
   await expect(async () => {
     await page.getByRole("button", { name: "Refresh" }).click();
     await expect(row).toContainText("Finished", { timeout: 1000 });
-    await expect(row).toContainText(`Outlook email: sent to ${purchasing}`, { timeout: 1000 });
-    await expect(row).toContainText("Teams note: accepted by Teams", { timeout: 1000 });
+    await expect(selected).toContainText(`Outlook email: sent to ${purchasing}`, { timeout: 1000 });
+    await expect(selected).toContainText("Teams note: accepted by Teams", { timeout: 1000 });
   }).toPass({ timeout: 30_000 });
   const sent = await control();
   expect(sent.outlookMessages.filter((m) => m.to === purchasing && m.subject === `Approved purchase ${reference}: Ergonomic chair for the front desk`)).toHaveLength(1);

@@ -23,13 +23,12 @@ import {
   type Setup,
   type WorkflowDefinition,
 } from "@daloy/engine";
-import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { api, ApiError, type Workflow } from "./api";
 import { FormEmbed } from "./FormEmbed";
 import { DeliveryList, type Delivery } from "./Connections";
 import { newestDraft } from "./lib/drafts";
-import { stepStates } from "./lib/guided";
-import { takingLonger } from "./lib/poll";
+import { needsAttention, requestCounts, requestKind, stepStates, type RequestKind } from "./lib/guided";
 import { MailNotice } from "./MailNotice";
 import { AutomationTabs } from "./Nav";
 import { TAKING_LONGER } from "./Runs";
@@ -601,15 +600,23 @@ function PurchaseWizard({ wf, setup, onLive }: { wf: Detail; setup: PurchaseSetu
   );
 }
 
-const outcome = (r: RequestRow, done: string) =>
-  // "Stopped", not "Not sent": earlier steps of a failed run may already have sent something (Details shows each step).
-  r.runState === "succeeded" ? done : r.runState === "failed" ? "Stopped, open details" : r.runState === "waiting" ? "Waiting for a decision" : takingLonger(r.createdAt) ? `Sending. ${TAKING_LONGER}` : "Sending";
+const OUTCOME_TAG: Record<RequestKind, string> = { done: "ok", failed: "bad", waiting: "wait", sending: "", slow: "bad" };
 
+/** The status text of a request. "Stopped", not "Not sent": earlier steps of a failed run may already have sent something (Details shows each step). */
+const outcome = (kind: RequestKind, done: string) =>
+  kind === "done" ? done : kind === "failed" ? "Stopped, open details" : kind === "waiting" ? "Waiting for a decision" : kind === "slow" ? `Sending. ${TAKING_LONGER}` : "Sending";
+
+/** #/a/<id> once the automation is on (Doop frame HofpINHSRv): the form link, the figures, the requests and the selected request's deliveries. */
 function LivePage({ wf, formId }: { wf: Detail; formId: string }) {
   const { t } = useLanguage();
   const [rows, setRows] = useState<RequestRow[] | null>(null);
   const [copied, setCopied] = useState("");
   const [failed, setFailed] = useState(false);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  // On a phone the selected request opens as a sheet over the list; on a desktop its panel is always there.
+  const [sheet, setSheet] = useState(false);
+  const closeRef = useRef<HTMLButtonElement>(null);
+  const openedFrom = useRef<HTMLElement | null>(null);
   const load = () =>
     api<RequestRow[]>("GET", `/workflows/${wf.id}/requests`).then(
       (r) => {
@@ -619,6 +626,17 @@ function LivePage({ wf, formId }: { wf: Detail; formId: string }) {
       () => setFailed(true),
     );
   useEffect(() => void load(), [wf.id]);
+  useEffect(() => {
+    if (!sheet) return;
+    closeRef.current?.focus();
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && closeSheet();
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [sheet]);
+  const closeSheet = () => {
+    setSheet(false);
+    openedFrom.current?.focus();
+  };
   const link = `${location.origin}/forms/${formId}`;
   const local = ["localhost", "127.0.0.1", "[::1]"].includes(location.hostname);
   const copy = () =>
@@ -626,71 +644,154 @@ function LivePage({ wf, formId }: { wf: Detail; formId: string }) {
       () => setCopied(t("Form link copied.")),
       () => setCopied(t("Copy this link: {link}", { link })),
     );
+  const purchase = (wf.setup as { template?: string } | null)?.template === PURCHASE_REQUEST;
+  const selected = rows?.find((r) => r.id === selectedId) ?? rows?.[0];
+  const counts = requestCounts(rows ?? []);
 
   return (
-    <main className="page request-page guided-request">
-      <p>{back}</p>
-      <h1>{wf.name}</h1>
-      <AutomationTabs id={wf.id} here="overview" overview />
-      <p role="status">
-        <span className="tag ok">{t("Accepting requests")}</span> {copied}
-      </p>
-      <MailNotice />
-      <p>
-        {t("Form link:")} <code>{link}</code>
-      </p>
-      {local && <p className="muted"><Text>This link works on this computer only. To share the form with staff, run Daloy on an address they can reach.</Text></p>}
-      <div className="actions">
-        <button type="button" className="primary" onClick={() => void copy()}>
-          {t("Copy form link")}
-        </button>
-        <FormEmbed link={link} />
-        <a href={link} target="_blank" rel="noreferrer">
-          {t("Open form")}
-        </a>
-      </div>
-      <h2><Text>Requests</Text></h2>
-      <div className="actions">
-        <button type="button" className="quiet" onClick={() => void load()}>
-          {t("Refresh")}
-        </button>
-      </div>
-      {failed ? (
-        <p role="alert">{t("Couldn't load.")} <button type="button" onClick={() => void load()}><Text>Retry</Text></button></p>
-      ) : rows === null ? (
-        <p><Text>Loading…</Text></p>
-      ) : rows.length === 0 ? (
-        <p className="muted"><Text>No requests yet. Open the form and send one.</Text></p>
-      ) : (
-        <div className="table-wrap">
-          <table className="table cards">
-            <thead>
-              <tr>
-                <th scope="col"><Text>Reference</Text></th>
-                <th scope="col"><Text>Subject</Text></th>
-                <th scope="col"><Text>Received</Text></th>
-                <th scope="col"><Text>Recorded in</Text></th>
-                <th scope="col"><Text>Progress</Text></th>
-                <th scope="col"><Text>Deliveries</Text></th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r) => (
-                <tr key={r.id}>
-                  <td data-label={t("Reference") }>{r.reference}</td>
-                  <td data-label={t("Subject") }>{r.subject}</td>
-                  <td data-label={t("Received") }>{new Date(r.createdAt).toLocaleString()}</td>
-                  <td data-label={t("Recorded in") }>{wf.name}</td>
-                  <td data-label={t("Progress") }>
-                    {t(outcome(r, (wf.setup as { template?: string } | null)?.template === PURCHASE_REQUEST ? "Finished" : "Processed"))} <a href={`#/runs/${r.runId}`}><Text>Details</Text></a>
-                  </td>
-                  <td data-label={t("Deliveries") }>{r.deliveries.length ? <DeliveryList deliveries={r.deliveries} onChange={load} /> : <span className="muted">{t("None")}</span>}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+    <main className="page ops gp gp-live motion-page">
+      <header className="ops-head">
+        <div className="gp-title">
+          <p className="gp-crumb">
+            <a href="#/"><Text>Automations</Text></a> / {wf.name}
+          </p>
+          <h1>{wf.name}</h1>
         </div>
-      )}
+        <p role="status" className="gp-status">
+          <span className="gp-tag ok">{t("Accepting requests")}</span> {copied}
+        </p>
+      </header>
+      <AutomationTabs id={wf.id} here="overview" overview />
+      <div className="ops-layout">
+        <div className="ops-main">
+          <MailNotice />
+          <section className="gp-card" aria-labelledby="form-link">
+            <h2 id="form-link"><Text>Request form</Text></h2>
+            <p className="gp-hint">
+              {t("Form link:")} <code>{link}</code>
+            </p>
+            {local && <p className="gp-hint"><Text>This link works on this computer only. To share the form with staff, run Daloy on an address they can reach.</Text></p>}
+            <div className="gp-actions">
+              <button type="button" className="ops-button blue" onClick={() => void copy()}>
+                {t("Copy form link")}
+              </button>
+              <FormEmbed link={link} />
+              <a className="ops-button" href={link} target="_blank" rel="noreferrer">
+                {t("Open form")}
+              </a>
+            </div>
+          </section>
+
+          <div className="ops-head">
+            <h2><Text>Requests</Text></h2>
+            <div className="ops-actions">
+              <button type="button" className="ops-button" onClick={() => void load()}>
+                {t("Refresh")}
+              </button>
+              <a className="ops-button" href={`#/w/${wf.id}/runs`}>
+                {t("View activity")}
+              </a>
+            </div>
+          </div>
+          {failed ? (
+            <p role="alert" className="gp-error">
+              {t("Couldn't load.")} <button type="button" className="ops-link" onClick={() => void load()}><Text>Retry</Text></button>
+            </p>
+          ) : rows === null ? (
+            <p className="gp-hint"><Text>Loading…</Text></p>
+          ) : (
+            <>
+              <div className="ops-kpis">
+                <div>
+                  <span><Text>Received today</Text></span>
+                  <b>{counts.today}</b>
+                </div>
+                <div>
+                  <span><Text>Waiting</Text></span>
+                  <b>{counts.waiting}</b>
+                </div>
+                <div>
+                  <span><Text>Completed</Text></span>
+                  <b>{counts.completed}</b>
+                </div>
+              </div>
+              {rows.length === 0 ? (
+                <p className="gp-hint"><Text>No requests yet. Open the form and send one.</Text></p>
+              ) : (
+                <table className="ops-table gp-requests">
+                  <thead>
+                    <tr>
+                      <th scope="col"><Text>Reference</Text></th>
+                      <th scope="col"><Text>Request</Text></th>
+                      <th scope="col"><Text>Received</Text></th>
+                      <th scope="col"><Text>Delivery</Text></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows.map((r) => {
+                      const kind = requestKind(r);
+                      const attention = needsAttention(r.deliveries);
+                      return (
+                        <tr
+                          key={r.id}
+                          className="ops-row"
+                          data-selected={r.id === selected?.id ? "" : undefined}
+                          onClick={(e) => {
+                            setSelectedId(r.id);
+                            setSheet(true);
+                            openedFrom.current = e.currentTarget.querySelector("button");
+                          }}
+                        >
+                          <td data-label={t("Reference")} className="c-ref">
+                            <button type="button" aria-pressed={r.id === selected?.id}>{r.reference}</button>
+                          </td>
+                          <td data-label={t("Request")} className="c-req">{r.subject}</td>
+                          <td data-label={t("Received")} className="c-when">{new Date(r.createdAt).toLocaleString()}</td>
+                          <td data-label={t("Delivery")} className="c-state">
+                            <span className={`gp-tag ${attention ? "bad" : OUTCOME_TAG[kind]}`}>{t(outcome(kind, purchase ? "Finished" : "Processed"))}</span>
+                            {attention && <span className="gp-sub">{t("A delivery needs attention")}</span>}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
+            </>
+          )}
+        </div>
+
+        {selected && (
+          <>
+            {sheet && <div className="ops-backdrop" onClick={closeSheet} />}
+            <aside className="ops-panel" aria-label={t("Selected request")} data-sheet={sheet ? "" : undefined}>
+              <div className="panel-top">
+                <p className="gp-eyebrow"><Text>Selected request</Text></p>
+                <button type="button" className="panel-close" ref={closeRef} onClick={closeSheet}>
+                  {t("Close")}
+                </button>
+              </div>
+              <h2>{selected.reference}</h2>
+              <p className="gp-lead">{selected.subject}</p>
+              <dl className="gp-facts">
+                <div>
+                  <dt><Text>Received</Text></dt>
+                  <dd>{new Date(selected.createdAt).toLocaleString()}</dd>
+                </div>
+                <div>
+                  <dt><Text>Progress</Text></dt>
+                  <dd>{t(outcome(requestKind(selected), purchase ? "Finished" : "Processed"))}</dd>
+                </div>
+              </dl>
+              <h3><Text>Deliveries</Text></h3>
+              {selected.deliveries.length ? <DeliveryList deliveries={selected.deliveries} onChange={load} /> : <p className="gp-hint">{t("None")}</p>}
+              <a className="gp-link" href={`#/runs/${selected.runId}`}>
+                {t("See run history")}
+              </a>
+            </aside>
+          </>
+        )}
+      </div>
     </main>
   );
 }
