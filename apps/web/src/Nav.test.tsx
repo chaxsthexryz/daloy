@@ -19,7 +19,7 @@ describe("staff navigation", () => {
     ["#/settings/business", "#/settings/business"], ["#/settings/business/outlook-connected", "#/apps"],
     ["#/verify-sender/token", "#/apps"], ["#/team", "#/team"],
   ])("marks the parent of %s", (hash, target) => {
-    const selected = [...render(hash).matchAll(/<a href="([^"]*)"[^>]*aria-current="page"/g)].map((match) => match[1]);
+    const selected = [...render(hash).matchAll(/<a [^>]*?href="([^"]*)"[^>]*aria-current="page"/g)].map((match) => match[1]);
     expect(selected.length).toBeGreaterThan(0);
     expect(new Set(selected)).toEqual(new Set([target]));
   });
