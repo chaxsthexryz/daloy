@@ -20,7 +20,10 @@ export async function runAi(cfg: AiConfig, input: string, opts: { model: string;
       model: opts.model,
       connection: opts.connection,
       temperature: TEMPERATURE[cfg.task],
-      maxTokens: 1024,
+      // 4,096, not 1,024: a transcription of one dense page (a class schedule, a receipt with many lines) runs past
+      // a thousand tokens, and a reply cut off mid-JSON fails as "not valid JSON" with no hint why. Output is billed
+      // by what the model writes, so a larger ceiling costs nothing when the answer is short.
+      maxTokens: 4096,
       timeoutMs: 60_000,
     });
     return { output: data, inputTokens: usage.inputTokens, outputTokens: usage.outputTokens };

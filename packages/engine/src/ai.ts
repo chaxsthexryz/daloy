@@ -43,7 +43,10 @@ export function aiOutputSchema(cfg: AiConfig): z.ZodType<Record<string, unknown>
     case "classify":
       return z.object({ label: z.enum(Object.keys(cfg.labels ?? {}) as [string, ...string[]]) });
     case "extract":
-      return z.object(Object.fromEntries(Object.keys(cfg.fields ?? {}).map((f) => [f, z.string().max(2000).nullable()])));
+      // 8,000 characters, not 2,000: one dense page (a class schedule, a long receipt) transcribes to about 3,000
+      // characters, and a field cap below that failed the reply as "does not match the schema" after the model had
+      // answered perfectly. Still bounded, because a Sheets cell holds 50,000 and expression output 100,000.
+      return z.object(Object.fromEntries(Object.keys(cfg.fields ?? {}).map((f) => [f, z.string().max(8000).nullable()])));
     case "summarize":
       return z.object({ summary: z.string().max(10_000) });
     case "draft":

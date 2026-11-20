@@ -31,6 +31,15 @@ describe("aiConfigSchema", () => {
 });
 
 describe("aiOutputSchema", () => {
+  it("keeps a whole transcribed page, and still refuses an unbounded one", () => {
+    // A dense page transcribes to about 3,000 characters; a 2,000 cap failed perfectly good replies.
+    const cfg = aiConfigSchema.parse({ task: "extract", input: "{{trigger.page}}", fields: { text: "All text" } });
+    const schema = aiOutputSchema(cfg);
+    expect(schema.safeParse({ text: "x".repeat(3000) }).success).toBe(true);
+    expect(schema.safeParse({ text: "x".repeat(8001) }).success).toBe(false);
+    expect(schema.safeParse({ text: null }).success).toBe(true);
+  });
+
   it("classify accepts only the configured labels", () => {
     const s = aiOutputSchema(classify);
     expect(s.safeParse({ label: "billing" }).success).toBe(true);
