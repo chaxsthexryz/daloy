@@ -61,7 +61,7 @@ test("the owner connects an inbox and a new website inquiry creates one live run
   const [inquiry] = await inboxRuns();
   expect(inquiry!.triggerPayload.text).toContain("Could we book an appointment on Friday?");
   await page.goto(`/#/runs/${inquiry!.id}`);
-  await expect(page.getByRole("heading", { name: "What happened", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Run timeline" })).toBeVisible();
   await page.getByText("Details for a technician").click();
   await expect(page.getByLabel("Trigger data")).toContainText("maya@example.test");
 });

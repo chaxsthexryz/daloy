@@ -153,3 +153,40 @@ main.page.act { max-width: none; width: 100%; margin: 0; padding: 0; min-height:
   .act-head, .act-body { padding-inline: 24px; }
   .act-split { grid-template-columns: minmax(0, 1fr) 300px; }
 }
+
+/* O2 run detail: timeline beside the outcome, then files, the path and the technician block across both columns. */
+.act-run { grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr); }
+.act-run > :not(.act-card), .act-run > .act-card:not([aria-labelledby="timeline-h"], [aria-labelledby="outcome-h"]) { grid-column: 1 / -1; }
+.act-card h3 { font-size: 15px; line-height: 20px; font-weight: 700; }
+.act-card pre { max-width: 100%; margin: 0; padding: 12px; overflow-x: auto; border-radius: 8px; background: var(--a-canvas); font-size: 12px; line-height: 18px; }
+.act-card summary { min-height: 32px; font-weight: 600; cursor: pointer; }
+.act-card details[open] > summary { margin-bottom: 10px; }
+.act-card button:not(.act-button, .act-link) { min-height: 40px; border-radius: 8px; }
+.act-timeline { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; }
+.act-timeline > li { position: relative; display: grid; grid-template-columns: 24px minmax(0, 1fr) auto; gap: 4px 18px; padding-bottom: 22px; }
+.act-timeline > li:not(:last-child)::before { content: ""; position: absolute; left: 11.5px; top: 28px; bottom: 4px; width: 1px; background: var(--a-line); }
+.act-timeline .title { font-size: 17px; line-height: 22px; font-weight: 600; }
+.act-timeline time { font-family: var(--font-mono); font-size: 13px; color: var(--a-muted); }
+.act-step { margin-left: 6px; font-size: 13px; font-weight: 600; color: var(--a-muted); transition: color var(--dur-fast) var(--ease); }
+.act-step.succeeded { color: var(--a-green); }
+.act-step.failed { color: var(--a-red); }
+.act-step.running, .act-step.pending, .act-step.needs_review { color: var(--a-accent); }
+.act-facts { display: flex; flex-direction: column; margin: 0; }
+.act-facts > div { padding: 12px 0; border-top: 1px solid var(--a-line); }
+.act-facts dt { font-size: 13px; color: var(--a-muted); }
+.act-facts dd { margin: 2px 0 0; font-weight: 600; }
+.act-card section > * + * { margin-top: 8px; }
+.act-card .message { margin: 0; }
+.act-card .choices { display: grid; gap: 12px; margin: 8px 0 0; padding: 0; list-style: none; }
+.act .technician summary { font-size: 15px; }
+.act .technician > * + * { margin-top: 10px; }
+.act .run-path .operations-path-list { display: none; }
+@media (max-width: 799.98px) {
+  .act-run { grid-template-columns: minmax(0, 1fr); }
+  .act-timeline > li { grid-template-columns: 24px minmax(0, 1fr); }
+  .act-timeline time { grid-column: 2; grid-row: 2; }
+  .act .run-path .run-canvas { display: none; }
+  .act .run-path .operations-path-list { display: grid; gap: 0; margin: 0; padding: 0; list-style: none; }
+  .act .operations-path-list li { display: grid; gap: 6px; padding: 12px 0; border-bottom: 1px solid var(--a-line); }
+  .act .operations-path-list .state { justify-self: start; }
+}

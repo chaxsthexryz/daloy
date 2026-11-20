@@ -844,3 +844,13 @@ Why it is built this way: both pages read `GET /runs` exactly as before (with `w
 Edge cases: a run without a reference is named by its kind ("Real run", "Preview (nothing sent)"). An empty list says "Nothing has happened yet.", and an empty search says "Nothing matches.". On a phone the rows stack and the panel is hidden, so the link opens the run page instead. The Ask link and button appear only when the Ask feature is on and the person is an owner or operator.
 
 Tests: `apps/web/src/lib/activity.test.ts` (day words, times, Tagalog placeholders), `e2e/history.spec.ts` (status filter), `e2e/automations.spec.ts` (phone cards), `e2e/navigation.spec.ts` (table alignment), `e2e/office-request.spec.ts` (search by reference on a phone), `e2e/ask-request.spec.ts` (Ask link from a row).
+
+### Run detail (O2)
+
+What it does: `#/runs/<id>` follows Doop frame aquI2X-gdg. The head names the automation and the run, with an Activity button back to that automation's activity and, where Ask is on, an Ask what happened button. The Run timeline card numbers each step attempt with its state, branch, attempt, approvals, errors and start time, and a closed "Masked request fields" disclosure holds the trigger data. The Delivery outcome card shows the state, why the run stopped, where it was sent, when it started, how long it took, and the recovery controls (Retry, Cancel run, or the three answers for a run that needs you). The path diagram, the files and the technician details follow underneath.
+
+Why it is built this way: the page keeps every request it made before (`GET /runs/:id` polling, `/explanation`, `/deliveries`, the version for the diagram) and only moves them into the frame's two cards. Trigger data reaches the page already masked by `maskSecrets()` and `historyHider()` in `apps/api/src/mask.ts`, so the disclosure shows `[secret]` in place of secret-looking values. The recovery controls stay open in the outcome card instead of the frame's disclosure, so a failed or parked run shows what you can do without another click.
+
+Edge cases: a run with no steps yet says so. A run that cannot load shows Retry. A refresh that fails keeps the last copy and says it is trying again. When the explanation has not loaded, the raw error is shown in the same "Why it stopped" region.
+
+Tests: `e2e/history.spec.ts` (masked trigger field, step input, back to Activity), `e2e/navigation.spec.ts` and `e2e/explain.spec.ts` (why it stopped), `e2e/review.spec.ts` and `e2e/run-controls.spec.ts` (recovery controls), `e2e/form-files.spec.ts` (file download), `e2e/run-animation.spec.ts` (path diagram).

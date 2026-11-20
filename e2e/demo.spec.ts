@@ -32,7 +32,7 @@ test("sign in to the seeded demo and browse its workflows and runs", async ({ pa
   await shot(page, "run-history");
 
   await page.getByRole("table").getByRole("link").first().click();
-  await expect(page.getByRole("heading", { name: "What happened", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Run timeline" })).toBeVisible();
   await page.getByText("Details for a technician").click();
   await shot(page, "run");
 });

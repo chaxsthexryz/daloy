@@ -25,7 +25,7 @@ test("open the run history, diff two versions and roll back", async ({ page }) =
 
   // The run page shows the trigger data with the secret-looking field masked, and the step's resolved input.
   await page.getByRole("link", { name: "Open this run in the run history" }).click();
-  await expect(page.getByRole("heading", { name: "What happened", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Run timeline" })).toBeVisible();
   await page.getByText("Details for a technician").click();
   const trigger = page.getByLabel("Trigger data");
   await expect(trigger).toContainText('"amount": 250');
@@ -36,7 +36,8 @@ test("open the run history, diff two versions and roll back", async ({ page }) =
   await expect(page.locator(".run")).toContainText("condition_1 → true");
 
   // The run list links back to the same run.
-  await page.getByRole("main").getByRole("link", { name: "Activity" }).click();
+  // The head's Activity button (the breadcrumb's Activity link comes first) opens this automation's activity.
+  await page.getByRole("main").getByRole("link", { name: "Activity" }).last().click();
   await expect(page.getByRole("table")).toContainText("Real run");
   await page.getByLabel("Status").selectOption("test");
   await expect(page.getByText("Nothing has happened yet.")).toBeVisible();
