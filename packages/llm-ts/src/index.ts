@@ -151,6 +151,11 @@ export async function generate<T = unknown>(input: GenerateInput<T>): Promise<Ge
   }
   if (!input.schema) return { text, usage };
 
+  // A truncated answer cannot be complete JSON. Saying so names the real cause; "not valid JSON" sent people looking
+  // for a schema bug when the reply had simply been cut off at the token limit.
+  if ("cutOff" in reply && reply.cutOff) {
+    throw new LlmError(`the answer was cut off at the token limit, so the JSON is incomplete (raise the budget or ask for less)`, false, { invalidOutput: true, usage });
+  }
   let json: unknown;
   try {
     json = JSON.parse(text);

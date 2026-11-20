@@ -42,7 +42,7 @@ export async function loadAiFiles(db: Db, { userId, runId, refs, imageTypes }: {
       pdfs.push({ name: ref.name, text: await pdfText(file.data) });
       continue;
     }
-    if (!imageTypes?.length) throw new StepError("The AI model picked on the AI model page does not read images. Pick Gemini, OpenAI or OpenRouter there, or take the file field out of this AI step.", false);
+    if (!imageTypes?.length) throw new StepError("The AI model picked on the AI model page does not read images. Pick Gemini, OpenAI, OpenRouter or DeepSeek there, or take the file field out of this AI step.", false);
     if (!imageTypes.includes(file.type)) throw new StepError("This AI model does not read HEIC photos. Ask for a JPEG or PNG, or pick Gemini on the AI model page.", false);
     imageBytes += file.data.length;
     if (imageBytes > MAX_AI_IMAGE_BYTES) throw new StepError("The photos add up to more than 10 MB, more than an AI step sends in one request.", false);

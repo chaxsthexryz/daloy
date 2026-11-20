@@ -260,6 +260,16 @@ it("adds a connection's extra body fields to an OpenAI-compatible request", asyn
   expect(body.model).toBe("llama3.2");
 });
 
+it("says a reply was cut off at the token limit, instead of blaming the JSON", async () => {
+  vi.stubEnv("LLM_PROVIDER", "openai");
+  vi.stubEnv("LLM_BASE_URL", "https://api.example.com/v1");
+  mockFetch(new Response(JSON.stringify({ choices: [{ message: { content: '{"label":"bil' }, finish_reason: "length" }] })));
+  await expect(generate({ ...base, schema: z.object({ label: z.string() }) })).rejects.toMatchObject({
+    invalidOutput: true,
+    message: expect.stringContaining("cut off at the token limit"),
+  });
+});
+
 it("adds a connection's thinking headroom to max_tokens, so maxTokens stays the answer's budget", async () => {
   const fetch = mockFetch(new Response(JSON.stringify({ choices: [{ message: { content: "hi" } }] })));
   await generate({ ...base, connection: { provider: "openai", baseUrl: "https://g.example/v1", reasoningTokens: 2048 } });

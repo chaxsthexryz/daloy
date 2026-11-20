@@ -37,6 +37,8 @@ const IMAGE_TYPES: Partial<Record<Preset, FileKind[]>> = {
   gemini: ["jpeg", "png", "webp", "heic"],
   openai: ["jpeg", "png", "webp"],
   openrouter: ["jpeg", "png", "webp"],
+  // deepseek-flash reads images (its /models lists "image" input); checked with a real call on 2026-11-18.
+  deepseek: ["jpeg", "png", "webp"],
 };
 
 export type AiConnection = { imageTypes?: FileKind[]; provider: string; baseUrl: string; apiKey?: string; model: string; extraBody?: Record<string, unknown>; reasoningTokens?: number; jsonMode?: "schema" | "object" };
