@@ -5,7 +5,7 @@ const control = (slackMember: boolean) => fetch(`${process.env.E2E_PROVIDERS_URL
 // N10b: Ask what happened, on the run page (N4g moved it off #/ai). A request whose Slack note fails is the cheapest problem request with a reference.
 test("an owner asks why a request stopped and only reads, nothing in the card changes the request", async ({ page, context }) => {
   await page.goto("/");
-  await page.getByRole("button", { name: "Create an account instead" }).click();
+  await page.getByRole("button", { name: "Create an account", exact: true }).click();
   await page.getByLabel("Email").fill(`ask-${Date.now()}@test.local`);
   await page.getByLabel("Password").fill("e2e test password 1");
   await page.getByRole("button", { name: "Create account" }).click();

@@ -4,7 +4,7 @@ import { expect, test, type Page } from "@playwright/test";
 // Nothing leaves the machine: the runs are delays and a mocked HTTP step.
 async function signUp(page: Page, label: string) {
   await page.goto("/");
-  await page.getByRole("button", { name: "Create an account instead" }).click();
+  await page.getByRole("button", { name: "Create an account", exact: true }).click();
   await page.getByLabel("Email").fill(`${label}-${Date.now()}@test.local`);
   await page.getByLabel("Password").fill("e2e test password 1");
   await page.getByRole("button", { name: "Create account" }).click();

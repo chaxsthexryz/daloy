@@ -5,7 +5,7 @@ test("open the run history, diff two versions and roll back", async ({ page }) =
   // Publish, Run live version and Disconnect ask first (N4a); accept each.
   page.on("dialog", (d) => void d.accept());
   await page.goto("/");
-  await page.getByRole("button", { name: "Create an account instead" }).click();
+  await page.getByRole("button", { name: "Create an account", exact: true }).click();
   await page.getByLabel("Email").fill(`history-${Date.now()}@test.local`);
   await page.getByLabel("Password").fill("e2e test password 1");
   await page.getByRole("button", { name: "Create account" }).click();

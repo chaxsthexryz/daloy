@@ -14,7 +14,7 @@ test("an owner sets up inquiry replies and a customer's inquiry reaches both inb
   const inbox = `front-${stamp}@clinic.test`;
   const customer = `rosa-${stamp}@example.com`;
   await page.goto("/");
-  await page.getByRole("button", { name: "Create an account instead" }).click();
+  await page.getByRole("button", { name: "Create an account", exact: true }).click();
   await page.getByLabel("Email").fill(owner);
   await page.getByLabel("Password").fill("e2e test password 1");
   await page.getByRole("button", { name: "Create account" }).click();

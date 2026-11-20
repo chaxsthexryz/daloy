@@ -16,7 +16,7 @@ test("a purchase request goes from the form to the named approver, then to purch
   const approver = `manager-${Date.now()}@test.local`;
   const purchasing = `purchasing-${Date.now()}@test.local`;
   await page.goto("/");
-  await page.getByRole("button", { name: "Create an account instead" }).click();
+  await page.getByRole("button", { name: "Create an account", exact: true }).click();
   await page.getByLabel("Email").fill(`office-${Date.now()}@test.local`);
   await page.getByLabel("Password").fill(PASSWORD);
   await page.getByRole("button", { name: "Create account" }).click();

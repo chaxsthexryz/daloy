@@ -16,7 +16,7 @@ test("an owner connects Sheets with Google, creates and picks sheets, adds a tes
     };
   });
   await page.goto("/");
-  await page.getByRole("button", { name: "Create an account instead" }).click();
+  await page.getByRole("button", { name: "Create an account", exact: true }).click();
   await page.getByLabel("Email").fill(`google-${Date.now()}@test.local`);
   await page.getByLabel("Password").fill("e2e test password 1");
   await page.getByRole("button", { name: "Create account" }).click();
@@ -63,7 +63,7 @@ test("an owner connects Drive with Google and lets Daloy create its uploads fold
     (window as unknown as PickWindow).daloyPick = async () => "e2e-picked-folder-001";
   });
   await page.goto("/");
-  await page.getByRole("button", { name: "Create an account instead" }).click();
+  await page.getByRole("button", { name: "Create an account", exact: true }).click();
   await page.getByLabel("Email").fill(`google-drive-${Date.now()}@test.local`);
   await page.getByLabel("Password").fill("e2e test password 1");
   await page.getByRole("button", { name: "Create account" }).click();

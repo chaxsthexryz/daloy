@@ -4,7 +4,7 @@ export const PASSWORD = "e2e test password 1";
 
 export async function registerOwner(page: Page) {
   await page.goto("/");
-  await page.getByRole("button", { name: "Create an account instead" }).click();
+  await page.getByRole("button", { name: "Create an account", exact: true }).click();
   await page.getByLabel("Email").fill(`owner-${Date.now()}@test.local`);
   await page.getByLabel("Password").fill(PASSWORD);
   await page.getByRole("button", { name: "Create account" }).click();

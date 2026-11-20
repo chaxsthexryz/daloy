@@ -12,7 +12,7 @@ export async function recorded(): Promise<RecordState> {
 
 export async function signUp(page: Page, app: RecordApp) {
   await page.goto("/");
-  await page.getByRole("button", { name: "Create an account instead" }).click();
+  await page.getByRole("button", { name: "Create an account", exact: true }).click();
   await page.getByLabel("Email").fill(`${app}-oauth-${Date.now()}@test.local`);
   await page.getByLabel("Password").fill("e2e test password 1");
   await page.getByRole("button", { name: "Create account" }).click();

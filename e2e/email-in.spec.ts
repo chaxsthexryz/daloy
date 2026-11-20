@@ -18,7 +18,7 @@ function deliver(subject: string, text: string) {
 test("the owner connects an inbox and a new website inquiry creates one live run", async ({ page }) => {
   page.on("dialog", (d) => void d.accept());
   await page.goto("/");
-  await page.getByRole("button", { name: "Create an account instead" }).click();
+  await page.getByRole("button", { name: "Create an account", exact: true }).click();
   await page.getByLabel("Email").fill(`email-in-${Date.now()}@test.local`);
   await page.getByLabel("Password").fill("email inquiry test password");
   await page.getByRole("button", { name: "Create account" }).click();

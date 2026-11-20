@@ -4,7 +4,7 @@ import { expect, test } from "@playwright/test";
 // Nothing is sent: the run is mocked (decision 0030).
 test("answer a run that needs review with It went through", async ({ page }) => {
   await page.goto("/");
-  await page.getByRole("button", { name: "Create an account instead" }).click();
+  await page.getByRole("button", { name: "Create an account", exact: true }).click();
   await page.getByLabel("Email").fill(`review-${Date.now()}@test.local`);
   await page.getByLabel("Password").fill("e2e test password 1");
   await page.getByRole("button", { name: "Create account" }).click();

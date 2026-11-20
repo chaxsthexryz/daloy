@@ -1,5 +1,5 @@
 import "./request-access.css";
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useState } from "react";
 import { api } from "./api";
 import { LanguageContext } from "./Language";
 import type { Language } from "./lib/locale";
@@ -22,6 +22,7 @@ import { TokensPage } from "./Tokens";
 import { VersionsPage } from "./Versions";
 import { Shell } from "./Nav";
 import { AccountPage, ForgotPasswordPage, ResetPasswordPage } from "./Account";
+import { SignIn } from "./SignIn";
 import { AcceptInvitePage, MyRequestsPage, TeamPage, type User } from "./Team";
 
 const ANSWER = /^#\/answer\/([A-Za-z0-9_-]{43})$/;
@@ -73,7 +74,7 @@ function Console({ hash }: { hash: string }) {
   if (invite) return <AcceptInvitePage key={invite[1]} token={invite[1]!} onDone={setUser} />;
   const reset = RESET.exec(hash);
   if (reset) return <ResetPasswordPage key={reset[1]} token={reset[1]!} />;
-  if (!user) return hash === "#/forgot-password" ? <ForgotPasswordPage /> : <SignIn onDone={setUser} />;
+  if (!user) return hash === "#/forgot-password" ? <ForgotPasswordPage /> : <SignIn onDone={setUser} approval={!!answer} />;
   // Approvers and requesters have no console beyond their own requests; the API refuses the rest anyway.
   return (
     <LanguageContext.Provider value={{ language, setLanguage }}>
@@ -120,48 +121,4 @@ function Route({ hash, user }: { hash: string; user: User }) {
   const verify = /^#\/verify-sender\/([A-Za-z0-9_-]{43})$/.exec(hash);
   if (verify) return <VerifySenderPage key={verify[1]} token={verify[1]!} />;
   return <Automations user={user} />;
-}
-
-function SignIn({ onDone }: { onDone: (u: User) => void }) {
-  const [mode, setMode] = useState<"login" | "register">("login");
-  const [error, setError] = useState("");
-  const submit = async (e: FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    const form = new FormData(e.currentTarget);
-    try {
-      onDone(await api<User>("POST", `/auth/${mode}`, { email: form.get("email"), password: form.get("password") }));
-    } catch (err) {
-      setError((err as Error).message);
-    }
-  };
-  return (
-    <main className="page narrow request-page access-page">
-      <h1 className="brand">
-        <img src="/logo.svg" alt="" width="32" height="32" />
-        Daloy
-      </h1>
-      <p className="muted">Automate the routine work of your office.</p>
-      <form onSubmit={submit}>
-        <h2>{mode === "login" ? "Sign in" : "Create an account"}</h2>
-        <div className="field">
-          <label htmlFor="email">Email</label>
-          <input id="email" name="email" type="email" autoComplete="email" required />
-        </div>
-        <div className="field">
-          <label htmlFor="password">Password {mode === "register" && <span className="muted">(at least 12 characters)</span>}</label>
-          <input id="password" name="password" type="password" autoComplete={mode === "login" ? "current-password" : "new-password"} required />
-        </div>
-        <p role="alert" className="message error" hidden={!error}>
-          {error}
-        </p>
-        <div className="actions">
-          <button className="primary">{mode === "login" ? "Sign in" : "Create account"}</button>
-          <button type="button" className="quiet" onClick={() => (setMode(mode === "login" ? "register" : "login"), setError(""))}>
-            {mode === "login" ? "Create an account instead" : "I have an account"}
-          </button>
-        </div>
-        {mode === "login" && <p><a href="#/forgot-password">Forgot your password?</a></p>}
-      </form>
-    </main>
-  );
 }

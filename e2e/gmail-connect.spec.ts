@@ -6,7 +6,7 @@ const control = async () => (await (await fetch(`${process.env.E2E_PROVIDERS_URL
 test("an owner connects Gmail with Google, sends a test email through the Gmail API and disconnects", async ({ page }) => {
   page.on("dialog", (d) => void d.accept());
   await page.goto("/");
-  await page.getByRole("button", { name: "Create an account instead" }).click();
+  await page.getByRole("button", { name: "Create an account", exact: true }).click();
   await page.getByLabel("Email").fill(`gmail-${Date.now()}@test.local`);
   await page.getByLabel("Password").fill("e2e test password 1");
   await page.getByRole("button", { name: "Create account" }).click();
