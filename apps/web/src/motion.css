@@ -1,0 +1,39 @@
+/*
+ * Shared motion for the console. Durations and easing come from styles.css
+ * (--ease, --dur-fast, --dur-base). These classes are opt-in: a page adds one
+ * to an element and it animates when the element mounts.
+ *
+ *   .motion-page      page body or panel content: fades in and rises 8px
+ *   .motion-drawer    side panel: fades in and slides in from the right
+ *   .motion-backdrop  dim layer behind a drawer or partial-height sheet
+ *   .motion-dialog    dialog: fades in and scales from 0.98 to 1
+ *
+ * To close a drawer or backdrop with the reverse animation, set data-closing
+ * and unmount the element on animationend. Under prefers-reduced-motion the
+ * animation never runs, so animationend never fires: check
+ * matchMedia("(prefers-reduced-motion: reduce)") and unmount at once (Nav.tsx
+ * does this for the phone menu).
+ */
+:root {
+  --motion-rise: 8px;
+  --motion-scale-from: 0.98;
+  --motion-drawer-shift: 24px;
+}
+
+.motion-page { animation: motion-page-in var(--dur-base) var(--ease); }
+.motion-dialog { animation: motion-dialog-in var(--dur-base) var(--ease); }
+.motion-drawer { animation: motion-drawer-in var(--dur-base) var(--ease); }
+.motion-drawer[data-closing] { animation: motion-drawer-out var(--dur-base) var(--ease) forwards; }
+.motion-backdrop { animation: motion-fade-in var(--dur-base) var(--ease); }
+.motion-backdrop[data-closing] { animation: motion-fade-out var(--dur-base) var(--ease) forwards; }
+
+@keyframes motion-page-in { from { opacity: 0; transform: translateY(var(--motion-rise)); } }
+@keyframes motion-dialog-in { from { opacity: 0; transform: scale(var(--motion-scale-from)); } }
+@keyframes motion-drawer-in { from { opacity: 0; transform: translateX(var(--motion-drawer-shift)); } }
+@keyframes motion-drawer-out { to { opacity: 0; transform: translateX(var(--motion-drawer-shift)); } }
+@keyframes motion-fade-in { from { opacity: 0; } }
+@keyframes motion-fade-out { to { opacity: 0; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .motion-page, .motion-dialog, .motion-drawer, .motion-backdrop { animation: none; }
+}

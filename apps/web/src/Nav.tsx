@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import "./console-shell.css";
+import "./motion.css";
 import { useLanguage } from "./Language";
 import type { User } from "./Team";
 
