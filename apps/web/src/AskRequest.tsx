@@ -1,6 +1,7 @@
 import { useLanguage } from "./Language";
 import { useEffect, useState, type FormEvent } from "react";
 import { api, ApiError } from "./api";
+import { PageHead } from "./Runs";
 
 type Answer = { headline: string; lines: string[]; fix: { href: string; label: string } | null };
 type Reply = { runId: string; reference: string; workflowName: string; answers: { happened: Answer; why: Answer | null; next: Answer } };
@@ -169,5 +170,18 @@ export function AskRequest({ reference }: { reference?: string } = {}) {
         </div>
       )}
     </section>
+  );
+}
+
+/** #/activity/ask (O3 without a run): type or pick a request reference, then read the answers. */
+export function AskPage() {
+  const { t } = useLanguage();
+  return (
+    <main className="page act">
+      <PageHead crumbs={[{ label: "Daloy", href: "#/" }, { label: t("Activity"), href: "#/activity" }, { label: t("Ask") }]} title={t("Ask about a request")} actions={<a className="act-button" href="#/activity">{t("Workspace activity")}</a>} />
+      <div className="act-body motion-page">
+        <AskRequest />
+      </div>
+    </main>
   );
 }

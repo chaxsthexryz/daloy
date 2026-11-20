@@ -38,7 +38,7 @@ test("open the run history, diff two versions and roll back", async ({ page }) =
   // The run list links back to the same run.
   await page.getByRole("main").getByRole("link", { name: "Activity" }).click();
   await expect(page.getByRole("table")).toContainText("Real run");
-  await page.getByLabel("Show").selectOption("test");
+  await page.getByLabel("Status").selectOption("test");
   await expect(page.getByText("Nothing has happened yet.")).toBeVisible();
 
   // Version 2 changes the operator.
