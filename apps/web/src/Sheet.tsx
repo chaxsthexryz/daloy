@@ -38,3 +38,16 @@ export function Sheet({ title, onClose, children }: { title: string; onClose: ()
     </dialog>
   );
 }
+
+/** A yes or no question in a Sheet. `onConfirm` runs when the primary button is pressed; the page closes the sheet. */
+export function ConfirmSheet({ title, text, confirm, cancel, danger, onConfirm, onClose }: { title: string; text: string; confirm: string; cancel: string; danger?: boolean; onConfirm: () => void; onClose: () => void }) {
+  return (
+    <Sheet title={title} onClose={onClose}>
+      <p className="wk-sheet-text">{text}</p>
+      <div className="wk-sheet-actions">
+        <button type="button" className={`wk-button ${danger ? "danger" : "blue"}`} onClick={onConfirm}>{confirm}</button>
+        <button type="button" className="wk-button" onClick={onClose}>{cancel}</button>
+      </div>
+    </Sheet>
+  );
+}

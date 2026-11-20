@@ -248,3 +248,36 @@ main.page.wk { display: flex; flex-direction: column; gap: 16px; width: 100%; ma
   .wk-actions .wk-button.blue { flex-basis: 100%; min-height: 44px; }
   .wk-actions .wk-button { min-height: 44px; }
 }
+
+/* Resources, tokens and secrets tables (W7 to W9): frames 28iDVdyywt, ui_7f702WF, USesnlw7T5, AXLsWhe06b, ba7D0fgHk-. */
+.wk-table { width: 100%; border-collapse: collapse; }
+.wk-table th { padding: 10px 16px; background: var(--w-canvas); border-bottom: 1px solid var(--w-line); color: var(--w-muted); font-size: 11px; line-height: 16px; font-weight: 700; letter-spacing: 0.065em; text-align: left; text-transform: uppercase; }
+.wk-table td { padding: 11px 16px; border-bottom: 1px solid var(--w-line); vertical-align: middle; }
+.wk-table tbody tr:last-child td { border-bottom: 0; }
+.wk-table tr.off td { background: var(--w-canvas); }
+.wk-table tr.off .wk-name { color: var(--w-muted); text-decoration: line-through; text-decoration-color: var(--w-field); }
+.wk-name { font-weight: 600; }
+.wk-acts { text-align: right; white-space: nowrap; }
+.wk-acts .wk-button + .wk-button { margin-left: 6px; }
+.wk-resources .wk-table th:nth-child(2) { width: 120px; }
+.wk-resources .wk-table th:nth-child(3) { width: 200px; }
+.wk-add-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: end; }
+.wk-add .wk-fields label { margin-bottom: 6px; }
+.wk-sheet-actions.inline { display: flex; flex-direction: row-reverse; justify-content: flex-start; margin-top: 4px; }
+.wk-sheet-actions.inline .wk-button { min-height: 38px; padding: 0 14px; }
+.wk-sheet-actions.inline .wk-button.danger { min-height: 38px; }
+@media (max-width: 799.98px) {
+  .wk-sheet-actions.inline { display: grid; }
+  .wk-sheet-actions.inline .wk-button, .wk-sheet-actions.inline .wk-button.danger { min-height: 44px; }
+  .wk-resources .wk-add { padding: 0; border: 0; border-radius: 0; background: none; overflow: visible; }
+  .wk-resources .wk-add .wk-card-title, .wk-resources .wk-add label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .wk-resources .wk-add .wk-button { min-height: 44px; }
+  .wk-resources .wk-card { border: 0; border-radius: 0; overflow: visible; background: none; }
+  .wk-resources .wk-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .wk-resources .wk-table, .wk-resources .wk-table tbody { display: block; }
+  .wk-resources .wk-table tr { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 12px; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--w-line); }
+  .wk-resources .wk-table td, .wk-resources .wk-table tr.off td { padding: 0; border: 0; background: none; }
+  .wk-resources .wk-table .wk-name { font-size: 16px; }
+  .wk-resources .wk-table .wk-acts { grid-column: 1 / -1; text-align: left; }
+  .wk-resources .wk-acts .wk-button { min-height: 36px; font-weight: 500; }
+}
