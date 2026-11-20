@@ -81,3 +81,50 @@
 .gp-facts dd { margin: 0; font-size: 15px; line-height: 20px; font-weight: 700; color: var(--o-ink); overflow-wrap: anywhere; }
 .gp .ops-panel p.muted { margin: 0; font-size: 13px; line-height: 18px; color: var(--o-muted); }
 .gp .ops-panel pre { margin: 0; padding: 12px; border: 1px solid var(--o-line); border-radius: 8px; background: var(--o-bg); color: var(--o-ink); font: 400 12px/18px var(--font-mono, ui-monospace, monospace); white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* Guided setup (A4, A5): step counter, segmented bar, the form body, the review table and the details blocks. */
+.gp .ops-main > h2 { margin-top: 4px; }
+.gp-bar { display: flex; gap: 5px; max-width: 735px; }
+.gp-bar i { flex: 1 1 0; height: 3px; border-radius: 2px; background: var(--o-line); transition: background-color var(--dur-base) var(--ease); }
+.gp-bar i[data-done] { background: var(--o-accent); }
+.gp-body { display: flex; flex-direction: column; gap: 14px; max-width: 735px; }
+.gp-body .gp-field > :is(input, select) { max-width: 100%; }
+.gp-fieldset { display: flex; flex-direction: column; gap: 10px; margin: 0; padding: 0; border: 0; min-width: 0; }
+.gp-fieldset legend { padding: 0; margin-bottom: 4px; font-size: 13px; line-height: 18px; font-weight: 700; color: var(--o-ink); }
+.gp-check { display: flex; align-items: flex-start; gap: 10px; font-size: 14px; line-height: 20px; color: var(--o-ink); cursor: pointer; }
+.gp-check input { flex: none; width: 18px; height: 18px; min-height: 0; margin: 1px 0 0; accent-color: var(--o-accent); }
+.gp-callout { display: flex; flex-direction: column; gap: 4px; margin: 0; padding: 12px 14px; border: 1px solid var(--o-line); border-radius: 8px; background: var(--o-canvas); font-size: 14px; line-height: 20px; color: var(--o-ink); }
+.gp-callout strong { font-size: 14px; line-height: 18px; }
+.gp-callout span { font-size: 13px; line-height: 18px; color: var(--o-muted); }
+.gp-details { border: 1px solid var(--o-line); border-radius: 8px; background: var(--o-bg); }
+.gp-details > summary { padding: 14px 16px; font-size: 14px; line-height: 20px; color: var(--o-ink); cursor: pointer; }
+.gp-details > summary:focus-visible { outline: 2px solid var(--o-focus); outline-offset: 2px; border-radius: 8px; }
+.gp-details[open] > summary { border-bottom: 1px solid var(--o-line); }
+.gp-details > :not(summary) { margin-inline: 16px; }
+.gp-details > :last-child { margin-bottom: 14px; }
+.gp-details > summary + * { margin-top: 12px; }
+.gp-details h3 { margin: 12px 0 4px; font-size: 11px; line-height: 14px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--o-muted); }
+.gp-details p { margin: 0 0 6px; font-size: 13px; line-height: 18px; color: var(--o-muted); }
+.gp-details pre { margin: 0 0 8px; padding: 12px; border: 1px solid var(--o-line); border-radius: 8px; background: var(--o-canvas); color: var(--o-ink); font: 400 12px/18px var(--font-mono, ui-monospace, monospace); white-space: pre-wrap; overflow-wrap: anywhere; }
+.gp-review { max-width: 735px; }
+.gp-review th, .gp-review td { padding: 0 10px; text-align: left; vertical-align: middle; font-size: 13px; line-height: 18px; font-weight: 400; }
+.gp-review tbody tr { border-bottom: 1px solid var(--o-line); }
+.gp-review tbody th, .gp-review tbody td { height: 46px; padding-block: 10px; }
+.gp-review tbody th { width: 34%; color: var(--o-ink); }
+.gp-review td { overflow-wrap: anywhere; }
+.gp-review .c-edit { width: 64px; text-align: right; }
+.gp-note { margin: 0; padding-top: 16px; border-top: 1px solid var(--o-line); font-size: 13px; line-height: 20px; color: var(--o-muted); }
+.gp-steps li[aria-current="step"] > b { background: var(--o-accent); color: var(--o-on-accent); }
+.gp-steps li[aria-current="step"] > span { color: var(--o-accent); font-weight: 600; }
+
+@media (max-width: 799.98px) {
+  .gp .ops-main { padding: 16px; }
+  .gp-review, .gp-review tbody { display: block; }
+  .gp-review thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .gp-review tbody tr { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 10px; padding: 10px 0; }
+  .gp-review tbody th, .gp-review tbody td { height: auto; width: auto; padding: 0; }
+  .gp-review tbody th { grid-column: 1; grid-row: 1; font-size: 12px; color: var(--o-muted); }
+  .gp-review tbody td:not(.c-edit) { grid-column: 1; grid-row: 2; }
+  .gp-review .c-edit { grid-column: 2; grid-row: 1 / span 2; width: auto; }
+  .gp-actions .ops-button { flex: 1 1 auto; }
+}

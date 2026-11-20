@@ -71,7 +71,8 @@ test("a purchase request goes from the form to the named approver, then to purch
   await page.getByLabel("Send the emails from our Outlook mailbox").check();
   await page.getByLabel(/Post a note in our Teams channel/).check();
   await page.getByRole("button", { name: "Next" }).click();
-  await expect(page.getByText(`Ask ${approver} to approve or reject it, signed in to Daloy.`)).toBeVisible();
+  await expect(page.getByRole("row", { name: /Approver/ })).toContainText(approver);
+  await expect(page.getByRole("row", { name: /Purchasing inbox/ })).toContainText("and a Teams note");
   await page.getByRole("button", { name: "Turn on" }).click();
   await expect(page.getByRole("status")).toContainText("Accepting requests");
 

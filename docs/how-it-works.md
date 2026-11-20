@@ -858,3 +858,13 @@ Why it is built that way: everything comes from `previewOfficeRequest` in the en
 Edge cases: the email field must be a valid address and every field has a length limit. A failed start shows its message and enables the button again. The location line in the sample message stays at the engine's sample value, since the frame has no location field.
 
 Tests: `e2e/office-request.spec.ts` (the preview shows REQ-SAMPLE and the receipt text, no mail is written, then the setup starts), `e2e/ask-request.spec.ts`, `e2e/connections.spec.ts`, `e2e/wizard-double-click.spec.ts` (all reach setup through this page).
+
+### Guided setups (A4 office requests, A5 purchase requests, `#/a/:id` while the automation is a draft)
+
+What it does: both setups share one frame (`useWizard` in `OfficeRequests.tsx`). The head shows Automations / Guided setup, the saved name and a Draft tag. The form shows "Step n of N", a segmented bar, the step, then Next (or Turn on on the last step), Save and finish later and Back. Beside it a Setup steps list marks each step Complete, Current step or Upcoming (`stepStates` in `lib/guided.ts`). The last step is a Setting and Selected value table with an Edit link per row that opens the step which sets it. The approval step of a purchase setup explains what the approver receives and has a Preview the approval email block. Example messages stay in a closed block on the review step.
+
+Why it is built that way: nothing about saving changed. Every step saves its answers through `PATCH /workflows/:id/setup`, so leaving and coming back resumes the saved step. Next, Save and finish later and Turn on share one busy flag, so a double click saves once and publishes one version. Turn on still publishes the definition built from the answers, and the API still refuses it while a chosen app or the named approver is missing, with the message shown above the buttons.
+
+Edge cases: the side list reflects the step on screen, not how far the person got earlier, so after Back a later step reads Upcoming even if it was answered. The purchase setup keeps four steps and the purchasing inbox on the destinations step (decision 0071). A failed save keeps the person on the step and shows the error.
+
+Tests: `lib/guided.test.ts` (step states, one current step, an index outside the list), `e2e/office-request.spec.ts` (name, fields, destinations, Save and finish later, resume, review table, Turn on), `e2e/purchase-request.spec.ts` (approver and purchasing rows, Outlook and Teams), `e2e/connections.spec.ts` (Optional apps row lists Google Sheets and Slack), `e2e/wizard-double-click.spec.ts` (Step 2 of 4 after resume, one version from a double click).

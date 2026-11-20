@@ -36,7 +36,7 @@ test("a beginner previews, sets up, turns on and receives one office request", a
   await expect(page.getByRole("heading", { name: "Where requests and alerts go" })).toBeVisible();
   await page.getByRole("button", { name: "Next" }).click();
   await expect(page.getByRole("heading", { name: "Review" })).toBeVisible();
-  await expect(page.getByText("Ask for name, email, what needs attention, where it is, anything else.")).toBeVisible();
+  await expect(page.getByRole("row", { name: /Request form/ })).toContainText("Where is it?, Anything else we should know?");
   await page.getByRole("button", { name: "Turn on" }).click();
   await expect(page.getByRole("status")).toContainText("Accepting requests");
   await expect(page.getByText("No requests yet.")).toBeVisible();

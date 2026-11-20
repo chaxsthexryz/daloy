@@ -53,7 +53,7 @@ test("an owner connects Sheets and Slack, and retries only the Slack note that f
   await page.getByLabel("A row in your Google Sheet").check();
   await page.getByLabel(/A short note in your Slack channel/).check();
   await page.getByRole("button", { name: "Next" }).click();
-  await expect(page.getByText("Post the reference and subject to your Slack channel.")).toBeVisible();
+  await expect(page.getByRole("row", { name: /Optional apps/ })).toContainText("Google Sheets, Slack");
   await page.getByRole("button", { name: "Turn on" }).click();
   await expect(page.getByRole("status")).toContainText("Accepting requests");
 
