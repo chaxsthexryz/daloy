@@ -129,6 +129,24 @@ These designs go beyond the current code in a few places. Plan them with the imp
 | W8 | Advanced / API tokens | `#/tokens`, `Tokens.tsx` | Create a scoped, expiring synthetic token, show it once, then revoke it. |
 | W9 | Advanced / Secrets | `#/secrets`, `Secrets.tsx` | Add, replace and remove a synthetic secret. Existing values never appear in the UI. |
 
+**Approved Phase 5 designs, 20 November 2026.** Every frame below is Ready for dev in Doop. W1 uses option B on desktop and option A's phone sheet. The other workspace pages follow that shell: the dark rail with the account avatar marked, bordered cards with a pale header strip, and bottom sheets for confirmations on a phone.
+
+| ID | Desktop | Phone |
+| --- | --- | --- |
+| W1. Team | [Grouped by role](https://doop.design/c/xH-4xV7kGK?frame=7bjgxavlHY) | [Remove a member](https://doop.design/c/xH-4xV7kGK?frame=yfzU8w8KVi) |
+| W2. Business | [Profile, logo and inquiry form](https://doop.design/c/xH-4xV7kGK?frame=Ajx1bSldHe), [No brand yet, logo rejected](https://doop.design/c/xH-4xV7kGK?frame=KB6XZWGTMw) | [Profile and form link](https://doop.design/c/xH-4xV7kGK?frame=9vFOuEnkIH) |
+| W3. Settings | [Owner view](https://doop.design/c/xH-4xV7kGK?frame=x3A-fJwMpM), [Operator view](https://doop.design/c/xH-4xV7kGK?frame=y8bjjzbxAu) | [Owner view](https://doop.design/c/xH-4xV7kGK?frame=I7ZfgM4eOZ) |
+| W4. Account | [Change password](https://doop.design/c/xH-4xV7kGK?frame=lH4X9qcB2B), [Current password is wrong](https://doop.design/c/xH-4xV7kGK?frame=ZaQH-F9-EY), [Password changed](https://doop.design/c/xH-4xV7kGK?frame=5YxvC0dks3) | [Requester with back link](https://doop.design/c/xH-4xV7kGK?frame=b3byDaxpPC) |
+| W5. Advanced | [Directory](https://doop.design/c/xH-4xV7kGK?frame=CWk0ay7YjH), [Non-owner fallback](https://doop.design/c/xH-4xV7kGK?frame=KYtxYUafud) | [Directory](https://doop.design/c/xH-4xV7kGK?frame=mpdXAQei3z) |
+| W6. AI model | [Saved, test passed](https://doop.design/c/xH-4xV7kGK?frame=NTdSU6RZ9F), [Test failed](https://doop.design/c/xH-4xV7kGK?frame=RR5MWYK8iZ) | [Saved, test passed](https://doop.design/c/xH-4xV7kGK?frame=fkjpQgqdZF) |
+| W7. Resources | [Active and archived](https://doop.design/c/xH-4xV7kGK?frame=28iDVdyywt), [Rename a resource](https://doop.design/c/xH-4xV7kGK?frame=ui_7f702WF) | [Active and archived](https://doop.design/c/xH-4xV7kGK?frame=USesnlw7T5) |
+| W8. API tokens | [Token list](https://doop.design/c/xH-4xV7kGK?frame=AXLsWhe06b), [New token shown once](https://doop.design/c/xH-4xV7kGK?frame=b6jDd6WDhG) | [Token list](https://doop.design/c/xH-4xV7kGK?frame=QVb6CA2-cB) |
+| W9. Secrets | [Secret list](https://doop.design/c/xH-4xV7kGK?frame=ba7D0fgHk-), [Replace a secret](https://doop.design/c/xH-4xV7kGK?frame=THcJmCHB9a), [Delete confirmation](https://doop.design/c/xH-4xV7kGK?frame=z-C5TXL2fk) | [Secret list](https://doop.design/c/xH-4xV7kGK?frame=EnTFjYkruA) |
+
+**A0 update, 20 November 2026.** The desktop rail expands on hover into a 232px column with labels and the full menu from `Nav.tsx` (Work, Build, Workspace, then the account with Account and Sign out). It pushes the page to the right instead of covering it. [Approved frame](https://doop.design/c/xH-4xV7kGK?frame=gDOrJNUuQK). Open it on keyboard focus as well, close it on pointer leave or Escape, and add a short open delay so the page does not jump when the pointer only passes over the rail.
+
+Beyond the current code: dialogs where the code uses `confirm()` or `prompt()` (resource rename, token revoke, secret delete), a Copy button for the new token, counts beside page titles, and the sample plan name and usage on W3.
+
 ## Phase 6. Entry, restricted roles and public pages
 
 | ID | Surface | Entry and files | Completion check |
@@ -145,6 +163,24 @@ These designs go beyond the current code in a few places. Plan them with the imp
 | E10 | Approval landing and decision | `#/answer/:token` to `/approvals/:token`, `App.tsx`, `apps/api/src/approvals.ts` | Verify signed-in handoff, named approver, approve/reject, expiry and already-decided states. |
 | E11 | Browser demo | `apps/web/demo/index.html`, `apps/web/src/demo/Demo.tsx` | Walk the synthetic demo through its stages and restart. Keep the public demo separate from workspace data. |
 
+**Approved Phase 6 designs, 20 November 2026.** Every frame below is Ready for dev in Doop. E1 uses option B, the split layout, and E2 to E5 follow it. Public pages (E7 to E10) carry the business brand kit: logo, accent and profile name, never the Daloy brand. Each public page also has a second sample brand and a no-brand version.
+
+| ID | Desktop | Phone |
+| --- | --- | --- |
+| E1. Sign in | [Split, approval waiting, wrong password](https://doop.design/c/xH-4xV7kGK?frame=G1dk1dFL1u) | [Sign in](https://doop.design/c/xH-4xV7kGK?frame=2eXiWhUFMx) |
+| E2. Registration | [Empty form](https://doop.design/c/xH-4xV7kGK?frame=D3VaFGGyyk), [Password too short](https://doop.design/c/xH-4xV7kGK?frame=GAkvveGkeR), [Email already registered](https://doop.design/c/xH-4xV7kGK?frame=m8XchRqOTo) | [Empty form](https://doop.design/c/xH-4xV7kGK?frame=OG-ZDKiIoQ) |
+| E3. Forgot password | [Request form](https://doop.design/c/xH-4xV7kGK?frame=CbCsqvxYF3), [Link sent](https://doop.design/c/xH-4xV7kGK?frame=SJmJ8JyTVb) | [Request form](https://doop.design/c/xH-4xV7kGK?frame=a1Qx9j4kVm) |
+| E4. Reset password | [Set a new password](https://doop.design/c/xH-4xV7kGK?frame=IqOVqxsswy), [Link expired or used](https://doop.design/c/xH-4xV7kGK?frame=lo-SW81rNR), [Password changed](https://doop.design/c/xH-4xV7kGK?frame=QtaBuvzWl_) | [Set a new password](https://doop.design/c/xH-4xV7kGK?frame=-iBg4S87aZ) |
+| E5. Accept invitation | [New person](https://doop.design/c/xH-4xV7kGK?frame=YjGdnlhsRr), [Invalid or used link](https://doop.design/c/xH-4xV7kGK?frame=M-kgOgSIQJ), [Email already has an account](https://doop.design/c/xH-4xV7kGK?frame=xd6O4k405D) | [New person](https://doop.design/c/xH-4xV7kGK?frame=QL3NOkPIH3) |
+| E6. My requests | [Requester list](https://doop.design/c/xH-4xV7kGK?frame=GgoY9QuYpL), [Approver variant](https://doop.design/c/xH-4xV7kGK?frame=fI0vKLwxWJ), [Empty](https://doop.design/c/xH-4xV7kGK?frame=LFW80dx56g) | [Requester list](https://doop.design/c/xH-4xV7kGK?frame=YXHsR0XKXq) |
+| E7. Public form | [Form](https://doop.design/c/xH-4xV7kGK?frame=APOh0l4BzS), [Validation errors](https://doop.design/c/xH-4xV7kGK?frame=3VWc5SBBJb), [Receipt](https://doop.design/c/xH-4xV7kGK?frame=rVgq6-LV9G), [Paused](https://doop.design/c/xH-4xV7kGK?frame=n0lqJe7pIU), [Second brand](https://doop.design/c/xH-4xV7kGK?frame=z8k36ub6yW), [No brand set](https://doop.design/c/xH-4xV7kGK?frame=_jHuG5dOsG) | [Form](https://doop.design/c/xH-4xV7kGK?frame=67yIIct_g8) |
+| E8. Embedded form | [In host page](https://doop.design/c/xH-4xV7kGK?frame=fA3nGcTh7N), [Confirmation](https://doop.design/c/xH-4xV7kGK?frame=qsRzqfXIir), [Second brand](https://doop.design/c/xH-4xV7kGK?frame=wppAnKwcXU), [No brand set](https://doop.design/c/xH-4xV7kGK?frame=yjWWkzlBMg) | [In host page](https://doop.design/c/xH-4xV7kGK?frame=7eP6v3Z9Ze) |
+| E9. Booking form | [Choose resource and time](https://doop.design/c/xH-4xV7kGK?frame=oeCtvge9o9), [Time no longer available](https://doop.design/c/xH-4xV7kGK?frame=rtw6EaGxyf), [Second brand](https://doop.design/c/xH-4xV7kGK?frame=kGS_cUnn8Z), [No brand set](https://doop.design/c/xH-4xV7kGK?frame=wDApswQSpQ) | [Choose resource and time](https://doop.design/c/xH-4xV7kGK?frame=5HDeEuOYuO) |
+| E10. Approval | [Decision](https://doop.design/c/xH-4xV7kGK?frame=IpTkhV7dCm), [Assigned to someone else](https://doop.design/c/xH-4xV7kGK?frame=J-XKSxE5Qh), [Link not valid](https://doop.design/c/xH-4xV7kGK?frame=r0lLub-pSN), [Sign in required](https://doop.design/c/xH-4xV7kGK?frame=jsVsnQboJI), [Answer recorded](https://doop.design/c/xH-4xV7kGK?frame=OOhvrW6YGN), [Branded decision](https://doop.design/c/xH-4xV7kGK?frame=T4vwqK9vnk), [Branded answer recorded](https://doop.design/c/xH-4xV7kGK?frame=roPgujk1Ls) | [Decision](https://doop.design/c/xH-4xV7kGK?frame=3_5sqLnXuX) |
+| E11. Browser demo | [1 Ask](https://doop.design/c/xH-4xV7kGK?frame=oNFvzNFZUI), [2 Question](https://doop.design/c/xH-4xV7kGK?frame=B7Nc9PbVqs), [3 Check the draft](https://doop.design/c/xH-4xV7kGK?frame=dFvw6A5kac), [4 Test run waiting](https://doop.design/c/xH-4xV7kGK?frame=ESR_bHeKYr), [5 Finished](https://doop.design/c/xH-4xV7kGK?frame=5jkj4ULqqH) | [1 Ask](https://doop.design/c/xH-4xV7kGK?frame=LA1V0D9Hic) |
+
+Beyond the current code: a rendered validation page for E7 (today the error is JSON), open-time choices and a slot-taken page for E9, the card layout on E10 and a branded E10 that needs `approvals.ts` to pass the workspace brand to `page()`, the approval-waiting note on E1, and friendly labels for the raw run states on E6. The E2 short-password message is assumed and needs checking against the server's validation text.
+
 ## Phase 7. Walkthrough and continuation
 
 Q1 covers the integrated journey. Start at Automations, enter Build with AI, describe, review, resolve an app requirement, return, save, open Steps and inspect Activity. Exercise phone navigation, English and Tagalog, both themes and all four roles. Verify non-React public pages separately. Use the [previous offline walkthrough](console-review.html) for historical comparison. Record new screenshots and tests against the actual implementation commit before reporting this round complete. The owner reviews the walkthrough before Docker rollout.
@@ -160,5 +196,7 @@ Q1 covers the integrated journey. Start at Automations, enter Build with AI, des
 | 2026-11-20 | B1 and B2 implemented. The table follows graph edges and labels branches. 31 focused unit checks and nine builder browser tests passed with fake providers. | A0 |
 
 | 2026-11-20 | Doop design checkpoint. Phase 3 selections: O1 option A, O2 option A, O3 option A, O4 option B. Phase 4 Apps approved: P0 option A and 45 panel frames for P1 to P14, all Ready for dev. Design only. No code changed and no tests were run. | Phase 5, W1 Team |
+
+| 2026-11-20 | Doop design checkpoint. Phases 5 and 6 approved: W1 to W9, E1 to E11 including the brand-kit frames, and the hover-expanding rail (A0 update). Design only. No code changed and no tests were run. | Phase 7, walkthrough |
 
 After each row, append the date, row ID, design/implementation status, frame link, branch and commit, checks actually run, open issues and next row. A future session can resume from the last entry without this chat.
