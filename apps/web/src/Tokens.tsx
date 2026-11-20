@@ -33,7 +33,7 @@ export function TokensPage() {
   const tokenBox = useRef<HTMLPreElement>(null);
   const load = () => api<Token[]>("GET", "/tokens").then(setList, (e: Error) => setError(e.message));
   const scopeText = (ids: string[]) => ids.map((id) => t(SCOPES.find((s) => s.id === id)?.label ?? id)).join(", ");
-  const expiry = (iso: string | null | undefined) => (!iso ? t("Never expires") : new Date(iso) < new Date() ? t("Expired") : t("Expires {date}", { date: new Date(iso).toLocaleDateString() }));
+  const expiry = (iso: string | null | undefined) => (!iso ? t("Never expires") : new Date(iso) < new Date() ? t("Expired") : t("Expires {date}", { date: shortDate(iso) }));
   const used = (iso: string | null) => (!iso ? t("never") : isToday(iso) ? t("Today, {time}", { time: shortTime(iso) }) : shortDate(iso));
   useEffect(() => {
     load();
@@ -126,7 +126,7 @@ export function TokensPage() {
                     <td className="wk-when" data-label={t("Created")}>{shortDate(token.createdAt)}</td>
                     <td data-label={t("Last used")}>{used(token.lastUsedAt)}</td>
                     <td data-label={t("Access")}>{scopeText(token.scopes)}</td>
-                    <td data-label={t("Expires")} className={status === "expired" ? "wk-bad" : undefined}>{expiry(token.expiresAt)}</td>
+                    <td data-label={t("Expires")} className={status === "expired" ? "wk-bad" : undefined}>{token.expiresAt && status !== "expired" ? shortDate(token.expiresAt) : expiry(token.expiresAt)}</td>
                     <td className="wk-status">
                       <span className={`wk-pill ${status === "active" ? "ok" : status === "expired" ? "red" : ""}`}>{t(status === "active" ? "Active" : status === "expired" ? "Expired" : "Revoked")}</span>
                       {token.revokedAt ? (
