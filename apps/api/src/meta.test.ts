@@ -96,7 +96,7 @@ type Agent = ReturnType<typeof request.agent>;
 async function owner() {
   const email = `meta-api-${++seq}@test.local`;
   const agent = request.agent(server);
-  await agent.post("/auth/register").send({ email, password: "correct horse battery" }).expect(201);
+  await agent.post("/auth/register").send({ email, password: "correct horse battery" }).expect(201); // gitleaks:allow
   const [u] = await db.select().from(users).where(eq(users.email, email));
   return { agent, userId: u!.id };
 }
@@ -149,9 +149,26 @@ describe("Meta connection settings and secret redaction", () => {
     const second = await connectMeta(o.agent, o.userId);
     expect(second.webhookPath).toBe(first.webhookPath);
 
+    // Mismatched Page ID on save is rejected with 400 (M5).
+    await o.agent
+      .put("/settings/connections/meta-messenger")
+      .send({
+        pageId: "999999999999",
+        pageAccessToken: PAGE_TOKEN,
+        appSecret: APP_SECRET,
+        verifyToken: VERIFY_TOKEN,
+      })
+      .expect(400);
+
     // Test endpoint succeeds.
     const tested = await o.agent.post("/settings/connections/meta-messenger/test").expect(200);
     expect(tested.body).toMatchObject({ ok: true, pageId: PAGE_ID, pageName: "Sari-Sari ni Ana" });
+
+    // Mismatched Page ID on test marks connection failed (M5).
+    fake.once("/v21.0/me", { status: 200, body: { id: "888888888888", name: "Other Page" } });
+    const mismatchTest = await o.agent.post("/settings/connections/meta-messenger/test").expect(200);
+    expect(mismatchTest.body.ok).toBe(false);
+    await connectMeta(o.agent, o.userId);
 
     // Even if Meta returns an error echoing the token, test and settings redact it.
     fake.once("/v21.0/me", { status: 401, body: { error: { code: 190, message: `Bad token ${PAGE_TOKEN}` } } });
@@ -319,7 +336,7 @@ describe("Meta webhook challenge verification and HMAC intake", () => {
             messaging: [
               {
                 sender: { id: "psid-good" },
-                timestamp: 1700000004000,
+                timestamp: Date.now(),
                 message: {
                   mid,
                   text,
@@ -432,5 +449,88 @@ describe("Meta webhook challenge verification and HMAC intake", () => {
     const bodyPaused = goodBody("m_receipt_paused", "Sent while paused");
     await request(server).post(`/hooks/meta/${webhookPath}`).set("content-type", "application/json").set("x-hub-signature-256", sign(bodyPaused)).send(bodyPaused).expect(200);
     expect(await runsOf(wfId)).toHaveLength(2);
+    await o.agent.post(`/workflows/${wfId}/resume`).expect(204);
+
+    // 3. Transient CDN 503 answers HTTP 503 so Meta retries without losing the mid to run_keys (M7).
+    fake.once("/meta-cdn/receipt.png", { status: 503, body: { error: "cdn_down" } });
+    const bodyTransient = goodBody("m_receipt_transient", "Retry me after CDN outage");
+    await request(server).post(`/hooks/meta/${webhookPath}`).set("content-type", "application/json").set("x-hub-signature-256", sign(bodyTransient)).send(bodyTransient).expect(503);
+    expect(await runsOf(wfId)).toHaveLength(2);
+    // Retrying the exact same webhook after CDN recovers now succeeds and creates the run.
+    await request(server).post(`/hooks/meta/${webhookPath}`).set("content-type", "application/json").set("x-hub-signature-256", sign(bodyTransient)).send(bodyTransient).expect(200);
+    expect(await runsOf(wfId)).toHaveLength(3);
+
+    // 4. meta_reply refuses a recipient or channel mismatch against the incoming trigger conversation (M6).
+    const badRecipientStep = { id: "reply_bad", type: "meta_reply", config: { recipientId: "psid-other", channel: "{{trigger.channel}}", text: "Wrong recipient" } } as never;
+    await expect(
+      exec.execute({
+        runId: run1.id,
+        stepRunId: "00000000-0000-0000-0000-000000000005",
+        userId: o.userId,
+        workflowId: wfId,
+        attempt: 1,
+        idempotencyKey: `${run1.id}:reply:bad`,
+        step: badRecipientStep,
+        ctx: { trigger: payload1, steps: {} },
+        mock: false,
+      }),
+    ).rejects.toThrow(/recipient must match/i);
+
+    // 5. After disconnecting Meta, GET /runs/:id still redacts all three retired Meta secrets (M8).
+    await o.agent.delete("/settings/connections/meta-messenger").expect(204);
+    const runReadAfterDisconnect = await o.agent.get(`/runs/${run1.id}`).expect(200);
+    expect(JSON.stringify(runReadAfterDisconnect.body)).not.toContain(PAGE_TOKEN);
+    expect(JSON.stringify(runReadAfterDisconnect.body)).not.toContain(APP_SECRET);
+    expect(JSON.stringify(runReadAfterDisconnect.body)).not.toContain(VERIFY_TOKEN);
+  });
+
+  it("does not touch receipt_references on unrelated AI file extractions without is_receipt (L2)", async () => {
+    const o = await owner();
+    const { webhookPath } = await connectMeta(o.agent, o.userId);
+    const wfId = await publishMetaWorkflow(o.agent, { channel: "both", requireImage: true });
+    const body = JSON.stringify({
+      object: "page",
+      entry: [
+        {
+          id: PAGE_ID,
+          messaging: [
+            {
+              sender: { id: "psid-invoice" },
+              timestamp: Date.now(),
+              message: {
+                mid: "m_unrelated_extract",
+                text: "invoice",
+                attachments: [{ type: "image", payload: { url: `${fake.urls.metaCdn}/meta-cdn/receipt.png` } }],
+              },
+            },
+          ],
+        },
+      ],
+    });
+    await request(server).post(`/hooks/meta/${webhookPath}`).set("content-type", "application/json").set("x-hub-signature-256", sign(body)).send(body).expect(200);
+    const [run] = await runsOf(wfId);
+    const exec = createExecutor({ db, secretsKey, mail: {} as never });
+    const nonReceiptAiStep = {
+      id: "extract_invoice",
+      type: "ai",
+      config: {
+        task: "extract",
+        input: "{{trigger.text}}",
+        files: ["image"],
+        fields: { reference: "Invoice reference", amount: "Amount" },
+      },
+    } as never;
+    const out = await exec.execute({
+      runId: run!.id,
+      stepRunId: "00000000-0000-0000-0000-000000000009",
+      userId: o.userId,
+      workflowId: wfId,
+      attempt: 1,
+      idempotencyKey: `${run!.id}:extract_invoice`,
+      step: nonReceiptAiStep,
+      ctx: { trigger: run!.triggerPayload, steps: {} },
+      fileFields: ["image"],
+    });
+    expect((out.output as Record<string, unknown>).duplicate_reference).toBeUndefined();
   });
 });

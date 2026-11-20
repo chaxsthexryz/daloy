@@ -315,11 +315,38 @@ describe("UniSMS", () => {
     expect(unauth.body.ok).toBe(false);
     const after401 = await agent.get("/settings/connections").expect(200);
     expect(after401.body.connections).toEqual([expect.objectContaining({ provider: "unisms", status: "failed" })]);
+    // Definite rejections (400 and 401) refund the test SMS quota claim so used stays at 1 (M2).
+    const usageAfterRejections = await agent.get("/usage").expect(200);
+    expect(usageAfterRejections.body.sms).toMatchObject({ used: 1, limit: 50 });
 
     // Disconnect via DELETE /settings/connections/unisms.
     await agent.delete("/settings/connections/unisms").expect(204);
     const afterDel = await agent.get("/settings/connections").expect(200);
     expect(afterDel.body.connections).toEqual([]);
+
+    // Disconnecting UniSMS permanently opts the workspace out of shared operator fallback until reconnected (H1).
+    const prevShared = {
+      SHARED_UNISMS_KEY: process.env.SHARED_UNISMS_KEY,
+      UNISMS_SECRET_KEY: process.env.UNISMS_SECRET_KEY,
+      UNISMS_SENDER_ID: process.env.UNISMS_SENDER_ID,
+    };
+    try {
+      process.env.SHARED_UNISMS_KEY = "open";
+      process.env.UNISMS_SECRET_KEY = "unisms_synth_shared_op_key"; // gitleaks:allow
+      process.env.UNISMS_SENDER_ID = "Daloy";
+      const wf = (await agent.post("/workflows").send({ name: "SMS Alert", slug: `sms-alert-${seq}` }).expect(201)).body as { id: string };
+      const smsDef = {
+        trigger: { type: "manual", config: {} },
+        steps: [{ id: "send_sms", type: "sms", config: { to: "+639171234567", message: "Alert" } }],
+        edges: [],
+      };
+      await agent.post(`/workflows/${wf.id}/versions`).send({ definition: smsDef, publish: true }).expect(400);
+    } finally {
+      for (const [k, v] of Object.entries(prevShared)) {
+        if (v === undefined) delete process.env[k];
+        else process.env[k] = v;
+      }
+    }
   });
 
   it("blocks test SMS with 429 on preview plan (sms: 0)", async () => {

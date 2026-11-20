@@ -226,7 +226,8 @@ async function runStep(deps: FullDeps, step: Step, input: unknown, ctx: Expressi
       const aiRes = await runAi(step.config, (input as AiInput).input, { connection, model, attempt, files });
       if (step.config.task === "extract" && refs.length > 0 && aiRes.output && typeof aiRes.output === "object") {
         const out = aiRes.output as Record<string, unknown>;
-        if (typeof out.reference === "string" && out.is_receipt !== "no") {
+        const hasIsReceiptField = "is_receipt" in (step.config.fields ?? {}) || "is_receipt" in ((step.config as { schema?: Record<string, unknown> }).schema ?? {});
+        if (typeof out.reference === "string" && (out.is_receipt === "yes" || (hasIsReceiptField && out.is_receipt !== "no"))) {
           const flag = await checkReceiptReference(deps.db, {
             userId,
             runId,
@@ -340,16 +341,40 @@ async function runStep(deps: FullDeps, step: Step, input: unknown, ctx: Expressi
     }
     case "meta_reply": {
       const cfg = input as MetaReplyInput;
-      if (mock) return { output: { mocked: true, recipientId: cfg.recipientId, channel: cfg.channel, text: cfg.text } };
       const recipientId = cfg.recipientId.trim();
       const body = cfg.text.trim();
+      const channel = cfg.channel?.trim() || undefined;
       if (!recipientId) throw new StepError("Meta reply needs a recipient id.", false);
       if (!body) throw new StepError("Meta reply message cannot be empty.", false);
       if (body.length > 2000) throw new StepError("Meta reply message can be at most 2,000 characters.", false);
-      const ref = (ctx.trigger as { reference?: unknown; messageId?: unknown } | null)?.reference ?? (ctx.trigger as { messageId?: unknown } | null)?.messageId;
+      const trig = (ctx.trigger ?? {}) as Record<string, unknown>;
+      if (typeof trig.senderId === "string" && trig.senderId.trim() && recipientId !== trig.senderId.trim()) {
+        throw new StepError("Meta reply recipient must match the incoming message sender.", false);
+      }
+      if (channel && typeof trig.channel === "string" && trig.channel.trim() && channel !== trig.channel.trim()) {
+        throw new StepError("Meta reply channel must match the incoming message channel.", false);
+      }
+      if (mock) return { output: { mocked: true, recipientId: cfg.recipientId, channel: cfg.channel, text: cfg.text } };
+      const ref = trig.reference ?? trig.messageId;
       const reference = typeof ref === "string" ? ref : runId;
-      const channel = cfg.channel?.trim() || undefined;
-      const d = await queueDelivery(deps.db, { userId, runId, stepId: step.id, provider: "meta_messenger", reference, payload: { recipientId, ...(channel ? { channel } : {}), text: body } });
+      const inboundTimestamp = typeof trig.timestamp === "string" && trig.timestamp.trim() ? trig.timestamp.trim() : undefined;
+      const receivingPageId = typeof trig.pageId === "string" && trig.pageId.trim() ? trig.pageId.trim() : undefined;
+      const receivingInstagramAccountId = typeof trig.instagramAccountId === "string" && trig.instagramAccountId.trim() ? trig.instagramAccountId.trim() : undefined;
+      const d = await queueDelivery(deps.db, {
+        userId,
+        runId,
+        stepId: step.id,
+        provider: "meta_messenger",
+        reference,
+        payload: {
+          recipientId,
+          ...(channel ? { channel } : {}),
+          text: body,
+          ...(inboundTimestamp ? { inboundTimestamp } : {}),
+          ...(receivingPageId ? { receivingPageId } : {}),
+          ...(receivingInstagramAccountId ? { receivingInstagramAccountId } : {}),
+        },
+      });
       return { output: { deliveryId: d.id, reference, state: d.state, recipientId } };
     }
     case "payment_status": {

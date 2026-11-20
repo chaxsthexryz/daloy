@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 import type { Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { freshDatabase } from "../../../test/db";
-import { cycleStart, mailboxCap, manilaDay, nextCycleStart, claimUsage, planOf, PLANS, QuotaError, UPLOADS_WITHOUT_PLAN, usageSummary } from "./usage";
+import { cycleStart, mailboxCap, manilaDay, nextCycleStart, claimUsage, planOf, PLANS, QuotaError, refundUsage, UPLOADS_WITHOUT_PLAN, usageSummary } from "./usage";
 import { usageClaims, usageCounts, users, workflows, workflowVersions } from "./schema";
 import type { Db } from "./index";
 
@@ -203,6 +203,27 @@ describe("usage", () => {
     const unplanned = await newUser(null);
     await claimUsage(db, unplanned, "sms", { n: 5, now: noon });
     expect(await used(unplanned, "sms")).toEqual(["2026-11-01:5"]);
+  });
+
+  it("refuses a reused claim key after a workspace is moved to preview (sms limit 0) and supports refundUsage", async () => {
+    const u = await newUser("pilot", "2026-11-01");
+    await claimUsage(db, u, "sms", { n: 1, key: "delivery:1", now: noon });
+    expect(await used(u, "sms")).toEqual(["2026-11-01:1"]);
+
+    // Downgrade workspace to preview (sms limit 0): reusing the old key must throw QuotaError.
+    await db.update(users).set({ plan: "preview" }).where(eq(users.id, u));
+    await expect(claimUsage(db, u, "sms", { n: 1, key: "delivery:1", now: noon })).rejects.toBeInstanceOf(QuotaError);
+
+    // Move back to pilot and refund the key: counter drops to 0 and the key can be claimed again.
+    await db.update(users).set({ plan: "pilot" }).where(eq(users.id, u));
+    await refundUsage(db, u, "sms", { n: 1, key: "delivery:1", now: noon });
+    expect(await used(u, "sms")).toEqual(["2026-11-01:0"]);
+    // A second refund with the same key is a no-op.
+    await refundUsage(db, u, "sms", { n: 1, key: "delivery:1", now: noon });
+    expect(await used(u, "sms")).toEqual(["2026-11-01:0"]);
+    // Re-claiming the key now increments again.
+    await claimUsage(db, u, "sms", { n: 1, key: "delivery:1", now: noon });
+    expect(await used(u, "sms")).toEqual(["2026-11-01:1"]);
   });
 });
 

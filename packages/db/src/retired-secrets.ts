@@ -1,5 +1,5 @@
 import { and, asc, eq, gt, inArray, isNotNull, lte, sql } from "drizzle-orm";
-import { decryptSecret, redactSecrets, secretForms } from "./crypto";
+import { decryptSecret, extractRetiredSecretValues, redactSecrets, secretForms } from "./crypto";
 import type { Db } from "./index";
 import { calendarEvents, connections, deliveries, emailSources, mailSenders, payments, requests, retiredSecrets, runs, stepRuns, workflows, workflowVersions } from "./schema";
 
@@ -395,7 +395,8 @@ export async function purgeRetiredSecrets(db: Db, secretsKey: Buffer, opts: Purg
       const deletableIds: string[] = [];
       for (const row of expired) {
         try {
-          values.push(decryptSecret(secretsKey, userId, row.name, row));
+          const plaintext = decryptSecret(secretsKey, userId, row.name, row);
+          values.push(...extractRetiredSecretValues(row.name, plaintext));
           deletableIds.push(row.id);
         } catch {
           // Skip rows that fail decryption: never delete a retired secret without scrubbing its value first.

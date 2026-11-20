@@ -6,7 +6,7 @@ import type { Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { freshDatabase } from "../../../test/db";
 import { startFakeProviders, type FakeProviders } from "../../../test/fake-providers";
-import { saveConnection } from "./connections";
+import { removeConnection, saveConnection } from "./connections";
 import { secretValuesToHide } from "./crypto";
 import { queueDelivery, runDueDeliveries } from "./deliveries";
 import type { Db } from "./index";
@@ -18,11 +18,13 @@ import {
   metaIdentity,
   metaSend,
   MetaImageError,
+  MetaTransientImageError,
   normalizeReceiptRef,
   parseMetaWebhook,
   verifyMetaSignature,
 } from "./meta";
-import { connections, deliveries, runs, users, workflows, workflowVersions } from "./schema";
+import { purgeRetiredSecrets } from "./retired-secrets";
+import { connections, deliveries, retiredSecrets, runs, users, workflows, workflowVersions } from "./schema";
 
 const KEY = randomBytes(32);
 const PAGE_TOKEN = "meta_page_token_synthetic_001"; // gitleaks:allow
@@ -50,6 +52,8 @@ beforeAll(async () => {
     if (req.url === "/svg-as-png") return void res.writeHead(200, { "content-type": "image/png" }).end("<svg xmlns='http://www.w3.org/2000/svg'></svg>");
     if (req.url === "/redirect") return void res.writeHead(302, { location: "/receipt.jpg" }).end();
     if (req.url === "/too-big") return void res.writeHead(200, { "content-type": "image/jpeg" }).end(Buffer.concat([JPEG_BYTES, Buffer.alloc(5 * 1024 * 1024 + 64, 0x41)]));
+    if (req.url === "/cdn-503") return void res.writeHead(503).end("unavailable");
+    if (req.url === "/cdn-429") return void res.writeHead(429).end("rate limited");
     res.writeHead(404).end("not found");
   });
   await new Promise<void>((r) => cdnServer.listen(0, "127.0.0.1", r));
@@ -159,6 +163,12 @@ describe("Meta webhook signature and challenge helpers", () => {
     };
     expect(parseMetaWebhook(igBody, dest)).toHaveLength(1);
     expect(parseMetaWebhook(igBody, dest)[0]).toMatchObject({ channel: "instagram", senderId: "igsid-9", messageId: "m_ig_1" });
+    // Self-sender events (sender.id === pageId or instagramAccountId) are ignored even without is_echo (L1).
+    const selfBody = {
+      object: "page",
+      entry: [{ id: "100200300", messaging: [{ sender: { id: "100200300" }, timestamp: 1700000000020, message: { mid: "m_self", text: "from page" } }] }],
+    };
+    expect(parseMetaWebhook(selfBody, dest)).toEqual([]);
     // Without instagramAccountId configured, IG events are ignored.
     expect(parseMetaWebhook(igBody, { pageId: "100200300", webhookPath: "p" })).toEqual([]);
   });
@@ -208,6 +218,9 @@ describe("Meta CDN host allowlist, SSRF protection, and magic-byte validation", 
     await expect(downloadMetaImage(`${cdnBase}/svg-as-png`, { urls })).rejects.toThrow(MetaImageError);
     await expect(downloadMetaImage(`${cdnBase}/redirect`, { urls })).rejects.toThrow(MetaImageError);
     await expect(downloadMetaImage(`${cdnBase}/too-big`, { urls })).rejects.toThrow(MetaImageError);
+    // Transient CDN errors (503, 429) throw MetaTransientImageError so webhook intake can ask Meta to retry (M7).
+    await expect(downloadMetaImage(`${cdnBase}/cdn-503`, { urls })).rejects.toThrow(MetaTransientImageError);
+    await expect(downloadMetaImage(`${cdnBase}/cdn-429`, { urls })).rejects.toThrow(MetaTransientImageError);
     // Even with metaCdn override, unrelated origins remain rejected.
     await expect(downloadMetaImage("https://evil.example/receipt.jpg", { urls })).rejects.toThrow(MetaImageError);
   });
@@ -340,6 +353,56 @@ describe("Meta reply delivery, 24-hour window, IV-fenced auth failure, and secre
 
     // Ensure metaSend never echoes the bearer token in thrown error messages.
     await expect(metaSend(fake.urls, NEW_TOKEN, { recipientId: "psid-1", text: "x" })).resolves.toMatchObject({ recipientId: "psid-1" });
+    // 200 without message_id throws ambiguous ProviderError (M3).
+    fake.once("/v21.0/me/messages", { status: 200, body: { recipient_id: "psid-1" } });
+    await expect(metaSend(fake.urls, NEW_TOKEN, { recipientId: "psid-1", text: "x" })).rejects.toMatchObject({ kind: "ambiguous" });
     expect(d5.id).toBeTruthy();
+
+    // 7. Dispatch-time 24-hour window check and receiving Page ID verification (M6).
+    await saveConnection(db, KEY, userId, "meta_messenger", {
+      account: "Tindahan ni Ana",
+      credential: JSON.stringify({ pageAccessToken: NEW_TOKEN, appSecret: APP_SECRET, verifyToken: VERIFY_TOKEN }),
+      destination: { pageId: "100200300", pageName: "Tindahan ni Ana", webhookPath: randomBytes(32).toString("base64url") },
+    });
+    const staleIso = new Date(Date.now() - 25 * 3600_000).toISOString();
+    const dStale = await queueDelivery(db, {
+      userId,
+      runId,
+      stepId: "reply_stale_local",
+      provider: "meta_messenger",
+      reference: "M-7",
+      payload: { recipientId: "psid-1", text: "Too late", inboundTimestamp: staleIso, receivingPageId: "100200300" },
+    });
+    const beforeStaleCount = fake.meta.messages.length;
+    await runDueDeliveries(db, KEY, fake.urls);
+    const [rowStale] = await db.select().from(deliveries).where(eq(deliveries.id, dStale.id));
+    expect(rowStale).toMatchObject({ state: "failed", errorKind: "invalid" });
+    expect(rowStale?.lastError).toContain("24-hour reply window");
+    expect(fake.meta.messages).toHaveLength(beforeStaleCount);
+
+    const dWrongPage = await queueDelivery(db, {
+      userId,
+      runId,
+      stepId: "reply_wrong_page",
+      provider: "meta_messenger",
+      reference: "M-8",
+      payload: { recipientId: "psid-1", text: "Wrong page", receivingPageId: "999999999" },
+    });
+    await runDueDeliveries(db, KEY, fake.urls);
+    const [rowWrongPage] = await db.select().from(deliveries).where(eq(deliveries.id, dWrongPage.id));
+    expect(rowWrongPage).toMatchObject({ state: "needs_review", errorKind: "destination_changed" });
+
+    // 8. Disconnecting retires the Meta credential and keeps all 3 tokens in secretValuesToHide and purgeRetiredSecrets (M8).
+    await removeConnection(db, userId, "meta_messenger");
+    const hiddenAfterDisconnect = await secretValuesToHide(db, KEY, userId);
+    expect(hiddenAfterDisconnect).toEqual(expect.arrayContaining([PAGE_TOKEN, NEW_TOKEN, APP_SECRET, VERIFY_TOKEN]));
+
+    await db.update(runs).set({ triggerPayload: { leaked: `${PAGE_TOKEN} ${APP_SECRET} ${VERIFY_TOKEN}` } }).where(eq(runs.id, runId));
+    await db.update(retiredSecrets).set({ retiredAt: new Date(Date.now() - 100 * 86_400_000) }).where(eq(retiredSecrets.userId, userId));
+    await purgeRetiredSecrets(db, KEY);
+    const [scrubbedRun] = await db.select().from(runs).where(eq(runs.id, runId));
+    expect(JSON.stringify(scrubbedRun?.triggerPayload)).not.toContain(PAGE_TOKEN);
+    expect(JSON.stringify(scrubbedRun?.triggerPayload)).not.toContain(APP_SECRET);
+    expect(JSON.stringify(scrubbedRun?.triggerPayload)).not.toContain(VERIFY_TOKEN);
   });
 });

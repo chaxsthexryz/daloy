@@ -1,6 +1,7 @@
 import { createHash, createSign, randomBytes } from "node:crypto";
-import { normalizePhMobile, SMS_MAX_CHARS } from "@daloy/engine";
+import { normalizePhMobile, parseRetryAfter, SMS_MAX_CHARS } from "@daloy/engine";
 import * as z from "zod";
+import { redactSecrets, secretForms } from "./crypto";
 
 /**
  * Google Sheets, Slack, Outlook (Microsoft Graph) and Teams Workflows, called with fetch. Every failure becomes a ProviderError whose kind says what the caller
@@ -119,7 +120,8 @@ export async function call(url: string, init: RequestInit, timeoutMs: number, wr
     const text = await res.text();
     let body: Record<string, unknown> = {};
     try {
-      body = text ? (JSON.parse(text) as Record<string, unknown>) : {};
+      const parsed: unknown = text ? JSON.parse(text) : {};
+      body = parsed !== null && typeof parsed === "object" ? (parsed as Record<string, unknown>) : {};
     } catch {
       body = {};
     }
@@ -132,10 +134,8 @@ export async function call(url: string, init: RequestInit, timeoutMs: number, wr
   }
 }
 
-export const retryAfter = (headers: Headers) => {
-  const s = Number(headers.get("retry-after"));
-  return Number.isFinite(s) && s > 0 ? s * 1000 : undefined;
-};
+export const MAX_PROVIDER_RETRY_AFTER_MS = 10 * 60_000;
+export const retryAfter = (headers: Headers) => parseRetryAfter(headers.get("retry-after"), MAX_PROVIDER_RETRY_AFTER_MS);
 
 // ---------------------------------------------------------------- Google Sheets
 
@@ -538,7 +538,7 @@ async function telegramCall(urls: ProviderUrls, token: string, method: string, p
   const res = await call(`${urls.telegram}/bot${token}/${method}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(params) }, urls.timeoutMs ?? 10_000, write, "Telegram");
   if (res.status === 429) {
     const s = Number((res.body.parameters as { retry_after?: unknown } | undefined)?.retry_after);
-    throw new ProviderError("Telegram is limiting requests right now. Daloy will try again.", "quota", Number.isFinite(s) && s > 0 ? s * 1000 : retryAfter(res.headers));
+    throw new ProviderError("Telegram is limiting requests right now. Daloy will try again.", "quota", Number.isFinite(s) && s > 0 ? Math.min(s * 1000, MAX_PROVIDER_RETRY_AFTER_MS) : retryAfter(res.headers));
   }
   if (res.status >= 500) throw new ProviderError(`Telegram answered ${res.status}.`, write ? "ambiguous" : "unavailable");
   if (res.status === 409) throw new ProviderError(TELEGRAM_WEBHOOK_SET, "invalid");
@@ -780,12 +780,8 @@ export async function teamsPost(urls: ProviderUrls, webhookUrl: string, text: st
 export type UnismsMessage = { recipient: string; content: string; senderId?: string; metadata?: Record<string, string> };
 
 function redactUnisms(text: string, secretKey: string): string {
-  let out = text;
-  if (secretKey) {
-    out = out.replaceAll(secretKey, "[secret]");
-    const b64 = Buffer.from(`${secretKey}:`).toString("base64");
-    if (b64) out = out.replaceAll(b64, "[secret]");
-  }
+  const forms = secretKey ? secretForms([secretKey, `${secretKey}:`, Buffer.from(`${secretKey}:`).toString("base64")]) : [];
+  const out = (redactSecrets(text, forms) as string) ?? "";
   return out.replace(/\bBasic\s+[A-Za-z0-9+/=]{6,}/gi, "Basic [secret]");
 }
 
@@ -796,7 +792,7 @@ function redactUnisms(text: string, secretKey: string): string {
  * - 400/4xx -> invalid (never retried)
  * - 5xx / timeout / dropped connection after connect -> ambiguous (parks in needs_review, never blindly double-sent)
  */
-export async function unismsSend(urls: ProviderUrls, secretKey: string, sms: UnismsMessage) {
+export async function unismsSend(urls: ProviderUrls, secretKey: string, sms: UnismsMessage, opts?: { shared?: boolean }) {
   const phone = normalizePhMobile(sms.recipient);
   if (!phone.ok) throw new ProviderError(phone.error, "invalid");
   const content = sms.content.trim();
@@ -820,8 +816,20 @@ export async function unismsSend(urls: ProviderUrls, secretKey: string, sms: Uni
   }
   if (res.status >= 500) throw new ProviderError(`UniSMS answered ${res.status}.`, "ambiguous");
   if (res.status >= 200 && res.status < 300 && res.body.success !== false) {
-    return { id: String(res.body.id ?? res.body.message_id ?? res.body.reference_id ?? ""), recipient: phone.value, senderId, sent: true };
+    const rawId =
+      res.body.id ??
+      res.body.message_id ??
+      res.body.reference_id ??
+      (res.body.data && typeof res.body.data === "object"
+        ? ((res.body.data as Record<string, unknown>).id ?? (res.body.data as Record<string, unknown>).message_id)
+        : undefined);
+    const id = typeof rawId === "string" || typeof rawId === "number" ? String(rawId).trim() : "";
+    if (!id) {
+      throw new ProviderError("UniSMS returned an unexpected response without a message ID, so Daloy cannot tell whether the SMS went through.", "ambiguous");
+    }
+    return { id, recipient: phone.value, senderId, sent: true };
   }
+  if (opts?.shared) throw new ProviderError(`UniSMS rejected the SMS (${res.status}).`, "invalid");
   const rawMsg = typeof res.body.message === "string" ? res.body.message : typeof res.body.error === "string" ? res.body.error : "";
   const cleanMsg = redactUnisms(rawMsg, secretKey).slice(0, 200);
   throw new ProviderError(`UniSMS rejected the SMS${cleanMsg ? `: ${cleanMsg}` : ` (${res.status})`}.`, "invalid");

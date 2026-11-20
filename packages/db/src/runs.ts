@@ -3,6 +3,7 @@ import { and, desc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import { approvals, runKeys, runs, stepRuns, workflows, workflowVersions } from "./schema";
 import { saveUploads, type NewUpload } from "./uploads";
+import { claimUsageInTx } from "./usage";
 
 /** pg-boss queue the worker takes runs from. Jobs carry { runId } and use the run id as singletonKey. */
 export const RUN_QUEUE = "advance-run";
@@ -61,9 +62,14 @@ export async function createKeyedRun(db: AnyDb, workflowId: string, workflowVers
     return await db.transaction(async (tx) => {
       const { uploads, ...runOpts } = opts;
       const runId = await createRun(tx, workflowVersionId, triggerPayload, runOpts);
-      if (uploads) await saveUploads(tx, { userId: uploads.userId, runId, files: uploads.files });
       const claimed = await tx.insert(runKeys).values({ workflowId, test, key, runId }).onConflictDoNothing().returning({ runId: runKeys.runId });
       if (claimed.length === 0) throw new Duplicate();
+      if (uploads) {
+        if (uploads.claimKey && uploads.files.length > 0) {
+          await claimUsageInTx(tx, uploads.userId, "upload", { n: uploads.files.length, key: uploads.claimKey });
+        }
+        await saveUploads(tx, { userId: uploads.userId, runId, files: uploads.files });
+      }
       return { runId };
     });
   } catch (err) {
@@ -79,7 +85,7 @@ export async function keyedRun(db: AnyDb, workflowId: string, key: string, test 
 }
 
 /** uploads: the files of a hosted form submission, stored in the same transaction as the run. */
-type RunOpts = { test?: boolean; live?: boolean; aiLive?: boolean; testChoices?: unknown; uploads?: { userId: string; files: NewUpload[] } };
+type RunOpts = { test?: boolean; live?: boolean; aiLive?: boolean; testChoices?: unknown; uploads?: { userId: string; files: NewUpload[]; claimKey?: string } };
 
 /**
  * Throws WorkflowPausedError when the workflow that owns this version is paused. Call it in the transaction that inserts

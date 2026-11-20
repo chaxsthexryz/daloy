@@ -28,7 +28,22 @@ export function NewAutomationPage({ email }: { email: string }) {
     try {
       const wf = await api<Workflow>("POST", "/workflows", { name, slug: slugify(name) || "workflow" });
       const t = templates.find((t) => t.slug === template);
-      if (t) await api("POST", `/workflows/${wf.id}/versions`, { definition: t.definition, publish: false });
+      if (t) {
+        const ownerEmail = email.trim();
+        const definition = ownerEmail
+          ? {
+              ...t.definition,
+              steps: t.definition.steps.map((s) => {
+                const cfg = s.config as Record<string, unknown>;
+                const nextCfg = { ...cfg };
+                if (nextCfg.to === "owner@example.com") nextCfg.to = ownerEmail;
+                if (nextCfg.approver === "owner@example.com") nextCfg.approver = ownerEmail;
+                return { ...s, config: nextCfg };
+              }),
+            }
+          : t.definition;
+        await api("POST", `/workflows/${wf.id}/versions`, { definition, publish: false });
+      }
       location.hash = `#/w/${wf.id}`;
     } catch (err) {
       setError(err instanceof ApiError && err.status === 409 ? t("An automation with that name already exists.") : (err as Error).message);

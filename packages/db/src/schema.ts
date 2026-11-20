@@ -21,6 +21,7 @@ export const users = pgTable("users", {
   plan: text("plan"),
   planStartedOn: date("plan_started_on"),
   language: text("language", { enum: LANGUAGES }).notNull().default("en"),
+  unismsDisconnectedAt: ts("unisms_disconnected_at"),
 }, (t) => [
   check("users_plan", sql`${t.plan} in ('preview', 'pilot', 'business', 'business_plus')`),
   check("users_language", sql`${t.language} in ('en', 'tl')`),
@@ -642,7 +643,7 @@ export const deliveries = pgTable(
     stepId: text("step_id").notNull(),
     provider: text("provider", { enum: PROVIDERS }).notNull(),
     reference: text("reference").notNull(),
-    payload: jsonb("payload").$type<{ row: string[] } | { bookingId: string } | { text: string } | { recipientId: string; channel?: string; text: string } | { fields?: Record<string, string>; title?: string; name?: string; desc?: string } | { to: string; subject: string; text: string } | { to: string; message: string; senderId?: string } | { files: FileRef[] }>().notNull(),
+    payload: jsonb("payload").$type<{ row: string[] } | { bookingId: string } | { text: string } | { recipientId: string; channel?: string; text: string; inboundTimestamp?: string; receivingPageId?: string; receivingInstagramAccountId?: string } | { fields?: Record<string, string>; title?: string; name?: string; desc?: string } | { to: string; subject: string; text: string } | { to: string; message: string; senderId?: string } | { files: FileRef[] }>().notNull(),
     state: text("state", { enum: DELIVERY_STATES }).notNull().default("queued"),
     checkFirst: boolean("check_first").notNull().default(false),
     attempts: integer("attempts").notNull().default(0),

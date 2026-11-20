@@ -581,7 +581,7 @@ export const TEMPLATES = [
           id: "approve",
           type: "approval",
           config: {
-            to: "owner@example.com",
+            approver: "owner@example.com",
             subject: "Verify receipt {{steps.read_receipt.output.reference}} ({{steps.read_receipt.output.amount}})",
             message: "A customer sent a receipt photo on {{trigger.channel}}.\nProvider: {{steps.read_receipt.output.provider}}\nReference: {{steps.read_receipt.output.reference}}\nAmount: {{steps.read_receipt.output.amount}}\nSender: {{steps.read_receipt.output.sender_name}}\nDate: {{steps.read_receipt.output.date}}\n{{steps.read_receipt.output.duplicate_warning}}\nCheck your real GCash or bank inbox before approving. A screenshot is never proof of payment.",
             timeoutSeconds: 86_400,

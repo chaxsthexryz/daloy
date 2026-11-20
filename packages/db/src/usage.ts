@@ -93,11 +93,11 @@ export async function claimUsageInTx(tx: Pick<Db, "select" | "insert">, userId: 
   const limit = limitFor(plan, kind);
   const period = periodOf(kind, startedOn, today);
   const over = () => new QuotaError(quotaMessage(kind, limit!, resetsOn(kind, startedOn, today)), kind);
+  if (limit !== null && n > limit) throw over();
   if (opts.key !== undefined) {
     const fresh = await tx.insert(usageClaims).values({ userId, kind, key: opts.key }).onConflictDoNothing().returning({ key: usageClaims.key });
     if (fresh.length === 0) return;
   }
-  if (limit !== null && n > limit) throw over();
   const counted = await tx
     .insert(usageCounts)
     .values({ userId, kind, period, used: n })
@@ -117,6 +117,33 @@ export async function claimUsageInTx(tx: Pick<Db, "select" | "insert">, userId: 
  */
 export async function claimUsage(db: Pick<Db, "select" | "transaction">, userId: string, kind: UsageKind, opts: { n?: number; key?: string; now?: Date } = {}) {
   await db.transaction((tx) => claimUsageInTx(tx, userId, kind, opts));
+}
+
+/**
+ * Refunds n units of reserved quota after a definite pre-send or provider rejection (not used for ambiguous outcomes).
+ * When a key is given, the claim row is removed first and the counter is decremented only if that claim existed.
+ */
+export async function refundUsage(db: Pick<Db, "select" | "transaction">, userId: string, kind: UsageKind, opts: { n?: number; key?: string; now?: Date } = {}) {
+  const n = opts.n ?? 1;
+  if (n <= 0) return;
+  await db.transaction(async (tx) => {
+    let claimTime = opts.now;
+    if (opts.key !== undefined) {
+      const removed = await tx
+        .delete(usageClaims)
+        .where(and(eq(usageClaims.userId, userId), eq(usageClaims.kind, kind), eq(usageClaims.key, opts.key)))
+        .returning({ key: usageClaims.key, createdAt: usageClaims.createdAt });
+      if (removed.length === 0) return;
+      claimTime = claimTime ?? removed[0]!.createdAt;
+    }
+    const today = manilaDay(claimTime);
+    const { startedOn } = await planOf(tx, userId);
+    const period = periodOf(kind, startedOn, today);
+    await tx
+      .update(usageCounts)
+      .set({ used: sql`greatest(0, ${usageCounts.used} - ${n})` })
+      .where(and(eq(usageCounts.userId, userId), eq(usageCounts.kind, kind), eq(usageCounts.period, period)));
+  });
 }
 
 /** What the console shows: plan, limits, use so far and when each counter resets. */

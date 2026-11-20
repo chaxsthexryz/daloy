@@ -70,3 +70,23 @@ export function decideRetry(
  * Daloy never relies on it, which is why an unknown outcome on a step that is not idempotent waits for review.
  */
 export const idempotencyKey = (runId: string, stepId: string) => `${runId}:${stepId}`;
+
+/**
+ * Parses a Retry-After header value (positive delta seconds or HTTP-date) into milliseconds from `now`,
+ * clamped to `maxDelayMs` when given. Returns undefined when absent, non-positive, or unparseable.
+ */
+export function parseRetryAfter(value: string | null | undefined, maxDelayMs?: number, now = Date.now()): number | undefined {
+  if (!value) return undefined;
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  let ms: number | undefined;
+  if (/^\d+(\.\d+)?$/.test(trimmed)) {
+    const s = Number(trimmed);
+    if (Number.isFinite(s) && s > 0) ms = Math.round(s * 1000);
+  } else {
+    const at = Date.parse(trimmed);
+    if (Number.isFinite(at) && at > now) ms = at - now;
+  }
+  if (ms === undefined || ms <= 0) return undefined;
+  return maxDelayMs !== undefined ? Math.min(ms, maxDelayMs) : ms;
+}

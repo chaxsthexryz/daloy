@@ -1,6 +1,6 @@
 import { publicCopy } from "./public-copy";
 import { createHmac, randomInt, randomUUID, timingSafeEqual } from "node:crypto";
-import { assertNotPaused, claimUsage, constantTimeEqual, downloadMetaImage, keyedRun, MetaImageError, parseMetaCredential, parseMetaWebhook, QuotaError, readBrand, saveUploads, verifyMetaSignature, workspaceLanguage, businessProfiles, connectionCredential, connections, createKeyedRun, createRun, eventSeen, finishEvent, keptEvent, markPaymentPaid, markPaymentRefunded, centavosToPesos, paymongoMode, readSecret, recordEvent, requests, runs, triggers, verifyPaymongoSignature, WorkflowPausedError, workflows, workflowVersions, type Db, type NewUpload, type Payment } from "@daloy/db";
+import { assertNotPaused, claimUsage, constantTimeEqual, downloadMetaImage, keyedRun, MetaImageError, MetaTransientImageError, parseMetaCredential, parseMetaWebhook, QuotaError, readBrand, saveUploads, usageSummary, verifyMetaSignature, workspaceLanguage, businessProfiles, connectionCredential, connections, createKeyedRun, createRun, eventSeen, finishEvent, keptEvent, markPaymentPaid, markPaymentRefunded, centavosToPesos, paymongoMode, readSecret, recordEvent, requests, runs, triggers, verifyPaymongoSignature, WorkflowPausedError, workflows, workflowVersions, type Db, type NewUpload, type Payment } from "@daloy/db";
 import { definitionSchema, FILE_MAX_BYTES, FILES_PER_FIELD, FILES_PER_SUBMISSION, fileType, OFFICE_REQUEST, parsePayload, PURCHASE_REQUEST, safeFileName, type FileRef, type FormField, type Resource } from "@daloy/engine";
 import {
   BadRequestException,
@@ -22,6 +22,7 @@ import {
   Post,
   Req,
   Res,
+  ServiceUnavailableException,
   UnauthorizedException,
   UploadedFiles,
   UseGuards,
@@ -318,28 +319,27 @@ export class MetaHooksController {
       if (pending.length === 0) continue;
 
       const downloaded: { name: string; type: "jpeg" | "png" | "webp"; data: Buffer }[] = [];
-      for (let i = 0; i < ev.imageUrls.length; i++) {
-        try {
-          downloaded.push(await downloadMetaImage(ev.imageUrls[i]!, { urls: this.config.providers, index: i + 1 }));
-        } catch (err) {
-          if (err instanceof MetaImageError) continue;
-          throw err;
+      if (ev.imageUrls.length > 0) {
+        const { upload } = await usageSummary(this.db, found.userId);
+        const canUpload = upload.limit === null || upload.used < upload.limit;
+        if (canUpload) {
+          for (let i = 0; i < ev.imageUrls.length; i++) {
+            try {
+              downloaded.push(await downloadMetaImage(ev.imageUrls[i]!, { urls: this.config.providers, index: i + 1 }));
+            } catch (err) {
+              if (err instanceof MetaImageError) continue;
+              if (err instanceof MetaTransientImageError) {
+                throw new ServiceUnavailableException("Meta image CDN is temporarily unavailable.");
+              }
+              throw err;
+            }
+          }
         }
       }
 
       for (const l of pending) {
         const cfg = savedTrigger(l.version.definition, "meta_dm") as { requireImage?: boolean } | undefined;
         if (cfg?.requireImage && downloaded.length === 0) continue;
-
-        if (downloaded.length > 0) {
-          const allowed = await claimUsage(this.db, found.userId, "upload", { n: downloaded.length, key: `meta-upload:${l.workflowId}:${ev.messageId}` })
-            .then(() => true)
-            .catch((err: unknown) => {
-              if (err instanceof QuotaError) return false;
-              throw err;
-            });
-          if (!allowed) continue;
-        }
 
         const runFiles: NewUpload[] = downloaded.map((img) => ({ id: randomUUID(), field: "image", name: img.name, type: img.type, data: img.data }));
         const imageRefs: FileRef[] = runFiles.map((f) => ({ id: f.id, name: f.name, type: f.type, size: f.data.length }));
@@ -350,9 +350,26 @@ export class MetaHooksController {
           text: ev.text,
           timestamp: ev.timestamp,
           image: imageRefs,
+          ...(found.conn.destination?.pageId ? { pageId: found.conn.destination.pageId } : {}),
+          ...(found.conn.destination?.instagramAccountId ? { instagramAccountId: found.conn.destination.instagramAccountId } : {}),
         };
-        const started = await createKeyedRun(this.db, l.workflowId, l.version.id, payload, key, runFiles.length > 0 ? { uploads: { userId: found.userId, files: runFiles } } : {}).catch((err: unknown) => {
+        const uploadClaimKey = `meta-upload:${l.workflowId}:${ev.messageId}`;
+        const started = await createKeyedRun(
+          this.db,
+          l.workflowId,
+          l.version.id,
+          payload,
+          key,
+          runFiles.length > 0 ? { uploads: { userId: found.userId, files: runFiles, claimKey: uploadClaimKey } } : {},
+        ).catch(async (err: unknown) => {
           if (err instanceof WorkflowPausedError) return null;
+          if (err instanceof QuotaError) {
+            if (cfg?.requireImage) return null;
+            return createKeyedRun(this.db, l.workflowId, l.version.id, { ...payload, image: [] }, key).catch((e: unknown) => {
+              if (e instanceof WorkflowPausedError) return null;
+              throw e;
+            });
+          }
           throw err;
         });
         if (started && !started.duplicate) {

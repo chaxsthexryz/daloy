@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { backoffDelayMs, FILE_MIME, type FileRef, type RetryPolicy } from "@daloy/engine";
 import { and, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
-import { connectionCredential, markConnectionFailed, PROVIDER_NAMES, sharedUnismsConfig } from "./connections";
+import { canUseSharedUnisms, connectionCredential, markConnectionFailed, PROVIDER_NAMES, sharedUnismsConfig } from "./connections";
 import { withGoogle } from "./google-access";
 import { freshToken, oauthProvider, slackToken, trelloAuthOf, withFreshToken, withRecordAuth } from "./oauth";
 import type { Db } from "./index";
@@ -9,9 +9,9 @@ import { airtableAdd, appendRowOnce, driveUpload, type DriveDestination, notionA
 import { bookingSuperseded, supersededSql } from "./bookings";
 import { bookingForCalendar } from "./calendar";
 import { metaSend, parseMetaCredential } from "./meta";
-import { bookings, calendarEvents, connections, deliveries, runs, type Provider } from "./schema";
+import { bookings, calendarEvents, connections, deliveries, runs, users, type Provider } from "./schema";
 import { readUpload } from "./uploads";
-import { claimUsageInTx, planOf, QuotaError } from "./usage";
+import { claimUsage, QuotaError, refundUsage } from "./usage";
 
 /**
  * Sheets rows, Slack and Teams notes and Outlook emails, delivered by the worker apart from the run that asked for them
@@ -55,10 +55,13 @@ const markerValue = () => randomBytes(6).toString("base64url");
  */
 export async function queueDelivery(db: Db, d: { userId: string; runId: string; stepId: string; provider: Provider; reference: string; payload: DeliveryPayload }): Promise<Delivery> {
   const [conn] = await db.select({ account: connections.account, destination: connections.destination, externalId: connections.externalId }).from(connections).where(and(eq(connections.userId, d.userId), eq(connections.provider, d.provider)));
+  const shared = !conn && d.provider === "unisms" && (await canUseSharedUnisms(db, d.userId)) ? sharedUnismsConfig() : null;
+  const pinnedAccount = conn?.account ?? (shared ? SHARED_UNISMS_ACCOUNT : "");
+  const pinnedDestination = conn?.destination ?? (shared ? { senderId: shared.senderId } : null);
   const sheet = d.provider === "google_sheets" ? { sheetMetaId: sql<number>`nextval('sheet_meta_seq')`, sheetMetaValue: markerValue() } : {};
   await db
     .insert(deliveries)
-    .values({ ...d, pinnedAccount: conn?.account ?? "", pinnedDestination: conn?.destination ?? null, pinnedExternalId: conn?.externalId ?? null, ...sheet })
+    .values({ ...d, pinnedAccount, pinnedDestination, pinnedExternalId: conn?.externalId ?? null, ...sheet })
     .onConflictDoNothing({ target: [deliveries.runId, deliveries.stepId] });
   const [row] = await db.select().from(deliveries).where(and(eq(deliveries.runId, d.runId), eq(deliveries.stepId, d.stepId)));
   return row!;
@@ -112,11 +115,11 @@ async function attempt(db: Db, key: Buffer, urls: ProviderUrls, d: Delivery): Pr
     }
     const shared = sharedUnismsConfig();
     if (!shared) return { state: "failed", error: `${name} is not connected. Connect it in Apps, then retry.`, kind: "not_connected" };
-    const { plan } = await planOf(db, d.userId);
-    if (plan === "preview") {
-      return { state: "failed", error: "SMS sending is not included on the Preview plan. Ask Daloy to move you to a paid plan.", kind: "plan_quota" };
-    }
-    if (plan === null) {
+    if (!(await canUseSharedUnisms(db, d.userId))) {
+      const [u] = await db.select({ plan: users.plan, unismsDisconnectedAt: users.unismsDisconnectedAt }).from(users).where(eq(users.id, d.userId));
+      if (u?.plan === "preview" && !u.unismsDisconnectedAt) {
+        return { state: "failed", error: "SMS sending is not included on the Preview plan. Ask Daloy to move you to a paid plan.", kind: "plan_quota" };
+      }
       return { state: "failed", error: `${name} is not connected. Connect it in Apps, then retry.`, kind: "not_connected" };
     }
     usingShared = true;
@@ -161,15 +164,17 @@ async function attempt(db: Db, key: Buffer, urls: ProviderUrls, d: Delivery): Pr
   const activeConn = conn;
   const destination = activeConn.destination!;
   const oauth = activeConn.authMethod === "oauth" ? oauthProvider(d.provider) : undefined;
+  let smsClaimNow: Date | undefined;
+  let smsSent = false;
   // null: the claim was lost partway through a Drive save, so the new holder owns what happens next.
   const send = async (tx: Pick<Db, "select" | "update" | "insert">): Promise<Outcome | null> => {
     if (d.provider === "unisms") {
-      // Claim 1 SMS unit atomically inside the booking-locked transaction, keyed by delivery id so retries never double-bill.
-      await claimUsageInTx(tx, d.userId, "sms", { n: 1, key: `delivery:${d.id}` });
       const p = d.payload as { to: string; message: string; senderId?: string };
-      const senderId = p.senderId || destination.senderId || "Unisoft";
+      // Never allow a workflow step to override the operator's UNISMS_SENDER_ID in shared fallback mode (H2).
+      const senderId = usingShared ? destination.senderId! : p.senderId || destination.senderId || "Unisoft";
       try {
-        const res = await unismsSend(urls, activeConn.credential, { recipient: p.to, content: p.message, senderId, metadata: { reference: d.reference, deliveryId: d.id } });
+        const res = await unismsSend(urls, activeConn.credential, { recipient: p.to, content: p.message, senderId, metadata: { reference: d.reference, deliveryId: d.id } }, { shared: usingShared });
+        smsSent = true;
         return { state: "delivered", result: res };
       } catch (err) {
         // Keep the quota claim committed when UniSMS may have sent the SMS (timeout / 5xx after connect).
@@ -225,8 +230,33 @@ async function attempt(db: Db, key: Buffer, urls: ProviderUrls, d: Delivery): Pr
     if (d.provider === "teams") return { state: "delivered", result: await teamsPost(urls, activeConn.credential, text) };
     if (d.provider === "telegram") return { state: "delivered", result: await telegramSend(urls, activeConn.credential, destination.chatId!, text) };
     if (d.provider === "meta_messenger") {
-      const m = d.payload as { recipientId?: string; channel?: string; text?: string };
+      const m = d.payload as {
+        recipientId?: string;
+        channel?: string;
+        text?: string;
+        inboundTimestamp?: string;
+        receivingPageId?: string;
+        receivingInstagramAccountId?: string;
+      };
       if (!m.recipientId || !m.text) return { state: "failed", error: "Missing recipient or message text for Meta reply.", kind: "invalid" };
+      if (
+        (m.receivingPageId && destination.pageId !== m.receivingPageId) ||
+        (m.channel === "instagram" && m.receivingInstagramAccountId && destination.instagramAccountId !== m.receivingInstagramAccountId)
+      ) {
+        return {
+          state: "needs_review",
+          error: `The ${name} connection changed since this message arrived, so it cannot be sent from ${describe(d.provider, destination)}.`,
+          kind: "destination_changed",
+        };
+      }
+      const inboundAt = m.inboundTimestamp ? Date.parse(m.inboundTimestamp) : Number.NaN;
+      if (Number.isFinite(inboundAt) && Date.now() - inboundAt > 24 * 3600_000) {
+        return {
+          state: "failed",
+          error: "Past Meta's 24-hour reply window. Reply directly from your Facebook Page or Instagram inbox.",
+          kind: "invalid",
+        };
+      }
       const { pageAccessToken } = parseMetaCredential(activeConn.credential);
       return { state: "delivered", result: await metaSend(urls, pageAccessToken, { recipientId: m.recipientId, channel: m.channel, text: m.text }) };
     }
@@ -236,10 +266,15 @@ async function attempt(db: Db, key: Buffer, urls: ProviderUrls, d: Delivery): Pr
     // An expiring OAuth token is refreshed before the booking-lock transaction opens, so the common refresh never needs
     // a second pool connection while the transaction holds one (decision 0058).
     if (oauth) await freshToken(db, key, urls, d.userId, oauth, activeConn);
+    // Reserve SMS quota durably before opening the booking-lock transaction or calling UniSMS (M1).
+    if (d.provider === "unisms") {
+      smsClaimNow = new Date();
+      await claimUsage(db, d.userId, "sms", { n: 1, key: `delivery:${d.id}`, now: smsClaimNow });
+    }
     // The run's booking link as it is now (its own booking step may have moved it), checked under a share lock held
     // until the provider answers: a cancel or reschedule either committed before this check (nothing is sent) or waits
     // for the call to return (decision 0032).
-    return await db.transaction(async (tx) => {
+    const outcome = await db.transaction(async (tx) => {
       const [run] = await tx.select({ bookingId: runs.bookingId, bookingVersion: runs.bookingVersion }).from(runs).where(eq(runs.id, d.runId));
       if (run && d.provider !== "google_calendar" && (await bookingSuperseded(tx, run, true))) {
         return { state: "failed", error: d.checkFirst ? `${BOOKING_CHANGED} An earlier attempt may have reached ${name}.` : BOOKING_CHANGED, kind: "booking_changed" } as const;
@@ -248,9 +283,21 @@ async function attempt(db: Db, key: Buffer, urls: ProviderUrls, d: Delivery): Pr
       if (d.provider === "google_calendar") await tx.execute(sql`select 1 from ${bookings} where ${bookings.id} = ${(d.payload as { bookingId: string }).bookingId} for share`);
       return send(tx);
     });
+    if (d.provider === "unisms" && outcome && outcome.state === "failed" && outcome.kind === "booking_changed" && smsClaimNow) {
+      await refundUsage(db, d.userId, "sms", { n: 1, key: `delivery:${d.id}`, now: smsClaimNow });
+    }
+    return outcome;
   } catch (err) {
     if (err instanceof QuotaError) {
       return { state: "failed", error: err.message, kind: "plan_quota" };
+    }
+    if (d.provider === "unisms") {
+      if (smsSent) {
+        return { state: "needs_review", error: `${name} sent this SMS, but Daloy could not record the outcome right away. ${reviewHint(d.provider, destination)}`, kind: "ambiguous" };
+      }
+      if (smsClaimNow && err instanceof ProviderError && err.kind !== "ambiguous") {
+        await refundUsage(db, d.userId, "sms", { n: 1, key: `delivery:${d.id}`, now: smsClaimNow });
+      }
     }
     const e = err instanceof ProviderError ? err : new ProviderError(err instanceof Error ? err.message : String(err), "unavailable");
     switch (e.kind) {
@@ -337,7 +384,8 @@ async function finish(db: Db, d: Delivery, o: Outcome) {
   // An ambiguous answer: the request may still be applied later. Sticky (OR), so no outcome can clear it.
   const sheetMarkerUncertain = sql`${deliveries.sheetMarkerUncertain} or ${o.state === "queued" && o.checkFirst === true}`;
   if (o.state === "queued" && d.attempts < DELIVERY_POLICY.maxAttempts) {
-    const delay = Math.max(backoffDelayMs(d.attempts, DELIVERY_POLICY), o.retryAfterMs ?? 0);
+    const retryAfterMs = o.retryAfterMs !== undefined ? Math.min(Math.max(0, o.retryAfterMs), DELIVERY_POLICY.maxDelayMs) : 0;
+    const delay = Math.max(backoffDelayMs(d.attempts, DELIVERY_POLICY), retryAfterMs);
     await db.update(deliveries).set({ state: "queued", lastError: o.error, errorKind: o.kind, checkFirst, sheetMarkerUncertain, nextAttemptAt: new Date(Date.now() + delay), updatedAt: sql`now()` }).where(claim);
     return;
   }

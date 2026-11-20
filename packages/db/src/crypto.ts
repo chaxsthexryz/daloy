@@ -75,15 +75,34 @@ export async function secretValuesToHide(db: Pick<Db, "execute">, key: Buffer, u
       return [];
     }
   };
-  const metaTokens = (r: EncryptedSecret & { name: string }) => {
+  const metaTokens = (plaintext: string): string[] => {
     try {
-      const parsed = JSON.parse(decryptSecret(key, userId, r.name, r)) as { pageAccessToken?: unknown; appSecret?: unknown; verifyToken?: unknown } | null;
+      const parsed = JSON.parse(plaintext) as { pageAccessToken?: unknown; appSecret?: unknown; verifyToken?: unknown } | null;
       return [parsed?.pageAccessToken, parsed?.appSecret, parsed?.verifyToken].filter((v): v is string => typeof v === "string" && v.length > 0);
     } catch {
       return [];
     }
   };
-  return rows.flatMap((r) => (r.kind === "oauth" ? tokens(r) : r.kind === "meta" ? metaTokens(r) : [decryptSecret(key, userId, r.name, r)]));
+  return rows.flatMap((r) => {
+    if (r.kind === "oauth") return tokens(r);
+    const plaintext = decryptSecret(key, userId, r.name, r);
+    if (r.kind === "meta" || r.name === "connection:meta_messenger") return [plaintext, ...metaTokens(plaintext)];
+    return [plaintext];
+  });
+}
+
+/** Extracts secret values from a decrypted secret or retired connection row (including all three Meta tokens for connection:meta_messenger). */
+export function extractRetiredSecretValues(name: string, plaintext: string): string[] {
+  if (name === "connection:meta_messenger") {
+    try {
+      const parsed = JSON.parse(plaintext) as { pageAccessToken?: unknown; appSecret?: unknown; verifyToken?: unknown } | null;
+      const tokens = [parsed?.pageAccessToken, parsed?.appSecret, parsed?.verifyToken].filter((v): v is string => typeof v === "string" && v.length > 0);
+      return [plaintext, ...tokens];
+    } catch {
+      return [plaintext];
+    }
+  }
+  return [plaintext];
 }
 
 /**

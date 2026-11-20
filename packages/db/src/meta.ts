@@ -37,6 +37,11 @@ export class MetaImageError extends Error {
   override name = "MetaImageError";
 }
 
+/** Transient Meta CDN failure (network timeout, HTTP 429, or 5xx): webhook returns 503 so Meta retries before run_keys is committed. */
+export class MetaTransientImageError extends Error {
+  override name = "MetaTransientImageError";
+}
+
 /** Parses the encrypted JSON credential for a meta_messenger connection. */
 export function parseMetaCredential(raw: string): MetaCredential {
   try {
@@ -119,6 +124,7 @@ export function parseMetaWebhook(body: unknown, dest: Partial<MetaDestination> |
       const mid = typeof ev.message.mid === "string" ? ev.message.mid.trim() : "";
       const senderId = ev.sender?.id !== undefined && ev.sender?.id !== null ? String(ev.sender.id).trim() : "";
       if (!mid || !senderId) continue;
+      if (senderId === expectedId || senderId === dest.pageId || (dest.instagramAccountId && senderId === dest.instagramAccountId)) continue;
       const text = typeof ev.message.text === "string" ? ev.message.text : "";
       const imageUrls: string[] = [];
       if (Array.isArray(ev.message.attachments)) {
@@ -223,6 +229,23 @@ function guardedLookup(resolve: MetaImageResolver): LookupFunction {
   }) as LookupFunction;
 }
 
+const MAX_CONCURRENT_META_DOWNLOADS = 4;
+let activeMetaDownloads = 0;
+const metaDownloadQueue: (() => void)[] = [];
+
+async function withDownloadSlot<T>(fn: () => Promise<T>): Promise<T> {
+  if (activeMetaDownloads >= MAX_CONCURRENT_META_DOWNLOADS) {
+    await new Promise<void>((resolve) => metaDownloadQueue.push(resolve));
+  }
+  activeMetaDownloads++;
+  try {
+    return await fn();
+  } finally {
+    activeMetaDownloads--;
+    metaDownloadQueue.shift()?.();
+  }
+}
+
 /**
  * Downloads one Meta image attachment with strict host allowlisting, IP-pinned DNS SSRF checks, no redirects,
  * 5 MB streaming size limit, 10s timeout, and magic-byte verification (JPEG, PNG, WebP only).
@@ -240,54 +263,65 @@ export async function downloadMetaImage(
   const maxBytes = opts.maxBytes ?? FILE_MAX_BYTES;
   const resolve: MetaImageResolver = opts.resolve ?? ((hostname) => dnsLookup(hostname, { all: true, order: "verbatim" }));
 
-  const res = await new Promise<IncomingMessage>((resolveReq, rejectReq) => {
-    const req = (url.protocol === "https:" ? https : http).request(
-      url,
-      {
-        method: "GET",
-        agent: false,
-        signal: AbortSignal.timeout(timeoutMs),
-        ...(testOverride ? {} : { lookup: guardedLookup(resolve) }),
-      },
-      resolveReq,
-    );
-    req.on("error", (err) => rejectReq(err instanceof MetaImageError ? err : new MetaImageError(`Could not download Meta image: ${err.message}`)));
-    req.end();
-  });
+  return withDownloadSlot(async () => {
+    const res = await new Promise<IncomingMessage>((resolveReq, rejectReq) => {
+      const req = (url.protocol === "https:" ? https : http).request(
+        url,
+        {
+          method: "GET",
+          agent: false,
+          signal: AbortSignal.timeout(timeoutMs),
+          ...(testOverride ? {} : { lookup: guardedLookup(resolve) }),
+        },
+        resolveReq,
+      );
+      req.on("error", (err) => rejectReq(err instanceof MetaImageError ? err : new MetaTransientImageError(`Could not download Meta image: ${err.message}`)));
+      req.end();
+    });
 
-  const status = res.statusCode ?? 0;
-  if (status >= 300 && status < 400) {
-    res.destroy();
-    throw new MetaImageError("Redirects are not allowed when downloading Meta images.");
-  }
-  if (status !== 200) {
-    res.destroy();
-    throw new MetaImageError(`Meta image download returned HTTP ${status}.`);
-  }
-  const declared = Number(res.headers["content-length"]);
-  if (Number.isFinite(declared) && declared > maxBytes) {
-    res.destroy();
-    throw new MetaImageError(`Image is larger than ${maxBytes} bytes.`);
-  }
-
-  const chunks: Buffer[] = [];
-  let total = 0;
-  for await (const chunk of res as AsyncIterable<Buffer>) {
-    total += chunk.length;
-    if (total > maxBytes) {
+    const status = res.statusCode ?? 0;
+    if (status === 429 || status >= 500) {
+      res.destroy();
+      throw new MetaTransientImageError(`Meta image CDN answered HTTP ${status}.`);
+    }
+    if (status >= 300 && status < 400) {
+      res.destroy();
+      throw new MetaImageError("Redirects are not allowed when downloading Meta images.");
+    }
+    if (status !== 200) {
+      res.destroy();
+      throw new MetaImageError(`Meta image download returned HTTP ${status}.`);
+    }
+    const declared = Number(res.headers["content-length"]);
+    if (Number.isFinite(declared) && declared > maxBytes) {
       res.destroy();
       throw new MetaImageError(`Image is larger than ${maxBytes} bytes.`);
     }
-    chunks.push(chunk);
-  }
-  const data = Buffer.concat(chunks);
-  const kind = fileType(data);
-  if (!kind || !ALLOWED_IMAGE_TYPES.has(kind)) {
-    throw new MetaImageError("Attachment is not a JPEG, PNG or WebP image.");
-  }
-  const imageType = kind as AllowedMetaImageType;
-  const idx = opts.index ?? 1;
-  return { name: safeFileName(`receipt-${idx}.${EXT_FOR_TYPE[imageType]}`), type: imageType, data };
+
+    const chunks: Buffer[] = [];
+    let total = 0;
+    try {
+      for await (const chunk of res as AsyncIterable<Buffer>) {
+        total += chunk.length;
+        if (total > maxBytes) {
+          res.destroy();
+          throw new MetaImageError(`Image is larger than ${maxBytes} bytes.`);
+        }
+        chunks.push(chunk);
+      }
+    } catch (err) {
+      if (err instanceof MetaImageError) throw err;
+      throw new MetaTransientImageError(`Meta image stream interrupted: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    const data = Buffer.concat(chunks);
+    const kind = fileType(data);
+    if (!kind || !ALLOWED_IMAGE_TYPES.has(kind)) {
+      throw new MetaImageError("Attachment is not a JPEG, PNG or WebP image.");
+    }
+    const imageType = kind as AllowedMetaImageType;
+    const idx = opts.index ?? 1;
+    return { name: safeFileName(`receipt-${idx}.${EXT_FOR_TYPE[imageType]}`), type: imageType, data };
+  });
 }
 
 // ---------------------------------------------------------------- Duplicate GCash / bank receipt reference flagging
@@ -366,21 +400,23 @@ function metaFailure(res: Reply, write: boolean): ProviderError {
   return new ProviderError("Meta refused the message. Check the recipient id and Page messaging permissions.", "invalid");
 }
 
-/** Validates a Page access token against Meta Graph API GET /v21.0/me?fields=id,name. */
-export async function metaIdentity(urls: ProviderUrls = providerUrls(), pageAccessToken: string): Promise<{ id: string; name: string }> {
+/** Validates a Page access token against Meta Graph API GET /v21.0/me?fields=id,name,instagram_business_account. */
+export async function metaIdentity(urls: ProviderUrls = providerUrls(), pageAccessToken: string): Promise<{ id: string; name: string; instagramAccountId?: string }> {
   const base = urls.meta ?? "https://graph.facebook.com";
   const res = await call(
-    `${base}/v21.0/me?fields=id,name`,
+    `${base}/v21.0/me?fields=id,name,instagram_business_account`,
     { method: "GET", headers: { authorization: `Bearer ${pageAccessToken}`, accept: "application/json" } },
     urls.timeoutMs ?? 10_000,
     false,
     "Meta",
   );
   if (res.status !== 200) throw metaFailure(res, false);
-  const id = String(res.body.id ?? "");
+  const id = String(res.body.id ?? "").trim();
   const name = String(res.body.name ?? id);
   if (!id) throw new ProviderError("Meta did not return a Page id for that token.", "auth");
-  return { id, name };
+  const igObj = res.body.instagram_business_account;
+  const igId = igObj && typeof igObj === "object" && typeof (igObj as { id?: unknown }).id === "string" ? (igObj as { id: string }).id.trim() : "";
+  return { id, name, ...(igId ? { instagramAccountId: igId } : {}) };
 }
 
 /** Sends a Messenger or Instagram DM reply within Meta's 24-hour standard messaging window. */
@@ -406,8 +442,12 @@ export async function metaSend(
     "Meta",
   );
   if (res.status !== 200) throw metaFailure(res, true);
+  const messageId = typeof res.body.message_id === "string" ? res.body.message_id.trim() : "";
+  if (!messageId) {
+    throw new ProviderError("Meta returned an unexpected response without a message ID, so Daloy cannot tell whether the reply went through.", "ambiguous");
+  }
   return {
     recipientId: String(res.body.recipient_id ?? msg.recipientId),
-    messageId: String(res.body.message_id ?? ""),
+    messageId,
   };
 }

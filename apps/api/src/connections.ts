@@ -30,6 +30,7 @@ import {
   ProviderError,
   QuotaError,
   readConnections,
+  refundUsage,
   sharedGrants,
   retryDelivery,
   BOOKING_CHANGED,
@@ -329,13 +330,21 @@ export class ConnectionsController {
     const phone = normalizePhMobile(body.to);
     if (!phone.ok) throw new BadRequestException(phone.error);
     const conn = await this.connection(user.workspaceId, "unisms");
-    await claimUsage(this.db, user.workspaceId, "sms").catch((err: unknown) => {
+    const now = new Date();
+    await claimUsage(this.db, user.workspaceId, "sms", { now }).catch((err: unknown) => {
       throw err instanceof QuotaError ? new HttpException({ message: err.message }, HttpStatus.TOO_MANY_REQUESTS) : err;
     });
     const senderId = conn.destination?.senderId || "Unisoft";
-    return this.test(user.workspaceId, "unisms", conn, () =>
-      unismsSend(this.urls, conn.credential, { recipient: phone.value, content: "Test SMS from Daloy.", senderId, metadata: { type: "test" } }),
-    );
+    return this.test(user.workspaceId, "unisms", conn, async () => {
+      try {
+        return await unismsSend(this.urls, conn.credential, { recipient: phone.value, content: "Test SMS from Daloy.", senderId, metadata: { type: "test" } });
+      } catch (err) {
+        if (err instanceof ProviderError && err.kind !== "ambiguous") {
+          await refundUsage(this.db, user.workspaceId, "sms", { now });
+        }
+        throw err;
+      }
+    });
   }
 
   /** Connect or Reconnect PayMongo. The webhook path is made once and kept, so the URL given to PayMongo keeps working. */
@@ -494,6 +503,12 @@ export class ConnectionsController {
     if (!appSecret) throw new BadRequestException("Paste the Meta App Secret.");
     if (!verifyToken) throw new BadRequestException("Enter a Verify Token of at least 6 characters.");
     const page = await metaIdentity(this.urls, body.pageAccessToken).catch(this.asBadRequest(user.workspaceId));
+    if (page.id !== body.pageId) {
+      throw new BadRequestException(`The Page Access Token belongs to Facebook Page ${page.id}, which does not match Page ID ${body.pageId}.`);
+    }
+    if (body.instagramAccountId && page.instagramAccountId && page.instagramAccountId !== body.instagramAccountId) {
+      throw new BadRequestException(`The Page Access Token is linked to Instagram Business Account ${page.instagramAccountId}, which does not match ${body.instagramAccountId}.`);
+    }
     const webhookPath = old?.destination?.webhookPath ?? randomBytes(32).toString("base64url");
     const destination: Record<string, string> = {
       pageId: body.pageId,
@@ -517,6 +532,12 @@ export class ConnectionsController {
     return this.test(user.workspaceId, "meta_messenger", conn, async () => {
       const { pageAccessToken } = parseMetaCredential(conn.credential);
       const info = await metaIdentity(this.urls, pageAccessToken);
+      if (conn.destination?.pageId && info.id !== conn.destination.pageId) {
+        throw new ProviderError("The Page Access Token no longer matches the connected Facebook Page ID.", "auth");
+      }
+      if (conn.destination?.instagramAccountId && info.instagramAccountId && info.instagramAccountId !== conn.destination.instagramAccountId) {
+        throw new ProviderError("The Page Access Token no longer matches the connected Instagram Business Account ID.", "auth");
+      }
       return { pageId: info.id, pageName: info.name };
     });
   }

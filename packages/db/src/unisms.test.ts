@@ -5,6 +5,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 import { freshDatabase } from "../../../test/db";
 import { startFakeProviders, type FakeProviders } from "../../../test/fake-providers";
 import { connectionCredential, markConnectionFailed, removeConnection, saveConnection } from "./connections";
+import { secretValuesToHide } from "./crypto";
 import { BOOKING_CHANGED, claimDueDeliveries, queueDelivery, retryDelivery, runDueDeliveries } from "./deliveries";
 import type { Db } from "./index";
 import { unismsSend, ProviderError, type ProviderUrls } from "./providers";
@@ -52,7 +53,7 @@ const clearSharedEnv = () => {
 beforeAll(async () => {
   ({ db, pool } = await freshDatabase());
   fake = await startFakeProviders();
-  urls = { ...fake.urls, timeoutMs: 300 };
+  urls = { ...fake.urls, timeoutMs: 2000 };
 }, 120_000);
 
 afterAll(async () => {
@@ -109,12 +110,37 @@ describe("unismsSend provider client", () => {
 
     // timeout after send -> ambiguous
     fake.once("/api/sms", "hang-after");
-    await expect(unismsSend(urls, SYNTH_WS_KEY, { recipient: "+639171234567", content: "Hi" })).rejects.toMatchObject({ kind: "ambiguous" });
+    await expect(unismsSend({ ...urls, timeoutMs: 250 }, SYNTH_WS_KEY, { recipient: "+639171234567", content: "Hi" })).rejects.toMatchObject({ kind: "ambiguous" });
 
     // redirect -> rejected (redirect: "error")
     fake.once("/api/sms", { status: 302, body: {}, headers: { location: "http://127.0.0.1/other" } });
     const errRedir = await unismsSend(urls, SYNTH_WS_KEY, { recipient: "+639171234567", content: "Hi" }).catch((e: unknown) => e);
     expect(errRedir).toBeInstanceOf(ProviderError);
+
+    // 200 without message ID or JSON null -> ambiguous (M3)
+    fake.once("/api/sms", { status: 200, body: { success: true } });
+    await expect(unismsSend(urls, SYNTH_WS_KEY, { recipient: "+639171234567", content: "Hi" })).rejects.toMatchObject({ kind: "ambiguous" });
+    fake.once("/api/sms", { status: 200, body: null });
+    await expect(unismsSend(urls, SYNTH_WS_KEY, { recipient: "+639171234567", content: "Hi" })).rejects.toMatchObject({ kind: "ambiguous" });
+
+    // Shared mode omits upstream error text on 400, and non-shared redacts URL-encoded secret forms (L3)
+    fake.once("/api/sms", { status: 400, body: { error: "upstream operator balance low" } });
+    await expect(unismsSend(urls, SYNTH_WS_KEY, { recipient: "+639171234567", content: "Hi" }, { shared: true })).rejects.toThrow("UniSMS rejected the SMS (400).");
+    const specialKey = "unisms_key/with+special=chars"; // gitleaks:allow
+    fake.once("/api/sms", { status: 400, body: { error: `bad ${encodeURIComponent(specialKey)} and ${specialKey}:` } });
+    const errEncoded = await unismsSend(urls, specialKey, { recipient: "+639171234567", content: "Hi" }).catch((e: unknown) => e);
+    expect((errEncoded as Error).message).not.toContain(specialKey);
+    expect((errEncoded as Error).message).not.toContain(encodeURIComponent(specialKey));
+
+    // Retry-After is clamped to 10 minutes and supports HTTP-date (M4)
+    fake.once("/api/sms", { status: 429, body: { error: "rate_limited" }, headers: { "retry-after": "999999" } });
+    await expect(unismsSend(urls, SYNTH_WS_KEY, { recipient: "+639171234567", content: "Hi" })).rejects.toMatchObject({ kind: "quota", retryAfterMs: 10 * 60_000 });
+    const futureDate = new Date(Date.now() + 25_000).toUTCString();
+    fake.once("/api/sms", { status: 429, body: { error: "rate_limited" }, headers: { "retry-after": futureDate } });
+    const errDate = (await unismsSend(urls, SYNTH_WS_KEY, { recipient: "+639171234567", content: "Hi" }).catch((e: unknown) => e)) as ProviderError;
+    expect(errDate.kind).toBe("quota");
+    expect(errDate.retryAfterMs).toBeGreaterThan(15_000);
+    expect(errDate.retryAfterMs).toBeLessThanOrEqual(25_000);
   });
 });
 
@@ -191,8 +217,38 @@ describe("UniSMS delivery worker", () => {
     await runDueDeliveries(db, key, urls);
     expect(await state(dDisc.id)).toMatchObject({ state: "failed", errorKind: "not_connected" });
 
-    // Only the paid workspace delivery actually hit UniSMS.
-    expect(fake.unisms.messages).toHaveLength(1);
+    // NEW delivery queued AFTER disconnecting workspace UniSMS also fails with not_connected and does not fall back to operator (H1)
+    const dAfterDisc = await smsDelivery(disc, (await newRun(disc)).runId);
+    await runDueDeliveries(db, key, urls);
+    expect(await state(dAfterDisc.id)).toMatchObject({ state: "failed", errorKind: "not_connected" });
+
+    // Step senderId override is ignored in shared operator fallback mode (H2)
+    const dSpoof = await smsDelivery(paid, (await newRun(paid)).runId, { to: "+639171234567", message: "No spoof", senderId: "SpoofBrand" });
+    await runDueDeliveries(db, key, urls);
+    expect(await state(dSpoof.id)).toMatchObject({ state: "delivered", result: expect.objectContaining({ senderId: "DaloyPH" }) });
+    expect(fake.unisms.messages.at(-1)?.senderId).toBe("DaloyPH");
+
+    // Only the two paid workspace deliveries actually hit UniSMS.
+    expect(fake.unisms.messages).toHaveLength(2);
+  });
+
+  it("refunds reserved SMS quota on definite rejections (400/401) and retires rotated or disconnected keys (M1, M2, M8)", async () => {
+    const u = await owner("pilot");
+    await saveConnection(db, key, u, "unisms", { account: "Clinic", credential: SYNTH_WS_KEY, destination: { senderId: "Clinic" } });
+
+    const dBad = await smsDelivery(u, (await newRun(u)).runId);
+    fake.once("/api/sms", { status: 400, body: { error: "bad_sender" } });
+    await runDueDeliveries(db, key, urls);
+    expect(await state(dBad.id)).toMatchObject({ state: "failed", errorKind: "invalid" });
+    expect(await smsUsed(u)).toBe(0);
+
+    // Rotate key -> old key remains in secretValuesToHide via retired_secrets
+    await saveConnection(db, key, u, "unisms", { account: "Clinic", credential: SYNTH_WS_KEY_2, destination: { senderId: "Clinic" } });
+    expect(await secretValuesToHide(db, key, u)).toEqual(expect.arrayContaining([SYNTH_WS_KEY, SYNTH_WS_KEY_2]));
+
+    // Disconnect -> both keys remain in secretValuesToHide via retired_secrets
+    await removeConnection(db, u, "unisms");
+    expect(await secretValuesToHide(db, key, u)).toEqual(expect.arrayContaining([SYNTH_WS_KEY, SYNTH_WS_KEY_2]));
   });
 
   it("parks 5xx, timeouts, and stale worker takeovers in needs_review without double-sending, and does not double-charge on Send again", async () => {
@@ -203,7 +259,7 @@ describe("UniSMS delivery worker", () => {
 
     const d = await smsDelivery(u, (await newRun(u)).runId);
     fake.once("/api/sms", "hang-after");
-    await runDueDeliveries(db, key, urls);
+    await runDueDeliveries(db, key, { ...urls, timeoutMs: 250 });
     expect(await state(d.id)).toMatchObject({ state: "needs_review", errorKind: "ambiguous" });
     expect(await smsUsed(u)).toBe(50);
 
