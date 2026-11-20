@@ -4,6 +4,8 @@ This file explains each core module in plain language: what it does, why it is b
 
 ## Reviewing the console design
 
+Owners and operators use a 64px navigation rail on screens at least 800px wide. Holding the pointer over it for 150ms shows the labels and expands the rail to 232px. Keyboard focus opens it immediately. Escape collapses it and keeps the focused link available. Reduced motion removes the hover delay and transitions. On a phone, Menu opens the role's links above the bottom bar. Close and Escape return focus to Menu, and changing routes closes the menu. Approvers and requesters keep their own My requests entry. The desktop, phone and role cases in `e2e/navigation.spec.ts` cover these paths.
+
 Staff start on Automations to see which workflows need attention. Activity opens the run behind a status, and Bookings lists appointments staff can change. The sidebar groups daily work, creation and workspace settings. On a phone, the bottom navigation and Menu expose the pages available to the signed-in role. The [offline walkthrough](design/console-review.html) shows these screens with sample records. Open it in a browser and switch between Desktop and Phone. The [phase ledger](design/console-redesign-phases.md) records which actions were tested separately.
 
 ## Layout

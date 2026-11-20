@@ -1,74 +1,79 @@
-/* The frame stays consistent while each page keeps its own theme tokens. */
-.console-shell .shell-main { background: var(--bg); }
-:root[data-theme="light"] .console-shell .shell-main { --bg: #f1f1ef; }
-.console-shell .sidebar {
-  color-scheme: dark;
-  --focus: #aed5f0;
-  background: #1a120f;
-  color: #f4eeea;
-  border: 0;
+/* Shared staff navigation. Pages keep their own light and dark surface tokens. */
+@font-face {
+  font-family: Inter; src: url("/fonts/inter-variable.woff2") format("woff2");
+  font-style: normal; font-weight: 100 900; font-display: swap;
 }
-.console-shell .sidebar-name { font-size: 1.55rem; letter-spacing: -.04em; font-weight: 600; }
-.console-shell .sidebar-top img { width: 28px; height: 28px; }
-.console-shell .sidebar .shell-nav-label {
-  padding: .9rem .75rem .2rem;
-  font-size: .75rem;
-  font-weight: 500;
-  color: #b6aaa2;
-}
-.console-shell .sidebar nav a,
-.console-shell .sidebar nav button {
-  min-height: var(--target);
-  color: #f4eeea;
-  font-size: .86rem;
-  font-weight: 400;
-  border: 0;
-  border-radius: 8px;
-}
-.console-shell .sidebar nav a:hover,
-.console-shell .sidebar nav button:hover { background: #382e29; color: #ffffff; }
-.console-shell .sidebar nav a[aria-current="page"] {
-  background: #353332;
-  color: #f5f3f2;
-  box-shadow: none;
-}
-.console-shell .sidebar .who { color: #b6aaa2; overflow-wrap: anywhere; padding-top: 20px; }
-.console-shell .sidebar nav.open { background: #1a120f; }
-.console-shell .bottom-bar {
-  color-scheme: light;
-  --focus: #244f7a;
-  background: #ffffff;
-  border-color: #e2e0dd;
-}
-.console-shell .bottom-bar a,
-.console-shell .bottom-bar button { color: #1a120f; font-size: .86rem; }
-.console-shell .bottom-bar a:hover,
-.console-shell .bottom-bar button:hover,
-.console-shell .bottom-bar button[aria-expanded="true"],
-.console-shell .bottom-bar a[aria-current="page"] { background: #f3f3f3; color: #1a120f; box-shadow: none; }
+.console-shell { --rail-ink: #0a0b0f; --rail-active: #1b45c9; --rail-muted: #aab0bf; }
+.console-shell .sidebar, .console-shell .bottom-bar { font-family: Inter, system-ui, sans-serif; }
+.rail-brand { display: block; width: 30px; height: 30px; flex: none; }
+.rail-icon { width: 18px; height: 18px; flex: none; }
+.console-shell .shell-nav-label { text-transform: uppercase; font-size: 11px; font-weight: 700; letter-spacing: .06em; }
+.console-shell .sidebar nav a { box-shadow: none; }
+.console-shell .sidebar-name { font-size: 16px; letter-spacing: -.025em; }
+.console-shell .rail-avatar { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; background: #e8eeff; color: #1b45c9; font-weight: 700; }
 
 @media (min-width: 800px) {
-  body:has(.console-shell) { background: #aed5f0; }
-  .console-shell {
-    width: calc(100% - clamp(24px, 5vw, 90px));
-    max-width: 1700px;
-    margin: clamp(12px, 2.4vw, 36px) auto;
-    min-height: 90svh;
-    background: #1a120f;
-    padding: 7px 7px 7px 0;
-    box-sizing: border-box;
-  }
   .console-shell .sidebar {
-    width: clamp(176px, 16vw, 228px);
-    height: auto;
-    min-height: 88svh;
-    align-self: stretch;
-    padding: 18px 14px;
-    position: static;
-    box-sizing: border-box;
+    position: sticky; top: 0; align-self: flex-start; height: 100dvh; width: 64px; flex: none;
+    overflow: hidden auto; scrollbar-width: none; padding: 14px 12px; box-sizing: border-box;
+    display: flex; flex-direction: column; border: 0; background: var(--rail-ink); color: white;
+    transition: width var(--dur-base) var(--ease);
   }
-  .console-shell .sidebar-top { padding: 2px 10px 16px; }
-  .console-shell .sidebar nav { min-height: calc(88svh - 96px); height: auto; }
-  .console-shell .sidebar .who { margin-top: auto; }
-  .console-shell .shell-main { border-radius: 22px; background: var(--bg); overflow: hidden; }
+  .console-shell .sidebar[data-expanded] { width: 232px; }
+  .console-shell .sidebar-top { min-height: 40px; gap: 12px; padding: 0 5px; }
+  .console-shell .sidebar nav { display: flex; flex: 1; height: auto; gap: 2px; padding: 0; }
+  .console-shell .sidebar .shell-nav-label { color: var(--rail-muted); height: 34px; padding: 12px 10px 4px; }
+  .console-shell .sidebar nav > a {
+    display: flex; align-items: center; gap: 12px; padding: 0 11px; min-height: 38px;
+    border-radius: 8px; white-space: nowrap; color: #d5d9e1; font-size: 14px; font-weight: 500;
+  }
+  .console-shell .sidebar nav a:hover, .console-shell .sidebar nav button:hover { background: #202126; color: white; }
+  .console-shell .sidebar nav a[aria-current="page"] { background: var(--rail-active); color: white; }
+  .console-shell .sidebar :focus-visible { outline: 2px solid #9fb7ff; outline-offset: -2px; }
+  .rail-label { opacity: 0; transition: opacity var(--dur-fast) var(--ease); white-space: nowrap; }
+  .sidebar[data-expanded] .rail-label { opacity: 1; transition-delay: var(--dur-fast); }
+  .rail-account { position: relative; margin-top: auto; padding: 14px 0 0 48px; min-height: 48px; border-top: 1px solid #33353b; }
+  .console-shell .rail-account .who { display: block; overflow: hidden; text-overflow: ellipsis; padding: 0; color: white; font-size: 12px; }
+  .console-shell .rail-account a, .console-shell .rail-account button { display: inline-flex; min-height: 22px; padding: 0 3px; border: 0; background: transparent; color: #d5d9e1; font-size: 12px; }
+  .rail-account .rail-avatar { position: absolute; left: 4px; bottom: 0; }
+  .console-shell .sidebar:not([data-expanded]) .account-link { position: absolute; inset: 6px 0 0; }
+  .sidebar:not([data-expanded]) .account-link .rail-label { overflow: hidden; }
+  .sidebar:not([data-expanded]) .sign-out { visibility: hidden; }
+  .console-shell .shell-main { background: var(--bg); }
+}
+
+@media (max-width: 799.98px) {
+  .console-shell .rail-icon, .console-shell .rail-avatar, .console-shell .rail-account .who { display: none; }
+  .console-shell .sidebar { background: var(--surface); color: var(--text); }
+  .console-shell .sidebar-name { font-size: 22px; }
+  .phone-close { margin-left: auto; }
+  .console-shell[data-phone-open] .sidebar {
+    position: fixed; z-index: 20; inset: 0 0 calc(var(--target) + var(--space-2) + env(safe-area-inset-bottom));
+    display: flex; flex-direction: column; padding: 0; border: 0;
+  }
+  .console-shell[data-phone-open] .sidebar-top { flex-shrink: 0; padding: 6px 18px; border-bottom: 1px solid var(--border-soft); }
+  .console-shell .sidebar nav.open { position: static; flex: 1; max-height: none; padding: 0 18px 18px; border: 0; box-shadow: none; }
+  .console-shell .shell-nav-label { margin: 12px 0 7px; color: var(--muted); }
+  .console-shell .sidebar nav a, .console-shell .sidebar nav button {
+    display: flex; align-items: center; justify-content: flex-start; min-height: var(--target);
+    padding: 0 8px; border: 0; border-bottom: 1px solid var(--border-soft); border-radius: 0;
+    background: transparent; color: var(--text); font-size: 14px; font-weight: 500;
+  }
+  .console-shell .sidebar .rail-account button { width: 100%; }
+  .console-shell .sidebar nav a:is([href="#/"], [href="#/activity"], [href="#/new"], [href="#/ai"]) {
+    border: 1px solid var(--border-soft); border-radius: 7px; margin: 2px 0; padding-inline: 12px;
+  }
+  .console-shell .sidebar .phone-close { color: var(--accent); }
+  .console-shell .sidebar .shell-nav-label:not(:first-child) { margin-top: 20px; }
+  .console-shell .sidebar nav a[aria-current="page"], .console-shell .bottom-bar a[aria-current="page"] {
+    background: var(--accent-tint); color: var(--accent);
+  }
+  .console-shell[data-phone-open] .sidebar { animation: rail-sheet-in var(--dur-base) var(--ease); }
+  .console-shell[data-phone-open] .sidebar[data-closing] { animation: rail-sheet-out var(--dur-base) var(--ease) forwards; }
+  @keyframes rail-sheet-in { from { transform: translateY(100%); opacity: 0; } }
+  @keyframes rail-sheet-out { to { transform: translateY(100%); opacity: 0; } }
+}
+@media (prefers-reduced-motion: reduce) {
+  .console-shell .sidebar, .console-shell .rail-label { transition: none; }
+  .console-shell[data-phone-open] .sidebar { animation: none; }
 }

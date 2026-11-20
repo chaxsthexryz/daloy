@@ -138,3 +138,95 @@ test("Apps lists each app as a card, and Connect opens that app's own setup", as
   await page.getByRole("button", { name: "Connected 0" }).click();
   await expect(page.getByText("Nothing is connected yet.")).toBeVisible();
 });
+
+test("desktop rail pushes the page, supports keyboard dismissal and respects reduced motion", async ({ page }) => {
+  await signUp(page);
+  const rail = page.locator(".sidebar");
+  const main = page.locator(".shell-main");
+  await page.mouse.move(500, 600);
+  await expect(rail).toHaveCSS("width", "64px");
+  const left = () => main.evaluate(node => node.getBoundingClientRect().left);
+  expect(await left()).toBe(64);
+  await page.screenshot({ path: test.info().outputPath("desktop-collapsed.png") });
+  // Advance the hover timer deterministically before allowing browser animations to run.
+  await page.clock.install();
+  await page.clock.pauseAt(new Date(Date.now() + 1000));
+  await page.mouse.move(20, 130);
+  await page.clock.runFor(149);
+  await expect(rail).not.toHaveAttribute("data-expanded", "true");
+  await page.mouse.move(500, 600);
+  await page.clock.runFor(200);
+  await expect(rail).not.toHaveAttribute("data-expanded", "true");
+  await page.clock.resume();
+  await rail.hover();
+  await expect(rail).toHaveCSS("width", "232px");
+  expect(await left()).toBe(232);
+  await page.mouse.move(600, 600);
+  await expect(rail).toHaveCSS("width", "64px");
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  const team = rail.getByRole("link", { name: "Team", exact: true });
+  await rail.getByRole("link", { name: "Build with AI", exact: true }).focus();
+  await page.keyboard.press("Tab");
+  await expect(team).toBeFocused();
+  await expect(rail).toHaveCSS("width", "232px");
+  await expect(rail).toHaveCSS("transition-duration", "0s");
+  await page.keyboard.press("Escape");
+  await expect(rail).toHaveCSS("width", "64px");
+  await expect(team).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(team).toHaveAttribute("aria-current", "page");
+  await page.mouse.move(20, 90);
+  await expect(rail).toHaveCSS("width", "232px");
+  await page.screenshot({ path: test.info().outputPath("desktop-team.png") });
+});
+
+test("phone menu closes with Escape, Close and route changes, including Back", async ({ page }) => {
+  await signUp(page);
+  await page.setViewportSize({width: 390, height: 844});
+  const menu = page.getByRole("button", { name: "Menu", exact: true });
+  const nav = page.locator("#main-menu");
+  await menu.click();
+  await expect(nav).toBeVisible();
+  await page.screenshot({ path: test.info().outputPath("phone-menu.png"), animations: "disabled" });
+  await page.keyboard.press("Escape");
+  await expect(menu).toBeFocused();
+  await menu.click();
+  await page.getByRole("button", { name: "Close", exact: true }).click();
+  await expect(menu).toBeFocused();
+  await menu.click();
+  await nav.getByRole("link", { name: "Team" }).click();
+  await expect(menu).toHaveAttribute("aria-expanded","false");
+  await menu.click();
+  await page.goBack();
+  await expect(nav).toBeHidden();
+});
+
+test("operator navigation and restricted landings stay scoped to their roles", async ({ page, browser }) => {
+  await signUp(page);
+  for (const role of ["operator", "requester", "approver"]) {
+    const response = await page.request.post("/workspace/invites", { data: { email: role + "@test.local", role } });
+    expect(response.ok()).toBe(true);
+    const member = await browser.newPage();
+    try {
+      await member.goto((await response.json()).link);
+      await member.getByLabel(/Password/).fill("e2e test password 1");
+      await member.getByRole("button", { name: "Join" }).click();
+      await expect(member.getByRole("heading", { name: role === "operator" ? "Automations" : "My requests", exact: true })).toBeVisible();
+      await expect(member.getByRole("link", { name: "Build with AI", exact: true })).toHaveCount(0);
+      if (role === "operator") {
+        const rail = member.locator(".sidebar");
+        await rail.hover();
+        await rail.getByRole("link", { name: "Bookings", exact: true }).click();
+        await expect(rail.getByRole("link", { name: "Bookings" })).toHaveAttribute("aria-current", "page");
+        await rail.getByRole("link", { name: "Account", exact: true }).click();
+        await expect(member).toHaveURL(/#\/account$/);
+        await rail.getByRole("button", { name: "Sign out" }).click();
+        await expect(member.getByRole("button", { name: "Sign in", exact: true })).toBeVisible();
+      } else {
+        await expect(member.locator(".sidebar")).toHaveCount(0);
+      }
+    } finally {
+      await member.close();
+    }
+  }
+});
