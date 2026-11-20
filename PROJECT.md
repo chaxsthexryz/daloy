@@ -227,6 +227,7 @@ Order: N3, N4, V1, then V2 and W together, N5 with the pilot search P in paralle
 - [ ] N23. Invoice PDF and chase: a form becomes a PDF invoice by email, with reminders while unpaid. After the pilot; the Invoice follow-up template covers most of it now.
 - [ ] N24. Google Sheets through OAuth ("bring your own Google client", like Outlook), with the service account kept as the fallback. Needs the operator's own Google Cloud app; a verified public consent screen is out of scope. After the pilot.
 - [ ] N25. WhatsApp Cloud API delivery with approved message templates. Only if a pilot asks: Messenger and Viber are read more here, and it needs Meta approval and paid templates.
+- [ ] N30. An AI step that reads a table and a sheets step that appends every row of it. Today a run writes one row, and an extract field holds one string, so a photo of a class schedule lands as one cell of tab-separated text that cannot be sorted or summed. Scope: an AI output shape `{rows: [[...], ...]}` (a new task or an extract option), a `rows` mode on the sheets step that appends all of them in one batched write with the existing marker and retry rules, a cap (100 rows, 20 columns), and a header row written once per tab. Exit: a schedule photo of ten classes produces a header row and ten clean rows in one run, a retry of that delivery adds nothing twice, and a malformed table fails with a plain reason. Medium. Not started.
 - [x] N26. Secrets page: owners add, replace and delete named secrets (webhook signing secrets, HTTP step keys) in the console instead of the browser console. Values are write-only: only names and dates come back. Found while writing docs/try-every-feature.md. Done: `#/secrets` under Advanced next to API tokens, owners only, linked from the webhook trigger's "Signing secret name". (branch n26-secrets)
 - [x] N27. No-show button on Bookings: staff mark a past booking as a no-show, which starts the no-show follow-up without a webhook. Found while writing docs/try-every-feature.md. (claimed: claude, branch n27-noshow)
 - [ ] N11. Real accounts: final security review at the release commit covering N6 to N10, a daily recipient cap on Gmail and Outlook receipts, a timestamp in the webhook signature, MCP token scopes and expiry, password change and reset, per-workflow pause and cancel of a pending run, read-side secret redaction on every surface, a purge policy for retired secrets.
@@ -264,6 +265,7 @@ Model and effort per open phase. One coordinator session (Opus 5.5) coordinates:
 | N23 invoice PDF | Sonnet 5.5, high | GPT-6.1 Sol, Medium |
 | N24 Sheets OAuth | Opus 5.5, high | GPT-6.1 Sol, High |
 | N25 WhatsApp | Opus 5.5, high | GPT-6.1 Sol, High |
+| N30 AI table to sheet rows | Sonnet 5.5, high | GPT-6.1 Sol, High |
 | N26 secrets page | Sonnet 5.5, medium | GPT-6.1 Sol, Medium |
 | N27 no-show button | Sonnet 5.5, medium | GPT-6.1 Sol, Medium |
 | Read-only checks and retests | Sonnet 5.5, medium | GPT-6.1 Terra |
