@@ -331,7 +331,7 @@ main.page.wk { display: flex; flex-direction: column; gap: 16px; width: 100%; ma
   .wk-token-table tr.off td.wk-status, .wk-token-table tr.fresh td.wk-status { display: contents; }
   .wk-token-table tr.off td[data-label] { color: var(--w-muted); }
   .wk-token-table td.wk-bad { color: var(--w-red); }
-  .wk-token-table tr.fresh { box-shadow: inset 3px 0 var(--w-accent); padding-left: 10px; }
+  .wk-token-table tr.fresh { background: var(--w-select); border-radius: 8px; padding-inline: 10px; }
   .wk-copyrow { grid-template-columns: minmax(0, 1fr); }
 }
 
