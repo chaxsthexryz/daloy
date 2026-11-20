@@ -43,6 +43,7 @@ test("open the run history, diff two versions and roll back", async ({ page }) =
 
   // Version 2 changes the operator.
   await page.getByRole("navigation", { name: "This automation" }).getByRole("link", { name: "Steps" }).click();
+  await page.getByRole("button", { name: "List", exact: true }).click();
   await page.getByRole("button", { name: "condition_1" }).first().click();
   await page.getByLabel("Operator").selectOption("lt");
   await page.getByRole("button", { name: "Publish" }).click();

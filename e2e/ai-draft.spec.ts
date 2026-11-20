@@ -28,7 +28,7 @@ test("describe a workflow, save the draft, then ask the AI to change it", async 
   await page.getByRole("button", { name: "Send", exact: true }).click();
   await expect(page.getByLabel("Conversation with the AI")).toContainText("Waits one day before the thank-you email. Not saved yet.");
   await expect(page.locator(".react-flow__node")).toHaveCount(3);
-  await expect(page.getByRole("button", { name: "wait_a_day" }).first()).toBeVisible();
+  await expect(page.getByRole("group", { name: /^delay step wait_a_day/ })).toBeVisible();
 });
 
 // The draft is valid but its approval ends the run in silence on reject and timeout, so the editor lists both.

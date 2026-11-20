@@ -1,0 +1,20 @@
+/** Tagalog for the Steps editor (A7). App and brand names stay as they are. */
+export const editorTranslations: Record<string, string> = {
+  Fit: "Ipagkasya",
+  Live: "Live",
+  "{done} of {total} apps connected": "{done} sa {total} app ang nakakonekta",
+  "Left: connect {apps}": "Natitira: ikonekta ang {apps}",
+  "Show steps as": "Ipakita ang mga hakbang bilang",
+  Diagram: "Diagram",
+  "Add step": "Magdagdag ng hakbang",
+  "Step {number} · {type}": "Hakbang {number} · {type}",
+  "{app} is not connected yet.": "Hindi pa nakakonekta ang {app}.",
+  "Insert data from earlier steps": "Gamitin ang data mula sa naunang hakbang",
+  "Copy {reference}": "Kopyahin ang {reference}",
+  "Copied {reference}": "Nakopya ang {reference}",
+  "Copy failed. Type {reference} into a text field.": "Hindi nakopya. I-type ang {reference} sa isang text field.",
+  "Select a step in the diagram or the list to change it.": "Pumili ng hakbang sa diagram o sa listahan para baguhin ito.",
+  "{from} on {branch}": "{from} kapag {branch}",
+  "What happens next": "Ano ang susunod",
+  "The run ends here.": "Dito nagtatapos ang run.",
+};

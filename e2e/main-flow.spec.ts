@@ -52,9 +52,10 @@ test("the step outline works from the keyboard", async ({ page }) => {
   await page.getByLabel("Name").fill("Keyboard");
   await page.keyboard.press("Enter");
 
-  const step = page.getByRole("button", { name: "is_billing" });
+  await page.getByRole("button", { name: "List", exact: true }).click();
+  const step = page.getByRole("button", { name: /^is_billing / });
   await step.focus();
   await page.keyboard.press("Enter");
   await expect(step).toHaveAttribute("aria-pressed", "true");
-  await expect(page.getByRole("heading", { name: "Condition: is_billing" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "is_billing" })).toBeVisible();
 });
