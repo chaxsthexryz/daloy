@@ -4,7 +4,9 @@ import "./workspace.css";
 import { Text, useLanguage } from "./Language";
 import { useEffect, useState, type FormEvent } from "react";
 import { api } from "./api";
+import { AuthLayout, AuthNote } from "./AuthLayout";
 import { Sheet, usePhone } from "./Sheet";
+import { checkNewPassword } from "./lib/password";
 import { canChangeRole, canInvite, canRemove, groupMembers, memberRoles, type Member, type MemberRole, type Role } from "./lib/team";
 
 export type { Role };
@@ -194,43 +196,39 @@ function RoleSheet({ member, phone, onClose, onSave, onRemove }: { member: Membe
   );
 }
 
-/** The page behind an invite link. A new person sets a password; someone with an account in no workspace enters theirs. */
+/** The page behind an invite link (Doop row E5). A new person sets a password; someone with an account in no workspace enters theirs. */
 export function AcceptInvitePage({ token, onDone }: { token: string; onDone: (u: User) => void }) {
-  const { t } = useLanguage();
   const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
   const submit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    const password = String(new FormData(e.currentTarget).get("password"));
+    // The API holds the same limits for a new and an existing account, so they are checked first.
+    const issue = checkNewPassword(password);
+    if (issue) return setError(issue === "too-short" ? "Password must be at least 12 characters." : "Password can have at most 200 characters.");
     setError("");
+    setBusy(true);
     try {
-      const user = await api<User>("POST", `/auth/invites/${token}/accept`, { password: new FormData(e.currentTarget).get("password") });
+      const user = await api<User>("POST", `/auth/invites/${token}/accept`, { password });
       location.hash = "#/";
       onDone(user);
     } catch (err) {
       setError((err as Error).message);
+      setBusy(false);
     }
   };
   return (
-    <main className="page narrow request-page access-page">
-      <h1 className="brand">
-        <img src="/logo.svg" alt="" width="32" height="32" />
-        Daloy
-      </h1>
-      <form onSubmit={submit}>
-        <h2>{t("Join your team")}</h2>
-        <p className="muted">{t("Choose a password for your account. If this email already has a Daloy account, enter its password.")}</p>
-        <div className="field">
-          <label htmlFor="invite-password">{t("Password ")}<span className="muted">{t("(at least 12 characters)")}</span>
-          </label>
-          <input id="invite-password" name="password" type="password" autoComplete="new-password" minLength={12} required />
+    <AuthLayout title="Join your team">
+      <p className="au-lead">Choose a password for your account. If this email already has a Daloy account, enter its password.</p>
+      <form onSubmit={submit} className="au-fields">
+        <div className="au-field">
+          <div className="au-label-row"><label htmlFor="invite-password">Password <span>(at least 12 characters)</span></label></div>
+          <input id="invite-password" name="password" type="password" autoComplete="new-password" placeholder="Password" required aria-invalid={!!error} aria-describedby={error ? "invite-error" : undefined} />
+          {error && <AuthNote kind="error" id="invite-error">{error}</AuthNote>}
         </div>
-        <p role="alert" className="message error" hidden={!error}>
-          {error}
-        </p>
-        <div className="actions">
-          <button className="primary">{t("Join")}</button>
-        </div>
+        <button className="au-button" disabled={busy}>Join</button>
       </form>
-    </main>
+    </AuthLayout>
   );
 }
 

@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { resetLink } from "./mail";
-import { PASSWORD } from "./workspace";
+import { PASSWORD, registerOwner } from "./workspace";
 
 // Doop rows E1 to E6: the signed-out pages and My requests.
 const PHONE = { width: 390, height: 844 };
@@ -175,6 +175,85 @@ test("E3 and E4 on a phone: no sideways scroll", async ({ browser }) => {
   await page.goto("about:blank");
   await page.goto(`/#/reset-password/${TOKEN}`);
   await expect(page.getByRole("heading", { name: "Set a new password" })).toBeVisible();
+  await noSideScroll(page);
+  await context.close();
+});
+
+/** Creates an invite link from the owner's Team page. */
+async function inviteLink(owner: Page, email: string, role: "Operator" | "Approver" | "Requester") {
+  await owner.goto("/#/team");
+  await owner.reload();
+  await owner.getByLabel("Email").fill(email);
+  await owner.getByLabel("Role", { exact: true }).selectOption({ label: role });
+  await owner.getByRole("button", { name: "Create invite link" }).click();
+  return (await owner.getByLabel("Invite link").textContent())!.trim();
+}
+
+test("E5: a new person joins as the invited role and the link works once", async ({ page, browser }) => {
+  await registerOwner(page);
+  const link = await inviteLink(page, `entry-operator-${Date.now()}@test.local`, "Operator");
+
+  const joining = await browser.newContext();
+  const join = await joining.newPage();
+  await join.goto(link);
+  await expect(join.getByRole("heading", { name: "Join your team" })).toBeVisible();
+  await join.getByLabel(/Password/).fill("too short");
+  await join.getByRole("button", { name: "Join" }).click();
+  await expect(join.getByRole("alert")).toHaveText("Password must be at least 12 characters.");
+  await join.getByLabel(/Password/).fill(PASSWORD);
+  await join.getByRole("button", { name: "Join" }).click();
+  // An operator gets the console but not the owner's pages.
+  await expect(join.getByRole("heading", { name: "Automations", exact: true })).toBeVisible();
+  await join.goto("/#/team");
+  await expect(join.getByRole("heading", { name: "Team", exact: true })).toHaveCount(0);
+
+  // The same link in a third browser: used.
+  const third = await browser.newContext();
+  const again = await third.newPage();
+  await again.goto(link);
+  await again.getByLabel(/Password/).fill(PASSWORD);
+  await again.getByRole("button", { name: "Join" }).click();
+  await expect(again.getByRole("alert")).toContainText("this invite is not valid");
+  await expect(again.getByLabel(/Password/)).toHaveAttribute("aria-invalid", "true");
+  await joining.close();
+  await third.close();
+});
+
+test("E5: an email that already has an account must enter its own password", async ({ page, browser }) => {
+  await registerOwner(page);
+  const email = `entry-again-${Date.now()}@test.local`;
+  // Join and be removed, so the account exists but belongs to no workspace.
+  const first = await inviteLink(page, email, "Requester");
+  const ctx = await browser.newContext();
+  const joined = await ctx.newPage();
+  await joined.goto(first);
+  await joined.getByLabel(/Password/).fill(PASSWORD);
+  await joined.getByRole("button", { name: "Join" }).click();
+  await expect(joined.getByRole("heading", { name: "My requests" })).toBeVisible();
+  await page.reload();
+  await page.getByRole("button", { name: `Remove ${email}` }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Remove", exact: true }).click();
+  await expect(page.getByRole("button", { name: `Remove ${email}` })).toHaveCount(0);
+
+  const second = await inviteLink(page, email, "Requester");
+  const again = await browser.newContext();
+  const join = await again.newPage();
+  await join.goto(second);
+  await join.getByLabel(/Password/).fill("a different password 9");
+  await join.getByRole("button", { name: "Join" }).click();
+  await expect(join.getByRole("alert")).toHaveText("this email already has an account: enter its password");
+  await join.getByLabel(/Password/).fill(PASSWORD);
+  await join.getByRole("button", { name: "Join" }).click();
+  await expect(join.getByRole("heading", { name: "My requests" })).toBeVisible();
+  await ctx.close();
+  await again.close();
+});
+
+test("E5 on a phone: no sideways scroll", async ({ browser }) => {
+  const context = await browser.newContext({ viewport: PHONE });
+  const page = await context.newPage();
+  await page.goto(`/#/invite/${TOKEN}`);
+  await expect(page.getByRole("heading", { name: "Join your team" })).toBeVisible();
   await noSideScroll(page);
   await context.close();
 });
