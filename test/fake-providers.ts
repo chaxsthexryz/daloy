@@ -77,6 +77,15 @@ export async function startFakeProviders(port = 0) {
   const slack = { token: "", team: "Lim Dental", channels: [{ id: "C0REQ", name: "office-requests", is_member: true }], messages: [] as { channel: string; text: string; ts: string }[], revoked: false, installs: new Map<string, { teamId: string; team: string }>(), revokedInstalls: [] as string[] };
   const telegram = { token: "", bot: "daloy_test_bot", chats: [{ id: -1001234567890, title: "Office team" }] as { id: number; title: string }[], updates: [] as Record<string, unknown>[], webhook: false, messages: [] as { chat: string; text: string; id: number }[], revoked: false };
   const unisms = { secretKey: "", messages: [] as { id: string; recipient: string; content: string; senderId: string; metadata?: Record<string, unknown> }[], revoked: false };
+  // Meta Messenger & Instagram Graph API + CDN fake (N16, decision 0069).
+  const meta = {
+    token: "",
+    pageId: "100200300",
+    pageName: "Daloy Test Page",
+    revoked: false,
+    messages: [] as { recipientId: string; text: string; messagingType: string; messageId: string }[],
+    cdnFiles: new Map<string, { contentType: string; data: Buffer }>(),
+  };
   // Airtable, Notion and Trello (N15, decision 0046): a bearer or key/token check, one target each, and the records added.
   // The OAuth pickers (decision 0062) list what is here: bases and tables for Airtable, databases for Notion, boards and lists for Trello.
   const airtable = {
@@ -226,6 +235,7 @@ export async function startFakeProviders(port = 0) {
         teamsPosts: teams.posts.map((p) => p.text),
         telegramMessages: telegram.messages.map((m) => m.text),
         unismsMessages: unisms.messages,
+        metaMessages: meta.messages,
         paymongoSessions: paymongo.sessions,
         airtableRecords: airtable.records.map((r) => r.fields),
         notionPages: notion.pages.map((p) => p.properties),
@@ -741,13 +751,38 @@ export async function startFakeProviders(port = 0) {
       }
       return res.writeHead(404, { "content-type": "text/plain" }).end("not found");
     }
+    // Meta Graph API v21.0 (N16): Page token verification and Send API replies.
+    if (path.startsWith("/v21.0/")) {
+      if (meta.revoked || !meta.token || req.headers.authorization !== `Bearer ${meta.token}`) {
+        return json(res, 401, { error: { message: "Invalid OAuth access token", type: "OAuthException", code: 190 } });
+      }
+      if (req.method === "GET" && path === "/v21.0/me") {
+        return json(res, 200, { id: meta.pageId, name: meta.pageName });
+      }
+      if (req.method === "POST" && path === "/v21.0/me/messages") {
+        const m = JSON.parse(raw || "{}") as { recipient?: { id?: string }; messaging_type?: string; message?: { text?: string } };
+        if (!m.recipient?.id || !m.message?.text) {
+          return json(res, 400, { error: { message: "Missing recipient or text", type: "OAuthException", code: 100 } });
+        }
+        const messageId = `mid.fake_${++seq}`;
+        meta.messages.push({ recipientId: m.recipient.id, text: m.message.text, messagingType: m.messaging_type ?? "", messageId });
+        return answer(200, { recipient_id: m.recipient.id, message_id: messageId });
+      }
+      return json(res, 404, { error: { message: "Unsupported get request", code: 100 } });
+    }
+    // Fake Meta CDN for image attachment download tests.
+    if (req.method === "GET" && path.startsWith("/meta-cdn/")) {
+      const file = meta.cdnFiles.get(path.slice("/meta-cdn/".length));
+      if (!file) return res.writeHead(404).end("not found");
+      return res.writeHead(200, { "content-type": file.contentType }).end(file.data);
+    }
     json(res, 404, { error: "not found" });
   });
   await new Promise<void>((resolve) => server.listen(port, "127.0.0.1", resolve));
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 
   return {
-    urls: { googleToken: `${base}/token`, sheets: base, calendar: base, drive: base, paymongo: base, airtable: base, notion: base, trello: base, slack: base, telegram: base, unisms: base, microsoftLogin: `${base}/ms`, graph: `${base}/graph`, gmail: base, airtableLogin: `${base}/airtable-login`, trelloLogin: `${base}/atlassian`, teamsHosts: ["127.0.0.1"] },
+    urls: { googleToken: `${base}/token`, sheets: base, calendar: base, drive: base, paymongo: base, meta: base, metaCdn: base, airtable: base, notion: base, trello: base, slack: base, telegram: base, unisms: base, microsoftLogin: `${base}/ms`, graph: `${base}/graph`, gmail: base, airtableLogin: `${base}/airtable-login`, trelloLogin: `${base}/atlassian`, teamsHosts: ["127.0.0.1"] },
     /** The installation's OAuth clients for the record apps, as providerUrls() would read them from env (decision 0062). */
     recordClients: () => ({
       airtableClient: { clientId: oauth.airtable!.clientId, clientSecret: oauth.airtable!.clientSecret },
@@ -758,6 +793,7 @@ export async function startFakeProviders(port = 0) {
     slack,
     telegram,
     unisms,
+    meta,
     airtable,
     notion,
     trello,

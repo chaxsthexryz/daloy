@@ -23,6 +23,7 @@ const tomorrowAtTen = () => `${new Date(Date.now() + 86_400_000).toISOString().s
 
 function samplePayload(trigger: Trigger, resourceId = "a resource id from the Resources page"): string {
   if (trigger.type === "email") return JSON.stringify({ from: "ana@example.com", replyTo: "ana@example.com", to: ["inquiries@example.com"], subject: "Website inquiry", text: "I would like a quote.", messageId: "sample-inquiry@example.com", receivedAt: new Date().toISOString() }, null, 2);
+  if (trigger.type === "meta_dm") return JSON.stringify({ channel: trigger.config.channel === "instagram" ? "instagram" : "messenger", senderId: "1234567890", messageId: "m_sample_1", text: "Here is my GCash receipt.", timestamp: new Date().toISOString(), image: [] }, null, 2);
   if (trigger.type !== "form") return "{}";
   // File fields are left out: a test run takes no files, and the server drops a value sent for one.
   const sample = Object.fromEntries(
@@ -252,26 +253,28 @@ export function Editor({ id }: { id: string }) {
                 value={step.config as Record<string, unknown>}
                 onChange={(config) => update({ ...draft, steps: draft.steps.map((s) => (s.id === step.id ? ({ ...s, config } as Step) : s)) })}
               />
-              {step.type === "ai" && draft.trigger.type === "form" && draft.trigger.config.fields.some((f) => f.type === "file") && (
+              {step.type === "ai" &&
+                ((draft.trigger.type === "form" && draft.trigger.config.fields.some((f) => f.type === "file")) || draft.trigger.type === "meta_dm") && (
                 <fieldset>
                   <legend>{t("Let the AI read these files")}</legend>
-                  {draft.trigger.config.fields
-                    .filter((f) => f.type === "file")
-                    .map((f) => (
-                      <label key={f.name} className="check">
-                        <input
-                          type="checkbox"
-                          checked={(step.config as { files?: string[] }).files?.includes(f.name) ?? false}
-                          onChange={(e) => {
-                            const { files = [], ...rest } = step.config as { files?: string[] };
-                            const next = e.target.checked ? [...files, f.name] : files.filter((n) => n !== f.name);
-                            const config = next.length ? { ...rest, files: next } : rest;
-                            update({ ...draft, steps: draft.steps.map((s) => (s.id === step.id ? ({ ...s, config } as Step) : s)) });
-                          }}
-                        />
-                        {f.label}
-                      </label>
-                    ))}
+                  {(draft.trigger.type === "form"
+                    ? draft.trigger.config.fields.filter((f) => f.type === "file").map((f) => ({ name: f.name, label: f.label }))
+                    : [{ name: "image", label: t("DM photo attachment") }]
+                  ).map((f) => (
+                    <label key={f.name} className="check">
+                      <input
+                        type="checkbox"
+                        checked={(step.config as { files?: string[] }).files?.includes(f.name) ?? false}
+                        onChange={(e) => {
+                          const { files = [], ...rest } = step.config as { files?: string[] };
+                          const next = e.target.checked ? [...files, f.name] : files.filter((n) => n !== f.name);
+                          const config = next.length ? { ...rest, files: next } : rest;
+                          update({ ...draft, steps: draft.steps.map((s) => (s.id === step.id ? ({ ...s, config } as Step) : s)) });
+                        }}
+                      />
+                      {f.label}
+                    </label>
+                  ))}
                   <p className="muted hint">{t("Checked files are sent to the AI model you picked on the AI model page. Photos need Gemini, OpenAI or OpenRouter.")}</p>
                 </fieldset>
               )}
@@ -369,6 +372,7 @@ const TRIGGER_DEFAULTS: Record<Trigger["type"], Trigger> = {
   schedule: { type: "schedule", config: { cron: "0 9 * * 1" } },
   form: { type: "form", config: { fields: [{ name: "email", label: "Email", type: "email", required: true }] } },
   payment: { type: "payment", config: { events: ["paid"] } },
+  meta_dm: { type: "meta_dm", config: { channel: "both", requireImage: false } },
 };
 
 function TriggerPanel({ trigger, wf, onChange }: { trigger: Trigger; wf: Loaded; onChange: (t: Trigger) => void }) {
@@ -390,8 +394,38 @@ function TriggerPanel({ trigger, wf, onChange }: { trigger: Trigger; wf: Loaded;
           <option value="form">{t("A form is submitted")}</option>
           <option value="email">{t("An email arrives")}</option>
           <option value="payment">{t("When a PayMongo payment is confirmed")}</option>
+          <option value="meta_dm">{t("A Messenger or Instagram DM arrives")}</option>
         </select>
       </div>
+      {trigger.type === "meta_dm" && (
+        <>
+          <div className="field">
+            <label htmlFor={`${id}-meta-channel`}>{t("Channel")}</label>
+            <select
+              id={`${id}-meta-channel`}
+              value={trigger.config.channel}
+              onChange={(e) => onChange({ type: "meta_dm", config: { ...trigger.config, channel: e.target.value as "messenger" | "instagram" | "both" } })}
+            >
+              <option value="both">{t("Messenger and Instagram")}</option>
+              <option value="messenger">{t("Facebook Messenger only")}</option>
+              <option value="instagram">{t("Instagram DM only")}</option>
+            </select>
+          </div>
+          <div className="field">
+            <label className="check">
+              <input
+                type="checkbox"
+                checked={trigger.config.requireImage}
+                onChange={(e) => onChange({ type: "meta_dm", config: { ...trigger.config, requireImage: e.target.checked } })}
+              />{" "}
+              {t("Only run when the message includes a photo")}
+            </label>
+          </div>
+          <p className="muted hint">
+            <a href="#/apps">{t("Connect Facebook Messenger & Instagram in Apps")}</a>
+          </p>
+        </>
+      )}
       {trigger.type === "payment" && (
         <fieldset>
           <legend>{t("Run when a payment is")}</legend>
@@ -528,7 +562,7 @@ function TriggerPanel({ trigger, wf, onChange }: { trigger: Trigger; wf: Loaded;
   );
 }
 
-const OUTSIDE = new Set(["http", "email", "approval", "sheets", "drive", "slack", "outlook", "teams", "telegram", "sms", "calendar", "airtable", "notion", "trello"]);
+const OUTSIDE = new Set(["http", "email", "approval", "sheets", "drive", "slack", "outlook", "teams", "telegram", "sms", "calendar", "airtable", "notion", "trello", "meta_reply"]);
 
 /** Per-step outcomes for a mocked or AI-only test run: a classify label, an approval decision, or a failure. */
 function TestChoices({ steps, choices, onChange }: { steps: Step[]; choices: Record<string, string>; onChange: (c: Record<string, string>) => void }) {

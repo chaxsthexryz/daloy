@@ -28,7 +28,7 @@ export const withPeople = (def: WorkflowDefinition, real: { owner: string; membe
 export const withLabels = (def: WorkflowDefinition, real: { owner: string; member1?: string }): WorkflowDefinition =>
   swap(def, [[real.owner, PEOPLE.owner], ...(real.member1 ? ([[real.member1, PEOPLE.member1]] as [string, string][]) : [])]);
 
-const WHEN: Record<string, string> = { form: "When someone fills the form", webhook: "When another system sends a web request", manual: "When you run it by hand" };
+const WHEN: Record<string, string> = { form: "When someone fills the form", webhook: "When another system sends a web request", manual: "When you run it by hand", meta_dm: "When a Messenger or Instagram DM arrives" };
 const BRANCH: Record<string, string> = {
   approved: "If approved:",
   rejected: "If rejected:",
@@ -90,6 +90,8 @@ function sentence(step: WorkflowDefinition["steps"][number], language: Language)
       return t("Send a web request to {host}", { host: /^(?:[a-z]+:\/\/)?([^/?#]+)/i.exec(text(c.url, ""))?.[1] ?? t("another system") });
     case "booking":
       return t("Hold the booked time");
+    case "meta_reply":
+      return t("Reply on Messenger or Instagram");
     default:
       return t("Do something");
   }

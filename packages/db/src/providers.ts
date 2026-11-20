@@ -36,6 +36,9 @@ export type ProviderUrls = {
   unisms?: string;
   /** PayMongo API base. Unset in test fakes: paymongo.ts falls back to the real one. */
   paymongo?: string;
+  /** Meta Graph API base and test-only CDN override for Messenger and Instagram DMs (decision 0069). */
+  meta?: string;
+  metaCdn?: string;
   airtable: string;
   notion: string;
   trello: string;
@@ -70,6 +73,8 @@ export const providerUrls = (env: NodeJS.ProcessEnv = process.env): ProviderUrls
   telegram: trim(env.TELEGRAM_API_URL ?? "https://api.telegram.org"),
   unisms: trim(env.UNISMS_API_URL ?? "https://unismsapi.com"),
   paymongo: trim(env.PAYMONGO_API_URL ?? "https://api.paymongo.com"),
+  meta: trim(env.META_GRAPH_URL ?? "https://graph.facebook.com"),
+  metaCdn: env.META_CDN_URL ? trim(env.META_CDN_URL) : undefined,
   airtable: trim(env.AIRTABLE_API_URL ?? "https://api.airtable.com"),
   notion: trim(env.NOTION_API_URL ?? "https://api.notion.com"),
   trello: trim(env.TRELLO_API_URL ?? "https://api.trello.com"),

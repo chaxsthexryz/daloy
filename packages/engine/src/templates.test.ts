@@ -7,7 +7,7 @@ import { templatesForLanguage } from "./template-language";
 import { TEMPLATES } from "./templates";
 import { websiteInquiryDefinition } from "./website-inquiry";
 
-const SLUGS = ["inquiry-triage", "invoice-follow-up", "no-show-follow-up", "appointment-reminder", "request-to-sheets", "lead-to-booking", "order-to-sheets", "order-paid", "invoice-paymongo", "quote-deposit", "renewal-reminders", "store-orders", "receipt-expense"];
+const SLUGS = ["inquiry-triage", "invoice-follow-up", "no-show-follow-up", "appointment-reminder", "request-to-sheets", "lead-to-booking", "order-to-sheets", "order-paid", "invoice-paymongo", "quote-deposit", "renewal-reminders", "store-orders", "receipt-expense", "meta-receipt-intake"];
 const parse = (slug: string) => definitionSchema.parse(TEMPLATES.find((t) => t.slug === slug)!.definition);
 
 describe("starter templates", () => {
@@ -32,7 +32,7 @@ describe("starter templates", () => {
     const tl = templatesForLanguage("tl");
     for (const t of TEMPLATES.slice(3)) {
       const tt = tl.find((x) => x.slug === t.slug)!;
-      for (const s of t.definition.steps) if (s.type === "email" || s.type === "approval" || s.type === "slack") expect(JSON.stringify(tt.definition.steps.find((x) => x.id === s.id)), `${t.slug}.${s.id}`).not.toEqual(JSON.stringify(s));
+      for (const s of t.definition.steps) if (s.type === "email" || s.type === "approval" || s.type === "slack" || s.type === "meta_reply") expect(JSON.stringify(tt.definition.steps.find((x) => x.id === s.id)), `${t.slug}.${s.id}`).not.toEqual(JSON.stringify(s));
     }
   });
 

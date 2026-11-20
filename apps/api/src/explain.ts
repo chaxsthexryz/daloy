@@ -87,7 +87,7 @@ export function askFacts(input: FactsInput): AskFacts {
   return { ...failureFacts(input), plainState, steps };
 }
 
-const APPS: Record<string, string> = { google_sheets: "Google Sheets", slack: "Slack", outlook: "Outlook", teams: "Microsoft Teams", telegram: "Telegram", unisms: "UniSMS", google_calendar: "Google Calendar", google_drive: "Google Drive", airtable: "Airtable", notion: "Notion", trello: "Trello" };
+const APPS: Record<string, string> = { google_sheets: "Google Sheets", slack: "Slack", outlook: "Outlook", teams: "Microsoft Teams", telegram: "Telegram", unisms: "UniSMS", google_calendar: "Google Calendar", google_drive: "Google Drive", airtable: "Airtable", notion: "Notion", trello: "Trello", meta_messenger: "Facebook Messenger & Instagram" };
 const APPS_FIX = { href: "#/apps", label: "Check the connection" };
 // Retry, Send again and Mark as posted are on the run page itself, so these need no link.
 const ACTIVITY_FIX = null;
@@ -107,12 +107,13 @@ const PERMISSION: Record<string, string> = {
   airtable: "Give the Airtable token access to that base and table, then press Retry.",
   notion: "Share the database with the Notion integration, then press Retry.",
   trello: "Make sure the Trello token can edit that board, then press Retry.",
+  meta_messenger: "Check the Page messaging permissions in Meta, then press Retry.",
 };
 
 function ofDelivery(d: Facts["deliveries"][number]): Explanation | null {
   const app = APPS[d.provider] ?? "The other app";
-  const sent = d.provider === "outlook" || d.provider === "unisms";
-  const where = d.provider === "google_sheets" ? "sheet" : d.provider === "google_calendar" ? "calendar" : d.provider === "unisms" ? "Sender ID" : "channel";
+  const sent = d.provider === "outlook" || d.provider === "unisms" || d.provider === "meta_messenger";
+  const where = d.provider === "google_sheets" ? "sheet" : d.provider === "google_calendar" ? "calendar" : d.provider === "unisms" ? "Sender ID" : d.provider === "meta_messenger" ? "page" : "channel";
   const done = sent ? "Mark as sent" : "Mark as posted";
   const again = sent ? "Send again" : "Post again";
   const check = d.provider === "outlook" ? "Check Sent Items" : `Check ${app}`;
@@ -183,7 +184,7 @@ export function explainFailure(facts: Facts, language: "en" | "tl" = "en"): Expl
 }
 
 // The console's names for step types (apps/web/src/FlowCanvas.tsx TYPE_NAMES), plus booking.
-const TYPE_NAMES: Record<string, string> = { condition: "Condition", http: "HTTP request", email: "Send email", delay: "Delay", ai: "AI task", approval: "Approval", sheets: "Add to Google Sheets", drive: "Save files to Google Drive", slack: "Post to Slack", outlook: "Send from Outlook", teams: "Post to Teams", telegram: "Send to Telegram", sms: "Send SMS", calendar: "Add to Google Calendar", paymongo_link: "Create payment link", payment_status: "Check payment", airtable: "Add to Airtable", notion: "Add to Notion", trello: "Add to Trello", booking: "Booking" };
+const TYPE_NAMES: Record<string, string> = { condition: "Condition", http: "HTTP request", email: "Send email", delay: "Delay", ai: "AI task", approval: "Approval", sheets: "Add to Google Sheets", drive: "Save files to Google Drive", slack: "Post to Slack", outlook: "Send from Outlook", teams: "Post to Teams", telegram: "Send to Telegram", sms: "Send SMS", calendar: "Add to Google Calendar", paymongo_link: "Create payment link", payment_status: "Check payment", airtable: "Add to Airtable", notion: "Add to Notion", trello: "Add to Trello", booking: "Booking", meta_reply: "Reply on Messenger or Instagram" };
 const HEADLINES = { "needs you": "This request needs you before it goes on.", done: "This request is done.", problem: "This request stopped with a problem.", waiting: "This request is waiting.", "in progress": "This request is still going." };
 const OPEN_ACTIVITY = "Open the request in Activity to see every step.";
 

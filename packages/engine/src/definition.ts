@@ -105,6 +105,13 @@ export const paymentStatusConfigSchema = z.object({ link: stepId });
 // Saves the files a form collected into the Google Drive folder picked in Apps. It takes no settings: the files are
 // the form's file fields. Queued like Sheets.
 export const driveConfigSchema = z.object({}).default({});
+// Replies to a Facebook Messenger or Instagram DM within Meta's 24-hour messaging window (decision 0069). Queued like Slack.
+export const metaReplyConfigSchema = z.object({
+  recipientId: template(200).min(1).default("{{trigger.senderId}}"),
+  channel: template(100).min(1).default("{{trigger.channel}}"),
+  text: template(2000).min(1),
+});
+export type MetaReplyConfig = z.infer<typeof metaReplyConfigSchema>;
 export type SheetsConfig = z.infer<typeof sheetsConfigSchema>;
 export type SlackConfig = z.infer<typeof slackConfigSchema>;
 
@@ -154,6 +161,7 @@ const stepSchema = z.discriminatedUnion("type", [
   z.object({ id: stepId, type: z.literal("booking"), config: bookingConfigSchema }),
   z.object({ id: stepId, type: z.literal("paymongo_link"), config: paymongoLinkConfigSchema }),
   z.object({ id: stepId, type: z.literal("payment_status"), config: paymentStatusConfigSchema }),
+  z.object({ id: stepId, type: z.literal("meta_reply"), config: metaReplyConfigSchema }),
 ]);
 export type Step = z.infer<typeof stepSchema>;
 
@@ -210,6 +218,16 @@ const triggerSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("form"), config: z.object({ fields: fieldList }) }),
   // Starts a run when PayMongo reports a payment (paid by default). The run gets the payment as its trigger payload.
   z.object({ type: z.literal("payment"), config: z.object({ events: z.array(z.enum(["paid", "refunded"])).min(1).default(["paid"]) }).default({ events: ["paid"] }) }),
+  // Starts a run when a Facebook Messenger or Instagram DM arrives on the connected Page or Instagram account (decision 0069).
+  z.object({
+    type: z.literal("meta_dm"),
+    config: z
+      .object({
+        channel: z.enum(["messenger", "instagram", "both"]).default("both"),
+        requireImage: z.boolean().default(false),
+      })
+      .default({ channel: "both", requireImage: false }),
+  }),
 ]);
 export type Trigger = z.infer<typeof triggerSchema>;
 
@@ -321,9 +339,11 @@ export const definitionSchema = z
     for (const s of def.steps) {
       if (byId.has(s.id)) fail(`duplicate step id "${s.id}"`);
       byId.set(s.id, s);
-      if (s.type === "drive" && !(def.trigger.type === "form" && def.trigger.config.fields.some((f) => f.type === "file"))) fail(`drive step "${s.id}" needs a form trigger with at least one file field`);
+      if (s.type === "drive" && !((def.trigger.type === "form" && def.trigger.config.fields.some((f) => f.type === "file")) || def.trigger.type === "meta_dm")) {
+        fail(`drive step "${s.id}" needs a form trigger with at least one file field`);
+      }
       if (s.type === "ai") {
-        const fileFields = def.trigger.type === "form" ? def.trigger.config.fields.filter((f) => f.type === "file").map((f) => f.name) : [];
+        const fileFields = def.trigger.type === "form" ? def.trigger.config.fields.filter((f) => f.type === "file").map((f) => f.name) : def.trigger.type === "meta_dm" ? ["image"] : [];
         for (const name of s.config.files ?? []) if (!fileFields.includes(name)) fail(`ai step "${s.id}" reads "${name}", which is not a file field of the form`);
       }
       if (s.type === "payment_status" && !def.steps.some((o) => o.id === s.config.link && o.type === "paymongo_link")) fail(`payment_status step "${s.id}" needs link to be the id of a paymongo_link step`);

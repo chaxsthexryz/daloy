@@ -3,7 +3,7 @@ import { Text, useLanguage } from "./Language";
 import { useEffect, useState, type ReactNode } from "react";
 import { api } from "./api";
 import { GmailCard, PILL, type Settings } from "./BusinessSetup";
-import { OutlookConnection, RecordConnection, PaymongoConnection, SlackConnection, TeamsConnection, TelegramConnection, UnismsConnection, type Connection, type OutlookSetup, type Provider } from "./Connections";
+import { MetaMessengerConnection, OutlookConnection, RecordConnection, PaymongoConnection, SlackConnection, TeamsConnection, TelegramConnection, UnismsConnection, type Connection, type OutlookSetup, type Provider } from "./Connections";
 import { GoogleCalendarCard } from "./GoogleCalendar";
 import { SharedGrants } from "./ConnectPanel";
 import { GoogleDriveCard, GoogleSheetsCard } from "./GoogleConnect";
@@ -25,6 +25,7 @@ const APPS: { key: Key; name: string; line: string }[] = [
   { key: "airtable", name: "Airtable", line: "Add a record to a table for every request." },
   { key: "notion", name: "Notion", line: "Add a page to a database for every request." },
   { key: "trello", name: "Trello", line: "Add a card to a list for every request." },
+  { key: "meta_messenger", name: "Facebook Messenger & Instagram", line: "Receive DMs and receipt photos, and reply within Meta's 24-hour window." },
 ];
 
 /**
@@ -35,7 +36,7 @@ const APPS: { key: Key; name: string; line: string }[] = [
 export function AppsPage({ outcome }: { outcome?: { app: string; code: string } }) {
   const { t } = useLanguage();
   const [mail, setMail] = useState<Settings | null>(null);
-  const [conns, setConns] = useState<{ connections: Connection[]; outlook: OutlookSetup; oauth: string[]; shared: string[]; paymongoWebhookBase: string } | null>(null);
+  const [conns, setConns] = useState<{ connections: Connection[]; outlook: OutlookSetup; oauth: string[]; shared: string[]; paymongoWebhookBase: string; metaWebhookBase: string } | null>(null);
   const [error, setError] = useState("");
   // An app slug is its provider name with dashes (google-sheets is google_sheets). "oauth" means the flow was not found.
   const landed = outcome && APPS.find((a) => a.key === outcome.app.replaceAll("-", "_"))?.key;
@@ -83,6 +84,7 @@ export function AppsPage({ outcome }: { outcome?: { app: string; code: string } 
     airtable: () => <RecordConnection key="airtable" app="airtable" conn={conn("airtable")} configured={conns.oauth.includes("airtable")} outcome={landed === "airtable" ? outcome?.code : undefined} onChange={load} />,
     notion: () => <RecordConnection key="notion" app="notion" conn={conn("notion")} configured={conns.oauth.includes("notion")} outcome={landed === "notion" ? outcome?.code : undefined} onChange={load} />,
     trello: () => <RecordConnection key="trello" app="trello" conn={conn("trello")} configured={conns.oauth.includes("trello")} outcome={landed === "trello" ? outcome?.code : undefined} onChange={load} />,
+    meta_messenger: () => <MetaMessengerConnection conn={conn("meta_messenger")} webhookBase={conns.metaWebhookBase} onChange={load} />,
   };
   const card = (a: (typeof APPS)[number]) => {
     const s = state(a.key);

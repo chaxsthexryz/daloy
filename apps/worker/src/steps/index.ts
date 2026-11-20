@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { workspaceLanguage, aiConnection, bookFromStep, checkRecipients, claimTimeout, claimUsage, createApproval, findPaymentForStep, findApprover, queueCalendarEvent, queueDelivery, readSecrets, redactSecrets, secretForms, sendAs, type Db, type MailDeps, type Provider } from "@daloy/db";
+import { workspaceLanguage, aiConnection, bookFromStep, checkReceiptReference, checkRecipients, claimTimeout, claimUsage, createApproval, findPaymentForStep, findApprover, queueCalendarEvent, queueDelivery, readSecrets, redactSecrets, secretForms, sendAs, type Db, type MailDeps, type Provider } from "@daloy/db";
 import { approvalEmailBody, type FileRef, bookingStartField, conditionBranch, normalizePhMobile, parseZoned, SMS_MAX_CHARS, type TestChoice, type Trigger, declaresJson, parseInstant, isRetryable, mockAiOutput, parseJsonTemplate, resolveJsonTemplate, resolveTemplate, StepError, usesSecrets, type ExpressionContext, type Step } from "@daloy/engine";
 import type { StepExecutor, StepResult } from "../advance";
 import { runAi } from "./ai";
@@ -48,6 +48,7 @@ type SheetsInput = { columns: string[] };
 type SlackInput = { text: string };
 type SmsInput = { to: string; message: string; senderId?: string };
 type CalendarInput = { title: string; description: string };
+type MetaReplyInput = { recipientId: string; channel?: string; text: string };
 type RecordInput = { fields?: Record<string, string>; title?: string; name?: string; desc?: string };
 
 /**
@@ -97,6 +98,8 @@ function resolveInput(step: Step, ctx: ExpressionContext): Record<string, unknow
       const { to, message, senderId } = step.config;
       return { to: text(to, ctx), message: text(message, ctx), ...(senderId ? { senderId } : {}) } satisfies SmsInput;
     }
+    case "meta_reply":
+      return { recipientId: text(step.config.recipientId, ctx), channel: text(step.config.channel, ctx), text: text(step.config.text, ctx) } satisfies MetaReplyInput;
     case "calendar":
       return { title: text(step.config.title, ctx), description: step.config.description === undefined ? "" : text(step.config.description, ctx) } satisfies CalendarInput;
     case "payment_status":
@@ -130,9 +133,9 @@ function resolveInput(step: Step, ctx: ExpressionContext): Record<string, unknow
 type BookingInput = { action: "create" | "reschedule" | "cancel"; resource?: string; booking?: string; start?: string; minutes?: number };
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-type Attempt = { runId: string; idempotencyKey: string; attempt: number; stepRunId: string; userId: string; workflowId?: string; mock: boolean; aiLive?: boolean; choice?: TestChoice; claimSend?: () => Promise<() => void>; booking?: { test: boolean; workflowId: string; trigger: Trigger }; fileFields?: string[] };
+type Attempt = { runId: string; idempotencyKey: string; attempt: number; stepRunId: string; userId: string; workflowId?: string; mock: boolean; test?: boolean; aiLive?: boolean; choice?: TestChoice; claimSend?: () => Promise<() => void>; booking?: { test: boolean; workflowId: string; trigger: Trigger }; fileFields?: string[] };
 
-async function runStep(deps: FullDeps, step: Step, input: unknown, ctx: ExpressionContext, { runId, idempotencyKey, attempt, stepRunId, userId, workflowId, mock, aiLive, choice, claimSend, booking, fileFields }: Attempt): Promise<StepResult> {
+async function runStep(deps: FullDeps, step: Step, input: unknown, ctx: ExpressionContext, { runId, idempotencyKey, attempt, stepRunId, userId, workflowId, mock, test, aiLive, choice, claimSend, booking, fileFields }: Attempt): Promise<StepResult> {
   // The API only accepts a fail choice on a step a faked run fakes (choiceProblems).
   // "unknown" fails only the first attempt, so Send again in review shows the step going through. Nothing is sent.
   if (mock && choice && "fail" in choice && (choice.fail !== "unknown" || attempt === 1)) {
@@ -220,7 +223,29 @@ async function runStep(deps: FullDeps, step: Step, input: unknown, ctx: Expressi
       // Each file is one more AI action. The claim key is the step key, so a retry is not counted twice; the checks
       // and the PDF reading happen before, so a refused file costs nothing.
       await claim("ai", 1 + refs.length);
-      return runAi(step.config, (input as AiInput).input, { connection, model, attempt, files });
+      const aiRes = await runAi(step.config, (input as AiInput).input, { connection, model, attempt, files });
+      if (step.config.task === "extract" && refs.length > 0 && aiRes.output && typeof aiRes.output === "object") {
+        const out = aiRes.output as Record<string, unknown>;
+        if (typeof out.reference === "string" && out.is_receipt !== "no") {
+          const flag = await checkReceiptReference(deps.db, {
+            userId,
+            runId,
+            provider: typeof out.provider === "string" ? out.provider : null,
+            reference: out.reference,
+            test: test || mock || booking?.test,
+          });
+          return {
+            ...aiRes,
+            output: {
+              ...out,
+              duplicate_reference: flag.duplicate ? "yes" : "no",
+              duplicate_warning: flag.warning,
+              ...(flag.duplicate && flag.firstRunId ? { previous_run_id: flag.firstRunId } : {}),
+            },
+          };
+        }
+      }
+      return aiRes;
     }
     case "approval": {
       // A mocked test run decides straight away (approved unless the tester chose otherwise), without an email.
@@ -313,6 +338,20 @@ async function runStep(deps: FullDeps, step: Step, input: unknown, ctx: Expressi
       const d = await queueDelivery(deps.db, { userId, runId, stepId: step.id, provider, reference, payload });
       return { output: { deliveryId: d.id, reference, state: d.state } };
     }
+    case "meta_reply": {
+      const cfg = input as MetaReplyInput;
+      if (mock) return { output: { mocked: true, recipientId: cfg.recipientId, channel: cfg.channel, text: cfg.text } };
+      const recipientId = cfg.recipientId.trim();
+      const body = cfg.text.trim();
+      if (!recipientId) throw new StepError("Meta reply needs a recipient id.", false);
+      if (!body) throw new StepError("Meta reply message cannot be empty.", false);
+      if (body.length > 2000) throw new StepError("Meta reply message can be at most 2,000 characters.", false);
+      const ref = (ctx.trigger as { reference?: unknown; messageId?: unknown } | null)?.reference ?? (ctx.trigger as { messageId?: unknown } | null)?.messageId;
+      const reference = typeof ref === "string" ? ref : runId;
+      const channel = cfg.channel?.trim() || undefined;
+      const d = await queueDelivery(deps.db, { userId, runId, stepId: step.id, provider: "meta_messenger", reference, payload: { recipientId, ...(channel ? { channel } : {}), text: body } });
+      return { output: { deliveryId: d.id, reference, state: d.state, recipientId } };
+    }
     case "payment_status": {
       const cfg = input as { link: string };
       if (mock) return { output: { mocked: true, status: "pending", paid: false } };
@@ -342,7 +381,7 @@ export function createExecutor(deps: ExecutorDeps): StepExecutor {
     publicUrl: (deps.publicUrl ?? "http://localhost:3000").replace(/\/+$/, ""),
   };
   return {
-    async execute({ runId, step, userId, workflowId, idempotencyKey, attempt, stepRunId, ctx, mock = false, aiLive, choice, claimSend, booking, fileFields }) {
+    async execute({ runId, step, userId, workflowId, idempotencyKey, attempt, stepRunId, ctx, mock = false, test, aiLive, choice, claimSend, booking, fileFields }) {
       const secrets = await readSecrets(deps.db, deps.secretsKey, userId);
       const forms = secretForms(Object.values(secrets));
       // Only an HTTP step sees secrets. Every other step resolves without them, so an email, AI prompt or condition can't carry one.
@@ -359,7 +398,7 @@ export function createExecutor(deps: ExecutorDeps): StepExecutor {
             throw new StepError("A request that uses a secret must go to a fixed address: trigger or step data changed its host. Move that data into the path or query.", false);
           }
         }
-        const result = await runStep(full, step, input, real, { runId, idempotencyKey, attempt, stepRunId, userId, workflowId, mock, aiLive, choice, claimSend, booking, fileFields });
+        const result = await runStep(full, step, input, real, { runId, idempotencyKey, attempt, stepRunId, userId, workflowId, mock, test, aiLive, choice, claimSend, booking, fileFields });
         return { ...result, input: preview, output: redactSecrets(result.output, forms) };
       } catch (err) {
         const message = redactSecrets(err instanceof Error ? err.message : String(err), forms) as string;

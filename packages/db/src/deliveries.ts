@@ -8,6 +8,7 @@ import type { Db } from "./index";
 import { airtableAdd, appendRowOnce, driveUpload, type DriveDestination, notionAddPage, trelloAddCard, deleteSheetMarker, outlookSend, ProviderError, slackPost, syncCalendarEvent, teamsPost, telegramSend, unismsSend, type CalendarDestination, type OutlookMessage, type ProviderErrorKind, type ProviderUrls, type SheetDestination } from "./providers";
 import { bookingSuperseded, supersededSql } from "./bookings";
 import { bookingForCalendar } from "./calendar";
+import { metaSend, parseMetaCredential } from "./meta";
 import { bookings, calendarEvents, connections, deliveries, runs, type Provider } from "./schema";
 import { readUpload } from "./uploads";
 import { claimUsageInTx, planOf, QuotaError } from "./usage";
@@ -131,7 +132,7 @@ async function attempt(db: Db, key: Buffer, urls: ProviderUrls, d: Delivery): Pr
   }
   if (!conn) return { state: "failed", error: `${name} is not connected. Connect it in Apps, then retry.`, kind: "not_connected" };
   if (conn.status === "failed") return { state: "failed", error: `${name} needs to be connected again (${conn.account}). Reconnect it in Apps, then retry.`, kind: "reconnect" };
-  if (!conn.destination) return { state: "failed", error: `No ${d.provider === "google_sheets" ? "sheet" : d.provider === "google_calendar" ? "calendar" : d.provider === "google_drive" ? "folder" : d.provider === "telegram" ? "chat" : d.provider === "airtable" ? "table" : d.provider === "notion" ? "database" : d.provider === "trello" ? "list" : d.provider === "unisms" ? "Sender ID" : "channel"} is chosen for ${name}. Pick one in Apps, then retry.`, kind: "no_destination" };
+  if (!conn.destination) return { state: "failed", error: `No ${d.provider === "google_sheets" ? "sheet" : d.provider === "google_calendar" ? "calendar" : d.provider === "google_drive" ? "folder" : d.provider === "telegram" ? "chat" : d.provider === "airtable" ? "table" : d.provider === "notion" ? "database" : d.provider === "trello" ? "list" : d.provider === "unisms" ? "Sender ID" : d.provider === "meta_messenger" ? "page" : "channel"} is chosen for ${name}. Pick one in Apps, then retry.`, kind: "no_destination" };
   if (d.pinnedAccount === null) {
     return { state: "needs_review", error: `This was queued before Daloy recorded where deliveries go, so it cannot confirm the ${name} destination. Choose Post again to send it to ${describe(d.provider, conn.destination)}, or Mark as posted.`, kind: "queued_before_pin" };
   }
@@ -145,7 +146,7 @@ async function attempt(db: Db, key: Buffer, urls: ProviderUrls, d: Delivery): Pr
       state: "needs_review",
       error: d.provider === "google_calendar"
         ? `The calendar connection changed since this event was created: it is still in ${describe(d.provider, d.pinnedDestination ?? {})}, and ${describe(d.provider, conn.destination)} is chosen now. Nothing was written to the new one. Choose Post again to write this change to the new calendar, or Mark as posted.`
-        : `The ${name} connection changed since this was queued (it was for ${describe(d.provider, d.pinnedDestination ?? {})}, now ${describe(d.provider, conn.destination)}). Nothing was sent to the new one. Choose ${d.provider === "unisms" || d.provider === "outlook" ? "Send again" : "Post again"} to send it there, or ${d.provider === "unisms" || d.provider === "outlook" ? "Mark as sent" : "Mark as posted"}.`,
+        : `The ${name} connection changed since this was queued (it was for ${describe(d.provider, d.pinnedDestination ?? {})}, now ${describe(d.provider, conn.destination)}). Nothing was sent to the new one. Choose ${d.provider === "unisms" || d.provider === "outlook" || d.provider === "meta_messenger" ? "Send again" : "Post again"} to send it there, or ${d.provider === "unisms" || d.provider === "outlook" || d.provider === "meta_messenger" ? "Mark as sent" : "Mark as posted"}.`,
       kind: "destination_changed",
     };
   }
@@ -223,6 +224,12 @@ async function attempt(db: Db, key: Buffer, urls: ProviderUrls, d: Delivery): Pr
     const text = p.text;
     if (d.provider === "teams") return { state: "delivered", result: await teamsPost(urls, activeConn.credential, text) };
     if (d.provider === "telegram") return { state: "delivered", result: await telegramSend(urls, activeConn.credential, destination.chatId!, text) };
+    if (d.provider === "meta_messenger") {
+      const m = d.payload as { recipientId?: string; channel?: string; text?: string };
+      if (!m.recipientId || !m.text) return { state: "failed", error: "Missing recipient or message text for Meta reply.", kind: "invalid" };
+      const { pageAccessToken } = parseMetaCredential(activeConn.credential);
+      return { state: "delivered", result: await metaSend(urls, pageAccessToken, { recipientId: m.recipientId, channel: m.channel, text: m.text }) };
+    }
     return { state: "delivered", result: await slackPost(urls, slackToken(activeConn), destination.channelId!, text) };
   };
   try {
@@ -265,7 +272,7 @@ async function attempt(db: Db, key: Buffer, urls: ProviderUrls, d: Delivery): Pr
   }
 }
 
-const verb = (p: Provider) => (p === "outlook" || p === "unisms" ? "sent" : p === "google_drive" ? "saved" : "posted");
+const verb = (p: Provider) => (p === "outlook" || p === "unisms" || p === "meta_messenger" ? "sent" : p === "google_drive" ? "saved" : "posted");
 
 /** The destination as a person would name it, for review messages. */
 function describe(provider: Provider, dest: Record<string, string>) {
@@ -279,6 +286,7 @@ function describe(provider: Provider, dest: Record<string, string>) {
   if (provider === "airtable") return `the Airtable table ${dest.tableName ?? dest.tableId}`;
   if (provider === "notion") return `the Notion database ${dest.databaseTitle ?? dest.databaseId}`;
   if (provider === "trello") return `the Trello list ${dest.listName ?? dest.listId}`;
+  if (provider === "meta_messenger") return `the Meta Page ${dest.pageName ?? dest.pageId}`;
   return `the Teams channel ${dest.channelName ?? ""}`.trim();
 }
 
@@ -300,13 +308,14 @@ const DESTINATION_ONLY = new Set<Provider>(["airtable", "notion", "trello"]);
 
 /** Same place: the fields that pick where a delivery lands. Display names may change without moving anything. */
 function sameDestination(a: Record<string, string> | null, b: Record<string, string>) {
-  const where = (d: Record<string, string> | null) => JSON.stringify([d?.spreadsheetId, d?.calendarId, d?.folderId, d?.tab, d?.channelId, d?.chatId, d?.baseId, d?.tableId, d?.databaseId, d?.listId, d?.mailbox, d?.channelName, d?.senderId]);
+  const where = (d: Record<string, string> | null) => JSON.stringify([d?.spreadsheetId, d?.calendarId, d?.folderId, d?.tab, d?.channelId, d?.chatId, d?.baseId, d?.tableId, d?.databaseId, d?.listId, d?.mailbox, d?.channelName, d?.senderId, d?.pageId, d?.instagramAccountId]);
   return where(a) === where(b);
 }
 
 function reviewHint(provider: Provider, dest: Record<string, string>) {
   if (provider === "outlook") return `Look in Sent Items of ${dest.mailbox ?? "the mailbox"}, then choose Mark as sent or Send again.`;
   if (provider === "unisms") return `Check your UniSMS delivery logs (Sender ID ${dest.senderId ?? "Unisoft"}), then choose Mark as sent or Send again.`;
+  if (provider === "meta_messenger") return `Check the inbox of ${describe(provider, dest)}, then choose Mark as sent or Send again.`;
   return `Check ${describe(provider, dest)}, then choose Mark as posted or Post again.`;
 }
 

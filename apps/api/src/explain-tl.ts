@@ -8,7 +8,7 @@ const lint: Record<LintRule, string> = {
   number_no_invalid: "May number check na walang kasunod na hakbang kapag hindi numero ang halaga, kaya doon matatapos ang automation.",
   unreachable_step: "May bahagi ng automation na hindi maaabot, kaya hindi ito tatakbo.",
 };
-const apps: Record<string, string> = { google_sheets: "Google Sheets", slack: "Slack", outlook: "Outlook", teams: "Microsoft Teams", telegram: "Telegram", unisms: "UniSMS", google_calendar: "Google Calendar", google_drive: "Google Drive", airtable: "Airtable", notion: "Notion", trello: "Trello" };
+const apps: Record<string, string> = { google_sheets: "Google Sheets", slack: "Slack", outlook: "Outlook", teams: "Microsoft Teams", telegram: "Telegram", unisms: "UniSMS", google_calendar: "Google Calendar", google_drive: "Google Drive", airtable: "Airtable", notion: "Notion", trello: "Trello", meta_messenger: "Facebook Messenger & Instagram" };
 const appsFix = { href: "#/apps", label: "Tingnan ang koneksyon" };
 const booking: Explanation = { headline: "Isinara ito dahil nagbago ang booking.", lines: ["Na-reschedule o nakansela ang booking, kaya wala nang ipapadala."], fix: null };
 const permission: Record<string, string> = {
@@ -20,11 +20,12 @@ const permission: Record<string, string> = {
   airtable: "Bigyan ng access ang Airtable token sa base at table na iyon, saka pindutin ang Subukan ulit.",
   notion: "I-share ang database sa Notion integration, saka pindutin ang Subukan ulit.",
   trello: "Tiyaking puwedeng mag-edit ang Trello token sa board na iyon, saka pindutin ang Subukan ulit.",
+  meta_messenger: "Tingnan ang messaging permissions ng Page sa Meta, saka pindutin ang Subukan ulit.",
 };
 function delivery(d: Facts["deliveries"][number]): Explanation | null {
   const app = apps[d.provider] ?? "Ang kabilang app";
-  const sent = d.provider === "outlook" || d.provider === "unisms";
-  const where = d.provider === "google_sheets" ? "sheet" : d.provider === "google_calendar" ? "calendar" : d.provider === "unisms" ? "Sender ID" : "channel";
+  const sent = d.provider === "outlook" || d.provider === "unisms" || d.provider === "meta_messenger";
+  const where = d.provider === "google_sheets" ? "sheet" : d.provider === "google_calendar" ? "calendar" : d.provider === "unisms" ? "Sender ID" : d.provider === "meta_messenger" ? "page" : "channel";
   const done = sent ? "Markahang naipadala" : "Markahang nai-post";
   const again = sent ? "Ipadala ulit" : "I-post ulit";
   const check = d.provider === "outlook" ? "Tingnan ang Sent Items" : `Tingnan ang ${app}`;
@@ -67,7 +68,7 @@ export function explainFailureTl(facts: Facts): Explanation {
   const base = facts.deliveries.map(delivery).find(Boolean) ?? (facts.step ? step(facts.step) : null) ?? { headline: "Hindi matukoy ng Daloy kung bakit ito huminto.", lines: ["Nasa detalye para sa technician sa ibaba ang buong tala."], fix: null };
   return { ...base, lines: [...base.lines, ...facts.lint.map((l) => lint[l.rule])] };
 }
-const types: Record<string, string> = { condition: "Kondisyon", http: "HTTP request", email: "Magpadala ng email", delay: "Paghihintay", ai: "AI task", approval: "Pag-apruba", sheets: "Idagdag sa Google Sheets", drive: "I-save ang mga file sa Google Drive", slack: "I-post sa Slack", outlook: "Ipadala mula sa Outlook", teams: "I-post sa Teams", telegram: "Ipadala sa Telegram", sms: "Magpadala ng SMS", calendar: "Idagdag sa Google Calendar", paymongo_link: "Gumawa ng payment link", payment_status: "Tingnan ang bayad", airtable: "Idagdag sa Airtable", notion: "Idagdag sa Notion", trello: "Idagdag sa Trello", booking: "Booking" };
+const types: Record<string, string> = { condition: "Kondisyon", http: "HTTP request", email: "Magpadala ng email", delay: "Paghihintay", ai: "AI task", approval: "Pag-apruba", sheets: "Idagdag sa Google Sheets", drive: "I-save ang mga file sa Google Drive", slack: "I-post sa Slack", outlook: "Ipadala mula sa Outlook", teams: "I-post sa Teams", telegram: "Ipadala sa Telegram", sms: "Magpadala ng SMS", calendar: "Idagdag sa Google Calendar", paymongo_link: "Gumawa ng payment link", payment_status: "Tingnan ang bayad", airtable: "Idagdag sa Airtable", notion: "Idagdag sa Notion", trello: "Idagdag sa Trello", booking: "Booking", meta_reply: "Sumagot sa Messenger o Instagram" };
 const headlines = { "needs you": "Kailangan mong tingnan ang request na ito bago magpatuloy.", done: "Tapos na ang request na ito.", problem: "Huminto ang request na ito dahil may problema.", waiting: "Naghihintay ang request na ito.", "in progress": "Tumatakbo pa ang request na ito." };
 export function answerAllTl(facts: AskFacts): { happened: Explanation; why: Explanation | null; next: Explanation } {
   const happened = [facts.steps.length ? `${facts.steps.length} hakbang ang tumakbo.` : "Wala pang tumatakbong hakbang."];

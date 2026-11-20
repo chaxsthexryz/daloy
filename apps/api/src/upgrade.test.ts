@@ -184,7 +184,7 @@ describe("upgrade to the shared OAuth core (0036 to 0037), with every provider c
       notion: "ntn_synthetic0123456789abcdefghij",
       trello: JSON.stringify({ key: "0".repeat(32), token: "t".repeat(64) }),
     });
-    const pre37Providers = PROVIDERS.filter((provider) => provider !== "unisms");
+    const pre37Providers = PROVIDERS.filter((provider) => provider !== "unisms" && provider !== "meta_messenger");
     const dest: Partial<Record<Provider, Record<string, string>>> = { outlook: { mailbox: "ana@contoso.example" }, slack: { channelId: "C0REQ", channelName: "office-requests" }, teams: { channelName: "Purchasing" } };
     for (const provider of pre37Providers) {
       const e = encryptSecret(key, owner, `connection:${provider}`, creds[provider]);
@@ -215,7 +215,13 @@ describe("upgrade to the shared OAuth core (0036 to 0037), with every provider c
       google_sheets: "service_account", google_calendar: "service_account", google_drive: "service_account", teams: "webhook_url", outlook: "oauth",
       slack: "token", telegram: "token", paymongo: "token", airtable: "token", notion: "token", trello: "token",
     });
-    for (const provider of PROVIDERS.filter((pr) => pr !== "unisms")) expect((await connectionCredential(d, key, owner, provider))!.credential).toBe(creds[provider]);
+    for (const provider of PROVIDERS.filter((pr) => pr !== "unisms" && pr !== "meta_messenger")) expect((await connectionCredential(d, key, owner, provider))!.credential).toBe(creds[provider]);
+    // Verify migration 0041 applied cleanly on top of 0040: both unisms and meta_messenger are allowed by connections_provider, and receipt_references exists.
+    const { rows: checks } = await p.query<{ def: string }>("select pg_get_constraintdef(oid) as def from pg_constraint where conname = 'connections_provider'");
+    expect(checks[0]?.def).toContain("'unisms'");
+    expect(checks[0]?.def).toContain("'meta_messenger'");
+    const { rows: rr } = await p.query<{ count: string }>("select count(*) from receipt_references");
+    expect(Number(rr[0]?.count)).toBe(0);
     const { rows: pins } = await p.query("select pinned_account, pinned_destination, pinned_external_id from deliveries where id = $1", [delivery]);
     expect(pins[0]).toEqual({ pinned_account: "ana@contoso.example", pinned_destination: { mailbox: "ana@contoso.example" }, pinned_external_id: null });
   });

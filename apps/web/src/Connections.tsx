@@ -5,7 +5,7 @@ import { ConnectPanel, Status, useAction } from "./ConnectPanel";
 import { RecordTargetPicker } from "./RecordTargetPicker";
 import { PaymongoSetup, TeamsSetup, TelegramSetup } from "./PasteSetups";
 
-export type Provider = "google_sheets" | "slack" | "outlook" | "teams" | "telegram" | "unisms" | "google_calendar" | "google_drive" | "paymongo" | "airtable" | "notion" | "trello";
+export type Provider = "google_sheets" | "slack" | "outlook" | "teams" | "telegram" | "unisms" | "google_calendar" | "google_drive" | "paymongo" | "airtable" | "notion" | "trello" | "meta_messenger";
 export type Connection = { provider: Provider; status: "active" | "failed"; authMethod?: "token" | "service_account" | "oauth" | "webhook_url"; account: string; destination: Record<string, string> | null; lastError: string | null; lastTestedAt: string | null };
 export type TestResult = { ok: true; range?: string; channel?: string } | { ok: false; error: string };
 export type OutlookSetup = { configured: boolean; adminConsentUrl?: string };
@@ -688,6 +688,138 @@ export function TeamsConnection({ conn, onChange }: { conn: Connection | null; o
   );
 }
 
+export function MetaMessengerConnection({ conn, webhookBase, onChange }: { conn: Connection | null; webhookBase: string; onChange: () => Promise<unknown> }) {
+  const { t } = useLanguage();
+  const { error, busy, act } = useAction(onChange);
+  const [editing, setEditing] = useState(false);
+  const [test, setTest] = useState<TestResult | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [form, setForm] = useState({
+    pageId: conn?.destination?.pageId ?? "",
+    instagramAccountId: conn?.destination?.instagramAccountId ?? "",
+    pageAccessToken: "",
+    appSecret: "",
+    verifyToken: "",
+  });
+  const webhookUrl = conn?.destination?.webhookPath ? `${webhookBase}/${conn.destination.webhookPath}` : null;
+  const save = (e: FormEvent) => {
+    e.preventDefault();
+    void act(async () => {
+      await api("PUT", "/settings/connections/meta-messenger", {
+        pageId: form.pageId.trim(),
+        ...(form.instagramAccountId.trim() ? { instagramAccountId: form.instagramAccountId.trim() } : {}),
+        pageAccessToken: form.pageAccessToken.trim(),
+        ...(form.appSecret.trim() ? { appSecret: form.appSecret.trim() } : {}),
+        ...(form.verifyToken.trim() ? { verifyToken: form.verifyToken.trim() } : {}),
+      });
+      setForm({ pageId: form.pageId.trim(), instagramAccountId: form.instagramAccountId.trim(), pageAccessToken: "", appSecret: "", verifyToken: "" });
+      setEditing(false);
+      setTest(null);
+    });
+  };
+  const copyUrl = () => {
+    if (!webhookUrl) return;
+    void navigator.clipboard?.writeText(webhookUrl);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <div className="connection" aria-busy={busy} aria-labelledby="meta-messenger-h">
+      <h3 id="meta-messenger-h">Facebook Messenger &amp; Instagram</h3>
+      {conn && <Status conn={conn} label={t("Page")} />}
+      {conn?.destination && (
+        <p>
+          {t("Page ID:")} <strong>{conn.destination.pageId}</strong>
+          {conn.destination.instagramAccountId && (
+            <>
+              {" · "}
+              {t("Instagram Account ID:")} <strong>{conn.destination.instagramAccountId}</strong>
+            </>
+          )}
+        </p>
+      )}
+      {webhookUrl && (
+        <p>
+          {t("Webhook URL:")} <code>{webhookUrl}</code>{" "}
+          <button type="button" className="quiet" onClick={copyUrl}>
+            {copied ? t("Copied") : t("Copy webhook URL")}
+          </button>
+        </p>
+      )}
+      <p className="muted">
+        {t("Live customer messaging needs Meta App Review with pages_messaging (and instagram_manage_messages for Instagram). Replies only go through within Meta's 24-hour window after the customer's last message.")}
+      </p>
+      {conn && (
+        <div className="actions">
+          <button type="button" disabled={busy} onClick={() => void act(async () => setTest(await api<TestResult>("POST", "/settings/connections/meta-messenger/test")))}>
+            {t("Test connection")}
+          </button>
+          {!editing && (
+            <button type="button" className="quiet" onClick={() => setEditing(true)}>
+              {t("Replace credentials")}
+            </button>
+          )}
+          <button
+            type="button"
+            className="quiet"
+            disabled={busy}
+            onClick={() => window.confirm(t("Disconnect Facebook Messenger & Instagram? Incoming DMs and replies stop until you reconnect.")) && void act(() => api("DELETE", "/settings/connections/meta-messenger"))}
+          >
+            {t("Disconnect")}
+          </button>
+        </div>
+      )}
+      <Outcome test={test} what={t("Meta accepted the Page access token")} />
+      {(!conn || editing) && (
+        <form onSubmit={save}>
+          <div className="field">
+            <label htmlFor="meta-page-id">{t("Facebook Page ID")}</label>
+            <input id="meta-page-id" value={form.pageId} onChange={(e) => setForm({ ...form, pageId: e.target.value })} required placeholder="100200300400" autoComplete="off" />
+          </div>
+          <div className="field">
+            <label htmlFor="meta-ig-id">
+              {t("Instagram Business Account ID")} <span className="muted">{t("(optional)")}</span>
+            </label>
+            <input id="meta-ig-id" value={form.instagramAccountId} onChange={(e) => setForm({ ...form, instagramAccountId: e.target.value })} placeholder="900800700600" autoComplete="off" />
+          </div>
+          <div className="field">
+            <label htmlFor="meta-page-token">{t("Page Access Token")}</label>
+            <input id="meta-page-token" type="password" value={form.pageAccessToken} onChange={(e) => setForm({ ...form, pageAccessToken: e.target.value })} required autoComplete="off" />
+          </div>
+          <div className="field">
+            <label htmlFor="meta-app-secret">
+              {t("App Secret")}
+              {conn ? t(", leave empty to keep the current secret") : ""}
+            </label>
+            <input id="meta-app-secret" type="password" value={form.appSecret} onChange={(e) => setForm({ ...form, appSecret: e.target.value })} required={!conn} autoComplete="off" />
+          </div>
+          <div className="field">
+            <label htmlFor="meta-verify-token">
+              {t("Verify Token")}
+              {conn ? t(", leave empty to keep the current token") : ""}
+            </label>
+            <input id="meta-verify-token" type="password" value={form.verifyToken} onChange={(e) => setForm({ ...form, verifyToken: e.target.value })} required={!conn} autoComplete="off" />
+          </div>
+          <div className="actions">
+            <button type="submit" className="primary" disabled={busy}>
+              {conn ? t("Save") : t("Connect Facebook Messenger & Instagram")}
+            </button>
+            {conn && (
+              <button type="button" className="quiet" onClick={() => setEditing(false)}>
+                {t("Cancel")}
+              </button>
+            )}
+          </div>
+        </form>
+      )}
+      <p role="alert" className="message error" hidden={!error}>
+        {error}
+      </p>
+    </div>
+  );
+}
+
 // ---------------------------------------------------------------- delivery status, for Requests and run details
 
 export type Delivery = {
@@ -701,10 +833,10 @@ export type Delivery = {
   lastError: string | null;
 };
 
-const NAMES: Record<Provider, string> = { google_sheets: "Sheet row", slack: "Slack note", outlook: "Outlook email", teams: "Teams note", telegram: "Telegram message", unisms: "SMS message", google_calendar: "Calendar event", google_drive: "Drive file", paymongo: "PayMongo", airtable: "Airtable record", notion: "Notion page", trello: "Trello card" };
+const NAMES: Record<Provider, string> = { google_sheets: "Sheet row", slack: "Slack note", outlook: "Outlook email", teams: "Teams note", telegram: "Telegram message", unisms: "SMS message", google_calendar: "Calendar event", google_drive: "Drive file", paymongo: "PayMongo", airtable: "Airtable record", notion: "Notion page", trello: "Trello card", meta_messenger: "Messenger or Instagram reply" };
 
 function describe(d: Delivery, t: ReturnType<typeof useLanguage>["t"]): string {
-  const sent = d.provider === "outlook" || d.provider === "unisms";
+  const sent = d.provider === "outlook" || d.provider === "unisms" || d.provider === "meta_messenger";
   switch (d.state) {
     case "queued":
       return d.attempts > 0 ? t("waiting to try again ({error})", { error: d.lastError ?? t("temporary problem") }) : t("queued");
@@ -719,6 +851,7 @@ function describe(d: Delivery, t: ReturnType<typeof useLanguage>["t"]): string {
       if (d.provider === "google_drive") return t("saved to {folder}", { folder: String(d.result?.folder ?? t("the folder")) });
       if (d.provider === "outlook") return t("sent to {email}", { email: String(d.result?.to ?? "") });
       if (d.provider === "unisms") return t("sent to {phone}", { phone: String(d.result?.recipient ?? "") });
+      if (d.provider === "meta_messenger") return t("sent");
       return t(d.provider === "teams" ? "accepted by Teams" : "posted");
     case "needs_review":
       return d.lastError ?? t(sent ? "may have been sent" : "may have been posted");
@@ -735,7 +868,7 @@ export function DeliveryList({ deliveries, onChange }: { deliveries: Delivery[];
   return (
     <ul className="deliveries">
       {deliveries.map((d) => {
-        const sent = d.provider === "outlook" || d.provider === "unisms";
+        const sent = d.provider === "outlook" || d.provider === "unisms" || d.provider === "meta_messenger";
         return (
           <li key={d.id} data-state={d.state}>
             {t(NAMES[d.provider])}: {describe(d, t)}{" "}
@@ -757,7 +890,9 @@ export function DeliveryList({ deliveries, onChange }: { deliveries: Delivery[];
                       ? "Send this email again? If it already went out, the recipient gets it twice."
                       : d.provider === "unisms"
                         ? "Send this SMS again? If it already went out, the recipient gets it twice."
-                        : "Post this note again? If it is already in the channel, people will see it twice.";
+                        : d.provider === "meta_messenger"
+                          ? "Send this reply again? If it already went out, the customer gets it twice."
+                          : "Post this note again? If it is already in the channel, people will see it twice.";
                     if (window.confirm(t(ask))) void act(() => api("POST", `/deliveries/${d.id}/retry`, { postAgain: true }));
                   }}
                 >

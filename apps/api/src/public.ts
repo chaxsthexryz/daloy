@@ -1,12 +1,13 @@
 import { publicCopy } from "./public-copy";
 import { createHmac, randomInt, randomUUID, timingSafeEqual } from "node:crypto";
-import { assertNotPaused, claimUsage, QuotaError, readBrand, saveUploads, workspaceLanguage, businessProfiles, connectionCredential, connections, createKeyedRun, createRun, eventSeen, finishEvent, keptEvent, markPaymentPaid, markPaymentRefunded, centavosToPesos, paymongoMode, readSecret, recordEvent, requests, runs, triggers, verifyPaymongoSignature, WorkflowPausedError, workflows, workflowVersions, type Db, type NewUpload, type Payment } from "@daloy/db";
+import { assertNotPaused, claimUsage, constantTimeEqual, downloadMetaImage, keyedRun, MetaImageError, parseMetaCredential, parseMetaWebhook, QuotaError, readBrand, saveUploads, verifyMetaSignature, workspaceLanguage, businessProfiles, connectionCredential, connections, createKeyedRun, createRun, eventSeen, finishEvent, keptEvent, markPaymentPaid, markPaymentRefunded, centavosToPesos, paymongoMode, readSecret, recordEvent, requests, runs, triggers, verifyPaymongoSignature, WorkflowPausedError, workflows, workflowVersions, type Db, type NewUpload, type Payment } from "@daloy/db";
 import { definitionSchema, FILE_MAX_BYTES, FILES_PER_FIELD, FILES_PER_SUBMISSION, fileType, OFFICE_REQUEST, parsePayload, PURCHASE_REQUEST, safeFileName, type FileRef, type FormField, type Resource } from "@daloy/engine";
 import {
   BadRequestException,
   Body,
   type CanActivate,
   type ExecutionContext,
+  ForbiddenException,
   Injectable,
   Controller,
   Get,
@@ -226,6 +227,141 @@ export class PaymongoHooksController {
       });
       if (started && !started.duplicate) await enqueueRun(this.boss, started.runId);
     }
+  }
+}
+
+/**
+ * Meta Messenger and Instagram DM webhook (decision 0069).
+ * GET answers Meta's hub.challenge verification after constant-time verify_token check.
+ * POST verifies X-Hub-Signature-256 against the raw body, deduplicates by message id (mid) via run_keys,
+ * safely downloads verified image attachments from allowlisted Meta CDN hosts, and starts matching meta_dm runs.
+ */
+@Controller("hooks/meta")
+@UseGuards(RateLimit(60))
+export class MetaHooksController {
+  constructor(
+    @Inject(DB) private readonly db: Db,
+    @Inject(BOSS) private readonly boss: PgBoss,
+    @Inject(CONFIG) private readonly config: Required<ApiConfig>,
+  ) {}
+
+  private async activeConnection(path: string) {
+    const [owner] = await this.db
+      .select({ userId: connections.userId })
+      .from(connections)
+      .where(and(eq(connections.provider, "meta_messenger"), eq(connections.status, "active"), sql`${connections.destination}->>'webhookPath' = ${path}`));
+    if (!owner) return null;
+    const conn = await connectionCredential(this.db, this.config.secretsKey, owner.userId, "meta_messenger");
+    if (!conn || conn.status !== "active") return null;
+    return { userId: owner.userId, conn, cred: parseMetaCredential(conn.credential) };
+  }
+
+  @Get(":path")
+  async verify(@Param("path") path: string, @Req() req: Request, @Res() res: Response) {
+    const found = await this.activeConnection(path);
+    if (!found) throw new ForbiddenException();
+    const q = req.query as Record<string, unknown>;
+    const hub = q.hub && typeof q.hub === "object" ? (q.hub as Record<string, unknown>) : undefined;
+    const mode = q["hub.mode"] ?? hub?.mode;
+    const token = q["hub.verify_token"] ?? hub?.verify_token;
+    const challenge = q["hub.challenge"] ?? hub?.challenge;
+    if (
+      mode !== "subscribe" ||
+      typeof token !== "string" ||
+      typeof challenge !== "string" ||
+      challenge.length === 0 ||
+      challenge.length > 256 ||
+      !constantTimeEqual(token, found.cred.verifyToken)
+    ) {
+      throw new ForbiddenException();
+    }
+    res.status(200).type("text/plain; charset=utf-8").send(challenge);
+  }
+
+  @Post(":path")
+  @HttpCode(200)
+  async receive(@Param("path") path: string, @Req() req: RawBodyRequest<Request>, @Headers("x-hub-signature-256") signature: string | undefined) {
+    const found = await this.activeConnection(path);
+    if (!found) throw new ForbiddenException();
+    const rawBody = req.rawBody ?? Buffer.alloc(0);
+    if (!verifyMetaSignature(rawBody, signature, found.cred.appSecret)) throw new UnauthorizedException("invalid signature");
+
+    const events = parseMetaWebhook(req.body, found.conn.destination);
+    if (events.length === 0) return { ok: true, started: 0 };
+
+    // Resolve trigger and published version atomically in one snapshot (H3 rule, decision 0057).
+    const listeners = await this.db
+      .select({ workflowId: triggers.workflowId, pausedAt: workflows.pausedAt, version: workflowVersions })
+      .from(triggers)
+      .innerJoin(workflows, eq(workflows.id, triggers.workflowId))
+      .innerJoin(workflowVersions, latestPublished)
+      .where(and(eq(workflows.userId, found.userId), eq(triggers.type, "meta_dm")));
+
+    let startedCount = 0;
+    for (const ev of events) {
+      const matching = listeners.filter((l) => {
+        if (l.pausedAt) return false;
+        const cfg = savedTrigger(l.version.definition, "meta_dm") as { channel?: string; requireImage?: boolean } | undefined;
+        if (!cfg) return false;
+        const channel = cfg.channel ?? "both";
+        if (channel !== "both" && channel !== ev.channel) return false;
+        if (cfg.requireImage && ev.imageUrls.length === 0) return false;
+        return true;
+      });
+      if (matching.length === 0) continue;
+
+      const key = `meta:${ev.messageId}`;
+      const pending: typeof matching = [];
+      for (const l of matching) {
+        if (!(await keyedRun(this.db, l.workflowId, key, false))) pending.push(l);
+      }
+      if (pending.length === 0) continue;
+
+      const downloaded: { name: string; type: "jpeg" | "png" | "webp"; data: Buffer }[] = [];
+      for (let i = 0; i < ev.imageUrls.length; i++) {
+        try {
+          downloaded.push(await downloadMetaImage(ev.imageUrls[i]!, { urls: this.config.providers, index: i + 1 }));
+        } catch (err) {
+          if (err instanceof MetaImageError) continue;
+          throw err;
+        }
+      }
+
+      for (const l of pending) {
+        const cfg = savedTrigger(l.version.definition, "meta_dm") as { requireImage?: boolean } | undefined;
+        if (cfg?.requireImage && downloaded.length === 0) continue;
+
+        if (downloaded.length > 0) {
+          const allowed = await claimUsage(this.db, found.userId, "upload", { n: downloaded.length, key: `meta-upload:${l.workflowId}:${ev.messageId}` })
+            .then(() => true)
+            .catch((err: unknown) => {
+              if (err instanceof QuotaError) return false;
+              throw err;
+            });
+          if (!allowed) continue;
+        }
+
+        const runFiles: NewUpload[] = downloaded.map((img) => ({ id: randomUUID(), field: "image", name: img.name, type: img.type, data: img.data }));
+        const imageRefs: FileRef[] = runFiles.map((f) => ({ id: f.id, name: f.name, type: f.type, size: f.data.length }));
+        const payload = {
+          channel: ev.channel,
+          senderId: ev.senderId,
+          messageId: ev.messageId,
+          text: ev.text,
+          timestamp: ev.timestamp,
+          image: imageRefs,
+        };
+        const started = await createKeyedRun(this.db, l.workflowId, l.version.id, payload, key, runFiles.length > 0 ? { uploads: { userId: found.userId, files: runFiles } } : {}).catch((err: unknown) => {
+          if (err instanceof WorkflowPausedError) return null;
+          throw err;
+        });
+        if (started && !started.duplicate) {
+          await enqueueRun(this.boss, started.runId);
+          startedCount++;
+        }
+      }
+    }
+    return { ok: true, started: startedCount };
   }
 }
 

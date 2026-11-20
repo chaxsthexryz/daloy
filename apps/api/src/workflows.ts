@@ -289,8 +289,9 @@ export class WorkflowsController {
 
   /** Turning on a workflow with Sheets, Slack, Outlook, Teams or SMS steps needs that connection working with a destination. Drafts do not. */
   private async checkConnections(userId: string, definition: WorkflowDefinition) {
-    const providers: Partial<Record<string, Provider>> = { sheets: "google_sheets", slack: "slack", outlook: "outlook", teams: "teams", telegram: "telegram", sms: "unisms", calendar: "google_calendar", airtable: "airtable", notion: "notion", trello: "trello" };
+    const providers: Partial<Record<string, Provider>> = { sheets: "google_sheets", slack: "slack", outlook: "outlook", teams: "teams", telegram: "telegram", sms: "unisms", calendar: "google_calendar", airtable: "airtable", notion: "notion", trello: "trello", meta_reply: "meta_messenger" };
     const needed = new Set(definition.steps.flatMap((s) => providers[s.type] ?? []));
+    if (definition.trigger.type === "meta_dm") needed.add("meta_messenger");
     if (needed.size === 0) return;
     const conns = await readConnections(this.db, userId);
     for (const provider of needed) {

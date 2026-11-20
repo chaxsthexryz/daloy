@@ -23,6 +23,8 @@ import {
   withGoogle,
   outlookSend,
   checkPaymongoKey,
+  metaIdentity,
+  parseMetaCredential,
   paymongoMode,
   PROVIDER_NAMES,
   ProviderError,
@@ -120,7 +122,19 @@ const calendarInput = z.strictObject({ serviceAccount: z.string().min(2).max(10_
 const driveInput = z.strictObject({ serviceAccount: z.string().min(2).max(10_000), folder: z.string().trim().min(3).max(500) });
 const retryInput = z.strictObject({ postAgain: z.boolean().default(false) });
 const teamsInput = z.strictObject({ url: z.string().trim().min(10).max(2000), channelName: z.string().trim().min(1).max(100) });
-const SLUGS: Record<string, Provider> = { "google-sheets": "google_sheets", slack: "slack", outlook: "outlook", teams: "teams", telegram: "telegram", "google-calendar": "google_calendar", "google-drive": "google_drive", paymongo: "paymongo", airtable: "airtable", notion: "notion", trello: "trello", unisms: "unisms" };
+const metaMessengerInput = z.strictObject({
+  pageId: z.string().trim().regex(/^\d{5,30}$/, "Enter the numeric Facebook Page ID"),
+  instagramAccountId: z
+    .string()
+    .trim()
+    .regex(/^(\d{5,30})?$/, "Enter the numeric Instagram Business Account ID")
+    .optional()
+    .transform((v) => (v ? v : undefined)),
+  pageAccessToken: z.string().trim().min(10, "Paste the Meta Page Access Token").max(1000),
+  appSecret: z.string().trim().min(8, "Paste the Meta App Secret").max(200).optional(),
+  verifyToken: z.string().trim().min(6, "Enter a Verify Token of at least 6 characters").max(200).optional(),
+});
+const SLUGS: Record<string, Provider> = { "google-sheets": "google_sheets", slack: "slack", outlook: "outlook", teams: "teams", telegram: "telegram", "google-calendar": "google_calendar", "google-drive": "google_drive", paymongo: "paymongo", airtable: "airtable", notion: "notion", trello: "trello", unisms: "unisms", "meta-messenger": "meta_messenger" };
 const providerSlug = new ZodPipe(z.enum(Object.keys(SLUGS) as [string, ...string[]]).transform((s) => SLUGS[s]!));
 const uuid = new ZodPipe(z.uuid());
 
@@ -156,7 +170,7 @@ export class ConnectionsController {
     const oauth = this.config.oauthProviders.filter((d) => d.client(this.urls)).map((d) => d.slug);
     const hide = await historyHider(this.db, this.config.secretsKey, user.workspaceId);
     const list = (await readConnections(this.db, user.workspaceId)).map((c) => ({ ...c, lastError: hide(c.lastError) as string | null }));
-    return { connections: list, outlook: ms, oauth, shared: await sharedGrants(this.db, user.workspaceId), paymongoWebhookBase: `${this.config.publicUrl}/hooks/paymongo` };
+    return { connections: list, outlook: ms, oauth, shared: await sharedGrants(this.db, user.workspaceId), paymongoWebhookBase: `${this.config.publicUrl}/hooks/paymongo`, metaWebhookBase: `${this.config.publicUrl}/hooks/meta` };
   }
 
   /** The sheet and tab, checked with a read before saving. Shared by connect and "change sheet". */
@@ -467,6 +481,44 @@ export class ConnectionsController {
   async testTeams(@CurrentUser() user: SessionUser) {
     const conn = await this.connection(user.workspaceId, "teams");
     return this.test(user.workspaceId, "teams", conn, () => teamsPost(this.urls, conn.credential, "Test message from Daloy. Approved purchase requests will be noted in this channel."));
+  }
+
+  /** Connect or Reconnect Facebook Messenger and Instagram DM. Preserves existing webhookPath across updates. */
+  @Put("meta-messenger")
+  @UseGuards(RateLimit(10))
+  async putMetaMessenger(@CurrentUser() user: SessionUser, @Body(new ZodPipe(metaMessengerInput)) body: z.output<typeof metaMessengerInput>) {
+    const old = await connectionCredential(this.db, this.config.secretsKey, user.workspaceId, "meta_messenger");
+    const oldCred = old ? parseMetaCredential(old.credential) : null;
+    const appSecret = body.appSecret ?? oldCred?.appSecret;
+    const verifyToken = body.verifyToken ?? oldCred?.verifyToken;
+    if (!appSecret) throw new BadRequestException("Paste the Meta App Secret.");
+    if (!verifyToken) throw new BadRequestException("Enter a Verify Token of at least 6 characters.");
+    const page = await metaIdentity(this.urls, body.pageAccessToken).catch(this.asBadRequest(user.workspaceId));
+    const webhookPath = old?.destination?.webhookPath ?? randomBytes(32).toString("base64url");
+    const destination: Record<string, string> = {
+      pageId: body.pageId,
+      ...(page.name ? { pageName: page.name } : {}),
+      ...(body.instagramAccountId ? { instagramAccountId: body.instagramAccountId } : {}),
+      webhookPath,
+    };
+    await saveConnection(this.db, this.config.secretsKey, user.workspaceId, "meta_messenger", {
+      account: page.name || body.pageId,
+      credential: JSON.stringify({ pageAccessToken: body.pageAccessToken, appSecret, verifyToken }),
+      destination,
+    });
+    return { ...(await this.get(user)), webhookUrl: `${this.config.publicUrl}/hooks/meta/${webhookPath}`, status: "active" as const };
+  }
+
+  @Post("meta-messenger/test")
+  @HttpCode(200)
+  @UseGuards(RateLimit(5))
+  async testMetaMessenger(@CurrentUser() user: SessionUser) {
+    const conn = await this.connection(user.workspaceId, "meta_messenger");
+    return this.test(user.workspaceId, "meta_messenger", conn, async () => {
+      const { pageAccessToken } = parseMetaCredential(conn.credential);
+      const info = await metaIdentity(this.urls, pageAccessToken);
+      return { pageId: info.id, pageName: info.name };
+    });
   }
 
   /**

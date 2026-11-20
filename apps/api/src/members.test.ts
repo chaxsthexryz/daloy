@@ -300,6 +300,8 @@ describe("role permissions", () => {
       ["post", "/settings/connections/outlook/test", only, {}],
       ["put", "/settings/connections/teams", only, {}],
       ["post", "/settings/connections/teams/test", only, {}],
+      ["put", "/settings/connections/meta-messenger", only, {}],
+      ["post", "/settings/connections/meta-messenger/test", only, {}],
       ["delete", "/settings/connections/slack", only],
       ["post", "/ai/chat", only, {}],
       ["get", "/settings/brand", only],
@@ -312,10 +314,10 @@ describe("role permissions", () => {
     ];
 
   // Not in the matrix on purpose. Each is public by design or guarded by its own rule, and has its own tests:
-  // auth.ts and password.test.ts, public*.test.ts and paymongo.test.ts, approvals.test.ts, mcp.test.ts, oauth.test.ts, microsoft.test.ts, brand.test.ts.
+  // auth.ts and password.test.ts, public*.test.ts, paymongo.test.ts and meta.test.ts, approvals.test.ts, mcp.test.ts, oauth.test.ts, microsoft.test.ts, brand.test.ts.
   const outsideMatrix = new Set([
     "POST /auth/register", "POST /auth/login", "POST /auth/invites/:token/accept", "POST /auth/logout", "POST /auth/password", "POST /auth/password-reset", "POST /auth/password-reset/:token",
-    "POST /hooks/:path", "POST /hooks/paymongo/:path", "GET /forms/:id", "GET /forms/:id/embed", "POST /forms/:id", "POST /forms/:id/embed",
+    "POST /hooks/:path", "POST /hooks/paymongo/:path", "GET /hooks/meta/:path", "POST /hooks/meta/:path", "GET /forms/:id", "GET /forms/:id/embed", "POST /forms/:id", "POST /forms/:id/embed",
     "GET /approvals/:token", "POST /approvals/:token", "GET /settings/connections/oauth/callback", "GET /settings/connections/outlook/callback", "GET /brand/logo/:id",
   ]);
 

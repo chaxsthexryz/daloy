@@ -54,17 +54,19 @@ export async function retireSecret(tx: Pick<Db, "select" | "insert" | "execute">
  * is either still current or already retired here, never missing from both (retest of 6e603de).
  */
 export async function secretValuesToHide(db: Pick<Db, "execute">, key: Buffer, userId: string): Promise<string[]> {
-  const { rows } = await db.execute<EncryptedSecret & { name: string; oauth: boolean }>(sql`
-    select name, ciphertext, iv, auth_tag as "authTag", false as oauth from secrets where user_id = ${userId}
+  const { rows } = await db.execute<EncryptedSecret & { name: string; kind: "plain" | "oauth" | "meta" }>(sql`
+    select name, ciphertext, iv, auth_tag as "authTag", 'plain' as kind from secrets where user_id = ${userId}
     union all
-    select name, ciphertext, iv, auth_tag as "authTag", false from retired_secrets where user_id = ${userId}
+    select name, ciphertext, iv, auth_tag as "authTag", 'plain' as kind from retired_secrets where user_id = ${userId}
     union all
-    select 'connection:' || provider, credential_ciphertext, credential_iv, credential_auth_tag, true from connections where user_id = ${userId} and auth_method = 'oauth'
+    select 'connection:' || provider, credential_ciphertext, credential_iv, credential_auth_tag, 'oauth' as kind from connections where user_id = ${userId} and auth_method = 'oauth'
     union all
-    select 'connection:' || provider, credential_ciphertext, credential_iv, credential_auth_tag, false from connections where user_id = ${userId} and provider = 'unisms'
+    select 'connection:' || provider, credential_ciphertext, credential_iv, credential_auth_tag, 'plain' as kind from connections where user_id = ${userId} and provider = 'unisms'
     union all
-    select 'gmail_oauth', password_ciphertext, password_iv, password_auth_tag, true from mail_senders where user_id = ${userId} and auth_method = 'oauth' and password_ciphertext is not null`);
-  // OAuth access and refresh tokens too, as defense in depth: they should never reach history at all (decision 0058, R4).
+    select 'connection:' || provider, credential_ciphertext, credential_iv, credential_auth_tag, 'meta' as kind from connections where user_id = ${userId} and provider = 'meta_messenger'
+    union all
+    select 'gmail_oauth', password_ciphertext, password_iv, password_auth_tag, 'oauth' as kind from mail_senders where user_id = ${userId} and auth_method = 'oauth' and password_ciphertext is not null`);
+  // OAuth, UniSMS, and Meta tokens too, as defense in depth: they should never reach history at all (decisions 0058, 0068, 0069).
   // A token blob that does not decrypt was never usable, so it has nothing to hide and must not break every history page.
   const tokens = (r: EncryptedSecret & { name: string }) => {
     try {
@@ -73,7 +75,15 @@ export async function secretValuesToHide(db: Pick<Db, "execute">, key: Buffer, u
       return [];
     }
   };
-  return rows.flatMap((r) => (r.oauth ? tokens(r) : [decryptSecret(key, userId, r.name, r)]));
+  const metaTokens = (r: EncryptedSecret & { name: string }) => {
+    try {
+      const parsed = JSON.parse(decryptSecret(key, userId, r.name, r)) as { pageAccessToken?: unknown; appSecret?: unknown; verifyToken?: unknown } | null;
+      return [parsed?.pageAccessToken, parsed?.appSecret, parsed?.verifyToken].filter((v): v is string => typeof v === "string" && v.length > 0);
+    } catch {
+      return [];
+    }
+  };
+  return rows.flatMap((r) => (r.kind === "oauth" ? tokens(r) : r.kind === "meta" ? metaTokens(r) : [decryptSecret(key, userId, r.name, r)]));
 }
 
 /**

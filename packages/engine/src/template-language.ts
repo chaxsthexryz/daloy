@@ -81,6 +81,18 @@ export function localizeGeneratedDefinition(definition: WorkflowDefinition, lang
       tell_declined: { subject: "Tungkol sa quote request mo", text: "Hi {{trigger.name}}, salamat sa pagtanong. Hindi pa namin ito matatanggap sa ngayon." },
       tell_no_decision: { subject: "Naghihintay ang quote request ni {{trigger.name}}", text: "Walang sumagot sa quote request ni {{trigger.name}} ({{trigger.email}}) sa loob ng dalawang araw. Pakisagot siya." },
     },
+    "meta-receipt-intake": {
+      approve: {
+        subject: "Suriin ang resibo {{steps.read_receipt.output.reference}} ({{steps.read_receipt.output.amount}})",
+        message: "Nagpadala ang customer ng litrato ng resibo sa {{trigger.channel}}.\nProvider: {{steps.read_receipt.output.provider}}\nReference: {{steps.read_receipt.output.reference}}\nHalaga: {{steps.read_receipt.output.amount}}\nNagpadala: {{steps.read_receipt.output.sender_name}}\nPetsa: {{steps.read_receipt.output.date}}\n{{steps.read_receipt.output.duplicate_warning}}\nTingnan muna ang totoong GCash o bank inbox mo bago mag-approve. Hindi kailanman patunay ng bayad ang screenshot.",
+      },
+      reply_confirmed: { text: "Salamat! Nakumpirma na namin ang bayad mo at natanggap ang order mo." },
+      reply_rejected: { text: "Hindi pa namin matugma ang bayad na iyon. Pakitingnan ulit ang detalye ng transfer at mag-message ulit sa amin." },
+      notify_timeout: {
+        subject: "Nag-timeout ang pagsuri ng resibo",
+        text: "Hindi nasuri sa loob ng 24 oras ang resibo mula sa {{trigger.channel}} (reference {{steps.read_receipt.output.reference}}, halaga {{steps.read_receipt.output.amount}}). Maaaring sarado na ang 24-hour reply window ng Meta, kaya sumagot nang direkta sa Page inbox mo.",
+      },
+    },
   };
   if (result.trigger.type === "form") {
     result.trigger.config.fields = result.trigger.config.fields.map((f) => ({ ...f, label: LABELS[f.label] ?? f.label }));

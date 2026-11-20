@@ -321,4 +321,25 @@ describe("ai step files", () => {
     expect(issues(form([{ name: "note", label: "Note", type: "text", required: false }], ["note"]))).toContain(bad("note"));
     expect(issues({ ...form([file], ["receipt"]), trigger: { type: "manual", config: {} } })).toContain(bad("receipt"));
   });
+
+  it("allows meta_dm triggers with image files, drive steps and meta_reply steps", () => {
+    const ok = definitionSchema.parse({
+      trigger: { type: "meta_dm", config: {} },
+      steps: [
+        { id: "read", type: "ai", config: { task: "summarize", input: "{{trigger.text}}", files: ["image"] } },
+        { id: "save", type: "drive", config: {} },
+        { id: "reply", type: "meta_reply", config: { text: "Thanks!" } },
+      ],
+      edges: [
+        { from: "read", to: "save" },
+        { from: "save", to: "reply" },
+      ],
+    });
+    expect(ok.trigger).toEqual({ type: "meta_dm", config: { channel: "both", requireImage: false } });
+    expect(ok.steps[2]).toEqual({ id: "reply", type: "meta_reply", config: { recipientId: "{{trigger.senderId}}", channel: "{{trigger.channel}}", text: "Thanks!" } });
+    expect(issues({ trigger: { type: "meta_dm", config: { channel: "viber" } }, steps: [step("a")] })).not.toEqual([]);
+    expect(issues({ trigger: { type: "meta_dm", config: {} }, steps: [step("read", "ai", { task: "summarize", input: "x", files: ["receipt"] })] })).toContain(bad("receipt"));
+    expect(issues({ trigger: { type: "meta_dm", config: {} }, steps: [{ id: "r", type: "meta_reply", config: { text: "x".repeat(2001) } }] })).not.toEqual([]);
+    expect(issues({ trigger: { type: "meta_dm", config: {} }, steps: [{ id: "r", type: "meta_reply", config: { text: "" } }] })).not.toEqual([]);
+  });
 });

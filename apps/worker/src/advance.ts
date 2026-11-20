@@ -25,8 +25,9 @@ import { and, asc, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
  * names in an AI step; this keeps a stale definition from reading a field that is not a file field.
  */
 const fileFieldsFor = (step: Step, trigger: Trigger) => {
-  if (trigger.type !== "form" || (step.type !== "drive" && step.type !== "ai")) return undefined;
-  const names = trigger.config.fields.filter((f) => f.type === "file").map((f) => f.name);
+  if (step.type !== "drive" && step.type !== "ai") return undefined;
+  const names = trigger.type === "form" ? trigger.config.fields.filter((f) => f.type === "file").map((f) => f.name) : trigger.type === "meta_dm" ? ["image"] : [];
+  if (names.length === 0) return undefined;
   return step.type === "ai" ? names.filter((n) => step.config.files?.includes(n)) : names;
 };
 
@@ -42,7 +43,7 @@ export type StepResult = { input?: unknown; output?: unknown; branch?: string; i
 export interface StepExecutor {
   // booking: what a booking step needs about its run: the test scope, the workflow and the trigger whose datetime field
   // sets the rules for start (decision 0032).
-  execute(input: { runId: string; stepRunId: string; userId: string; workflowId?: string; step: Step; attempt: number; idempotencyKey: string; ctx: ExpressionContext; mock?: boolean; aiLive?: boolean; choice?: TestChoice; claimSend?: () => Promise<() => void>; booking?: { test: boolean; workflowId: string; trigger: Trigger }; fileFields?: string[] }): Promise<StepResult>;
+  execute(input: { runId: string; stepRunId: string; userId: string; workflowId?: string; step: Step; attempt: number; idempotencyKey: string; ctx: ExpressionContext; mock?: boolean; test?: boolean; aiLive?: boolean; choice?: TestChoice; claimSend?: () => Promise<() => void>; booking?: { test: boolean; workflowId: string; trigger: Trigger }; fileFields?: string[] }): Promise<StepResult>;
 }
 
 export type AdvanceDeps = {
@@ -269,6 +270,7 @@ async function runNext(deps: AdvanceDeps, run: Run): Promise<void> {
       idempotencyKey: idempotencyKey(run.id, step.id),
       ctx,
       mock,
+      test: run.test,
       aiLive: run.aiLive,
       choice: (run.testChoices as Record<string, TestChoice> | null)?.[step.id],
       claimSend: !mock && unsafeToRepeat(step) ? claimSend : undefined,

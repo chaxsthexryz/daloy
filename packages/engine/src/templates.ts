@@ -527,4 +527,103 @@ export const TEMPLATES = [
       ],
     },
   },
+  // N16: FB Messenger and Instagram DM receipt intake. A screenshot is never proof of payment: the sheet row is
+  // explicitly marked "Pending verification" and the owner checks their real GCash or bank inbox before approving.
+  {
+    slug: "meta-receipt-intake",
+    name: "FB and IG receipt check",
+    description: "When a customer sends a GCash or bank receipt photo on Facebook Messenger or Instagram, Daloy reads the details, saves the photo, logs a pending row to Google Sheets and asks you to verify before replying. Needs Facebook Messenger & Instagram, Google Drive, Google Sheets and an AI model that reads images.",
+    definition: {
+      trigger: {
+        type: "meta_dm",
+        config: { channel: "both", requireImage: true },
+      },
+      steps: [
+        {
+          id: "read_receipt",
+          type: "ai",
+          config: {
+            task: "extract",
+            input: "Channel: {{trigger.channel}}. Message: {{trigger.text}}",
+            files: ["image"],
+            fields: {
+              is_receipt: "Reply yes if this photo is a GCash, Maya or bank transfer receipt, otherwise no",
+              provider: "Payment provider or bank name on the receipt (for example GCash, Maya, BDO, BPI)",
+              reference: "Reference or transaction number on the receipt",
+              amount: "Amount paid, digits and a decimal point only",
+              sender_name: "Sender name on the receipt",
+              date: "Date on the receipt as YYYY-MM-DD",
+            },
+          },
+        },
+        { id: "save_receipt", type: "drive", config: {} },
+        {
+          id: "is_receipt",
+          type: "condition",
+          config: { condition: { left: "{{steps.read_receipt.output.is_receipt}}", op: "eq", right: "yes" } },
+        },
+        {
+          id: "log_pending",
+          type: "sheets",
+          config: {
+            columns: [
+              "Pending verification",
+              "{{trigger.channel}}",
+              "{{trigger.senderId}}",
+              "{{steps.read_receipt.output.provider}}",
+              "{{steps.read_receipt.output.reference}}",
+              "{{steps.read_receipt.output.amount}}",
+              "{{steps.read_receipt.output.date}}",
+            ],
+          },
+        },
+        {
+          id: "approve",
+          type: "approval",
+          config: {
+            to: "owner@example.com",
+            subject: "Verify receipt {{steps.read_receipt.output.reference}} ({{steps.read_receipt.output.amount}})",
+            message: "A customer sent a receipt photo on {{trigger.channel}}.\nProvider: {{steps.read_receipt.output.provider}}\nReference: {{steps.read_receipt.output.reference}}\nAmount: {{steps.read_receipt.output.amount}}\nSender: {{steps.read_receipt.output.sender_name}}\nDate: {{steps.read_receipt.output.date}}\n{{steps.read_receipt.output.duplicate_warning}}\nCheck your real GCash or bank inbox before approving. A screenshot is never proof of payment.",
+            timeoutSeconds: 86_400,
+          },
+        },
+        {
+          id: "reply_confirmed",
+          type: "meta_reply",
+          config: {
+            recipientId: "{{trigger.senderId}}",
+            channel: "{{trigger.channel}}",
+            text: "Thanks! We verified your payment and confirmed your order.",
+          },
+        },
+        {
+          id: "reply_rejected",
+          type: "meta_reply",
+          config: {
+            recipientId: "{{trigger.senderId}}",
+            channel: "{{trigger.channel}}",
+            text: "We could not match that payment yet. Please double-check the transfer details and send us a message again.",
+          },
+        },
+        {
+          id: "notify_timeout",
+          type: "email",
+          config: {
+            to: "owner@example.com",
+            subject: "Receipt check timed out",
+            text: "A receipt sent on {{trigger.channel}} (reference {{steps.read_receipt.output.reference}}, amount {{steps.read_receipt.output.amount}}) was not reviewed within 24 hours. Meta's 24-hour reply window may have closed, so reply directly from your Page inbox.",
+          },
+        },
+      ],
+      edges: [
+        { from: "read_receipt", to: "save_receipt" },
+        { from: "save_receipt", to: "is_receipt" },
+        { from: "is_receipt", to: "log_pending", on: "true" },
+        { from: "log_pending", to: "approve" },
+        { from: "approve", to: "reply_confirmed", on: "approved" },
+        { from: "approve", to: "reply_rejected", on: "rejected" },
+        { from: "approve", to: "notify_timeout", on: "timeout" },
+      ],
+    },
+  },
 ] as const;

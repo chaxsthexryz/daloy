@@ -1,6 +1,6 @@
 import * as z from "zod";
 import { aiConfigSchema } from "./ai";
-import { approvalConfigSchema, bookingConfigSchema, calendarConfigSchema, conditionSchema, delayConfigSchema, driveConfigSchema, emailConfigSchema, httpConfigSchema, outlookConfigSchema, paymentStatusConfigSchema, paymongoLinkConfigSchema, airtableConfigSchema, notionConfigSchema, trelloConfigSchema, sheetsConfigSchema, slackConfigSchema, smsConfigSchema, teamsConfigSchema, telegramConfigSchema, type Step } from "./definition";
+import { approvalConfigSchema, bookingConfigSchema, calendarConfigSchema, conditionSchema, delayConfigSchema, driveConfigSchema, emailConfigSchema, httpConfigSchema, metaReplyConfigSchema, outlookConfigSchema, paymentStatusConfigSchema, paymongoLinkConfigSchema, airtableConfigSchema, notionConfigSchema, trelloConfigSchema, sheetsConfigSchema, slackConfigSchema, smsConfigSchema, teamsConfigSchema, telegramConfigSchema, type Step } from "./definition";
 
 /**
  * JSON Schema for each step type's config, which the builder turns into a form.
@@ -30,5 +30,6 @@ export function stepJsonSchemas(): Record<Step["type"], unknown> {
     booking: json(bookingConfigSchema),
     paymongo_link: json(paymongoLinkConfigSchema),
     payment_status: json(paymentStatusConfigSchema),
+    meta_reply: json(metaReplyConfigSchema),
   };
 }
