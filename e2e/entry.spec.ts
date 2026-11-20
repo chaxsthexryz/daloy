@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { resetLink } from "./mail";
 import { PASSWORD } from "./workspace";
 
 // Doop rows E1 to E6: the signed-out pages and My requests.
@@ -96,6 +97,84 @@ test("E1 and E2 on a phone: one column, one forgot link, no sideways scroll", as
   await noSideScroll(page);
   await page.getByRole("button", { name: "Create an account", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Create an account" })).toBeVisible();
+  await noSideScroll(page);
+  await context.close();
+});
+
+test("E3: the same answer for an account that exists and one that does not", async ({ page }) => {
+  const known = `entry-known-${Date.now()}@test.local`;
+  const stranger = `entry-stranger-${Date.now()}@test.local`;
+  await page.goto("/");
+  await page.getByRole("button", { name: "Create an account", exact: true }).click();
+  await page.getByLabel("Email").fill(known);
+  await page.getByLabel("Password").fill(PASSWORD);
+  await page.getByRole("button", { name: "Create account" }).click();
+  await expect(page.getByRole("heading", { name: "Automations", exact: true })).toBeVisible();
+  await page.context().clearCookies();
+
+  const answers: string[] = [];
+  for (const email of [known, stranger]) {
+    await page.goto("about:blank");
+    await page.goto("/#/forgot-password");
+    await expect(page.getByRole("heading", { name: "Forgot your password?" })).toBeVisible();
+    await page.getByLabel("Email").fill(email);
+    await page.getByRole("button", { name: "Send link" }).click();
+    answers.push((await page.getByRole("status").textContent())!);
+    await expect(page.getByRole("link", { name: "Back to sign in" })).toBeVisible();
+  }
+  expect(answers[0]).toBe(answers[1]);
+  expect(answers[0]).toContain("If an account exists for that email");
+  await resetLink(known);
+  await page.getByRole("link", { name: "Back to sign in" }).click();
+  await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
+});
+
+test("E4: a reset link works once, a short password is refused, and a reused link says so", async ({ page }) => {
+  const email = `entry-reset-${Date.now()}@test.local`;
+  await page.goto("/");
+  await page.getByRole("button", { name: "Create an account", exact: true }).click();
+  await page.getByLabel("Email").fill(email);
+  await page.getByLabel("Password").fill(PASSWORD);
+  await page.getByRole("button", { name: "Create account" }).click();
+  await expect(page.getByRole("heading", { name: "Automations", exact: true })).toBeVisible();
+  await page.context().clearCookies();
+  await page.goto("about:blank");
+  await page.goto("/#/forgot-password");
+  await page.getByLabel("Email").fill(email);
+  await page.getByRole("button", { name: "Send link" }).click();
+  await expect(page.getByRole("status")).toBeVisible();
+  const link = await resetLink(email);
+
+  await page.goto("about:blank");
+  await page.goto(link);
+  await page.getByLabel(/New password/).fill("too short");
+  await page.getByRole("button", { name: "Change password" }).click();
+  await expect(page.getByRole("alert")).toHaveText("Password must be at least 12 characters.");
+  await page.getByLabel(/New password/).fill("e2e brand new password 2");
+  await page.getByRole("button", { name: "Change password" }).click();
+  await expect(page.getByRole("status")).toHaveText("Password changed. Sign in with your new password.");
+  await page.getByRole("link", { name: "Sign in" }).click();
+  await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
+
+  // The same link a second time: the API refuses it, and the page offers a new one.
+  await page.goto("about:blank");
+  await page.goto(link);
+  await page.getByLabel(/New password/).fill("another brand new password 3");
+  await page.getByRole("button", { name: "Change password" }).click();
+  await expect(page.getByRole("alert")).toContainText("this link is not valid");
+  await page.getByRole("link", { name: "Send a new link" }).click();
+  await expect(page.getByRole("heading", { name: "Forgot your password?" })).toBeVisible();
+});
+
+test("E3 and E4 on a phone: no sideways scroll", async ({ browser }) => {
+  const context = await browser.newContext({ viewport: PHONE });
+  const page = await context.newPage();
+  await page.goto("/#/forgot-password");
+  await expect(page.getByRole("heading", { name: "Forgot your password?" })).toBeVisible();
+  await noSideScroll(page);
+  await page.goto("about:blank");
+  await page.goto(`/#/reset-password/${TOKEN}`);
+  await expect(page.getByRole("heading", { name: "Set a new password" })).toBeVisible();
   await noSideScroll(page);
   await context.close();
 });
