@@ -245,3 +245,9 @@ Reviewed on branch `oauth-p8-integration`, which merges the plan, P0 docs, P1 co
 Merge changes made in this review, beyond resolving conflicts: the keepalive stamp for a grant without a refresh token now writes only to `connections` (it was typed for `connections` but could have been reached with Gmail's provider name); duplicate `OAUTH_ENV` keys in the e2e setup were removed; the record app client variables in `.env.example` are commented like the other clients; the `aria-busy` the console redesign added to each app card is kept on the cards that moved into `ConnectPanel`.
 
 R8 and R14 were closed after this review on the same branch (decision 0065, migration 0039). Open before customers use these apps: the live checks, Google's review of `gmail.send` and possibly `calendar.app.created` ([submission pack](google-scope-submission.md)), and the Slack distribution terms (plan question 8).
+
+### Gmail link previews and shared sign-in details
+
+Mail scanners and browser prefetch can open a verification link. Reading its status has no side effects. The owner-only confirmation checks the workspace, digest, expiry and stored credential in a single conditional update. The digest stays with a null expiry to identify a repeat click. Issuing another link or disconnecting clears that association. The token travels in the URL fragment and the request body, outside server access-log URLs. A token from another workspace looks unavailable.
+
+The list of apps sharing a Google sign-in joins OAuth grants by Google account ID inside the signed-in workspace. The response contains app keys. The general warning can still signal that revocation could affect another workspace without disclosing its identity or app names.

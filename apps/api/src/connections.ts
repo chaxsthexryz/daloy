@@ -24,9 +24,11 @@ import {
   checkPaymongoKey,
   paymongoMode,
   PROVIDER_NAMES,
+  payments,
   ProviderError,
   readConnections,
   sharedGrants,
+  sharedGoogleApps,
   retryDelivery,
   BOOKING_CHANGED,
   deliveryBookingMoved,
@@ -61,7 +63,7 @@ import {
   type SheetDestination,
 } from "@daloy/db";
 import { BadRequestException, Body, ConflictException, Controller, Delete, Get, HttpCode, Inject, NotFoundException, Param, Post, Put, Query, Res, UseGuards } from "@nestjs/common";
-import { and, eq } from "drizzle-orm";
+import { and, eq, desc, sql } from "drizzle-orm";
 import * as z from "zod";
 import type { Response } from "express";
 import { SessionGuard } from "./auth";
@@ -146,7 +148,30 @@ export class ConnectionsController {
     const oauth = this.config.oauthProviders.filter((d) => d.client(this.urls)).map((d) => d.slug);
     const hide = await historyHider(this.db, this.config.secretsKey, user.workspaceId);
     const list = (await readConnections(this.db, user.workspaceId)).map((c) => ({ ...c, lastError: hide(c.lastError) as string | null }));
-    return { connections: list, outlook: ms, oauth, shared: await sharedGrants(this.db, user.workspaceId), paymongoWebhookBase: `${this.config.publicUrl}/hooks/paymongo` };
+    // Only the currently published definition counts. Draft versions can contain abandoned destinations.
+    const used = await this.db.execute<{ id: string; name: string; kind: string }>(sql`
+      with current_versions as (
+        select distinct on (w.id) w.id, w.name, v.definition
+        from workflows w join workflow_versions v on v.workflow_id = w.id
+        where w.user_id = ${user.workspaceId} and v.published
+        order by w.id, v.version desc
+      )
+      select distinct id, name, item->>'type' as kind from current_versions
+      cross join lateral jsonb_array_elements(definition->'steps') as item
+      union select id, name, 'paymongo_link' from current_versions where definition->'trigger'->>'type' = 'payment'
+      order by name, id`);
+    const providerFor: Record<string, string> = { email: "gmail", sheets: "google_sheets", drive: "google_drive", calendar: "google_calendar", paymongo_link: "paymongo", payment_status: "paymongo" };
+    const usage: Record<string, { id: string; name: string }[]> = {};
+    const supported = new Set(["gmail", ...Object.keys(PROVIDER_NAMES)]);
+    for (const { id, name, kind } of used.rows) {
+      const key = providerFor[kind] ?? kind;
+      if (!supported.has(key)) continue;
+      const entries = usage[key] ??= [];
+      if (!entries.some((entry) => entry.id === id)) entries.push({ id, name });
+    }
+    const [latestPayment] = await this.db.select({ status: payments.status, updatedAt: payments.updatedAt, live: payments.livemode })
+      .from(payments).where(eq(payments.userId, user.workspaceId)).orderBy(desc(payments.updatedAt), desc(payments.id)).limit(1);
+    return { connections: list, outlook: ms, oauth, usage, latestPayment: latestPayment ?? null, shared: await sharedGrants(this.db, user.workspaceId), sharedGoogleApps: await sharedGoogleApps(this.db, user.workspaceId), paymongoWebhookBase: `${this.config.publicUrl}/hooks/paymongo` };
   }
 
   /** The sheet and tab, checked with a read before saving. Shared by connect and "change sheet". */

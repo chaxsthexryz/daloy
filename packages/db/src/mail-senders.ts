@@ -103,11 +103,22 @@ export async function issueVerifyToken(db: Db, userId: string, ttlMs = VERIFY_TT
   return token;
 }
 
+/** A retained digest with no expiry marks the last link as consumed. New links replace it. */
+export async function verifyLinkStatus(db: Db, userId: string, token: string) {
+  const [row] = await db.select({
+    address: mailSenders.address,
+    state: sql<"ready" | "expired" | "used">`case
+      when ${mailSenders.verifyExpiresAt} is null then 'used'
+      when ${mailSenders.verifyExpiresAt} <= now() then 'expired' else 'ready' end`,
+  }).from(mailSenders).where(and(eq(mailSenders.userId, userId), eq(mailSenders.verifyTokenHash, hashToken(token)), isNotNull(mailSenders.passwordCiphertext)));
+  return row ?? { state: "invalid" as const };
+}
+
 /** One guarded UPDATE: the token must be this owner's, unexpired and unused, and the credential still saved. */
 export async function claimVerifyToken(db: Db, userId: string, token: string): Promise<boolean> {
   const claimed = await db
     .update(mailSenders)
-    .set({ status: "active", verifiedAt: sql`now()`, verifyTokenHash: null, verifyExpiresAt: null, lastError: null, updatedAt: new Date() })
+    .set({ status: "active", verifiedAt: sql`now()`, verifyExpiresAt: null, lastError: null, updatedAt: new Date() })
     .where(
       and(
         eq(mailSenders.userId, userId),

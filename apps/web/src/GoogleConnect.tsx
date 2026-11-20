@@ -99,7 +99,7 @@ export function GoogleSheetsCard({ conn, configured, outcome, onChange, pick = d
 
   return (
     <ConnectPanel
-      slug="google-sheets"
+      slug="google-sheets" sectionLabel="Destination"
       name="Google Sheets"
       connectLabel="Connect with Google"
       configured
@@ -177,7 +177,7 @@ export function GoogleDriveCard({ conn, configured, outcome, onChange, pick = de
 
   return (
     <ConnectPanel
-      slug="google-drive"
+      slug="google-drive" sectionLabel="Upload folder"
       name="Google Drive"
       connectLabel="Connect with Google"
       configured

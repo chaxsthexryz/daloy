@@ -928,3 +928,9 @@ Why it is built that way: `requestKind`, `requestCounts` and `needsAttention` in
 Edge cases: a failed load shows Retry. No requests shows the three figures at zero and "No requests yet. Open the form and send one." A run still going after 60 seconds says "Taking longer than usual". "Today" is the viewer's calendar day, so 23:59 yesterday does not count.
 
 Tests: `lib/guided.test.ts` (status mapping, the 60 second rule, today across midnight, counts, delivery attention), `e2e/office-request.spec.ts` (one request, Processed), `e2e/connections.spec.ts` (Sheet row added, Slack note failed, then Retry in the panel), `e2e/purchase-request.spec.ts` (Waiting for a decision, then Finished, with the Outlook and Teams deliveries), `e2e/ask-request.spec.ts`, `e2e/wizard-double-click.spec.ts` (See run history, then a failed deliveries list and its Retry).
+
+### Apps directory and Business
+
+Apps groups saved connections together, including ones that need reconnecting. Select an app to open its settings beside the directory on desktop or full screen on a phone. Used by lists the current published automations in this workspace. The date comes from the saved connection check. PayMongo shows the most recent recorded payment and whether it used test or live mode. Business shows a preview of the public form branding and the inquiry form link and embed code.
+
+Opening a Gmail app-password verification link shows its status. The owner presses Confirm sender to use the link. Google sign-in can verify the address through consent as before. When Google apps in one workspace share a provider account, Apps names the other apps on that sign-in. A connection outside the workspace can trigger the existing general disconnect warning.

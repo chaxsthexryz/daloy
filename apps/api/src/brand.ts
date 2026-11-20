@@ -18,7 +18,7 @@ export class BrandController {
   @Get()
   async read(@CurrentUser() user: SessionUser) {
     const brand = await readBrand(this.db, user.workspaceId);
-    return { accent: brand?.accent ?? null, logo: !!brand?.logo };
+    return { accent: brand?.accent ?? null, logo: !!brand?.logo, ...(brand?.logo ? { logoUrl: `/brand/logo/${user.workspaceId}` } : {}) };
   }
 
   @Put()
