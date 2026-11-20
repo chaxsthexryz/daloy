@@ -114,7 +114,7 @@ function Route({ hash, user }: { hash: string; user: User }) {
   const back = /^#\/apps\/([a-z-]+)-([a-z_]+)$/.exec(hash) ?? /^#\/settings\/business\/(outlook)-([a-z_]+)$/.exec(hash);
   if (back) return <AppsPage outcome={{ app: back[1]!, code: back[2]! }} />;
   if (hash === "#/settings/business") return <BusinessSetupPage />;
-  if (hash === "#/team" && user.role === "owner") return <TeamPage />;
+  if (hash === "#/team" && user.role === "owner") return <TeamPage user={user} />;
   if (hash === "#/resources" && user.role === "owner") return <ResourcesPage />;
   if (hash === "#/bookings" && (user.role === "owner" || user.role === "operator")) return <BookingsPage />;
   const verify = /^#\/verify-sender\/([A-Za-z0-9_-]{43})$/.exec(hash);

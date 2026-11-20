@@ -1,0 +1,166 @@
+/*
+ * Team, Settings and Account (Doop rows W1, W3, W4). Sizes follow the approved frames 7bjgxavlHY, yfzU8w8KVi,
+ * x3A-fJwMpM, y8bjjzbxAu, I7ZfgM4eOZ, lH4X9qcB2B, ZaQH-F9-EY, 5YxvC0dks3 and b3byDaxpPC. Light uses the frames'
+ * values; dark maps the same roles onto the console's theme variables, as activity.css does.
+ */
+.wk {
+  --w-bg: var(--surface);
+  --w-canvas: var(--sunken);
+  --w-ink: var(--text);
+  --w-muted: var(--muted);
+  --w-line: var(--border-soft);
+  --w-field: var(--border);
+  --w-accent: var(--accent);
+  --w-on-accent: var(--on-accent);
+  --w-select: var(--accent-tint);
+  --w-red: var(--danger);
+  --w-green: var(--ok);
+  --w-focus: var(--focus);
+}
+:root[data-theme="light"] .wk {
+  --w-bg: #fff;
+  --w-canvas: #f5f6f8;
+  --w-ink: #0a0b0f;
+  --w-muted: #5b6170;
+  --w-line: #e3e6ec;
+  --w-field: #d5d9e2;
+  --w-accent: #1b45c9;
+  --w-on-accent: #fff;
+  --w-select: #e8eeff;
+  --w-red: #b42318;
+  --w-green: #12b76a;
+  --w-focus: #1b45c9;
+}
+
+main.page.wk { display: flex; flex-direction: column; gap: 16px; width: 100%; max-width: none; min-height: 100%; margin: 0; padding: 22px 28px; box-sizing: border-box; background: var(--w-bg); color: var(--w-ink); font-family: "Inter", var(--font-sans); font-size: 14px; line-height: 20px; overflow-wrap: anywhere; }
+.wk :focus-visible { outline: 2px solid var(--w-focus); outline-offset: 2px; }
+.wk h1, .wk h2, .wk p { margin: 0; }
+.wk a { color: var(--w-accent); text-underline-offset: 3px; }
+.wk-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+/* Page head: title with a count or a role beside it. */
+.wk > * { width: 100%; max-width: 1004px; box-sizing: border-box; }
+.wk-head, .wk-title-row { display: flex; align-items: baseline; gap: 2px 14px; }
+.wk-title-row { flex-wrap: wrap; }
+.wk-title-row h1 { flex: none; }
+.wk-head { align-items: center; justify-content: space-between; }
+.wk-head h1 { font-size: 24px; line-height: 30px; font-weight: 700; letter-spacing: -0.02em; }
+.wk-sub { color: var(--w-muted); font-size: 14px; }
+.wk-eyebrow { color: var(--w-muted); font-size: 14px; }
+.wk-back { font-size: 14px; font-weight: 600; text-decoration: none; }
+.wk-head-action { margin-left: auto; align-self: center; }
+
+/* Cards: a pale header strip over a bordered body. */
+.wk-card { min-width: 0; border: 1px solid var(--w-line); border-radius: 10px; overflow: hidden; background: var(--w-bg); }
+.wk-card-head { display: flex; align-items: baseline; gap: 10px; padding: 12px 16px; background: var(--w-canvas); border-bottom: 1px solid var(--w-line); font-size: 14px; font-weight: 400; }
+.wk-card-head b { font-weight: 700; }
+.wk-card-head span { color: var(--w-muted); font-size: 13px; }
+.wk-card-title { margin-bottom: 10px !important; font-size: 14px; font-weight: 700; }
+.wk-body { padding: 16px; }
+.wk-body > * + * { margin-top: 12px; }
+.wk-muted { color: var(--w-muted); font-size: 13px; line-height: 18px; }
+
+.wk-button { display: inline-flex; align-items: center; justify-content: center; min-height: 32px; padding: 0 11px; border: 1px solid var(--w-field); border-radius: 7px; background: var(--w-bg); color: var(--w-ink); font: 600 13px/18px inherit; white-space: nowrap; cursor: pointer; transition: border-color var(--dur-fast) var(--ease), background-color var(--dur-fast) var(--ease); }
+.wk-button:hover:not(:disabled) { border-color: var(--w-accent); }
+.wk-button.blue { min-height: 38px; padding: 0 16px; border-color: var(--w-accent); background: var(--w-accent); color: var(--w-on-accent); }
+.wk-button.blue:hover:not(:disabled) { background: color-mix(in srgb, var(--w-accent) 88%, black); border-color: transparent; }
+.wk-button.danger { min-height: 44px; border-color: var(--w-red); background: var(--w-red); color: #fff; }
+.wk-button.danger-quiet { border-color: transparent; color: var(--w-red); }
+.wk-chip { display: inline-flex; flex: none; white-space: nowrap; align-items: center; min-height: 22px; padding: 0 9px; border-radius: 11px; background: var(--w-select); color: var(--w-accent); font-size: 12px; font-weight: 700; }
+
+/* Invite form and notices. */
+.wk-invite { display: grid; gap: 12px; }
+.wk-invite-row { display: grid; grid-template-columns: minmax(0, 1fr) 200px auto; gap: 10px; align-items: center; }
+.wk input[type="email"], .wk input[type="password"], .wk input[type="text"], .wk select { box-sizing: border-box; width: 100%; height: 38px; min-height: 0; padding: 0 12px; border: 1px solid var(--w-field); border-radius: 7px; background: var(--w-bg); color: var(--w-ink); font: inherit; }
+.wk input::placeholder { color: var(--w-muted); opacity: .8; }
+.wk-note { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 10px 12px; border-radius: 8px; background: var(--w-canvas); box-shadow: inset 3px 0 var(--w-green); font-size: 13px; }
+.wk-note p { flex: 1; min-width: 0; }
+.wk-note code { font: 12px/18px ui-monospace, SFMono-Regular, Menlo, monospace; }
+.wk-note.bad { box-shadow: inset 3px 0 var(--w-red); color: var(--w-red); font-weight: 600; }
+.wk-note[hidden] { display: none; }
+
+/* Team rows: email, joined date, actions. */
+.wk-rows { margin: 0; padding: 0; list-style: none; }
+.wk-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto; gap: 12px; align-items: center; padding: 10px 16px; border-bottom: 1px solid var(--w-line); }
+.wk-row:last-child { border-bottom: 0; }
+.wk-row small { grid-column: 2; font-size: 13px; color: var(--w-muted); text-align: right; min-width: 150px; }
+.wk-email { font-weight: 600; }
+.wk-row .wk-chip, .wk-row .wk-button { justify-self: end; }
+.wk-row small + .wk-chip { grid-column: 3 / 5; }
+
+/* Dialog: centered card on a desktop, bottom sheet on a phone. */
+.wk-sheet { width: min(440px, calc(100vw - 32px)); padding: 20px; border: 0; border-radius: 12px; background: var(--w-bg); color: var(--w-ink); box-shadow: 0 12px 40px rgb(10 11 15 / 0.28); font: inherit; }
+.wk-sheet::backdrop { background: rgb(10 11 15 / 0.45); }
+.wk-sheet h2 { font-size: 18px; line-height: 24px; font-weight: 700; }
+.wk-sheet-grip { display: none; }
+.wk-sheet-text { margin-top: 8px !important; color: var(--w-muted); font-size: 15px; line-height: 22px; }
+.wk-sheet-actions { display: grid; gap: 10px; margin-top: 18px; }
+.wk-sheet-actions .wk-button, .wk-sheet-cancel { min-height: 44px; }
+.wk-roles { display: grid; gap: 4px; margin: 12px 0 0; padding: 0; border: 0; }
+.wk-radio { display: flex; gap: 10px; align-items: flex-start; padding: 8px 0; cursor: pointer; }
+.wk-radio input { width: 18px; height: 18px; min-height: 0; margin: 1px 0 0; accent-color: var(--w-accent); }
+.wk-radio small { display: block; color: var(--w-muted); font-size: 13px; }
+.wk-invite .wk-sheet-cancel { justify-self: stretch; }
+
+/* Settings and Account. */
+.wk-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; align-items: start; max-width: 1004px; }
+.wk-col { display: grid; gap: 14px; min-width: 0; }
+.wk-radios { display: flex; flex-direction: column; gap: 6px; margin: 0; border: 0; border-radius: 0; min-width: 0; }
+.wk-radios > * + * { margin-top: 0; }
+.wk-radios > .wk-muted { margin-top: 6px; }
+.wk-radios label { display: flex; align-items: center; gap: 10px; min-height: 0; margin: 0; cursor: pointer; }
+.wk-radios input { width: 18px; height: 18px; min-height: 0; margin: 0; accent-color: var(--w-accent); }
+.wk-line { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.wk-usage { margin: 8px 0 0; padding: 0; list-style: none; }
+.wk-usage li { display: flex; justify-content: space-between; gap: 12px; padding: 7px 0; border-bottom: 1px solid var(--w-line); }
+.wk-usage li:last-child { border-bottom: 0; }
+.wk-usage .wk-muted { white-space: nowrap; }
+.wk-office { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); margin: 0; padding: 0; list-style: none; }
+.wk-office li { padding: 14px 16px; border-right: 1px solid var(--w-line); border-bottom: 1px solid var(--w-line); }
+.wk-office li:nth-child(3n) { border-right: 0; }
+.wk-office li:nth-last-child(-n + 3) { border-bottom: 0; }
+.wk-office a { display: block; font-size: 15px; font-weight: 700; text-decoration: none; }
+.wk-office a:hover { text-decoration: underline; }
+.wk-office span { display: block; margin-top: 2px; color: var(--w-muted); font-size: 13px; line-height: 18px; }
+.wk-narrow { max-width: 520px; }
+.wk-fields { display: grid; gap: 14px; }
+.wk-fields label { display: block; margin-bottom: 4px; font-size: 13px; font-weight: 600; color: var(--w-ink); }
+.wk-fields label .wk-muted { font-weight: 400; }
+.wk-fields input[aria-invalid="true"] { border-color: var(--w-red); }
+.wk-fields .wk-button.blue { justify-self: start; }
+.wk-fields .wk-note { font-size: 14px; font-weight: 600; }
+
+@media (max-width: 799.98px) {
+  main.page.wk { gap: 14px; padding: 0 0 24px; }
+  .wk > :not(.wk-head, dialog) { margin-inline: 18px; width: auto; }
+  .wk-head { padding: 14px 18px; border-bottom: 1px solid var(--w-line); }
+  .wk-head h1 { font-size: 26px; line-height: 32px; font-weight: 800; letter-spacing: -0.03em; }
+  .wk-grid { grid-template-columns: minmax(0, 1fr); }
+  .wk-radios { flex-direction: row; flex-wrap: wrap; gap: 8px 22px; }
+  .wk-radios > .wk-muted, .wk-radios > .wk-note { flex-basis: 100%; margin-top: 0; }
+  .wk-office { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .wk-office li { padding: 12px 16px; }
+  .wk-office li:nth-child(3n) { border-right: 1px solid var(--w-line); }
+  .wk-office li:nth-child(2n) { border-right: 0; }
+  .wk-office li:nth-last-child(-n + 2) { border-bottom: 0; }
+  .wk-office li:nth-last-child(3) { border-bottom: 0; }
+  .wk-office span { display: none; }
+  .wk input[type="email"], .wk input[type="password"], .wk input[type="text"], .wk select, .wk-button { min-height: 44px; }
+  .wk-narrow { max-width: none; }
+
+  /* Team: one flat list. The role button shows the current role and opens the sheet. */
+  .wk-team { gap: 0; }
+  .wk-team .wk-group { border: 0; border-radius: 0; margin-inline: 18px; }
+  .wk-team .wk-card-head { display: none; }
+  .wk-row { grid-template-columns: minmax(0, 1fr) auto; gap: 2px 12px; padding: 12px 0; }
+  .wk-email { grid-column: 1; font-size: 16px; }
+  .wk-row small { grid-column: 1; grid-row: 2; min-width: 0; text-align: left; }
+  .wk-row .wk-button, .wk-row .wk-chip { grid-column: 2; grid-row: 1 / 3; align-self: center; min-height: 36px; font-weight: 500; }
+  .wk-row .wk-chip { min-height: 24px; font-weight: 700; }
+  .wk-row small + .wk-chip { grid-column: 2; }
+  .wk-invite-row { grid-template-columns: minmax(0, 1fr); }
+  .wk-sheet { position: fixed; inset: auto 0 0; width: 100%; max-width: 100%; margin: 0; padding: 10px 18px calc(20px + env(safe-area-inset-bottom)); border-radius: 16px 16px 0 0; animation: wk-sheet-in var(--dur-base) var(--ease); }
+  .wk-sheet-grip { display: block; width: 36px; height: 4px; margin: 0 auto 16px; border-radius: 2px; background: var(--w-line); }
+}
+@keyframes wk-sheet-in { from { transform: translateY(100%); } }
+@media (prefers-reduced-motion: reduce) { .wk-sheet { animation: none; } }
