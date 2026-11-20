@@ -37,6 +37,7 @@ async function signIn(page: Page, email: string, password: string) {
 test("forgot password: the emailed link sets a new password and the old one stops working", async ({ page }) => {
   const email = `forgot-${Date.now()}@test.local`;
   await register(page, email);
+  await page.locator(".sidebar").hover();
   await page.getByRole("button", { name: "Sign out" }).click();
 
   await page.getByRole("link", { name: "Forgot your password?" }).click();
@@ -67,9 +68,11 @@ test("change password from the account page, then sign in with the new one", asy
   await page.getByRole("button", { name: "Change password" }).click();
   await expect(page.getByRole("status")).toHaveText("Password changed. Your other sessions are signed out.");
 
+  await page.locator(".sidebar").hover();
   await page.getByRole("button", { name: "Sign out" }).click();
   await signIn(page, email, NEW);
   // Sign-in keeps the address, so this lands on the account page again.
+  await page.locator(".sidebar").hover();
   await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible();
 });
 
