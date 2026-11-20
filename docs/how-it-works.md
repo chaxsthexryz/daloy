@@ -934,3 +934,23 @@ Tests: `lib/guided.test.ts` (status mapping, the 60 second rule, today across mi
 Apps groups saved connections together, including ones that need reconnecting. Select an app to open its settings beside the directory on desktop or full screen on a phone. Used by lists the current published automations in this workspace. The date comes from the saved connection check. PayMongo shows the most recent recorded payment and whether it used test or live mode. Business shows a preview of the public form branding and the inquiry form link and embed code.
 
 Opening a Gmail app-password verification link shows its status. The owner presses Confirm sender to use the link. Google sign-in can verify the address through consent as before. When Google apps in one workspace share a provider account, Apps names the other apps on that sign-in. A connection outside the workspace can trigger the existing general disconnect warning.
+
+## Workspace pages (Doop rows W1, W3, W4, decision 0072)
+
+What it does: Team, Settings and Account follow the approved Phase 5 frames. They share `apps/web/src/workspace.css` (scope `.wk`: cards with a pale header strip, Inter, light values from the frames and dark mapped onto the console theme variables) and the `Sheet` dialog in `apps/web/src/Sheet.tsx`.
+
+### Team (W1, `#/team`)
+
+The owner sees an invite card, then one card per role (Owner, Operators, Approvers, Requesters) with the role's help line and a count. A group with nobody in it is hidden. The owner row has no actions. Change role opens a dialog with the three member roles and Save. Remove asks in a dialog that says the person is signed out and that approvals naming them can no longer be answered. Below 800px the page is one flat list: the role button shows the current role and opens the sheet, which also holds Remove, and Invite in the header opens the form in a sheet.
+
+Why it is built this way: `lib/team.ts` holds the rules the page mirrors (`groupMembers`, `canInvite`, `canChangeRole`, `canRemove`), so the buttons and the tests share one definition. The API stays the authority: the routes need the owner role, and `setMemberRole` and `removeMember` refuse the owner row in SQL.
+
+Edge cases: an owner can never be given as an invite role or a new role; a non-owner sees no invite form and no buttons; a second invite link replaces the first on screen only after the new one arrives. Tests: `lib/team.test.ts`, `e2e/workspace-team.spec.ts` (invite, change role, remove, owner row, phone sheets) and `e2e/team.spec.ts` (named approval).
+
+### Settings (W3, `#/settings`)
+
+Language (owner only), Appearance (every role, saved on the device), Your account, Plan and usage (owner and operator, hidden when `/usage` cannot be read) and, for the owner, the Your office link grid. An operator sees a line saying language and office settings belong to the owner. On a phone the cards stack, the subtitle shows the email and role, and the usage dates drop the year. `shortDay` in `lib/usage.ts` formats them without a time zone shift. Tests: `lib/usage.test.ts`, `e2e/workspace-pages.spec.ts`, `e2e/language.spec.ts`, `e2e/usage.spec.ts`.
+
+### Account (W4, `#/account`)
+
+Change password for any signed-in role. `lib/password.ts` (`checkPasswordChange`) applies the API's limits (a current password, 12 to 200 characters for the new one) before any request, so the reason shows beside the right field and nothing is sent. The API's "current password is wrong" (a 400, not a 401, so the console does not sign the person out) marks the current-password field. On success the form is cleared and the page says other sessions are signed out. A requester or approver has no rail, so the page links back to My requests. Forgot and reset password pages in the same file are unchanged. Tests: `lib/password.test.ts`, `e2e/workspace-pages.spec.ts`, `e2e/account.spec.ts`.
