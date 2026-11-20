@@ -15,6 +15,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   UseGuards,
 } from "@nestjs/common";
 import { and, desc, eq, getTableColumns, max, sql } from "drizzle-orm";
@@ -37,6 +38,25 @@ const runInput = z.object({ payload: z.record(z.string(), z.unknown()).default({
 const testRunInput = runInput.extend({ definition: z.unknown(), live: z.boolean().default(false), mode: testModeSchema.optional(), choices: testChoicesSchema.default({}) });
 const workflowId = new ZodPipe(z.uuid());
 const versionNumber = new ZodPipe(z.coerce.number().int().min(1).max(1_000_000));
+/** Step types whose connection must be working before the workflow is turned on. */
+const CHECKED_PROVIDERS: Partial<Record<string, Provider>> = { sheets: "google_sheets", slack: "slack", outlook: "outlook", teams: "teams", telegram: "telegram", calendar: "google_calendar", airtable: "airtable", notion: "notion", trello: "trello" };
+/** Every step type that uses an app, for the overview's apps list. Drive and PayMongo steps are not checked at publish, so they are not in CHECKED_PROVIDERS. */
+const APP_PROVIDERS: Partial<Record<string, Provider>> = { ...CHECKED_PROVIDERS, drive: "google_drive", paymongo_link: "paymongo", payment_status: "paymongo" };
+/** The viewer's time zone, so "today" and the day bars follow their calendar. ICU checks the name; the database receives it as a bound parameter. */
+const timeZone = new ZodPipe(
+  z
+    .string()
+    .max(64)
+    .refine((tz) => {
+      try {
+        new Intl.DateTimeFormat("en", { timeZone: tz });
+        return true;
+      } catch {
+        return false;
+      }
+    }, "not a time zone")
+    .default("Asia/Manila"),
+);
 
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
@@ -85,6 +105,57 @@ export class WorkflowsController {
     return list.map((w) => {
       const found = newest.find((n) => n.workflowId === w.id);
       return { ...w, last: found ? { ...found, workflowId: undefined } : null };
+    });
+  }
+
+  /**
+   * One entry per automation for the Automations table: real, non-test run counts for today and the last seven calendar days
+   * in the viewer's zone (tz, default Asia/Manila), the trigger type and the apps its steps use, from the live version or else the
+   * newest draft, and the workspace owner. Three queries however many automations or runs there are. Declared before :id.
+   * The owner is the workspace owner: an automation has no creator of its own.
+   */
+  @Get("overview")
+  async overview(@CurrentUser() user: SessionUser, @Query("tz", timeZone) tz: string) {
+    // The same zone expression appears in several places, and the database sees each bound parameter as a different value, so the grouped columns are named by position.
+    const day = sql`(${runs.createdAt} at time zone ${tz})::date`;
+    const daysAgo = sql<number>`((now() at time zone ${tz})::date - ${day})`.mapWith(Number);
+    const counted = await this.db
+      .select({
+        workflowId: workflowVersions.workflowId,
+        daysAgo,
+        total: sql<number>`count(*)`.mapWith(Number),
+        succeeded: sql<number>`count(*) filter (where ${runs.state} = 'succeeded')`.mapWith(Number),
+        failed: sql<number>`count(*) filter (where ${runs.state} = 'failed')`.mapWith(Number),
+      })
+      .from(runs)
+      .innerJoin(workflowVersions, eq(workflowVersions.id, runs.workflowVersionId))
+      .innerJoin(workflows, eq(workflows.id, workflowVersions.workflowId))
+      .where(and(eq(workflows.userId, user.workspaceId), eq(runs.test, false), sql`${day} > (now() at time zone ${tz})::date - 7`))
+      .groupBy(sql`1`, sql`2`);
+    // The live version when there is one, else the newest.
+    const shown = await this.db
+      .selectDistinctOn([workflows.id], { id: workflows.id, definition: workflowVersions.definition })
+      .from(workflows)
+      .leftJoin(workflowVersions, eq(workflowVersions.workflowId, workflows.id))
+      .where(eq(workflows.userId, user.workspaceId))
+      .orderBy(workflows.id, desc(workflowVersions.published), desc(workflowVersions.version));
+    const [owner] = await this.db.select({ email: users.email }).from(users).where(eq(users.id, user.workspaceId));
+    return shown.map((w) => {
+      const def = w.definition as { trigger?: { type?: string }; steps?: { type?: string }[] } | null;
+      const apps = [...new Set((def?.steps ?? []).flatMap((s) => (s.type ? (APP_PROVIDERS[s.type] ?? []) : [])))];
+      const days = Array.from({ length: 7 }, () => ({ total: 0, failed: false }));
+      const mine = { today: 0, week: 0, succeeded: 0, failed: 0 };
+      for (const c of counted.filter((x) => x.workflowId === w.id)) {
+        const bar = days[6 - c.daysAgo];
+        if (!bar) continue;
+        bar.total += c.total;
+        bar.failed ||= c.failed > 0;
+        mine.week += c.total;
+        mine.succeeded += c.succeeded;
+        mine.failed += c.failed;
+        if (c.daysAgo === 0) mine.today += c.total;
+      }
+      return { id: w.id, trigger: def?.trigger?.type ?? null, owner: { email: owner!.email }, apps, runs: { ...mine, days } };
     });
   }
 
@@ -289,8 +360,7 @@ export class WorkflowsController {
 
   /** Turning on a workflow with Sheets, Slack, Outlook or Teams steps needs that connection working with a destination. Drafts do not. */
   private async checkConnections(userId: string, definition: WorkflowDefinition) {
-    const providers: Partial<Record<string, Provider>> = { sheets: "google_sheets", slack: "slack", outlook: "outlook", teams: "teams", telegram: "telegram", calendar: "google_calendar", airtable: "airtable", notion: "notion", trello: "trello" };
-    const needed = new Set(definition.steps.flatMap((s) => providers[s.type] ?? []));
+    const needed = new Set(definition.steps.flatMap((s) => CHECKED_PROVIDERS[s.type] ?? []));
     if (needed.size === 0) return;
     const conns = await readConnections(this.db, userId);
     for (const provider of needed) {
