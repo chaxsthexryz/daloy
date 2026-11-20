@@ -7,6 +7,7 @@ import { viewTranslations } from "./locale-views";
 import { googleTranslations } from "./locale-google";
 import { gmailTranslations } from "./locale-gmail";
 import { calendarTranslations } from "./locale-calendar";
+import { opsTranslations } from "./locale-ops";
 import { pasteTranslations } from "./locale-paste";
 export type Language = "en" | "tl";
 
@@ -21,6 +22,7 @@ const tagalog: Record<string, string> = {
   ...googleTranslations,
   ...gmailTranslations,
   ...calendarTranslations,
+  ...opsTranslations,
   "Plan: {plan}": "Plan: {plan}",
   "{used}, no limit": "{used}, walang limit",
   "{used} of {limit}": "{used} sa {limit}",

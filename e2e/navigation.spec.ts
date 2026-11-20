@@ -34,27 +34,32 @@ test("an owner starts from the top button, narrows the list, deletes a draft and
 
   // Problem filter and search, with the failed automation sorted first.
   await page.getByRole("link", { name: "Automations", exact: true }).first().click();
-  const cards = page.locator("ul.cards > li");
+  const rows = page.locator("tbody tr.ops-row");
   await expect(async () => {
     await page.reload();
-    await expect(cards.first()).toContainText("Problem", { timeout: 1000 });
+    await expect(rows.first()).toContainText("Problem", { timeout: 1000 });
   }).toPass({ timeout: 30_000 });
-  await page.getByRole("button", { name: "Problem", exact: true }).click();
-  await expect(cards).toHaveCount(1);
-  await expect(cards).toContainText("Broken");
-  await page.getByRole("button", { name: "All" }).click();
+  await page.getByLabel("Status:").selectOption("problem");
+  await expect(rows).toHaveCount(1);
+  await expect(rows).toContainText("Broken");
+  await page.getByLabel("Status:").selectOption("all");
   await page.getByLabel("Find an automation").fill("fin");
-  await expect(cards).toHaveCount(1);
-  await expect(cards).toContainText("Fine");
+  await expect(rows).toHaveCount(1);
+  await expect(rows).toContainText("Fine");
   await page.getByLabel("Find an automation").fill("");
 
-  // The draft is not a card; it sits under Drafts and can be deleted.
-  await expect(cards).toHaveCount(2);
-  await page.locator("summary", { hasText: "Drafts (1)" }).click();
+  // The draft is a row with the status Draft; its panel has Continue setup and Delete.
+  await expect(rows).toHaveCount(3);
+  await page.getByLabel("Status:").selectOption("draft");
+  await expect(rows).toHaveCount(1);
+  await rows.first().getByRole("button").click();
+  await expect(page.getByRole("link", { name: "Continue setup" })).toHaveAttribute("href", /#\/a\//);
   page.once("dialog", (d) => void d.accept());
   await page.getByRole("button", { name: "Delete" }).click();
-  await expect(page.locator("summary", { hasText: "Drafts" })).toHaveCount(0);
+  await expect(rows).toHaveCount(0);
   expect(await (await page.request.get("/workflows")).json()).toHaveLength(2);
+  await page.getByRole("button", { name: "Clear filters" }).click();
+  await expect(rows).toHaveCount(2);
 
   // On desktop the Activity table is a table: its heading row sits above the first row, at the same left edge.
   await page.goto(`/#/w/${broken}/runs`);
@@ -83,7 +88,7 @@ test("Settings in the menu sets light or dark on this device, and System follows
   const surface = page.getByRole("main");
   const background = () => surface.evaluate((el) => getComputedStyle(el).backgroundColor);
   expect(await theme()).toBe("light");
-  await expect(page.locator(".shell-main")).toHaveCSS("background-color", "rgb(241, 241, 239)");
+  await expect(page.locator(".shell-main")).toHaveCSS("background-color", "rgb(242, 245, 252)");
 
   await page.getByRole("link", { name: "Settings", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Settings", level: 1 })).toBeVisible();
@@ -101,11 +106,12 @@ test("Settings in the menu sets light or dark on this device, and System follows
   await expect(page.getByLabel("Dark")).toBeChecked();
   await expect.poll(background).not.toBe(light);
 
-  // The approved homepage stays light even when this device is set to Dark.
+  // The Automations table follows the theme too: Dark gives the dark surface and dark panel colours.
   await page.getByRole("link", { name: "Automations", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Automations", exact: true })).toBeVisible();
   expect(await theme()).toBe("dark");
-  await expect(page.locator(".shell-main")).toHaveCSS("background-color", "rgb(241, 241, 239)");
+  await expect(page.locator(".shell-main")).toHaveCSS("background-color", "rgb(11, 16, 32)");
+  await expect(page.locator("main.ops")).toHaveCSS("background-color", "rgb(19, 26, 48)");
   await page.getByRole("link", { name: "Settings", exact: true }).click();
   await expect(page.getByLabel("Dark")).toBeChecked();
   await expect.poll(background).not.toBe(light);

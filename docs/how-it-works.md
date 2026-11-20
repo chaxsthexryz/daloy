@@ -824,3 +824,13 @@ Tests: `packages/db/src/retired-secrets.test.ts` (env parsing, 90-day boundary, 
 ### Build with AI review
 
 Owners describe an automation in a conversation at #/ai. A generated definition opens Review plan. The table follows workflow edges and labels conditional paths. Change something returns to the conversation with the draft. App setup opens separately so the draft stays available. Saving opens an unpublished version in Steps. Turning it on requests publication. The assistant mark identifies the conversation UI. The configured AI model still answers it.
+
+### Automations table (A1, decision 0068)
+
+What it does: `#/` lists every automation as a table row with its status, trigger, a seven day bar chart, success rate and last run. A strip above shows runs today, success over seven days, requests that need you, automations with problems and live automations. The row you select fills the panel beside the table: status and published version, the main next action, the steps in plain words, recent runs and the form link. On a phone the panel opens as a sheet.
+
+Why it is built this way: the page uses only data the API already sends. `GET /workflows` gives the rows, `GET /runs?test=false` gives the newest 50 real runs for the strip and the bars, `GET /runs?review=true` gives the requests that wait for a person, and `GET /workflows/:id` gives each row's trigger and steps (four at a time after the list shows). The bars and rates carry a note when 50 runs came back and the oldest is still inside the seven days, because older runs may be missing. A tile never disagrees with its list: `counts()` in `lib/automations.ts` and the status filter share one rule.
+
+Edge cases: a paused automation is listed as Paused and counts under Needs you only if a run in review is still waiting. A missed schedule counts as a problem unless the last run needs a person. A draft is a row with the status Draft and a Continue setup action. A failed list load shows Retry. A failed run, usage or detail request leaves only that figure out. The Owner column and the Owner and App filters from the design are left out because the list has no owner or app data.
+
+Tests: `apps/web/src/lib/automations.test.ts` (filters, counts, trigger labels), `apps/web/src/lib/ops-stats.test.ts` (day buckets, success rate, the 50 run limit), `apps/web/src/lib/locale-ops.test.ts` (Tagalog placeholders), and `e2e/navigation.spec.ts`, `e2e/automations.spec.ts`, `e2e/run-controls.spec.ts`, `e2e/office-request.spec.ts` (filter, select, next action, pause and resume, draft).
