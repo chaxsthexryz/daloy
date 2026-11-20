@@ -200,3 +200,51 @@ main.page.wk { display: flex; flex-direction: column; gap: 16px; width: 100%; ma
   .wk-dir-flows .wk-ink { font-size: 16px; font-weight: 500; }
   .wk-dir-flows small { display: none; }
 }
+
+/* Status pills and tags (W6 to W8). Colours mix the theme's green and red so dark mode follows. */
+.wk-pill, .wk-tag { display: inline-flex; flex: none; align-items: center; min-height: 22px; padding: 0 9px; border-radius: 11px; background: var(--w-canvas); color: var(--w-muted); font-size: 12px; font-weight: 700; white-space: nowrap; transition: color var(--dur-fast) var(--ease), background-color var(--dur-fast) var(--ease); }
+.wk-pill.ok { background: color-mix(in srgb, var(--w-green) 14%, var(--w-bg)); color: color-mix(in srgb, var(--w-green) 55%, var(--w-ink)); }
+.wk-pill.red { background: color-mix(in srgb, var(--w-red) 12%, var(--w-bg)); color: var(--w-red); }
+.wk-tag { min-height: 20px; margin-left: 8px; padding: 0 8px; font-size: 11px; vertical-align: 1px; }
+.wk-tag.on { background: var(--w-select); color: var(--w-accent); }
+.wk-bad { color: var(--w-red); }
+.wk-hint { margin-top: 6px !important; }
+.wk-lead { font-size: 14px; color: var(--w-ink); }
+.wk-eyebrow-caps { padding: 0; margin-bottom: 10px; color: var(--w-muted); font-size: 11px; font-weight: 700; letter-spacing: 0.065em; text-transform: uppercase; }
+
+/* AI model (W6): frames NTdSU6RZ9F, RR5MWYK8iZ, fkjpQgqdZF. */
+.wk-ai-grid { display: grid; grid-template-columns: minmax(0, 1fr) 400px; gap: 16px; align-items: start; }
+.wk-ai .wk-body > * + * { margin-top: 0; }
+.wk-ai .wk-col { gap: 14px; }
+.wk-providers { margin: 0; min-width: 0; display: grid; gap: 8px; }
+.wk-providers > .wk-eyebrow-caps { float: left; width: 100%; }
+.wk-choice { display: grid; grid-template-columns: 18px minmax(0, 1fr); gap: 12px; align-items: start; padding: 11px 12px; border: 1px solid var(--w-line); border-radius: 8px; transition: border-color var(--dur-fast) var(--ease), background-color var(--dur-fast) var(--ease); }
+.wk-choice:has(input:checked) { border-color: var(--w-accent); background: var(--w-select); }
+.wk-choice input { width: 16px; height: 16px; min-height: 0; margin: 2px 0 0; accent-color: var(--w-accent); }
+.wk-choice label { display: grid; gap: 2px; margin: 0; cursor: pointer; }
+.wk-choice-note { color: var(--w-muted); font-size: 13px; line-height: 18px; }
+.wk-ai .wk-fields.wk-body { gap: 14px; }
+.wk-ai .wk-fields.wk-body > * + * { margin-top: 0; }
+.wk-fields select { appearance: auto; }
+.wk-keybox { position: relative; }
+.wk-keybox-hint { position: absolute; inset: 0 12px 0 auto; display: flex; align-items: center; color: var(--w-muted); font-size: 12px; pointer-events: none; }
+.wk-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.wk-actions .wk-button { min-height: 34px; }
+.wk-actions .wk-button.blue { min-height: 34px; padding: 0 16px; }
+.wk-test.failed { border-color: var(--w-red); }
+.wk-test .wk-body { display: grid; gap: 8px; }
+.wk-test .wk-card-title { margin: 0 !important; }
+.wk-code, .wk-in-use code, .wk-ai code { padding: 2px 6px; border-radius: 5px; background: var(--w-canvas); font: 13px/18px ui-monospace, SFMono-Regular, Menlo, monospace; }
+.wk-ai p.in-use { display: block; }
+@media (max-width: 799.98px) {
+  .wk-ai-grid { grid-template-columns: minmax(0, 1fr); }
+  .wk-ai .wk-card:not(.wk-test) { border: 0; border-radius: 0; background: none; overflow: visible; }
+  .wk-ai .wk-card:not(.wk-test).wk-body { padding: 0; }
+  .wk-providers > .wk-eyebrow-caps { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .wk-choice-note { display: none; }
+  .wk-choice { align-items: center; padding: 10px 12px; }
+  .wk-choice input { margin: 0; }
+  .wk-actions .wk-button { flex: 1 1 calc(50% - 4px); }
+  .wk-actions .wk-button.blue { flex-basis: 100%; min-height: 44px; }
+  .wk-actions .wk-button { min-height: 44px; }
+}
