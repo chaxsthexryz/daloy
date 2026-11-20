@@ -884,3 +884,47 @@ Why it is built this way: the data and the rollback are unchanged (see Run histo
 Edge cases: version 1 has nothing to compare and says so. An automation with only drafts opens the drafts disclosure. A failed load or rollback shows the error in the status line.
 
 Tests: `apps/web/src/lib/diff.test.ts` (diff), `e2e/history.spec.ts` (live version selected, diff text, rollback creates version 3 and selects it).
+
+## Guided pages (Doop rows A2 to A6, decision 0071)
+
+`apps/web/src/NewAutomation.tsx`, `OfficeRequests.tsx`, `guided-pages.css`, `lib/locale-setup.ts`.
+
+### New automation (A2, `#/new`)
+
+What it does: a table of the three templates (Track an office request, Purchase request with approval, Reply to a website inquiry) with a Set up button each, a blank workflow card (Name, Start from, Create and open editor), Build with AI in the page head, and a side panel that previews the Office requests template with a Try the preview link to `#/try/office-request`. The website inquiry row links to Business setup because inquiry replies need the business details first.
+
+Why it is built that way: the Set up buttons call the same single-flight `startOfficeSetup` and `startPurchaseSetup` as before, so two clicks, or coming back later, reopen one draft. The page also disables all three starts while one is running, which the old page did not do for the blank form. The visible button text is short ("Set up"); its accessible name keeps the full phrase, so a screen reader and the e2e specs still hear "Set up for my office".
+
+Edge cases: a name already in use shows "An automation with that name already exists." and re-enables the form. A failed guided start shows its message and re-enables the buttons.
+
+Tests: `e2e/office-request.spec.ts`, `e2e/wizard-double-click.spec.ts` (double click makes one draft), `e2e/editor.spec.ts`, `e2e/email-in.spec.ts`, `e2e/business-setup.spec.ts` (the three paths from this page), `lib/locale-setup.test.ts` (Tagalog keeps every braced value).
+
+### Office request preview (A3, `#/try/office-request`)
+
+What it does: a four field sample form (requester name, email, subject, request details) filled from the engine's `SAMPLE_REQUEST`. Try with sample details fills the side panel with the reference, the request list, who the office notification and the requester receipt go to, and the two messages in full, plus the Sheets row and Slack note when the answers include them. Use this template starts the guided setup.
+
+Why it is built that way: everything comes from `previewOfficeRequest` in the engine, run in the browser. The page makes no API call, so nothing is sent and no request is recorded, whatever the person types. The panel says so in words. The preview waits for the Try button instead of updating on every key, so a person sees the result of a deliberate action. Use this template reuses the single-flight start and disables itself while it runs.
+
+Edge cases: the email field must be a valid address and every field has a length limit. A failed start shows its message and enables the button again. The location line in the sample message stays at the engine's sample value, since the frame has no location field.
+
+Tests: `e2e/office-request.spec.ts` (the preview shows REQ-SAMPLE and the receipt text, no mail is written, then the setup starts), `e2e/ask-request.spec.ts`, `e2e/connections.spec.ts`, `e2e/wizard-double-click.spec.ts` (all reach setup through this page).
+
+### Guided setups (A4 office requests, A5 purchase requests, `#/a/:id` while the automation is a draft)
+
+What it does: both setups share one frame (`useWizard` in `OfficeRequests.tsx`). The head shows Automations / Guided setup, the saved name and a Draft tag. The form shows "Step n of N", a segmented bar, the step, then Next (or Turn on on the last step), Save and finish later and Back. Beside it a Setup steps list marks each step Complete, Current step or Upcoming (`stepStates` in `lib/guided.ts`). The last step is a Setting and Selected value table with an Edit link per row that opens the step which sets it. The approval step of a purchase setup explains what the approver receives and has a Preview the approval email block. Example messages stay in a closed block on the review step.
+
+Why it is built that way: nothing about saving changed. Every step saves its answers through `PATCH /workflows/:id/setup`, so leaving and coming back resumes the saved step. Next, Save and finish later and Turn on share one busy flag, so a double click saves once and publishes one version. Turn on still publishes the definition built from the answers, and the API still refuses it while a chosen app or the named approver is missing, with the message shown above the buttons.
+
+Edge cases: the side list reflects the step on screen, not how far the person got earlier, so after Back a later step reads Upcoming even if it was answered. The purchase setup keeps four steps and the purchasing inbox on the destinations step (decision 0071). A failed save keeps the person on the step and shows the error.
+
+Tests: `lib/guided.test.ts` (step states, one current step, an index outside the list), `e2e/office-request.spec.ts` (name, fields, destinations, Save and finish later, resume, review table, Turn on), `e2e/purchase-request.spec.ts` (approver and purchasing rows, Outlook and Teams), `e2e/connections.spec.ts` (Optional apps row lists Google Sheets and Slack), `e2e/wizard-double-click.spec.ts` (Step 2 of 4 after resume, one version from a double click).
+
+### Live overview (A6, `#/a/:id` once the automation is on)
+
+What it does: the head shows the name and an Accepting requests tag, with the tabs Overview, Activity and Steps under it. The page has a Request form card (the link, Copy form link, Copy embed code, Open form, and the local-address warning), then Requests with Refresh and View activity, three figures (Received today, Waiting, Completed), and a table of reference, request subject, time received and a status tag. Selecting a row fills the Selected request panel: reference, subject, time, progress, each delivery with its Retry or Mark as sent buttons, and See run history. On a phone the panel is a sheet that opens when a row is tapped and closes with Close, Escape or a tap outside, and focus returns to the row.
+
+Why it is built that way: `requestKind`, `requestCounts` and `needsAttention` in `lib/guided.ts` hold the rules, so they are unit tested apart from the page. A request counts as Completed when its run succeeded and as Waiting when its run waits for a person. A failed or unclear delivery turns the row's tag red and adds "A delivery needs attention", whatever the run says, so a request whose run finished but whose Slack note failed is not shown as plainly done. The deliveries moved from the table cells into the selected panel because the approved frame has no room for them in a row; the newest request is selected when the page opens, so the most recent deliveries are visible without a click.
+
+Edge cases: a failed load shows Retry. No requests shows the three figures at zero and "No requests yet. Open the form and send one." A run still going after 60 seconds says "Taking longer than usual". "Today" is the viewer's calendar day, so 23:59 yesterday does not count.
+
+Tests: `lib/guided.test.ts` (status mapping, the 60 second rule, today across midnight, counts, delivery attention), `e2e/office-request.spec.ts` (one request, Processed), `e2e/connections.spec.ts` (Sheet row added, Slack note failed, then Retry in the panel), `e2e/purchase-request.spec.ts` (Waiting for a decision, then Finished, with the Outlook and Teams deliveries), `e2e/ask-request.spec.ts`, `e2e/wizard-double-click.spec.ts` (See run history, then a failed deliveries list and its Retry).

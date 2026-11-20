@@ -22,8 +22,8 @@ test("an owner asks why a request stopped and only reads, nothing in the card ch
   await expect(page.getByText("Notes go to #office-requests.")).toBeVisible();
 
   await page.getByRole("link", { name: "New automation" }).first().click();
-  await page.getByRole("link", { name: "Try an example" }).click();
-  await page.getByRole("button", { name: "Set up for my office" }).click();
+  await page.getByRole("link", { name: "Try the preview" }).click();
+  await page.getByRole("button", { name: "Use this template" }).click();
   await page.getByRole("button", { name: "Next" }).click();
   await page.getByRole("button", { name: "Next" }).click();
   await expect(page.getByRole("heading", { name: "Where requests and alerts go" })).toBeVisible();
@@ -43,7 +43,7 @@ test("an owner asks why a request stopped and only reads, nothing in the card ch
     await expect(form.getByRole("heading", { name: "Request received" })).toBeVisible();
     const reference = /REQ-[0-9A-Z]{6}/.exec(await form.locator("strong").innerText())![0];
 
-    const row = page.locator("tbody tr").first();
+    const row = page.getByRole("complementary", { name: "Selected request" });
     await expect(async () => {
       await page.getByRole("button", { name: "Refresh" }).click();
       await expect(row).toContainText("Slack note: The Slack app is not in that channel", { timeout: 1000 });

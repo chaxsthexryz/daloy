@@ -12,14 +12,14 @@ test("a double click on Next and Turn on acts once, setup resumes the draft, and
 
   // Two clicks on Set up for my office make one workflow; starting again later reopens it.
   await page.getByRole("link", { name: "New automation" }).first().click();
-  await page.getByRole("link", { name: "Try an example" }).click();
-  const setUp = page.getByRole("button", { name: "Set up for my office" });
+  await page.getByRole("link", { name: "Try the preview" }).click();
+  const setUp = page.getByRole("button", { name: "Use this template" });
   await setUp.dblclick();
   await expect(page.getByLabel("Automation name")).toBeVisible();
   const workflows = async () => (await (await page.request.get("/workflows")).json()) as { id: string }[];
   expect(await workflows()).toHaveLength(1);
   await page.getByRole("link", { name: "New automation" }).first().click();
-  await page.getByRole("link", { name: "Try an example" }).click();
+  await page.getByRole("link", { name: "Try the preview" }).click();
   await setUp.click();
   await expect(page.getByLabel("Automation name")).toBeVisible();
   expect(await workflows()).toHaveLength(1);
@@ -67,10 +67,10 @@ test("a double click on Next and Turn on acts once, setup resumes the draft, and
   await expect(form.getByRole("heading", { name: "Request received" })).toBeVisible();
   await expect(async () => {
     await page.getByRole("button", { name: "Refresh" }).click();
-    await expect(page.getByRole("link", { name: "Details" })).toBeVisible({ timeout: 1000 });
+    await expect(page.getByRole("link", { name: "See run history" })).toBeVisible({ timeout: 1000 });
   }).toPass({ timeout: 30_000 });
   await page.route("**/deliveries*", (route) => route.abort());
-  await page.getByRole("link", { name: "Details" }).click();
+  await page.getByRole("link", { name: "See run history" }).click();
   await expect(page.getByText("Couldn't load deliveries.")).toBeVisible();
   await page.unroute("**/deliveries*");
   await page.getByRole("button", { name: "Retry" }).click();

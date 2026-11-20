@@ -44,8 +44,8 @@ test("an owner connects Sheets and Slack, and retries only the Slack note that f
 
   // An office request that also goes to both.
   await page.getByRole("link", { name: "New automation" }).first().click();
-  await page.getByRole("link", { name: "Try an example" }).click();
-  await page.getByRole("button", { name: "Set up for my office" }).click();
+  await page.getByRole("link", { name: "Try the preview" }).click();
+  await page.getByRole("button", { name: "Use this template" }).click();
   await page.getByRole("button", { name: "Next" }).click();
   await expect(page.getByRole("heading", { name: "Fields staff fill in" })).toBeVisible();
   await page.getByRole("button", { name: "Next" }).click();
@@ -53,7 +53,7 @@ test("an owner connects Sheets and Slack, and retries only the Slack note that f
   await page.getByLabel("A row in your Google Sheet").check();
   await page.getByLabel(/A short note in your Slack channel/).check();
   await page.getByRole("button", { name: "Next" }).click();
-  await expect(page.getByText("Post the reference and subject to your Slack channel.")).toBeVisible();
+  await expect(page.getByRole("row", { name: /Optional apps/ })).toContainText("Google Sheets, Slack");
   await page.getByRole("button", { name: "Turn on" }).click();
   await expect(page.getByRole("status")).toContainText("Accepting requests");
 
@@ -68,7 +68,7 @@ test("an owner connects Sheets and Slack, and retries only the Slack note that f
   await form.getByRole("button", { name: "Send" }).click();
   await expect(form.getByRole("heading", { name: "Request received" })).toBeVisible();
 
-  const row = page.locator("tbody tr").first();
+  const row = page.getByRole("complementary", { name: "Selected request" });
   await expect(async () => {
     await page.getByRole("button", { name: "Refresh" }).click();
     await expect(row).toContainText("Sheet row: added", { timeout: 1000 });

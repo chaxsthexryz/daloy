@@ -24,7 +24,7 @@ test("the owner connects an inbox and a new website inquiry creates one live run
   await page.getByRole("button", { name: "Create account" }).click();
   await page.goto("/#/new");
   await page.getByLabel("Name").fill("Website inbox");
-  await page.getByRole("button", { name: "Create", exact: true }).click();
+  await page.getByRole("button", { name: "Create and open editor" }).click();
   await expect(page.getByRole("heading", { name: "Website inbox" })).toBeVisible();
   const workflowId = new URL(page.url()).hash.split("/")[2]!;
 
