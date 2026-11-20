@@ -39,11 +39,11 @@ test("an owner adds, replaces and deletes a secret and its value never shows", a
   await expect(page.getByRole("cell", { name: "shop_hook", exact: true })).toHaveCount(1);
   expect(await page.content()).not.toContain(VALUE);
 
-  // Delete asks first: dismissing keeps it, accepting removes it.
-  page.once("dialog", (d) => void d.dismiss());
+  // Delete asks first (a dialog, W9): Cancel keeps it, Delete secret removes it.
   await page.getByRole("button", { name: "Delete shop_hook" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Cancel" }).click();
   await expect(page.getByRole("cell", { name: "shop_hook", exact: true })).toBeVisible();
-  page.once("dialog", (d) => void d.accept());
   await page.getByRole("button", { name: "Delete shop_hook" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Delete secret" }).click();
   await expect(page.getByRole("cell", { name: "shop_hook", exact: true })).toHaveCount(0);
 });

@@ -23,7 +23,10 @@ export async function joinAs(browser: Browser, owner: Page, role: "Operator" | "
   const page = await context.newPage();
   await page.goto(link);
   await page.getByLabel(/Password/).fill(PASSWORD);
+  // Wait for the accept call itself: the sign-in page has an h1 too, so a heading alone can pass before the session exists.
+  const accepted = page.waitForResponse((r) => /\/invites\/[^/]+\/accept$/.test(r.url()));
   await page.getByRole("button", { name: "Join" }).click();
+  expect((await accepted).ok()).toBe(true);
   await expect(page.getByRole("heading", { level: 1 }).first()).toBeVisible();
   return page;
 }
