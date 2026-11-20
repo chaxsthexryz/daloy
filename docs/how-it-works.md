@@ -864,3 +864,13 @@ Why it is built this way: the answers still come from `GET /runs/ask` (decision 
 Edge cases: an unknown reference says "No request with that reference in this office." A run with no request reference says there is nothing to ask about and links to the run. A reword that fails or hits the AI limit shows the error under the button and leaves the fixed answer in place.
 
 Tests: `e2e/ask-request.spec.ts` (questions from an Activity row, pressed state, run link, no recovery buttons, reference lookup from `#/activity/ask`, unknown reference), `apps/api/src/ask-api.test.ts` (flag, role and quota on the API).
+
+### Bookings day agenda (O4)
+
+What it does: `#/bookings` follows Doop frame PtNZfoOj94 (option B). The Day agenda lists every booking under its own day, by start time, with its reference, resource, time and status. Picking one fills the Selected booking card: resource, date and time in the booking's time zone, status, a link to its run, and the actions Reschedule, Cancel booking, Mark no-show (once the start time has passed) and Undo no-show. Download CSV is in the head. On a phone the agenda fills the page and the selected booking opens as a sheet that Close, the backdrop or Escape dismiss.
+
+Why it is built this way: the page calls the same routes as before (decision 0032), and each change still sends the version shown, so a change made by someone else in between is refused. `byDay()` and `ampm()` in `lib/agenda.ts` read the date and time from the zoned `start` string, so a 23:30 booking in Manila stays on its own day whatever the viewer's zone. The frame shows a guest name, but the booking list has none, so the card and agenda name the resource and reference.
+
+Edge cases: no bookings shows the empty note. A booking whose run failed or waits for review keeps its Active status with a "needs attention" pill and note. Cancelled and no-show bookings show only the actions that still apply.
+
+Tests: `apps/web/src/lib/agenda.test.ts` (grouping, zoned day, 12-hour times), `e2e/bookings.spec.ts` (pick, reschedule, cancel, phone sheet with Escape), `e2e/calendar.spec.ts` (reschedule and cancel update the calendar event).

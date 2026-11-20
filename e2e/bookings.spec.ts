@@ -31,16 +31,33 @@ test("staff reschedule and cancel a booking on the Bookings page", async ({ page
   // The worker books it in the background.
   await expect.poll(async () => (await (await page.request.get("/bookings")).json()).length, { timeout: 20_000 }).toBe(1);
   await page.getByRole("link", { name: "Bookings" }).click();
-  const row = page.getByRole("row", { name: /Ana/ });
-  await expect(row).toContainText(`${year}-01-20 14:00 to 15:00`);
-  await row.getByRole("button", { name: "Reschedule" }).click();
+  // O4 day agenda: the booking is listed under its day, and the selected booking card holds its actions.
+  const item = page.getByRole("region", { name: "Day agenda" }).getByRole("button", { name: /Ana/ });
+  await expect(item).toContainText("2:00 PM");
+  await item.click();
+  await expect(item).toHaveAttribute("aria-pressed", "true");
+  const card = page.getByRole("region", { name: "Ana" });
+  await expect(card).toContainText(`${year}-01-20 14:00 to 15:00`);
+  await card.getByRole("button", { name: "Reschedule" }).click();
   await page.getByLabel("New time (Asia/Manila)").fill(`${year}-01-20T16:00`);
   await page.getByRole("button", { name: "Move" }).click();
-  await expect(page.getByRole("status")).toContainText(`moved to ${year}-01-20 16:00`);
-  await expect(row).toContainText(`${year}-01-20 16:00 to 17:00`);
+  await expect(page.getByRole("status").filter({ hasText: "moved to" })).toContainText(`moved to ${year}-01-20 16:00`);
+  await expect(card).toContainText(`${year}-01-20 16:00 to 17:00`);
+  await expect(item).toContainText("4:00 PM");
 
   page.once("dialog", (d) => void d.accept());
-  await row.getByRole("button", { name: "Cancel" }).click();
-  await expect(page.getByRole("status")).toContainText("is cancelled");
-  await expect(row).toContainText("cancelled");
+  await card.getByRole("button", { name: "Cancel booking" }).click();
+  await expect(page.getByRole("status").filter({ hasText: "is cancelled" })).toBeVisible();
+  await expect(card).toContainText("Cancelled");
+  await expect(item).toContainText("Cancelled");
+
+  // On a phone the agenda fills the page and the booking opens as a sheet that Escape closes.
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.keyboard.press("Escape");
+  await expect(card).toBeHidden();
+  await item.click();
+  await expect(card).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(card).toBeHidden();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });

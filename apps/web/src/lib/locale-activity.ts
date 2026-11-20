@@ -25,4 +25,8 @@ export const activityTranslations: Record<string, string> = {
   "Type or pick a request to read what happened.": "Mag-type o pumili ng request para mabasa ang nangyari.",
   "Simpler wording": "Mas simpleng pananalita",
   "This run was not started by a request, so there is nothing to ask about.": "Hindi nagsimula sa request ang run na ito, kaya walang maitatanong.",
+  "No-show": "Hindi dumating",
+  "Selected booking": "Napiling booking",
+  "Day agenda": "Agenda ng araw",
+  "Cancel booking": "Kanselahin ang booking",
 };
