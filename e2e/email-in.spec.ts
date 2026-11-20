@@ -29,6 +29,7 @@ test("the owner connects an inbox and a new website inquiry creates one live run
   const workflowId = new URL(page.url()).hash.split("/")[2]!;
 
   deliver("Older inquiry", "Already in the inbox before it was connected.");
+  await page.getByRole("button", { name: "List", exact: true }).click();
   await page.getByRole("button", { name: "Trigger: manual" }).click();
   await page.getByLabel("Starts when").selectOption("email");
   await page.getByLabel("IMAP host").fill("imap.office.example");
