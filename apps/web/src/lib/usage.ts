@@ -9,6 +9,11 @@ export const day = (iso: string, t: Translator = (source, values) => translate("
   const [, m = 1, d = 1] = iso.split("-").map(Number);
   return `${d} ${t(MONTHS[m - 1] ?? "")}`;
 };
+/** "2026-12-01" as "1 Dec 2026", or "1 Dec" without the year (the Settings frames). */
+export const shortDay = (iso: string, withYear = true) => {
+  const [y = 0, m = 1, d = 1] = iso.split("-").map(Number);
+  return `${d} ${MONTHS[m - 1]?.slice(0, 3) ?? ""}${withYear ? ` ${y}` : ""}`;
+};
 
 const METERS = [
   { key: "ai", what: "AI actions", period: "", stopped: "Steps that need AI stop" },

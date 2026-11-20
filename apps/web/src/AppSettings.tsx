@@ -1,11 +1,11 @@
-import "./workspace-admin.css";
+import "./workspace.css";
 import { Text } from "./Language";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { api, getUsage, type Meter, type Usage } from "./api";
-import { day } from "./lib/usage";
+import { shortDay } from "./lib/usage";
 import { saveTheme, savedTheme, type Theme } from "./lib/theme";
 import { useLanguage } from "./Language";
-import { Header } from "./Nav";
+import { usePhone } from "./Sheet";
 import type { Role, User } from "./Team";
 import { UsageNotice } from "./UsageNotice";
 
@@ -18,8 +18,17 @@ const ROLES: Record<Role, string> = { owner: "Owner", operator: "Operator", appr
 
 const ofLimit = (m: Meter, t: (s: string, values?: Record<string, string | number>) => string) => m.limit === null ? t("{used}, no limit", { used: m.used }) : t("{used} of {limit}", { used: m.used, limit: m.limit });
 
+function Card({ title, id, children }: { title: string; id: string; children: ReactNode }) {
+  return (
+    <section className="wk-card" aria-labelledby={id}>
+      <h2 className="wk-card-head" id={id}><b>{title}</b></h2>
+      {children}
+    </section>
+  );
+}
+
 /** Plan, what this workspace has used and when each count resets. Hidden when /usage cannot be read. */
-function PlanAndUsage() {
+function PlanAndUsage({ phone }: { phone: boolean }) {
   const { t } = useLanguage();
   const [u, setU] = useState<Usage | null>(null);
   useEffect(() => {
@@ -27,32 +36,38 @@ function PlanAndUsage() {
   }, []);
   if (!u) return null;
   const { automations: a } = u;
+  const back = (m: Meter) => <span className="wk-muted">{phone ? t("back {day}", { day: shortDay(m.resetsOn, false) }) : t("back on {day}", { day: shortDay(m.resetsOn) })}</span>;
   return (
-    <section aria-labelledby="plan-usage">
-      <h2 id="plan-usage">{t("Plan and usage")}</h2>
-      <p>{u.plan ? t("Plan: {plan}", { plan: u.label ?? u.plan }) : t("No plan limits are set. The operator sets the plan.")}</p>
-      <ul className="list">
-        <li>
-          {t("AI actions: {count} this month", { count: ofLimit(u.ai, t) })} <span className="muted">{t("(back on {day})", { day: day(u.ai.resetsOn) })}</span>
-        </li>
-        <li>
-          {t("Emails: {count} today", { count: ofLimit(u.email, t) })} <span className="muted">{t("(back on {day})", { day: day(u.email.resetsOn) })}</span>
-        </li>
-        <li>
-          {t("Web requests: {count} today", { count: ofLimit(u.http, t) })} <span className="muted">{t("(back on {day})", { day: day(u.http.resetsOn) })}</span>
-        </li>
-        <li>{t("Live automations: {count}", { count: a.limit === null ? t("{used}, no limit", { used: a.live }) : t("{used} of {limit}", { used: a.live, limit: a.limit }) })}</li>
-        {u.minScheduleMinutes !== null && <li>{t("Shortest schedule: every {minutes} minutes", { minutes: u.minScheduleMinutes })}</li>}
-      </ul>
-      <UsageNotice usage={u} />
-      {u.plan && <p className="muted"><Text>To change your plan, message the Daloy operator. Payment is monthly by GCash or Maya.</Text></p>}
-    </section>
+    <Card title={t("Plan and usage")} id="plan-usage">
+      <div className="wk-body">
+        <p>{u.plan ? <>{t("Plan:")} <b>{u.label ?? u.plan}</b></> : t("No plan limits are set. The operator sets the plan.")}</p>
+        <ul className="wk-usage">
+          <li><span>{t("AI actions: {count} this month", { count: ofLimit(u.ai, t) })}</span>{back(u.ai)}</li>
+          <li><span>{t("Emails: {count} today", { count: ofLimit(u.email, t) })}</span>{back(u.email)}</li>
+          <li><span>{t("Web requests: {count} today", { count: ofLimit(u.http, t) })}</span>{back(u.http)}</li>
+          <li><span>{t("Live automations: {count}", { count: a.limit === null ? t("{used}, no limit", { used: a.live }) : t("{used} of {limit}", { used: a.live, limit: a.limit }) })}</span></li>
+          {u.minScheduleMinutes !== null && <li><span>{t("Shortest schedule: every {minutes} minutes", { minutes: u.minScheduleMinutes })}</span></li>}
+        </ul>
+        <UsageNotice usage={u} />
+        {u.plan && <p className="wk-muted"><Text>To change your plan, message the Daloy operator. Payment is monthly by GCash or Maya.</Text></p>}
+      </div>
+    </Card>
   );
 }
 
-/** #/settings: how the console looks on this device, the account, and (for owners) the office's settings in one list. */
+const OFFICE: [href: string, name: string, note: string][] = [
+  ["#/apps", "Apps", "Gmail, Outlook, Google Sheets, Slack and Teams"],
+  ["#/settings/business", "Business", "your business details and the website inquiry form"],
+  ["#/team", "Team", "who can use Daloy and what each person may do"],
+  ["#/resources", "Resources", "rooms, people and tables that bookings reserve"],
+  ["#/settings/ai", "AI model", "which model drafts and classifies, and its key"],
+  ["#/tokens", "API tokens", "for MCP clients and scripts"],
+];
+
+/** #/settings: how the console looks on this device, the account, the plan, and (for owners) the office's settings in one list. */
 export function SettingsPage({ user }: { user: User }) {
   const { language, setLanguage, t } = useLanguage();
+  const phone = usePhone();
   const [languageError, setLanguageError] = useState(false);
   const [savingLanguage, setSavingLanguage] = useState(false);
   const changeLanguage = async (next: "en" | "tl") => {
@@ -65,59 +80,75 @@ export function SettingsPage({ user }: { user: User }) {
     finally { setSavingLanguage(false); }
   };
   const [theme, setTheme] = useState(savedTheme);
-  const pick = (t: Theme) => {
-    setTheme(t);
-    saveTheme(t);
+  const pick = (next: Theme) => {
+    setTheme(next);
+    saveTheme(next);
   };
+  const owner = user.role === "owner";
+  // The email is bold in the sentence; the translated template decides where it sits.
+  const [before = "", after = ""] = t("Signed in as {email}, {role}.", { email: "\u0000", role: t(ROLES[user.role]) }).split("\u0000");
   return (
-    <main className="page narrow workspace-admin admin-appsettings">
-      <Header title={t("Settings")} />
-      {user.role === "owner" && <fieldset disabled={savingLanguage}>
-        <legend>{t("Language")}</legend>
-        <label className="check"><input type="radio" name="language" value="en" checked={language === "en"} onChange={() => void changeLanguage("en")} /> English</label>
-        <label className="check"><input type="radio" name="language" value="tl" checked={language === "tl"} onChange={() => void changeLanguage("tl")} /> Taglish</label>
-        <p className="muted">{t("Language applies to this workspace.")}</p>
-        {languageError && <p role="alert" className="message error">{t("Could not save language. Try again.")}</p>}
-      </fieldset>}
-      <fieldset>
-        <legend>{t("Appearance")}</legend>
-        {THEMES.map(([value, label]) => (
-          <label key={value} className="check">
-            <input type="radio" name="theme" value={value} checked={theme === value} onChange={() => pick(value)} /> {t(label)}
-          </label>
-        ))}
-        <p className="muted">{t("Saved on this device only.")}</p>
-      </fieldset>
-      <h2>{t("Your account")}</h2>
-      <p>
-        {t("Signed in as {email}, {role}.", { email: user.email, role: t(ROLES[user.role]) })}
-      </p>
-      {(user.role === "owner" || user.role === "operator") && <PlanAndUsage />}
-      {user.role === "owner" && (
-        <>
-          <h2>{t("Your office")}</h2>
-          <ul className="list">
-            <li>
-              <a href="#/apps"><Text>Apps</Text></a> <span className="muted">Gmail, Outlook, Google Sheets, Slack and Teams</span>
-            </li>
-            <li>
-              <a href="#/settings/business"><Text>Business</Text></a> <span className="muted"><Text>your business details and the website inquiry form</Text></span>
-            </li>
-            <li>
-              <a href="#/team"><Text>Team</Text></a> <span className="muted"><Text>who can use Daloy and what each person may do</Text></span>
-            </li>
-            <li>
-              <a href="#/resources"><Text>Resources</Text></a> <span className="muted"><Text>rooms, people and tables that bookings reserve</Text></span>
-            </li>
-            <li>
-              <a href="#/settings/ai"><Text>AI model</Text></a> <span className="muted"><Text>which model drafts and classifies, and its key</Text></span>
-            </li>
-            <li>
-              <a href="#/tokens"><Text>API tokens</Text></a> <span className="muted"><Text>for MCP clients and scripts</Text></span>
-            </li>
+    <main className="page wk wk-settings">
+      <header className="wk-head">
+        <div>
+          {phone && <p className="wk-eyebrow"><Text>Workspace</Text></p>}
+          <div className="wk-title-row">
+            <h1>{t("Settings")}</h1>
+            <span className="wk-sub">{phone ? `${user.email}, ${t(ROLES[user.role])}` : t("Signed in as {role}", { role: t(user.role) })}</span>
+          </div>
+        </div>
+      </header>
+      <div className="wk-grid">
+        <div className="wk-col">
+          {owner && (
+            <Card title={t("Language")} id="language-card">
+              <fieldset className="wk-body wk-radios" disabled={savingLanguage}>
+                <legend className="wk-sr">{t("Language")}</legend>
+                <label><input type="radio" name="language" value="en" checked={language === "en"} onChange={() => void changeLanguage("en")} /> English</label>
+                <label><input type="radio" name="language" value="tl" checked={language === "tl"} onChange={() => void changeLanguage("tl")} /> Taglish</label>
+                <p className="wk-muted">{t("Language applies to this workspace.")}</p>
+                {languageError && <p role="alert" className="wk-note bad">{t("Could not save language. Try again.")}</p>}
+              </fieldset>
+            </Card>
+          )}
+          <Card title={t("Appearance")} id="appearance-card">
+            <fieldset className="wk-body wk-radios">
+              <legend className="wk-sr">{t("Appearance")}</legend>
+              {THEMES.map(([value, label]) => (
+                <label key={value}>
+                  <input type="radio" name="theme" value={value} checked={theme === value} onChange={() => pick(value)} /> {value === "system" && phone ? t("System") : t(label)}
+                </label>
+              ))}
+              <p className="wk-muted">{t("Saved on this device only.")}</p>
+            </fieldset>
+          </Card>
+          {!phone && (
+            <>
+              <Card title={t("Your account")} id="account-card">
+                <div className="wk-body wk-line">
+                  <p>{before}<b>{user.email}</b>{after}</p>
+                  <span className="wk-chip">{t(ROLES[user.role])}</span>
+                </div>
+              </Card>
+              {!owner && <p className="wk-muted wk-managed">{t("Language and office settings are managed by the owner.")}</p>}
+            </>
+          )}
+        </div>
+        {(owner || user.role === "operator") && <PlanAndUsage phone={phone} />}
+      </div>
+      {owner && (
+        <Card title={t("Your office")} id="office-card">
+          <ul className="wk-office">
+            {OFFICE.map(([href, name, note]) => (
+              <li key={href}>
+                <a href={href}><Text>{name}</Text></a>
+                <span><Text>{note}</Text></span>
+              </li>
+            ))}
           </ul>
-        </>
+        </Card>
       )}
+      {phone && !owner && <p className="wk-muted">{t("Language and office settings are managed by the owner.")}</p>}
     </main>
   );
 }

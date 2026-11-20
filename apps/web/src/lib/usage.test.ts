@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Usage } from "../api";
-import { day, usageLines } from "./usage";
+import { day, shortDay, usageLines } from "./usage";
 
 const usage = (ai: number, live = 1): Usage => ({
   plan: "pilot",
@@ -15,6 +15,10 @@ const usage = (ai: number, live = 1): Usage => ({
 
 describe("usageLines", () => {
   it("formats the day", () => expect(day("2026-12-07")).toBe("7 December"));
+  it("formats the day short, with or without the year", () => {
+    expect(shortDay("2026-12-01")).toBe("1 Dec 2026");
+    expect(shortDay("2026-11-21", false)).toBe("21 Nov");
+  });
   it("is quiet below 80%", () => expect(usageLines(usage(399))).toEqual([]));
   it("warns at 80%", () => expect(usageLines(usage(410))).toEqual(["You have used 410 of 500 AI actions. They come back on 17 December."]));
   it("says what stopped at 100%", () =>
