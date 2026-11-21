@@ -336,7 +336,7 @@ main.page.wk { display: flex; flex-direction: column; gap: 16px; width: 100%; ma
 }
 
 /* Secrets (W9): frames ba7D0fgHk-, THcJmCHB9a, z-C5TXL2fk, EnTFjYkruA. Names are monospace; values never appear. */
-.wk-mono, .wk input.wk-mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.wk-mono, .wk input.wk-mono { font-family: var(--font-sans); font-variant-numeric: tabular-nums; }
 .wk-secret-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; gap: 12px; align-items: end; }
 .wk-secret-form .wk-button.blue { min-height: 38px; }
 .wk-secret-form code, .wk-sub code { font: 12px/18px ui-monospace, SFMono-Regular, Menlo, monospace; }

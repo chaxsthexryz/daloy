@@ -39,3 +39,10 @@ export function usageLines(u: Usage, t: Translator = (source, values) => transla
   }
   return lines.filter((l): l is string => l !== null);
 }
+
+/** The AI meter for the rail and Settings: text and bar fill, or null when the plan has no AI limit. */
+export function aiMeter(u: Usage, t: Translator = (source, values) => translate("en", source, values)) {
+  const { used, limit } = u.ai;
+  if (limit === null || limit === 0) return null;
+  return { text: t("AI {used} of {limit} this month", { used, limit }), used, limit, percent: Math.min(100, Math.round((used / limit) * 100)) };
+}

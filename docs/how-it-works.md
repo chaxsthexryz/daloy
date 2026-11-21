@@ -1195,3 +1195,10 @@ Owner's own tasks:
 - Handle backups, which keep old data until they roll over.
 
 Tests: `packages/db/src/privacy.test.ts` (phone and email matching, retention at 89, 91 and open dues, per-workspace days, batch limit, the 1 to 3650 check), `apps/api/src/privacy.test.ts` (export holds one customer's data only, delete erases it everywhere and keeps bookkeeping, workspace isolation, roles 401 and 403, bad input 400, audit row without customer values, the notice in English and Tagalog with the business name escaped), `apps/api/src/members.test.ts` (route matrix).
+
+## Console rail: calmer motion, Inter and the AI meter (roadmap U1)
+
+- The rail opens on hover intent: the pointer must rest 250 ms to open it and must leave for 200 ms to close it, so passing over it does not flicker. It widens over 280 ms and the labels fade in over 180 ms after a 120 ms delay, all on `--ease` with no overshoot. These are `--dur-rail`, `--dur-rail-label` and `--dur-rail-label-delay` in `styles.css`; the phone sheet uses `--dur-rail` too. With reduced motion there is no delay and no transition.
+- Inter is used for inputs, textareas, references, IDs and times (with tabular figures). `--font-mono` remains for `pre` and `code` blocks and the raw JSON payload textarea (`#payload`) in the editor.
+- The "AI {used} of {limit} this month" meter shows above the account at the bottom of the rail (owners only) and in the Plan and usage card on Settings. It comes from `GET /usage` through `aiMeter` in `lib/usage.ts`, and it is hidden when the plan has no AI limit. In the collapsed rail only the 4 px bar shows, and the text is its accessible name. The rail loads usage once and again whenever a `daloy:usage` event fires on `window`; it does not reload on page changes. Any page that spends AI usage can dispatch `window.dispatchEvent(new Event("daloy:usage"))` to refresh it.
+- The `#/new` entry is now called Library on the rail and the phone menu. The route is unchanged.

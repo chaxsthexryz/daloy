@@ -1,14 +1,49 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import "./console-shell.css";
 import "./motion.css";
+import { getUsage, type Usage } from "./api";
 import { useLanguage } from "./Language";
+import { aiMeter } from "./lib/usage";
 import type { User } from "./Team";
+
+/** Hover intent: the rail opens after the pointer rests 250 ms and closes 200 ms after it leaves, so passing over does not flicker. */
+const OPEN_DELAY = 250;
+const CLOSE_DELAY = 200;
+
+/** GET /usage once on load, and again when something that spends or frees usage fires a `daloy:usage` window event. */
+export function useUsage(enabled = true) {
+  const [usage, setUsage] = useState<Usage | null>(null);
+  useEffect(() => {
+    if (!enabled) return;
+    let live = true;
+    const load = () => { getUsage().then(u => { if (live) setUsage(u); }, () => undefined); };
+    load();
+    window.addEventListener("daloy:usage", load);
+    return () => { live = false; window.removeEventListener("daloy:usage", load); };
+  }, [enabled]);
+  return usage;
+}
+
+/** "AI 120 of 500 this month" with a 4 px bar. The collapsed rail shows the bar only; the text is its accessible name. */
+export function AiMeter({ usage, className }: { usage: Usage | null; className?: string }) {
+  const { t } = useLanguage();
+  const meter = usage && aiMeter(usage, t);
+  if (!meter) return null;
+  return (
+    <div className={className ?? "ai-meter"}>
+      <div className="ai-meter-bar" role="progressbar" aria-label={meter.text} aria-valuemin={0} aria-valuemax={meter.limit} aria-valuenow={Math.min(meter.used, meter.limit)}>
+        <i style={{ width: `${meter.percent}%` }} />
+      </div>
+      <span className="ai-meter-text" aria-hidden="true">{meter.text}</span>
+    </div>
+  );
+}
 
 /** Which menu entry a hash route belongs to, so the same menu shows on every page and marks where you are. */
 function section(hash: string) {
   if (hash === "#/settings") return "Settings";
   if (hash === "#/account") return "Account";
-  if (hash === "#/new") return "New automation";
+  if (hash === "#/new") return "Library";
   if (hash === "#/activity" || hash.startsWith("#/runs/")) return "Activity";
   if (hash === "#/ai") return "Build with AI";
   if (hash.startsWith("#/bookings")) return "Bookings";
@@ -31,6 +66,7 @@ export function Shell({ user, hash, onSignOut, children }: { user: User; hash: s
   const menuButton = useRef<HTMLButtonElement>(null);
   const menu = useRef<HTMLElement>(null);
   const owner = user.role === "owner";
+  const usage = useUsage(owner);
   const here = section(hash);
   // The phone menu closes on any page change, the browser's Back button included.
   useEffect(() => { setOpen(false); setClosing(false); }, [hash]);
@@ -88,11 +124,12 @@ export function Shell({ user, hash, onSignOut, children }: { user: User; hash: s
           if (event.pointerType === "touch" || !matchMedia("(min-width: 800px)").matches) return;
           clearTimeout(hoverTimer.current);
           if (matchMedia("(prefers-reduced-motion: reduce)").matches) setHovered(true);
-          else hoverTimer.current = setTimeout(() => setHovered(true), 150);
+          else hoverTimer.current = setTimeout(() => setHovered(true), OPEN_DELAY);
         }}
         onPointerLeave={event => {
           clearTimeout(hoverTimer.current);
-          setHovered(false);
+          if (matchMedia("(prefers-reduced-motion: reduce)").matches) setHovered(false);
+          else hoverTimer.current = setTimeout(() => setHovered(false), CLOSE_DELAY);
           if (!event.currentTarget.querySelector(":focus-visible")) setFocused(false);
         }}
         onFocusCapture={() => setFocused(true)}
@@ -112,7 +149,7 @@ export function Shell({ user, hash, onSignOut, children }: { user: User; hash: s
           {(owner || user.role === "operator") && link("#/receipts", "Receipts to review", "receipts")}
           {owner && <>
             <span className="shell-nav-label rail-label">{t("Build")}</span>
-            {link("#/new", "New automation", "new")}
+            {link("#/new", "Library", "new")}
             {link("#/ai", "Build with AI", "ai")}
           </>}
           <span className="shell-nav-label rail-label">{t("Workspace")}</span>
@@ -123,6 +160,7 @@ export function Shell({ user, hash, onSignOut, children }: { user: User; hash: s
             {link("#/advanced", "Advanced", "advanced")}
           </>}
           {link("#/settings", "Settings", "settings")}
+          {owner && <AiMeter usage={usage} className="ai-meter rail-usage" />}
           <div className="rail-account">
             <span className="who rail-label">{user.email}</span>
             <a className="account-link" href="#/account" aria-current={here === "Account" ? "page" : undefined} onClick={() => setOpen(false)}>
