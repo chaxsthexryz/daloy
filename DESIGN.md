@@ -9,7 +9,7 @@ The owner approved this signed-in homepage on 18 November 2026. Use commit `c92d
 ### Recreate the layout
 
 1. Place the Daloy logo and wordmark at the top of the desktop sidebar. Group Automations, Activity and Bookings under **Work**. Group New automation and Build with AI under **Build**. Put Team, Apps, Business, Advanced and Settings under **Workspace**, with account controls at the bottom. Preserve the existing owner and operator permissions. [Navigation](apps/web/src/Nav.tsx) · [Logo](apps/web/public/logo.svg)
-2. Put **Automations** at the top of the page. For owners, place the Build with AI link beside the New automation button. Use Geist, with a medium-weight title and compact labels.
+2. Put **Automations** at the top of the page. For owners, place the Build with AI link beside the New automation button. Use Inter, with a medium-weight title and compact labels.
 3. Below the title, show **Automation status**, **Work queue** and **Recent activity**. Size the status bar segments from the actual On, Paused, Off and Draft counts. Queue counts filter the workflow list. Recent activity links to up to three runs, using the latest run per automation and sorting newest first.
 4. Place search and state filters immediately above the workflow cards. Keep each workflow’s name, state, last event and applicable actions together. Group unfinished guided setups under Drafts. Use the existing workspace data, translations and permissions. [Homepage component](apps/web/src/Automations.tsx)
 
@@ -39,7 +39,7 @@ The owner picked direction B, "Karatula" (a painted shop sign), over a quieter p
 - Blue also means "your move": the Needs you strip and the Needs you state are the only solid colour blocks on a page.
 - Green, amber and red are quiet. Done, Waiting and Problem are pale fills with darker text of the same hue. A 6 px line on the left edge of each automation card repeats the state in a mid tone.
 - Flat and lightly bordered. Borders are 1 px, corners 8 px. Nothing has a drop shadow except things that float over the page.
-- One sans-serif, Geist, at weights 400, 500 and 600. Large headings are weight 500 with tight tracking. IBM Plex Mono is for code, JSON and raw state badges.
+- One sans-serif, Inter, at weights 400, 500 and 600 (owner decision, 2026-11-21: the approved Doop frames use Inter). Large headings are weight 500 with tight tracking. IBM Plex Mono is for code, JSON and raw state badges.
 - Words carry every state. Colour, the card edge and motion repeat what the label already says.
 
 The rejected direction's mockup is not kept in the repo.
@@ -56,7 +56,7 @@ The rejected direction's mockup is not kept in the repo.
 | `docs/design/run.html` | One failed run with "Path it took", and at the bottom a reference sheet of every node and edge state. Markup copied from `Runs.tsx`. |
 | `docs/design/landing.html` | The public landing page, with the pricing section. Its styles are inline so W can lift the file whole. |
 | `docs/design/index.html` | Viewer: each mockup framed at 375 px and 1280 px. |
-| `docs/design/fonts/` | Geist and IBM Plex Mono as woff2 (Latin subset), with their licence texts. |
+| `docs/design/fonts/` | Geist (still used by the marketing site in `site/`) and IBM Plex Mono as woff2 (Latin subset), with their licence texts. The console's Inter lives in `apps/web/public/fonts/`. |
 
 The mockups open as local files. They load nothing from the network. They follow the system colour scheme because `tokens.css` carries both themes; light is the designed theme and dark was spot-checked on the Automations mockup.
 
@@ -106,7 +106,7 @@ Paste these two blocks over the `:root` blocks at the top of `apps/web/src/style
   --run-idle: #7c88a6;
 
   /* Type */
-  --font-sans: "Geist", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-sans: "Inter", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --font-mono: "IBM Plex Mono", "Cascadia Mono", Consolas, monospace;
   --text-xs: 0.8125rem;   /* 13 px: tags, states, table labels */
   --text-sm: 0.9375rem;   /* 15 px: hints, secondary lines, code */
@@ -256,7 +256,7 @@ Node text is `--text` on every fill. `.node-status` sets `font-variant-emoji: te
 
 ## Type
 
-Geist for everything, IBM Plex Mono for code, JSON, textareas that hold JSON, and raw state badges. Both are under the SIL Open Font License 1.1 and are self-hosted. The font stacks fall back to Segoe UI, Roboto, Helvetica Neue and Arial, then to Cascadia Mono and Consolas.
+Inter for everything, IBM Plex Mono for code, JSON, textareas that hold JSON, and raw state badges. Both are under the SIL Open Font License 1.1 and are self-hosted. The font stacks fall back to Segoe UI, Roboto, Helvetica Neue and Arial, then to Cascadia Mono and Consolas.
 
 | Use | Size | Weight | Line height | Tracking |
 | --- | --- | --- | --- | --- |
@@ -428,5 +428,5 @@ These need a component or copy change, so V2 cannot do them.
 
 | Font | Files | Licence | Source |
 | --- | --- | --- | --- |
-| Geist (variable, weights 100 to 900) | `fonts/geist.woff2` | SIL OFL 1.1, `fonts/OFL-geist.txt` | github.com/vercel/geist-font, Latin subset from Fontsource |
+| Inter (variable, weights 100 to 900) | `apps/web/public/fonts/inter-variable.woff2` | SIL OFL 1.1, `apps/web/public/fonts/OFL-inter.txt` | github.com/rsms/inter |
 | IBM Plex Mono 400 and 500 | `fonts/ibm-plex-mono-400.woff2`, `fonts/ibm-plex-mono-500.woff2` | SIL OFL 1.1, `fonts/OFL-ibmplexmono.txt` | github.com/IBM/plex, Latin subset from Fontsource |
