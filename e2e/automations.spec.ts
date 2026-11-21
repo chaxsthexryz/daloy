@@ -89,3 +89,45 @@ test("on a phone the menu collapses, nothing scrolls sideways, and the activity 
   await page.setViewportSize({ width: 1280, height: 800 });
   expect(await row.evaluate((e) => getComputedStyle(e).display)).toBe("table-row");
 });
+
+test("the panel is closed on load, a click opens it, Close and Escape close it, a double click opens the editor", async ({ page }) => {
+  await signUp(page, "panel");
+  const wf = await (await page.request.post("/workflows", { data: { name: "Panel check", slug: `panel-${Date.now()}` } })).json();
+  await page.reload();
+  const row = page.getByRole("row", { name: /Panel check/ });
+  const panel = page.getByRole("complementary", { name: "Panel check" });
+  await expect(row).toBeVisible();
+  await expect(page.locator(".ops-panel")).toHaveCount(0);
+  const wide = (await page.locator(".ops-table").boundingBox())!.width;
+  expect(wide).toBeGreaterThan(1000);
+
+  await row.getByRole("button", { name: "Panel check" }).click();
+  await expect(panel).toBeVisible();
+  expect((await page.locator(".ops-table").boundingBox())!.width).toBeLessThan(wide - 300);
+  await panel.getByRole("button", { name: "Close" }).click();
+  await expect(panel).toHaveCount(0);
+
+  // Keyboard: Enter on the name opens the panel, Escape closes it, Shift+Enter opens the editor.
+  await row.getByRole("button", { name: "Panel check" }).focus();
+  await page.keyboard.press("Enter");
+  await expect(panel).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(panel).toHaveCount(0);
+  await expect(row.getByRole("link", { name: /Steps of Panel check/ })).toHaveAttribute("href", `#/w/${wf.id}`);
+
+  await row.dblclick();
+  await expect(page).toHaveURL(new RegExp(`#/w/${wf.id}$`));
+});
+
+test("on a phone a row opens the panel as a sheet that Close dismisses", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 800 });
+  await signUp(page, "sheet");
+  await page.request.post("/workflows", { data: { name: "Sheet check", slug: `sheet-${Date.now()}` } });
+  await page.reload();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await page.getByRole("button", { name: "Sheet check" }).click();
+  const sheet = page.getByRole("dialog", { name: "Sheet check" });
+  await expect(sheet).toBeVisible();
+  await sheet.getByRole("button", { name: "Close" }).click();
+  await expect(sheet).toHaveCount(0);
+});

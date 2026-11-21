@@ -843,6 +843,14 @@ Edge cases: a paused automation is listed as Paused and counts under Needs you o
 
 Tests: `apps/web/src/lib/automations.test.ts` (filters, counts, trigger labels), `apps/web/src/lib/ops-stats.test.ts` (strip totals, success rate), `apps/api/src/workflows-overview.test.ts` (sign-in and role, workspace isolation, more than 50 runs counted, test runs and old runs left out, day buckets in three time zones checked against ICU, bad time zones refused, trigger, apps, owner), `apps/web/src/lib/locale-ops.test.ts` (Tagalog placeholders), and `e2e/navigation.spec.ts`, `e2e/automations.spec.ts`, `e2e/run-controls.spec.ts`, `e2e/office-request.spec.ts` (filter, select, next action, pause and resume, draft).
 
+#### Row clicks and the side panel (U7)
+
+What it does: no row is selected when the page loads, so the table uses the full width. One click on a row (or Enter or Space on its name) selects it and opens the panel; a double click, or Shift+Enter on the name, opens the editor at `#/w/<id>`. The panel closes with its Close button or Escape and opens again on the next row click. At 390 px the panel is the bottom sheet, with the same Close and Escape.
+
+Why it is built this way: selection is plain state that starts empty, and the panel renders only while a visible row is selected, so filtering the row away also closes it. Each row keeps a visually hidden link to the editor so a screen reader can reach it without a double click. Escape inside the search box or a select keeps its own meaning and does not close the panel.
+
+Tests: `e2e/automations.spec.ts` (closed on load, full-width table, click, Close, Escape, Enter, double click, phone sheet).
+
 ### Activity pages (A8 and O1)
 
 What it does: `#/activity` (O1, Doop frame iIHhpAQIUx) is the workspace run register: the newest 50 runs of every automation in one card with a search box, a status filter, and columns for reference, automation, started, time taken and status. `#/w/<id>/runs` (A8, Doop frame fqwMyRZslq) shows one automation's runs beside a run details panel. Selecting a row, or moving keyboard focus onto it, lists that run's steps in the panel, and the reference link opens the full run. The O1 header button opens `#/activity/ask`, where you type or pick a request reference.

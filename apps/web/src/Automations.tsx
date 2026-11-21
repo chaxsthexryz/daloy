@@ -79,7 +79,8 @@ export function Automations({ user }: { user: User }) {
   const typeOf = useMemo(() => Object.fromEntries(Object.entries(overview ?? {}).flatMap(([id, o]) => (o.trigger ? [[id, o.trigger]] : []))) as Record<string, string>, [overview]);
   const triggerTypes = [...new Set(Object.values(typeOf))].sort();
   const shown = withTrigger(arrange(all, query, filter).shown, trigger, typeOf);
-  const selected = shown.find((w) => w.id === selectedId) ?? shown[0] ?? null;
+  // Nothing is selected on load: the panel stays closed until a row is clicked.
+  const selected = shown.find((w) => w.id === selectedId) ?? null;
   const stats = overview ? totals(Object.values(overview).map((o) => o.runs)) : null;
   const reviewOf = (id: string) => (review ?? []).filter((r) => r.workflowId === id);
   // The steps and versions of the selected automation, and its newest runs, load when it is selected and again after a change.
@@ -139,7 +140,10 @@ export function Automations({ user }: { user: User }) {
       setSheet(true);
     }
   };
-  const closeSheet = () => setSheet(false);
+  const closeSheet = () => {
+    setSheet(false);
+    setSelectedId(null);
+  };
   // The list is inert while the sheet is open, so focus goes back to the row only after that has rendered.
   const wasOpen = useRef(false);
   useEffect(() => {
@@ -148,11 +152,14 @@ export function Automations({ user }: { user: User }) {
     wasOpen.current = sheet;
   }, [sheet]);
   useEffect(() => {
-    if (!sheet) return;
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && closeSheet();
+    if (!selectedKey) return;
+    const onKey = (e: KeyboardEvent) => {
+      // Escape in a field keeps its own meaning (clearing a search); the sheet is modal, so it always closes.
+      if (e.key === "Escape" && (sheet || !(e.target instanceof HTMLElement && e.target.closest("input, select, textarea")))) closeSheet();
+    };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [sheet]);
+  }, [sheet, selectedKey]);
 
   const clear = () => {
     setQuery("");
@@ -193,7 +200,7 @@ export function Automations({ user }: { user: User }) {
       ) : list.length === 0 ? (
         <p className="ops-muted">{owner ? <>{t("No automations yet.")} <a href="#/new">{t("Add your first one")}</a>.</> : t("No automations yet.")}</p>
       ) : (
-        <div className="ops-layout">
+        <div className="ops-layout" data-panel={selected ? "open" : "closed"}>
           <div className="ops-main" inert={sheet}>
             {head}
             <section className="ops-kpis" aria-label={t("Overview")}>
@@ -347,12 +354,23 @@ function Row({ w, selected, reviewCount, entry, loading, now, onPick }: {
                 : null;
 
   return (
-    <tr className="ops-row" data-selected={selected || undefined} onClick={(e) => {
-      if (!(e.target as HTMLElement).closest("button")) onPick(w, e.currentTarget.querySelector("button"));
+    <tr className="ops-row" data-selected={selected || undefined} onDoubleClick={() => { location.hash = `#/w/${w.id}`; }} onClick={(e) => {
+      if (!(e.target as HTMLElement).closest("button, a")) onPick(w, e.currentTarget.querySelector("button"));
     }}>
       <td className="c-dot"><i className={`dot ${tone}`} aria-hidden="true" /></td>
       <th scope="row" className="c-name">
-        <button type="button" aria-current={selected ? "true" : undefined} onClick={(e) => onPick(w, e.currentTarget)}>{w.name}</button>
+        <button
+          type="button"
+          aria-current={selected ? "true" : undefined}
+          onClick={(e) => onPick(w, e.currentTarget)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && e.shiftKey) {
+              e.preventDefault();
+              location.hash = `#/w/${w.id}`;
+            }
+          }}
+        >{w.name}</button>
+        <a className="ops-sr" href={`#/w/${w.id}`}>{t("Steps of {name}", { name: w.name })}</a>
         {note && <span className={`sub ${note.kind}`}>{note.text}</span>}
       </th>
       <td className="c-trigger">{loading ? "…" : entry?.trigger ? t(triggerLabel(entry.trigger)) : <span className="dash">-</span>}</td>

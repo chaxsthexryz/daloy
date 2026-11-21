@@ -1,6 +1,7 @@
 /** Automations table (A1): the strip, filters, columns and the selected automation's panel. Braced names are values. */
 export const opsTranslations: Record<string, string> = {
   "Newest {count} runs only": "Pinakabagong {count} run lang",
+  "Steps of {name}": "Mga hakbang ng {name}",
   "{count} total": "{count} lahat",
   "Runs today": "Mga run ngayon",
   "Success, 7 days": "Tagumpay, 7 araw",
