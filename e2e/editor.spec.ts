@@ -17,7 +17,7 @@ test("edit trigger, steps and branches, then test, save and publish", async ({ p
 
   // The list view is the keyboard and screen reader route to every step.
   await page.getByRole("button", { name: "List", exact: true }).click();
-  await page.getByRole("button", { name: "Trigger: manual" }).click();
+  await page.getByRole("button", { name: "Trigger: You run it" }).click();
   await page.getByLabel("Starts when").selectOption("form");
   await expect(page.getByRole("group", { name: "Form fields" })).toBeVisible();
 
@@ -53,7 +53,13 @@ test("edit trigger, steps and branches, then test, save and publish", async ({ p
   // The diagram draws every step; the zoom bar changes the zoom.
   await page.getByRole("button", { name: "Diagram", exact: true }).click();
   await expect(page.locator(".react-flow__node")).toHaveCount(4);
-  await expect(page.locator(".a7-needs-app")).toContainText("Not connected");
+  await expect(page.locator(".a7-needs-app")).toContainText("Connect Google Sheets");
+  // Each node says the app, the action and where it acts (roadmap R2a).
+  const sheetNode = page.locator(".a7-node", { hasText: "Add a row" });
+  await expect(sheetNode).toContainText("Google Sheets");
+  await expect(sheetNode).toContainText("Sheet: chosen in Apps");
+  await expect(sheetNode.getByRole("img", { name: "Google Sheets" })).toBeHidden();
+  await expect(page.locator(".a7-node", { hasText: "Send email" })).toContainText("To: Email from the form");
   const level = page.locator(".a7-zoom-level");
   const before = await level.textContent();
   await page.getByRole("button", { name: "Zoom Out" }).click();

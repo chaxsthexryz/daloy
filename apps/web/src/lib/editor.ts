@@ -1,4 +1,4 @@
-import { mockAiOutput, type Step } from "@daloy/engine";
+import { mockAiOutput, stepEntry, triggerEntry, type Step } from "@daloy/engine";
 import { entryOf, type Draft } from "./graph";
 
 /** What happens after a step: one path per outgoing edge, each the chain of steps until a fork, a join already listed, or the end. */
@@ -72,4 +72,40 @@ export function setupLeft(draft: Draft, connected: ReadonlySet<string>): AppNeed
     needs.set(app.provider, need);
   }
   return [...needs.values()];
+}
+
+export type ConnInfo = { provider: string; status: string; destination?: Record<string, string> | null };
+
+/** The name of what the owner picked in Apps for a connection: a sheet, channel, chat, table, list or database. */
+export function destinationName(c: ConnInfo): string | undefined {
+  const d = c.destination;
+  return (d && (d.title || d.channelName || d.chatTitle || d.tableName || d.listName || d.databaseTitle)) || undefined;
+}
+
+/** Each step's destination name, for the line under its title. Steps whose app has none picked are left out. */
+export function chosenFor(draft: Draft, conns: readonly ConnInfo[]): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const s of draft.steps) {
+    const provider = stepEntry(s.type).provider;
+    const c = provider && conns.find((x) => x.provider === provider);
+    const name = c ? destinationName(c) : undefined;
+    if (name) out.set(s.id, name);
+  }
+  return out;
+}
+
+/**
+ * The app each node needs and does not have yet, by node id ("trigger" for the trigger), named in English. An email
+ * step needs Gmail only when no sender can send: mailReady is false when the workspace has no Gmail sender and the installation has none either.
+ */
+export function unconnectedNodes(draft: Draft, connected: ReadonlySet<string>, mailReady: boolean): Map<string, string> {
+  const out = new Map<string, string>();
+  const check = (id: string, entry: ReturnType<typeof stepEntry>) => {
+    if (!entry.provider || !entry.app) return;
+    const ok = entry.provider === "gmail" ? mailReady : connected.has(entry.provider);
+    if (!ok) out.set(id, entry.app.en);
+  };
+  check("trigger", triggerEntry(draft.trigger.type));
+  for (const s of draft.steps) check(s.id, stepEntry(s.type));
+  return out;
 }

@@ -30,7 +30,7 @@ test("the owner connects an inbox and a new website inquiry creates one live run
 
   deliver("Older inquiry", "Already in the inbox before it was connected.");
   await page.getByRole("button", { name: "List", exact: true }).click();
-  await page.getByRole("button", { name: "Trigger: manual" }).click();
+  await page.getByRole("button", { name: "Trigger: You run it" }).click();
   await page.getByLabel("Starts when").selectOption("email");
   await page.getByLabel("IMAP host").fill("imap.office.example");
   await page.getByLabel("Mailbox username").fill("inquiries@example.test");
@@ -45,7 +45,7 @@ test("the owner connects an inbox and a new website inquiry creates one live run
   await page.getByLabel("Operator").selectOption("exists");
   await page.getByRole("button", { name: "Publish" }).click();
   await expect(page.getByText(/Version \d+ is live/)).toBeVisible();
-  await page.getByRole("button", { name: "Trigger: email" }).click();
+  await page.getByRole("button", { name: "Trigger: An email arrives" }).click();
   await expect(page.getByText("Listening for new mail", { exact: true })).toBeVisible({ timeout: 30_000 });
   deliver("New website inquiry", "Could we book an appointment on Friday?");
 

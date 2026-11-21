@@ -1,15 +1,16 @@
 import "./editor.css";
 import { useLanguage } from "./Language";
-import { definitionSchema, lintDefinition, type FormField, type Step, type Trigger } from "@daloy/engine";
+import { definitionSchema, destination, lintDefinition, markText, stepEntry, stepLabel, triggerEntry, triggerLabel, type FormField, type Step, type Trigger } from "@daloy/engine";
+import { AppMark } from "./AppMark";
 import { Background, ReactFlow, type NodeChange } from "@xyflow/react";
 import { useEffect, useId, useMemo, useState } from "react";
 import { AskAi } from "./AiDraft";
 import { FormEmbed } from "./FormEmbed";
 import { api, type Version, type Workflow } from "./api";
-import { editorEdgeTypes, editorNodeTypes, flowAriaLabels, summary, TYPE_NAMES, ZoomBar } from "./FlowCanvas";
+import { editorEdgeTypes, editorNodeTypes, flowAriaLabels, ZoomBar } from "./FlowCanvas";
 import { RunResult, useRun } from "./Runs";
 import { ADDABLE, addStep, blankDraft, removeStep, toFlow, type AddableType, type Draft } from "./lib/graph";
-import { insertables, nextPaths, setupLeft } from "./lib/editor";
+import { chosenFor, insertables, nextPaths, setupLeft, unconnectedNodes, type ConnInfo } from "./lib/editor";
 import { warningForLanguage } from "./lib/ai-build";
 import { runFlow } from "./lib/run-flow";
 import { AutomationTabs } from "./Nav";
@@ -55,6 +56,9 @@ export function Editor({ id }: { id: string }) {
   const { run } = useRun(runId);
   // null until GET /settings/connections answers; a refused or failed read leaves it null and hides the setup banner.
   const [connected, setConnected] = useState<ReadonlySet<string> | null>(null);
+  const [conns, setConns] = useState<ConnInfo[]>([]);
+  // True until GET /settings/email answers, so a node never flashes "Connect Gmail" while the answer is on its way.
+  const [mailReady, setMailReady] = useState(true);
   // A phone shows the list first: the whole diagram fitted to 360px is too small to read.
   const [view, setView] = useState<"diagram" | "list">(() => (matchMedia("(max-width: 599.98px)").matches ? "list" : "diagram"));
   const [copied, setCopied] = useState<string | null>(null);
@@ -74,9 +78,16 @@ export function Editor({ id }: { id: string }) {
         setCatalog(c);
       })
       .catch((e: Error) => setMessage({ kind: "error", text: e.message }));
-    api<{ connections: { provider: string; status: string }[] }>("GET", "/settings/connections").then(
-      (r) => setConnected(new Set(r.connections.filter((c) => c.status === "active").map((c) => c.provider))),
+    api<{ connections: ConnInfo[] }>("GET", "/settings/connections").then(
+      (r) => {
+        setConns(r.connections);
+        setConnected(new Set(r.connections.filter((c) => c.status === "active").map((c) => c.provider)));
+      },
       () => setConnected(null),
+    );
+    api<{ sender: { status: string } | null; installationAllowed: boolean }>("GET", "/settings/email").then(
+      (m) => setMailReady(m.sender?.status === "active" || m.installationAllowed),
+      () => setMailReady(true),
     );
   }, [id]);
 
@@ -92,10 +103,12 @@ export function Editor({ id }: { id: string }) {
   }, [draft]);
   const apps = useMemo(() => (connected ? setupLeft(draft, connected) : []), [draft, connected]);
   const missingApp = new Map(apps.filter((a) => !a.connected).flatMap((a) => a.steps.map((s) => [s, a.label] as const)));
+  const chosen = useMemo(() => chosenFor(draft, conns), [draft, conns]);
+  const unconnected = useMemo(() => (connected ? unconnectedNodes(draft, connected, mailReady) : new Map<string, string>()), [draft, connected, mailReady]);
   const nodes = flow.nodes.map((n) => ({
     ...n,
     ...(measured[n.id] && { measured: measured[n.id] }),
-    data: { ...n.data, index: draft.steps.findIndex((s) => s.id === n.id) + 1, needsApp: missingApp.get(n.id) },
+    data: { ...n.data, index: draft.steps.findIndex((s) => s.id === n.id) + 1, needsApp: unconnected.get(n.id), chosen: chosen.get(n.id) },
   }));
   // Every editor edge uses the square editor edge; it carries the branch so the pill can take its colour.
   const edges = flow.edges.map((e) => ({ ...e, type: "editor", data: { ...e.data, on: e.sourceHandle ?? undefined } }));
@@ -264,7 +277,7 @@ export function Editor({ id }: { id: string }) {
               </ReactFlow>
             </div>
           ) : (
-            <StepList draft={draft} selected={selected} onSelect={select} />
+            <StepList draft={draft} selected={selected} onSelect={select} chosen={chosen} />
           )}
           <button
             type="button"
@@ -302,7 +315,7 @@ export function Editor({ id }: { id: string }) {
           {step && (
             <section className="a7-inspector" aria-labelledby="step-heading">
               <div className="a7-kicker-row">
-                <p className="a7-kicker">{t("Step {number} · {type}", { number: draft.steps.indexOf(step) + 1, type: t(TYPE_NAMES[step.type]!) })}</p>
+                <p className="a7-kicker">{t("Step {number} · {type}", { number: draft.steps.indexOf(step) + 1, type: stepLabel(step.type, language) })}</p>
                 <button
                   type="button"
                   className="a7-delete"
@@ -315,7 +328,8 @@ export function Editor({ id }: { id: string }) {
                 </button>
               </div>
               <h2 id="step-heading">{step.id}</h2>
-              <p className="a7-lead">{summary(step, language)}</p>
+              <p className="a7-lead">{destination(step, { language, trigger: draft.trigger, chosen: chosen.get(step.id) })}</p>
+              <p className="muted a7-describe">{stepEntry(step.type).description[language]}</p>
               {missingApp.get(step.id) && (
                 <p className="a7-warn-note">
                   {t("{app} is not connected yet.", { app: t(missingApp.get(step.id)!) })} <a href="#/apps">{t("Connect in Apps")}</a>
@@ -445,13 +459,14 @@ export function Editor({ id }: { id: string }) {
 }
 
 /** The accessible list: every step as a button, in order, with the branch that leads to it. */
-function StepList({ draft, selected, onSelect }: { draft: Draft; selected: string | null; onSelect: (id: string) => void }) {
-  const { t } = useLanguage();
+function StepList({ draft, selected, onSelect, chosen }: { draft: Draft; selected: string | null; onSelect: (id: string) => void; chosen: ReadonlyMap<string, string> }) {
+  const { t, language } = useLanguage();
   return (
     <ol className="a7-list" aria-label={t("Steps")}>
       <li>
         <button type="button" aria-pressed={selected === "trigger"} onClick={() => onSelect("trigger")}>
-          {t("Trigger: {type}", { type: t(draft.trigger.type) })}
+          <AppMark decorative mark={triggerEntry(draft.trigger.type).mark} name={markText(triggerEntry(draft.trigger.type), language)} size={24} />
+          {t("Trigger: {type}", { type: triggerLabel(draft.trigger.type, language) })}
         </button>
       </li>
       {draft.steps.map((s, i) => {
@@ -460,10 +475,12 @@ function StepList({ draft, selected, onSelect }: { draft: Draft; selected: strin
           <li key={s.id}>
             <button type="button" aria-pressed={selected === s.id} onClick={() => onSelect(s.id)}>
               {/* The id comes first so the button's name starts with it; CSS puts the kicker before it. */}
+              <AppMark decorative mark={stepEntry(s.type).mark} name={markText(stepEntry(s.type), language)} size={24} />
               <span className="a7-list-id">{s.id}</span>{" "}
               <span className="a7-list-kicker">
-                {i + 1} · {t(TYPE_NAMES[s.type]!)}
+                {i + 1} · {stepLabel(s.type, language)}
               </span>
+              <span className="a7-list-where">{destination(s, { language, trigger: draft.trigger, chosen: chosen.get(s.id) })}</span>
               {into.map((e) => (
                 <span key={e.from} className="a7-branch" data-branch={e.on}>
                   {t("{from} on {branch}", { from: e.from, branch: t(e.on!) })}
@@ -503,7 +520,7 @@ function NextUp({ draft, id }: { draft: Draft; id: string }) {
 }
 
 function AddStep({ draft, after, branches, onAdd }: { draft: Draft; after?: Step; branches?: string[]; onAdd: (type: AddableType, on?: string) => void }) {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const [type, setType] = useState<AddableType>("http");
   const [on, setOn] = useState("");
   const where = after ? t("after {id}", { id: after.id }) : t(draft.steps.length ? "at the start" : "as the first step");
@@ -515,7 +532,7 @@ function AddStep({ draft, after, branches, onAdd }: { draft: Draft; after?: Step
           <select id="add-step-type" value={type} onChange={(e) => setType(e.target.value as AddableType)}>
             {ADDABLE.map((kind) => (
               <option key={kind} value={kind}>
-                {t(TYPE_NAMES[kind]!)}
+                {stepLabel(kind, language)}
               </option>
             ))}
           </select>
@@ -538,6 +555,7 @@ function AddStep({ draft, after, branches, onAdd }: { draft: Draft; after?: Step
   );
 }
 
+const TRIGGER_ORDER: Trigger["type"][] = ["manual", "webhook", "schedule", "form", "email", "payment", "meta_dm"];
 const TRIGGER_DEFAULTS: Record<Trigger["type"], Trigger> = {
   manual: { type: "manual", config: {} },
   email: { type: "email", config: {} },
@@ -549,7 +567,7 @@ const TRIGGER_DEFAULTS: Record<Trigger["type"], Trigger> = {
 };
 
 function TriggerPanel({ trigger, wf, onChange }: { trigger: Trigger; wf: Loaded; onChange: (t: Trigger) => void }) {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const id = useId();
   const published = wf.trigger && wf.live && wf.trigger.type === trigger.type ? wf.trigger : null;
   const [newPath, setNewPath] = useState<string | null>(null);
@@ -561,13 +579,11 @@ function TriggerPanel({ trigger, wf, onChange }: { trigger: Trigger; wf: Loaded;
       <div className="field">
         <label htmlFor={`${id}-type`}>{t("Starts when")}</label>
         <select id={`${id}-type`} value={trigger.type} onChange={(e) => onChange(TRIGGER_DEFAULTS[e.target.value as Trigger["type"]])}>
-          <option value="manual">{t("Started by hand")}</option>
-          <option value="webhook">{t("A webhook is called")}</option>
-          <option value="schedule">{t("On a schedule")}</option>
-          <option value="form">{t("A form is submitted")}</option>
-          <option value="email">{t("An email arrives")}</option>
-          <option value="payment">{t("When a PayMongo payment is confirmed")}</option>
-          <option value="meta_dm">{t("A Messenger or Instagram DM arrives")}</option>
+          {TRIGGER_ORDER.map((type) => (
+            <option key={type} value={type}>
+              {triggerLabel(type, language)}
+            </option>
+          ))}
         </select>
       </div>
       {trigger.type === "meta_dm" && (

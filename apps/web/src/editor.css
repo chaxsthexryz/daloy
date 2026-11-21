@@ -165,3 +165,9 @@
 @media (prefers-reduced-motion: reduce) {
   .a7-chip, .a7-copied { transition-duration: 0s; animation: none; }
 }
+
+/* Under a step's title: where it acts, in words. */
+.a7-list .a7-list-where { order: 1; flex-basis: 100%; color: var(--muted); font-size: 12px; font-weight: 400; }
+.a7-list button .app-mark { order: -2; align-self: center; }
+.a7-describe { margin: 4px 0 12px; }
+.a7-node-row .node-id { max-width: 90px; overflow: hidden; text-overflow: ellipsis; }

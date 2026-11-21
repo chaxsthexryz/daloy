@@ -22,3 +22,4 @@ export * from "./template-language";
 export * from "./file-type";
 export * from "./phone";
 export * from "./onboarding";
+export * from "./catalog";

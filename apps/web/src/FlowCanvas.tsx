@@ -1,57 +1,15 @@
 import { translate, type Language } from "./lib/locale";
 import { useLanguage } from "./Language";
-import type { Step } from "@daloy/engine";
+import { destination, stepEntry, triggerEntry, triggerLabel, markText, type Step } from "@daloy/engine";
+import { AppMark } from "./AppMark";
 import { BaseEdge, Background, Controls, EdgeLabelRenderer, getBezierPath, getSmoothStepPath, Handle, Panel, Position, ReactFlow, useReactFlow, useViewport, type Edge, type EdgeProps, type Node, type NodeProps } from "@xyflow/react";
 import { useEffect, useMemo, useState } from "react";
 import { toFlow, type Draft, type RunEdgeData, type StepNodeData } from "./lib/graph";
 import { runFlow, STATUS, type FlowRun } from "./lib/run-flow";
 
-export const TYPE_NAMES: Record<string, string> = { condition: "Condition", http: "HTTP request", email: "Send email", delay: "Delay", ai: "AI task", approval: "Approval", sheets: "Add to Google Sheets", drive: "Save files to Google Drive", slack: "Post to Slack", outlook: "Send from Outlook", teams: "Post to Teams", telegram: "Send to Telegram", sms: "Send SMS", calendar: "Add to Google Calendar", paymongo_link: "Create payment link", payment_status: "Check payment", airtable: "Add to Airtable", notion: "Add to Notion", trello: "Add to Trello", booking: "Booking", meta_reply: "Reply on Messenger or Instagram" };
-
-export function summary(step: Step, language: Language = "en"): string {
-  const t = (source: string, values?: Record<string, string | number>) => translate(language, source, values);
-  switch (step.type) {
-    case "condition":
-      return `${step.config.condition.left} ${step.config.condition.op} ${step.config.condition.right ?? ""}`;
-    case "http":
-      return `${step.config.method} ${step.config.url}`;
-    case "email":
-    case "outlook":
-    case "sms":
-      return t("to {recipient}", { recipient: String(step.config.to) });
-    case "delay": {
-      const { seconds, until, offsetSeconds } = step.config;
-      if (until === undefined) return `${seconds} s`;
-      return offsetSeconds ? t("until {time} {sign} {seconds} s", { time: until, sign: t(offsetSeconds < 0 ? "minus" : "plus"), seconds: Math.abs(offsetSeconds) }) : t("until {time}", { time: until });
-    }
-    case "ai":
-      return step.config.task === "classify" ? t("classify: {labels}", { labels: Object.keys(step.config.labels ?? {}).join(", ") }) : t(step.config.task);
-    case "approval":
-      return t("ask {person}", { person: String(step.config.approver ?? step.config.to) });
-    case "sheets":
-      return t("{count} columns, reference first", { count: step.config.columns.length + 2 });
-    case "drive":
-      return "files from the form";
-    case "slack":
-    case "teams":
-    case "telegram":
-    case "meta_reply":
-      return step.config.text.slice(0, 60);
-    case "calendar":
-      return step.config.title.slice(0, 60);
-    case "paymongo_link":
-      return t("{amount} pesos, {reference}", { amount: String(step.config.amount), reference: String(step.config.reference) });
-    case "payment_status":
-      return step.config.link;
-    case "airtable":
-      return Object.keys(step.config.fields).join(", ");
-    case "notion":
-      return step.config.title.slice(0, 60);
-    case "trello":
-      return step.config.name.slice(0, 60);
-    case "booking":
-      return step.config.action === "create" ? t("book {resource} at {start}, {minutes} min", { resource: String(step.config.resource), start: String(step.config.start), minutes: String(step.config.minutes) }) : t("{action} {booking}", { action: t(step.config.action), booking: String(step.config.booking) });
-  }
+/** What a node shows under its title: who or where the step acts on, from the catalog. */
+function whereLine(step: Step, data: StepNodeData, language: Language): string {
+  return destination(step, { language, trigger: data.context, chosen: data.chosen });
 }
 
 /** The state in words and a symbol under the title, shown whenever a run is drawn. Colour only adds to it. */
@@ -69,11 +27,12 @@ function Status({ status }: { status: StepNodeData["status"] }) {
 const nodeClass = (base: string, status: StepNodeData["status"]) => (status ? `${base} run-${status}` : base);
 
 function TriggerNode({ data }: NodeProps<Node<StepNodeData, "trigger">>) {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
+  const entry = triggerEntry(data.trigger!.type);
   return (
     <div className={nodeClass("node trigger-node", data.status)}>
-      <span className="node-type">{t("Trigger")}</span>
-      <span className="node-title">{t(data.trigger!.type)}</span>
+      <span className="node-type node-app"><AppMark decorative mark={entry.mark} name={markText(entry, language)} size={24} />{t("Trigger")}</span>
+      <span className="node-title">{triggerLabel(data.trigger!.type, language)}</span>
       <Status status={data.status} />
       <Handle type="source" position={Position.Bottom} isConnectable={false} />
     </div>
@@ -83,12 +42,14 @@ function TriggerNode({ data }: NodeProps<Node<StepNodeData, "trigger">>) {
 function StepNode({ data }: NodeProps<Node<StepNodeData, "step">>) {
   const { t, language } = useLanguage();
   const step = data.step!;
+  const entry = stepEntry(step.type);
   return (
     <div className={nodeClass("node", data.status)}>
       <Handle type="target" position={Position.Top} isConnectable={false} />
-      <span className="node-type">{t(TYPE_NAMES[step.type]!)}</span>
-      <span className="node-title">{step.id}</span>
-      <span className="node-summary">{summary(step, language)}</span>
+      <span className="node-type node-app"><AppMark decorative mark={entry.mark} name={markText(entry, language)} size={24} />{entry.app ? entry.app[language] : t("Daloy")}</span>
+      <span className="node-title">{entry.action[language]}</span>
+      <span className="node-summary">{whereLine(step, data, language)}</span>
+      <span className="node-id">{step.id}</span>
       <Status status={data.status} />
       {data.branches ? (
         data.branches.map((b, i) => (
@@ -134,14 +95,15 @@ function RunEdge({ id, sourceX, sourceY, targetX, targetY, sourcePosition, targe
 export type EditorNodeData = StepNodeData & { index?: number; needsApp?: string };
 
 function EditorTriggerNode({ data }: NodeProps<Node<EditorNodeData, "trigger">>) {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
+  const entry = triggerEntry(data.trigger!.type);
   return (
     <div className={nodeClass("node a7-node trigger-node", data.status)}>
       <span className="a7-node-row">
-        <span className="a7-node-kicker a7-when">{t("When")}</span>
-        <span className="a7-node-note">{t(data.trigger!.type)}</span>
+        <span className="a7-node-kicker a7-when node-app"><AppMark decorative mark={entry.mark} name={markText(entry, language)} size={24} />{t("When")}</span>
+        {data.needsApp && <span className="a7-node-note a7-warn">{t("Connect {app}", { app: data.needsApp })}</span>}
       </span>
-      <span className="node-title">{t("Trigger")}</span>
+      <span className="node-title">{triggerLabel(data.trigger!.type, language)}</span>
       <Status status={data.status} />
       <Handle type="source" position={Position.Bottom} isConnectable={false} />
     </div>
@@ -151,17 +113,20 @@ function EditorTriggerNode({ data }: NodeProps<Node<EditorNodeData, "trigger">>)
 function EditorStepNode({ data }: NodeProps<Node<EditorNodeData, "step">>) {
   const { t, language } = useLanguage();
   const step = data.step!;
+  const entry = stepEntry(step.type);
   return (
     <div className={nodeClass(`node a7-node${data.needsApp ? " a7-needs-app" : ""}`, data.status)}>
       <Handle type="target" position={Position.Top} isConnectable={false} />
       <span className="a7-node-row">
-        <span className="a7-node-kicker">
-          {data.index} · {t(TYPE_NAMES[step.type]!)}
+        <span className="a7-node-kicker node-app">
+          <AppMark decorative mark={entry.mark} name={markText(entry, language)} size={24} />
+          {data.index} · {entry.app ? entry.app[language] : t("Daloy")}
         </span>
-        {data.needsApp && <span className="a7-node-note a7-warn">{t("Not connected")}</span>}
+        <span className="a7-node-note node-id">{step.id}</span>
       </span>
-      <span className="node-title">{step.id}</span>
-      <span className="node-summary">{summary(step, language)}</span>
+      <span className="node-title">{entry.action[language]}</span>
+      <span className="node-summary">{whereLine(step, data, language)}</span>
+      {data.needsApp && <span className="a7-node-note a7-warn">{t("Connect {app}", { app: t(data.needsApp) })}</span>}
       <Status status={data.status} />
       {data.branches ? (
         data.branches.map((b, i) => (

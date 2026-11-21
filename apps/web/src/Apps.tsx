@@ -9,9 +9,10 @@ import { GoogleCalendarCard } from "./GoogleCalendar";
 import { SharedGrants } from "./ConnectPanel";
 import { GoogleDriveCard, GoogleSheetsCard } from "./GoogleConnect";
 import { Header } from "./Nav";
+import { APP_LOGO, AppMark } from "./AppMark";
 
 type Key = "gmail" | Provider;
-// Letter tiles, not logos: Microsoft, Slack and Google allow their names in text but their logos only under licence.
+// Logos come from public/logos (sources and terms in its README, decision 0085). UniSMS, PayMongo and GCash have no usable asset, so AppMark shows a letter tile for them.
 const APPS: { key: Key; name: string; line: string }[] = [
   { key: "gmail", name: "Gmail", line: "Send customer emails from your own address." },
   { key: "outlook", name: "Outlook", line: "Send purchase emails from an Outlook mailbox." },
@@ -103,7 +104,7 @@ export function AppsPage({ outcome }: { outcome?: { app: string; code: string } 
     const stamp = checked(a.key);
     return (
       <li key={a.key} className="directory-row" data-selected={open === a.key} data-saved={!!status}>
-        <span className="app-tile" data-app={a.key} aria-hidden="true">{a.name[0]}</span>
+        <AppMark mark={APP_LOGO[a.key] ?? a.key} name={a.name} size={36} />
         <div className="app-text"><h3>{a.name}</h3><p>{t(a.line)}</p></div>
         {status && !open && <>
           <div className="directory-detail">{c?.account || (a.key === "gmail" && mail.sender?.address)}{label && <small>{label}</small>}</div>
@@ -156,7 +157,7 @@ export function AppsPage({ outcome }: { outcome?: { app: string; code: string } 
       </div>
       {open && selected && <section key={open} id="app-setup" className="setup-pane motion-page" aria-label={t("{app} setup", { app: selected.name })}>
         <button className="panel-back" onClick={() => { trigger.current = open; setOpen(null); }}>{t("Back to Apps")}</button>
-        <header className="panel-head"><span className="app-tile" data-app={open} aria-hidden="true">{selected.name[0]}</span>
+        <header className="panel-head"><AppMark mark={APP_LOGO[open] ?? open} name={selected.name} size={44} />
           <div><h2 id="panel-title" tabIndex={-1}>{selected.name}</h2><p>{t(selected.line)}</p></div>
         </header>
         <SharedGrants.Provider value={conns.shared}>{setup[open]()}</SharedGrants.Provider>

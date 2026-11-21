@@ -21,7 +21,7 @@ test("sign up, build, test-run, publish and run a workflow", async ({ page }) =>
   await expect(page.getByLabel("Operator")).toHaveValue("gt");
   await page.getByLabel("Add a step after condition_1").selectOption("http");
   await page.getByRole("button", { name: "Add", exact: true }).click();
-  await expect(page.getByRole("group", { name: "condition step condition_1, on true goes to http_1" })).toBeVisible();
+  await expect(page.getByRole("group", { name: "Condition step condition_1, on true goes to http_1" })).toBeVisible();
 
   // Test run with mocked calls: the HTTP step answers without a request.
   await page.getByLabel("Sample trigger data (JSON)").fill('{ "amount": 250 }');
