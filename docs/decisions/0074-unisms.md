@@ -1,5 +1,7 @@
 # 0074: Philippine SMS confirmations and reminders through UniSMS
 
+Superseded in part by [0100](0100-unisms-by-operator.md): credentials now come only from the server env, workspaces no longer save their own UniSMS key, and the credential resolution bullet below no longer applies. The rest of this decision still stands.
+
 ## Context
 
 Phase N7 adds SMS confirmations and reminders for Philippine mobile numbers as a queued delivery with `needs_review` on unknown outcomes, strict monthly per-workspace quotas, and cancellation when a linked booking changes.

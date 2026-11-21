@@ -264,6 +264,25 @@ describe("builder", () => {
     await request(server).get("/step-schemas").expect(401);
   });
 
+  it("tells the web app whether SMS is set up on this server (decision 0100)", async () => {
+    const { agent } = await signedIn();
+    const saved = { UNISMS_SECRET_KEY: process.env.UNISMS_SECRET_KEY, UNISMS_SENDER_ID: process.env.UNISMS_SENDER_ID };
+    try {
+      delete process.env.UNISMS_SECRET_KEY;
+      delete process.env.UNISMS_SENDER_ID;
+      expect((await agent.get("/step-schemas").expect(200)).body.sms).toBe(false);
+      process.env.UNISMS_SECRET_KEY = "unisms_synth_catalog_key"; // gitleaks:allow
+      expect((await agent.get("/step-schemas").expect(200)).body.sms).toBe(false);
+      process.env.UNISMS_SENDER_ID = "Daloy";
+      expect((await agent.get("/step-schemas").expect(200)).body.sms).toBe(true);
+    } finally {
+      for (const [k, v] of Object.entries(saved)) {
+        if (v === undefined) delete process.env[k];
+        else process.env[k] = v;
+      }
+    }
+  });
+
   it("test-runs a draft as a mocked test run without publishing it", async () => {
     const { agent } = await signedIn();
     const wf = await agent.post("/workflows").send({ name: "Draft", slug: `wf-${++seq}` }).expect(201);

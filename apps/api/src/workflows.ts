@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { canUseSharedUnisms, createKeyedRun, deliveries, emailSources, findApprover, listDeliveries, PLANS, PROVIDER_NAMES, type Provider, publishedVersion, readConnections, requests, runs, SCHEDULE_QUEUE, secrets, setPaused, supersededSql, syncEmailSourceOnPublish, triggers, users, workflows, workflowVersions, type Db } from "@daloy/db";
+import { createKeyedRun, deliveries, emailSources, findApprover, listDeliveries, PLANS, PROVIDER_NAMES, type Provider, publishedVersion, readConnections, requests, runs, SCHEDULE_QUEUE, secrets, setPaused, SMS_NOT_SET_UP, supersededSql, syncEmailSourceOnPublish, triggers, unismsConfig, users, workflows, workflowVersions, type Db } from "@daloy/db";
 import { BRANCHES, choiceProblems, definitionSchema, testChoicesSchema, testModeSchema, guidedSetupInput, OFFICE_REQUEST, saveProblems, stepJsonSchemas, templatesForLanguage, triggerFields, type Trigger, type WorkflowDefinition } from "@daloy/engine";
 import {
   BadRequestException,
@@ -39,7 +39,7 @@ const testRunInput = runInput.extend({ definition: z.unknown(), live: z.boolean(
 const workflowId = new ZodPipe(z.uuid());
 const versionNumber = new ZodPipe(z.coerce.number().int().min(1).max(1_000_000));
 /** Step types whose connection must be working before the workflow is turned on. */
-const CHECKED_PROVIDERS: Partial<Record<string, Provider>> = { sheets: "google_sheets", slack: "slack", outlook: "outlook", teams: "teams", telegram: "telegram", sms: "unisms", calendar: "google_calendar", airtable: "airtable", notion: "notion", trello: "trello", meta_reply: "meta_messenger" };
+const CHECKED_PROVIDERS: Partial<Record<string, Provider>> = { sheets: "google_sheets", slack: "slack", outlook: "outlook", teams: "teams", telegram: "telegram", calendar: "google_calendar", airtable: "airtable", notion: "notion", trello: "trello", meta_reply: "meta_messenger" };
 /** Every step type that uses an app, for the overview's apps list. Drive and PayMongo steps are not checked at publish, so they are not in CHECKED_PROVIDERS. */
 const APP_PROVIDERS: Partial<Record<string, Provider>> = { ...CHECKED_PROVIDERS, drive: "google_drive", paymongo_link: "paymongo", payment_status: "paymongo" };
 /** The viewer's time zone, so "today" and the day bars follow their calendar. ICU checks the name; the database receives it as a bound parameter. */
@@ -362,13 +362,13 @@ export class WorkflowsController {
   private async checkConnections(userId: string, definition: WorkflowDefinition) {
     const needed = new Set(definition.steps.flatMap((s) => CHECKED_PROVIDERS[s.type] ?? []));
     if (definition.trigger.type === "meta_dm") needed.add("meta_messenger");
+    if (definition.steps.some((s) => s.type === "sms") && !unismsConfig()) throw new BadRequestException(SMS_NOT_SET_UP);
     if (needed.size === 0) return;
     const conns = await readConnections(this.db, userId);
     for (const provider of needed) {
       const c = conns.find((x) => x.provider === provider);
       const name = PROVIDER_NAMES[provider];
       const where = provider === "slack" ? " and pick a channel" : provider === "telegram" ? " and choose a chat" : provider === "google_sheets" ? " and pick a sheet" : provider === "google_calendar" ? " and choose a calendar" : provider === "airtable" || provider === "notion" || provider === "trello" ? " and choose where it goes" : "";
-      if (!c && provider === "unisms" && (await canUseSharedUnisms(this.db, userId))) continue;
       if (!c || !c.destination) throw new BadRequestException(`Connect ${name}${where} in Apps before turning this on.`);
       if (c.status !== "active") throw new BadRequestException(`${name} needs to be connected again in Apps before turning this on.`);
     }
@@ -486,7 +486,8 @@ export function canonical(value: unknown): string {
 export class CatalogController {
   @Get("step-schemas")
   stepSchemas() {
-    return { schemas: stepJsonSchemas(), branches: BRANCHES };
+    // sms: whether this server has UniSMS settings (decision 0100), so the web app can hide the SMS step when it has not.
+    return { schemas: stepJsonSchemas(), branches: BRANCHES, sms: unismsConfig() !== null };
   }
 
   @Get("templates")

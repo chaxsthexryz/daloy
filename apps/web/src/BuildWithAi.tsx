@@ -23,7 +23,6 @@ const NEEDS: Record<string, { provider: string; label: string }> = {
   trello: { provider: "trello", label: "Trello" },
   paymongo_link: { provider: "paymongo", label: "PayMongo" },
   payment_status: { provider: "paymongo", label: "PayMongo" },
-  sms: { provider: "unisms", label: "UniSMS" },
   meta_reply: { provider: "meta_messenger", label: "Facebook Messenger & Instagram" },
 };
 const OUTPUT: Record<string, string> = {

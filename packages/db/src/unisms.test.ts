@@ -4,18 +4,17 @@ import type { Pool } from "pg";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { freshDatabase } from "../../../test/db";
 import { startFakeProviders, type FakeProviders } from "../../../test/fake-providers";
-import { connectionCredential, markConnectionFailed, removeConnection, saveConnection } from "./connections";
+import { retireStoredUnismsKeys, saveConnection, unismsConfig } from "./connections";
 import { secretValuesToHide } from "./crypto";
 import { BOOKING_CHANGED, claimDueDeliveries, queueDelivery, retryDelivery, runDueDeliveries } from "./deliveries";
 import type { Db } from "./index";
 import { unismsSend, ProviderError, type ProviderUrls } from "./providers";
-import { bookings, connections, deliveries, resources, runs, usageCounts, users, workflows, workflowVersions } from "./schema";
+import { bookings, connections, deliveries, resources, retiredSecrets, runs, usageCounts, users, workflows, workflowVersions } from "./schema";
 import { claimUsage, type Plan } from "./usage";
 
-// N7: UniSMS delivery, quotas, operator fallback, error classification, booking cancellation, and secret redaction.
+// N7 and U6: UniSMS delivery, quotas, the server env as the only credential source, error classification, booking cancellation, and secret redaction.
 const key = randomBytes(32);
 const SYNTH_WS_KEY = "unisms_synth_workspace_key_0001"; // gitleaks:allow
-const SYNTH_WS_KEY_2 = "unisms_synth_workspace_key_0002"; // gitleaks:allow
 const SYNTH_OP_KEY = "unisms_synth_operator_key_9999"; // gitleaks:allow
 
 let db: Db;
@@ -43,11 +42,17 @@ const state = async (id: string) => (await db.select().from(deliveries).where(eq
 const makeDue = (id: string) => db.update(deliveries).set({ nextAttemptAt: sql`now()` }).where(eq(deliveries.id, id));
 const smsUsed = async (userId: string) => (await db.select().from(usageCounts).where(eq(usageCounts.userId, userId))).filter((r) => r.kind === "sms").reduce((a, r) => a + r.used, 0);
 
-const savedEnv = { SHARED_UNISMS_KEY: process.env.SHARED_UNISMS_KEY, UNISMS_SECRET_KEY: process.env.UNISMS_SECRET_KEY, UNISMS_SENDER_ID: process.env.UNISMS_SENDER_ID };
-const clearSharedEnv = () => {
-  delete process.env.SHARED_UNISMS_KEY;
+const savedEnv = { UNISMS_SECRET_KEY: process.env.UNISMS_SECRET_KEY, UNISMS_SENDER_ID: process.env.UNISMS_SENDER_ID };
+const clearOperatorEnv = () => {
   delete process.env.UNISMS_SECRET_KEY;
   delete process.env.UNISMS_SENDER_ID;
+};
+
+/** The server operator's UniSMS settings as the deployment sets them in env (decision 0100); the fake accepts only the operator key. */
+const operatorEnv = (senderId = "Daloy") => {
+  process.env.UNISMS_SECRET_KEY = SYNTH_OP_KEY;
+  process.env.UNISMS_SENDER_ID = senderId;
+  fake.unisms.secretKey = SYNTH_OP_KEY;
 };
 
 beforeAll(async () => {
@@ -63,7 +68,7 @@ afterAll(async () => {
 });
 
 beforeEach(async () => {
-  clearSharedEnv();
+  clearOperatorEnv();
   await db.delete(deliveries);
   await db.delete(connections);
   fake.unisms.secretKey = SYNTH_WS_KEY;
@@ -72,7 +77,7 @@ beforeEach(async () => {
 });
 
 afterEach(() => {
-  clearSharedEnv();
+  clearOperatorEnv();
 });
 
 describe("unismsSend provider client", () => {
@@ -144,12 +149,12 @@ describe("unismsSend provider client", () => {
   });
 });
 
+
 describe("UniSMS delivery worker", () => {
-  it("sends with workspace credentials, claims 1 sms unit, and honours Retry-After without double-charging", async () => {
+  it("sends with the server env key and Sender ID, claims 1 sms unit, and honours Retry-After without double-charging", async () => {
+    operatorEnv("DaloyPH");
     const u = await owner("pilot");
-    await saveConnection(db, key, u, "unisms", { account: "LimDental", credential: SYNTH_WS_KEY, destination: { senderId: "LimDental" } });
-    const { runId } = await newRun(u);
-    const d = await smsDelivery(u, runId);
+    const d = await smsDelivery(u, (await newRun(u)).runId);
 
     fake.once("/api/sms", { status: 429, body: { error: "throttled" }, headers: { "retry-after": "15" } });
     await runDueDeliveries(db, key, urls);
@@ -160,20 +165,25 @@ describe("UniSMS delivery worker", () => {
 
     await makeDue(d.id);
     await runDueDeliveries(db, key, urls);
-    expect(await state(d.id)).toMatchObject({ state: "delivered", result: expect.objectContaining({ recipient: "+639171234567", senderId: "LimDental" }) });
+    expect(await state(d.id)).toMatchObject({ state: "delivered", result: expect.objectContaining({ recipient: "+639171234567", senderId: "DaloyPH" }) });
     expect(await smsUsed(u)).toBe(1);
     expect(fake.unisms.messages).toHaveLength(1);
   });
 
-  it("blocks preview plan (sms: 0) before sending even when SHARED_UNISMS_KEY=open", async () => {
-    process.env.SHARED_UNISMS_KEY = "open";
-    process.env.UNISMS_SECRET_KEY = SYNTH_OP_KEY;
-    process.env.UNISMS_SENDER_ID = "Daloy";
-    fake.unisms.secretKey = SYNTH_OP_KEY;
+  it("is configured only when both env values are set", () => {
+    expect(unismsConfig({})).toBeNull();
+    expect(unismsConfig({ UNISMS_SECRET_KEY: SYNTH_OP_KEY })).toBeNull();
+    expect(unismsConfig({ UNISMS_SENDER_ID: "Daloy" })).toBeNull();
+    expect(unismsConfig({ UNISMS_SECRET_KEY: "  ", UNISMS_SENDER_ID: "Daloy" })).toBeNull();
+    expect(unismsConfig({ UNISMS_SECRET_KEY: ` ${SYNTH_OP_KEY} `, UNISMS_SENDER_ID: " Daloy " })).toEqual({ secretKey: SYNTH_OP_KEY, senderId: "Daloy" });
+    // The old switch no longer matters: the two values are enough.
+    expect(unismsConfig({ UNISMS_SECRET_KEY: SYNTH_OP_KEY, UNISMS_SENDER_ID: "Daloy", SHARED_UNISMS_KEY: "off" })).not.toBeNull();
+  });
 
+  it("refuses a preview workspace before sending, even with the env set", async () => {
+    operatorEnv();
     const u = await owner("preview");
-    const { runId } = await newRun(u);
-    const d = await smsDelivery(u, runId);
+    const d = await smsDelivery(u, (await newRun(u)).runId);
     await runDueDeliveries(db, key, urls);
 
     expect(await state(d.id)).toMatchObject({ state: "failed", errorKind: "plan_quota" });
@@ -181,79 +191,88 @@ describe("UniSMS delivery worker", () => {
     expect(await smsUsed(u)).toBe(0);
   });
 
-  it("uses operator fallback ONLY on paid plans with no workspace connection, and never falls back after failure or disconnect", async () => {
-    process.env.SHARED_UNISMS_KEY = "open";
-    process.env.UNISMS_SECRET_KEY = SYNTH_OP_KEY;
-    process.env.UNISMS_SENDER_ID = "DaloyPH";
-    fake.unisms.secretKey = SYNTH_OP_KEY;
-
-    // Paid plan (pilot) without workspace connection -> uses operator fallback
-    const paid = await owner("pilot");
-    const dPaid = await smsDelivery(paid, (await newRun(paid)).runId);
+  it("lets a private install (plan null) send", async () => {
+    operatorEnv();
+    const u = await owner(null);
+    const d = await smsDelivery(u, (await newRun(u)).runId);
     await runDueDeliveries(db, key, urls);
-    expect(await state(dPaid.id)).toMatchObject({ state: "delivered", result: expect.objectContaining({ senderId: "DaloyPH" }) });
-    expect(await smsUsed(paid)).toBe(1);
 
-    // Unplanned (plan: null) -> never spends operator fallback
-    const unplanned = await owner(null);
-    const dNull = await smsDelivery(unplanned, (await newRun(unplanned)).runId);
-    await runDueDeliveries(db, key, urls);
-    expect(await state(dNull.id)).toMatchObject({ state: "failed", errorKind: "not_connected" });
-
-    // Workspace with a FAILED connection -> never falls back to operator
-    const broken = await owner("business");
-    await saveConnection(db, key, broken, "unisms", { account: "ClinicA", credential: SYNTH_WS_KEY, destination: { senderId: "ClinicA" } });
-    const conn = (await connectionCredential(db, key, broken, "unisms"))!;
-    await markConnectionFailed(db, broken, "unisms", "UniSMS rejected the key.", conn.revision);
-    const dBroken = await smsDelivery(broken, (await newRun(broken)).runId);
-    await runDueDeliveries(db, key, urls);
-    expect(await state(dBroken.id)).toMatchObject({ state: "failed", errorKind: "reconnect" });
-
-    // Delivery queued under workspace connection that was then DISCONNECTED -> never falls back to operator
-    const disc = await owner("business");
-    await saveConnection(db, key, disc, "unisms", { account: "ClinicB", credential: SYNTH_WS_KEY, destination: { senderId: "ClinicB" } });
-    const dDisc = await smsDelivery(disc, (await newRun(disc)).runId);
-    await removeConnection(db, disc, "unisms");
-    await runDueDeliveries(db, key, urls);
-    expect(await state(dDisc.id)).toMatchObject({ state: "failed", errorKind: "not_connected" });
-
-    // NEW delivery queued AFTER disconnecting workspace UniSMS also fails with not_connected and does not fall back to operator (H1)
-    const dAfterDisc = await smsDelivery(disc, (await newRun(disc)).runId);
-    await runDueDeliveries(db, key, urls);
-    expect(await state(dAfterDisc.id)).toMatchObject({ state: "failed", errorKind: "not_connected" });
-
-    // Step senderId override is ignored in shared operator fallback mode (H2)
-    const dSpoof = await smsDelivery(paid, (await newRun(paid)).runId, { to: "+639171234567", message: "No spoof", senderId: "SpoofBrand" });
-    await runDueDeliveries(db, key, urls);
-    expect(await state(dSpoof.id)).toMatchObject({ state: "delivered", result: expect.objectContaining({ senderId: "DaloyPH" }) });
-    expect(fake.unisms.messages.at(-1)?.senderId).toBe("DaloyPH");
-
-    // Only the two paid workspace deliveries actually hit UniSMS.
-    expect(fake.unisms.messages).toHaveLength(2);
+    expect(await state(d.id)).toMatchObject({ state: "delivered" });
+    expect(fake.unisms.messages).toHaveLength(1);
   });
 
-  it("refunds reserved SMS quota on definite rejections (400/401) and retires rotated or disconnected keys (M1, M2, M8)", async () => {
-    const u = await owner("pilot");
-    await saveConnection(db, key, u, "unisms", { account: "Clinic", credential: SYNTH_WS_KEY, destination: { senderId: "Clinic" } });
+  it("fails with the server message when the env is not set, and sends nothing", async () => {
+    const u = await owner("business");
+    const d = await smsDelivery(u, (await newRun(u)).runId);
+    await runDueDeliveries(db, key, urls);
 
+    expect(await state(d.id)).toMatchObject({ state: "failed", errorKind: "not_connected", lastError: "SMS is not set up on this server." });
+    expect(fake.unisms.messages).toHaveLength(0);
+    expect(await smsUsed(u)).toBe(0);
+
+    // With only half of the pair set it is still not set up.
+    process.env.UNISMS_SECRET_KEY = SYNTH_OP_KEY;
+    const d2 = await smsDelivery(u, (await newRun(u)).runId);
+    await runDueDeliveries(db, key, urls);
+    expect(await state(d2.id)).toMatchObject({ state: "failed", errorKind: "not_connected" });
+  });
+
+  it("ignores a stored workspace key: it is never decrypted into a send, and the operator Sender ID wins", async () => {
+    const u = await owner("pilot");
+    await saveConnection(db, key, u, "unisms", { account: "LimDental", credential: SYNTH_WS_KEY, destination: { senderId: "LimDental" } });
+    // Without the env nothing is sent, even though the workspace has a working key of its own.
+    fake.unisms.secretKey = SYNTH_WS_KEY;
+    const none = await smsDelivery(u, (await newRun(u)).runId);
+    await runDueDeliveries(db, key, urls);
+    expect(await state(none.id)).toMatchObject({ state: "failed", errorKind: "not_connected" });
+    expect(fake.unisms.messages).toHaveLength(0);
+
+    // With the env set the operator key is used. The stored credential is made unreadable to prove it is never opened.
+    operatorEnv("DaloyPH");
+    await db.update(connections).set({ credentialCiphertext: "AAAA" }).where(eq(connections.userId, u));
+    const d = await smsDelivery(u, (await newRun(u)).runId, { to: "+639171234567", message: "Hi", senderId: "SpoofBrand" });
+    await runDueDeliveries(db, key, urls);
+    expect(await state(d.id)).toMatchObject({ state: "delivered", result: expect.objectContaining({ senderId: "DaloyPH" }) });
+    expect(fake.unisms.messages.at(-1)?.senderId).toBe("DaloyPH");
+  });
+
+  it("retires a stored workspace key into retired_secrets once, and keeps hiding its value", async () => {
+    const u = await owner("pilot");
+    const other = await owner("pilot");
+    await saveConnection(db, key, u, "unisms", { account: "LimDental", credential: SYNTH_WS_KEY, destination: { senderId: "LimDental" } });
+    await saveConnection(db, key, other, "slack", { account: "T1", credential: "xoxb-synthetic-token-0001", destination: { channelId: "C1" } }); // gitleaks:allow
+
+    expect(await retireStoredUnismsKeys(db)).toBe(1);
+    expect(await db.select().from(connections).where(eq(connections.provider, "unisms"))).toHaveLength(0);
+    expect(await db.select().from(connections).where(eq(connections.provider, "slack"))).toHaveLength(1);
+    expect(await db.select().from(retiredSecrets).where(eq(retiredSecrets.userId, u))).toHaveLength(1);
+    expect(await secretValuesToHide(db, key, u)).toContain(SYNTH_WS_KEY);
+
+    // A second start finds nothing and adds nothing.
+    expect(await retireStoredUnismsKeys(db)).toBe(0);
+    expect(await db.select().from(retiredSecrets).where(eq(retiredSecrets.userId, u))).toHaveLength(1);
+  });
+
+  it("refunds reserved SMS quota on a definite rejection and leaves the workspace's connections alone on a 401", async () => {
+    operatorEnv();
+    const u = await owner("pilot");
     const dBad = await smsDelivery(u, (await newRun(u)).runId);
     fake.once("/api/sms", { status: 400, body: { error: "bad_sender" } });
     await runDueDeliveries(db, key, urls);
     expect(await state(dBad.id)).toMatchObject({ state: "failed", errorKind: "invalid" });
     expect(await smsUsed(u)).toBe(0);
 
-    // Rotate key -> old key remains in secretValuesToHide via retired_secrets
-    await saveConnection(db, key, u, "unisms", { account: "Clinic", credential: SYNTH_WS_KEY_2, destination: { senderId: "Clinic" } });
-    expect(await secretValuesToHide(db, key, u)).toEqual(expect.arrayContaining([SYNTH_WS_KEY, SYNTH_WS_KEY_2]));
-
-    // Disconnect -> both keys remain in secretValuesToHide via retired_secrets
-    await removeConnection(db, u, "unisms");
-    expect(await secretValuesToHide(db, key, u)).toEqual(expect.arrayContaining([SYNTH_WS_KEY, SYNTH_WS_KEY_2]));
+    const d401 = await smsDelivery(u, (await newRun(u)).runId);
+    fake.once("/api/sms", { status: 401, body: { error: "bad_op_key" } });
+    await runDueDeliveries(db, key, urls);
+    expect(await state(d401.id)).toMatchObject({ state: "failed", errorKind: "auth" });
+    expect(await db.select().from(connections).where(eq(connections.userId, u))).toHaveLength(0);
+    expect(await smsUsed(u)).toBe(0);
   });
 
   it("parks 5xx, timeouts, and stale worker takeovers in needs_review without double-sending, and does not double-charge on Send again", async () => {
+    operatorEnv();
     const u = await owner("pilot");
-    await saveConnection(db, key, u, "unisms", { account: "Unisoft", credential: SYNTH_WS_KEY, destination: { senderId: "Unisoft" } });
     // Bring usage to 49 of 50 so a double-charge on Send again would hit the limit.
     await claimUsage(db, u, "sms", { n: 49 });
 
@@ -278,46 +297,9 @@ describe("UniSMS delivery worker", () => {
     expect(fake.unisms.messages).toHaveLength(beforeCount);
   });
 
-  it("marks workspace connection failed on 401/403 fenced by credential IV, and leaves operator fallback untouched", async () => {
-    const u = await owner("pilot");
-    await saveConnection(db, key, u, "unisms", { account: "Clinic", credential: SYNTH_WS_KEY, destination: { senderId: "Clinic" } });
-    const d = await smsDelivery(u, (await newRun(u)).runId);
-
-    // Hold a 401 while owner replaces the key -> late 401 must NOT mark the replacement failed.
-    let release!: () => void;
-    const held = new Promise<void>((r) => (release = r));
-    fake.once("/api/sms", { heldUntil: held, status: 401, body: { error: "bad_key" } });
-    const inFlight = runDueDeliveries(db, key, urls);
-    // Wait until the worker has claimed the row and sent the request.
-    while ((await state(d.id)).state !== "sending") await new Promise((r) => setTimeout(r, 10));
-    await saveConnection(db, key, u, "unisms", { account: "Clinic", credential: SYNTH_WS_KEY_2, destination: { senderId: "Clinic" } });
-    release();
-    await inFlight;
-    expect(await state(d.id)).toMatchObject({ state: "failed", errorKind: "auth" });
-    expect((await connectionCredential(db, key, u, "unisms"))!.status).toBe("active");
-
-    // A 403 against the current key DOES mark the connection failed.
-    const d2 = await smsDelivery(u, (await newRun(u)).runId);
-    fake.once("/api/sms", { status: 403, body: { error: "suspended" } });
-    await runDueDeliveries(db, key, urls);
-    expect(await state(d2.id)).toMatchObject({ state: "failed", errorKind: "auth" });
-    expect((await connectionCredential(db, key, u, "unisms"))!.status).toBe("failed");
-
-    // 401 on operator fallback fails the delivery without creating/mutating any workspace connection.
-    process.env.SHARED_UNISMS_KEY = "open";
-    process.env.UNISMS_SECRET_KEY = SYNTH_OP_KEY;
-    process.env.UNISMS_SENDER_ID = "Daloy";
-    const uOp = await owner("pilot");
-    const dOp = await smsDelivery(uOp, (await newRun(uOp)).runId);
-    fake.once("/api/sms", { status: 401, body: { error: "bad_op_key" } });
-    await runDueDeliveries(db, key, urls);
-    expect(await state(dOp.id)).toMatchObject({ state: "failed", errorKind: "auth" });
-    expect(await connectionCredential(db, key, uOp, "unisms")).toBeNull();
-  });
-
   it("stops a queued SMS delivery cleanly when its booking was cancelled or rescheduled (N2b)", async () => {
+    operatorEnv();
     const u = await owner("pilot");
-    await saveConnection(db, key, u, "unisms", { account: "Clinic", credential: SYNTH_WS_KEY, destination: { senderId: "Clinic" } });
     const [res] = await db.insert(resources).values({ userId: u, name: "Room 1" }).returning();
     const [bk] = await db
       .insert(bookings)

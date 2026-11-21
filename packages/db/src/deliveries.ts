@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { backoffDelayMs, FILE_MIME, type FileRef, type RetryPolicy } from "@daloy/engine";
 import { and, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
-import { canUseSharedUnisms, connectionCredential, markConnectionFailed, PROVIDER_NAMES, sharedUnismsConfig } from "./connections";
+import { connectionCredential, markConnectionFailed, PROVIDER_NAMES, SMS_NOT_SET_UP, unismsConfig } from "./connections";
 import { withGoogle } from "./google-access";
 import { freshToken, oauthProvider, slackToken, trelloAuthOf, withFreshToken, withRecordAuth } from "./oauth";
 import type { Db } from "./index";
@@ -30,7 +30,7 @@ export type Delivery = typeof deliveries.$inferSelect;
 export type DeliveryPayload = Delivery["payload"];
 /** What the last failure was, as a closed value (decision 0039). */
 export type DeliveryErrorKind = ProviderErrorKind | "not_connected" | "reconnect" | "no_destination" | "destination_changed" | "queued_before_pin" | "booking_changed" | "plan_quota";
-/** Sentinel pinnedAccount for deliveries sent through the operator's shared UniSMS key (decision 0074). */
+/** pinnedAccount of every UniSMS delivery: the server's own key sends them all (decision 0100). */
 const SHARED_UNISMS_ACCOUNT = "__operator_shared__";
 
 export const DELIVERY_POLICY: RetryPolicy = { maxAttempts: 5, baseDelayMs: 2000, maxDelayMs: 10 * 60_000 };
@@ -54,10 +54,11 @@ const markerValue = () => randomBytes(6).toString("base64url");
  * first row back. Pins the connection as it is now; an empty pin means nothing was connected yet, pinned on first send.
  */
 export async function queueDelivery(db: Db, d: { userId: string; runId: string; stepId: string; provider: Provider; reference: string; payload: DeliveryPayload }): Promise<Delivery> {
-  const [conn] = await db.select({ account: connections.account, destination: connections.destination, externalId: connections.externalId }).from(connections).where(and(eq(connections.userId, d.userId), eq(connections.provider, d.provider)));
-  const shared = !conn && d.provider === "unisms" && (await canUseSharedUnisms(db, d.userId)) ? sharedUnismsConfig() : null;
-  const pinnedAccount = conn?.account ?? (shared ? SHARED_UNISMS_ACCOUNT : "");
-  const pinnedDestination = conn?.destination ?? (shared ? { senderId: shared.senderId } : null);
+  // SMS never reads a workspace connection row: the server's env is the only source (decision 0100).
+  const operator = d.provider === "unisms" ? unismsConfig() : null;
+  const [conn] = d.provider === "unisms" ? [] : await db.select({ account: connections.account, destination: connections.destination, externalId: connections.externalId }).from(connections).where(and(eq(connections.userId, d.userId), eq(connections.provider, d.provider)));
+  const pinnedAccount = conn?.account ?? (d.provider === "unisms" ? SHARED_UNISMS_ACCOUNT : "");
+  const pinnedDestination = conn?.destination ?? (operator ? { senderId: operator.senderId } : null);
   const sheet = d.provider === "google_sheets" ? { sheetMetaId: sql<number>`nextval('sheet_meta_seq')`, sheetMetaValue: markerValue() } : {};
   await db
     .insert(deliveries)
@@ -106,28 +107,22 @@ type Outcome =
  */
 async function attempt(db: Db, key: Buffer, urls: ProviderUrls, d: Delivery): Promise<Outcome | null> {
   const name = PROVIDER_NAMES[d.provider];
-  let conn = await connectionCredential(db, key, d.userId, d.provider);
+  // UniSMS is sent with the server's key only. A workspace's stored key is never read, whatever this delivery was pinned to.
+  let conn = d.provider === "unisms" ? null : await connectionCredential(db, key, d.userId, d.provider);
   let usingShared = false;
-  if (!conn && d.provider === "unisms") {
-    // Never silently fall back to the operator key if this delivery was pinned to a workspace connection that was disconnected.
-    if (d.pinnedAccount && d.pinnedAccount !== SHARED_UNISMS_ACCOUNT) {
-      return { state: "failed", error: `${name} is not connected. Connect it in Apps, then retry.`, kind: "not_connected" };
-    }
-    const shared = sharedUnismsConfig();
-    if (!shared) return { state: "failed", error: `${name} is not connected. Connect it in Apps, then retry.`, kind: "not_connected" };
-    if (!(await canUseSharedUnisms(db, d.userId))) {
-      const [u] = await db.select({ plan: users.plan, unismsDisconnectedAt: users.unismsDisconnectedAt }).from(users).where(eq(users.id, d.userId));
-      if (u?.plan === "preview" && !u.unismsDisconnectedAt) {
-        return { state: "failed", error: "SMS sending is not included on the Preview plan. Ask Daloy to move you to a paid plan.", kind: "plan_quota" };
-      }
-      return { state: "failed", error: `${name} is not connected. Connect it in Apps, then retry.`, kind: "not_connected" };
+  if (d.provider === "unisms") {
+    const operator = unismsConfig();
+    if (!operator) return { state: "failed", error: SMS_NOT_SET_UP, kind: "not_connected" };
+    const [u] = await db.select({ plan: users.plan }).from(users).where(eq(users.id, d.userId));
+    if (u?.plan === "preview") {
+      return { state: "failed", error: "SMS sending is not included on the Preview plan. Ask Daloy to move you to a paid plan.", kind: "plan_quota" };
     }
     usingShared = true;
     conn = {
-      credential: shared.secretKey,
+      credential: operator.secretKey,
       status: "active",
       account: SHARED_UNISMS_ACCOUNT,
-      destination: { senderId: shared.senderId },
+      destination: { senderId: operator.senderId },
       revision: "",
       authMethod: "token",
       externalId: null,
@@ -170,8 +165,8 @@ async function attempt(db: Db, key: Buffer, urls: ProviderUrls, d: Delivery): Pr
   const send = async (tx: Pick<Db, "select" | "update" | "insert">): Promise<Outcome | null> => {
     if (d.provider === "unisms") {
       const p = d.payload as { to: string; message: string; senderId?: string };
-      // Never allow a workflow step to override the operator's UNISMS_SENDER_ID in shared fallback mode (H2).
-      const senderId = usingShared ? destination.senderId! : p.senderId || destination.senderId || "Unisoft";
+      // A step never overrides the operator's UNISMS_SENDER_ID (H2).
+      const senderId = destination.senderId!;
       try {
         const res = await unismsSend(urls, activeConn.credential, { recipient: p.to, content: p.message, senderId, metadata: { reference: d.reference, deliveryId: d.id } }, { shared: usingShared });
         smsSent = true;

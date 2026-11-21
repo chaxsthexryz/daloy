@@ -1,4 +1,4 @@
-import { createDb, oauthEnvProblem, mailDeps, migrate, providerUrls, retiredSecretMaxAgeDays } from "@daloy/db";
+import { createDb, oauthEnvProblem, mailDeps, migrate, providerUrls, retireStoredUnismsKeys, retiredSecretMaxAgeDays } from "@daloy/db";
 import { createExecutor } from "./steps";
 import { startWorker } from "./worker";
 
@@ -17,6 +17,8 @@ const ownsSchema = process.env.MIGRATE_ON_BOOT !== "false";
 // completions, deliveries and the sweep always have connections left.
 const { db, pool } = createDb(url, 20);
 if (ownsSchema) await migrate(pool);
+// SMS uses the server's UniSMS settings only (decision 0100): any key a workspace saved earlier moves to retired secrets. Safe on every start.
+await retireStoredUnismsKeys(db);
 
 const worker = await startWorker({
   connectionString: url,

@@ -81,10 +81,9 @@ services:
       LLM_API_KEY: ${LLM_API_KEY:-}
       # open lets accounts without their own AI key use LLM_API_KEY. Leave it off on a public installation (decision 0035).
       SHARED_LLM_KEY: ${SHARED_LLM_KEY:-off}
-      # Optional operator UniSMS fallback for paid plans without their own UniSMS connection (decision 0074).
+      # UniSMS for every workspace, set by the operator only (decision 0100). Empty means SMS is not set up on this server.
       UNISMS_SECRET_KEY: ${UNISMS_SECRET_KEY:-}
       UNISMS_SENDER_ID: ${UNISMS_SENDER_ID:-}
-      SHARED_UNISMS_KEY: ${SHARED_UNISMS_KEY:-off}
       # Comma list of the only hosts an HTTP step may call, for the public demo. Empty means any public host.
       HTTP_ALLOWED_HOSTS: ${HTTP_ALLOWED_HOSTS:-}
       # Recipients a workspace may send to in one Manila day through its own Gmail or Outlook (decision 0052). Empty defaults to 400.
@@ -141,7 +140,6 @@ services:
       SHARED_LLM_KEY: ${SHARED_LLM_KEY:-off}
       UNISMS_SECRET_KEY: ${UNISMS_SECRET_KEY:-}
       UNISMS_SENDER_ID: ${UNISMS_SENDER_ID:-}
-      SHARED_UNISMS_KEY: ${SHARED_UNISMS_KEY:-off}
       # on turns on "Ask about a request" in Build with AI (decision 0041). Keep off until docs/ai-ask-measurement.md is done.
       AI_ASK: ${AI_ASK:-off}
       # Behind cloudflared or Caddy: 1, so rate limits key on the real client (docs/deployment.md). 0 when nothing is in front.

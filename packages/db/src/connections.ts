@@ -1,32 +1,41 @@
 import { and, eq, sql } from "drizzle-orm";
 import { decryptSecret, encryptSecret } from "./crypto";
 import type { Db } from "./index";
-import { connections, retiredSecrets, users, type AuthMethod, type Provider } from "./schema";
+import { connections, retiredSecrets, type AuthMethod, type Provider } from "./schema";
 
 export const PROVIDER_NAMES: Record<Provider, string> = { google_sheets: "Google Sheets", slack: "Slack", outlook: "Outlook", teams: "Microsoft Teams", telegram: "Telegram", google_calendar: "Google Calendar", google_drive: "Google Drive", paymongo: "PayMongo", airtable: "Airtable", notion: "Notion", trello: "Trello", unisms: "UniSMS", meta_messenger: "Facebook Messenger & Instagram" };
 
 /** What a pasted credential is, by provider. An Outlook credential is always a Microsoft grant. */
 const PASTED: Record<Provider, AuthMethod> = { google_sheets: "service_account", google_calendar: "service_account", google_drive: "service_account", teams: "webhook_url", outlook: "oauth", slack: "token", telegram: "token", paymongo: "token", airtable: "token", notion: "token", trello: "token", unisms: "token", meta_messenger: "token" };
 
-/** Operator shared UniSMS fallback from env, enabled only when SHARED_UNISMS_KEY=open with both key and sender id set. */
-export function sharedUnismsConfig(env: NodeJS.ProcessEnv = process.env): { secretKey: string; senderId: string } | null {
-  if (env.SHARED_UNISMS_KEY !== "open") return null;
+/**
+ * The server's UniSMS settings: the only source of SMS credentials (decision 0100). Set when both UNISMS_SECRET_KEY and
+ * UNISMS_SENDER_ID are present. Workspaces never hold a UniSMS key; each is limited by its plan's monthly sms quota.
+ */
+export function unismsConfig(env: NodeJS.ProcessEnv = process.env): { secretKey: string; senderId: string } | null {
   const secretKey = env.UNISMS_SECRET_KEY?.trim();
   const senderId = env.UNISMS_SENDER_ID?.trim();
   if (!secretKey || !senderId) return null;
   return { secretKey, senderId };
 }
 
+/** What a delivery or a publish says when the server has no UniSMS settings. */
+export const SMS_NOT_SET_UP = "SMS is not set up on this server.";
+
 /**
- * Whether a workspace may send SMS through the operator's shared UniSMS key: SHARED_UNISMS_KEY=open with credentials set,
- * no workspace unisms connection row, the workspace has not disconnected UniSMS, and the workspace is on a paid plan.
+ * One-time clean-up for workspaces that saved their own UniSMS key before decision 0100: the key moves into
+ * retired_secrets (so history still hides it and the daily purge scrubs it) and the connection row goes. Idempotent,
+ * safe on every worker start. Returns how many keys it retired.
  */
-export async function canUseSharedUnisms(db: Pick<Db, "select">, userId: string, env: NodeJS.ProcessEnv = process.env): Promise<boolean> {
-  if (!sharedUnismsConfig(env)) return false;
-  const [conn] = await db.select({ account: connections.account }).from(connections).where(and(eq(connections.userId, userId), eq(connections.provider, "unisms")));
-  if (conn) return false;
-  const [u] = await db.select({ plan: users.plan, unismsDisconnectedAt: users.unismsDisconnectedAt }).from(users).where(eq(users.id, userId));
-  return !!u && u.unismsDisconnectedAt === null && u.plan !== null && u.plan !== "preview";
+export async function retireStoredUnismsKeys(db: Db): Promise<number> {
+  const rows = await db.select({ userId: connections.userId }).from(connections).where(eq(connections.provider, "unisms"));
+  for (const { userId } of rows) {
+    await db.transaction(async (tx) => {
+      await retireConnectionInTx(tx, userId, "unisms");
+      await tx.delete(connections).where(and(eq(connections.userId, userId), eq(connections.provider, "unisms")));
+    });
+  }
+  return rows.length;
 }
 
 // The owner id is in the associated data (crypto.ts), so a credential copied to another owner's row does not decrypt.
@@ -72,9 +81,6 @@ export async function saveConnection(db: Db, key: Buffer, userId: string, provid
   await db.transaction(async (tx) => {
     await retireConnectionInTx(tx, userId, provider);
     await tx.insert(connections).values({ userId, provider, ...values }).onConflictDoUpdate({ target: [connections.userId, connections.provider], set: values });
-    if (provider === "unisms") {
-      await tx.update(users).set({ unismsDisconnectedAt: null }).where(eq(users.id, userId));
-    }
   });
 }
 
@@ -124,9 +130,6 @@ export async function removeConnection(db: Db, userId: string, provider: Provide
   return db.transaction(async (tx) => {
     await retireConnectionInTx(tx, userId, provider);
     const deleted = await tx.delete(connections).where(and(eq(connections.userId, userId), eq(connections.provider, provider))).returning({ userId: connections.userId });
-    if (deleted.length === 1 && provider === "unisms") {
-      await tx.update(users).set({ unismsDisconnectedAt: new Date() }).where(eq(users.id, userId));
-    }
     return deleted.length === 1;
   });
 }
