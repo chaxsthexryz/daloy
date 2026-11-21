@@ -1,5 +1,5 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import type { Db } from "./index";
 import { call, ProviderError, providerUrls, retryAfter, type ProviderUrls } from "./providers";
 import { paymongoEvents, payments } from "./schema";
@@ -87,7 +87,7 @@ export const findPaymentForStep = async (db: Db, runId: string, stepId: string):
   (await db.select().from(payments).where(and(eq(payments.runId, runId), eq(payments.stepId, stepId))))[0];
 
 /** One payment per run and step: a repeat returns the existing row. */
-export async function insertPayment(db: Db, v: { userId: string; workflowId: string; runId: string; stepId: string; reference: string; amountCentavos: number; livemode: boolean; providerSessionId: string; url: string }): Promise<Payment> {
+export async function insertPayment(db: Db, v: { userId: string; workflowId: string; runId: string; stepId: string; reference: string; amountCentavos: number; livemode: boolean; providerSessionId: string; url: string; dueId?: string }): Promise<Payment> {
   await db.insert(payments).values(v).onConflictDoNothing({ target: [payments.runId, payments.stepId] });
   // A paid event that arrived before this row was kept (decision 0056).
   // shortcut: listener runs are not started on this path because Daloy only hands out the checkout URL after the row is stored, so a paid event cannot normally arrive first, upgrade if a link can reach a buyer earlier.
@@ -108,13 +108,16 @@ export async function insertPayment(db: Db, v: { userId: string; workflowId: str
 // Only a payment of the mode the event was verified in: a sandbox event never settles a live payment.
 const bySession = (userId: string, sessionId: string, livemode: boolean) => and(eq(payments.userId, userId), eq(payments.providerSessionId, sessionId), eq(payments.livemode, livemode));
 
-/** pending -> paid, only once. A different amount or currency parks it in needs_review for a person. Paid, refunded and needs_review never move back. */
+/**
+ * pending -> paid, only once. A different amount or currency parks it in needs_review for a person, and so does a payment
+ * for a checkout Daloy already expired (decision 0089). Paid, refunded and needs_review never move back.
+ */
 export async function markPaymentPaid(db: Db, o: { userId: string; sessionId: string; paymentId: string; amount: number; currency: string; livemode: boolean }): Promise<{ payment: Payment | undefined; changed: boolean; mismatch: boolean }> {
   const matches = sql`${o.amount}::int = ${payments.amountCentavos} and ${o.currency} = ${payments.currency}`;
   const [row] = await db
     .update(payments)
-    .set({ status: sql`case when ${matches} then 'paid' else 'needs_review' end`, providerPaymentId: o.paymentId, paidAt: sql`now()`, updatedAt: sql`now()` })
-    .where(and(bySession(o.userId, o.sessionId, o.livemode), eq(payments.status, "pending")))
+    .set({ status: sql`case when ${payments.status} = 'pending' and ${matches} then 'paid' else 'needs_review' end`, providerPaymentId: o.paymentId, paidAmountCentavos: o.amount, paidCurrency: o.currency, paidAt: sql`now()`, updatedAt: sql`now()` })
+    .where(and(bySession(o.userId, o.sessionId, o.livemode), inArray(payments.status, ["pending", "expired"])))
     .returning();
   if (row) return { payment: row, changed: true, mismatch: row.status === "needs_review" };
   return { payment: (await db.select().from(payments).where(bySession(o.userId, o.sessionId, o.livemode)))[0], changed: false, mismatch: false };
