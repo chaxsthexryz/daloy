@@ -3,7 +3,8 @@ import { useEffect, useState, type ReactNode } from "react";
 import { api, ApiError, type Run, type RunSummary, type Version, type Workflow } from "./api";
 import { DeliveryList, type Delivery } from "./Connections";
 import { AutomationTabs } from "./Nav";
-import { RunFlow, TYPE_NAMES } from "./FlowCanvas";
+import { stepLabel } from "@daloy/engine";
+import { RunFlow } from "./FlowCanvas";
 import { runFlow, STATUS } from "./lib/run-flow";
 import "./operations.css";
 import "./activity.css";
@@ -571,7 +572,7 @@ function RunError({ error, owner }: { error: string; owner: boolean }) {
 
 /** The path this run took: the version's diagram, redrawn on every poll with the state of each step (read only). */
 function RunPath({ run }: { run: Run }) {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const [draft, setDraft] = useState<Draft | null>(null);
   const [failed, setFailed] = useState(false);
   useEffect(() => {
@@ -593,7 +594,7 @@ function RunPath({ run }: { run: Run }) {
         {draft.steps.map((step) => (
           <li key={step.id}>
             <span className={`state ${states[step.id] ?? "idle"}`}>{t(STATUS[states[step.id] ?? "idle"].label)}</span>
-            <span>{t(TYPE_NAMES[step.type] ?? step.type)} <span className="muted">({step.id})</span></span>
+            <span>{stepLabel(step.type, language)} <span className="muted">({step.id})</span></span>
           </li>
         ))}
       </ol>

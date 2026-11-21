@@ -40,15 +40,15 @@ export const ICON_KEYS = Object.keys(ICONS);
 /**
  * One app or action mark. A logo shows as a picture; an action Daloy does itself shows a line icon; an app without a
  * usable logo shows its first letter. The wrapper always carries the app's name, so a screen reader and a failed image
- * both fall back to text. The padding around the picture is the clear space (at least a fifth of the logo's width).
+ * both fall back to text. Next to text that already names the app (a node, a list row), pass decorative so it is not read twice. The padding around the picture is the clear space (at least a fifth of the logo's width).
  */
-export function AppMark({ mark, name, size = 28 }: { mark: string; name: string; size?: number }) {
+export function AppMark({ mark, name, size = 28, decorative = false }: { mark: string; name: string; size?: number; decorative?: boolean }) {
   const [failed, setFailed] = useState(false);
   const logo = hasLogo(mark) && !failed;
   const icon = !logo && ICONS[mark];
   const inner = Math.round(size * 0.62);
   return (
-    <span className="app-mark" data-mark={mark} data-kind={logo ? "logo" : icon ? "icon" : "letter"} role="img" aria-label={name} style={{ width: size, height: size }}>
+    <span className="app-mark" data-mark={mark} data-kind={logo ? "logo" : icon ? "icon" : "letter"} {...(decorative ? { "aria-hidden": true } : { role: "img", "aria-label": name })} style={{ width: size, height: size }}>
       {logo ? (
         <img src={`${import.meta.env.BASE_URL}logos/${mark}.svg`} alt="" width={inner} height={inner} draggable={false} onError={() => setFailed(true)} />
       ) : icon ? (

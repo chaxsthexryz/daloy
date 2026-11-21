@@ -1,5 +1,5 @@
 import { translate, type Language } from "./locale";
-import { BRANCHES, type Step, type WorkflowDefinition } from "@daloy/engine";
+import { BRANCHES, stepLabel, triggerLabel, type Step, type WorkflowDefinition } from "@daloy/engine";
 import type { Edge as FlowEdge, Node as FlowNode } from "@xyflow/react";
 import { STATUS, type EdgeState, type NodeState } from "./run-flow";
 
@@ -131,7 +131,8 @@ export function layout(draft: Draft): Record<string, { x: number; y: number }> {
   return pos;
 }
 
-export type StepNodeData = { step?: Step; trigger?: Draft["trigger"]; branches?: readonly string[]; status?: NodeState };
+/** context: the draft's trigger, for a step's destination line. chosen: the destination picked in Apps (a channel, a sheet, a list). */
+export type StepNodeData = { step?: Step; trigger?: Draft["trigger"]; context?: Draft["trigger"]; chosen?: string; branches?: readonly string[]; status?: NodeState };
 export type RunEdgeData = { state: EdgeState };
 /** What a run says about the diagram (see runFlow). Without it the diagram is drawn plain, as in the editor with no run. */
 export type FlowState = { nodes: Record<string, NodeState>; edges: Record<string, EdgeState> };
@@ -144,17 +145,17 @@ export function toFlow(draft: Draft, selected: string | null, state?: FlowState,
   const edgeProps = (id: string) => (state ? { type: "run", data: { state: state.edges[id] ?? "idle" } satisfies RunEdgeData } : {});
   const at = (id: string) => ({ x: pos[id]!.x - NODE_W / 2, y: pos[id]!.y });
   const nodes: FlowNode<StepNodeData>[] = [
-    { id: "trigger", type: "trigger", ariaLabel: t("Trigger: {type}", { type: t(draft.trigger.type) }) + said("trigger"), position: at("trigger"), data: { trigger: draft.trigger, status: state?.nodes.trigger }, selected: selected === "trigger", deletable: false },
+    { id: "trigger", type: "trigger", ariaLabel: t("Trigger: {type}", { type: triggerLabel(draft.trigger.type, language) }) + said("trigger"), position: at("trigger"), data: { trigger: draft.trigger, status: state?.nodes.trigger }, selected: selected === "trigger", deletable: false },
     ...draft.steps.map((step) => ({
       id: step.id,
       type: "step",
       // Screen readers announce the node by this name; branches say where each one leads.
-      ariaLabel: `${t("{type} step {id}", { type: t(step.type), id: step.id })}${draft.edges
+      ariaLabel: `${t("{type} step {id}", { type: stepLabel(step.type, language), id: step.id })}${draft.edges
         .filter((e) => e.from === step.id)
         .map((e) => t(", {branch}goes to {id}", { branch: e.on ? `${t("on {branch}", { branch: t(e.on) })} ` : "", id: e.to }))
         .join("")}${said(step.id)}`,
       position: at(step.id),
-      data: { step, branches: BRANCHES[step.type], status: state?.nodes[step.id] },
+      data: { step, context: draft.trigger, branches: BRANCHES[step.type], status: state?.nodes[step.id] },
       selected: selected === step.id,
     })),
   ];

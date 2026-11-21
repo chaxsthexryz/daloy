@@ -1062,3 +1062,15 @@ GET shows the request and records nothing; the decision is a POST, as before. Th
 ### Browser demo (E11, `Demo.tsx`, decision 0081)
 
 The demo has its own scoped stylesheet and the console's real flow diagram and checker. A step that waits for the visitor shows "Needs you". Start over and Try another example clear the conversation and the run. `e2e/portfolio-demo.spec.ts` runs the whole path offline and checks that no request is made.
+
+## Step catalog and app logos (roadmap R2a, decisions 0085 to 0087)
+
+What it does. Every trigger and every step type has one entry in `packages/engine/src/catalog.ts`: the app (or none, for things Daloy does itself), an icon key, the action name, a plain description, the config fields it needs, its input, its output and its possible outcomes. The step picker, the canvas nodes, the phone list, the step inspector, the run path and the screen reader names all read their labels from it. A node shows the app, the action and where it acts: "Gmail, Send email" with "To: Customer email from the form" under it. If the app is not connected, the node shows "Connect Gmail" instead.
+
+Why it is built this way. Names used to be copied into four places, so a new step type could be missing from one. Now the catalog is typed on the step schema, so the compiler rejects a new type with no entry. English and Tagalog sit side by side in each entry, so one test checks both.
+
+Logos. `apps/web/public/logos/` holds the SVGs and a README with each file's source, terms and date. `AppMark` draws a logo unaltered on a white tile with clear space, a text name for screen readers and a letter-tile fallback if the image fails. GCash, PayMongo, UniSMS, Messenger and Instagram stay letter tiles, and the README says why.
+
+Edge cases. A destination written as a template reads as words ("Customer email from the form", "phone from step ai_1"), and a literal stays as typed. A step whose destination the owner has not picked in Apps says "chosen in Apps". An email step asks for Gmail only when neither the workspace nor the installation can send mail, so the local demo with the mail sink shows no warning. A mark with no logo and no icon still has its name.
+
+Tests. `packages/engine/src/catalog.test.ts` (an entry for every step and trigger type, both languages filled, required fields are real config fields, labels and destination lines in English and Tagalog). `apps/web/src/AppMark.test.ts` (each logo file exists, is plain SVG and is in the README; every catalog mark has a picture, icon or tile). `apps/web/src/lib/editor.test.ts` (which nodes need which app, and the destination name). `e2e/editor.spec.ts` checks the node lines in a browser.

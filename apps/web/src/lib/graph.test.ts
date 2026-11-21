@@ -106,7 +106,7 @@ describe("layout and toFlow", () => {
     const flow = toFlow(d, "http_1");
     expect(flow.nodes.map((n) => n.id)).toEqual(["trigger", "condition_1", "http_1"]);
     expect(flow.nodes.find((n) => n.id === "http_1")!.selected).toBe(true);
-    expect(flow.nodes.find((n) => n.id === "condition_1")!.ariaLabel).toBe("condition step condition_1, on true goes to http_1");
+    expect(flow.nodes.find((n) => n.id === "condition_1")!.ariaLabel).toBe("Condition step condition_1, on true goes to http_1");
     expect(flow.edges).toContainEqual(expect.objectContaining({ source: "trigger", target: "condition_1" }));
     expect(flow.edges).toContainEqual(expect.objectContaining({ source: "condition_1", target: "http_1", sourceHandle: "true", label: "true" }));
   });
@@ -118,7 +118,7 @@ describe("localized diagram labels", () => {
     const draft = addStep(blankDraft(), "condition").draft;
     const withEmail = addStep(draft, "email", { id: "condition_1", on: "true" }).draft;
     const translated = toFlow(withEmail, null, undefined, "tl");
-    expect(translated.nodes[0]?.ariaLabel).toBe("Simula: manual");
+    expect(translated.nodes[0]?.ariaLabel).toBe("Simula: Ikaw ang magpapatakbo");
     expect(translated.edges[1]).toMatchObject({ sourceHandle: "true", label: "oo" });
     expect(translated.nodes[1]?.id).toBe("condition_1");
     expect(toFlow(withEmail, null).edges[1]?.label).toBe("true");
