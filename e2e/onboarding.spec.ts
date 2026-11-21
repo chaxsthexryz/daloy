@@ -1,3 +1,4 @@
+import { captureReview } from "./review-capture";
 import { expect, test, type Page } from "@playwright/test";
 
 // Roadmap R1: a new owner answers three screens and gets one editable draft with a sample order. Nothing is
@@ -26,6 +27,7 @@ test("a new owner reaches a draft with a sample order in three screens, and runn
   await expect(next(page)).toBeDisabled();
   await page.getByLabel("Business name").fill("Ana's Sweets");
   await expect(page.locator(".ob-mark")).toHaveText("AS");
+  await captureReview(page, "01", "Business name", "The public business name appears in the preview.");
   await page.getByLabel("Website").fill("https://anassweets.example");
   await page.getByLabel(/^Logo/).setInputFiles({ name: "logo.png", mimeType: "image/png", buffer: PNG });
   await expect(page.locator(".ob-mark img")).toBeVisible();
@@ -39,6 +41,7 @@ test("a new owner reaches a draft with a sample order in three screens, and runn
   await expect(page.getByRole("checkbox", { name: /Food orders/ })).toHaveCount(0);
   for (const name of ["Online retail", "Beauty and wellness", "Professional services"]) await page.getByRole("checkbox", { name: new RegExp(name) }).check();
   await expect(page.getByRole("checkbox", { name: /^Other/ })).toBeDisabled();
+  await captureReview(page, "02", "Business categories", "The owner picked Food orders and three related categories.");
   await next(page).click();
 
   // Screen 3: a suggested first workflow, and a payment choice only for the workflows that take money.
@@ -49,6 +52,7 @@ test("a new owner reaches a draft with a sample order in three screens, and runn
   await expect(page.getByText("How do customers pay?")).toHaveCount(0);
   await page.getByRole("radio", { name: /Order follow-up/ }).check();
   await page.getByRole("radio", { name: /Pay later/ }).check();
+  await captureReview(page, "03", "First workflow", "The owner can start with an order workflow and pick how customers pay.");
   await page.getByRole("button", { name: "Create my draft" }).click();
 
   await expect(page.getByRole("heading", { name: "Your draft is ready" })).toBeVisible();
@@ -121,6 +125,7 @@ test("on a phone the action bar stays on screen with the keyboard open, and the 
 
   // A shorter viewport stands in for the keyboard: the page scrolls, but the primary button stays inside it.
   await page.getByLabel("Pangalan ng negosyo").fill("Kape ni Mara");
+  await captureReview(page, "04", "Tagalog setup", "The same setup starts in Tagalog.", "tl");
   await page.setViewportSize({ width: 390, height: 420 });
   await page.getByLabel("Pangalan ng negosyo").focus();
   const button = page.getByRole("button", { name: "Susunod" });

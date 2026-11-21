@@ -1,3 +1,4 @@
+import { captureReview } from "./review-capture";
 import { createHmac } from "node:crypto";
 import { expect, test, type Page } from "@playwright/test";
 
@@ -70,10 +71,12 @@ test("booking D-1042: a transfer receipt goes to review, a verified checkout con
   await expect(customer.getByRole("link", { name: "Or pay online with GCash" })).toHaveAttribute("href", checkoutUrl);
   await customer.getByLabel("Transfer reference number").fill("GC 5544 3322 11");
   await customer.getByLabel("Amount you sent (pesos, optional)").fill("350");
+  await captureReview(customer, "06", "Customer payment page", "The customer can enter a transfer reference or open hosted checkout.");
   await customer.getByLabel("Receipt screenshot (optional)").setInputFiles({ name: "receipt.png", mimeType: "image/png", buffer: PNG });
   await customer.getByRole("button", { name: "Send reference" }).click();
   await expect(customer.getByText("Reference received")).toBeVisible();
   await expect(customer.getByText("Your order stays pending until then.")).toBeVisible();
+  await captureReview(customer, "07", "Reference received", "The transfer stays pending while the seller checks their account.");
 
   // Receipts to review: one row with the order, amounts, reference, channel and the private image.
   await page.getByRole("link", { name: "Receipts to review" }).click();
@@ -83,6 +86,7 @@ test("booking D-1042: a transfer receipt goes to review, a verified checkout con
   await expect(row).toContainText("GC 5544 3322 11");
   await expect(row).toContainText("QR Ph or GCash transfer");
   await expect(row.getByRole("link", { name: "Open receipt image" })).toBeVisible();
+  await captureReview(page, "08", "Receipts to review", "Staff can inspect the private receipt and match the reference and amount.");
   expect((await page.request.get((await row.getByRole("link", { name: "Open receipt image" }).getAttribute("href"))!)).headers()["content-type"]).toBe("image/png");
   // The customer cannot open it: the image needs a staff session.
   expect((await customer.request.get((await row.getByRole("link", { name: "Open receipt image" }).getAttribute("href"))!)).status()).toBe(401);
@@ -122,12 +126,14 @@ test("booking D-1042: a transfer receipt goes to review, a verified checkout con
   await expect(payments).toContainText("Receipt submitted, in review");
   await expect(payments).toContainText("Receipt rejected");
   await expect(payments.getByText("Confirmed", { exact: true }).first()).toBeVisible();
+  await captureReview(page, "09", "Verified deposit", "One verified PHP 350 deposit leaves a PHP 850 balance.");
 
   await page.getByRole("region", { name: "Day agenda" }).getByRole("button", { name: /Chair 2/ }).click();
   const card2 = page.getByRole("region", { name: "Chair 2" });
   await expect(card2).toContainText("Active");
   await expect(card2.getByLabel("Payments")).toContainText("Waiting for payment");
   await expect(card2.getByLabel("Payments")).toContainText("Balance outstanding: PHP 1,200.00");
+  await captureReview(page, "10", "Pay later", "The other booking remains active with its full balance outstanding.");
 
   // Exactly one confirmation reached the customer, plus the reason for the rejected duplicate receipt.
   await expect.poll(async () => (await smsTo("+639171230042")).map((m) => m.content), { timeout: 20_000 }).toContain("We could not confirm your payment for D-1042: Already paid through PayMongo checkout");

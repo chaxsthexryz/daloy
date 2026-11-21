@@ -1,3 +1,4 @@
+import { captureReview } from "./review-capture";
 import { expect, test } from "@playwright/test";
 
 // A7: the Steps editor on a disposable workflow. Trigger, branches, the list view, app setup, a mocked test run, save and publish.
@@ -60,6 +61,7 @@ test("edit trigger, steps and branches, then test, save and publish", async ({ p
   await expect(sheetNode).toContainText("Sheet: chosen in Apps");
   await expect(sheetNode.getByRole("img", { name: "Google Sheets" })).toBeHidden();
   await expect(page.locator(".a7-node", { hasText: "Send email" })).toContainText("To: Email from the form");
+  await captureReview(page, "05", "Workflow steps", "The canvas shows the app, action and destination for each step.");
   const level = page.locator(".a7-zoom-level");
   const before = await level.textContent();
   await page.getByRole("button", { name: "Zoom Out" }).click();

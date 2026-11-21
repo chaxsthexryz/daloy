@@ -13,7 +13,7 @@ import { sha256 } from "./http";
 
 // R3 routes: the public pay page, Receipts to review, decisions, private receipt images and the PayMongo webhook for dues.
 const SK = "sk_test_r3";
-const WHSK = "whsk_r3";
+const WHSK = "whsk_" + randomBytes(24).toString("hex");
 const PNG = Buffer.from("89504e470d0a1a0a0000000d4948445200000001000000010806000000", "hex");
 let app: INestApplication;
 let boss: PgBoss;
@@ -153,7 +153,11 @@ describe("decisions", () => {
 
 describe("PayMongo webhook for a due", () => {
   const now = () => Math.floor(Date.now() / 1000);
-  const sign = (body: string) => `t=${now()},te=${createHmac("sha256", WHSK).update(`${now()}.${body}`).digest("hex")}`;
+  const sign = (body: string) => {
+    const timestamp = now();
+    const digest = createHmac("sha256", WHSK).update(`${timestamp}.${body}`).digest("hex");
+    return `t=${timestamp},te=${digest}`;
+  };
   const paidEvent = (id: string, sessionId: string, amount: number) =>
     JSON.stringify({ data: { id, type: "event", attributes: { type: "checkout_session.payment.paid", livemode: false, data: { id: sessionId, attributes: { payments: [{ id: `pay_${id}`, attributes: { amount, currency: "PHP", status: "paid" } }] } } } } });
 

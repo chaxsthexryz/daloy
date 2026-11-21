@@ -69,6 +69,15 @@ describe("setupLeft", () => {
       { provider: "google_sheets", label: "Google Sheet", connected: true, steps: ["log_expense"] },
     ]);
   });
+  it("lists only the apps chosen for checkout and customer replies", () => {
+    const due = { id: "ask", type: "payment_due", config: { reference: "D-1042", amount: "350", kind: "deposit", checkout: false } } as const;
+    const draft = { ...receipt, steps: [due] };
+    expect(setupLeft(draft, new Set())).toEqual([]);
+    const checkout = { ...draft, steps: [{ ...due, config: { ...due.config, checkout: true, channel: "sms" as const, to: "{{trigger.phone}}" } }] };
+    expect(setupLeft(checkout, new Set()).map(app => app.provider)).toEqual(["paymongo", "unisms"]);
+    expect(unconnectedNodes(checkout, new Set(["paymongo"]), true).get("ask")).toBe("UniSMS");
+  });
+
   it("needs nothing for steps without an app", () => {
     expect(setupLeft({ ...receipt, steps: receipt.steps.filter((s) => s.type === "email") }, new Set())).toEqual([]);
   });

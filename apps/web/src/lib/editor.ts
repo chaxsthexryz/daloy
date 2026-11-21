@@ -59,17 +59,27 @@ const NEEDS: Record<string, { provider: string; label: string }> = {
   meta_reply: { provider: "meta_messenger", label: "Facebook Messenger & Instagram" },
 };
 
+function paymentApps(step: Extract<Step, { type: "payment_due" }>) {
+  const apps = [];
+  if (step.config.checkout) apps.push(NEEDS.paymongo_link!);
+  if (step.config.channel === "sms") apps.push(NEEDS.sms!);
+  if (step.config.channel === "messenger") apps.push(NEEDS.meta_reply!);
+  return apps;
+}
+
 export type AppNeed = { provider: string; label: string; connected: boolean; steps: string[] };
 
 /** Each app the draft's steps need, once, in step order, with whether the workspace has it connected. */
 export function setupLeft(draft: Draft, connected: ReadonlySet<string>): AppNeed[] {
   const needs = new Map<string, AppNeed>();
   for (const s of draft.steps) {
-    const app = NEEDS[s.type];
-    if (!app) continue;
-    const need = needs.get(app.provider) ?? { ...app, connected: connected.has(app.provider), steps: [] };
-    need.steps.push(s.id);
-    needs.set(app.provider, need);
+    const apps = s.type === "payment_due" ? paymentApps(s) : [NEEDS[s.type]];
+    for (const app of apps) {
+      if (!app) continue;
+      const need = needs.get(app.provider) ?? { ...app, connected: connected.has(app.provider), steps: [] };
+      need.steps.push(s.id);
+      needs.set(app.provider, need);
+    }
   }
   return [...needs.values()];
 }
@@ -106,6 +116,13 @@ export function unconnectedNodes(draft: Draft, connected: ReadonlySet<string>, m
     if (!ok) out.set(id, entry.app.en);
   };
   check("trigger", triggerEntry(draft.trigger.type));
-  for (const s of draft.steps) check(s.id, stepEntry(s.type));
+  for (const step of draft.steps) {
+    if (step.type === "payment_due") {
+      const missing = paymentApps(step).filter(app => !connected.has(app.provider));
+      if (missing.length) out.set(step.id, missing.map(app => app.label).join(", "));
+    } else {
+      check(step.id, stepEntry(step.type));
+    }
+  }
   return out;
 }
