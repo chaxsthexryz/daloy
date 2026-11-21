@@ -96,6 +96,9 @@ export default async function setup() {
   process.env.E2E_TELEGRAM_TOKEN = providers.telegram.token;
   process.env.E2E_PAYMONGO_KEY = "sk_test_e2e0000000000000000";
   process.env.E2E_PAYMONGO_WEBHOOK_SECRET = "whsk_e2e000000000000";
+  // UniSMS (R3 payment replies): the fake accepts this key only.
+  providers.unisms.secretKey = "unisms_e2e_key_0000000001";
+  process.env.E2E_UNISMS_KEY = providers.unisms.secretKey;
   providers.notion.token = "ntn_e2eNotionToken0123456789abcdef";
   process.env.E2E_NOTION_TOKEN = providers.notion.token;
   process.env.E2E_NOTION_DATABASE = providers.notion.database;

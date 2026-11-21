@@ -52,6 +52,20 @@ export const STEP_CATALOG: Record<Step["type"], CatalogEntry> = {
   notion: { app: tx("Notion", "Notion"), mark: "notion", provider: "notion", action: tx("Add a page", "Magdagdag ng page"), description: tx("Add one page to the Notion database chosen in Apps.", "Magdagdag ng isang page sa Notion database na pinili sa Apps."), required: ["title"], input: tx("A page title and optional text properties.", "Pamagat ng page at mga text property kung gusto."), output: tx("Whether the page was added.", "Kung naidagdag ang page."), outcomes: queued },
   trello: { app: tx("Trello", "Trello"), mark: "trello", provider: "trello", action: tx("Add a card", "Magdagdag ng card"), description: tx("Add one card to the Trello list chosen in Apps.", "Magdagdag ng isang card sa Trello list na pinili sa Apps."), required: ["name"], input: tx("A card name and optional description.", "Pangalan ng card at paglalarawan kung gusto."), output: tx("Whether the card was added.", "Kung naidagdag ang card."), outcomes: queued },
   booking: { app: null, mark: "calendar", action: tx("Booking", "Reserbasyon"), description: tx("Reserve, move or cancel a booking for a resource such as a therapist or a room.", "Mag-reserve, maglipat o magkansela ng booking para sa resource gaya ng therapist o kuwarto."), required: ["action"], input: tx("The action, the resource and time, or the booking reference.", "Ang aksyon, ang resource at oras, o ang reference ng booking."), output: tx("The booking reference and time.", "Ang reference at oras ng booking."), outcomes: [tx("Booked or changed", "Na-book o nabago"), tx("Time already taken", "Kinuha na ang oras"), tx("Booking not found", "Hindi nakita ang booking")] },
+  payment_due: {
+    app: null, mark: "form", action: tx("Ask for payment", "Humingi ng bayad"),
+    description: tx("Create a payment request for an order or booking.", "Gumawa ng kahilingan sa bayad para sa order o booking."),
+    required: ["amount", "reference"], input: tx("Order reference and amount in pesos.", "Reference ng order at halaga sa piso."),
+    output: tx("Payment request and payment page link.", "Kahilingan sa bayad at link sa pahina ng pagbabayad."),
+    outcomes: [tx("Payment requested", "Nahiling ang bayad"), tx("Failed, with the reason", "Nabigo, may dahilan")],
+  },
+  payment_expire: {
+    app: null, mark: "clock", action: tx("Cancel if unpaid", "Kanselahin kung hindi bayad"),
+    description: tx("Check the payment request at its deadline and release an expired booking.", "Suriin ang bayad sa takdang oras at palayain ang slot ng napasong booking."),
+    required: ["due"], input: tx("An earlier payment request step.", "Naunang hakbang na humingi ng bayad."),
+    output: tx("Whether the request expired or was kept.", "Kung napaso o nanatili ang kahilingan."),
+    outcomes: [tx("Expired", "Napaso"), tx("Kept", "Nanatili")],
+  },
   paymongo_link: { app: PAYMONGO, mark: "paymongo", provider: "paymongo", action: tx("Create a payment link", "Gumawa ng payment link"), description: tx("Create a checkout link for the amount in pesos. A later step sends it to the customer.", "Gumawa ng checkout link para sa halaga sa piso. Ipapadala ito ng susunod na step sa customer."), required: ["amount", "description", "reference"], input: tx("The amount in pesos, a description and the order reference.", "Ang halaga sa piso, paglalarawan at reference ng order."), output: tx("The checkout link.", "Ang checkout link."), outcomes: [tx("Link created", "Nagawa ang link"), tx("Failed, with the reason", "Nabigo, may dahilan")] },
   payment_status: { app: PAYMONGO, mark: "paymongo", provider: "paymongo", action: tx("Check a payment", "Tingnan ang bayad"), description: tx("Read the current status of a payment link made earlier in this run. It never calls PayMongo.", "Basahin ang kasalukuyang status ng payment link na ginawa kanina sa run na ito. Hindi ito tumatawag sa PayMongo."), required: ["link"], input: tx("The id of the payment link step.", "Ang id ng step ng payment link."), output: tx("Pending, paid, needs review or refunded.", "Pending, bayad na, kailangang suriin o na-refund."), outcomes: [tx("Pending", "Pending"), tx("Paid", "Bayad na"), tx("Needs review", "Kailangang suriin"), tx("Refunded", "Na-refund")] },
   meta_reply: { app: META, mark: "messenger", provider: "meta_messenger", action: tx("Reply to a message", "Sumagot sa mensahe"), description: tx("Reply to the customer in the same conversation, within Meta's 24-hour window.", "Sumagot sa customer sa parehong usapan, sa loob ng 24 oras na window ng Meta."), required: ["text"], input: tx("The reply text. The customer and channel come from the message.", "Ang text ng sagot. Ang customer at channel ay mula sa mensahe."), output: tx("Whether the reply was sent.", "Kung naipadala ang sagot."), outcomes: queued },
@@ -165,6 +179,9 @@ export function destination(step: Step, ctx: DestinationContext): string {
       return line(label("Task", "Gawain"), step.config.task);
     case "booking":
       return step.config.action === "create" ? line(label("Resource", "Resource"), short(human(String(step.config.resource ?? ""), ctx))) : line(label("Booking", "Booking"), short(human(String(step.config.booking ?? ""), ctx)));
+    case "payment_expire":
+      return line(label("Payment request", "Kahilingan sa bayad"), step.config.due);
+    case "payment_due":
     case "paymongo_link":
       return line(label("Amount", "Halaga"), `${human(String(step.config.amount), ctx)} ${pick(tx("pesos", "piso"), language)}`);
     case "payment_status":

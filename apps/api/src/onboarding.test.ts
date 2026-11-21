@@ -145,7 +145,7 @@ describe("onboarding first draft", () => {
     const b = await newOwner();
     await throughScreen3(b, { goal: "order_follow_up", payment: "gcash_paymongo" });
     await b.agent.post("/onboarding/finish").expect(201);
-    expect((await b.agent.get("/onboarding").expect(200)).body.template.slug).toBe("order-to-sheets");
+    expect((await b.agent.get("/onboarding").expect(200)).body.template.slug).toBe("order-gcash-checkout");
   });
 
   it("opens the same draft when onboarding runs twice, one after the other or at the same moment", async () => {

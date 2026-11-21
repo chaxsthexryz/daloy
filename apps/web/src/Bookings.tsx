@@ -2,6 +2,7 @@ import { Text, useLanguage } from "./Language";
 import { useEffect, useRef, useState } from "react";
 import { api } from "./api";
 import { PageHead } from "./Runs";
+import { BookingPayments } from "./Receipts";
 import "./activity.css";
 import { longDate } from "./lib/activity";
 import { ampm, byDay } from "./lib/agenda";
@@ -122,6 +123,7 @@ export function BookingsPage() {
             </p>
             {chosen.attention && <p className="act-muted">{t("The run for this booking failed or waits for review. The booking is still active.")}</p>}
             {chosen.runId && <p><a href={`#/runs/${chosen.runId}`}>{t("Open run detail")}</a></p>}
+            <BookingPayments bookingId={chosen.id} />
             {moving?.id === chosen.id ? (
               <form
                 className="act-move"

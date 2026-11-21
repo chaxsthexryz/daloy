@@ -12,6 +12,7 @@ import { NewAutomationPage } from "./NewAutomation";
 import { BuildWithAiPage } from "./BuildWithAi";
 import { OfficeRequestPage, TryOfficeRequest } from "./OfficeRequests";
 import { BookingsPage } from "./Bookings";
+import { ReceiptsPage } from "./Receipts";
 import { ResourcesPage } from "./Resources";
 import { AiModelPage } from "./Settings";
 import { SettingsPage } from "./AppSettings";
@@ -31,7 +32,7 @@ const RESET = /^#\/reset-password\/([A-Za-z0-9_-]{43})$/;
 const INVITE = /^#\/invite\/([A-Za-z0-9_-]{43})$/;
 
 /**
- * Hash routes (#/ is Automations, #/advanced the developer menu, #/w/<id>, #/w/<id>/runs, #/w/<id>/versions, #/runs/<id> (and #/runs/<id>/ask), #/tokens, #/secrets, #/settings, #/settings/ai, #/settings/business, #/onboarding (first-time setup), #/apps (and #/apps/<app>-<outcome>), #/activity (and #/activity/ask), #/new, #/ai (Build with AI), #/resources, #/bookings,
+ * Hash routes (#/ is Automations, #/advanced the developer menu, #/w/<id>, #/w/<id>/runs, #/w/<id>/versions, #/runs/<id> (and #/runs/<id>/ask), #/tokens, #/secrets, #/settings, #/settings/ai, #/settings/business, #/onboarding (first-time setup), #/apps (and #/apps/<app>-<outcome>), #/activity (and #/activity/ask), #/new, #/ai (Build with AI), #/resources, #/bookings, #/receipts,
  * #/verify-sender/<token> for the Gmail confirmation link, #/team, #/invite/<token> for an invite link,
  * #/forgot-password and #/reset-password/<token> before sign-in, #/account to change the password,
  * #/answer/<token> to sign in before a named approval (decision 0022),
@@ -120,6 +121,7 @@ function Route({ hash, user }: { hash: string; user: User }) {
   if (hash === "#/team" && user.role === "owner") return <TeamPage user={user} />;
   if (hash === "#/resources" && user.role === "owner") return <ResourcesPage />;
   if (hash === "#/bookings" && (user.role === "owner" || user.role === "operator")) return <BookingsPage />;
+  if (hash === "#/receipts" && (user.role === "owner" || user.role === "operator")) return <ReceiptsPage user={user} />;
   const verify = /^#\/verify-sender\/([A-Za-z0-9_-]{43})$/.exec(hash);
   if (verify) return <VerifySenderPage key={verify[1]} token={verify[1]!} />;
   return <Automations user={user} />;

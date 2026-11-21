@@ -101,7 +101,27 @@ export const airtableConfigSchema = z.object({ fields: fieldMap.refine((f) => Ob
 export const notionConfigSchema = z.object({ title: template(2000).min(1), fields: fieldMap.default({}) });
 export const trelloConfigSchema = z.object({ name: template(500).min(1), desc: template(10_000).optional() });
 // link is the id of the paymongo_link step to check. The current status of its payment in this run: pending, paid, needs_review or refunded. Read-only, never calls PayMongo.
-export const paymentStatusConfigSchema = z.object({ link: stepId });
+export const paymentStatusConfigSchema = z.object({ link: stepId.describe("Id of a paymongo_link or payment_due step of this workflow.") });
+// R3 (decision 0088): what a customer owes on one order or booking. The customer pays the QR Ph code or GCash number
+// shown on the pay page and sends the transfer reference, or pays PayMongo checkout when it is on. Nothing here confirms
+// a payment: a reviewer or a matching PayMongo event does, and then Daloy sends confirmedMessage once.
+export const paymentDueConfigSchema = z
+  .object({
+    reference: template(200).min(1).describe("The order or booking reference the customer sees, such as {{trigger.order_id}}."),
+    kind: z.enum(["deposit", "full", "balance"]).default("deposit").describe("deposit, full or balance. A pay-later booking asks for the balance and is never cancelled for it."),
+    amount: template(100).min(1).describe("Amount in pesos, like 350 or 350.50."),
+    total: template(100).min(1).optional().describe("For a deposit: the full price in pesos. What is left is shown as the balance."),
+    booking: stepId.optional().describe("Id of the booking step that made the booking this payment is for."),
+    checkout: z.boolean().default(false).describe("Also offer PayMongo checkout (GCash and others). Needs PayMongo connected."),
+    reviewer: z.email().max(254).transform((s) => s.toLowerCase()).optional().describe("Email of the owner or operator who reviews receipts for this. Empty: any owner or operator."),
+    channel: z.enum(["sms", "messenger"]).optional().describe("How the customer is told about the decision: sms or messenger."),
+    to: template(500).min(1).optional().describe("The customer's mobile number for SMS, or their Messenger id, such as {{trigger.phone}}."),
+    confirmedMessage: template(2500).min(1).optional().describe("Sent once when the payment is confirmed."),
+  })
+  .refine((c) => (c.channel === undefined) === (c.to === undefined), { message: "set both channel and to, or neither", path: ["to"] });
+// The unpaid deadline (R3): cancels the due made by the named payment_due step of this run when it is still unpaid,
+// expires its open checkout and releases the booking slot. Branches: expired, or kept when it was paid meanwhile.
+export const paymentExpireConfigSchema = z.object({ due: stepId.describe("Id of the payment_due step whose payment this cancels.") });
 // Saves the files a form collected into the Google Drive folder picked in Apps. It takes no settings: the files are
 // the form's file fields. Queued like Sheets.
 export const driveConfigSchema = z.object({}).default({});
@@ -161,6 +181,8 @@ const stepSchema = z.discriminatedUnion("type", [
   z.object({ id: stepId, type: z.literal("booking"), config: bookingConfigSchema }),
   z.object({ id: stepId, type: z.literal("paymongo_link"), config: paymongoLinkConfigSchema }),
   z.object({ id: stepId, type: z.literal("payment_status"), config: paymentStatusConfigSchema }),
+  z.object({ id: stepId, type: z.literal("payment_due"), config: paymentDueConfigSchema }),
+  z.object({ id: stepId, type: z.literal("payment_expire"), config: paymentExpireConfigSchema }),
   z.object({ id: stepId, type: z.literal("meta_reply"), config: metaReplyConfigSchema }),
 ]);
 export type Step = z.infer<typeof stepSchema>;
@@ -171,6 +193,7 @@ export const BRANCHES: Partial<Record<Step["type"], readonly string[]>> = {
   condition: ["true", "false", "invalid"],
   approval: ["approved", "rejected", "timeout"],
   booking: ["done", "taken", "not_found"],
+  payment_expire: ["expired", "kept"],
 };
 
 const edgeSchema = z.object({ from: stepId, to: stepId, on: z.string().max(32).optional() });
@@ -346,7 +369,9 @@ export const definitionSchema = z
         const fileFields = def.trigger.type === "form" ? def.trigger.config.fields.filter((f) => f.type === "file").map((f) => f.name) : def.trigger.type === "meta_dm" ? ["image"] : [];
         for (const name of s.config.files ?? []) if (!fileFields.includes(name)) fail(`ai step "${s.id}" reads "${name}", which is not a file field of the form`);
       }
-      if (s.type === "payment_status" && !def.steps.some((o) => o.id === s.config.link && o.type === "paymongo_link")) fail(`payment_status step "${s.id}" needs link to be the id of a paymongo_link step`);
+      if (s.type === "payment_status" && !def.steps.some((o) => o.id === s.config.link && (o.type === "paymongo_link" || o.type === "payment_due"))) fail(`payment_status step "${s.id}" needs link to be the id of a paymongo_link or payment_due step`);
+      if (s.type === "payment_expire" && !def.steps.some((o) => o.id === s.config.due && o.type === "payment_due")) fail(`payment_expire step "${s.id}" needs due to be the id of a payment_due step`);
+      if (s.type === "payment_due" && s.config.booking !== undefined && !def.steps.some((o) => o.id === s.config.booking && o.type === "booking" && o.config.action === "create")) fail(`payment_due step "${s.id}" needs booking to be the id of a booking step that creates a booking`);
       if (s.type !== "booking") continue;
       if (s.config.start !== undefined && !bookingStartField(def.trigger, s.config)) fail(`booking step "${s.id}" needs start to be {{trigger.<field>}} for a datetime field of the trigger`);
       // Changing a booking is for staff (the Run button), MCP (its own tools) and signed webhooks, never a public form.

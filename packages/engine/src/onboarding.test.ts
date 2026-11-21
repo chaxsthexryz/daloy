@@ -63,9 +63,9 @@ describe("closest existing template", () => {
 
   it("maps goals to the templates the first release has", () => {
     expect(templateFor("bookings", null).slug).toBe("lead-to-booking");
-    expect(templateFor("receipt_review", "manual_qrph").slug).toBe("receipt-expense");
+    expect(templateFor("receipt_review", "manual_qrph").slug).toBe("booking-deposit-review");
     expect(templateFor("order_follow_up", "pay_later").slug).toBe("store-orders");
-    expect(templateFor("order_follow_up", "gcash_paymongo").slug).toBe("order-to-sheets");
+    expect(templateFor("order_follow_up", "gcash_paymongo").slug).toBe("order-gcash-checkout");
   });
 
   it("suggests a goal from the primary category and falls back to order follow-up", () => {

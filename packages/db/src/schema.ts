@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import { LANGUAGES, RUN_STATES, STEP_STATES, type FileRef } from "@daloy/engine";
-import { bigint, boolean, check, customType, date, index, integer, jsonb, pgEnum, pgSequence, pgTable, primaryKey, text, timestamp, unique, uuid, type AnyPgColumn } from "drizzle-orm/pg-core";
+import { bigint, boolean, check, customType, date, index, integer, jsonb, pgEnum, pgSequence, pgTable, primaryKey, text, timestamp, unique, uniqueIndex, uuid, type AnyPgColumn } from "drizzle-orm/pg-core";
 
 const id = () => uuid("id").primaryKey().defaultRandom();
 const createdAt = () => timestamp("created_at", { withTimezone: true }).notNull().defaultNow();
@@ -721,7 +721,7 @@ export const calendarEvents = pgTable("calendar_events", {
   updatedAt: ts("updated_at").notNull().defaultNow(),
 });
 
-export const PAYMENT_STATES = ["pending", "paid", "refunded", "needs_review"] as const;
+export const PAYMENT_STATES = ["pending", "paid", "refunded", "needs_review", "expired"] as const;
 export type PaymentState = (typeof PAYMENT_STATES)[number];
 
 /** One PayMongo checkout link a run created. Moves pending -> paid -> refunded, only forward; an amount mismatch parks it in needs_review. */
@@ -742,6 +742,10 @@ export const payments = pgTable(
     status: text("status", { enum: PAYMENT_STATES }).notNull().default("pending"),
     providerPaymentId: text("provider_payment_id"),
     paidAt: ts("paid_at"),
+    // R3 (decision 0089): the amount owed this checkout belongs to, and what the paid event said was paid.
+    dueId: uuid("due_id").references((): AnyPgColumn => paymentDues.id, { onDelete: "set null" }),
+    paidAmountCentavos: integer("paid_amount_centavos"),
+    paidCurrency: text("paid_currency"),
     createdAt: createdAt(),
     updatedAt: ts("updated_at").notNull().defaultNow(),
   },
@@ -749,7 +753,7 @@ export const payments = pgTable(
     unique().on(t.runId, t.stepId),
     index("payments_provider_payment").on(t.providerPaymentId),
     check("payments_amount", sql`${t.amountCentavos} > 0`),
-    check("payments_status", sql`${t.status} in ('pending', 'paid', 'refunded', 'needs_review')`),
+    check("payments_status", sql`${t.status} in ('pending', 'paid', 'refunded', 'needs_review', 'expired')`),
   ],
 );
 
@@ -785,3 +789,121 @@ export const receiptReferences = pgTable(
   },
   (t) => [primaryKey({ columns: [t.userId, t.normalizedRef] })],
 );
+
+export const DUE_KINDS = ["deposit", "full", "balance"] as const;
+export const DUE_STATES = ["pending", "confirmed", "cancelled", "refunded"] as const;
+export type DueState = (typeof DUE_STATES)[number];
+export const CLAIM_FLAGS = ["duplicate_reference", "amount_mismatch", "unreadable_upload", "already_confirmed", "paid_twice", "late_payment"] as const;
+export type ClaimFlag = (typeof CLAIM_FLAGS)[number];
+
+/**
+ * An amount a customer owes on one order or booking (R3, decision 0088): a deposit, the full price or a balance.
+ * Moves pending -> confirmed -> refunded, or pending -> cancelled, never back. Only a reviewer's decision on a claim or
+ * a fully matching PayMongo event confirms it, and the confirmation names its source, who and when.
+ */
+export const paymentDues = pgTable(
+  "payment_dues",
+  {
+    id: id(),
+    userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    test: boolean("test").notNull(),
+    workflowId: uuid("workflow_id").references(() => workflows.id, { onDelete: "set null" }),
+    runId: uuid("run_id").notNull().references(() => runs.id, { onDelete: "cascade" }),
+    stepId: text("step_id").notNull(),
+    reference: text("reference").notNull(),
+    bookingId: uuid("booking_id").references(() => bookings.id),
+    kind: text("kind", { enum: DUE_KINDS }).notNull(),
+    amountCentavos: integer("amount_centavos").notNull(),
+    totalCentavos: integer("total_centavos"),
+    currency: text("currency").notNull().default("PHP"),
+    status: text("status", { enum: DUE_STATES }).notNull().default("pending"),
+    // The public pay page's address: 32 random bytes, so it cannot be guessed from the order reference.
+    token: text("token").notNull().unique(),
+    reviewerId: uuid("reviewer_id").references(() => users.id, { onDelete: "set null" }),
+    replyChannel: text("reply_channel", { enum: ["sms", "messenger"] }),
+    replyTo: text("reply_to"),
+    replyText: text("reply_text"),
+    confirmedSource: text("confirmed_source", { enum: ["transfer", "checkout"] }),
+    confirmedBy: uuid("confirmed_by").references(() => users.id, { onDelete: "set null" }),
+    confirmedAt: ts("confirmed_at"),
+    confirmedClaimId: uuid("confirmed_claim_id"),
+    confirmedPaymentId: uuid("confirmed_payment_id"),
+    // "<runId>:<stepId>" of the expire step that cancelled it, so a retry of that step reads its own result.
+    cancelledBy: text("cancelled_by"),
+    createdAt: createdAt(),
+    updatedAt: ts("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    unique().on(t.runId, t.stepId),
+    // One open or confirmed amount of each kind per order: a second deposit request for D-1042 is refused.
+    uniqueIndex("payment_dues_open_order").on(t.userId, t.test, t.reference, t.kind).where(sql`${t.status} in ('pending', 'confirmed')`),
+    index("payment_dues_booking").on(t.bookingId),
+    check("payment_dues_kind", sql`${t.kind} in ('deposit', 'full', 'balance')`),
+    check("payment_dues_status", sql`${t.status} in ('pending', 'confirmed', 'cancelled', 'refunded')`),
+    check("payment_dues_amount", sql`${t.amountCentavos} > 0 and (${t.totalCentavos} is null or ${t.totalCentavos} >= ${t.amountCentavos})`),
+    check("payment_dues_confirmed", sql`(${t.status} in ('confirmed', 'refunded')) = (${t.confirmedSource} is not null and ${t.confirmedAt} is not null)`),
+  ],
+);
+
+/**
+ * Something a person decides about a due (decision 0088): a customer's transfer receipt, or a PayMongo payment that did
+ * not match (wrong amount, paid twice, paid after the deadline). The Receipts to review list is the open ones.
+ */
+export const paymentClaims = pgTable(
+  "payment_claims",
+  {
+    id: id(),
+    userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    dueId: uuid("due_id").notNull().references(() => paymentDues.id, { onDelete: "cascade" }),
+    channel: text("channel", { enum: ["transfer", "checkout"] }).notNull(),
+    transferRef: text("transfer_ref"),
+    normalizedRef: text("normalized_ref"),
+    submittedCentavos: integer("submitted_centavos"),
+    paymentId: uuid("payment_id").unique().references(() => payments.id, { onDelete: "cascade" }),
+    image: bytea("image"),
+    imageType: text("image_type", { enum: ["jpeg", "png", "webp", "heic"] }),
+    imageSize: integer("image_size"),
+    flags: text("flags").array().$type<ClaimFlag[]>().notNull().default(sql`'{}'::text[]`),
+    status: text("status", { enum: ["open", "clarify", "confirmed", "rejected"] }).notNull().default("open"),
+    reason: text("reason"),
+    decidedBy: uuid("decided_by").references(() => users.id, { onDelete: "set null" }),
+    decidedAt: ts("decided_at"),
+    version: integer("version").notNull().default(1),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index("payment_claims_open").on(t.userId, t.status),
+    index("payment_claims_ref").on(t.userId, t.normalizedRef),
+    check("payment_claims_status", sql`${t.status} in ('open', 'clarify', 'confirmed', 'rejected')`),
+    check("payment_claims_flags", sql`${t.flags} <@ array['duplicate_reference', 'amount_mismatch', 'unreadable_upload', 'already_confirmed', 'paid_twice', 'late_payment']::text[]`),
+    check("payment_claims_image", sql`(${t.image} is null) = (${t.imageType} is null) and (${t.imageSize} is null or ${t.imageSize} between 1 and 5242880)`),
+    check("payment_claims_amount", sql`${t.submittedCentavos} is null or ${t.submittedCentavos} > 0`),
+  ],
+);
+
+/** Every change to a due, in order, for the one payment history a booking or order shows. Written in the transaction that made the change. */
+export const paymentHistory = pgTable(
+  "payment_history",
+  {
+    id: id(),
+    userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    dueId: uuid("due_id").notNull().references(() => paymentDues.id, { onDelete: "cascade" }),
+    event: text("event").notNull(),
+    source: text("source", { enum: ["transfer", "checkout", "staff", "workflow"] }).notNull(),
+    actorId: uuid("actor_id").references(() => users.id, { onDelete: "set null" }),
+    claimId: uuid("claim_id"),
+    detail: jsonb("detail").$type<Record<string, string | number | boolean | null>>().notNull().default({}),
+    at: ts("at").notNull().defaultNow(),
+  },
+  (t) => [index("payment_history_due").on(t.dueId, t.at)],
+);
+
+/** What the public pay page shows: the seller's GCash or QR Ph number, the account name and the QR Ph image. */
+export const paymentSettings = pgTable("payment_settings", {
+  userId: uuid("user_id").primaryKey().references(() => users.id, { onDelete: "cascade" }),
+  gcashNumber: text("gcash_number"),
+  accountName: text("account_name"),
+  qrImage: bytea("qr_image"),
+  qrType: text("qr_type", { enum: ["jpeg", "png", "webp"] }),
+  updatedAt: ts("updated_at").notNull().defaultNow(),
+});

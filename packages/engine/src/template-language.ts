@@ -6,9 +6,9 @@ const LABELS: Record<string, string> = {
   "Your name": "Pangalan mo", "Your email": "Email mo", "Email": "Email", "How can we help?": "Paano kami makakatulong?",
   "What needs attention?": "Ano ang kailangang asikasuhin?", "Where is it?": "Saan ito?", "Anything else we should know?": "May iba pa ba kaming dapat malaman?",
   "What do you want to buy?": "Ano ang gusto mong bilhin?", "Estimated cost": "Tinatayang halaga", "Why is it needed?": "Bakit ito kailangan?",
-  "Service": "Serbisyo", "Appointment time": "Oras ng appointment", "Preferred time": "Gustong oras", "Who or what to book": "Sino o ano ang ibu-book", "What do you need?": "Ano ang kailangan mo?", "What do you want to order?": "Ano ang gusto mong i-order?", "Amount in pesos": "Halaga sa piso", "Deposit in pesos": "Deposito sa piso", "Invoice number": "Numero ng invoice", "Customer name": "Pangalan ng customer", "Customer email": "Email ng customer", "What renews? (domain, hosting, SSL, permit, insurance)": "Ano ang ire-renew? (domain, hosting, SSL, permit, insurance)", "Expires on": "Mag-e-expire sa", "Send the reminder to": "Pagpapadalhan ng paalala", "Order number": "Numero ng order", "Total in pesos": "Kabuuan sa piso", "Receipt photo": "Litrato ng resibo", "Note": "Tala",
+  "Service": "Serbisyo", "Appointment time": "Oras ng appointment", "Preferred time": "Gustong oras", "Who or what to book": "Sino o ano ang ibu-book", "What do you need?": "Ano ang kailangan mo?", "What do you want to order?": "Ano ang gusto mong i-order?", "Amount in pesos": "Halaga sa piso", "Deposit in pesos": "Deposito sa piso", "Invoice number": "Numero ng invoice", "Customer name": "Pangalan ng customer", "Customer email": "Email ng customer", "What renews? (domain, hosting, SSL, permit, insurance)": "Ano ang ire-renew? (domain, hosting, SSL, permit, insurance)", "Expires on": "Mag-e-expire sa", "Send the reminder to": "Pagpapadalhan ng paalala", "Order number": "Numero ng order", "Total in pesos": "Kabuuan sa piso", "Receipt photo": "Litrato ng resibo", "Note": "Tala", "Mobile number": "Numero ng mobile",
 };
-type Message = { subject?: string; text?: string; message?: string };
+type Message = { subject?: string; text?: string; message?: string; confirmedMessage?: string };
 
 /** Used only when generating a fresh template, never when reading or running saved definitions. */
 export function localizeGeneratedDefinition(definition: WorkflowDefinition, language: Language, kind: string, values: { businessName?: string; approver?: string; extraFields?: string[] } = {}): WorkflowDefinition {
@@ -80,6 +80,21 @@ export function localizeGeneratedDefinition(definition: WorkflowDefinition, lang
       send_deposit: { subject: "Na-approve ang quote mo", text: "Hi {{trigger.name}}, kaya naming gawin. Pakibayaran ang {{trigger.deposit}} pisong deposito para makumpirma: {{steps.deposit_link.output.url}}" },
       tell_declined: { subject: "Tungkol sa quote request mo", text: "Hi {{trigger.name}}, salamat sa pagtanong. Hindi pa namin ito matatanggap sa ngayon." },
       tell_no_decision: { subject: "Naghihintay ang quote request ni {{trigger.name}}", text: "Walang sumagot sa quote request ni {{trigger.name}} ({{trigger.email}}) sa loob ng dalawang araw. Pakisagot siya." },
+    },
+    "booking-deposit-review": {
+      decide: { subject: "Booking request mula kay {{trigger.name}}", message: "Humihingi si {{trigger.name}} ({{trigger.phone}}) ng {{trigger.service}} sa {{trigger.appointment_at}}. Kapag inaprubahan mo, ibu-book ito ng Daloy at hihingi ng deposito." },
+      ask_deposit: { confirmedMessage: "Hi {{trigger.name}}, natanggap namin ang 350 pisong deposito para sa {{steps.book.output.reference}}. Kita tayo sa {{trigger.appointment_at}}." },
+      send_pay_link: { message: "Hi {{trigger.name}}, naka-hold ang slot mo {{steps.book.output.reference}}. Bayaran ang 350 pisong deposito at ipadala ang reference dito: {{steps.ask_deposit.output.payUrl}}" },
+      remind: { message: "Paalala: hindi pa bayad ang deposito para sa {{steps.book.output.reference}}. Magbayad at ipadala ang reference dito: {{steps.ask_deposit.output.payUrl}}" },
+      tell_released: { message: "Hi {{trigger.name}}, hindi namin natanggap ang deposito para sa {{steps.book.output.reference}}, kaya binitawan na ang slot. Mag-book ulit kahit kailan." },
+      tell_taken: { message: "Hi {{trigger.name}}, may naka-book na sa {{trigger.appointment_at}}. Pumili ng ibang oras." },
+      tell_declined: { message: "Hi {{trigger.name}}, hindi namin matatanggap ang booking sa {{trigger.appointment_at}}. Pumili ng ibang oras." },
+    },
+    "order-gcash-checkout": {
+      ask_payment: { confirmedMessage: "Hi {{trigger.customer_name}}, kumpirmado na ang bayad mo para sa order {{trigger.order_id}}. Salamat!" },
+      send_checkout: { message: "Hi {{trigger.customer_name}}, bayaran ang {{trigger.amount}} piso para sa order {{trigger.order_id}} dito: {{steps.ask_payment.output.checkoutUrl}}" },
+      remind: { message: "Paalala: hindi pa bayad ang order {{trigger.order_id}}. Magbayad dito: {{steps.ask_payment.output.checkoutUrl}}" },
+      tell_cancelled: { message: "Hi {{trigger.customer_name}}, kinansela ang order {{trigger.order_id}} dahil hindi nabayaran sa oras. Mag-reply kung nakabayad ka na." },
     },
     "meta-receipt-intake": {
       approve: {

@@ -105,6 +105,8 @@ describe("destination line", () => {
       trello: { name: "n" },
       booking: { action: "cancel", booking: "{{trigger.reference}}" },
       paymongo_link: { amount: "100", description: "d", reference: "r" },
+      payment_due: { reference: "D-1042", amount: "350" },
+      payment_expire: { due: "ask_deposit" },
       payment_status: { link: "pay_1" },
       meta_reply: { recipientId: "{{trigger.senderId}}", channel: "{{trigger.channel}}", text: "t" },
       calendar: { title: "t" },

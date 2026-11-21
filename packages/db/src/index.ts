@@ -8,6 +8,7 @@ export * from "./ai-settings";
 export * from "./approvals";
 export * from "./brand";
 export * from "./bookings";
+export * from "./payment-review";
 export * from "./calendar";
 export * from "./connections";
 export * from "./crypto";

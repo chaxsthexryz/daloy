@@ -143,7 +143,8 @@ export async function startFakeProviders(port = 0) {
   // Google Drive: folders by id, and the files saved into them (bytes are kept as a hash, not stored).
   const driveFolders = new Map<string, { name: string; editors: Set<string>; sharedDriveId: string | null }>();
   const driveFiles: { id: string; name: string; parent: string; mimeType: string; size: number; sha256: string }[] = [];
-  const paymongo = { sessions: [] as { id: string; amount: number }[], keys: new Map<string, unknown>() }; // keys: Idempotency-Key -> stored response
+  // keys: Idempotency-Key -> stored response. busy: session ids whose expire answers 400 (a payment in progress).
+  const paymongo = { sessions: [] as { id: string; amount: number; status?: "active" | "expired" }[], keys: new Map<string, unknown>(), busy: new Set<string>() };
   const teams = { flows: new Set(["flow-purchasing"]), posts: [] as { flow: string; text: string }[] };
   // Gmail API (decision 0063): messages sent with a Google OAuth access token, as the RFC 822 text Google received.
   const gmail = { sent: [] as { id: string; user: string; raw: string }[] };
@@ -634,6 +635,17 @@ export async function startFakeProviders(port = 0) {
         return answer(200, { ok: true, channel: channel.id, ts });
       }
       return json(res, 200, { ok: false, error: "unknown_method" });
+    }
+    // PayMongo expire (R3): 400 for a session with a payment in progress, like the real Expire API.
+    const expire = /^\/v1\/checkout_sessions\/([^/]+)\/expire$/.exec(path);
+    if (expire) {
+      const [user] = Buffer.from((req.headers.authorization ?? "").replace(/^Basic /, ""), "base64").toString().split(":");
+      if (!user?.startsWith("sk_test_")) return json(res, 401, { errors: [{ code: "authentication_error", detail: "Invalid authentication credentials" }] });
+      const s = paymongo.sessions.find((x) => x.id === expire[1]);
+      if (!s) return json(res, 404, { errors: [{ code: "resource_not_found", detail: "No such checkout session" }] });
+      if (paymongo.busy.has(s.id) || s.status === "expired") return json(res, 400, { errors: [{ code: "parameter_invalid", detail: "The checkout session cannot be expired." }] });
+      s.status = "expired";
+      return answer(200, { data: { id: s.id, type: "checkout_session", attributes: { status: "expired", livemode: false } } });
     }
     // PayMongo: Basic auth with a test secret key. A repeated Idempotency-Key gets the stored answer, not a second session.
     if (path === "/v1/checkout_sessions" || path === "/v1/webhooks") {

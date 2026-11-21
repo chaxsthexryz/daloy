@@ -39,14 +39,11 @@ export const resumeStep = (s: OnboardingState): 1 | 2 | 3 => Math.min(Math.max(s
 /** Pre-selected on screen 3 from the primary category. The owner can pick any of the three. */
 export const suggestedGoal = (primary: BusinessCategory | null): OnboardingGoal => (primary === "beauty_wellness" || primary === "professional_services" ? "bookings" : "order_follow_up");
 
-/**
- * The closest template that exists today. Checkout wins over the goal because its template has the PayMongo step.
- * TODO(R3): receipt review with manual QR Ph transfer gets its own "receipt-review" template, and order follow-up
- * with manual transfer or pay later gets the matching payment-review template. Until then these two stand in.
- */
+/** Choose the R3 starter matching the payment route. Pay-later drafts never request an upfront deposit. */
 export function templateFor(goal: OnboardingGoal, payment: OnboardingPayment | null): { slug: string; stopgap: boolean } {
   if (goal === "bookings") return { slug: "lead-to-booking", stopgap: false };
-  if (payment === "gcash_paymongo") return { slug: "order-to-sheets", stopgap: false };
+  if (payment === "gcash_paymongo") return { slug: "order-gcash-checkout", stopgap: false };
+  if (goal === "receipt_review" && payment === "manual_qrph") return { slug: "booking-deposit-review", stopgap: false };
   if (goal === "receipt_review") return { slug: "receipt-expense", stopgap: true };
   return { slug: "store-orders", stopgap: true };
 }
@@ -54,6 +51,7 @@ export function templateFor(goal: OnboardingGoal, payment: OnboardingPayment | n
 const SAMPLE_VALUES: Record<string, string | number> = {
   name: "Ana Reyes",
   customer_name: "Ana Reyes",
+  phone: "0917 555 0100",
   email: "ana@example.com",
   customer_email: "ana@example.com",
   order_id: "SAMPLE-1001",
