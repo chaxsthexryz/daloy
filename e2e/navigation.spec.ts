@@ -181,7 +181,8 @@ test("desktop rail pushes the page, supports keyboard dismissal and respects red
   await expect(team).toBeFocused();
   await page.keyboard.press("Enter");
   await expect(team).toHaveAttribute("aria-current", "page");
-  await page.mouse.move(20, 90);
+  // hover() waits until the rail receives the pointer; a bare mouse.move can land while the new page renders.
+  await rail.hover({ position: { x: 20, y: 90 } });
   await expect(rail).toHaveCSS("width", "232px");
   await page.screenshot({ path: test.info().outputPath("desktop-team.png") });
 });
@@ -210,7 +211,7 @@ test("phone menu closes with Escape, Close and route changes, including Back", a
 test("operator navigation and restricted landings stay scoped to their roles", async ({ page, browser }) => {
   await signUp(page);
   for (const role of ["operator", "requester", "approver"]) {
-    const response = await page.request.post("/workspace/invites", { data: { email: role + "@test.local", role } });
+    const response = await page.request.post("/workspace/invites", { data: { email: `${role}-${Date.now()}@test.local`, role } });
     expect(response.ok()).toBe(true);
     const member = await browser.newPage();
     try {

@@ -1,18 +1,48 @@
-# Fake token in the redaction test (apps/worker/src/steps/index.test.ts): it checks that secret values never reach stored step data.
-bc2a6b452cd0b52507642b354d582867e1c54ac0:apps/worker/src/steps/index.test.ts:generic-api-key:13
-# Synthetic PayMongo keys in tests that check a live key is refused and keys are never echoed.
+# Every entry below is a synthetic value in a test, an e2e spec or a manual test guide. None is a real credential.
+# A fingerprint is commit:file:rule:line, so the commit hashes go stale if history is rewritten.
+# To regenerate: run `gitleaks git --redact -v` (same as CI), check each finding is synthetic, and copy its Fingerprint line here.
+
+# Synthetic key typed into the Gemini form in the workspace AI e2e spec ("a synthetic key is saved without a test call"). Not a real key (wrong length and format).
+d66125f5db811092e23a68f5289bee8954a740f7:e2e/workspace-ai.spec.ts:generic-api-key:39
+
+# Short sk_live_ placeholder (14 characters, far too short to be real) in tests that check a live PayMongo key is refused and never echoed.
+2988b784ec4623229a53e734cdca887984a70d22:apps/api/src/paymongo.test.ts:generic-api-key:291
+14c78f68876a211124d3430d25068bdc57730723:apps/api/src/paymongo.test.ts:generic-api-key:291
+5ea6e37efc862201b2e449dc80816898125a21f3:apps/api/src/paymongo.test.ts:generic-api-key:202
+1161f685822a90e18acc3175ce5b9ec4c976d165:apps/api/src/paymongo.test.ts:generic-api-key:129
+
+# Synthetic PayMongo test-mode key passed to the mocked fetch in the db tests for the PayMongo API calls.
+1161f685822a90e18acc3175ce5b9ec4c976d165:packages/db/src/paymongo.test.ts:stripe-access-token:151
+
+# Synthetic Slack token in the test that checks a rejected request body never echoes the token.
+2988b784ec4623229a53e734cdca887984a70d22:apps/api/src/secrets-history.test.ts:generic-api-key:377
+14c78f68876a211124d3430d25068bdc57730723:apps/api/src/secrets-history.test.ts:generic-api-key:377
+
+# Synthetic Trello, Airtable and Notion tokens given to the fake providers in tests.
+f62a3ad6380c410cf46b68f5916510089ac14e2f:apps/api/src/connections.test.ts:generic-api-key:148
+f62a3ad6380c410cf46b68f5916510089ac14e2f:apps/worker/src/steps/deliveries.test.ts:generic-api-key:76
+f62a3ad6380c410cf46b68f5916510089ac14e2f:apps/worker/src/steps/deliveries.test.ts:generic-api-key:77
+
+# Placeholder (PASTE_KEY_HERE) in a manual test guide, not a token.
+66185ff29194ac0bde8a7a037a34d3d1d19d4527:docs/manual-test-workflows.md:curl-auth-header:26
+
+# Synthetic marker value that the Ask test checks never reaches the model.
+595559f318cc8f7c3efe4ed48b7740ff0936457c:apps/api/src/ask-api.test.ts:stripe-access-token:82
+
+# Fake token in the redaction test: it checks that secret values never reach stored step data.
+3e28a2b9b975f9f8bb2f0591c47b8998091e605e:apps/worker/src/steps/index.test.ts:generic-api-key:13
+
+# The same synthetic values as above, as they appear in commits from before the history rewrite. Branches and refs that still carry those commits are scanned by `gitleaks git` too.
+1a951cab97c6deb6ea02642e45bd4ab70b65d036:apps/api/src/secrets-history.test.ts:generic-api-key:377
 1a951cab97c6deb6ea02642e45bd4ab70b65d036:apps/api/src/paymongo.test.ts:generic-api-key:291
 f4a51431705c64805645dcae391f5c94f160cd63:apps/api/src/paymongo.test.ts:generic-api-key:202
 ebe0ab7867bec1d5dff066b2d18ebae0c6812ad9:apps/api/src/paymongo.test.ts:generic-api-key:129
 ebe0ab7867bec1d5dff066b2d18ebae0c6812ad9:packages/db/src/paymongo.test.ts:stripe-access-token:151
-# Synthetic Slack, Trello, Airtable and Notion tokens given to the fake providers in tests.
-1a951cab97c6deb6ea02642e45bd4ab70b65d036:apps/api/src/secrets-history.test.ts:generic-api-key:377
 4f1b515c55cb97a5bb4070e43149bfeeb2eb61f4:apps/api/src/connections.test.ts:generic-api-key:148
 4f1b515c55cb97a5bb4070e43149bfeeb2eb61f4:apps/worker/src/steps/deliveries.test.ts:generic-api-key:76
 4f1b515c55cb97a5bb4070e43149bfeeb2eb61f4:apps/worker/src/steps/deliveries.test.ts:generic-api-key:77
-# A placeholder (PASTE_KEY) in a manual test guide.
 6d4983f018c905a10f108ceda962210dbd6692e1:docs/manual-test-workflows.md:curl-auth-header:26
-# Synthetic marker value that the Ask test checks never reaches the model.
 40d2427a66ce958537a6732d07bd244fee614b8d:apps/api/src/ask-api.test.ts:stripe-access-token:82
 # Synthetic Gemini key in the AI model settings e2e test that checks the key is masked and never echoed.
 d66125f5db811092e23a68f5289bee8954a740f7:e2e/workspace-ai.spec.ts:generic-api-key:39
+bc2a6b452cd0b52507642b354d582867e1c54ac0:apps/worker/src/steps/index.test.ts:generic-api-key:13

@@ -187,6 +187,7 @@ describe("role permissions", () => {
       ["get", "/auth/me", all],
       ["get", "/my/requests", all],
       ["get", "/workflows", operate],
+      ["get", "/workflows/overview", operate],
       ["get", `/workflows/${id}`, operate],
       ["get", `/workflows/${id}/requests`, operate],
       ["get", `/workflows/${id}/versions`, operate],

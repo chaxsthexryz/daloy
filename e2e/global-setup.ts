@@ -161,6 +161,7 @@ export default async function setup() {
     GOOGLE_PROJECT_NUMBER: "000000000000",
     // Every spec signs up from 127.0.0.1.
     REGISTER_LIMIT_PER_HOUR: "1000",
+    INVITE_ACCEPT_LIMIT_PER_MINUTE: "1000",
     // Specs publish several automations on one account.
     SIGNUP_PLAN: "none",
     AI_ASK: "on",

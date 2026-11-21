@@ -33,6 +33,9 @@ const SESSION_MS = 7 * 24 * 60 * 60 * 1000;
 // Sign-ups per client IP per hour. The test suites raise it, since every account there comes from 127.0.0.1.
 const REGISTER_LIMIT = Number(process.env.REGISTER_LIMIT_PER_HOUR || 10);
 if (!Number.isInteger(REGISTER_LIMIT) || REGISTER_LIMIT < 1) throw new Error("REGISTER_LIMIT_PER_HOUR must be a whole number above 0");
+// Invite accepts per client IP per minute. Raised in e2e for the same reason as REGISTER_LIMIT.
+const ACCEPT_LIMIT = Number(process.env.INVITE_ACCEPT_LIMIT_PER_MINUTE || 10);
+if (!Number.isInteger(ACCEPT_LIMIT) || ACCEPT_LIMIT < 1) throw new Error("INVITE_ACCEPT_LIMIT_PER_MINUTE must be a whole number above 0");
 
 const email = z.email().max(254).transform((s) => s.toLowerCase());
 const registerInput = z.object({ email, password: z.string().min(12).max(200) });
@@ -152,7 +155,7 @@ export class AuthController {
    */
   @Post("invites/:token/accept")
   @HttpCode(200)
-  @UseGuards(RateLimit(10))
+  @UseGuards(RateLimit(ACCEPT_LIMIT))
   async acceptInvite(@Param("token", inviteToken) token: string, @Body(new ZodPipe(acceptInput)) body: z.output<typeof acceptInput>, @Res({ passthrough: true }) res: Response) {
     const newHash = await hash(body.password);
     const joined = await this.db.transaction(async (tx) => {
