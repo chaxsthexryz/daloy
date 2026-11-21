@@ -122,10 +122,11 @@ function EditorStepNode({ data }: NodeProps<Node<EditorNodeData, "step">>) {
           <AppMark decorative mark={entry.mark} name={markText(entry, language)} size={24} />
           {data.index} · {entry.app ? entry.app[language] : t("Daloy")}
         </span>
-        {data.needsApp ? <span className="a7-node-note a7-warn">{t("Connect {app}", { app: t(data.needsApp) })}</span> : <span className="a7-node-note node-id">{step.id}</span>}
+        <span className="a7-node-note node-id">{step.id}</span>
       </span>
       <span className="node-title">{entry.action[language]}</span>
       <span className="node-summary">{whereLine(step, data, language)}</span>
+      {data.needsApp && <span className="a7-node-note a7-warn">{t("Connect {app}", { app: t(data.needsApp) })}</span>}
       <Status status={data.status} />
       {data.branches ? (
         data.branches.map((b, i) => (

@@ -32,12 +32,12 @@ test("the editor and the run page show the trigger and first edge done before th
 
   // The delay step waits an hour, so the last step is never Done while the steps before it are.
   await expect(node(page, "pause", "waiting")).toContainText("Waiting", { timeout: 30_000 });
-  await expect(node(page, "Trigger", "done")).toContainText("Done");
+  await expect(node(page, "You run it", "done")).toContainText("Done");
   await expect(node(page, "post", "done")).toContainText("Done");
   await expect(edge(page, "trigger->entry")).toHaveAttribute("data-state", "done");
   await expect(edge(page, "post:next")).toHaveAttribute("data-state", "done");
   await expect(page.locator(".node.run-done", { hasText: "pause" })).toHaveCount(0);
-  await expect(page.getByRole("group", { name: /delay step pause.*Waiting/ })).toBeVisible();
+  await expect(page.getByRole("group", { name: /Delay step pause.*Waiting/ })).toBeVisible();
 
   // The same picture on the run page, read only, with the technician details still there.
   await page.getByRole("link", { name: "Open this run in the run history" }).click();
