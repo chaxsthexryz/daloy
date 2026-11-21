@@ -1,15 +1,17 @@
 import "./editor.css";
 import { useLanguage } from "./Language";
-import { configProblems, definitionSchema, destination, lintDefinition, markText, stepEntry, stepLabel, triggerEntry, triggerLabel, type FormField, type Step, type Trigger } from "@daloy/engine";
+import { BRANCHES, configProblems, definitionSchema, destination, lintDefinition, markText, stepEntry, stepLabel, triggerEntry, triggerLabel, type FormField, type Step, type Trigger } from "@daloy/engine";
 import { AppMark } from "./AppMark";
 import { Background, ReactFlow, type NodeChange } from "@xyflow/react";
-import { useEffect, useId, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { AskAi } from "./AiDraft";
 import { FormEmbed } from "./FormEmbed";
 import { api, type Version, type Workflow } from "./api";
 import { editorEdgeTypes, editorNodeTypes, flowAriaLabels, ZoomBar } from "./FlowCanvas";
 import { RunResult, useRun } from "./Runs";
-import { ADDABLE, addStep, blankDraft, removeStep, toFlow, type AddableType, type Draft } from "./lib/graph";
+import { ADDABLE, addStep, blankDraft, canMove, connectSteps, moveStep, removeStep, toFlow, type AddableType, type ConnectError, type Draft } from "./lib/graph";
+import { record, redo, startHistory, undo } from "./lib/history";
+import { Sheet, usePhone } from "./Sheet";
 import { chosenFor, insertables, nextPaths, setupLeft, unconnectedNodes, type ConnInfo } from "./lib/editor";
 import { warningForLanguage } from "./lib/ai-build";
 import { runFlow } from "./lib/run-flow";
@@ -52,8 +54,16 @@ export function Editor({ id }: { id: string }) {
   const { t, language } = useLanguage();
   const [wf, setWf] = useState<Loaded | null>(null);
   const [catalog, setCatalog] = useState<Catalog | null>(null);
-  const [draft, setDraft] = useState<Draft>(blankDraft);
+  // Every edit goes through the history, so undo and redo restore exact drafts. Loading a draft starts a fresh history.
+  const [history, setHistory] = useState(() => startHistory<Draft>(blankDraft()));
+  const draft = history.present;
+  const setDraft = (d: Draft) => setHistory(startHistory(d));
   const [dirty, setDirty] = useState(false);
+  // What the last move, undo or redo did, in words, next to the undo buttons.
+  const [note, setNote] = useState("");
+  // The add menu: where it inserts (a step id and branch, or neither for the start of the flow).
+  const [menu, setMenu] = useState<{ after?: string; on?: string } | null>(null);
+  const phone = usePhone();
   const [selected, setSelected] = useState<string | null>(null);
   const [firstResource, setFirstResource] = useState<string | undefined>();
   const [measured, setMeasured] = useState<Record<string, { width: number; height: number }>>({});
@@ -110,10 +120,35 @@ export function Editor({ id }: { id: string }) {
     );
   }, [id]);
 
-  const update = (next: Draft) => {
-    setDraft(next);
+  const update = (next: Draft, key?: string) => {
+    setHistory((h) => record(h, next, key));
     setDirty(true);
   };
+  const stepHistory = (to: "undo" | "redo") => {
+    const next = (to === "undo" ? undo : redo)(history);
+    if (next === history) return;
+    setHistory(next);
+    setDirty(true);
+    setNote(t(to === "undo" ? "Undid the last change." : "Redid the change."));
+    // A selected step that the change removed has nothing left to show.
+    if (selected && selected !== "trigger" && !next.present.steps.some((s) => s.id === selected)) setSelected(null);
+  };
+  // Ctrl+Z and Cmd+Z, outside text fields (those keep their own undo) and while no dialog is open.
+  const keys = useRef(stepHistory);
+  keys.current = stepHistory;
+  useEffect(() => {
+    const on = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey || document.querySelector("dialog[open]")) return;
+      if ((e.target as HTMLElement).closest("input, textarea, select, [contenteditable='true']")) return;
+      const key = e.key.toLowerCase();
+      if (key === "z" || key === "y") {
+        e.preventDefault();
+        keys.current(key === "y" || e.shiftKey ? "redo" : "undo");
+      }
+    };
+    addEventListener("keydown", on);
+    return () => removeEventListener("keydown", on);
+  }, []);
   const flow = useMemo(() => toFlow(draft, selected, run ? runFlow(draft, run) : undefined, language), [draft, selected, run, language]);
   // Advice only (decision 0033): a draft that does not parse yet is a work in progress, so it gets no checks.
   const warnings = useMemo(() => {
@@ -130,7 +165,7 @@ export function Editor({ id }: { id: string }) {
     data: { ...n.data, index: draft.steps.findIndex((s) => s.id === n.id) + 1, needsApp: unconnected.get(n.id), chosen: chosen.get(n.id) },
   }));
   // Every editor edge uses the square editor edge; it carries the branch so the pill can take its colour.
-  const edges = flow.edges.map((e) => ({ ...e, type: "editor", data: { ...e.data, on: e.sourceHandle ?? undefined } }));
+  const edges = flow.edges.map((e) => ({ ...e, type: "editor", data: { ...e.data, on: e.sourceHandle ?? undefined, insert: () => setMenu(e.source === "trigger" ? {} : { after: e.source, on: e.sourceHandle ?? undefined }) } }));
 
   const onNodesChange = (changes: NodeChange[]) => {
     for (const c of changes) {
@@ -212,7 +247,36 @@ export function Editor({ id }: { id: string }) {
     setSelected(next);
     setCopied(null);
   };
-  const editStep = (config: unknown) => update({ ...draft, steps: draft.steps.map((s) => (s.id === step!.id ? ({ ...s, config } as Step) : s)) });
+  const editStep = (config: unknown) => update({ ...draft, steps: draft.steps.map((s) => (s.id === step!.id ? ({ ...s, config } as Step) : s)) }, `config:${step!.id}`);
+  const move = (id: string, dir: "up" | "down") => {
+    const next = moveStep(draft, id, dir);
+    if (next === draft) return;
+    update(next);
+    setNote(t("Moved {id} to step {number}.", { id, number: next.steps.findIndex((s) => s.id === id) + 1 }));
+    // Reordering rebuilds the row, which drops focus; put it back on the same button, or its twin at the end of the list.
+    setTimeout(() => (document.querySelector<HTMLElement>(`[data-move="${id}:${dir}"]:not(:disabled)`) ?? document.querySelector<HTMLElement>(`[data-move="${id}:${dir === "up" ? "down" : "up"}"]`))?.focus(), 0);
+  };
+  const addFromMenu = (type: AddableType, on?: string) => {
+    const at = menu?.after;
+    const r = addStep(draft, type, at ? { id: at, on: on ?? menu?.on } : undefined, language);
+    update(r.draft);
+    select(r.id);
+    setMenu(null);
+  };
+  // On a phone a selected step or trigger is edited in a sheet over the list; on a wider screen it stays in the side panel.
+  const inSheet = (body: ReactNode) =>
+    phone && selected ? (
+      <Sheet title={t(selected === "trigger" ? "Edit the trigger" : "Edit step")} onClose={() => select(null)}>
+        {body}
+        <div className="wk-sheet-actions">
+          <button type="button" className="wk-button blue" onClick={(e) => e.currentTarget.closest("dialog")?.close()}>
+            {t("Done")}
+          </button>
+        </div>
+      </Sheet>
+    ) : (
+      body
+    );
   const copy = (reference: string) =>
     navigator.clipboard.writeText(reference).then(
       () => setCopied(t("Copied {reference}", { reference })),
@@ -280,6 +344,18 @@ export function Editor({ id }: { id: string }) {
               </a>
             </div>
           )}
+          <div className="a7-tools">
+          <div className="a7-undo" role="group" aria-label={t("Undo and redo")}>
+            <button type="button" onClick={() => stepHistory("undo")} disabled={history.past.length === 0}>
+              {t("Undo")}
+            </button>
+            <button type="button" onClick={() => stepHistory("redo")} disabled={history.future.length === 0}>
+              {t("Redo")}
+            </button>
+            <span className="a7-note" aria-live="polite">
+              {note}
+            </span>
+          </div>
           <div className="a7-view" role="group" aria-label={t("Show steps as")}>
             <button type="button" aria-pressed={view === "diagram"} onClick={() => setView("diagram")}>
               {t("Diagram")}
@@ -288,8 +364,20 @@ export function Editor({ id }: { id: string }) {
               {t("List")}
             </button>
           </div>
+          </div>
           {view === "diagram" ? (
-            <div className="a7-flow">
+            <div
+              className="a7-flow"
+              // Shift+F10 and the Menu key open the add menu for the focused step, like a right click.
+              onKeyDown={(e) => {
+                if (!((e.shiftKey && e.key === "F10") || e.key === "ContextMenu")) return;
+                const id = (e.target as HTMLElement).closest(".react-flow__node")?.getAttribute("data-id");
+                if (!id) return;
+                e.preventDefault();
+                if (id !== "trigger") select(id);
+                setMenu(id === "trigger" ? {} : { after: id });
+              }}
+            >
               <ReactFlow
                 ariaLabelConfig={flowAriaLabels(language)}
                 nodes={nodes}
@@ -298,6 +386,11 @@ export function Editor({ id }: { id: string }) {
                 edgeTypes={editorEdgeTypes}
                 onNodesChange={onNodesChange}
                 onPaneClick={() => select(null)}
+                onNodeContextMenu={(e, node) => {
+                  e.preventDefault();
+                  if (node.id !== "trigger") select(node.id);
+                  setMenu(node.id === "trigger" ? {} : { after: node.id });
+                }}
                 nodesDraggable={false}
                 nodesConnectable={false}
                 deleteKeyCode="Delete"
@@ -311,12 +404,18 @@ export function Editor({ id }: { id: string }) {
               </ReactFlow>
             </div>
           ) : (
-            <StepList draft={draft} selected={selected} onSelect={select} chosen={chosen} />
+            <StepList draft={draft} selected={selected} onSelect={select} onMove={move} chosen={chosen} />
           )}
           <button
             type="button"
             className="a7-add"
             onClick={() => {
+              if (phone) {
+                // The searchable menu: after the end of the flow, or at the start when it is empty.
+                const tail = [...draft.steps].reverse().find((s) => !draft.edges.some((e) => e.from === s.id));
+                setMenu(tail ? { after: tail.id } : {});
+                return;
+              }
               const field = document.getElementById("add-step-type");
               field?.scrollIntoView({ block: "center" });
               field?.focus();
@@ -333,6 +432,8 @@ export function Editor({ id }: { id: string }) {
           )}
           <SetupGuide facts={{ missingApps: missing.length, problems: problems.length, explained, test, live: isLive }} onExplain={() => setShowExplain(true)} onTry={() => void testRun("mock")} onTurnOn={() => setShowTurnOn(true)} />
           <SampleTest draft={draft} apps={apps} test={test} run={sampleRun} busy={busy} onTry={() => void testRun("mock")} />
+          {inSheet(
+            <>
           {selected === "trigger" && (
             <div className="a7-inspector">
               <p className="a7-kicker a7-when">{t("When")}</p>
@@ -416,8 +517,16 @@ export function Editor({ id }: { id: string }) {
                   </p>
                 )}
               </section>
+              {phone && (
+                <button type="button" onClick={() => setMenu({ after: step.id })}>
+                  {t("Add a step after this one")}
+                </button>
+              )}
+              <ConnectTo draft={draft} step={step} onConnect={update} />
               <NextUp draft={draft} id={step.id} />
             </section>
+          )}
+            </>,
           )}
           {!selected && (
             <div className="a7-overview">
@@ -490,6 +599,7 @@ export function Editor({ id }: { id: string }) {
           </section>
         </aside>
       </div>
+      {menu && <AddMenu draft={draft} after={menu.after ? draft.steps.find((s) => s.id === menu.after) : undefined} on={menu.on} onPick={addFromMenu} onClose={() => setMenu(null)} />}
       {showExplain && <ExplainSheet draft={draft} chosen={chosen} onClose={closeExplain} />}
       {showTurnOn && (
         <TurnOnSheet
@@ -510,7 +620,7 @@ export function Editor({ id }: { id: string }) {
 }
 
 /** The accessible list: every step as a button, in order, with the branch that leads to it. */
-function StepList({ draft, selected, onSelect, chosen }: { draft: Draft; selected: string | null; onSelect: (id: string) => void; chosen: ReadonlyMap<string, string> }) {
+function StepList({ draft, selected, onSelect, onMove, chosen }: { draft: Draft; selected: string | null; onSelect: (id: string) => void; onMove: (id: string, dir: "up" | "down") => void; chosen: ReadonlyMap<string, string> }) {
   const { t, language } = useLanguage();
   return (
     <ol className="a7-list" aria-label={t("Steps")}>
@@ -538,10 +648,116 @@ function StepList({ draft, selected, onSelect, chosen }: { draft: Draft; selecte
                 </span>
               ))}
             </button>
+            <span className="a7-move">
+              {(["up", "down"] as const).map((dir) => (
+                <button key={dir} type="button" data-move={`${s.id}:${dir}`} disabled={!canMove(draft, s.id, dir)} aria-label={t(dir === "up" ? "Move {id} up" : "Move {id} down", { id: s.id })} onClick={() => onMove(s.id, dir)}>
+                  <span aria-hidden="true">{dir === "up" ? "↑" : "↓"}</span>
+                </button>
+              ))}
+            </span>
           </li>
         );
       })}
     </ol>
+  );
+}
+
+/** The searchable add menu: type to narrow the steps, arrow keys move through the results, Enter adds, Escape closes. */
+function AddMenu({ draft, after, on, onPick, onClose }: { draft: Draft; after?: Step; on?: string; onPick: (type: AddableType, on?: string) => void; onClose: () => void }) {
+  const { t, language } = useLanguage();
+  const [query, setQuery] = useState("");
+  const [branch, setBranch] = useState("");
+  const labels = after && on === undefined ? BRANCHES[after.type] : undefined;
+  const q = query.trim().toLowerCase();
+  const found = ADDABLE.filter((kind) => !q || `${stepLabel(kind, language)} ${stepEntry(kind).description[language]} ${kind}`.toLowerCase().includes(q));
+  const where = after ? t("after {id}", { id: after.id }) : t(draft.steps.length ? "at the start" : "as the first step");
+  const go = (kind: AddableType) => onPick(kind, labels && branch ? branch : undefined);
+  const arrows = (e: React.KeyboardEvent<HTMLElement>) => {
+    if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+    const items = [...e.currentTarget.querySelectorAll<HTMLElement>("input[type=search], .a7-menu-list button")];
+    const next = items.indexOf(document.activeElement as HTMLElement) + (e.key === "ArrowDown" ? 1 : -1);
+    if (next < 0 || next >= items.length) return;
+    e.preventDefault();
+    items[next]!.focus();
+  };
+  return (
+    <Sheet title={t("Add a step {where}", { where })} onClose={onClose}>
+      <div className="a7-menu" onKeyDown={arrows}>
+        <input type="search" autoFocus aria-label={t("Search steps")} placeholder={t("Search steps")} value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => e.key === "Enter" && found[0] && go(found[0])} />
+        {labels && (
+          <select aria-label={t("Branch")} value={branch} onChange={(e) => setBranch(e.target.value)}>
+            <option value="">{t("next free branch")}</option>
+            {labels.map((b) => (
+              <option key={b} value={b}>
+                {t("on {branch}", { branch: t(b) })}
+              </option>
+            ))}
+          </select>
+        )}
+        <ul className="a7-menu-list">
+          {found.map((kind) => (
+            <li key={kind}>
+              <button type="button" onClick={() => go(kind)}>
+                <AppMark decorative mark={stepEntry(kind).mark} name={markText(stepEntry(kind), language)} size={24} />
+                <span>
+                  <strong>{stepLabel(kind, language)}</strong>
+                  <small>{stepEntry(kind).description[language]}</small>
+                </span>
+              </button>
+            </li>
+          ))}
+        </ul>
+        {found.length === 0 && <p className="muted">{t("No step matches that.")}</p>}
+      </div>
+    </Sheet>
+  );
+}
+
+/** Connect to: where each path of this step leads, chosen from a list so it works by touch and keyboard. A refused change says why. */
+function ConnectTo({ draft, step, onConnect }: { draft: Draft; step: Step; onConnect: (next: Draft) => void }) {
+  const { t } = useLanguage();
+  const [error, setError] = useState<ConnectError | null>(null);
+  const others = draft.steps.filter((s) => s.id !== step.id);
+  if (others.length === 0) return null;
+  const paths: readonly (string | undefined)[] = BRANCHES[step.type] ?? [undefined];
+  const reason = (e: ConnectError) => {
+    if (e.id === "self") return t("A step cannot lead to itself.");
+    if (e.id === "loop") return t("{to} already leads to {from}, so this would make a loop.", { to: e.to, from: e.from });
+    if (e.id === "orphan") return t("{step} would have no way in. Connect it from another step first, or delete it.", { step: e.step });
+    return t("Pick one of this step's branches.");
+  };
+  return (
+    <section className="a7-group" aria-labelledby={`connect-${step.id}`}>
+      <h3 id={`connect-${step.id}`}>{t("Connect to")}</h3>
+      {paths.map((on) => (
+        <div className="field" key={on ?? "next"}>
+          <label htmlFor={`connect-${step.id}-${on ?? "next"}`}>{on ? t("On {branch} go to", { branch: t(on) }) : t("Go to")}</label>
+          <select
+            id={`connect-${step.id}-${on ?? "next"}`}
+            value={draft.edges.find((e) => e.from === step.id && e.on === on)?.to ?? ""}
+            onChange={(e) => {
+              const r = connectSteps(draft, step.id, on, e.target.value);
+              setError("error" in r ? r.error : null);
+              if ("draft" in r) onConnect(r.draft);
+            }}
+          >
+            <option value="" disabled>
+              {t("Nothing yet")}
+            </option>
+            {others.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.id}
+              </option>
+            ))}
+          </select>
+        </div>
+      ))}
+      {error && (
+        <p role="alert" className="message error">
+          {reason(error)}
+        </p>
+      )}
+    </section>
   );
 }
 

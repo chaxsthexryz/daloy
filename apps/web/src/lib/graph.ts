@@ -109,6 +109,61 @@ export function removeStep(draft: Draft, id: string): Draft {
   return { ...draft, steps: draft.steps.filter((s) => s.id !== id), edges };
 }
 
+const quiet = (d: Draft, id: string) => {
+  const step = d.steps.find((s) => s.id === id);
+  const out = d.edges.filter((e) => e.from === id);
+  return !!step && !BRANCHES[step.type] && out.length <= 1 && out.every((e) => e.on === undefined);
+};
+/** The step that `id` would swap places with when moved down: both have one plain way out and the other has one way in. */
+function below(d: Draft, id: string): string | undefined {
+  const next = d.edges.find((e) => e.from === id)?.to;
+  if (!next || !quiet(d, id) || !quiet(d, next) || d.edges.filter((e) => e.to === next).length !== 1) return undefined;
+  return next;
+}
+/** The step above `id` in a straight stretch: its only parent, when that parent has no other way out. */
+function above(d: Draft, id: string): string | undefined {
+  const into = d.edges.filter((e) => e.to === id);
+  return into.length === 1 && below(d, into[0]!.from) === id ? into[0]!.from : undefined;
+}
+export const canMove = (d: Draft, id: string, dir: "up" | "down") => (dir === "down" ? below(d, id) : above(d, id)) !== undefined;
+
+/**
+ * Swaps a step with its neighbour on a straight stretch of the flow. Steps with branches, and steps next to them, stay put
+ * (the draft comes back unchanged). Edges into the stretch keep their branch labels, and the steps are renumbered in flow order.
+ */
+export function moveStep(draft: Draft, id: string, dir: "up" | "down"): Draft {
+  const top = dir === "down" ? id : above(draft, id);
+  const bottom = top && below(draft, top);
+  if (!top || !bottom) return draft;
+  const edges = draft.edges.map((e) => (e.to === top ? { ...e, to: bottom } : e.from === top ? { from: bottom, to: top } : e.from === bottom ? { from: top, to: e.to } : e));
+  const moved = { ...draft, edges };
+  const y = layout(moved);
+  const steps = [...draft.steps].sort((a, b) => y[a.id]!.y - y[b.id]!.y);
+  const at = new Map(steps.map((s, n) => [s.id, n]));
+  return { ...moved, steps, edges: [...edges].sort((a, b) => at.get(a.from)! - at.get(b.from)!) };
+}
+
+export type ConnectError = { id: "self" } | { id: "loop"; from: string; to: string } | { id: "branch"; from: string } | { id: "orphan"; step: string };
+
+/**
+ * Points the `on` path of step `from` at step `to`, replacing what that path led to before. It refuses, with a reason, a link to
+ * itself, a loop, a missing or wrong branch, and a change that would leave another step with no way in.
+ */
+export function connectSteps(draft: Draft, from: string, on: string | undefined, to: string): { draft: Draft } | { error: ConnectError } {
+  const source = draft.steps.find((s) => s.id === from);
+  if (!source || !draft.steps.some((s) => s.id === to)) return { error: { id: "branch", from } };
+  if (from === to) return { error: { id: "self" } };
+  const labels = BRANCHES[source.type];
+  if (labels ? on === undefined || !labels.includes(on) : on !== undefined) return { error: { id: "branch", from } };
+  const edges = [...draft.edges.filter((e) => !(e.from === from && e.on === on)), { from, to, ...(on && { on }) }];
+  const leadsTo = (a: string, b: string, seen = new Set<string>()): boolean => a === b || (!seen.has(a) && edges.some((e) => e.from === a && leadsTo(e.to, b, seen.add(a))));
+  if (leadsTo(to, from)) return { error: { id: "loop", from, to } };
+  const orphan = draft.steps.find((s) => !edges.some((e) => e.to === s.id) && draft.edges.some((e) => e.to === s.id));
+  if (orphan) return { error: { id: "orphan", step: orphan.id } };
+  const order = new Map(draft.steps.map((s, n) => [s.id, n]));
+  return { draft: { ...draft, edges: edges.sort((a, b) => order.get(a.from)! - order.get(b.from)!) } };
+}
+
 export const NODE_W = 220;
 const COL = 260;
 const ROW = 130;

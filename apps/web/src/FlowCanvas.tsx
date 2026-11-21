@@ -140,7 +140,8 @@ function EditorStepNode({ data }: NodeProps<Node<EditorNodeData, "step">>) {
 }
 
 /** The editor's edge: square corners, the branch as a coloured pill, and the run state when a test run is drawn. */
-function EditorEdge({ id, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, label, data }: EdgeProps<Edge<Partial<RunEdgeData> & { on?: string }>>) {
+function EditorEdge({ id, source, target, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, label, data }: EdgeProps<Edge<Partial<RunEdgeData> & { on?: string; insert?: () => void }>>) {
+  const { t } = useLanguage();
   const [path, labelX, labelY] = getSmoothStepPath({ sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, borderRadius: 0 });
   const reduced = useReducedMotion();
   const state = data?.state;
@@ -152,6 +153,19 @@ function EditorEdge({ id, sourceX, sourceY, targetX, targetY, sourcePosition, ta
           <span className="a7-branch nodrag nopan" data-branch={data?.on} style={{ transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)` }}>
             {label}
           </span>
+        </EdgeLabelRenderer>
+      )}
+      {data?.insert && (
+        <EdgeLabelRenderer>
+          <button
+            type="button"
+            className="a7-insert nodrag nopan"
+            aria-label={source === "trigger" ? t("Add a step at the start") : t("Add a step between {from} and {to}", { from: source, to: target })}
+            style={{ transform: `translate(-50%, -50%) translate(${labelX + (label ? 44 : 0)}px, ${labelY}px)` }}
+            onClick={data.insert}
+          >
+            <span aria-hidden="true">+</span>
+          </button>
         </EdgeLabelRenderer>
       )}
       {state === "flowing" && !reduced && (
