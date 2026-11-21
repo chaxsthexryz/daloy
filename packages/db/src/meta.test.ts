@@ -78,6 +78,8 @@ async function makeUserAndRun() {
 describe("Meta webhook signature and challenge helpers", () => {
   it("verifies X-Hub-Signature-256 against raw bytes and fails closed on tampering or missing values", () => {
     const raw = Buffer.from('{"object":"page","entry":[]}');
+    // Semgrep: APP_SECRET is a synthetic constant that signs the fake webhook body, not a real key.
+    // nosemgrep: javascript.lang.security.audit.hardcoded-hmac-key.hardcoded-hmac-key
     const sig = `sha256=${createHmac("sha256", APP_SECRET).update(raw).digest("hex")}`;
     expect(verifyMetaSignature(raw, sig, APP_SECRET)).toBe(true);
     expect(verifyMetaSignature(raw, sig.toUpperCase().replace("SHA256=", "sha256="), APP_SECRET)).toBe(true);
