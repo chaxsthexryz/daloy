@@ -4,15 +4,16 @@ import { Text, useLanguage } from "./Language";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { api } from "./api";
 import { GmailCard, PILL, type Settings } from "./BusinessSetup";
-import { MetaMessengerConnection, OutlookConnection, RecordConnection, PaymongoConnection, SlackConnection, TeamsConnection, TelegramConnection, UnismsConnection, type Connection, type OutlookSetup, type Provider } from "./Connections";
+import { MetaMessengerConnection, OutlookConnection, RecordConnection, PaymongoConnection, SlackConnection, TeamsConnection, TelegramConnection, type Connection, type OutlookSetup, type Provider } from "./Connections";
 import { GoogleCalendarCard } from "./GoogleCalendar";
 import { SharedGrants } from "./ConnectPanel";
 import { GoogleDriveCard, GoogleSheetsCard } from "./GoogleConnect";
 import { Header } from "./Nav";
 import { APP_LOGO, AppMark } from "./AppMark";
 
-type Key = "gmail" | Provider;
-// Logos come from public/logos (sources and terms in its README, decision 0085). UniSMS, PayMongo and GCash have no usable asset, so AppMark shows a letter tile for them.
+// UniSMS is not an app a workspace connects: the server operator sets it in env (decision 0100).
+type Key = "gmail" | Exclude<Provider, "unisms">;
+// Logos come from public/logos (sources and terms in its README, decision 0085). PayMongo and GCash have no usable asset, so AppMark shows a letter tile for them.
 const APPS: { key: Key; name: string; line: string }[] = [
   { key: "gmail", name: "Gmail", line: "Send customer emails from your own address." },
   { key: "outlook", name: "Outlook", line: "Send purchase emails from an Outlook mailbox." },
@@ -20,7 +21,6 @@ const APPS: { key: Key; name: string; line: string }[] = [
   { key: "slack", name: "Slack", line: "Post a short note to a channel." },
   { key: "teams", name: "Microsoft Teams", line: "Post a note to a Teams channel." },
   { key: "telegram", name: "Telegram", line: "Send a message to a Telegram chat." },
-  { key: "unisms", name: "UniSMS", line: "Send SMS confirmations and reminders to Philippine mobile numbers." },
   { key: "google_calendar", name: "Google Calendar", line: "Put a booking on a calendar, and move or remove it with the booking." },
   { key: "google_drive", name: "Google Drive", line: "Save the files people attach to a form into a shared drive folder." },
   { key: "paymongo", name: "PayMongo", line: "Take payments and start automations when they are paid." },
@@ -84,7 +84,6 @@ export function AppsPage({ outcome }: { outcome?: { app: string; code: string } 
     outlook: () => <OutlookConnection conn={conn("outlook")} setup={conns.outlook} outcome={landed === "outlook" ? outcome?.code : undefined} onChange={load} />,
     teams: () => <TeamsConnection conn={conn("teams")} onChange={load} />,
     telegram: () => <TelegramConnection conn={conn("telegram")} onChange={load} />,
-    unisms: () => <UnismsConnection conn={conn("unisms")} onChange={load} />,
     google_calendar: () => <GoogleCalendarCard conn={conn("google_calendar")} configured={conns.oauth.includes("google-calendar")} outcome={landed === "google_calendar" ? outcome?.code : undefined} onChange={load} />,
     google_drive: () => <GoogleDriveCard conn={conn("google_drive")} configured={conns.oauth.includes("google-drive")} outcome={landed === "google_drive" ? outcome?.code : undefined} onChange={load} />,
     paymongo: () => <PaymongoConnection conn={conn("paymongo")} webhookBase={conns.paymongoWebhookBase} onChange={load} />,

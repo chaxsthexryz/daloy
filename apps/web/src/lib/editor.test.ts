@@ -74,8 +74,15 @@ describe("setupLeft", () => {
     const draft = { ...receipt, steps: [due] };
     expect(setupLeft(draft, new Set())).toEqual([]);
     const checkout = { ...draft, steps: [{ ...due, config: { ...due.config, checkout: true, channel: "sms" as const, to: "{{trigger.phone}}" } }] };
-    expect(setupLeft(checkout, new Set()).map(app => app.provider)).toEqual(["paymongo", "unisms"]);
-    expect(unconnectedNodes(checkout, new Set(["paymongo"]), true).get("ask")).toBe("UniSMS");
+    // SMS is the server's own (decision 0100): a workspace never has to connect it.
+    expect(setupLeft(checkout, new Set()).map(app => app.provider)).toEqual(["paymongo"]);
+    expect(unconnectedNodes(checkout, new Set(["paymongo"]), true).has("ask")).toBe(false);
+  });
+
+  it("never asks to connect UniSMS for an SMS step", () => {
+    const sms = { ...receipt, steps: [{ id: "tell", type: "sms", config: { to: "{{trigger.phone}}", message: "Hi" } }] } as Draft;
+    expect(setupLeft(sms, new Set())).toEqual([]);
+    expect(unconnectedNodes(sms, new Set(), true).size).toBe(0);
   });
 
   it("needs nothing for steps without an app", () => {

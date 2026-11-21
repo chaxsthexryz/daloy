@@ -47,7 +47,6 @@ test("booking D-1042: a transfer receipt goes to review, a verified checkout con
   await registerSeller(page);
 
   expect((await page.request.put("/settings/connections/paymongo", { data: { secretKey: process.env.E2E_PAYMONGO_KEY, webhookSecret: process.env.E2E_PAYMONGO_WEBHOOK_SECRET } })).status()).toBe(200);
-  expect((await page.request.put("/settings/connections/unisms", { data: { secretKey: process.env.E2E_UNISMS_KEY } })).status()).toBe(200);
   const conns = (await (await page.request.get("/settings/connections")).json()) as { connections: { provider: string; destination: { webhookPath?: string } }[] };
   const hookPath = conns.connections.find((c) => c.provider === "paymongo")!.destination.webhookPath!;
   expect((await page.request.put("/payments/settings", { data: { gcashNumber: "0917 555 0101", accountName: "Lia Nail Studio", qr: PNG.toString("base64") } })).status()).toBe(200);
@@ -151,6 +150,8 @@ test("staff confirm a manual transfer and retry only its failed SMS", async ({ p
   const reference = "M-1044";
   const phone = "09171230044";
   const message = "Transfer for M-1044 confirmed.";
+  const unismsDown = (revoked: boolean) => fetch(`${process.env.E2E_PROVIDERS_URL}/__control`, { method: "POST", body: JSON.stringify({ unismsRevoked: revoked }) });
+  await unismsDown(true);
   expect((await page.request.put("/payments/settings", { data: { gcashNumber: "0917 555 0101", accountName: "Lia Nail Studio" } })).status()).toBe(200);
   const resource = await (await page.request.post("/resources", { data: { name: "Pickup desk" } })).json();
   const workflow = await publish(page, "manual-payment", [{
@@ -170,15 +171,15 @@ test("staff confirm a manual transfer and retry only its failed SMS", async ({ p
   const row = page.getByRole("listitem").filter({ hasText: reference });
   page.once("dialog", d => void d.accept());
   await row.getByRole("button", { name: "Confirm payment" }).click();
-  // This workspace has no SMS connection. Confirmation succeeds before the reply fails.
+  // UniSMS refuses the server's key for a while. Confirmation succeeds before the reply fails.
   await expect.poll(async () => {
     const rows: { reference: string; replyState: string | null }[] = await (await page.request.get("/payments/review")).json();
     return rows.find(r => r.reference === reference)?.replyState;
   }, { timeout: 20_000 }).toBe("failed");
   await page.reload();
   await expect(row.getByRole("button", { name: "Retry reply" })).toBeVisible();
-  await captureReview(page, "11", "Retry the reply", "The transfer is already confirmed. The seller can reconnect SMS and resend just the message.");
-  expect((await page.request.put("/settings/connections/unisms", { data: { secretKey: process.env.E2E_UNISMS_KEY } })).status()).toBe(200);
+  await captureReview(page, "11", "Retry the reply", "The transfer is already confirmed. The seller can resend just the message once the SMS service works again.");
+  await unismsDown(false);
   await row.getByRole("button", { name: "Retry reply" }).click();
   await expect.poll(async () => (await smsTo("+639171230044")).filter(m => m.content === message).length, { timeout: 20_000 }).toBe(1);
   const [due] = await (await page.request.get("/payments/dues?reference=" + reference)).json();

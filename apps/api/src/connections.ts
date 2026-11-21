@@ -1,11 +1,10 @@
-import { builtInEmailCopy, normalizePhMobile, SENDER_ID_RE } from "@daloy/engine";
+import { builtInEmailCopy } from "@daloy/engine";
 import { randomBytes } from "node:crypto";
 import {
   appendRow,
   calendarIdFrom,
   calendarInfo,
   calendarWriteTest,
-  claimUsage,
   driveFolderIdFrom,
   driveFolderInfo,
   confirmDelivery,
@@ -29,9 +28,7 @@ import {
   PROVIDER_NAMES,
   payments,
   ProviderError,
-  QuotaError,
   readConnections,
-  refundUsage,
   sharedGrants,
   sharedGoogleApps,
   retryDelivery,
@@ -58,7 +55,6 @@ import {
   telegramChats,
   telegramIdentity,
   telegramSend,
-  unismsSend,
   spreadsheetIdFrom,
   teamsPost,
   teamsWebhookUrl,
@@ -68,7 +64,7 @@ import {
   type ServiceAccount,
   type SheetDestination,
 } from "@daloy/db";
-import { BadRequestException, Body, ConflictException, Controller, Delete, Get, HttpCode, HttpException, HttpStatus, Inject, NotFoundException, Param, Post, Put, Query, Res, UseGuards } from "@nestjs/common";
+import { BadRequestException, Body, ConflictException, Controller, Delete, Get, HttpCode, Inject, NotFoundException, Param, Post, Put, Query, Res, UseGuards } from "@nestjs/common";
 import { and, eq, desc, sql } from "drizzle-orm";
 import * as z from "zod";
 import type { Response } from "express";
@@ -88,13 +84,6 @@ const telegramInput = z.strictObject({
   chatId: z.string().trim().regex(/^(-?\d{1,20}|@[A-Za-z][A-Za-z0-9_]{4,31})$/, "Enter the chat id (a number) or the public @name"),
 });
 const telegramChatsInput = z.strictObject({ token: telegramInput.shape.token });
-const unismsInput = z.strictObject({
-  secretKey: z.string().trim().min(8, "Paste the Secret Key from your UniSMS account").max(200).optional(),
-  senderId: z.string().trim().min(1).max(11).regex(SENDER_ID_RE, "Sender ID uses up to 11 letters, digits, spaces, - or _").default("Unisoft"),
-});
-const unismsTestInput = z.strictObject({
-  to: z.string().trim().min(1).max(32),
-});
 // PayMongo's secret key and the signing secret of the webhook the owner made in PayMongo. Both are kept encrypted and never returned.
 // The secret may come second: the webhook URL only exists after the key is saved, and until the secret is saved every paid event is refused (decision 0059).
 const paymongoInput = z.strictObject({
@@ -328,49 +317,6 @@ export class ConnectionsController {
   async testTelegram(@CurrentUser() user: SessionUser) {
     const conn = await this.connection(user.workspaceId, "telegram");
     return this.test(user.workspaceId, "telegram", conn, () => telegramSend(this.urls, conn.credential, conn.destination!.chatId!, "Test message from Daloy."));
-  }
-
-  /** Connect or Reconnect UniSMS (Philippine SMS, phase N7, decision 0074). Secret Key is encrypted and never returned. */
-  @Put("unisms")
-  @UseGuards(RateLimit(10))
-  async putUnisms(@CurrentUser() user: SessionUser, @Body(new ZodPipe(unismsInput)) body: z.output<typeof unismsInput>) {
-    let secretKey = body.secretKey;
-    if (!secretKey) {
-      const old = await connectionCredential(this.db, this.config.secretsKey, user.workspaceId, "unisms");
-      if (!old) throw new BadRequestException("Paste the Secret Key from your UniSMS account.");
-      secretKey = old.credential;
-    }
-    await saveConnection(this.db, this.config.secretsKey, user.workspaceId, "unisms", {
-      account: body.senderId,
-      credential: secretKey,
-      destination: { senderId: body.senderId },
-    });
-    return this.get(user);
-  }
-
-  /** Sends one test SMS to a Philippine mobile number entered by the owner, charging 1 SMS unit when quota applies. */
-  @Post("unisms/test")
-  @HttpCode(200)
-  @UseGuards(RateLimit(5))
-  async testUnisms(@CurrentUser() user: SessionUser, @Body(new ZodPipe(unismsTestInput)) body: z.output<typeof unismsTestInput>) {
-    const phone = normalizePhMobile(body.to);
-    if (!phone.ok) throw new BadRequestException(phone.error);
-    const conn = await this.connection(user.workspaceId, "unisms");
-    const now = new Date();
-    await claimUsage(this.db, user.workspaceId, "sms", { now }).catch((err: unknown) => {
-      throw err instanceof QuotaError ? new HttpException({ message: err.message }, HttpStatus.TOO_MANY_REQUESTS) : err;
-    });
-    const senderId = conn.destination?.senderId || "Unisoft";
-    return this.test(user.workspaceId, "unisms", conn, async () => {
-      try {
-        return await unismsSend(this.urls, conn.credential, { recipient: phone.value, content: "Test SMS from Daloy.", senderId, metadata: { type: "test" } });
-      } catch (err) {
-        if (err instanceof ProviderError && err.kind !== "ambiguous") {
-          await refundUsage(this.db, user.workspaceId, "sms", { now });
-        }
-        throw err;
-      }
-    });
   }
 
   /** Connect or Reconnect PayMongo. The webhook path is made once and kept, so the URL given to PayMongo keeps working. */

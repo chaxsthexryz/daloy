@@ -318,8 +318,6 @@ describe("role permissions", () => {
       ["put", "/settings/connections/slack/channel", only, {}],
       ["put", "/settings/connections/telegram", only, {}],
       ["post", "/settings/connections/telegram/test", only, {}],
-      ["put", "/settings/connections/unisms", only, {}],
-      ["post", "/settings/connections/unisms/test", only, {}],
       ["delete", "/settings/connections/unisms", only],
       ["put", "/settings/connections/paymongo", only, {}],
       ["post", "/settings/connections/paymongo/test", only, {}],

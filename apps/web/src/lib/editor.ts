@@ -55,14 +55,12 @@ const NEEDS: Record<string, { provider: string; label: string }> = {
   trello: { provider: "trello", label: "Trello" },
   paymongo_link: { provider: "paymongo", label: "PayMongo" },
   payment_status: { provider: "paymongo", label: "PayMongo" },
-  sms: { provider: "unisms", label: "UniSMS" },
   meta_reply: { provider: "meta_messenger", label: "Facebook Messenger & Instagram" },
 };
 
 function paymentApps(step: Extract<Step, { type: "payment_due" }>) {
   const apps = [];
   if (step.config.checkout) apps.push(NEEDS.paymongo_link!);
-  if (step.config.channel === "sms") apps.push(NEEDS.sms!);
   if (step.config.channel === "messenger") apps.push(NEEDS.meta_reply!);
   return apps;
 }
@@ -111,7 +109,8 @@ export function chosenFor(draft: Draft, conns: readonly ConnInfo[]): Map<string,
 export function unconnectedNodes(draft: Draft, connected: ReadonlySet<string>, mailReady: boolean): Map<string, string> {
   const out = new Map<string, string>();
   const check = (id: string, entry: ReturnType<typeof stepEntry>) => {
-    if (!entry.provider || !entry.app) return;
+    // SMS is the server's own, never connected by a workspace (decision 0100).
+    if (!entry.provider || !entry.app || entry.provider === "unisms") return;
     const ok = entry.provider === "gmail" ? mailReady : connected.has(entry.provider);
     if (!ok) out.set(id, entry.app.en);
   };

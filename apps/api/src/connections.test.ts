@@ -291,87 +291,40 @@ describe("turning on and retrying", () => {
 });
 
 describe("UniSMS", () => {
-  it("saves Secret Key encrypted and Sender ID, never returns the key, sends a test SMS, charges quota, redacts errors, and disconnects", async () => {
-    const { agent, userId } = await signedIn();
-    // Give the workspace a paid plan so SMS quota allows sending (preview has sms: 0).
-    await db.update(users).set({ plan: "pilot", planStartedOn: "2026-11-01" }).where(eq(users.id, userId));
-    const secretKey = `unisms_synth_api_key_${seq}_abcd`; // gitleaks:allow
-    fake.unisms.secretKey = secretKey;
-    fake.unisms.messages.length = 0;
-
-    // Invalid Sender ID or missing key is refused.
-    await agent.put("/settings/connections/unisms").send({ secretKey: "short" }).expect(400);
-    await agent.put("/settings/connections/unisms").send({ secretKey, senderId: "Bad!SenderID" }).expect(400);
-
-    const saved = await agent.put("/settings/connections/unisms").send({ secretKey, senderId: "LimDental" }).expect(200);
-    expect(saved.body.connections).toEqual([expect.objectContaining({ provider: "unisms", status: "active", destination: { senderId: "LimDental" } })]);
-    expect(JSON.stringify(saved.body)).not.toContain(secretKey);
-    const [row] = await db.select().from(connections).where(eq(connections.userId, userId));
-    expect(JSON.stringify(row)).not.toContain(secretKey);
-
-    // Invalid phone number on test is refused with 400.
-    await agent.post("/settings/connections/unisms/test").send({ to: "+14155550100" }).expect(400);
-
-    // Valid PH number sends one test SMS and counts 1 sms unit in /usage.
-    const test = await agent.post("/settings/connections/unisms/test").send({ to: "09171234567" }).expect(200);
-    expect(test.body).toMatchObject({ ok: true, recipient: "+639171234567", senderId: "LimDental" });
-    expect(fake.unisms.messages).toHaveLength(1);
-    const usage = await agent.get("/usage").expect(200);
-    expect(usage.body.sms).toMatchObject({ used: 1, limit: 50 });
-
-    // Error echoing secret is redacted through historyHider, and 401 marks connection failed.
-    fake.once("/api/sms", { status: 400, body: { error: `rejected ${secretKey}` } });
-    const bad = await agent.post("/settings/connections/unisms/test").send({ to: "+639171234567" }).expect(200);
-    expect(bad.body.ok).toBe(false);
-    expect(bad.body.error).not.toContain(secretKey);
-
-    fake.once("/api/sms", { status: 401, body: { error: "unauthorized" } });
-    const unauth = await agent.post("/settings/connections/unisms/test").send({ to: "+639171234567" }).expect(200);
-    expect(unauth.body.ok).toBe(false);
-    const after401 = await agent.get("/settings/connections").expect(200);
-    expect(after401.body.connections).toEqual([expect.objectContaining({ provider: "unisms", status: "failed" })]);
-    // Definite rejections (400 and 401) refund the test SMS quota claim so used stays at 1 (M2).
-    const usageAfterRejections = await agent.get("/usage").expect(200);
-    expect(usageAfterRejections.body.sms).toMatchObject({ used: 1, limit: 50 });
-
-    // Disconnect via DELETE /settings/connections/unisms.
-    await agent.delete("/settings/connections/unisms").expect(204);
-    const afterDel = await agent.get("/settings/connections").expect(200);
-    expect(afterDel.body.connections).toEqual([]);
-
-    // Disconnecting UniSMS permanently opts the workspace out of shared operator fallback until reconnected (H1).
-    const prevShared = {
-      SHARED_UNISMS_KEY: process.env.SHARED_UNISMS_KEY,
-      UNISMS_SECRET_KEY: process.env.UNISMS_SECRET_KEY,
-      UNISMS_SENDER_ID: process.env.UNISMS_SENDER_ID,
-    };
-    try {
-      process.env.SHARED_UNISMS_KEY = "open";
-      process.env.UNISMS_SECRET_KEY = "unisms_synth_shared_op_key"; // gitleaks:allow
-      process.env.UNISMS_SENDER_ID = "Daloy";
-      const wf = (await agent.post("/workflows").send({ name: "SMS Alert", slug: `sms-alert-${seq}` }).expect(201)).body as { id: string };
-      const smsDef = {
-        trigger: { type: "manual", config: {} },
-        steps: [{ id: "send_sms", type: "sms", config: { to: "+639171234567", message: "Alert" } }],
-        edges: [],
-      };
-      await agent.post(`/workflows/${wf.id}/versions`).send({ definition: smsDef, publish: true }).expect(400);
-    } finally {
-      for (const [k, v] of Object.entries(prevShared)) {
-        if (v === undefined) delete process.env[k];
-        else process.env[k] = v;
-      }
+  const saved = { UNISMS_SECRET_KEY: process.env.UNISMS_SECRET_KEY, UNISMS_SENDER_ID: process.env.UNISMS_SENDER_ID };
+  const restore = () => {
+    for (const [k, v] of Object.entries(saved)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
     }
+  };
+  const smsDef = { trigger: { type: "manual", config: {} }, steps: [{ id: "send_sms", type: "sms", config: { to: "+639171234567", message: "Alert" } }], edges: [] };
+
+  it("has no connection routes for a workspace key: the server's env is the only source (decision 0100)", async () => {
+    const { agent } = await signedIn();
+    fake.unisms.messages.length = 0;
+    await agent.put("/settings/connections/unisms").send({ secretKey: "unisms_synth_key_12345678" }).expect(404); // gitleaks:allow
+    await agent.post("/settings/connections/unisms/test").send({ to: "09171234567" }).expect(404);
+    expect(fake.unisms.messages).toHaveLength(0);
+    expect((await agent.get("/settings/connections").expect(200)).body.connections).toEqual([]);
   });
 
-  it("blocks test SMS with 429 on preview plan (sms: 0)", async () => {
-    const { agent, userId } = await signedIn();
-    await db.update(users).set({ plan: "preview", planStartedOn: "2026-11-01" }).where(eq(users.id, userId));
-    const secretKey = `unisms_synth_prev_key_${seq}_abcd`; // gitleaks:allow
-    fake.unisms.secretKey = secretKey;
-    fake.unisms.messages.length = 0;
-    await agent.put("/settings/connections/unisms").send({ secretKey }).expect(200);
-    await agent.post("/settings/connections/unisms/test").send({ to: "09171234567" }).expect(429);
-    expect(fake.unisms.messages).toHaveLength(0);
+  it("publishes an SMS step only when the server has UniSMS settings, and says so otherwise", async () => {
+    const { agent } = await signedIn();
+    const wf = (await agent.post("/workflows").send({ name: "SMS Alert", slug: `sms-alert-${seq}` }).expect(201)).body as { id: string };
+    try {
+      delete process.env.UNISMS_SECRET_KEY;
+      delete process.env.UNISMS_SENDER_ID;
+      const refused = await agent.post(`/workflows/${wf.id}/versions`).send({ definition: smsDef, publish: true }).expect(400);
+      expect(refused.body.message).toBe("SMS is not set up on this server.");
+      // A draft is still saved: only turning on is checked.
+      await agent.post(`/workflows/${wf.id}/versions`).send({ definition: smsDef }).expect(201);
+
+      process.env.UNISMS_SECRET_KEY = "unisms_synth_shared_op_key"; // gitleaks:allow
+      process.env.UNISMS_SENDER_ID = "Daloy";
+      await agent.post(`/workflows/${wf.id}/versions`).send({ definition: smsDef, publish: true }).expect(201);
+    } finally {
+      restore();
+    }
   });
 });

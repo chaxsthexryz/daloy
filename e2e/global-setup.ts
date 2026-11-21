@@ -96,9 +96,8 @@ export default async function setup() {
   process.env.E2E_TELEGRAM_TOKEN = providers.telegram.token;
   process.env.E2E_PAYMONGO_KEY = "sk_test_e2e0000000000000000";
   process.env.E2E_PAYMONGO_WEBHOOK_SECRET = "whsk_e2e000000000000";
-  // UniSMS (R3 payment replies): the fake accepts this key only.
+  // UniSMS is the server's own (decision 0100): the fake accepts this key only, and the API and worker get it as env below.
   providers.unisms.secretKey = "unisms_e2e_key_0000000001";
-  process.env.E2E_UNISMS_KEY = providers.unisms.secretKey;
   providers.notion.token = "ntn_e2eNotionToken0123456789abcdef";
   process.env.E2E_NOTION_TOKEN = providers.notion.token;
   process.env.E2E_NOTION_DATABASE = providers.notion.database;
@@ -130,6 +129,8 @@ export default async function setup() {
     SLACK_API_URL: providers.urls.slack,
     TELEGRAM_API_URL: providers.urls.telegram,
     UNISMS_API_URL: providers.urls.unisms,
+    UNISMS_SECRET_KEY: providers.unisms.secretKey,
+    UNISMS_SENDER_ID: "DaloyE2E",
     PAYMONGO_API_URL: providers.urls.paymongo,
     META_GRAPH_URL: providers.urls.meta,
     META_CDN_URL: providers.urls.metaCdn,

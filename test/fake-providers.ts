@@ -220,10 +220,11 @@ export async function startFakeProviders(port = 0) {
     // For the e2e suite, whose tests run in other processes: read counts, and take the Slack app out of the channel.
     if (path === "/__control") {
       if (req.method === "POST") {
-        const c = JSON.parse(raw) as { slackMember?: boolean; slackConsent?: "grant" | "declined"; microsoftConsent?: typeof microsoft.consent };
+        const c = JSON.parse(raw) as { slackMember?: boolean; slackConsent?: "grant" | "declined"; microsoftConsent?: typeof microsoft.consent; unismsRevoked?: boolean };
         if (c.slackMember !== undefined) slack.channels[0]!.is_member = c.slackMember;
         if (c.slackConsent) oauth.v2!.consent = c.slackConsent;
         if (c.microsoftConsent) microsoft.consent = c.microsoftConsent;
+        if (c.unismsRevoked !== undefined) unisms.revoked = c.unismsRevoked;
       }
       return json(res, 200, {
         driveFiles,
