@@ -1102,6 +1102,16 @@ Edge cases. A sample result remembers the draft as JSON, so any edit makes it "O
 
 Tests. `packages/engine/src/flow-guide.test.ts` (order and wording in both languages, unreached steps, required fields, recipients, the failing example, payment mode), `apps/web/src/lib/guide.test.ts` (out-of-date and guide state), `e2e/setup-guide.spec.ts` (try a sample, edit, out of date, explain, Turn on summary and cancel). The other editor specs now confirm from the summary.
 
+## Phone step editor and canvas controls (roadmap R4, decision 0095)
+
+What it does. On a phone the editor opens on the step list. Each step has move up and move down buttons, tapping a step opens its settings in a bottom sheet, and Add step opens a searchable menu of step types. Undo and Redo buttons sit above the list, and Ctrl+Z, Ctrl+Shift+Z and Ctrl+Y do the same outside text fields. On a larger screen the diagram gets a plus on each connection (adds a step between the two), the same add menu on right click or Shift+F10 on a step, and a Connect to field in the step settings that says why it refuses a change. All controls are 44 px high at 390 px, and nothing needs dragging.
+
+Why it is built this way. Every edit was already a pure function from one draft to the next (`lib/graph.ts`), so undo is a list of earlier drafts (`lib/history.ts`) and needs no server. Typing in one step's fields is one undo step. An edit never saves or publishes: Save is explicit and Publish still opens the Turn on summary (decision 0092). Reordering is limited to a straight stretch of the flow (`moveStep`) because a branching step has no obvious place to put each branch. Connect to is a list instead of dragging handles so touch and keyboard work the same way.
+
+Edge cases. A move keeps the branch label of the edge that leads into the stretch, and renumbers the steps in flow order. `connectSteps` refuses a link to itself, a loop, a wrong or missing branch, and a change that would leave a step with no way in (the flow needs exactly one first step). Undo or redo of a step that was selected and no longer exists clears the selection. The history is lost on reload. The sheet used for settings is the shared `Sheet`, which now gives each sheet its own title id so one can open over another.
+
+Tests. `apps/web/src/lib/edit-model.test.ts` (move, connect, and undo restoring the exact earlier definition after add, move and remove, each checked against the engine's definition schema), `apps/web/src/lib/history.test.ts` (undo, redo, merged edits, the limit), `e2e/phone-editor.spec.ts` (390 px: move, 44 px targets, sheet edit, undo, add menu, Publish only opens Turn on and saves nothing; desktop: plus on a connection, search and Enter, Ctrl+Z, Shift+F10, Connect to refusing a loop).
+
 ## Both payment paths (R3, decisions 0088 to 0091)
 
 What it does: a workflow asks a customer for a deposit, a full payment or a balance with the `payment_due` step. The customer pays the seller's QR Ph code or GCash number and sends the transfer reference on a private pay page, or pays a PayMongo checkout. Staff see one Receipts to review list. Unpaid orders get a reminder and, after a deadline, are cancelled with the booking slot released.

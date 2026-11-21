@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 
 const PHONE = "(max-width: 799.98px)";
 
@@ -20,6 +20,7 @@ export function usePhone(): boolean {
  */
 export function Sheet({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
   const ref = useRef<HTMLDialogElement>(null);
+  const titleId = useId(); // a sheet can open over another sheet, so the title id must be unique
   useEffect(() => {
     const dialog = ref.current;
     if (dialog && !dialog.open) dialog.showModal();
@@ -28,12 +29,12 @@ export function Sheet({ title, onClose, children }: { title: string; onClose: ()
     <dialog
       ref={ref}
       className="wk-sheet motion-dialog"
-      aria-labelledby="wk-sheet-title"
+      aria-labelledby={titleId}
       onClose={onClose}
       onClick={(e) => e.target === ref.current && ref.current.close()}
     >
       <div className="wk-sheet-grip" aria-hidden="true" />
-      <h2 id="wk-sheet-title">{title}</h2>
+      <h2 id={titleId}>{title}</h2>
       {children}
     </dialog>
   );

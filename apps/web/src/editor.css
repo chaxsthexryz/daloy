@@ -162,6 +162,29 @@
   .a7-next div { flex-direction: column; gap: 2px; }
   .a7-next dd { text-align: left; }
 }
+/* R4: undo and redo, move buttons, the add menu, the plus on a connection and Connect to. */
+.a7-tools { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.a7-undo { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.a7-editor .a7-undo button { min-height: 30px; padding: 0 12px; }
+.a7-note { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+.a7-list > li { display: flex; align-items: stretch; gap: 6px; }
+.a7-list > li > button:first-child { flex: 1; min-width: 0; }
+.a7-move { display: flex; flex: none; gap: 6px; }
+.a7-editor .a7-list .a7-move button { display: grid; place-items: center; flex: none; width: 44px; min-width: 44px; height: auto; min-height: 44px; padding: 0; font-size: 18px; line-height: 1; }
+.a7-insert { display: grid; place-items: center; position: absolute; width: 24px; height: 24px; padding: 0; border: 1px solid var(--border); border-radius: 50%; background: var(--surface); color: var(--accent); font-size: 16px; line-height: 1; cursor: pointer; pointer-events: all; }
+.a7-insert::before { content: ""; position: absolute; inset: -10px; }
+.a7-insert:hover { background: var(--accent-tint); }
+@media (max-width: 599.98px) {
+  .a7-undo { flex: 1 1 100%; }
+  .a7-editor :is(.a7-undo button, .add-step button, .add-step select, .a7-add) { min-height: var(--target); }
+}
+@media (pointer: coarse) { .a7-insert { width: 44px; height: 44px; } .a7-insert::before { inset: 0; } }
+.a7-menu { display: flex; flex-direction: column; gap: 12px; min-height: 0; }
+.a7-menu-list { display: flex; flex-direction: column; gap: 6px; max-height: 46dvh; margin: 0; padding: 0; overflow-y: auto; list-style: none; }
+.a7-menu-list button { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 44px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); box-shadow: none; text-align: left; }
+.a7-menu-list button > span:last-child { display: flex; flex-direction: column; min-width: 0; }
+.a7-menu-list small { color: var(--muted); font-size: 12px; font-weight: 400; line-height: 16px; }
+
 @media (prefers-reduced-motion: reduce) {
   .a7-chip, .a7-copied { transition-duration: 0s; animation: none; }
 }
