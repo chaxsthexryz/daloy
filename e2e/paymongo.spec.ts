@@ -38,7 +38,9 @@ test("an owner connects PayMongo, a run makes a payment link, and the paid webho
       return run.state;
     }, { timeout: 30_000 })
     .toBe("succeeded");
-  const { paymongoSessions } = (await (await fetch(`${process.env.E2E_PROVIDERS_URL}/__control`)).json()) as { paymongoSessions: { id: string; amount: number }[] };
+  const { paymongoSessions: all } = (await (await fetch(`${process.env.E2E_PROVIDERS_URL}/__control`)).json()) as { paymongoSessions: { id: string; amount: number }[] };
+  // Other specs share the fake (R3 payments.spec makes a 350 peso session), so only this run's session counts.
+  const paymongoSessions = all.filter((s) => url.endsWith(s.id));
   expect(paymongoSessions).toHaveLength(1);
   expect(paymongoSessions[0]!.amount).toBe(15050);
   expect(url).toBe(`https://checkout.paymongo.test/${paymongoSessions[0]!.id}`);
