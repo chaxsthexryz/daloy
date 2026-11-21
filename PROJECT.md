@@ -311,7 +311,7 @@ DeepSeek's review is in `docs/roadmap-review-2026-11-18.md`. Claude's second opi
 - [x] Doop W1, W3 and W4 (Team, Settings, Account).
 - [x] Doop W5 to W9 (Advanced pages) merged into main. 78 e2e pass locally.
 - [x] Doop E1 to E6 (sign in, registration, forgot and reset password, accept invitation, My requests).
-- [ ] Doop E7 to E11 (public form, embed, booking form, approval page, browser demo).
+- [x] Doop E7 to E11 (public form, embed, booking form, approval page, browser demo). 95 e2e pass locally.
 - [ ] Doop Q1 walkthrough and clean Docker start.
 
 ## Seller pilot roadmap (docs/roadmap.md, 21 November 2026)
