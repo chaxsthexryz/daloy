@@ -40,7 +40,6 @@ afterAll(async () => {
   await pool?.end();
 });
 
-type Agent = ReturnType<typeof request.agent>;
 
 async function owner() {
   const email = `r3-${++seq}@test.local`;

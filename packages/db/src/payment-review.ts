@@ -351,7 +351,7 @@ export async function duesForBooking(db: Db, workspaceId: string, by: { bookingI
       confirmedSource: d.confirmedSource,
       confirmedBy,
       confirmedAt: d.confirmedAt,
-      history: events.filter((e) => e.dueId === d.id).map(({ dueId: _, ...e }) => e),
+      history: events.filter((e) => e.dueId === d.id).map((e) => ({ event: e.event, source: e.source, actor: e.actor, detail: e.detail, at: e.at })),
     };
   });
 }
