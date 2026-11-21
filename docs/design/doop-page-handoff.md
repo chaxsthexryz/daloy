@@ -223,3 +223,5 @@ After each row, append the date, row ID, design/implementation status, frame lin
 ### Reproduce the Apps and Business walkthrough
 
 Build the console with `pnpm --filter @daloy/web build`. Run `DALOY_REVIEW=apps pnpm --filter @daloy/api exec tsx --tsconfig ../../tsconfig.json ../../scripts/console-review/capture.mjs` from the repository root. The capture opens the built application with local fixtures, checks overflow at 390 and 1440 pixels in English and Tagalog, then reopens every image offline. The output is `test-results/console-review/console-review.html`.
+
+21 November 2026. E7 to E11 are implemented on `claude/doop-e7-e11-e962b9` (based on `claude/n7-n16-ci-6fe00f`). E7 and E8 share one commit (public form, receipt, paused page, embed), then E9 (booking form), E10 (approval pages) and E11 (browser demo). Decisions 0079 to 0081. Open issues: the booking form assumes 9 am to 5 pm hours; the validation page cannot keep a chosen file; the demo diagram is the real canvas, not the frame's simplified drawing; the web console has no new locale file because these pages are server-rendered with `public-copy.ts` (en and tl) and the demo is English only.

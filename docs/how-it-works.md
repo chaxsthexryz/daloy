@@ -1038,3 +1038,27 @@ A new person chooses a password. Someone whose email already has an account in n
 ### My requests (E6, `Team.tsx`)
 
 Approvers and requesters see requests they sent while signed in: reference, subject, automation, when it was sent and a status in words from `requestStatus` in `lib/my-requests.ts`. An approver also sees where approval requests arrive. An empty list says "None yet.", a failed load shows the error, and Account and Sign out sit in the top bar. Tests: `lib/my-requests.test.ts`, `lib/locale-entry.test.ts`, `e2e/entry.spec.ts` (empty, rows with phone cards, approver note, failed load).
+
+## Public pages (Doop rows E7 to E11, decisions 0079 to 0081)
+
+What it does: the form a visitor fills in, its receipt, the paused page, the embedded form, the booking form and the approval page are plain HTML cards from `apps/api/src/public-pages.ts` (one inline stylesheet, no script). They carry the business brand (logo, accent, name) and never the Daloy brand, except an approval whose workspace set no brand. The browser demo (`apps/web/src/demo`) is a React page of its own with scripted replies.
+
+### Public form and receipt (E7, `public.ts`)
+
+A refused submission comes back to a browser as the same form with an alert, the reason beside each field and the visitor's answers kept (files cannot be kept). An API caller that asks for JSON, or sends `*/*`, still gets the JSON 400 or 429. The receipt shows the reference in a card with a "Received" label, and a repeated send of a tracked form (same submission key) shows the first reference. A paused form says so and stores nothing. Short fields (number, email) sit two to a row on a wide page. Proven by `public-form-pages.test.ts`, `public-pages.test.ts` and `e2e/public-form.spec.ts` (brand, a refused .docx, receipt, paused page, phone width).
+
+### Embedded form (E8, `FormEmbed.tsx`, `/forms/:id/embed`)
+
+The embed route is the same renderer with a transparent page background. It is the only route helmet allows to be framed (`frame-ancestors`), it never records the signed-in member as the requester, and a refused send stays inside the frame. `e2e/form-embed.spec.ts` submits from a page on another host, and `e2e/public-form.spec.ts` does it at phone width.
+
+### Booking form (E9, `slots.ts`, decision 0080)
+
+A form with a resource field and a datetime field on a slot grid shows the open times of the chosen resource for the chosen day (9 am to 5 pm on the grid). `GET /forms/:id/slots` answers only for a resource of that form's workspace and returns times, never who booked. A browser that submits a taken time gets the form back with "That time is no longer available" and the other times; an API caller still reaches the booking step's `taken` branch. Proven by `slots.test.ts` (grid, overlap, past slots, zones), `public-form-pages.test.ts` (endpoint scope, notice) and `e2e/booking-public.spec.ts` (two visitors, one real booking made by the worker).
+
+### Approval page (E10, `approvals.ts`)
+
+GET shows the request and records nothing; the decision is a POST, as before. The decision, sign-in, not-yours and answer-recorded pages carry the brand of the approval's own workspace. An unknown, used or expired link gets one plain "Link not valid" page with no brand and no detail. Proven by `approvals-brand.test.ts`, `approvals.test.ts`, `approvals-named.test.ts`, `e2e/approval.spec.ts` and `e2e/team.spec.ts`.
+
+### Browser demo (E11, `Demo.tsx`, decision 0081)
+
+The demo has its own scoped stylesheet and the console's real flow diagram and checker. A step that waits for the visitor shows "Needs you". Start over and Try another example clear the conversation and the run. `e2e/portfolio-demo.spec.ts` runs the whole path offline and checks that no request is made.

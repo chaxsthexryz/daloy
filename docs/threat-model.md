@@ -144,6 +144,15 @@ Kept current with each phase. A mitigation marked "planned" does not exist in co
 - Workflows already built from the old starters keep the old wording and the old booking flow until the owner edits them.
 - Requester attribution needs the browser's `Origin` header to reach the API and `PUBLIC_URL` to match the address people use. A proxy that drops or rewrites `Origin` makes every tracked request anonymous.
 
+## Public pages (Doop rows E7 to E11, decisions 0079 and 0080)
+
+- Reflected input on the re-rendered form: the visitor's answers and the error messages are HTML escaped before they go back into the page, and the form is returned only for a 400 or 429, so no other status carries input. `public-form-pages.test.ts` posts `<tables>` and checks it comes back as text.
+- CSS injection through the brand colour: the accent and ink are written into the stylesheet only if they match `#rrggbb`, whatever the database holds (`safeColour`, `public-pages.test.ts`).
+- Availability probing: `GET /forms/:id/slots` is limited to 60 calls a minute per IP, answers 404 for a resource that does not belong to the form's workspace or an inactive one, rejects a bad date or id with 400, and returns only start times and a taken flag. It reveals when a resource is busy (the booking form shows this on purpose) and nothing about who booked. The date range is not capped, so a scraper can read a year of busy times; this is the same information the form shows a visitor.
+- Another workspace's brand on an approval: the brand is read with the approval's own workspace id. An unknown link has no workspace and shows the Daloy page. `approvals-brand.test.ts`.
+- Scripts on public pages: the pages have no inline script. The booking form loads `/public/slots.js` from the API origin, so `script-src 'self'` stays. The embed route keeps the framing allowance and the plain form keeps `X-Frame-Options`.
+- Taken-time notice for browsers only: it does not stop a double booking, which the booking step's exclusion constraint does.
+
 ## Public demo boundary
 
 The demo page (`apps/web/demo`, published as `site/demo/` on Cloudflare Pages) accepts a free-text request and sample form values. It renders them as React text, keeps them in browser memory, and never sends them anywhere: there is no model call, no API call and no storage. On daloyapp.pages.dev it is a static site with no console behind it. The API also serves it at `/demo/` on an installation, on the console's origin, where it makes no requests either. `e2e/portfolio-demo.spec.ts` runs the whole flow offline and checks that no request was made.
