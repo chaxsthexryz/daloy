@@ -200,7 +200,24 @@ The demo page (`apps/web/demo`, published as `site/demo/` on Cloudflare Pages) a
 - A test payment starting real work (decision 0056): the listeners for a sandbox payment, or for a payment made by a builder test run, start as test runs, which mock emails, HTTP calls and sheet rows. A payment row only changes on an event of its own mode.
 - Events out of order (decision 0056): a paid or refund event that matches no payment yet is kept with what is needed to apply it. A paid event applies a kept refund, and storing a checkout session applies a kept paid event (without starting listeners, since Daloy hands out the link only after storing it).
 - A GCash screenshot as proof: nothing in Daloy marks a payment paid except a signed PayMongo event that matches the stored amount.
-- Remaining risk: abandoned links stay pending (PayMongo sends no expiry event), failed payments and partial refunds are not handled, and the signing format is only checked against PayMongo's documentation until the live check is run.
+- Remaining risk: a link made by `paymongo_link` stays pending when abandoned (PayMongo sends no expiry event; a `payment_due` checkout is expired by its deadline step, decision 0089), partial refunds are not handled, and the signing format is only checked against PayMongo's documentation until the live check is run.
+
+## Payment review and the pay page (R3, decisions 0088 to 0091)
+
+Assets: the confirmed state of an order, the seller's payment details (where customers send money), receipt images, the customer's mobile number.
+
+Entry points: `GET` and `POST /pay/<token>`, `GET /pay/<token>/qr`, the PayMongo webhook, and the staff routes under `/payments`.
+
+- A screenshot or an edited receipt: a claim never confirms. Only a reviewer's decision or a verified PayMongo event that matches workspace, checkout, order reference, currency and amount does. Reused references are flagged across the workspace, including references the Messenger receipt check saw.
+- Guessing another order's page: the token is 32 random bytes, so the order reference alone opens nothing. Malformed tokens are refused before any query.
+- Spam and oversized uploads: 10 posts a minute per IP, checked before multer reads the body, one file of at most 5 MB, a honeypot, zod on every field, and the daily `upload` quota for images. A file that is not JPEG, PNG, WebP or HEIC by its bytes is flagged and not stored.
+- Seeing receipts: images are served only to owners and operators of the claim's workspace, with `nosniff`, a `sandbox` CSP and `no-store`. Approvers, requesters, other workspaces and the customer get 403, 404 or 401. Decisions and the review list have the same rule.
+- Redirecting payments: only the owner may change the GCash number, account name or QR image. The QR upload must be a JPEG, PNG or WebP of at most 1 MB by its bytes. The checkout link on the page must be `https://` and comes from PayMongo's answer, never from a customer.
+- Two reviewers, or a reviewer and a webhook, at once: the due row is locked first in every path, decisions carry the claim version, and the confirmation reply is a delivery unique per run and step, so one confirmation goes out.
+- An unassigned staff member deciding: a due with an assigned reviewer is decided by that reviewer or the owner (403 otherwise).
+- Rows of another workspace: every query filters by the workspace from the session or the webhook path, and all queries are parameterised through Drizzle.
+- A late or second payment: a payment after the deadline or after a manual confirmation is parked as a checkout claim for a person, never counted as a second confirmation.
+- Remaining risk: the rate limit is per API instance; a holder of one pay link can add claims for that order up to the limit; reminders can reach a customer who paid but is not confirmed yet; the Expire API is checked against the fake only until the live check.
 
 ## Airtable, Notion and Trello (decision 0046)
 

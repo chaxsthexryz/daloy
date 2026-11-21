@@ -319,7 +319,7 @@ DeepSeek's review is in `docs/roadmap-review-2026-11-18.md`. Claude's second opi
 - [ ] R1. Three-screen onboarding (name, business type, first workflow and payment choice), saved per step and resumable.
 - [ ] R2a. App logos and action labels on every node, one step catalog, logos on the Apps page.
 - [ ] R2b. Setup guide, Explain this flow dialog, sample test run and the Turn on summary.
-- [ ] R3. Manual QR Ph transfer review, PayMongo GCash checkout, one Receipts to review list, unpaid-order nudges.
+- [x] R3. Manual QR Ph transfer review, PayMongo GCash checkout, one Receipts to review list, unpaid-order nudges. Branch `claude/r3-payments-511e4f`, migration 0043, decisions 0088 to 0091.
 - [ ] R4. Phone step editor (add, reorder, edit, undo), then canvas controls.
 - [ ] R5. Morning digest, payments CSV export, Taglish templates, receipt compression on the phone.
 - [ ] R6. Privacy under RA 10173: form notice, receipt image retention, per-customer export and delete.

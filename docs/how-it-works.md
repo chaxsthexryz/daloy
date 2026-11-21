@@ -1062,3 +1062,22 @@ GET shows the request and records nothing; the decision is a POST, as before. Th
 ### Browser demo (E11, `Demo.tsx`, decision 0081)
 
 The demo has its own scoped stylesheet and the console's real flow diagram and checker. A step that waits for the visitor shows "Needs you". Start over and Try another example clear the conversation and the run. `e2e/portfolio-demo.spec.ts` runs the whole path offline and checks that no request is made.
+
+## Both payment paths (R3, decisions 0088 to 0091)
+
+What it does: a workflow asks a customer for a deposit, a full payment or a balance with the `payment_due` step. The customer pays the seller's QR Ph code or GCash number and sends the transfer reference on a private pay page, or pays a PayMongo checkout. Staff see one Receipts to review list. Unpaid orders get a reminder and, after a deadline, are cancelled with the booking slot released.
+
+How it works:
+
+- Dues (`packages/db/src/payment-review.ts`, migration 0043): a due is what is owed on one order or booking, in integer centavos. It moves pending to confirmed to refunded, or pending to cancelled, never back. Every change locks the due row first and writes a line to `payment_history` in the same transaction, which is the history the booking card shows.
+- Manual path (`apps/api/src/payments.ts`): `/pay/<token>` shows the amount, the order, the seller's number, name and QR image and the form. A submission becomes a claim with flags (reference used before, amount differs, upload not readable, already confirmed, paid after the deadline). It never confirms. The reviewer confirms, rejects with a reason or asks the customer a question, and the customer gets the reason by SMS or Messenger. Each decision sends the claim version it showed, so a second reviewer gets a 409.
+- Automatic path (`settleCheckout`, called from the PayMongo webhook in `apps/api/src/public.ts`): after the signature and mode checks of decision 0045, the due is confirmed only when the payment is paid and its amount, currency and order reference equal the due's. Anything else (a wrong amount, a payment after the deadline, a second payment) becomes a checkout claim in the same list. A failed attempt changes nothing, since the checkout stays payable.
+- One confirmation: the reply is a delivery keyed `<due step>#confirmed` per run, queued by the pending to confirmed update alone. Whichever path confirms first sends it. A transfer receipt still open when the checkout confirms is flagged "Already confirmed" and cannot confirm again.
+- Payment and reply apart: the list shows "Payment confirmed, Reply failed" when the reply delivery failed. Retry reply re-queues that delivery only.
+- Nudges and deadline (`apps/worker/src/steps/index.ts`): ordinary steps the seller edits. `payment_status` reads the due, a condition checks `pending`, an SMS reminds. `payment_expire` expires the PayMongo checkout through its Expire API, cancels the due and releases the booking with the booking step code. If PayMongo says a payment is in progress, it keeps the order (`kept` branch).
+- Deposits and pay later: a deposit with a total shows the rest as the balance outstanding on the booking. A pay-later booking asks for a balance and has no deadline, so it stays active.
+- Templates: `booking-deposit-review` and `order-gcash-checkout` in `packages/engine/src/templates.ts`.
+
+Edge cases: two reviewers at once, duplicate receipts, duplicate and out-of-order webhooks, wrong amounts, a payment after the deadline, a checkout paid after a manual confirmation, a refund after confirmation, a checkout mid-payment at the deadline, a failed reply.
+
+Tests: `packages/db/src/payment-review.test.ts` (every transition and exception), `apps/worker/src/steps/payments.test.ts` (the steps against a fake PayMongo), `apps/api/src/payments.test.ts` (pay page, rate limit, who may review, decisions, webhook), `packages/engine/src/templates.test.ts`, and `e2e/payments.spec.ts` (the D-1042 pilot: a receipt in review, a verified checkout confirming it, one SMS, the booking history, a pay-later booking).
