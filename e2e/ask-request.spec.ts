@@ -22,7 +22,7 @@ test("an owner asks why a request stopped and only reads, nothing in the card ch
   await page.getByRole("button", { name: "Save channel" }).click();
   await expect(page.getByText("Notes go to #office-requests.")).toBeVisible();
 
-  await page.getByRole("link", { name: "New automation" }).first().click();
+  await page.getByRole("link", { name: "Library", exact: true }).first().click();
   await page.getByRole("link", { name: "Try the preview" }).click();
   await page.getByRole("button", { name: "Use this template" }).click();
   await page.getByRole("button", { name: "Next" }).click();
