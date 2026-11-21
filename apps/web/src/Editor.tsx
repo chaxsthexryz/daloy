@@ -1,6 +1,6 @@
 import "./editor.css";
 import { useLanguage } from "./Language";
-import { definitionSchema, destination, lintDefinition, markText, stepEntry, stepLabel, triggerEntry, triggerLabel, type FormField, type Step, type Trigger } from "@daloy/engine";
+import { configProblems, definitionSchema, destination, lintDefinition, markText, stepEntry, stepLabel, triggerEntry, triggerLabel, type FormField, type Step, type Trigger } from "@daloy/engine";
 import { AppMark } from "./AppMark";
 import { Background, ReactFlow, type NodeChange } from "@xyflow/react";
 import { useEffect, useId, useMemo, useState } from "react";
@@ -16,6 +16,17 @@ import { runFlow } from "./lib/run-flow";
 import { AutomationTabs } from "./Nav";
 import { SchemaForm, type JsonSchema } from "./SchemaForm";
 import { EmailSource } from "./EmailSource";
+import { ExplainSheet, SampleTest, SetupGuide, TurnOnSheet } from "./Guide";
+import { testState, type SampleResult } from "./lib/guide";
+
+const explainedKey = (id: string) => `daloy.explained.${id}`;
+const wasExplained = (id: string) => {
+  try {
+    return localStorage.getItem(explainedKey(id)) === "1";
+  } catch {
+    return false; // storage can be blocked; the dialog then shows again, which is harmless
+  }
+};
 
 type Catalog = { schemas: Record<string, JsonSchema>; branches: Record<string, string[]> };
 type Loaded = Workflow & { trigger: { id: string; type: string; webhookPath: string | null; legacySignatureAt?: string | null } | null; live: Version | null; latest: Version | null };
@@ -62,6 +73,12 @@ export function Editor({ id }: { id: string }) {
   // A phone shows the list first: the whole diagram fitted to 360px is too small to read.
   const [view, setView] = useState<"diagram" | "list">(() => (matchMedia("(max-width: 599.98px)").matches ? "list" : "diagram"));
   const [copied, setCopied] = useState<string | null>(null);
+  // R2b: the last test run and the draft it ran on, the dialogs, and whether the owner has read "Explain this flow".
+  const [sample, setSample] = useState<SampleResult | null>(null);
+  const { run: sampleRun } = useRun(sample?.runId ?? null);
+  const [showExplain, setShowExplain] = useState(false);
+  const [showTurnOn, setShowTurnOn] = useState(false);
+  const [explained, setExplained] = useState(() => wasExplained(id));
 
   const reload = async () => {
     const w = await api<Loaded>("GET", `/workflows/${id}`);
@@ -76,6 +93,8 @@ export function Editor({ id }: { id: string }) {
         setFirstResource(r.find((x) => x.active)?.id);
         setPayload(samplePayload(d.trigger, r.find((x) => x.active)?.id));
         setCatalog(c);
+        // After guided setup, show the explanation once for a draft that is not live yet.
+        if (w.setup && !w.live && d.steps.length > 0 && !wasExplained(id)) setShowExplain(true);
       })
       .catch((e: Error) => setMessage({ kind: "error", text: e.message }));
     api<{ connections: ConnInfo[] }>("GET", "/settings/connections").then(
@@ -150,16 +169,17 @@ export function Editor({ id }: { id: string }) {
       throw new Error(t("the sample data is not valid JSON"));
     }
   };
-  const testRun = () =>
+  const testRun = (testMode: typeof mode = mode) =>
     act("Test run", async () => {
       const r = await api<{ id: string; duplicate?: boolean; mode?: string }>("POST", `/workflows/${id}/test-runs`, {
         definition: draft,
         payload: parsedPayload(),
-        mode,
-        choices: mode === "live" ? {} : Object.fromEntries(draft.steps.flatMap((s) => (choices[s.id] ? [[s.id, JSON.parse(choices[s.id]!) as unknown]] : []))),
+        mode: testMode,
+        choices: testMode === "live" ? {} : Object.fromEntries(draft.steps.flatMap((s) => (choices[s.id] ? [[s.id, JSON.parse(choices[s.id]!) as unknown]] : []))),
       });
       setDirty(false);
       setRunId(r.id);
+      setSample({ key: JSON.stringify(draft), runId: r.id });
       await reload();
       // act() shows a returned string as the result message.
       if (r.duplicate) return t("This event key already ran, so nothing ran now. Showing the earlier {mode} test run; change the event id to test again.", { mode: t({ mock: "mocked", ai: "real AI only", live: "live" }[r.mode ?? "mock"] ?? "mocked") });
@@ -174,6 +194,17 @@ export function Editor({ id }: { id: string }) {
   if (!wf || !catalog) return <main className="page a7-loading">{message ? <p role="alert">{message.text}</p> : <p>{t("Loading…")}</p>}</main>;
 
   const step = draft.steps.find((s) => s.id === selected);
+  const problems = configProblems(draft, language);
+  const test = testState(JSON.stringify(draft), sample, sample ? (sampleRun?.id === sample.runId ? sampleRun.state : null) : null);
+  const closeExplain = () => {
+    setShowExplain(false);
+    setExplained(true);
+    try {
+      localStorage.setItem(explainedKey(id), "1");
+    } catch {
+      /* storage blocked: the dialog may show again */
+    }
+  };
   const status = dirty ? t("Unsaved changes") : wf.latest ? t("Version {version}{state}", { version: wf.latest.version, state: t(wf.latest.published ? " (live)" : ", draft") }) : t("Not saved yet");
   const isLive = !dirty && !!wf.latest?.published;
   const missing = apps.filter((a) => !a.connected);
@@ -222,10 +253,13 @@ export function Editor({ id }: { id: string }) {
           >
             {t("Test run")}
           </button>
+          <button type="button" onClick={() => setShowExplain(true)} disabled={draft.steps.length === 0}>
+            {t("Explain this flow")}
+          </button>
           <button type="button" onClick={() => save(false)} disabled={busy || draft.steps.length === 0}>
             {t("Save")}
           </button>
-          <button type="button" className="primary" onClick={() => window.confirm(t("Publish this version? It replaces the live version at once.")) && save(true)} disabled={busy || draft.steps.length === 0}>
+          <button type="button" className="primary" onClick={() => setShowTurnOn(true)} disabled={busy || draft.steps.length === 0}>
             {t("Publish")}
           </button>
         </div>
@@ -297,6 +331,8 @@ export function Editor({ id }: { id: string }) {
               {message.text}
             </p>
           )}
+          <SetupGuide facts={{ missingApps: missing.length, problems: problems.length, explained, test, live: isLive }} onExplain={() => setShowExplain(true)} onTry={() => void testRun("mock")} onTurnOn={() => setShowTurnOn(true)} />
+          <SampleTest draft={draft} apps={apps} test={test} run={sampleRun} busy={busy} onTry={() => void testRun("mock")} />
           {selected === "trigger" && (
             <div className="a7-inspector">
               <p className="a7-kicker a7-when">{t("When")}</p>
@@ -436,7 +472,7 @@ export function Editor({ id }: { id: string }) {
             </div>
             {mode !== "live" && <TestChoices steps={draft.steps} choices={choices} onChange={setChoices} />}
             <div className="actions">
-              <button type="button" onClick={testRun} disabled={busy || draft.steps.length === 0}>
+              <button type="button" onClick={() => void testRun()} disabled={busy || draft.steps.length === 0}>
                 {t("Test run draft")}
               </button>
               <button type="button" onClick={runLive} disabled={busy || !wf.live}>
@@ -454,6 +490,21 @@ export function Editor({ id }: { id: string }) {
           </section>
         </aside>
       </div>
+      {showExplain && <ExplainSheet draft={draft} chosen={chosen} onClose={closeExplain} />}
+      {showTurnOn && (
+        <TurnOnSheet
+          draft={draft}
+          apps={apps}
+          chosen={chosen}
+          test={test}
+          problems={problems.length}
+          onConfirm={() => {
+            setShowTurnOn(false);
+            void save(true);
+          }}
+          onClose={() => setShowTurnOn(false)}
+        />
+      )}
     </div>
   );
 }

@@ -23,3 +23,4 @@ export * from "./file-type";
 export * from "./phone";
 export * from "./onboarding";
 export * from "./catalog";
+export * from "./flow-guide";

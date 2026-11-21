@@ -1092,6 +1092,16 @@ Edge cases. A destination written as a template reads as words ("Customer email 
 
 Tests. `packages/engine/src/catalog.test.ts` (an entry for every step and trigger type, both languages filled, required fields are real config fields, labels and destination lines in English and Tagalog). `apps/web/src/AppMark.test.ts` (each logo file exists, is plain SVG and is in the README; every catalog mark has a picture, icon or tile). `apps/web/src/lib/editor.test.ts` (which nodes need which app, and the destination name). `e2e/editor.spec.ts` checks the node lines in a browser.
 
+## Setup guide, Explain this flow, sample test and Turn on (roadmap R2b, decision 0092)
+
+What it does. The editor shows a five-step setup guide (connect the apps, check the messages, read how it works, try a sample, turn on) with a word for each state. "Explain this flow" is a dialog that lists how the draft starts and what each step does and for whom, in English or Tagalog. It opens once by itself after guided setup and then from a button in the editor header. "Try a sample" runs the draft in mock mode and reports three separate things: configuration checks (a required field or recipient left empty), simulated step outcomes, and live connection status. "Show a failing example" runs the same checks on a copy of the draft with its first recipient removed. Publish opens a Turn on summary (apps, who gets what, payment mode, sample test state) and the owner confirms from there.
+
+Why it is built this way. The explanation and the checks are plain functions of the draft and the R2a catalog (`packages/engine/src/flow-guide.ts`), so they cost no network call, cannot say something the draft does not do and give the same answer in tests and in the browser. No AI decides a check. The sample uses the existing mock test run, so no provider is called. The server, the database and the threat model are unchanged.
+
+Edge cases. A sample result remembers the draft as JSON, so any edit makes it "Out of date" in the guide and in the summary. A step no edge reaches is still listed, after the reachable ones, because a draft in progress may not parse yet. An approval with neither an approver nor a recipient fails the recipient check. Pay later is reported when a payment step asks for a balance, and checkout when PayMongo checkout is on. If browser storage is blocked, the dialog just shows again.
+
+Tests. `packages/engine/src/flow-guide.test.ts` (order and wording in both languages, unreached steps, required fields, recipients, the failing example, payment mode), `apps/web/src/lib/guide.test.ts` (out-of-date and guide state), `e2e/setup-guide.spec.ts` (try a sample, edit, out of date, explain, Turn on summary and cancel). The other editor specs now confirm from the summary.
+
 ## Both payment paths (R3, decisions 0088 to 0091)
 
 What it does: a workflow asks a customer for a deposit, a full payment or a balance with the `payment_due` step. The customer pays the seller's QR Ph code or GCash number and sends the transfer reference on a private pay page, or pays a PayMongo checkout. Staff see one Receipts to review list. Unpaid orders get a reminder and, after a deadline, are cancelled with the booking slot released.

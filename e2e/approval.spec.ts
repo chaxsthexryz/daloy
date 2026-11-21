@@ -24,6 +24,7 @@ test("a live run waits for approval, and the emailed link approves it once", asy
   await page.getByRole("textbox", { name: "To (comma-separated)" }).fill(approver);
   await page.getByRole("textbox", { name: "Message", exact: true }).fill("Refund {{trigger.amount}} EUR to Ana?");
   await page.getByRole("button", { name: "Publish" }).click();
+  await page.getByRole("button", { name: "Turn on", exact: true }).click();
   await expect(page.getByRole("status")).toHaveText(/Version 1 is live/);
 
   await page.getByLabel("Sample trigger data (JSON)").fill('{ "amount": 40 }');

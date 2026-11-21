@@ -17,6 +17,7 @@ test("open the run history, diff two versions and roll back", async ({ page }) =
   await page.getByLabel("Add a step as the first step").selectOption("condition");
   await page.getByRole("button", { name: "Add", exact: true }).click();
   await page.getByRole("button", { name: "Publish" }).click();
+  await page.getByRole("button", { name: "Turn on", exact: true }).click();
   await expect(page.getByRole("status")).toHaveText(/Version 1 is live/);
 
   await page.getByLabel("Sample trigger data (JSON)").fill('{ "amount": 250, "api_key": "do-not-show" }');
@@ -48,6 +49,7 @@ test("open the run history, diff two versions and roll back", async ({ page }) =
   await page.getByRole("button", { name: "condition_1" }).first().click();
   await page.getByLabel("Operator").selectOption("lt");
   await page.getByRole("button", { name: "Publish" }).click();
+  await page.getByRole("button", { name: "Turn on", exact: true }).click();
   await expect(page.getByRole("status")).toHaveText(/Version 2 is live/);
 
   // The versions page diffs v2 against v1, and a rollback publishes v1's definition as v3.
