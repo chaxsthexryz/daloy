@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { addStep } from "./editor-steps";
 
 // R2b: the setup guide, a sample test that goes out of date on an edit, the failing example, and the Turn on summary.
 test("try a sample, see it go out of date, then turn on from the summary", async ({ page }) => {
@@ -13,8 +14,10 @@ test("try a sample, see it go out of date, then turn on from the summary", async
   await expect(page.getByRole("heading", { name: "Guide check", level: 1 })).toBeVisible();
 
   await page.getByRole("button", { name: "List", exact: true }).click();
-  await page.getByLabel("Add a step as the first step").selectOption("approval");
-  await page.getByRole("button", { name: "Add", exact: true }).click();
+  await addStep(page, "approval");
+  // The guide and the sample test show in the panel's overview, with no step selected (U2).
+  const close = page.locator(".a7-panel").getByRole("button", { name: "Close", exact: true });
+  await close.click();
 
   const guide = page.getByRole("region", { name: "Setup guide" });
   await expect(guide).toContainText("Try a sample");
@@ -27,9 +30,9 @@ test("try a sample, see it go out of date, then turn on from the summary", async
   await expect(sample.locator(".badge").first()).toBeVisible();
 
   // Adding a step changes the draft, so the old result is out of date.
-  await page.getByLabel("Add a step after approval_1").selectOption("email");
-  await page.getByLabel("Branch").selectOption("approved");
-  await page.getByRole("button", { name: "Add", exact: true }).click();
+  await page.getByRole("button", { name: /^approval_1 / }).click();
+  await addStep(page, "email", { after: "approval_1", branch: "approved" });
+  await close.click();
   await expect(sample).toContainText("Out of date");
 
   // The failing example removes the email's recipient from a copy; the real draft keeps passing its checks.

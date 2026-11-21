@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { addStep, openTestSettings } from "./editor-steps";
 
 // Run history and versions: see a run's step input and output, change the flow, diff the versions, roll back.
 test("open the run history, diff two versions and roll back", async ({ page }) => {
@@ -14,12 +15,12 @@ test("open the run history, diff two versions and roll back", async ({ page }) =
   await page.getByRole("button", { name: "Create" }).click();
 
   // Version 1: one condition step ({{trigger.amount}} gt 100). No outside calls.
-  await page.getByLabel("Add a step as the first step").selectOption("condition");
-  await page.getByRole("button", { name: "Add", exact: true }).click();
+  await addStep(page, "condition");
   await page.getByRole("button", { name: "Publish" }).click();
   await page.getByRole("button", { name: "Turn on", exact: true }).click();
   await expect(page.getByRole("status")).toHaveText(/Version 1 is live/);
 
+  await openTestSettings(page);
   await page.getByLabel("Sample trigger data (JSON)").fill('{ "amount": 250, "api_key": "do-not-show" }');
   await page.getByRole("button", { name: "Run live version" }).click();
   await expect(page.locator(".run > p").first()).toHaveText(/^succeeded live run/, { timeout: 30_000 });

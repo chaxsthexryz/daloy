@@ -49,7 +49,7 @@ test("on a 390 px phone: add, move, edit and undo steps with 44 px targets, and 
 
   // Every control a seller taps is at least 44 px high and wide.
   const small = await page.evaluate(() =>
-    [...document.querySelectorAll<HTMLElement>(".a7-move button, .a7-undo button, .a7-view button, .a7-list > li > button:first-child, .a7-add, .add-step button, .add-step select")]
+    [...document.querySelectorAll<HTMLElement>(".a7-move button, .a7-undo button, .a7-view button, .a7-list > li > button:first-child, .a7-add, .a7-actions button")]
       .map((el) => ({ name: el.getAttribute("aria-label") ?? el.textContent?.trim() ?? el.tagName, box: el.getBoundingClientRect() }))
       .filter(({ box }) => box.height < 43.5 || box.width < 43.5)
       .map(({ name, box }) => `${name} ${Math.round(box.width)}x${Math.round(box.height)}`),
@@ -81,7 +81,7 @@ test("on a 390 px phone: add, move, edit and undo steps with 44 px targets, and 
 
   // Add from the same list, then undo the add.
   const before = await ids(page);
-  await page.getByRole("button", { name: "Add step", exact: true }).click();
+  await page.getByRole("button", { name: "Add a step at the end" }).click();
   const menu = page.getByRole("dialog", { name: "Add a step after mail" });
   await menu.getByRole("searchbox", { name: "Search steps" }).fill("sheet");
   expect(await menu.getByRole("button").count()).toBeGreaterThan(0);
@@ -113,7 +113,7 @@ test("on a 390 px phone: add, move, edit and undo steps with 44 px targets, and 
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
 
-test("canvas controls: plus on a connection, searchable add menu, Shift+F10, Ctrl+Z and Connect to", async ({ page }) => {
+test("canvas controls: plus on a connection, searchable add menu, Shift+F10 menu, Ctrl+Z and Connect to", async ({ page }) => {
   const id = await draftFlow(page);
   await page.goto(`/#/w/${id}`);
   await expect(page.getByRole("heading", { name: "Phone editor", level: 1 })).toBeVisible();
@@ -137,12 +137,16 @@ test("canvas controls: plus on a connection, searchable add menu, Shift+F10, Ctr
   await page.keyboard.press("Control+z");
   await expect(node("delay_1")).toHaveCount(0);
 
-  // Shift+F10 on a focused step opens the same menu for it, and Escape closes it.
+  // Shift+F10 on a focused step opens its right-click menu (U2); arrow keys move through it, Escape closes it and focus returns.
   await node("wait").focus();
   await page.keyboard.press("Shift+F10");
-  await expect(page.getByRole("dialog", { name: "Add a step after wait" })).toBeVisible();
+  const actions = page.getByRole("menu", { name: "Actions for wait" });
+  await expect(actions.getByRole("menuitem").first()).toBeFocused();
+  await page.keyboard.press("ArrowDown");
+  await expect(actions.getByRole("menuitem", { name: "Add a step after this one" })).toBeFocused();
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(node("wait")).toBeFocused();
 
   // Connect to refuses a loop and says why; the draft stays as it was.
   await node("wait").click();

@@ -3,15 +3,15 @@ import { useLanguage } from "./Language";
 import { BRANCHES, configProblems, definitionSchema, destination, lintDefinition, markText, stepEntry, stepLabel, triggerEntry, triggerLabel, type FormField, type Step, type Trigger } from "@daloy/engine";
 import { AppMark } from "./AppMark";
 import { Background, ReactFlow, type NodeChange } from "@xyflow/react";
-import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { AskAi } from "./AiDraft";
 import { FormEmbed } from "./FormEmbed";
 import { api, type Version, type Workflow } from "./api";
-import { editorEdgeTypes, editorNodeTypes, flowAriaLabels, ZoomBar } from "./FlowCanvas";
+import { DropLine, editorEdgeTypes, editorNodeTypes, flowAriaLabels, ZoomBar } from "./FlowCanvas";
 import { RunResult, useRun } from "./Runs";
-import { ADDABLE, addStep, blankDraft, canMove, connectSteps, moveStep, removeStep, toFlow, type AddableType, type ConnectError, type Draft } from "./lib/graph";
+import { ADDABLE, addStep, blankDraft, canMove, connectSteps, duplicateStep, moveStep, readCopiedStep, removeStep, toFlow, type AddableType, type ConnectError, type Draft } from "./lib/graph";
 import { record, redo, startHistory, undo } from "./lib/history";
-import { Sheet, usePhone } from "./Sheet";
+import { Popover, Sheet, useMedia, usePhone } from "./Sheet";
 import { chosenFor, insertables, nextPaths, setupLeft, unconnectedNodes, type ConnInfo } from "./lib/editor";
 import { warningForLanguage } from "./lib/ai-build";
 import { runFlow } from "./lib/run-flow";
@@ -29,6 +29,32 @@ const wasExplained = (id: string) => {
     return false; // storage can be blocked; the dialog then shows again, which is harmless
   }
 };
+
+/** Whether the side panel is folded to a strip, kept per viewer (U2). Storage can be blocked, so a failed read means open. */
+const PANEL_KEY = "daloy.editor.panel";
+const panelFolded = () => {
+  try {
+    return localStorage.getItem(PANEL_KEY) === "collapsed";
+  } catch {
+    return false;
+  }
+};
+
+type Point = { x: number; y: number };
+/** Where a menu opens: the bottom left of the control that opened it. */
+const below = (el: Element): Point => {
+  const r = el.getBoundingClientRect();
+  return { x: r.left, y: r.bottom };
+};
+type MenuItem = { label: string; keys?: string; run: () => void };
+
+/** Why connectSteps refused, in words. The panel's Connect to and a drag on the canvas say the same. */
+function connectReason(e: ConnectError, t: (source: string, values?: Record<string, string | number>) => string) {
+  if (e.id === "self") return t("A step cannot lead to itself.");
+  if (e.id === "loop") return t("{to} already leads to {from}, so this would make a loop.", { to: e.to, from: e.from });
+  if (e.id === "orphan") return t("{step} would have no way in. Connect it from another step first, or delete it.", { step: e.step });
+  return t("Pick one of this step's branches.");
+}
 
 type Catalog = { schemas: Record<string, JsonSchema>; branches: Record<string, string[]> };
 type Loaded = Workflow & { trigger: { id: string; type: string; webhookPath: string | null; legacySignatureAt?: string | null } | null; live: Version | null; latest: Version | null };
@@ -61,9 +87,21 @@ export function Editor({ id }: { id: string }) {
   const [dirty, setDirty] = useState(false);
   // What the last move, undo or redo did, in words, next to the undo buttons.
   const [note, setNote] = useState("");
-  // The add menu: where it inserts (a step id and branch, or neither for the start of the flow).
-  const [menu, setMenu] = useState<{ after?: string; on?: string } | null>(null);
+  // The add menu: where it inserts (a step id and branch, or neither for the start of the flow), and where it opens on a wide screen.
+  const [menu, setMenu] = useState<{ after?: string; on?: string; at?: Point } | null>(null);
+  // The right-click menu (U2): its items and where it opens.
+  const [context, setContext] = useState<{ label: string; at: Point; items: MenuItem[] } | null>(null);
+  // The last copied step, so paste works when the system clipboard is refused or holds something else.
+  const [clip, setClip] = useState<{ type: AddableType; config: Step["config"] } | null>(null);
+  // Connect mode from the right-click menu: the next step clicked becomes where this path leads.
+  const [connecting, setConnecting] = useState<{ from: string; on?: string } | null>(null);
+  const [folded, setFolded] = useState(panelFolded);
+  // The step whose line in the test result to scroll to once "Test this step" has a result.
+  const [testFocus, setTestFocus] = useState<string | null>(null);
+  const fitRef = useRef<(() => void) | null>(null);
   const phone = usePhone();
+  // At 1000px and up the panel sits beside the canvas and can fold; below that it sits under it.
+  const wide = useMedia("(min-width: 1000px)");
   const [selected, setSelected] = useState<string | null>(null);
   const [firstResource, setFirstResource] = useState<string | undefined>();
   const [measured, setMeasured] = useState<Record<string, { width: number; height: number }>>({});
@@ -133,22 +171,43 @@ export function Editor({ id }: { id: string }) {
     // A selected step that the change removed has nothing left to show.
     if (selected && selected !== "trigger" && !next.present.steps.some((s) => s.id === selected)) setSelected(null);
   };
-  // Ctrl+Z and Cmd+Z, outside text fields (those keep their own undo) and while no dialog is open.
-  const keys = useRef(stepHistory);
-  keys.current = stepHistory;
+  // Shortcuts work outside text fields (those keep their own undo, copy and paste) and while no dialog is open: Ctrl+Z, Ctrl+Shift+Z
+  // and Ctrl+Y (Cmd on a Mac), and from U2 Ctrl+D, Ctrl+C, Ctrl+V and Escape. `key` returns true when it used the key.
+  const keys = useRef<{ history: typeof stepHistory; key?: (key: string) => boolean; paste?: (text: string) => void }>({ history: stepHistory });
+  keys.current.history = stepHistory;
   useEffect(() => {
+    const outside = (e: Event) => !document.querySelector("dialog[open]") && !(e.target instanceof Element && e.target.closest("input, textarea, select, [contenteditable='true']"));
     const on = (e: KeyboardEvent) => {
-      if (!(e.ctrlKey || e.metaKey) || e.altKey || document.querySelector("dialog[open]")) return;
-      if ((e.target as HTMLElement).closest("input, textarea, select, [contenteditable='true']")) return;
+      if (e.altKey || !outside(e)) return;
+      const mod = e.ctrlKey || e.metaKey;
       const key = e.key.toLowerCase();
-      if (key === "z" || key === "y") {
+      if (mod && (key === "z" || key === "y")) {
         e.preventDefault();
-        keys.current(key === "y" || e.shiftKey ? "redo" : "undo");
+        keys.current.history(key === "y" || e.shiftKey ? "redo" : "undo");
+      } else if ((mod && !e.shiftKey && (key === "d" || key === "c")) || (!mod && key === "escape")) {
+        if (keys.current.key?.(key)) e.preventDefault();
       }
     };
+    // Ctrl+V arrives as a paste event, which carries the clipboard text without asking for permission.
+    const onPaste = (e: ClipboardEvent) => {
+      if (!outside(e) || !keys.current.paste) return;
+      e.preventDefault();
+      keys.current.paste(e.clipboardData?.getData("text/plain") ?? "");
+    };
     addEventListener("keydown", on);
-    return () => removeEventListener("keydown", on);
+    addEventListener("paste", onPaste);
+    return () => {
+      removeEventListener("keydown", on);
+      removeEventListener("paste", onPaste);
+    };
   }, []);
+  // "Test this step": once the new run reaches that step, bring its line in the result into view.
+  useEffect(() => {
+    if (!testFocus || !run || run.id !== runId || !run.steps.some((s) => s.stepId === testFocus)) return;
+    const line = [...document.querySelectorAll<HTMLElement>(".a7-test .steps > li")].find((li) => new RegExp(`^\\S+ ${testFocus}(?![a-z0-9_])`).test(li.textContent ?? ""));
+    line?.scrollIntoView({ block: "center" });
+    setTestFocus(null);
+  }, [run, runId, testFocus]);
   const flow = useMemo(() => toFlow(draft, selected, run ? runFlow(draft, run) : undefined, language), [draft, selected, run, language]);
   // Advice only (decision 0033): a draft that does not parse yet is a work in progress, so it gets no checks.
   const warnings = useMemo(() => {
@@ -165,12 +224,15 @@ export function Editor({ id }: { id: string }) {
     data: { ...n.data, index: draft.steps.findIndex((s) => s.id === n.id) + 1, needsApp: unconnected.get(n.id), chosen: chosen.get(n.id) },
   }));
   // Every editor edge uses the square editor edge; it carries the branch so the pill can take its colour.
-  const edges = flow.edges.map((e) => ({ ...e, type: "editor", data: { ...e.data, on: e.sourceHandle ?? undefined, insert: () => setMenu(e.source === "trigger" ? {} : { after: e.source, on: e.sourceHandle ?? undefined }) } }));
+  const edges = flow.edges.map((e) => ({ ...e, type: "editor", data: { ...e.data, on: e.sourceHandle ?? undefined, insert: (at: Point) => setMenu(e.source === "trigger" ? { at } : { after: e.source, on: e.sourceHandle ?? undefined, at }) } }));
 
   const onNodesChange = (changes: NodeChange[]) => {
     for (const c of changes) {
       if (c.type === "dimensions" && c.dimensions) setMeasured((m) => ({ ...m, [c.id]: c.dimensions! }));
-      if (c.type === "select" && c.selected) setSelected(c.id);
+      if (c.type === "select" && c.selected) {
+        setSelected(c.id);
+        setFolded(false); // selecting a step opens a folded panel
+      }
       if (c.type === "remove" && c.id !== "trigger") {
         update(removeStep(draft, c.id));
         setSelected(null);
@@ -246,6 +308,7 @@ export function Editor({ id }: { id: string }) {
   const select = (next: string | null) => {
     setSelected(next);
     setCopied(null);
+    if (next) setFolded(false);
   };
   const editStep = (config: unknown) => update({ ...draft, steps: draft.steps.map((s) => (s.id === step!.id ? ({ ...s, config } as Step) : s)) }, `config:${step!.id}`);
   const move = (id: string, dir: "up" | "down") => {
@@ -263,26 +326,253 @@ export function Editor({ id }: { id: string }) {
     select(r.id);
     setMenu(null);
   };
-  // On a phone a selected step or trigger is edited in a sheet over the list; on a wider screen it stays in the side panel.
-  const inSheet = (body: ReactNode) =>
-    phone && selected ? (
-      <Sheet title={t(selected === "trigger" ? "Edit the trigger" : "Edit step")} onClose={() => select(null)}>
-        {body}
-        <div className="wk-sheet-actions">
-          <button type="button" className="wk-button blue" onClick={(e) => e.currentTarget.closest("dialog")?.close()}>
-            {t("Done")}
-          </button>
-        </div>
-      </Sheet>
-    ) : (
-      body
-    );
+  const fold = (next: boolean) => {
+    setFolded(next);
+    try {
+      localStorage.setItem(PANEL_KEY, next ? "collapsed" : "open");
+    } catch {
+      /* storage blocked: the choice lasts until the page reloads */
+    }
+  };
+  const closeButton = !phone && (
+    <button type="button" className="a7-close" onClick={() => select(null)}>
+      {t("Close")}
+    </button>
+  );
+  const addAfter = (after: string | undefined, label: string) => (
+    <button type="button" onClick={(e) => setMenu({ ...(after && { after }), at: below(e.currentTarget) })}>
+      {label}
+    </button>
+  );
   const copy = (reference: string) =>
     navigator.clipboard.writeText(reference).then(
       () => setCopied(t("Copied {reference}", { reference })),
       () => setCopied(t("Copy failed. Type {reference} into a text field.", { reference })),
     );
   const showRun = () => document.getElementById("run-heading")?.scrollIntoView({ block: "start", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+
+  // U2 canvas actions. Each one is an edit through the history, so Ctrl+Z takes it back; refusals say why in the canvas note.
+  // The last step of the flow, for "Add a step at the end", and where "Add step here" and paste go when no step is selected.
+  const tail = [...draft.steps].reverse().find((s) => !draft.edges.some((e) => e.from === s.id));
+  const where = (): { after?: string } => (step ? { after: step.id } : selected === "trigger" || !tail ? {} : { after: tail.id });
+  const copyable = (s: Step) => (ADDABLE as readonly string[]).includes(s.type);
+  const connect = (from: string, on: string | undefined, to: string) => {
+    const r = connectSteps(draft, from, on, to);
+    if ("error" in r) return setNote(connectReason(r.error, t));
+    update(r.draft);
+    setNote(t("Connected {from} to {to}.", { from, to }));
+  };
+  const duplicate = (stepId: string) => {
+    const r = duplicateStep(draft, stepId);
+    if ("error" in r) return setNote(t("{step} has branches, so it cannot be duplicated. Add a step and copy its settings instead.", { step: stepId }));
+    update(r.draft);
+    select(r.id);
+    setNote(t("Duplicated {from} as {id}.", { from: stepId, id: r.id }));
+  };
+  const copyStep = (s: Step) => {
+    const copied = { type: s.type as AddableType, config: s.config };
+    setClip(copied);
+    // Only the type and config: a config holds {{secrets.name}} references, never secret values. The system clipboard may refuse.
+    void Promise.resolve()
+      .then(() => navigator.clipboard.writeText(JSON.stringify(copied)))
+      .catch(() => undefined);
+    setNote(t("Copied {id}. Paste with Ctrl+V.", { id: s.id }));
+  };
+  const paste = (text: string) => {
+    const s = readCopiedStep(text) ?? clip;
+    if (!s) return setNote(t("Nothing to paste. Copy a step first."));
+    const { after } = where();
+    const r = addStep(draft, s.type, after ? { id: after } : undefined, language, s.config);
+    update(r.draft);
+    select(r.id);
+    setNote(t("Pasted {id}.", { id: r.id }));
+  };
+  const startConnect = (s: Step) => {
+    const labels = BRANCHES[s.type];
+    const on = labels?.find((l) => !draft.edges.some((e) => e.from === s.id && e.on === l)) ?? labels?.[0];
+    setConnecting({ from: s.id, on });
+    setNote(on ? t("Click the step {from} goes to on {branch}. Escape cancels.", { from: s.id, branch: t(on) }) : t("Click the step {from} goes to. Escape cancels.", { from: s.id }));
+  };
+  const cancelConnect = () => {
+    setConnecting(null);
+    setNote(t("Connect cancelled."));
+  };
+  const testStep = (stepId: string) => {
+    select(null);
+    void testRun("mock").then(() => {
+      showRun();
+      setTestFocus(stepId);
+    });
+  };
+  const nodeMenu = (nodeId: string, at: Point) => {
+    const s = draft.steps.find((x) => x.id === nodeId);
+    if (s) select(nodeId);
+    const items: MenuItem[] = [
+      { label: t("Test this step"), run: () => testStep(nodeId) },
+      { label: t(s ? "Add a step after this one" : "Add a step at the start"), run: () => setMenu({ ...(s && { after: nodeId }), at }) },
+    ];
+    if (s) {
+      items.push({ label: t("Duplicate"), keys: "Ctrl+D", run: () => duplicate(s.id) });
+      if (copyable(s)) items.push({ label: t("Copy"), keys: "Ctrl+C", run: () => copyStep(s) });
+      items.push({ label: t("Connect to"), run: () => startConnect(s) });
+      items.push({
+        label: t("Delete"),
+        keys: "Del",
+        run: () => {
+          update(removeStep(draft, s.id));
+          select(null);
+        },
+      });
+    }
+    setContext({ label: t("Actions for {id}", { id: s ? s.id : t("the trigger") }), at, items });
+  };
+  const paneMenu = (at: Point) =>
+    setContext({
+      label: t("Canvas actions"),
+      at,
+      items: [
+        ...(clip ? [{ label: t("Paste step"), keys: "Ctrl+V", run: () => void Promise.resolve().then(() => navigator.clipboard.readText()).then(paste, () => paste("")) }] : []),
+        { label: t("Add step here"), run: () => setMenu({ ...where(), at }) },
+        { label: t("Fit view"), run: () => fitRef.current?.() },
+      ],
+    });
+  keys.current.paste = paste;
+  keys.current.key = (key) => {
+    if (key === "escape") {
+      if (connecting) cancelConnect();
+      else if (selected && !phone) select(null);
+      else return false;
+      return true;
+    }
+    // Ctrl+C with text selected on the page copies the text, as usual.
+    if (!step || (key === "c" && (!copyable(step) || String(getSelection() ?? "") !== ""))) return false;
+    if (key === "d") duplicate(step.id);
+    else copyStep(step);
+    return true;
+  };
+  const actions = (
+    <div className="a7-actions" role="group" aria-label={t("Workflow actions")}>
+      {/* The result shows in the panel's overview, so the selected step is closed first. */}
+      <button
+        type="button"
+        onClick={() => {
+          select(null);
+          void testRun().then(showRun);
+        }}
+        disabled={busy || draft.steps.length === 0}
+      >
+        {t("Test run")}
+      </button>
+      <button type="button" aria-label={t("Explain this flow")} onClick={() => setShowExplain(true)} disabled={draft.steps.length === 0}>
+        {t("Explain")}
+      </button>
+      <button type="button" onClick={() => save(false)} disabled={busy || draft.steps.length === 0}>
+        {t("Save")}
+      </button>
+      <button type="button" className="primary" onClick={() => setShowTurnOn(true)} disabled={busy || draft.steps.length === 0}>
+        {t("Publish")}
+      </button>
+    </div>
+  );
+
+  // The selected step or trigger: in the side panel on a wide screen, in a sheet over the list on a phone.
+  const inspector = (
+    <>
+      {selected === "trigger" && (
+        <div className="a7-inspector">
+          <div className="a7-kicker-row">
+            <p className="a7-kicker a7-when">{t("When")}</p>
+            {closeButton}
+          </div>
+          <TriggerPanel
+            trigger={draft.trigger}
+            wf={wf}
+            onChange={(trigger) => {
+              // A new trigger type gets matching sample data; edits within a type keep what the user typed.
+              if (trigger.type !== draft.trigger.type) setPayload(samplePayload(trigger, firstResource));
+              update({ ...draft, trigger });
+            }}
+          />
+          {addAfter(undefined, t("Add a step at the start"))}
+          <NextUp draft={draft} id="trigger" />
+        </div>
+      )}
+      {step && (
+        <section className="a7-inspector" aria-labelledby="step-heading">
+          <div className="a7-kicker-row">
+            <p className="a7-kicker">{t("Step {number} · {type}", { number: draft.steps.indexOf(step) + 1, type: stepLabel(step.type, language) })}</p>
+            <button
+              type="button"
+              className="a7-delete"
+              onClick={() => {
+                update(removeStep(draft, step.id));
+                select(null);
+              }}
+            >
+              {t("Delete step")}
+            </button>
+            {closeButton}
+          </div>
+          <h2 id="step-heading">{step.id}</h2>
+          <p className="a7-lead">{destination(step, { language, trigger: draft.trigger, chosen: chosen.get(step.id) })}</p>
+          <p className="muted a7-describe">{stepEntry(step.type).description[language]}</p>
+          {missingApp.get(step.id) && (
+            <p className="a7-warn-note">
+              {t("{app} is not connected yet.", { app: t(missingApp.get(step.id)!) })} <a href="#/apps">{t("Connect in Apps")}</a>
+            </p>
+          )}
+          <SchemaForm key={step.id} schema={step.type === "ai" ? withoutFiles(catalog.schemas.ai!) : catalog.schemas[step.type]!} value={step.config as Record<string, unknown>} onChange={editStep} />
+          {step.type === "ai" &&
+            ((draft.trigger.type === "form" && draft.trigger.config.fields.some((f) => f.type === "file")) || draft.trigger.type === "meta_dm") && (
+            <fieldset>
+              <legend>{t("Let the AI read these files")}</legend>
+              {(draft.trigger.type === "form"
+                ? draft.trigger.config.fields.filter((f) => f.type === "file").map((f) => ({ name: f.name, label: f.label }))
+                : [{ name: "image", label: t("DM photo attachment") }]
+              ).map((f) => (
+                <label key={f.name} className="check">
+                  <input
+                    type="checkbox"
+                    checked={(step.config as { files?: string[] }).files?.includes(f.name) ?? false}
+                    onChange={(e) => {
+                      const { files = [], ...rest } = step.config as { files?: string[] };
+                      const next = e.target.checked ? [...files, f.name] : files.filter((n) => n !== f.name);
+                      editStep(next.length ? { ...rest, files: next } : rest);
+                    }}
+                  />
+                  {f.label}
+                </label>
+              ))}
+              <p className="muted hint">{t("Checked files are sent to the AI model you picked on the AI model page. Photos need Gemini, OpenAI or OpenRouter.")}</p>
+            </fieldset>
+          )}
+          <section className="a7-group" aria-labelledby="insert-heading">
+            <h3 id="insert-heading">{t("Insert data from earlier steps")}</h3>
+            <p className="muted hint">
+              {t("Use {trigger}, {step} and {secret} in text fields.", { trigger: "{{trigger.field}}", step: "{{steps.step_id.output.field}}", secret: "{{secrets.name}}" })}
+            </p>
+            <ul className="a7-chips">
+              {insertables(draft, step.id).map((r) => (
+                <li key={r}>
+                  <button type="button" onClick={() => void copy(r)} aria-label={t("Copy {reference}", { reference: r })}>
+                    {r.slice(2, -2).replace(/^steps\.|\.output/g, "")}
+                  </button>
+                </li>
+              ))}
+            </ul>
+            {copied && (
+              <p role="status" className="a7-copied">
+                {copied}
+              </p>
+            )}
+          </section>
+          {addAfter(step.id, t("Add a step after this one"))}
+          <ConnectTo draft={draft} step={step} onConnect={update} />
+          <NextUp draft={draft} id={step.id} />
+        </section>
+      )}
+    </>
+  );
 
   return (
     <div className="a7-editor">
@@ -306,30 +596,12 @@ export function Editor({ id }: { id: string }) {
             <a href={`#/w/${id}/versions`}>{t("Versions")}</a>
           </div>
         </div>
-        <div className="a7-actions">
-          <button
-            type="button"
-            onClick={() => {
-              showRun();
-              void testRun();
-            }}
-            disabled={busy || draft.steps.length === 0}
-          >
-            {t("Test run")}
-          </button>
-          <button type="button" onClick={() => setShowExplain(true)} disabled={draft.steps.length === 0}>
-            {t("Explain this flow")}
-          </button>
-          <button type="button" onClick={() => save(false)} disabled={busy || draft.steps.length === 0}>
-            {t("Save")}
-          </button>
-          <button type="button" className="primary" onClick={() => setShowTurnOn(true)} disabled={busy || draft.steps.length === 0}>
-            {t("Publish")}
-          </button>
-        </div>
+        {/* The actions live at the top of the side panel; with the panel folded they come back here, so they are never hidden. */}
+        {wide && folded && actions}
       </header>
       <div className="a7-body">
         <section className="a7-canvas" aria-label={t("Workflow diagram. Tab to a step and press Enter to select it, Delete to remove it.")}>
+          {!wide && actions}
           {missing.length > 0 && (
             <div className="a7-setup">
               <p className="a7-setup-count">{t("{done} of {total} apps connected", { done: apps.length - missing.length, total: apps.length })}</p>
@@ -368,14 +640,14 @@ export function Editor({ id }: { id: string }) {
           {view === "diagram" ? (
             <div
               className="a7-flow"
-              // Shift+F10 and the Menu key open the add menu for the focused step, like a right click.
+              // Shift+F10 and the Menu key open the right-click menu for the focused step.
               onKeyDown={(e) => {
                 if (!((e.shiftKey && e.key === "F10") || e.key === "ContextMenu")) return;
-                const id = (e.target as HTMLElement).closest(".react-flow__node")?.getAttribute("data-id");
-                if (!id) return;
+                const el = (e.target as HTMLElement).closest(".react-flow__node");
+                const nodeId = el?.getAttribute("data-id");
+                if (!el || !nodeId) return;
                 e.preventDefault();
-                if (id !== "trigger") select(id);
-                setMenu(id === "trigger" ? {} : { after: id });
+                nodeMenu(nodeId, below(el));
               }}
             >
               <ReactFlow
@@ -385,14 +657,50 @@ export function Editor({ id }: { id: string }) {
                 nodeTypes={editorNodeTypes}
                 edgeTypes={editorEdgeTypes}
                 onNodesChange={onNodesChange}
-                onPaneClick={() => select(null)}
+                onInit={(instance) => (fitRef.current = () => void instance.fitView({ maxZoom: 1 }))}
+                onPaneClick={() => {
+                  select(null);
+                  if (connecting) cancelConnect();
+                }}
+                onNodeClick={(_, node) => {
+                  if (!connecting) return;
+                  setConnecting(null);
+                  if (node.id === "trigger") setNote(t("Connect cancelled."));
+                  else connect(connecting.from, connecting.on, node.id);
+                }}
+                onNodeDoubleClick={(_, node) => {
+                  select(node.id);
+                  // The panel renders the step's form on this click; focus its first field once it is there.
+                  setTimeout(() => document.querySelector<HTMLElement>(".a7-inspector :is(input, select, textarea)")?.focus(), 0);
+                }}
                 onNodeContextMenu={(e, node) => {
                   e.preventDefault();
-                  if (node.id !== "trigger") select(node.id);
-                  setMenu(node.id === "trigger" ? {} : { after: node.id });
+                  nodeMenu(node.id, { x: e.clientX, y: e.clientY });
                 }}
+                onPaneContextMenu={(e) => {
+                  e.preventDefault();
+                  paneMenu({ x: e.clientX, y: e.clientY });
+                }}
+                // Drag from a step's dot: onto another step connects them (or says why not), onto empty canvas opens the add menu there.
+                // onConnectEnd fires only after the pointer moved, so a plain click on a dot does nothing.
+                onConnectEnd={(e, state) => {
+                  if (!state.fromNode || !state.fromHandle) return;
+                  const from = state.fromNode.id;
+                  const on = state.fromHandle.id ?? undefined;
+                  const point = "changedTouches" in e ? e.changedTouches[0]! : e;
+                  // toNode is set only near a step's top dot; anywhere on a step's card counts too.
+                  const to = state.toNode?.id ?? document.elementFromPoint(point.clientX, point.clientY)?.closest(".react-flow__node")?.getAttribute("data-id");
+                  if (to) {
+                    if (to !== from && to !== "trigger") connect(from, on, to);
+                    return;
+                  }
+                  setMenu({ after: from, on, at: { x: point.clientX, y: point.clientY } });
+                }}
+                connectionLineComponent={DropLine}
+                connectOnClick={false}
+                zoomOnDoubleClick={false}
                 nodesDraggable={false}
-                nodesConnectable={false}
+                nodesConnectable
                 deleteKeyCode="Delete"
                 colorMode={document.documentElement.dataset.theme === "dark" ? "dark" : "light"}
                 proOptions={{ hideAttribution: true }}
@@ -406,200 +714,105 @@ export function Editor({ id }: { id: string }) {
           ) : (
             <StepList draft={draft} selected={selected} onSelect={select} onMove={move} chosen={chosen} />
           )}
-          <button
-            type="button"
-            className="a7-add"
-            onClick={() => {
-              if (phone) {
-                // The searchable menu: after the end of the flow, or at the start when it is empty.
-                const tail = [...draft.steps].reverse().find((s) => !draft.edges.some((e) => e.from === s.id));
-                setMenu(tail ? { after: tail.id } : {});
-                return;
-              }
-              const field = document.getElementById("add-step-type");
-              field?.scrollIntoView({ block: "center" });
-              field?.focus();
-            }}
-          >
-            <span aria-hidden="true">+</span> {t("Add step")}
-          </button>
+          {/* The list (and a phone, and an empty flow) adds at the end; the diagram adds from a connection, a dot or a right click. */}
+          {(phone || view === "list" || draft.steps.length === 0) && (
+            <button type="button" className="a7-add" onClick={(e) => setMenu({ ...(tail && { after: tail.id }), at: below(e.currentTarget) })}>
+              <span aria-hidden="true">+</span> {t("Add a step at the end")}
+            </button>
+          )}
         </section>
-        <aside className="a7-panel">
-          {message && (
-            <p role={message.kind === "error" ? "alert" : "status"} className={`message ${message.kind}`}>
-              {message.text}
-            </p>
+        <div className="a7-side" data-folded={(wide && folded) || undefined}>
+          {wide && (
+            <button type="button" className="a7-fold" aria-expanded={!folded} aria-controls={folded ? undefined : "a7-panel"} aria-label={t(folded ? "Show the side panel" : "Hide the side panel")} onClick={() => fold(!folded)}>
+              <span aria-hidden="true">{folded ? "‹" : "›"}</span>
+            </button>
           )}
-          <SetupGuide facts={{ missingApps: missing.length, problems: problems.length, explained, test, live: isLive }} onExplain={() => setShowExplain(true)} onTry={() => void testRun("mock")} onTurnOn={() => setShowTurnOn(true)} />
-          <SampleTest draft={draft} apps={apps} test={test} run={sampleRun} busy={busy} onTry={() => void testRun("mock")} />
-          {inSheet(
-            <>
-          {selected === "trigger" && (
-            <div className="a7-inspector">
-              <p className="a7-kicker a7-when">{t("When")}</p>
-              <TriggerPanel
-                trigger={draft.trigger}
-                wf={wf}
-                onChange={(trigger) => {
-                  // A new trigger type gets matching sample data; edits within a type keep what the user typed.
-                  if (trigger.type !== draft.trigger.type) setPayload(samplePayload(trigger, firstResource));
-                  update({ ...draft, trigger });
-                }}
-              />
-              <NextUp draft={draft} id="trigger" />
-            </div>
-          )}
-          {step && (
-            <section className="a7-inspector" aria-labelledby="step-heading">
-              <div className="a7-kicker-row">
-                <p className="a7-kicker">{t("Step {number} · {type}", { number: draft.steps.indexOf(step) + 1, type: stepLabel(step.type, language) })}</p>
-                <button
-                  type="button"
-                  className="a7-delete"
-                  onClick={() => {
-                    update(removeStep(draft, step.id));
-                    select(null);
-                  }}
-                >
-                  {t("Delete step")}
-                </button>
-              </div>
-              <h2 id="step-heading">{step.id}</h2>
-              <p className="a7-lead">{destination(step, { language, trigger: draft.trigger, chosen: chosen.get(step.id) })}</p>
-              <p className="muted a7-describe">{stepEntry(step.type).description[language]}</p>
-              {missingApp.get(step.id) && (
-                <p className="a7-warn-note">
-                  {t("{app} is not connected yet.", { app: t(missingApp.get(step.id)!) })} <a href="#/apps">{t("Connect in Apps")}</a>
+          {!(wide && folded) && (
+            <aside className="a7-panel" id="a7-panel" aria-label={t("Side panel")}>
+              {wide && actions}
+              {message && (
+                <p role={message.kind === "error" ? "alert" : "status"} className={`message ${message.kind}`}>
+                  {message.text}
                 </p>
               )}
-              <SchemaForm key={step.id} schema={step.type === "ai" ? withoutFiles(catalog.schemas.ai!) : catalog.schemas[step.type]!} value={step.config as Record<string, unknown>} onChange={editStep} />
-              {step.type === "ai" &&
-                ((draft.trigger.type === "form" && draft.trigger.config.fields.some((f) => f.type === "file")) || draft.trigger.type === "meta_dm") && (
-                <fieldset>
-                  <legend>{t("Let the AI read these files")}</legend>
-                  {(draft.trigger.type === "form"
-                    ? draft.trigger.config.fields.filter((f) => f.type === "file").map((f) => ({ name: f.name, label: f.label }))
-                    : [{ name: "image", label: t("DM photo attachment") }]
-                  ).map((f) => (
-                    <label key={f.name} className="check">
-                      <input
-                        type="checkbox"
-                        checked={(step.config as { files?: string[] }).files?.includes(f.name) ?? false}
-                        onChange={(e) => {
-                          const { files = [], ...rest } = step.config as { files?: string[] };
-                          const next = e.target.checked ? [...files, f.name] : files.filter((n) => n !== f.name);
-                          editStep(next.length ? { ...rest, files: next } : rest);
-                        }}
-                      />
-                      {f.label}
-                    </label>
-                  ))}
-                  <p className="muted hint">{t("Checked files are sent to the AI model you picked on the AI model page. Photos need Gemini, OpenAI or OpenRouter.")}</p>
-                </fieldset>
-              )}
-              <section className="a7-group" aria-labelledby="insert-heading">
-                <h3 id="insert-heading">{t("Insert data from earlier steps")}</h3>
-                <p className="muted hint">
-                  {t("Use {trigger}, {step} and {secret} in text fields.", { trigger: "{{trigger.field}}", step: "{{steps.step_id.output.field}}", secret: "{{secrets.name}}" })}
-                </p>
-                <ul className="a7-chips">
-                  {insertables(draft, step.id).map((r) => (
-                    <li key={r}>
-                      <button type="button" onClick={() => void copy(r)} aria-label={t("Copy {reference}", { reference: r })}>
-                        {r.slice(2, -2).replace(/^steps\.|\.output/g, "")}
+              {selected && !phone ? (
+                inspector
+              ) : (
+                <>
+                  <SetupGuide facts={{ missingApps: missing.length, problems: problems.length, explained, test, live: isLive }} onExplain={() => setShowExplain(true)} onTry={() => void testRun("mock")} onTurnOn={() => setShowTurnOn(true)} />
+                  {warnings.length > 0 && (
+                    <section className="a7-checks" aria-labelledby="checks-heading">
+                      <h2 id="checks-heading">{t("Check before publishing")}</h2>
+                      <ul>
+                        {warnings.map((w) => (
+                          <li key={w}>{warningForLanguage(w, language)}</li>
+                        ))}
+                      </ul>
+                    </section>
+                  )}
+                  <SampleTest draft={draft} apps={apps} test={test} run={sampleRun} busy={busy} onTry={() => void testRun("mock")} />
+                  <div className="a7-ai">
+                    <AskAi
+                      workflowId={id}
+                      draft={draft}
+                      onApply={(d) => {
+                        update(d);
+                        select(null);
+                        setPayload(samplePayload(d.trigger, firstResource));
+                      }}
+                    />
+                  </div>
+                  <details className="a7-test-settings">
+                    <summary>{t("Test settings")}</summary>
+                    <div className="field">
+                      <label htmlFor="payload">{t("Sample trigger data (JSON)")}</label>
+                      <textarea id="payload" rows={5} value={payload} onChange={(e) => setPayload(e.target.value)} spellCheck={false} />
+                    </div>
+                    <div className="field">
+                      <label htmlFor="test-mode">{t("Test calls")}</label>
+                      <select id="test-mode" value={mode} onChange={(e) => setMode(e.target.value as typeof mode)}>
+                        <option value="mock">{t("Mocked: nothing is sent and no model is called")}</option>
+                        <option value="ai">{t("Real AI only: the model is called, everything else is mocked")}</option>
+                        <option value="live">{t("Live: real HTTP, email, AI, approval emails and connected apps")}</option>
+                      </select>
+                    </div>
+                    {mode !== "live" && <TestChoices steps={draft.steps} choices={choices} onChange={setChoices} />}
+                    <div className="actions">
+                      <button type="button" onClick={() => void testRun()} disabled={busy || draft.steps.length === 0}>
+                        {t("Test run draft")}
                       </button>
-                    </li>
-                  ))}
-                </ul>
-                {copied && (
-                  <p role="status" className="a7-copied">
-                    {copied}
-                  </p>
-                )}
-              </section>
-              {phone && (
-                <button type="button" onClick={() => setMenu({ after: step.id })}>
-                  {t("Add a step after this one")}
-                </button>
+                      <button type="button" onClick={runLive} disabled={busy || !wf.live}>
+                        {t("Run live version")}
+                      </button>
+                    </div>
+                  </details>
+                  {run && (
+                    <section className="a7-test" aria-labelledby="run-heading">
+                      <h2 id="run-heading">{t("Run")}</h2>
+                      <RunResult run={run} />
+                      <p>
+                        <a href={`#/runs/${run.id}`}>{t("Open this run in the run history")}</a>
+                      </p>
+                    </section>
+                  )}
+                </>
               )}
-              <ConnectTo draft={draft} step={step} onConnect={update} />
-              <NextUp draft={draft} id={step.id} />
-            </section>
+            </aside>
           )}
-            </>,
-          )}
-          {!selected && (
-            <div className="a7-overview">
-              <h2>{t("Steps")}</h2>
-              <p className="muted">{t("Select a step in the diagram or the list to change it.")}</p>
-            </div>
-          )}
-          {warnings.length > 0 && (
-            <section className="a7-checks" aria-labelledby="checks-heading">
-              <h2 id="checks-heading">{t("Check before publishing")}</h2>
-              <ul>
-                {warnings.map((w) => (
-                  <li key={w}>{warningForLanguage(w, language)}</li>
-                ))}
-              </ul>
-            </section>
-          )}
-          <AddStep
-            draft={draft}
-            after={step}
-            branches={step ? catalog.branches[step.type] : undefined}
-            onAdd={(type, on) => {
-              const r = addStep(draft, type, step ? { id: step.id, on } : undefined, language);
-              update(r.draft);
-              select(r.id);
-            }}
-          />
-          <div className="a7-ai">
-            <AskAi
-              workflowId={id}
-              draft={draft}
-              onApply={(d) => {
-                update(d);
-                select(null);
-                setPayload(samplePayload(d.trigger, firstResource));
-              }}
-            />
-          </div>
-          <section className="a7-test" aria-labelledby="run-heading">
-            <h2 id="run-heading">{t("Run")}</h2>
-            <div className="field">
-              <label htmlFor="payload">{t("Sample trigger data (JSON)")}</label>
-              <textarea id="payload" rows={5} value={payload} onChange={(e) => setPayload(e.target.value)} spellCheck={false} />
-            </div>
-            <div className="field">
-              <label htmlFor="test-mode">{t("Test calls")}</label>
-              <select id="test-mode" value={mode} onChange={(e) => setMode(e.target.value as typeof mode)}>
-                <option value="mock">{t("Mocked: nothing is sent and no model is called")}</option>
-                <option value="ai">{t("Real AI only: the model is called, everything else is mocked")}</option>
-                <option value="live">{t("Live: real HTTP, email, AI, approval emails and connected apps")}</option>
-              </select>
-            </div>
-            {mode !== "live" && <TestChoices steps={draft.steps} choices={choices} onChange={setChoices} />}
-            <div className="actions">
-              <button type="button" onClick={() => void testRun()} disabled={busy || draft.steps.length === 0}>
-                {t("Test run draft")}
-              </button>
-              <button type="button" onClick={runLive} disabled={busy || !wf.live}>
-                {t("Run live version")}
-              </button>
-            </div>
-            {run && (
-              <>
-                <RunResult run={run} />
-                <p>
-                  <a href={`#/runs/${run.id}`}>{t("Open this run in the run history")}</a>
-                </p>
-              </>
-            )}
-          </section>
-        </aside>
+        </div>
       </div>
-      {menu && <AddMenu draft={draft} after={menu.after ? draft.steps.find((s) => s.id === menu.after) : undefined} on={menu.on} onPick={addFromMenu} onClose={() => setMenu(null)} />}
+      {phone && selected && (
+        <Sheet title={t(selected === "trigger" ? "Edit the trigger" : "Edit step")} onClose={() => select(null)}>
+          {inspector}
+          <div className="wk-sheet-actions">
+            <button type="button" className="wk-button blue" onClick={(e) => e.currentTarget.closest("dialog")?.close()}>
+              {t("Done")}
+            </button>
+          </div>
+        </Sheet>
+      )}
+      {menu && <AddMenu draft={draft} after={menu.after ? draft.steps.find((s) => s.id === menu.after) : undefined} on={menu.on} at={menu.at} onPick={addFromMenu} onClose={() => setMenu(null)} />}
+      {context && <ContextMenu label={context.label} at={context.at} items={context.items} onClose={() => setContext(null)} />}
       {showExplain && <ExplainSheet draft={draft} chosen={chosen} onClose={closeExplain} />}
       {showTurnOn && (
         <TurnOnSheet
@@ -663,8 +876,9 @@ function StepList({ draft, selected, onSelect, onMove, chosen }: { draft: Draft;
 }
 
 /** The searchable add menu: type to narrow the steps, arrow keys move through the results, Enter adds, Escape closes. */
-function AddMenu({ draft, after, on, onPick, onClose }: { draft: Draft; after?: Step; on?: string; onPick: (type: AddableType, on?: string) => void; onClose: () => void }) {
+function AddMenu({ draft, after, on, at, onPick, onClose }: { draft: Draft; after?: Step; on?: string; at?: Point; onPick: (type: AddableType, on?: string) => void; onClose: () => void }) {
   const { t, language } = useLanguage();
+  const phone = usePhone();
   const [query, setQuery] = useState("");
   const [branch, setBranch] = useState("");
   const labels = after && on === undefined ? BRANCHES[after.type] : undefined;
@@ -680,36 +894,78 @@ function AddMenu({ draft, after, on, onPick, onClose }: { draft: Draft; after?: 
     e.preventDefault();
     items[next]!.focus();
   };
-  return (
-    <Sheet title={t("Add a step {where}", { where })} onClose={onClose}>
-      <div className="a7-menu" onKeyDown={arrows}>
-        <input type="search" autoFocus aria-label={t("Search steps")} placeholder={t("Search steps")} value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => e.key === "Enter" && found[0] && go(found[0])} />
-        {labels && (
-          <select aria-label={t("Branch")} value={branch} onChange={(e) => setBranch(e.target.value)}>
-            <option value="">{t("next free branch")}</option>
-            {labels.map((b) => (
-              <option key={b} value={b}>
-                {t("on {branch}", { branch: t(b) })}
-              </option>
-            ))}
-          </select>
-        )}
-        <ul className="a7-menu-list">
-          {found.map((kind) => (
-            <li key={kind}>
-              <button type="button" onClick={() => go(kind)}>
-                <AppMark decorative mark={stepEntry(kind).mark} name={markText(stepEntry(kind), language)} size={24} />
-                <span>
-                  <strong>{stepLabel(kind, language)}</strong>
-                  <small>{stepEntry(kind).description[language]}</small>
-                </span>
-              </button>
-            </li>
+  const title = t("Add a step {where}", { where });
+  const body = (
+    <div className="a7-menu" onKeyDown={arrows}>
+      <input type="search" autoFocus aria-label={t("Search steps")} placeholder={t("Search steps")} value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => e.key === "Enter" && found[0] && go(found[0])} />
+      {labels && (
+        <select aria-label={t("Branch")} value={branch} onChange={(e) => setBranch(e.target.value)}>
+          <option value="">{t("next free branch")}</option>
+          {labels.map((b) => (
+            <option key={b} value={b}>
+              {t("on {branch}", { branch: t(b) })}
+            </option>
           ))}
-        </ul>
-        {found.length === 0 && <p className="muted">{t("No step matches that.")}</p>}
-      </div>
+        </select>
+      )}
+      <ul className="a7-menu-list">
+        {found.map((kind) => (
+          <li key={kind}>
+            <button type="button" data-type={kind} onClick={() => go(kind)}>
+              <AppMark decorative mark={stepEntry(kind).mark} name={markText(stepEntry(kind), language)} size={24} />
+              <span>
+                <strong>{stepLabel(kind, language)}</strong>
+                <small>{stepEntry(kind).description[language]}</small>
+              </span>
+            </button>
+          </li>
+        ))}
+      </ul>
+      {found.length === 0 && <p className="muted">{t("No step matches that.")}</p>}
+    </div>
+  );
+  // A wide screen opens the menu by what opened it (the plus, the dot's drop point, the pointer); a phone gets the bottom sheet.
+  return phone || !at ? (
+    <Sheet title={title} onClose={onClose}>
+      {body}
     </Sheet>
+  ) : (
+    <Popover title={title} at={at} className="a7-add-menu" onClose={onClose}>
+      {body}
+    </Popover>
+  );
+}
+
+/** The right-click menu, Lucid style: arrow keys, Home and End move, Enter picks, Escape closes and focus goes back where it was. */
+function ContextMenu({ label, at, items, onClose }: { label: string; at: Point; items: MenuItem[]; onClose: () => void }) {
+  const arrows = (e: React.KeyboardEvent<HTMLElement>) => {
+    const list = [...e.currentTarget.querySelectorAll<HTMLElement>("[role=menuitem]")];
+    const i = list.indexOf(document.activeElement as HTMLElement);
+    const next = { ArrowDown: (i + 1) % list.length, ArrowUp: (i - 1 + list.length) % list.length, Home: 0, End: list.length - 1 }[e.key];
+    if (next === undefined) return;
+    e.preventDefault();
+    list[next]!.focus();
+  };
+  return (
+    <Popover title={label} hideTitle at={at} className="a7-context" onClose={onClose}>
+      <ul role="menu" aria-label={label} onKeyDown={arrows}>
+        {items.map((item) => (
+          <li key={item.label} role="none">
+            <button
+              type="button"
+              role="menuitem"
+              onClick={(e) => {
+                e.currentTarget.closest("dialog")?.close();
+                item.run();
+              }}
+            >
+              <span>{item.label}</span>
+              {item.keys && <kbd>{item.keys}</kbd>}
+            </button>
+          </li>
+        ))}
+      </ul>
+    </Popover>
   );
 }
 
@@ -720,12 +976,6 @@ function ConnectTo({ draft, step, onConnect }: { draft: Draft; step: Step; onCon
   const others = draft.steps.filter((s) => s.id !== step.id);
   if (others.length === 0) return null;
   const paths: readonly (string | undefined)[] = BRANCHES[step.type] ?? [undefined];
-  const reason = (e: ConnectError) => {
-    if (e.id === "self") return t("A step cannot lead to itself.");
-    if (e.id === "loop") return t("{to} already leads to {from}, so this would make a loop.", { to: e.to, from: e.from });
-    if (e.id === "orphan") return t("{step} would have no way in. Connect it from another step first, or delete it.", { step: e.step });
-    return t("Pick one of this step's branches.");
-  };
   return (
     <section className="a7-group" aria-labelledby={`connect-${step.id}`}>
       <h3 id={`connect-${step.id}`}>{t("Connect to")}</h3>
@@ -754,7 +1004,7 @@ function ConnectTo({ draft, step, onConnect }: { draft: Draft; step: Step; onCon
       ))}
       {error && (
         <p role="alert" className="message error">
-          {reason(error)}
+          {connectReason(error, t)}
         </p>
       )}
     </section>
@@ -783,42 +1033,6 @@ function NextUp({ draft, id }: { draft: Draft; id: string }) {
         </dl>
       )}
     </section>
-  );
-}
-
-function AddStep({ draft, after, branches, onAdd }: { draft: Draft; after?: Step; branches?: string[]; onAdd: (type: AddableType, on?: string) => void }) {
-  const { t, language } = useLanguage();
-  const [type, setType] = useState<AddableType>("http");
-  const [on, setOn] = useState("");
-  const where = after ? t("after {id}", { id: after.id }) : t(draft.steps.length ? "at the start" : "as the first step");
-  return (
-    <div className="add-step">
-      <div className="field">
-        <label htmlFor="add-step-type">{t("Add a step {where}", { where })}</label>
-        <div className="row">
-          <select id="add-step-type" value={type} onChange={(e) => setType(e.target.value as AddableType)}>
-            {ADDABLE.map((kind) => (
-              <option key={kind} value={kind}>
-                {stepLabel(kind, language)}
-              </option>
-            ))}
-          </select>
-          {branches && (
-            <select aria-label={t("Branch")} value={on} onChange={(e) => setOn(e.target.value)}>
-              <option value="">{t("next free branch")}</option>
-              {branches.map((b) => (
-                <option key={b} value={b}>
-                  {t("on {branch}", { branch: t(b) })}
-                </option>
-              ))}
-            </select>
-          )}
-          <button type="button" onClick={() => onAdd(type, branches && on ? on : undefined)}>
-            {t("Add")}
-          </button>
-        </div>
-      </div>
-    </div>
   );
 }
 

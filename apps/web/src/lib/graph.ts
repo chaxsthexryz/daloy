@@ -1,5 +1,5 @@
 import { translate, type Language } from "./locale";
-import { BRANCHES, stepLabel, triggerLabel, type Step, type WorkflowDefinition } from "@daloy/engine";
+import { BRANCHES, definitionSchema, stepLabel, triggerLabel, type Step, type WorkflowDefinition } from "@daloy/engine";
 import type { Edge as FlowEdge, Node as FlowNode } from "@xyflow/react";
 import { STATUS, type EdgeState, type NodeState } from "./run-flow";
 
@@ -74,11 +74,16 @@ export const edgeId = (e: Edge) => `${e.from}:${e.on ?? "next"}`;
 /**
  * Adds a step after `after.id` (on branch `after.on`, or the first free branch). If that slot already
  * leads somewhere, the new step is inserted in between. Without `after`, the step becomes the new entry.
+ * `config` defaults to the type's starting config; a pasted step brings its own.
  */
-export function addStep(draft: Draft, type: AddableType, after?: { id: string; on?: string }, language: Language = "en"): { draft: Draft; id: string } {
+export function addStep(draft: Draft, type: AddableType, after?: { id: string; on?: string }, language: Language = "en", config: Step["config"] = defaultConfig(type, language)): { draft: Draft; id: string } {
   const id = newStepId(draft, type);
-  const step = { id, type, config: defaultConfig(type, language) } as Step;
-  const ownLabel = BRANCHES[type]?.[0];
+  return { draft: insert(draft, { id, type, config } as Step, after), id };
+}
+
+function insert(draft: Draft, step: Step, after?: { id: string; on?: string }): Draft {
+  const { id } = step;
+  const ownLabel = BRANCHES[step.type]?.[0];
   const edges = [...draft.edges];
 
   if (!after) {
@@ -97,7 +102,44 @@ export function addStep(draft: Draft, type: AddableType, after?: { id: string; o
   // Keep edges ordered by source so the draft reads top to bottom.
   const order = new Map([...draft.steps.map((s) => s.id), id].map((s, n) => [s, n]));
   edges.sort((a, b) => order.get(a.from)! - order.get(b.from)!);
-  return { draft: { ...draft, steps: [...draft.steps, step], edges }, id };
+  return { ...draft, steps: [...draft.steps, step], edges };
+}
+
+export type DuplicateError = { id: "branching" | "missing"; step: string };
+
+/**
+ * Copies a step (same type and config) under the id `<id>_copy`, `<id>_copy_2` and so on, right after the original. A step with
+ * branches is refused: its copy would need a step on every branch, which the owner has to choose.
+ */
+export function duplicateStep(draft: Draft, id: string): { draft: Draft; id: string } | { error: DuplicateError } {
+  const step = draft.steps.find((s) => s.id === id);
+  if (!step) return { error: { id: "missing", step: id } };
+  if (BRANCHES[step.type]) return { error: { id: "branching", step: id } };
+  const used = new Set(draft.steps.map((s) => s.id));
+  const base = `${id.slice(0, 50)}_copy`; // step ids are at most 64 characters
+  let copy = base;
+  for (let n = 2; used.has(copy); n++) copy = `${base}_${n}`;
+  return { draft: insert(draft, { ...step, id: copy }, { id }), id: copy };
+}
+
+/**
+ * The paste check: reads a copied step (`{type, config}` as JSON, from the clipboard) and returns it only when the type is one the
+ * add menu offers and the config has that step's shape, with unknown keys dropped. Rules that need the rest of the flow (a drive
+ * step needs a form with a file field) are left to the save check, as for a step added from the menu.
+ */
+export function readCopiedStep(text: string): { type: AddableType; config: Step["config"] } | null {
+  let value: unknown;
+  try {
+    value = JSON.parse(text);
+  } catch {
+    return null;
+  }
+  if (!value || typeof value !== "object") return null;
+  const { type, config } = value as { type?: unknown; config?: unknown };
+  if (!(ADDABLE as readonly unknown[]).includes(type)) return null;
+  const r = definitionSchema.safeParse({ ...blankDraft(), steps: [{ id: "pasted", type, config }] });
+  if (r.success) return { type: type as AddableType, config: r.data.steps[0]!.config };
+  return r.error.issues.every((i) => i.code === "custom") ? { type: type as AddableType, config: config as Step["config"] } : null;
 }
 
 /** Removes a step. A step with one parent and one child is bridged, keeping the parent's branch label. */
@@ -166,7 +208,7 @@ export function connectSteps(draft: Draft, from: string, on: string | undefined,
 
 export const NODE_W = 220;
 const COL = 260;
-const ROW = 130;
+const ROW = 170; // room under a branch pill for the plus on its connection (U2)
 
 /** Top-to-bottom layout: a step sits one row below its deepest parent, and each row is centred. */
 export function layout(draft: Draft): Record<string, { x: number; y: number }> {

@@ -1,6 +1,6 @@
 import { definitionSchema } from "@daloy/engine";
 import { describe, expect, it } from "vitest";
-import { addStep, blankDraft, layout, removeStep, toFlow, type Draft } from "./graph";
+import { addStep, blankDraft, duplicateStep, layout, readCopiedStep, removeStep, toFlow, type Draft } from "./graph";
 
 const valid = (d: Draft) => {
   const r = definitionSchema.safeParse(d);
@@ -130,4 +130,85 @@ it("localizes newly added defaults while keeping config identifiers stable", () 
   const draft = addStep(blankDraft(), "email", undefined, "tl").draft;
   expect(draft.steps[0]?.config).toMatchObject({ to: "{{trigger.email}}", subject: "Kumusta", text: "Kumusta, salamat sa pakikipag-ugnayan." });
   expect(addStep(blankDraft(), "email").draft.steps[0]?.config).toMatchObject({ subject: "Hello" });
+});
+
+describe("duplicateStep (U2)", () => {
+  const straight = (): Draft => ({
+    trigger: { type: "manual", config: {} },
+    steps: [
+      { id: "post", type: "http", config: { method: "POST", url: "https://example.com/a", headers: {}, body: "{}" } },
+      { id: "mail", type: "email", config: { to: "ana@example.com", subject: "Hi", text: "Hello" } },
+    ],
+    edges: [{ from: "post", to: "mail" }],
+  });
+
+  it("copies the type and config under a new id and puts the copy right after the original", () => {
+    const r = duplicateStep(straight(), "post");
+    if (!("draft" in r)) throw new Error("refused");
+    expect(r.id).toBe("post_copy");
+    const copy = r.draft.steps.find((s) => s.id === "post_copy")!;
+    expect(copy).toEqual({ ...straight().steps[0], id: "post_copy" });
+    expect(r.draft.edges).toEqual([
+      { from: "post", to: "post_copy" },
+      { from: "post_copy", to: "mail" },
+    ]);
+    expect(valid(r.draft)).toEqual([]);
+  });
+
+  it("numbers later copies _copy_2, _copy_3 and copies the last step onto the end", () => {
+    let d = straight();
+    const ids: string[] = [];
+    for (let i = 0; i < 3; i++) {
+      const r = duplicateStep(d, "mail");
+      if (!("draft" in r)) throw new Error("refused");
+      d = r.draft;
+      ids.push(r.id);
+    }
+    expect(ids).toEqual(["mail_copy", "mail_copy_2", "mail_copy_3"]);
+    expect(d.edges).toContainEqual({ from: "mail", to: "mail_copy_3" });
+    expect(valid(d)).toEqual([]);
+  });
+
+  it("keeps a long id inside the 64 character limit", () => {
+    const long = "a".repeat(64);
+    const d: Draft = { trigger: { type: "manual", config: {} }, steps: [{ id: long, type: "delay", config: { seconds: 5 } }], edges: [] };
+    const r = duplicateStep(d, long);
+    if (!("draft" in r)) throw new Error("refused");
+    expect(r.id.length).toBeLessThanOrEqual(64);
+    expect(valid(r.draft)).toEqual([]);
+  });
+
+  it("refuses a step with branches, and a step that is not there, with a reason", () => {
+    const d = addStep(blankDraft(), "condition").draft;
+    expect(duplicateStep(d, "condition_1")).toEqual({ error: { id: "branching", step: "condition_1" } });
+    expect(duplicateStep(d, "nope")).toEqual({ error: { id: "missing", step: "nope" } });
+  });
+});
+
+describe("readCopiedStep (U2 paste check)", () => {
+  const copied = (v: unknown) => JSON.stringify(v);
+
+  it("reads a copied step and drops keys the step schema does not know", () => {
+    expect(readCopiedStep(copied({ type: "delay", config: { seconds: 30, extra: "x" } }))).toEqual({ type: "delay", config: { seconds: 30 } });
+  });
+
+  it("refuses text that is not a step Daloy can add", () => {
+    expect(readCopiedStep("hello")).toBeNull();
+    expect(readCopiedStep("null")).toBeNull();
+    expect(readCopiedStep(copied({ type: "teleport", config: {} }))).toBeNull();
+    // Payment steps need links to other steps, so they are not in the add menu and cannot be pasted either.
+    expect(readCopiedStep(copied({ type: "payment_expire", config: { due: "pay" } }))).toBeNull();
+    expect(readCopiedStep(copied({ type: "delay", config: { seconds: "soon" } }))).toBeNull();
+    expect(readCopiedStep(copied({ type: "email" }))).toBeNull();
+  });
+
+  it("pastes through addStep after the chosen step, and the draft stays valid", () => {
+    const base = addStep(blankDraft(), "http").draft;
+    const step = readCopiedStep(copied({ type: "email", config: { to: "{{trigger.email}}", subject: "Hi", text: "Hello" } }))!;
+    const r = addStep(base, step.type, { id: "http_1" }, "en", step.config);
+    expect(r.id).toBe("email_1");
+    expect(r.draft.steps.find((s) => s.id === "email_1")!.config).toEqual(step.config);
+    expect(r.draft.edges).toEqual([{ from: "http_1", to: "email_1" }]);
+    expect(valid(r.draft)).toEqual([]);
+  });
 });

@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { approvalLink } from "./mail";
+import { addStep, openTestSettings } from "./editor-steps";
 
 const PASSWORD = "e2e test password 1";
 
@@ -34,14 +35,14 @@ test("an invited approver answers a named approval; the owner and a signed-out v
   await page.goto("/#/new");
   await page.getByLabel("Name").fill("Named approval");
   await page.getByRole("button", { name: "Create" }).click();
-  await page.getByLabel("Add a step as the first step").selectOption("approval");
-  await page.getByRole("button", { name: "Add", exact: true }).click();
+  await addStep(page, "approval");
   await page.getByRole("textbox", { name: "To (comma-separated)" }).fill("");
   await page.getByRole("textbox", { name: /^Approver/ }).fill(approver);
   await page.getByRole("textbox", { name: "Message", exact: true }).fill("Buy a printer for 300 EUR?");
   await page.getByRole("button", { name: "Publish" }).click();
   await page.getByRole("button", { name: "Turn on", exact: true }).click();
   await expect(page.getByRole("status")).toHaveText(/Version 1 is live/);
+  await openTestSettings(page);
   await page.getByRole("button", { name: "Run live version" }).click();
   const result = page.locator(".run");
   await expect(result.locator("> p").first()).toHaveText(/^waiting live run/, { timeout: 30_000 });

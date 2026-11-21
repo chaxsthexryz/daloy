@@ -1,5 +1,6 @@
 import { appendFileSync } from "node:fs";
 import { expect, test } from "@playwright/test";
+import { addStep } from "./editor-steps";
 
 function deliver(subject: string, text: string) {
   const message = [
@@ -39,8 +40,7 @@ test("the owner connects an inbox and a new website inquiry creates one live run
   await expect(page.getByText(/^Mailbox checked\./)).toBeVisible({ timeout: 30_000 });
   deliver("Inquiry while setting up", "Delivered after checking the account and before publishing.");
 
-  await page.getByLabel("Add a step as the first step").selectOption("condition");
-  await page.getByRole("button", { name: "Add", exact: true }).click();
+  await addStep(page, "condition");
   await page.getByLabel("Value", { exact: true }).fill("{{trigger.subject}}");
   await page.getByLabel("Operator").selectOption("exists");
   await page.getByRole("button", { name: "Publish" }).click();

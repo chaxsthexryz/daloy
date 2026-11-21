@@ -328,7 +328,7 @@ DeepSeek's review is in `docs/roadmap-review-2026-11-18.md`. Claude's second opi
 ## Console UI from the Paper file (docs/plans/console-ui-paper.md, 21 November 2026)
 
 - [ ] U1. Rail, Inter everywhere, calmer nav motion, AI usage meter. (claimed: claude, cloud session)
-- [ ] U2. Editor panel and canvas: empty-state actions and AI box, collapsible panel, connection dots, drop to connect, right-click menu, no black Add step button. Decision 0096. (claimed: claude, branch claude/u2-editor-canvas)
+- [x] U2. Editor panel and canvas: empty-state actions and AI box, collapsible panel, connection dots, drop to connect, right-click menu, no black Add step button. Decision 0096. (claimed: claude, branch claude/u2-editor-canvas)
 - [ ] U3. Disable a step, after U2. Decision 0097.
 - [ ] U4. AI builder: file upload fields, free-text answers. Decision 0098. (claimed: claude, cloud session)
 - [ ] U5. Workflow library with categories. Decision 0099. (claimed: claude, cloud session)
