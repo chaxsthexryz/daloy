@@ -11,7 +11,7 @@ for (const file of (await readdir(dir)).sort()) {
   captures.push(JSON.parse(await readFile(resolve(dir, file), "utf8")));
 }
 const keys = ["Business name", "Business categories", "First workflow", "Tagalog setup", "Workflow steps",
-  "Customer payment page", "Reference received", "Receipts to review", "Verified deposit", "Pay later", "Retry the reply"];
+  "Customer payment page", "Reference received", "Receipts to review", "Verified deposit", "Pay later", "Retry the reply", "Ask about a request"];
 for (const name of keys) {
   assert.deepEqual(captures.filter(c => c.name === name).map(c => c.width).sort((a, b) => a - b), [390, 1440], name);
 }

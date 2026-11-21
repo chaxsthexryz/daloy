@@ -1,3 +1,4 @@
+import { captureReview } from "./review-capture";
 import { expect, test } from "@playwright/test";
 
 const control = (slackMember: boolean) => fetch(`${process.env.E2E_PROVIDERS_URL}/__control`, { method: "POST", body: JSON.stringify({ slackMember }) });
@@ -55,6 +56,7 @@ test("an owner asks why a request stopped and only reads, nothing in the card ch
     // nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp
     await page.getByRole("row", { name: new RegExp(reference) }).getByRole("link", { name: "Ask what happened" }).click();
     await expect(page).toHaveURL(/#\/runs\/[0-9a-f-]{36}\/ask$/);
+    const runAskUrl = page.url();
     // O3: the questions card beside the recorded answer, on its own page.
     const card = page.getByRole("main");
     const answer = page.getByRole("region", { name: "Recorded answer" });
@@ -76,6 +78,14 @@ test("an owner asks why a request stopped and only reads, nothing in the card ch
     await page.getByLabel("Request reference").fill("REQ-NOPE00");
     await page.getByRole("button", { name: "Ask", exact: true }).click();
     await expect(page.getByRole("alert").filter({ hasText: "No request with that reference" })).toBeVisible();
+
+    expect((await page.request.put("/settings/language", { data: { language: "tl" } })).ok()).toBe(true);
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto(runAskUrl);
+    await page.reload();
+    await expect(page.getByRole("heading", { name: "Itanong kung ano ang nangyari" })).toBeVisible();
+    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
+    await captureReview(page, "12", "Ask about a request", "Tagalog request details fit on a 390px phone.", "tl");
   } finally {
     await control(true);
   }
