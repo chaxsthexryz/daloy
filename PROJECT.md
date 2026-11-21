@@ -313,3 +313,14 @@ DeepSeek's review is in `docs/roadmap-review-2026-11-18.md`. Claude's second opi
 - [x] Doop E1 to E6 (sign in, registration, forgot and reset password, accept invitation, My requests).
 - [ ] Doop E7 to E11 (public form, embed, booking form, approval page, browser demo).
 - [ ] Doop Q1 walkthrough and clean Docker start.
+
+## Seller pilot roadmap (docs/roadmap.md, 21 November 2026)
+
+- [ ] R1. Three-screen onboarding (name, business type, first workflow and payment choice), saved per step and resumable.
+- [ ] R2a. App logos and action labels on every node, one step catalog, logos on the Apps page.
+- [ ] R2b. Setup guide, Explain this flow dialog, sample test run and the Turn on summary.
+- [ ] R3. Manual QR Ph transfer review, PayMongo GCash checkout, one Receipts to review list, unpaid-order nudges.
+- [ ] R4. Phone step editor (add, reorder, edit, undo), then canvas controls.
+- [ ] R5. Morning digest, payments CSV export, Taglish templates, receipt compression on the phone.
+- [ ] R6. Privacy under RA 10173: form notice, receipt image retention, per-customer export and delete.
+- [ ] R7. Demand-led: public-page reading, new templates, integration candidates after an API, cost and terms check.
