@@ -6,7 +6,8 @@ import { expect, test, type Page } from "@playwright/test";
 // reference on the pay page, which puts it in Receipts to review. A verified PayMongo event then confirms it. Both show
 // in the one booking history, the deposit stays apart from the balance, one confirmation SMS goes out, and a pay-later
 // booking stays active with its balance outstanding. All providers are the e2e fakes.
-const PNG = Buffer.from("89504e470d0a1a0a0000000d4948445200000001000000010806000000", "hex");
+// Inert demo image for the fake seller. It contains no payment destination.
+const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAGAAAABgAQAAAADK40qVAAAAo0lEQVR4nM2TPQ7CMAxGn0uHiiWwMLC0R+j9NyQO0CMUCTEnW8XyMRDaLkhuJX485Sl+sewkJqYocAERkCQgOJ0CKQIEyVunINlzZTu/8y0IeXKKXqfEQEAy99xsxf18FlRvu+Z6zjtdVHc/ZqhQdRkd62cHNMDtBT1wyDBwGuoyQ7u3dgP/2PY7SGa20CkRaXHRZK60n0CQK20W419Y4Kx5FA8MPSsRciNC8AAAAABJRU5ErkJggg==", "base64");
 const PHONE = "09171230042";
 
 type RunView = { state: string; steps: { stepId: string; output?: Record<string, unknown> }[] };
@@ -33,13 +34,17 @@ async function run(page: Page, workflowId: string, payload: object) {
 
 const smsTo = async (to: string) => ((await (await fetch(`${process.env.E2E_PROVIDERS_URL}/__control`)).json()) as { unismsMessages: { recipient: string; content: string }[] }).unismsMessages.filter((m) => m.recipient === to);
 
-test("booking D-1042: a transfer receipt goes to review, a verified checkout confirms it, and the booking shows one payment history", async ({ page }) => {
+async function registerSeller(page: Page) {
   await page.goto("/");
   await page.getByRole("button", { name: "Create an account", exact: true }).click();
   await page.getByLabel("Email").fill(`seller-${Date.now()}@test.local`);
   await page.getByLabel("Password").fill("e2e test password 1");
   await page.getByRole("button", { name: "Create account" }).click();
   await expect(page.getByRole("heading", { name: "Automations", exact: true })).toBeVisible();
+}
+
+test("booking D-1042: a transfer receipt goes to review, a verified checkout confirms it, and the booking shows one payment history", async ({ page }) => {
+  await registerSeller(page);
 
   expect((await page.request.put("/settings/connections/paymongo", { data: { secretKey: process.env.E2E_PAYMONGO_KEY, webhookSecret: process.env.E2E_PAYMONGO_WEBHOOK_SECRET } })).status()).toBe(200);
   expect((await page.request.put("/settings/connections/unisms", { data: { secretKey: process.env.E2E_UNISMS_KEY } })).status()).toBe(200);
@@ -139,4 +144,46 @@ test("booking D-1042: a transfer receipt goes to review, a verified checkout con
   await expect.poll(async () => (await smsTo("+639171230042")).map((m) => m.content), { timeout: 20_000 }).toContain("We could not confirm your payment for D-1042: Already paid through PayMongo checkout");
   expect((await smsTo("+639171230042")).filter((m) => m.content.includes("Deposit for D-1042 received"))).toHaveLength(1);
   await customer.close();
+});
+
+test("staff confirm a manual transfer and retry only its failed SMS", async ({ page, browser }) => {
+  await registerSeller(page);
+  const reference = "M-1044";
+  const phone = "09171230044";
+  const message = "Transfer for M-1044 confirmed.";
+  expect((await page.request.put("/payments/settings", { data: { gcashNumber: "0917 555 0101", accountName: "Lia Nail Studio" } })).status()).toBe(200);
+  const resource = await (await page.request.post("/resources", { data: { name: "Pickup desk" } })).json();
+  const workflow = await publish(page, "manual-payment", [{
+    id: "ask", type: "payment_due", config: { reference: "{{trigger.order}}", kind: "full", amount: "350", channel: "sms", to: "{{trigger.phone}}", confirmedMessage: message },
+  }]);
+  const year = new Date().getUTCFullYear() + 1;
+  const out = await run(page, workflow, { order: reference, phone, who: resource.id, at: `${year}-02-11T10:00` });
+  const customer = await browser.newPage();
+  await customer.goto(new URL(out.ask!.payUrl!).pathname);
+  await expect(customer.getByRole("link", { name: "Or pay online with GCash" })).toHaveCount(0);
+  await customer.getByLabel("Transfer reference number").fill("MANUAL 1044");
+  await customer.getByRole("button", { name: "Send reference" }).click();
+  await expect(customer.getByText("Reference received")).toBeVisible();
+  await customer.close();
+
+  await page.getByRole("link", { name: "Receipts to review" }).click();
+  const row = page.getByRole("listitem").filter({ hasText: reference });
+  page.once("dialog", d => void d.accept());
+  await row.getByRole("button", { name: "Confirm payment" }).click();
+  // This workspace has no SMS connection. Confirmation succeeds before the reply fails.
+  await expect.poll(async () => {
+    const rows: { reference: string; replyState: string | null }[] = await (await page.request.get("/payments/review")).json();
+    return rows.find(r => r.reference === reference)?.replyState;
+  }, { timeout: 20_000 }).toBe("failed");
+  await page.reload();
+  await expect(row.getByRole("button", { name: "Retry reply" })).toBeVisible();
+  await captureReview(page, "11", "Retry the reply", "The transfer is already confirmed. The seller can reconnect SMS and resend just the message.");
+  expect((await page.request.put("/settings/connections/unisms", { data: { secretKey: process.env.E2E_UNISMS_KEY } })).status()).toBe(200);
+  await row.getByRole("button", { name: "Retry reply" }).click();
+  await expect.poll(async () => (await smsTo("+639171230044")).filter(m => m.content === message).length, { timeout: 20_000 }).toBe(1);
+  const [due] = await (await page.request.get("/payments/dues?reference=" + reference)).json();
+  expect(due).toMatchObject({ status: "confirmed", confirmedSource: "transfer", outstanding: 0 });
+  const history = due.history.map((item: { event: string }) => item.event);
+  expect(history.filter((event: string) => event === "confirmed")).toHaveLength(1);
+  expect(history.filter((event: string) => event === "reply_retried")).toHaveLength(1);
 });

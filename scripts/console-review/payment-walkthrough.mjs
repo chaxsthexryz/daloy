@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile, readdir, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { pathToFileURL } from "node:url";
+import { pathToFileURL, URL } from "node:url";
 import { env } from "node:process";
 import { chromium } from "@playwright/test";
 
@@ -11,7 +11,7 @@ for (const file of (await readdir(dir)).sort()) {
   captures.push(JSON.parse(await readFile(resolve(dir, file), "utf8")));
 }
 const keys = ["Business name", "Business categories", "First workflow", "Tagalog setup", "Workflow steps",
-  "Customer payment page", "Reference received", "Receipts to review", "Verified deposit", "Pay later"];
+  "Customer payment page", "Reference received", "Receipts to review", "Verified deposit", "Pay later", "Retry the reply"];
 for (const name of keys) {
   assert.deepEqual(captures.filter(c => c.name === name).map(c => c.width).sort((a, b) => a - b), [390, 1440], name);
 }
