@@ -1,4 +1,4 @@
-# 0092: Morning digest, payments CSV, Taglish templates and photo compression
+# 0093: Morning digest, payments CSV, Taglish templates and photo compression
 
 ## Context
 

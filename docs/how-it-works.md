@@ -1122,7 +1122,7 @@ Edge cases: two reviewers at once, duplicate receipts, duplicate and out-of-orde
 Tests: `packages/db/src/payment-review.test.ts` (every transition and exception), `apps/worker/src/steps/payments.test.ts` (the steps against a fake PayMongo), `apps/api/src/payments.test.ts` (pay page, rate limit, who may review, decisions, webhook), `packages/engine/src/templates.test.ts`, and `e2e/payments.spec.ts` (the D-1042 pilot: a receipt in review, a verified checkout confirming it, one SMS, the booking history, a pay-later booking).
 
 
-## Daily tools: morning digest, payments CSV, Taglish and photo compression (R5, decision 0092)
+## Daily tools: morning digest, payments CSV, Taglish and photo compression (R5, decision 0093)
 
 What it does: the owner can get one email each morning listing receipts to review, unpaid orders and failed customer replies. Staff download a CSV of confirmed payments for a date range. A seller can start a template with Taglish wording. A photo chosen on the pay page or a public form is shrunk on the phone before it uploads.
 

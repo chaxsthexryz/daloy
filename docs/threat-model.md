@@ -305,7 +305,7 @@ The list of apps sharing a Google sign-in joins OAuth grants by Google account I
 - Meta credential exposure: `pageAccessToken`, `appSecret`, and `verifyToken` are encrypted with AES-256-GCM bound to `${userId}:connection:meta_messenger`, write-only in the API, never echoed in connection responses or provider errors, and loaded by `secretValuesToHide` so `historyHider` redacts all four encoded forms on every read surface. Auth failures (401, 403, or Meta code 190) mark the connection failed fenced by credential IV; 24-hour window errors (code 10, subcode 2018278) fail without altering connection status; timeouts and 5xx writes park in `needs_review`. Remaining risk: live Meta webhook behaviour and App Review permissions (`pages_messaging`, `instagram_manage_messages`) remain unverified until the owner runs [docs/live-meta-check.md](live-meta-check.md).
 
 
-## Daily tools (R5, decision 0092)
+## Daily tools (R5, decision 0093)
 
 Assets: the owner's inbox, confirmed payment records, customers' receipt photos.
 
