@@ -46,7 +46,8 @@ describe("brand kit", () => {
   it("leaves forms as they were when nothing is set", async () => {
     const o = await owner();
     const page = await request(server).get(`/forms/${o.formId}`).expect(200);
-    expect(page.text).not.toMatch(/<style|<header|brand\/logo/);
+    expect(page.text).not.toMatch(/<header|brand\/logo|class="ruled"/);
+    expect(page.text).toContain("--accent:#0a0b0f");
     await request(server).get(`/brand/logo/${o.id}`).expect(404);
     expect((await o.agent.get("/settings/brand").expect(200)).body).toEqual({ accent: null, logo: false });
   });
@@ -59,7 +60,7 @@ describe("brand kit", () => {
     const page = await request(server).get(`/forms/${o.formId}`).expect(200);
     expect(page.text).toContain("Cruz &lt;Bakery&gt;");
     expect(page.text).toContain(`src="/brand/logo/${o.id}"`);
-    expect(page.text).toContain("background:#ffe08a;color:#111111");
+    expect(page.text).toContain("--accent:#ffe08a;--on:#111111");
     const sent = await request(server).post(`/forms/${o.formId}`).type("form").send({ name: "Ana", _website: "" }).expect(200);
     expect(sent.text).toContain("#ffe08a");
 
@@ -70,7 +71,7 @@ describe("brand kit", () => {
 
     await o.agent.delete("/settings/brand/logo").expect(204);
     await o.agent.put("/settings/brand").send({ accent: null }).expect(200);
-    expect((await request(server).get(`/forms/${o.formId}`).expect(200)).text).not.toMatch(/<style|<header/);
+    expect((await request(server).get(`/forms/${o.formId}`).expect(200)).text).not.toMatch(/<header|class="ruled"|ffe08a/);
   });
 
   it("refuses SVG, other types, disguised files, big files and empty uploads", async () => {

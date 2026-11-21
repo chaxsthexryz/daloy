@@ -86,7 +86,7 @@ test("a purchase request goes from the form to the named approver, then to purch
   await form.getByLabel("Why is it needed?").fill("The current chair is broken.");
   await form.getByRole("button", { name: "Send" }).click();
   await expect(form.getByRole("heading", { name: "Request received" })).toBeVisible();
-  const reference = /Your reference is (\S+)\./.exec(await form.locator("body").innerText())![1]!;
+  const reference = await form.locator(".ref").innerText();
 
   // The owner sees it waiting for the approver, with the receipt sent from Outlook.
   const row = page.locator("tbody tr").filter({ hasText: reference });

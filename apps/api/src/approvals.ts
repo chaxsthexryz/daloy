@@ -7,23 +7,21 @@ import * as z from "zod";
 import { sessionUser } from "./auth";
 import { BOSS, CONFIG, DB, enqueueRun, RateLimit, ZodPipe, type ApiConfig, type SessionUser } from "./http";
 import { historyHider } from "./mask";
-import { escapeHtml, page } from "./public";
+import { escapeHtml, pageBrand, type PageBrand } from "./public";
+import { approvalShell } from "./public-pages";
 
 const token = new ZodPipe(z.string().regex(/^[A-Za-z0-9_-]{43}$/));
 const decisionBody = z.object({ decision: z.enum(["approved", "rejected"]) });
 
-// Unknown, used and expired links all get this, so the page tells an attacker nothing about a token.
-const GONE = page("This approval link is not valid. It may have been used already or expired.", "Approval");
+type Language = "en" | "tl";
+const card = (language: Language, brand: PageBrand | undefined, heading: string | undefined, body: string) => approvalShell({ title: publicCopy[language].approval, heading, body, language, brand, eyebrow: publicCopy[language].approval });
+// Unknown, used and expired links all get this, so the page tells an attacker nothing about a token. It has no workspace, so it carries no brand.
+const gone = (language: Language = "en") => card(language, undefined, publicCopy[language].invalidTitle, `<span class="pill no">${publicCopy[language].invalidPill}</span><p class="lead">${publicCopy[language].invalid}</p>`);
+const GONE = gone();
 // A named approval opened by someone else. It says nothing about the request: its details are private.
-const notYours = (language: "en" | "tl") => {
-  const copy = publicCopy[language];
-  return page(`<h1>${copy.requested}</h1><p>${copy.notYours}</p>`, copy.approval, language);
-};
+const notYours = (language: Language, brand?: PageBrand) => card(language, brand, publicCopy[language].requested, `<span class="pill">${publicCopy[language].notYoursPill}</span><p class="lead">${publicCopy[language].notYours}</p>`);
 // The console's #/answer route signs the visitor in and comes back here. The token is checked against a strict pattern there.
-const signIn = (value: string, language: "en" | "tl") => {
-  const copy = publicCopy[language];
-  return page(`<h1>${copy.requested}</h1><p>${copy.named}</p><p><a href="/#/answer/${value}">${copy.signIn}</a></p>`, copy.approval, language);
-};
+const signIn = (value: string, language: Language, brand?: PageBrand) => card(language, brand, publicCopy[language].requested, `<p class="lead">${publicCopy[language].named}</p><p><a class="btn" href="/#/answer/${value}">${publicCopy[language].signIn}</a></p>`);
 
 type Pending = NonNullable<Awaited<ReturnType<typeof findPendingApproval>>>;
 type Access = { ok: true; user: SessionUser | null } | { ok: false; status: 401 | 403; html: string };
@@ -69,14 +67,16 @@ export class ApprovalsController {
     }
     const language = await workspaceLanguage(this.db, pending.workspaceId);
     const copy = publicCopy[language];
+    const brand = await pageBrand(this.db, pending.workspaceId);
     const input = hide(pending.input) as { message?: unknown } | null;
     const message = String(input?.message ?? "");
     const who = access.user ? `<p class="muted">${copy.signedIn} ${escapeHtml(access.user.email)}</p>` : "";
-    return page(
-      `<h1>${copy.requested}</h1>${who}<p style="white-space:pre-wrap">${escapeHtml(message)}</p>` +
-        `<form method="post"><button type="submit" name="decision" value="approved">${copy.approve}</button> <button type="submit" name="decision" value="rejected">${copy.reject}</button></form>`,
-      copy.approval,
+    return card(
       language,
+      brand,
+      copy.requested,
+      `${who}<div class="msg">${escapeHtml(message)}</div>` +
+        `<form method="post" class="actions"><button class="btn" type="submit" name="decision" value="approved">${copy.approve}</button><button class="btn ghost" type="submit" name="decision" value="rejected">${copy.reject}</button></form><p class="muted">${copy.decisionNote}</p>`,
     );
   }
 
@@ -96,6 +96,7 @@ export class ApprovalsController {
     const pendingBefore = await findPendingApproval(this.db, value);
     const language = pendingBefore ? await workspaceLanguage(this.db, pendingBefore.workspaceId) : "en";
     const copy = publicCopy[language];
+    const brand = pendingBefore ? await pageBrand(this.db, pendingBefore.workspaceId) : undefined;
     const runId = await recordDecision(this.db, value, body.decision, user ?? undefined);
     if (!runId) {
       // Nothing was recorded. If the link is still live, it was the wrong person; otherwise it is used or expired.
@@ -110,15 +111,17 @@ export class ApprovalsController {
     }
     // If this send fails, the worker's sweep still finds the woken run.
     await enqueueRun(this.boss, runId);
-    return page(`<p>${copy.recorded} (${copy[body.decision]}) ${copy.recordedEnd}</p>`, copy.approval, language);
+    const pill = body.decision === "approved" ? `<span class="pill ok">${copy.approvedPill}</span>` : `<span class="pill no">${copy.rejectedPill}</span>`;
+    return card(language, brand, undefined, `${pill}<p>${copy.recorded} (${copy[body.decision]}) ${copy.recordedEnd}</p>`);
   }
 
   private async access(pending: Pending, value: string, req: Request): Promise<Access> {
     const language = await workspaceLanguage(this.db, pending.workspaceId);
+    const brand = await pageBrand(this.db, pending.workspaceId);
     if (!pending.approverId) return { ok: true, user: null };
     const user = await sessionUser(this.db, req);
-    if (!user) return { ok: false, status: 401, html: signIn(value, language) };
+    if (!user) return { ok: false, status: 401, html: signIn(value, language, brand) };
     const mayAnswer = user.id === pending.approverId && user.workspaceId === pending.workspaceId && CAN_APPROVE.includes(user.role);
-    return mayAnswer ? { ok: true, user } : { ok: false, status: 403, html: notYours(language) };
+    return mayAnswer ? { ok: true, user } : { ok: false, status: 403, html: notYours(language, brand) };
   }
 }

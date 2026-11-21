@@ -266,3 +266,14 @@ export async function bookingSuperseded(db: Pick<Db, "select">, run: { bookingId
 /** SQL for "this run's booking moved on", for run lists. */
 export const supersededSql = sql<boolean>`(${runs.bookingId} is not null and exists (select 1 from ${bookings} where ${bookings.id} = ${runs.bookingId} and ${bookings.version} <> ${runs.bookingVersion}))`;
 
+
+/**
+ * Active, real (not test) bookings of one resource that overlap [from, to). The public booking form uses it to show
+ * which open times are taken. It reads only times, never a reference or a person, and only for one workspace's resource.
+ */
+export async function busyBetween(db: Db, workspaceId: string, resourceId: string, from: Date, to: Date): Promise<{ start: Date; end: Date }[]> {
+  return db
+    .select({ start: startOf, end: endOf })
+    .from(bookings)
+    .where(and(eq(bookings.userId, workspaceId), eq(bookings.resourceId, resourceId), eq(bookings.test, false), eq(bookings.status, "active"), sql`${bookings.during} && ${range(from, to)}`));
+}

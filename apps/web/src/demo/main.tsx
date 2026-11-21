@@ -1,5 +1,6 @@
 import "@xyflow/react/dist/style.css";
 import "../styles.css";
+import "../motion.css";
 import "./demo.css";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";

@@ -51,7 +51,7 @@ describe("approval page", () => {
     const res = await request(server).get(`/approvals/${token}`).expect(200);
     expect(res.text).toContain("&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt; Refund?");
     expect(res.text).not.toContain("<script>");
-    expect(res.text).toContain('<form method="post">');
+    expect(res.text).toContain('<form method="post"');
     expect(res.text).toContain('name="decision" value="approved"');
     expect(res.text).toContain('name="decision" value="rejected"');
     // The token is in the URL; it must not leak to other sites or caches.
