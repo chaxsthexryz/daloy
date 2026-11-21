@@ -22,3 +22,7 @@ A refused submission returns the form again with the visitor's answers (never fi
 - The receipt shows the reference in a card and a "Received" label. Tests read the reference from `.ref`.
 - The upload, over-quota and bad-field cases all use the same alert.
 - A form behind a stale submission key still returns JSON for API callers and the alert for browsers.
+
+## Approval page (E10)
+
+The approval card is built by `approvalShell`. It carries the brand of the approval's own workspace (read with `pageBrand(workspaceId)` from the approval row) on the decision, sign-in, not-yours and answer-recorded pages. An unknown, used or expired link has no workspace, so it gets the plain Daloy page and nothing about any business. The pages still say nothing about the request except on the decision page for an allowed visitor. Expiry, single use and the named-approver check are unchanged: they live in `findPendingApproval` and `recordDecision`.

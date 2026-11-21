@@ -98,8 +98,9 @@ input[type=file]::file-selector-button{margin-right:12px;padding:4px 10px;font:i
 .short h1{padding-bottom:10px;background:linear-gradient(var(--accent),var(--accent)) left bottom/40px 3px no-repeat}
 .muted{font-size:12px;line-height:16px;color:#5b6170}
 .msg{padding:14px 16px;white-space:pre-wrap;background:#f5f6f8;border:1px solid #e3e6ec;border-radius:8px}
-.actions{display:flex;gap:12px}
+.actions{flex-direction:row;gap:12px}
 .wrap .btn{padding:10px 16px;border-radius:8px}
+a.btn{display:inline-block;color:var(--on)}
 @keyframes rise{from{opacity:0;transform:translateY(8px)}}
 @media(max-width:560px){main,.wrap main{padding:20px}.row{flex-direction:column}form>.btn{align-self:stretch}}
 @media(prefers-reduced-motion:reduce){main{animation:none}.btn{transition:none}}`;
@@ -125,7 +126,7 @@ export function shell({ body, title, language, brand, embed }: ShellOptions) {
 
 const MARK = `<svg viewBox="0 0 30 30" role="img" aria-label="Daloy"><rect width="30" height="30" rx="8" fill="#1b45c9"/><path d="M8 18.5 15 12l7 6.5" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 
-export type ApprovalOptions = { title: string; heading: string; body: string; language: Language; brand?: PageBrand; eyebrow?: string };
+export type ApprovalOptions = { title: string; heading?: string; body: string; language: Language; brand?: PageBrand; eyebrow?: string };
 
 /**
  * The approval card. Branded, the business logo and name sit above it and the heading has a short accent rule;
@@ -135,7 +136,7 @@ export function approvalShell({ title, heading, body, language, brand, eyebrow }
   const named = brand && (brand.logo || brand.name) ? brand : undefined;
   const bar = named ? `${named.logo ? logo(named) : ""}${named.name ? `<span>${escapeHtml(named.name)}</span>` : ""}` : `${MARK}<span>Daloy</span>`;
   const label = !named && eyebrow ? `<p class="eyebrow">${escapeHtml(eyebrow)}</p>` : "";
-  return `<!doctype html><html lang="${language}"><head>${head(title, brand, { accent: "#1b45c9", ink: "#ffffff" })}</head><body><div class="wrap"><div class="brandbar">${bar}</div><main${named ? ' class="short"' : ""}>${label}<h1>${heading}</h1>${body}</main></div></body></html>`;
+  return `<!doctype html><html lang="${language}"><head>${head(title, brand, { accent: "#1b45c9", ink: "#ffffff" })}</head><body><div class="wrap"><div class="brandbar">${bar}</div><main${named ? ' class="short"' : ""}>${label}${heading ? `<h1>${heading}</h1>` : ""}${body}</main></div></body></html>`;
 }
 
 /**
