@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { openTestSettings } from "./editor-steps";
 
 // N4c: the diagram takes the run's state. Mocked test runs, so nothing is sent.
 const definition = {
@@ -28,6 +29,7 @@ const edge = (page: Page, id: string) => page.locator(`[data-testid="rf__edge-${
 test("the editor and the run page show the trigger and first edge done before the last step", async ({ page }) => {
   const id = await signUp(page, "anim");
   await page.goto(`/#/w/${id}`);
+  await openTestSettings(page);
   await page.getByRole("button", { name: "Test run draft" }).click();
 
   // The delay step waits an hour, so the last step is never Done while the steps before it are.

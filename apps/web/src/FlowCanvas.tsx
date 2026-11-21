@@ -2,7 +2,7 @@ import { translate, type Language } from "./lib/locale";
 import { useLanguage } from "./Language";
 import { destination, stepEntry, triggerEntry, triggerLabel, markText, type Step } from "@daloy/engine";
 import { AppMark } from "./AppMark";
-import { BaseEdge, Background, Controls, EdgeLabelRenderer, getBezierPath, getSmoothStepPath, Handle, Panel, Position, ReactFlow, useReactFlow, useViewport, type Edge, type EdgeProps, type Node, type NodeProps } from "@xyflow/react";
+import { BaseEdge, Background, Controls, EdgeLabelRenderer, getBezierPath, getSmoothStepPath, Handle, Panel, Position, ReactFlow, useReactFlow, useViewport, type ConnectionLineComponentProps, type Edge, type EdgeProps, type Node, type NodeProps } from "@xyflow/react";
 import { useEffect, useMemo, useState } from "react";
 import { toFlow, type Draft, type RunEdgeData, type StepNodeData } from "./lib/graph";
 import { runFlow, STATUS, type FlowRun } from "./lib/run-flow";
@@ -116,7 +116,7 @@ function EditorStepNode({ data }: NodeProps<Node<EditorNodeData, "step">>) {
   const entry = stepEntry(step.type);
   return (
     <div className={nodeClass(`node a7-node${data.needsApp ? " a7-needs-app" : ""}`, data.status)}>
-      <Handle type="target" position={Position.Top} isConnectable={false} />
+      <Handle type="target" position={Position.Top} isConnectableStart={false} />
       <span className="a7-node-row">
         <span className="a7-node-kicker node-app">
           <AppMark decorative mark={entry.mark} name={markText(entry, language)} size={24} />
@@ -130,21 +130,24 @@ function EditorStepNode({ data }: NodeProps<Node<EditorNodeData, "step">>) {
       <Status status={data.status} />
       {data.branches ? (
         data.branches.map((b, i) => (
-          <Handle key={b} id={b} type="source" position={Position.Bottom} isConnectable={false} style={{ left: `${((i + 1) / (data.branches!.length + 1)) * 100}%` }} />
+          <Handle key={b} id={b} type="source" position={Position.Bottom} title={t("Drag from here to connect {branch}", { branch: t(b) })} style={{ left: `${((i + 1) / (data.branches!.length + 1)) * 100}%` }} />
         ))
       ) : (
-        <Handle type="source" position={Position.Bottom} isConnectable={false} />
+        <Handle type="source" position={Position.Bottom} title={t("Drag from here to connect")} />
       )}
     </div>
   );
 }
 
 /** The editor's edge: square corners, the branch as a coloured pill, and the run state when a test run is drawn. */
-function EditorEdge({ id, source, target, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, label, data }: EdgeProps<Edge<Partial<RunEdgeData> & { on?: string; insert?: () => void }>>) {
+function EditorEdge({ id, source, target, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, label, data }: EdgeProps<Edge<Partial<RunEdgeData> & { on?: string; insert?: (at: { x: number; y: number }) => void }>>) {
   const { t } = useLanguage();
   const [path, labelX, labelY] = getSmoothStepPath({ sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, borderRadius: 0 });
   const reduced = useReducedMotion();
   const state = data?.state;
+  // A branch's pill sits where the line turns (labelY); its plus goes on the line's last vertical run, halfway between the pill's
+  // lower edge (10px below its middle) and the next step, so it never covers a pill or another plus.
+  const plus = label ? { x: targetX, y: (labelY + 10 + targetY) / 2 } : { x: labelX, y: labelY };
   return (
     <>
       <BaseEdge id={id} path={path} className={state ? `run-edge ${state}` : "a7-edge"} data-state={state} />
@@ -161,8 +164,11 @@ function EditorEdge({ id, source, target, sourceX, sourceY, targetX, targetY, so
             type="button"
             className="a7-insert nodrag nopan"
             aria-label={source === "trigger" ? t("Add a step at the start") : t("Add a step between {from} and {to}", { from: source, to: target })}
-            style={{ transform: `translate(-50%, -50%) translate(${labelX + (label ? 44 : 0)}px, ${labelY}px)` }}
-            onClick={data.insert}
+            style={{ transform: `translate(-50%, -50%) translate(${plus.x}px, ${plus.y}px)` }}
+            onClick={(e) => {
+              const r = e.currentTarget.getBoundingClientRect();
+              data.insert!({ x: r.left, y: r.bottom });
+            }}
           >
             <span aria-hidden="true">+</span>
           </button>
@@ -174,6 +180,16 @@ function EditorEdge({ id, source, target, sourceX, sourceY, targetX, targetY, so
         </circle>
       )}
     </>
+  );
+}
+
+/** While a connection is dragged from a step's dot: a dashed line and a dashed box the size of a step where it would land. */
+export function DropLine({ fromX, fromY, toX, toY }: ConnectionLineComponentProps) {
+  return (
+    <g className="a7-drop">
+      <path d={`M${fromX},${fromY} L${toX},${toY}`} />
+      <rect x={toX - 130} y={toY} width={260} height={60} rx={10} />
+    </g>
   );
 }
 

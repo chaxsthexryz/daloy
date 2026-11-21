@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { addStep, openTestSettings } from "./editor-steps";
 
 // The main flow from CLAUDE.md: sign up, build a two-step flow, test it, publish, run, see it succeed.
 test("sign up, build, test-run, publish and run a workflow", async ({ page }) => {
@@ -16,14 +17,13 @@ test("sign up, build, test-run, publish and run a workflow", async ({ page }) =>
   await expect(page.getByRole("heading", { name: "Large orders" })).toBeVisible();
 
   // Step 1: a condition (default: {{trigger.amount}} gt 100). Step 2: an HTTP call on its true branch.
-  await page.getByLabel("Add a step as the first step").selectOption("condition");
-  await page.getByRole("button", { name: "Add", exact: true }).click();
+  await addStep(page, "condition");
   await expect(page.getByLabel("Operator")).toHaveValue("gt");
-  await page.getByLabel("Add a step after condition_1").selectOption("http");
-  await page.getByRole("button", { name: "Add", exact: true }).click();
+  await addStep(page, "http", { after: "condition_1" });
   await expect(page.getByRole("group", { name: "Condition step condition_1, on true goes to http_1" })).toBeVisible();
 
   // Test run with mocked calls: the HTTP step answers without a request.
+  await openTestSettings(page);
   await page.getByLabel("Sample trigger data (JSON)").fill('{ "amount": 250 }');
   await page.getByRole("button", { name: "Test run draft" }).click();
   const result = page.locator(".run");
@@ -36,6 +36,7 @@ test("sign up, build, test-run, publish and run a workflow", async ({ page }) =>
   await expect(page.getByRole("status")).toHaveText(/Version \d+ is live/);
 
   // A live run that takes the false branch, which has no step, so the test makes no outside call.
+  await openTestSettings(page);
   await page.getByLabel("Sample trigger data (JSON)").fill('{ "amount": 50 }');
   await page.getByRole("button", { name: "Run live version" }).click();
   await expect(result.locator("> p").first()).toHaveText(/^succeeded live run/, { timeout: 30_000 });
