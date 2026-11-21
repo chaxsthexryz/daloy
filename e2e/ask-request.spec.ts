@@ -83,7 +83,7 @@ test("an owner asks why a request stopped and only reads, nothing in the card ch
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto(runAskUrl);
     await page.reload();
-    await expect(page.getByRole("heading", { name: "Itanong kung ano ang nangyari" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Magtanong tungkol sa request" })).toBeVisible();
     await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
     await captureReview(page, "12", "Ask about a request", "Tagalog request details fit on a 390px phone.", "tl");
   } finally {
