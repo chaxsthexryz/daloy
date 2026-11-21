@@ -343,3 +343,27 @@ describe("ai step files", () => {
     expect(issues({ trigger: { type: "meta_dm", config: {} }, steps: [{ id: "r", type: "meta_reply", config: { text: "" } }] })).not.toEqual([]);
   });
 });
+
+describe("disabled steps (decision 0097)", () => {
+  const off = <T extends object>(s: T) => ({ ...s, disabled: true });
+
+  it("keeps disabled: true on a step that does not branch", () => {
+    const def = triage();
+    def.steps[0] = off(def.steps[0]!);
+    const parsed = definitionSchema.parse(def);
+    expect(parsed.steps[0]!.disabled).toBe(true);
+    expect(parsed.steps[2]!.disabled).toBeUndefined();
+  });
+
+  it("refuses a disabled branching step, since a skipped step has no branch to follow", () => {
+    const def = triage();
+    def.steps[1] = off(def.steps[1]!);
+    expect(issues(def)).toContain('condition step "is_billing" branches, so it cannot be turned off');
+  });
+
+  it("accepts only true, so an enabled step carries no disabled key", () => {
+    const def = triage();
+    def.steps[0] = { ...def.steps[0]!, disabled: false } as never;
+    expect(issues(def).length).toBeGreaterThan(0);
+  });
+});

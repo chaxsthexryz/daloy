@@ -322,6 +322,16 @@ Entry points: `GET /payments/export.csv`, `GET` and `PUT /settings/digest`, `GET
 - Remaining risk: the digest says an order is unpaid even while a reminder is already queued, so the number can overstate the work; the digest needs the installation's SMTP server; a worker that is down all morning sends no digest that day.
 
 
+## Disable a step (U3, decision 0097)
+
+Assets: the sends a workflow makes (emails, HTTP calls, messages, payment links).
+
+Entry points: the saved definition (`POST /workflows/:id/versions`, the editor, MCP), read by the worker.
+
+- A turned-off step still sending: the worker checks the flag before it creates an attempt, so no executor call, claim or retry happens for that step. A worker from before U3 would ignore the flag and send, so the engine and worker are deployed together.
+- A turned-off step changing the route: the definition check refuses `disabled` on any step that branches, so a skip always has one edge to follow and the run cannot take a path the owner did not draw.
+- Turning off a safety step: an owner can turn off an approval's follow-up or a notification like they could delete it. Turning off an approval itself is refused because it branches. The run history shows every skipped step with its reason, so the change is visible after the fact.
+
 ## Customer privacy (R6, decision 0094)
 
 Assets: customers' receipt images, DM and form text inside run data, the export file the owner downloads, the audit rows.

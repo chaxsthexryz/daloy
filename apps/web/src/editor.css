@@ -85,6 +85,10 @@
 .a7-when { color: var(--accent); }
 .a7-warn { color: var(--a7-warn); font-weight: 600; }
 .a7-node.a7-needs-app { border-color: var(--a7-warn-line); }
+/* A turned-off step (decision 0097): grey and dashed, with "Turned off" in words so colour is not the only signal. */
+.a7-node.node-off { border-style: dashed; background: var(--sunken); color: var(--muted); }
+.a7-node.node-off .node-title { color: var(--muted); }
+.a7-node.node-off .node-app svg, .a7-node.node-off .node-app img { filter: grayscale(1); opacity: 0.6; }
 .react-flow__node.selected .a7-node { border: 2px solid var(--accent); padding: 9px 11px; box-shadow: 0 0 0 4px var(--accent-tint); }
 .react-flow__node.selected .a7-node .a7-node-kicker { color: var(--accent); }
 /* Connection dots (U2): hidden until the step is selected, then 8px blue dots with a 2px white ring. A wider invisible ring is the grab area. */

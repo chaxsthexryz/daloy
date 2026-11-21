@@ -289,6 +289,7 @@ details summary::-webkit-details-marker { display: none; }
 .node-status { margin-top: 2px; font-weight: var(--weight-bold); color: var(--muted); font-variant-emoji: text; }
 .react-flow__node.selected .node { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
 .node.run-idle { border-style: dashed; border-color: var(--run-idle); }
+.node.run-skipped { border-style: dashed; border-color: var(--run-idle); background: var(--sunken); }
 .node.run-done { border-color: var(--run-path); background: var(--done); }
 .node.run-done .node-status { color: var(--on-done); }
 .node.run-working, .node.run-needs_you { border-color: var(--run-working); background: var(--accent-tint); }

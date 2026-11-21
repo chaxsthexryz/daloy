@@ -1,6 +1,6 @@
 import { definitionSchema } from "@daloy/engine";
 import { describe, expect, it } from "vitest";
-import { addStep, blankDraft, duplicateStep, layout, readCopiedStep, removeStep, toFlow, type Draft } from "./graph";
+import { addStep, blankDraft, duplicateStep, layout, readCopiedStep, removeStep, setDisabled, toFlow, type Draft } from "./graph";
 
 const valid = (d: Draft) => {
   const r = definitionSchema.safeParse(d);
@@ -210,5 +210,27 @@ describe("readCopiedStep (U2 paste check)", () => {
     expect(r.draft.steps.find((s) => s.id === "email_1")!.config).toEqual(step.config);
     expect(r.draft.edges).toEqual([{ from: "http_1", to: "email_1" }]);
     expect(valid(r.draft)).toEqual([]);
+  });
+});
+
+describe("setDisabled (U3)", () => {
+  const d: Draft = {
+    trigger: { type: "manual", config: {} },
+    steps: [
+      { id: "check", type: "condition", config: { condition: { left: "{{trigger.n}}", op: "gt", right: 1 } } },
+      { id: "wait", type: "delay", config: { seconds: 5 } },
+    ],
+    edges: [{ from: "check", to: "wait", on: "true" }],
+  };
+
+  it("turns a step off and on again, leaving no disabled key behind", () => {
+    const off = setDisabled(d, "wait", true);
+    expect(off.steps[1]).toEqual({ ...d.steps[1], disabled: true });
+    expect(valid(off)).toEqual([]);
+    expect(setDisabled(off, "wait", false).steps[1]).toEqual(d.steps[1]);
+  });
+
+  it("leaves a branching step on", () => {
+    expect(setDisabled(d, "check", true)).toEqual(d);
   });
 });

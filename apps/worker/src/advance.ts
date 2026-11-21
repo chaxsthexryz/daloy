@@ -180,7 +180,7 @@ async function runNext(deps: AdvanceDeps, run: Run): Promise<void> {
   const mock = run.test && !run.live;
   if (!last) {
     step = entryStep(def);
-  } else if (last.state === "succeeded") {
+  } else if (last.state === "succeeded" || last.state === "skipped") {
     const next = nextStep(def, last.stepId, last.branch ?? undefined);
     if (!next) return moveRun(db, run.id, "running", "succeeded", { finishedAt: new Date() });
     step = next;
@@ -194,6 +194,13 @@ async function runNext(deps: AdvanceDeps, run: Run): Promise<void> {
       attempt = last.attempt;
       stepRunId = last.id;
     }
+  }
+
+  // A turned-off step sends nothing: it gets a skipped row and the run follows its one edge (decision 0097). The
+  // definition refuses disabled on a branching step, so nextStep needs no branch for it.
+  if (step.disabled) {
+    await db.insert(stepRuns).values({ runId: run.id, stepId: step.id, attempt: 1, state: "skipped", output: { skipped: "This step is turned off in the editor." }, finishedAt: new Date() });
+    return deps.enqueue(run.id);
   }
 
   // A run of an older booking version stops before any attempt: a new step, a retry, a resumed wait, or an operator's

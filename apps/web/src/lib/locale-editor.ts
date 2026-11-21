@@ -103,4 +103,10 @@ export const editorTranslations: Record<string, string> = {
   "Copied {id}. Paste with Ctrl+V.": "Nakopya ang {id}. I-paste gamit ang Ctrl+V.",
   "Nothing to paste. Copy a step first.": "Walang mai-paste. Kumopya muna ng hakbang.",
   "Pasted {id}.": "Na-paste ang {id}.",
+  "Disable": "I-off",
+  "Enable": "I-on",
+  "Turned off": "Naka-off",
+  ", turned off": ", naka-off",
+  "Turned off {id}. Runs skip it and go on to the next step.": "Na-off ang {id}. Nilalaktawan ito ng mga run at tumutuloy sa susunod na hakbang.",
+  "Turned on {id}.": "Na-on ang {id}.",
 };

@@ -160,30 +160,33 @@ export const bookingConfigSchema = z
   });
 export type BookingConfig = z.infer<typeof bookingConfigSchema>;
 
+// A disabled step is recorded as skipped and the run follows its one edge (decision 0097). Only true, so an enabled step has no key.
+const disabled = z.literal(true).optional();
+
 const stepSchema = z.discriminatedUnion("type", [
-  z.object({ id: stepId, type: z.literal("condition"), config: z.object({ condition: conditionSchema }) }),
-  z.object({ id: stepId, type: z.literal("http"), config: httpConfigSchema }),
-  z.object({ id: stepId, type: z.literal("email"), config: emailConfigSchema }),
-  z.object({ id: stepId, type: z.literal("delay"), config: delayConfigSchema }),
-  z.object({ id: stepId, type: z.literal("ai"), config: aiConfigSchema }),
-  z.object({ id: stepId, type: z.literal("approval"), config: approvalConfigSchema }),
-  z.object({ id: stepId, type: z.literal("sheets"), config: sheetsConfigSchema }),
-  z.object({ id: stepId, type: z.literal("drive"), config: driveConfigSchema }),
-  z.object({ id: stepId, type: z.literal("slack"), config: slackConfigSchema }),
-  z.object({ id: stepId, type: z.literal("outlook"), config: outlookConfigSchema }),
-  z.object({ id: stepId, type: z.literal("teams"), config: teamsConfigSchema }),
-  z.object({ id: stepId, type: z.literal("telegram"), config: telegramConfigSchema }),
-  z.object({ id: stepId, type: z.literal("sms"), config: smsConfigSchema }),
-  z.object({ id: stepId, type: z.literal("calendar"), config: calendarConfigSchema }),
-  z.object({ id: stepId, type: z.literal("airtable"), config: airtableConfigSchema }),
-  z.object({ id: stepId, type: z.literal("notion"), config: notionConfigSchema }),
-  z.object({ id: stepId, type: z.literal("trello"), config: trelloConfigSchema }),
-  z.object({ id: stepId, type: z.literal("booking"), config: bookingConfigSchema }),
-  z.object({ id: stepId, type: z.literal("paymongo_link"), config: paymongoLinkConfigSchema }),
-  z.object({ id: stepId, type: z.literal("payment_status"), config: paymentStatusConfigSchema }),
-  z.object({ id: stepId, type: z.literal("payment_due"), config: paymentDueConfigSchema }),
-  z.object({ id: stepId, type: z.literal("payment_expire"), config: paymentExpireConfigSchema }),
-  z.object({ id: stepId, type: z.literal("meta_reply"), config: metaReplyConfigSchema }),
+  z.object({ id: stepId, disabled, type: z.literal("condition"), config: z.object({ condition: conditionSchema }) }),
+  z.object({ id: stepId, disabled, type: z.literal("http"), config: httpConfigSchema }),
+  z.object({ id: stepId, disabled, type: z.literal("email"), config: emailConfigSchema }),
+  z.object({ id: stepId, disabled, type: z.literal("delay"), config: delayConfigSchema }),
+  z.object({ id: stepId, disabled, type: z.literal("ai"), config: aiConfigSchema }),
+  z.object({ id: stepId, disabled, type: z.literal("approval"), config: approvalConfigSchema }),
+  z.object({ id: stepId, disabled, type: z.literal("sheets"), config: sheetsConfigSchema }),
+  z.object({ id: stepId, disabled, type: z.literal("drive"), config: driveConfigSchema }),
+  z.object({ id: stepId, disabled, type: z.literal("slack"), config: slackConfigSchema }),
+  z.object({ id: stepId, disabled, type: z.literal("outlook"), config: outlookConfigSchema }),
+  z.object({ id: stepId, disabled, type: z.literal("teams"), config: teamsConfigSchema }),
+  z.object({ id: stepId, disabled, type: z.literal("telegram"), config: telegramConfigSchema }),
+  z.object({ id: stepId, disabled, type: z.literal("sms"), config: smsConfigSchema }),
+  z.object({ id: stepId, disabled, type: z.literal("calendar"), config: calendarConfigSchema }),
+  z.object({ id: stepId, disabled, type: z.literal("airtable"), config: airtableConfigSchema }),
+  z.object({ id: stepId, disabled, type: z.literal("notion"), config: notionConfigSchema }),
+  z.object({ id: stepId, disabled, type: z.literal("trello"), config: trelloConfigSchema }),
+  z.object({ id: stepId, disabled, type: z.literal("booking"), config: bookingConfigSchema }),
+  z.object({ id: stepId, disabled, type: z.literal("paymongo_link"), config: paymongoLinkConfigSchema }),
+  z.object({ id: stepId, disabled, type: z.literal("payment_status"), config: paymentStatusConfigSchema }),
+  z.object({ id: stepId, disabled, type: z.literal("payment_due"), config: paymentDueConfigSchema }),
+  z.object({ id: stepId, disabled, type: z.literal("payment_expire"), config: paymentExpireConfigSchema }),
+  z.object({ id: stepId, disabled, type: z.literal("meta_reply"), config: metaReplyConfigSchema }),
 ]);
 export type Step = z.infer<typeof stepSchema>;
 
@@ -378,6 +381,8 @@ export const definitionSchema = z
       const signed = def.trigger.type === "manual" || (def.trigger.type === "webhook" && def.trigger.config.hmacSecret !== undefined);
       if (s.config.action !== "create" && !signed) fail(`booking step "${s.id}" can reschedule or cancel only from a manual trigger or a webhook with a signing secret`);
     }
+
+    for (const s of def.steps) if (s.disabled && BRANCHES[s.type]) fail(`${s.type} step "${s.id}" branches, so it cannot be turned off`);
 
     for (const e of def.edges) {
       for (const id of [e.from, e.to]) if (!byId.has(id)) fail(`edge refers to unknown step "${id}"`);
