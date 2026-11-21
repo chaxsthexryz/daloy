@@ -7,7 +7,7 @@ import { templatesForLanguage } from "./template-language";
 import { TEMPLATES } from "./templates";
 import { websiteInquiryDefinition } from "./website-inquiry";
 
-const SLUGS = ["inquiry-triage", "invoice-follow-up", "no-show-follow-up", "appointment-reminder", "request-to-sheets", "lead-to-booking", "order-to-sheets", "order-paid", "invoice-paymongo", "quote-deposit", "renewal-reminders", "store-orders", "receipt-expense", "meta-receipt-intake"];
+const SLUGS = ["inquiry-triage", "invoice-follow-up", "no-show-follow-up", "appointment-reminder", "request-to-sheets", "lead-to-booking", "order-to-sheets", "order-paid", "invoice-paymongo", "quote-deposit", "renewal-reminders", "store-orders", "receipt-expense", "meta-receipt-intake", "booking-deposit-review", "order-gcash-checkout"];
 const parse = (slug: string) => definitionSchema.parse(TEMPLATES.find((t) => t.slug === slug)!.definition);
 
 describe("starter templates", () => {
@@ -162,5 +162,21 @@ describe("starter templates", () => {
     expect(def.trigger.type).toBe("webhook");
     expect(def.steps.map((s) => s.type)).toEqual(["sheets", "email", "slack"]);
     expect(JSON.stringify(def.steps.find((s) => s.type === "slack"))).not.toContain("customer_email");
+  });
+
+  it("booking-deposit-review books, asks for a deposit tied to the booking, reminds once and releases the slot at the deadline", () => {
+    const def = parse("booking-deposit-review");
+    expect(def.steps.find((s) => s.id === "ask_deposit")).toMatchObject({ type: "payment_due", config: { kind: "deposit", amount: "350", booking: "book", checkout: false, channel: "sms" } });
+    expect(def.edges).toContainEqual({ from: "still_unpaid", to: "remind", on: "true" });
+    expect(def.edges).toContainEqual({ from: "unpaid_at_deadline", to: "release_slot", on: "true" });
+    expect(def.edges).toContainEqual({ from: "release_slot", to: "tell_released", on: "expired" });
+    expect(def.edges).toContainEqual({ from: "decide", to: "book", on: "approved" });
+  });
+
+  it("order-gcash-checkout takes a signed order, offers checkout and cancels an unpaid order at the deadline", () => {
+    const def = parse("order-gcash-checkout");
+    expect(def.trigger).toMatchObject({ type: "webhook", config: { hmacSecret: "order_webhook_secret", requireTimestamp: true } });
+    expect(def.steps.find((s) => s.id === "ask_payment")).toMatchObject({ type: "payment_due", config: { kind: "full", checkout: true } });
+    expect(def.edges).toContainEqual({ from: "cancel_order", to: "tell_cancelled", on: "expired" });
   });
 });
