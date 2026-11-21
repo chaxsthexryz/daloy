@@ -200,8 +200,9 @@ describe("form file upload", () => {
     expect(page).toContain("required");
     expect(page).toContain('accept="image/jpeg,image/png,image/webp,image/heic,image/heif,application/pdf,.heic,.heif"');
     expect(page).toContain("multiple");
+    expect(page).toContain('<script src="/public/compress.js" defer></script>');
     const without = await form(o.agent, [{ name: "name", label: "Name", type: "text", required: true }]);
-    expect((await request(server).get(`/forms/${without.formId}`).expect(200)).text).not.toMatch(/enctype|type="file"/);
+    expect((await request(server).get(`/forms/${without.formId}`).expect(200)).text).not.toMatch(/enctype|type="file"|compress\.js/);
   });
 });
 

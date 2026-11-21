@@ -1,5 +1,6 @@
 import type { Language } from "./language";
 import type { WorkflowDefinition } from "./definition";
+import { TAGLISH } from "./taglish";
 import { TEMPLATES } from "./templates";
 
 const LABELS: Record<string, string> = {
@@ -119,6 +120,14 @@ export function localizeGeneratedDefinition(definition: WorkflowDefinition, lang
   return result;
 }
 
-export function templatesForLanguage(language: Language = "en") {
-  return TEMPLATES.map((template) => ({ ...template, definition: localizeGeneratedDefinition(structuredClone(template.definition) as unknown as WorkflowDefinition, language, template.slug) }));
+/** "taglish" replaces the customer messages of the payment, reminder and order templates with Taglish wording (R5). */
+export type TemplateStyle = "default" | "taglish";
+
+export function templatesForLanguage(language: Language = "en", style: TemplateStyle = "default") {
+  return TEMPLATES.map((template) => {
+    const definition = localizeGeneratedDefinition(structuredClone(template.definition) as unknown as WorkflowDefinition, language, template.slug);
+    const copy = style === "taglish" ? TAGLISH[template.slug] : undefined;
+    if (copy) for (const step of definition.steps) if (copy[step.id]) Object.assign(step.config, copy[step.id]);
+    return { ...template, definition };
+  });
 }

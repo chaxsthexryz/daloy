@@ -321,6 +321,6 @@ DeepSeek's review is in `docs/roadmap-review-2026-11-18.md`. Claude's second opi
 - [ ] R2b. Setup guide, Explain this flow dialog, sample test run and the Turn on summary. (claimed: claude, branch claude/r2b-setup-guide)
 - [x] R3. Manual QR Ph transfer review, PayMongo GCash checkout, one Receipts to review list, unpaid-order nudges. Branch `claude/r3-payments-511e4f`, migration 0043, decisions 0088 to 0091.
 - [ ] R4. Phone step editor (add, reorder, edit, undo), then canvas controls.
-- [ ] R5. Morning digest, payments CSV export, Taglish templates, receipt compression on the phone. (claimed: claude, branch claude/r5-digest-csv)
+- [x] R5. Morning digest (email, opt-in), payments CSV export, Taglish templates, receipt compression on the phone. Branch `claude/r5-digest-csv`, migration 0044, decision 0092.
 - [ ] R6. Privacy under RA 10173: form notice, receipt image retention, per-customer export and delete. (claimed: claude, branch claude/r6-privacy)
 - [ ] R7. Demand-led: public-page reading, new templates, integration candidates after an API, cost and terms check.

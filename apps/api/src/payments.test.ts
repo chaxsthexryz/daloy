@@ -100,6 +100,23 @@ describe("pay page", () => {
     await send(d.token, { transfer_ref: "ABCD12345", amount: "3,50" }).expect(400);
   });
 
+  it("loads the phone compressor, and the server still judges the bytes and the size (R5, N21)", async () => {
+    const o = await owner();
+    const d = await due(o.userId);
+    const res = await request(server).get(`/pay/${d.token}`).expect(200);
+    expect(res.text).toContain('<script src="/public/compress.js" defer></script>');
+    const js = await request(server).get("/public/compress.js").expect(200);
+    expect(js.headers["content-type"]).toContain("application/javascript");
+    expect(js.text).toContain("createImageBitmap");
+    // A script that was skipped or edited changes nothing: a text file named like a photo is flagged, and a file over 5 MB is refused.
+    await send(d.token, { transfer_ref: "FAKE12345" }, Buffer.from("not an image at all")).expect(200);
+    const [row] = (await o.agent.get("/payments/review").expect(200)).body;
+    expect(row).toMatchObject({ flags: ["unreadable_upload"], hasImage: false });
+    const big = Buffer.concat([PNG, Buffer.alloc(5 * 1024 * 1024)]);
+    expect((await send(d.token, { transfer_ref: "BIG123456" }, big)).status).toBeGreaterThanOrEqual(400);
+    expect(((await o.agent.get("/payments/review").expect(200)).body as unknown[]).length).toBe(1);
+  });
+
   it("limits uploads per IP", async () => {
     const o = await owner();
     const d = await due(o.userId);

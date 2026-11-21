@@ -8,6 +8,7 @@ import { advance, type AdvanceDeps, type StepExecutor } from "./advance";
 import { pollEmailSources, type ImapAdapter } from "./email-in";
 import { connectImap } from "./imap";
 import { alertBrokenGrants } from "./connection-alerts";
+import { sendDigests } from "./digest";
 import { checkSchedules } from "./watchdog";
 
 export type WorkerOptions = {
@@ -157,6 +158,9 @@ export async function startWorker(opts: WorkerOptions) {
       // Plan R8: one email a day per broken OAuth grant.
       .then(() => alertBrokenGrants(deps))
       .catch((err: unknown) => console.error("connection alerts failed", err))
+      // R5: the owner's morning digest, for owners who turned it on.
+      .then(() => sendDigests(deps))
+      .catch((err: unknown) => console.error("morning digest failed", err))
       .finally(() => { checking = undefined; });
   }, opts.watchdog.intervalMs ?? 60_000) : undefined;
 

@@ -37,6 +37,7 @@ import type { PgBoss } from "pg-boss";
 import * as z from "zod";
 import { BOSS, CONFIG, DB, enqueueRun, eventKey, isUniqueViolation, RateLimit, replayedRun, validPayload, ZodPipe, type ApiConfig } from "./http";
 import { sessionUser } from "./auth";
+import { COMPRESS_JS, COMPRESS_TAG } from "./compress";
 import { resourcesFor } from "./resources";
 import { escapeHtml, groupFields, shell, SLOTS_JS, splitErrors, type PageBrand } from "./public-pages";
 import { clock, dayLabel, daySlots, dayWindow, isTaken } from "./slots";
@@ -640,6 +641,14 @@ export class PublicAssetsController {
   slotsScript() {
     return SLOTS_JS;
   }
+
+  /** The phone-side photo compressor (R5). Public and static, so script-src 'self' holds. */
+  @Get("compress.js")
+  @Header("Content-Type", "application/javascript; charset=utf-8")
+  @Header("Cache-Control", "public, max-age=300")
+  compressScript() {
+    return COMPRESS_JS;
+  }
 }
 
 /** The reasons an HttpException carries: a list from parsePayload, or one message. */
@@ -763,6 +772,6 @@ export function renderForm(fields: FormField[], resources: Resource[], submissio
   const honeypot = `<div aria-hidden="true" style="position:absolute;left:-9999px"><label for="${HONEYPOT}">Website</label><input id="${HONEYPOT}" name="${HONEYPOT}" tabindex="-1" autocomplete="off"></div>`;
   const key = submissionKey ? `<input type="hidden" name="${SUBMISSION_KEY}" value="${submissionKey}">` : "";
   const heading = businessName ? `<h1>${escapeHtml(businessName)}</h1>` : "";
-  const slotsScript = booking ? '<script src="/public/slots.js" defer></script>' : "";
+  const slotsScript = (booking ? '<script src="/public/slots.js" defer></script>' : "") + (fields.some((f) => f.type === "file") ? COMPRESS_TAG : "");
   return page(`${heading}${alert}<form method="post"${fields.some((f) => f.type === "file") ? ' enctype="multipart/form-data"' : ""}>${inputs}${honeypot}${key}<button class="btn" type="submit">${copy.send}</button></form>${slotsScript}`, businessName ? escapeHtml(businessName) : copy.form, language, brand, view.embed);
 }

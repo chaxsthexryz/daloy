@@ -1110,3 +1110,19 @@ How it works:
 Edge cases: two reviewers at once, duplicate receipts, duplicate and out-of-order webhooks, wrong amounts, a payment after the deadline, a checkout paid after a manual confirmation, a refund after confirmation, a checkout mid-payment at the deadline, a failed reply.
 
 Tests: `packages/db/src/payment-review.test.ts` (every transition and exception), `apps/worker/src/steps/payments.test.ts` (the steps against a fake PayMongo), `apps/api/src/payments.test.ts` (pay page, rate limit, who may review, decisions, webhook), `packages/engine/src/templates.test.ts`, and `e2e/payments.spec.ts` (the D-1042 pilot: a receipt in review, a verified checkout confirming it, one SMS, the booking history, a pay-later booking).
+
+
+## Daily tools: morning digest, payments CSV, Taglish and photo compression (R5, decision 0092)
+
+What it does: the owner can get one email each morning listing receipts to review, unpaid orders and failed customer replies. Staff download a CSV of confirmed payments for a date range. A seller can start a template with Taglish wording. A photo chosen on the pay page or a public form is shrunk on the phone before it uploads.
+
+How it works:
+
+- Digest (`apps/worker/src/digest.ts`, `packages/db/src/digest.ts`, `packages/engine/src/digest.ts`, migration 0044): the worker's minute tick looks for owners with `digest_enabled` whose `digest_sent_on` is before today in Manila. Between 8 am and noon Manila it claims the day with a conditional UPDATE, counts the workspace's real receipts, pending dues and failed SMS or Messenger replies, and emails the owner's login address through the installation's server. With nothing to do it sends nothing and still uses up the day. A failed send gives the day back. The owner switches it on under Receipts to review (`GET` and `PUT /settings/digest`). It is off until then.
+- Payments CSV (`GET /payments/export.csv`, `apps/api/src/payments.ts`): owners and operators, a Manila day range of at most a year, one row per confirmed or refunded due of real runs, through the N19 `toCsv` so formula cells are quoted. Amounts come from integer centavos.
+- Taglish (`packages/engine/src/taglish.ts`, `templatesForLanguage(language, "taglish")`): replaces the customer messages of six templates and nothing else, so the workflow runs the same. The New automation page has a Wording choice.
+- Photo compression (`apps/api/src/compress.ts`, served at `/public/compress.js`): on choosing a JPEG, PNG or WebP it scales to at most 2000 px on the longest side, encodes JPEG at quality 0.8, and keeps the original when it cannot decode, when the result is not smaller, or when the file is 300 KB or less and already fits. The server still checks the type from the bytes and the 5 MB limit.
+
+Edge cases: a worker down at 8 (sends until noon, not later), two workers (one email), a failed send (retried next minute), test runs and other workspaces (never counted), a formula in a reference (quoted), a range over a year or backwards (400), a browser that cannot decode a photo (original uploaded), a visitor with no script (original uploaded, same server checks).
+
+Tests: `apps/worker/src/digest.test.ts` (timing, once a day, empty mornings, opt-in, counts, failure, Tagalog, no customer detail), `packages/engine/src/digest.test.ts`, `packages/engine/src/taglish.test.ts`, `apps/api/src/csv-export.test.ts` (columns, range, escaping, roles), `apps/api/src/compress.test.ts` (the limits, with a faked browser), `apps/api/src/payments.test.ts` and `form-files.test.ts` (the script is loaded and the server still refuses bad bytes and big files), `apps/api/src/members.test.ts` (roles), and `e2e/photo-compression.spec.ts` (a real browser resizes a 3000 x 2000 photo to 2000 x 1333).
