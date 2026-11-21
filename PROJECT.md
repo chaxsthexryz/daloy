@@ -329,7 +329,7 @@ DeepSeek's review is in `docs/roadmap-review-2026-11-18.md`. Claude's second opi
 
 - [x] U1. Rail, Inter everywhere, calmer nav motion, AI usage meter. (claimed: claude, cloud session)
 - [x] U2. Editor panel and canvas: empty-state actions and AI box, collapsible panel, connection dots, drop to connect, right-click menu, no black Add step button. Decision 0096. (claimed: claude, branch claude/u2-editor-canvas)
-- [ ] U3. Disable a step, after U2. Decision 0097.
+- [ ] U3. Disable a step, after U2. Decision 0097. (claimed: claude, branch claude/u3-disable-step)
 - [x] U4. AI builder: file upload fields, free-text answers. Decision 0098. (claimed: claude, cloud session)
 - [x] U5. Workflow library with categories. Decision 0099. (claimed: claude, cloud session)
 - [x] U6. UniSMS set by the operator, removed from Apps. Decision 0100. (claimed: claude, branch claude/u6-unisms-operator)
