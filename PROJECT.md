@@ -305,7 +305,7 @@ DeepSeek's review is in `docs/roadmap-review-2026-11-18.md`. Claude's second opi
 - Stripe: PayMongo is the Philippine choice.
 - [x] Doop redesign phase 1. Build with AI, Describe and Review Plan. (claimed: codex, branch design/paper-redesign)
 - [x] Doop Apps P0 to P14 and Business W2 merged into main. Owner walkthrough pending.
-- [ ] Doop redesign phase 2. Shared console and Automations pages. (claimed: codex, branch design/paper-redesign)
+- [ ] Doop redesign phase 2. Shared console and Automations pages. Claim released by the owner on 21 November 2026: main already has the ops table, and U1 to U7 replace this phase. Codex's branch `design/paper-redesign` and its worktree are left untouched.
 - [x] A0 implementation and local browser checks. The shared rail and phone menu follow the approved Doop frames on branch `design/doop-a0`. Integration, CI and the clean Docker start are pending.
 - [x] Doop A1 to A9 and O1 to O4 (Automations, setup pages, editor, Activity, run detail, Ask, Bookings, Versions) merged into main. All 68 e2e pass locally. CI and the clean Docker start are pending.
 - [x] Doop W1, W3 and W4 (Team, Settings, Account).
@@ -333,4 +333,4 @@ DeepSeek's review is in `docs/roadmap-review-2026-11-18.md`. Claude's second opi
 - [ ] U4. AI builder: file upload fields, free-text answers. Decision 0098. (claimed: claude, cloud session)
 - [ ] U5. Workflow library with categories. Decision 0099. (claimed: claude, cloud session)
 - [ ] U6. UniSMS set by the operator, removed from Apps. Decision 0100. (claimed: claude, branch claude/u6-unisms-operator)
-- [ ] U7. Automations list: double click opens, panel only on click, collapsible. Waits until Codex's Doop phase 2 claim on `design/paper-redesign` is released.
+- [ ] U7. Automations list: double click opens, panel only on click, collapsible. (claimed: claude, branch claude/u7-automations-list)
