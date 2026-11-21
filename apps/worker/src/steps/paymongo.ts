@@ -1,4 +1,4 @@
-import { centavosToPesos, connectionCredential, createCheckoutSession, findPaymentForStep, insertPayment, pesosToCentavos, ProviderError, type Db, type Payment } from "@daloy/db";
+import { centavosToPesos, connectionCredential, createCheckoutSession, expireCheckoutSession, findPaymentForStep, insertPayment, pesosToCentavos, ProviderError, type Db, type Payment } from "@daloy/db";
 import { StepError, type Outcome } from "@daloy/engine";
 
 type Link = { amount: string; description: string; reference: string };
@@ -15,7 +15,7 @@ function stepError(err: ProviderError): StepError {
 }
 
 /** One checkout link per run and step: a re-run returns the stored payment and calls PayMongo no more. */
-export async function paymongoLink(db: Db, key: Buffer, at: Where, cfg: Link, claim: () => Promise<void>) {
+export async function paymongoLink(db: Db, key: Buffer, at: Where, cfg: Link, claim: () => Promise<void>, dueId?: string) {
   let amountCentavos: number;
   try {
     amountCentavos = pesosToCentavos(cfg.amount);
@@ -32,7 +32,19 @@ export async function paymongoLink(db: Db, key: Buffer, at: Where, cfg: Link, cl
   await claim();
   try {
     const session = await createCheckoutSession({ secretKey, amountCentavos, description: cfg.description, reference: cfg.reference, idempotencyKey: at.idempotencyKey, metadata: { daloy_run: at.runId, daloy_step: at.stepId, reference: cfg.reference } });
-    return output(await insertPayment(db, { userId: at.userId, workflowId: at.workflowId, runId: at.runId, stepId: at.stepId, reference: cfg.reference, amountCentavos, livemode: session.livemode, providerSessionId: session.id, url: session.url }));
+    return output(await insertPayment(db, { userId: at.userId, workflowId: at.workflowId, runId: at.runId, stepId: at.stepId, reference: cfg.reference, amountCentavos, livemode: session.livemode, providerSessionId: session.id, url: session.url, dueId }));
+  } catch (err) {
+    throw err instanceof ProviderError ? stepError(err) : err;
+  }
+}
+
+/** Expires a due's open checkout at the unpaid deadline. "in_progress": PayMongo is taking a payment, so the order is kept. */
+export async function expireCheckout(db: Db, key: Buffer, userId: string, sessionId: string): Promise<"expired" | "in_progress"> {
+  const conn = await connectionCredential(db, key, userId, "paymongo");
+  if (!conn) throw new StepError("PayMongo is no longer connected, so the open checkout could not be cancelled. Connect PayMongo and retry.", false);
+  const { secretKey } = JSON.parse(conn.credential) as { secretKey: string };
+  try {
+    return await expireCheckoutSession({ secretKey, sessionId });
   } catch (err) {
     throw err instanceof ProviderError ? stepError(err) : err;
   }

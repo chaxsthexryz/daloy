@@ -6,7 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 import { toFlow, type Draft, type RunEdgeData, type StepNodeData } from "./lib/graph";
 import { runFlow, STATUS, type FlowRun } from "./lib/run-flow";
 
-export const TYPE_NAMES: Record<string, string> = { condition: "Condition", http: "HTTP request", email: "Send email", delay: "Delay", ai: "AI task", approval: "Approval", sheets: "Add to Google Sheets", drive: "Save files to Google Drive", slack: "Post to Slack", outlook: "Send from Outlook", teams: "Post to Teams", telegram: "Send to Telegram", sms: "Send SMS", calendar: "Add to Google Calendar", paymongo_link: "Create payment link", payment_status: "Check payment", airtable: "Add to Airtable", notion: "Add to Notion", trello: "Add to Trello", booking: "Booking", meta_reply: "Reply on Messenger or Instagram" };
+export const TYPE_NAMES: Record<string, string> = { condition: "Condition", http: "HTTP request", email: "Send email", delay: "Delay", ai: "AI task", approval: "Approval", sheets: "Add to Google Sheets", drive: "Save files to Google Drive", slack: "Post to Slack", outlook: "Send from Outlook", teams: "Post to Teams", telegram: "Send to Telegram", sms: "Send SMS", calendar: "Add to Google Calendar", paymongo_link: "Create payment link", payment_status: "Check payment", airtable: "Add to Airtable", notion: "Add to Notion", trello: "Add to Trello", booking: "Booking", meta_reply: "Reply on Messenger or Instagram", payment_due: "Ask for payment", payment_expire: "Cancel if unpaid" };
 
 export function summary(step: Step, language: Language = "en"): string {
   const t = (source: string, values?: Record<string, string | number>) => translate(language, source, values);
@@ -43,6 +43,10 @@ export function summary(step: Step, language: Language = "en"): string {
       return t("{amount} pesos, {reference}", { amount: String(step.config.amount), reference: String(step.config.reference) });
     case "payment_status":
       return step.config.link;
+    case "payment_due":
+      return t("{amount} pesos, {reference}", { amount: String(step.config.amount), reference: String(step.config.reference) });
+    case "payment_expire":
+      return step.config.due;
     case "airtable":
       return Object.keys(step.config.fields).join(", ");
     case "notion":

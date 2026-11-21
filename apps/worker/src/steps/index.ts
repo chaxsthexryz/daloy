@@ -1,11 +1,11 @@
 import { randomUUID } from "node:crypto";
-import { workspaceLanguage, aiConnection, bookFromStep, checkReceiptReference, checkRecipients, claimTimeout, claimUsage, createApproval, findPaymentForStep, findApprover, queueCalendarEvent, queueDelivery, readSecrets, redactSecrets, secretForms, sendAs, type Db, type MailDeps, type Provider } from "@daloy/db";
+import { workspaceLanguage, aiConnection, bookFromStep, bookingOfStep, bookingReference, centavosToPesos, createDue, dueForStep, DueTakenError, expireDue, findReviewer, pendingCheckout, pesosToCentavos, checkReceiptReference, checkRecipients, claimTimeout, claimUsage, createApproval, findPaymentForStep, findApprover, queueCalendarEvent, queueDelivery, readSecrets, redactSecrets, secretForms, sendAs, type Db, type MailDeps, type Provider } from "@daloy/db";
 import { approvalEmailBody, type FileRef, bookingStartField, conditionBranch, normalizePhMobile, parseZoned, SMS_MAX_CHARS, type TestChoice, type Trigger, declaresJson, parseInstant, isRetryable, mockAiOutput, parseJsonTemplate, resolveJsonTemplate, resolveTemplate, StepError, usesSecrets, type ExpressionContext, type Step } from "@daloy/engine";
 import type { StepExecutor, StepResult } from "../advance";
 import { runAi } from "./ai";
 import { loadAiFiles } from "./ai-files";
 import { httpRequest } from "./http";
-import { paymongoLink } from "./paymongo";
+import { expireCheckout, paymongoLink } from "./paymongo";
 import { defaultGuard, type SsrfGuard } from "./ssrf";
 
 /**
@@ -50,6 +50,7 @@ type SmsInput = { to: string; message: string; senderId?: string };
 type CalendarInput = { title: string; description: string };
 type MetaReplyInput = { recipientId: string; channel?: string; text: string };
 type RecordInput = { fields?: Record<string, string>; title?: string; name?: string; desc?: string };
+type DueInput = { reference: string; kind: "deposit" | "full" | "balance"; amount: string; total?: string; booking?: string; checkout: boolean; reviewer?: string; channel?: "sms" | "messenger"; to?: string; confirmedMessage?: string };
 
 /**
  * The config a step runs with, its templates resolved. The executor stores it (redacted) on the step run,
@@ -104,6 +105,22 @@ function resolveInput(step: Step, ctx: ExpressionContext): Record<string, unknow
       return { title: text(step.config.title, ctx), description: step.config.description === undefined ? "" : text(step.config.description, ctx) } satisfies CalendarInput;
     case "payment_status":
       return { link: step.config.link };
+    case "payment_due": {
+      const c = step.config;
+      return {
+        reference: text(c.reference, ctx).trim(),
+        kind: c.kind,
+        amount: text(c.amount, ctx),
+        ...(c.total !== undefined && { total: text(c.total, ctx) }),
+        ...(c.booking !== undefined && { booking: c.booking }),
+        checkout: c.checkout,
+        ...(c.reviewer !== undefined && { reviewer: c.reviewer }),
+        ...(c.channel !== undefined && { channel: c.channel, to: text(c.to!, ctx).trim() }),
+        ...(c.confirmedMessage !== undefined && { confirmedMessage: text(c.confirmedMessage, ctx).trim() }),
+      } satisfies DueInput;
+    }
+    case "payment_expire":
+      return { due: step.config.due };
     case "paymongo_link": {
       const { amount, description, reference } = step.config;
       return { amount: text(amount, ctx), description: text(description, ctx), reference: text(reference, ctx) };
@@ -380,6 +397,9 @@ async function runStep(deps: FullDeps, step: Step, input: unknown, ctx: Expressi
     case "payment_status": {
       const cfg = input as { link: string };
       if (mock) return { output: { mocked: true, status: "pending", paid: false } };
+      // A payment_due step: its own state, whichever path paid it (decision 0088).
+      const due = await dueForStep(deps.db, runId, cfg.link);
+      if (due) return { output: { status: due.status, paid: due.status === "confirmed", reference: due.reference, amount: due.amountCentavos, amountPesos: centavosToPesos(due.amountCentavos), confirmedSource: due.confirmedSource } };
       const p = await findPaymentForStep(deps.db, runId, cfg.link);
       if (!p) throw new StepError(`Step ${cfg.link} made no payment link in this run.`, false);
       return { output: { status: p.status, paid: p.status === "paid", reference: p.reference, amount: p.amountCentavos, url: p.url } };
@@ -389,6 +409,59 @@ async function runStep(deps: FullDeps, step: Step, input: unknown, ctx: Expressi
       if (mock) return { output: { mocked: true, reference: cfg.reference, amount: cfg.amount } };
       // Counted under the step key, like an HTTP call, and only once PayMongo is really going to be called.
       return { output: await paymongoLink(deps.db, deps.secretsKey, { userId, workflowId: workflowId!, runId, stepId: step.id, idempotencyKey }, cfg, () => claim("http")) };
+    }
+    case "payment_due": {
+      const cfg = input as DueInput;
+      const cents = (label: string, value: string) => {
+        try {
+          return pesosToCentavos(value);
+        } catch (err) {
+          throw new StepError(`${label}: ${(err as Error).message}`, false);
+        }
+      };
+      const amountCentavos = cents("amount", cfg.amount);
+      const totalCentavos = cfg.total === undefined ? null : cents("total", cfg.total);
+      if (totalCentavos !== null && totalCentavos < amountCentavos) throw new StepError("The total is less than the amount asked for now.", false);
+      if (!cfg.reference || cfg.reference.length > 200) throw new StepError("The order reference is empty or longer than 200 characters.", false);
+      let replyTo = cfg.to ?? null;
+      if (cfg.channel === "sms") {
+        const phone = normalizePhMobile(cfg.to ?? "");
+        if (!phone.ok) throw new StepError(phone.error, false);
+        replyTo = phone.value;
+      }
+      if (cfg.confirmedMessage && cfg.channel === "sms" && cfg.confirmedMessage.length > SMS_MAX_CHARS) throw new StepError(`The confirmation message is above the ${SMS_MAX_CHARS}-character SMS limit.`, false);
+      if (mock) return { output: { mocked: true, reference: cfg.reference, kind: cfg.kind, amount: amountCentavos, amountPesos: centavosToPesos(amountCentavos), status: "pending", payUrl: "", checkoutUrl: "" } };
+      const reviewer = cfg.reviewer ? await findReviewer(deps.db, userId, cfg.reviewer) : null;
+      if (cfg.reviewer && !reviewer) throw new StepError(`${cfg.reviewer} is not an owner or operator of this workspace, so they cannot review payments.`, false);
+      const booked = cfg.booking ? await bookingOfStep(deps.db, runId, cfg.booking) : undefined;
+      let due;
+      try {
+        due = await createDue(deps.db, { userId, test: test === true, workflowId: workflowId ?? null, runId, stepId: step.id, reference: cfg.reference, kind: cfg.kind, amountCentavos, totalCentavos, bookingId: booked?.id ?? null, reviewerId: reviewer?.id ?? null, replyChannel: cfg.channel ?? null, replyTo, replyText: cfg.confirmedMessage || null });
+      } catch (err) {
+        throw err instanceof DueTakenError ? new StepError(err.message, false) : err;
+      }
+      const checkout = cfg.checkout ? await paymongoLink(deps.db, deps.secretsKey, { userId, workflowId: workflowId!, runId, stepId: step.id, idempotencyKey }, { amount: centavosToPesos(due.amountCentavos), description: `${due.kind === "deposit" ? "Deposit" : due.kind === "balance" ? "Balance" : "Payment"} for ${due.reference}`, reference: due.reference }, () => claim("http"), due.id) : undefined;
+      return { output: { dueId: due.id, reference: due.reference, kind: due.kind, amount: due.amountCentavos, amountPesos: centavosToPesos(due.amountCentavos), status: due.status, payUrl: `${deps.publicUrl}/pay/${due.token}`, checkoutUrl: checkout?.url ?? "" } };
+    }
+    case "payment_expire": {
+      const cfg = input as { due: string };
+      if (mock) return { branch: "expired", output: { mocked: true, reason: "Test run: nothing was cancelled." } };
+      const due = await dueForStep(deps.db, runId, cfg.due);
+      if (!due) throw new StepError(`Step ${cfg.due} asked for no payment in this run.`, false);
+      // PayMongo first, outside the lock: a checkout being paid right now keeps the order, and its webhook settles it.
+      const open = due.status === "pending" ? await pendingCheckout(deps.db, due.id) : undefined;
+      if (open && (await expireCheckout(deps.db, deps.secretsKey, userId, open.providerSessionId)) === "in_progress") {
+        return { branch: "kept", output: { status: due.status, reference: due.reference, reason: "PayMongo is taking a payment for this checkout, so the order was kept." } };
+      }
+      const r = await expireDue(deps.db, { userId, runId, stepId: step.id, dueStepId: cfg.due });
+      if (r.result === "not_found") throw new StepError(`Step ${cfg.due} asked for no payment in this run.`, false);
+      let released = false;
+      if (r.result === "expired" && due.bookingId) {
+        const reference = await bookingReference(deps.db, due.bookingId);
+        const b = reference ? await bookFromStep(deps.db, { workspaceId: userId, test: due.test, runId, stepId: step.id, workflowId: workflowId! }, { action: "cancel", reference }) : undefined;
+        released = b?.branch === "done";
+      }
+      return { branch: r.result, output: { status: r.due!.status, reference: due.reference, bookingReleased: released } };
     }
   }
 }

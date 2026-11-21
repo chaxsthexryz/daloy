@@ -158,3 +158,18 @@ export async function keptEvent(db: Db, userId: string, type: string, field: "se
 }
 
 export const finishEvent = (db: Db, userId: string, eventId: string) => db.update(paymongoEvents).set({ state: "done" }).where(ownEvent(userId, eventId));
+
+/**
+ * Expires an open checkout session, so the customer can no longer pay it after the deadline (decision 0089). PayMongo
+ * sends no webhook for this; the answer is the record. A 400 means it is paid or a payment is in progress, and the
+ * caller keeps the order: the paid webhook will settle it.
+ */
+export async function expireCheckoutSession(o: { secretKey: string; sessionId: string; urls?: ProviderUrls }): Promise<"expired" | "in_progress"> {
+  try {
+    await paymongoCall(o.urls ?? providerUrls(), o.secretKey, `/v1/checkout_sessions/${encodeURIComponent(o.sessionId)}/expire`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" }, true);
+    return "expired";
+  } catch (err) {
+    if (err instanceof ProviderError && err.kind === "invalid") return "in_progress";
+    throw err;
+  }
+}

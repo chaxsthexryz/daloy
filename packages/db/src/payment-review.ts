@@ -4,7 +4,7 @@ import { and, asc, eq, inArray, ne, or, sql, type SQL } from "drizzle-orm";
 import type { Db } from "./index";
 import { queueDelivery, retryDelivery } from "./deliveries";
 import { normalizeReceiptRef } from "./meta";
-import { bookings, deliveries, paymentClaims, paymentDues, paymentHistory, payments, receiptReferences, users, type ClaimFlag, type Role } from "./schema";
+import { bookingResults, bookings, deliveries, paymentClaims, paymentDues, paymentHistory, payments, receiptReferences, users, workspaceMembers, type ClaimFlag, type Role } from "./schema";
 
 /**
  * The two payment paths of R3 (decisions 0088 and 0089). A due is what a customer owes on one order or booking. It is
@@ -355,3 +355,28 @@ export async function duesForBooking(db: Db, workspaceId: string, by: { bookingI
     };
   });
 }
+
+/** The owner or operator of the workspace with this email, who may review payments, or null. */
+export async function findReviewer(db: Db, workspaceId: string, email: string): Promise<{ id: string } | null> {
+  const [row] = await db
+    .select({ id: users.id })
+    .from(workspaceMembers)
+    .innerJoin(users, eq(users.id, workspaceMembers.userId))
+    .where(and(eq(workspaceMembers.workspaceId, workspaceId), eq(users.email, email.trim().toLowerCase()), inArray(workspaceMembers.role, ["owner", "operator"])));
+  return row ?? null;
+}
+
+/** The booking a booking step of this run made, with its reference, or undefined when it booked nothing (taken). */
+export async function bookingOfStep(db: Db, runId: string, stepId: string) {
+  const [row] = await db
+    .select({ id: bookings.id, reference: bookings.reference, test: bookings.test })
+    .from(bookingResults)
+    .innerJoin(bookings, eq(bookings.id, bookingResults.bookingId))
+    .where(and(eq(bookingResults.runId, runId), eq(bookingResults.stepId, stepId)));
+  return row;
+}
+
+export const bookingReference = async (db: Db, bookingId: string) => (await db.select({ reference: bookings.reference }).from(bookings).where(eq(bookings.id, bookingId)))[0]?.reference;
+
+/** The open checkout of a due, if it has one. */
+export const pendingCheckout = async (db: Db, dueId: string) => (await db.select().from(payments).where(and(eq(payments.dueId, dueId), eq(payments.status, "pending"))))[0];
