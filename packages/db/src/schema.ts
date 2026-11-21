@@ -22,6 +22,9 @@ export const users = pgTable("users", {
   planStartedOn: date("plan_started_on"),
   language: text("language", { enum: LANGUAGES }).notNull().default("en"),
   unismsDisconnectedAt: ts("unisms_disconnected_at"),
+  // R5 morning digest (decision 0092): off until the owner turns it on; digestSentOn is the Manila day it last went out or was skipped.
+  digestEnabled: boolean("digest_enabled").notNull().default(false),
+  digestSentOn: date("digest_sent_on"),
 }, (t) => [
   check("users_plan", sql`${t.plan} in ('preview', 'pilot', 'business', 'business_plus')`),
   check("users_language", sql`${t.language} in ('en', 'tl')`),

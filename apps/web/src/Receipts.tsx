@@ -163,6 +163,7 @@ export function ReceiptsPage({ user }: { user: User }) {
           </ul>
         )}
         <PaymentDetails owner={user.role === "owner"} />
+        <DailyTools owner={user.role === "owner"} />
       </div>
     </main>
   );
@@ -211,6 +212,55 @@ function PaymentDetails({ owner }: { owner: boolean }) {
         {owner && <div className="act-actions"><button className="act-button blue">{t("Save payment details")}</button></div>}
         <p role="status" className="act-muted">{msg}</p>
       </form>
+    </section>
+  );
+}
+
+const manilaToday = () => new Date(Date.now() + 8 * 3600_000).toISOString().slice(0, 10);
+
+/**
+ * R5, decision 0092: a CSV of confirmed payments by Manila day for bookkeeping, and the owner's switch for the morning
+ * digest. The download is a plain link: the browser sends the session cookie and the server checks the role.
+ */
+function DailyTools({ owner }: { owner: boolean }) {
+  const { t } = useLanguage();
+  const today = manilaToday();
+  const [from, setFrom] = useState(`${today.slice(0, 8)}01`);
+  const [to, setTo] = useState(today);
+  const [digest, setDigest] = useState<boolean | null>(null);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    if (owner) api<{ enabled: boolean }>("GET", "/settings/digest").then((d) => setDigest(d.enabled), () => undefined);
+  }, [owner]);
+  const flip = async (enabled: boolean) => {
+    setError("");
+    try {
+      setDigest((await api<{ enabled: boolean }>("PUT", "/settings/digest", { enabled })).enabled);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  };
+  const valid = from !== "" && to !== "" && from <= to;
+  return (
+    <section className="act-card rc-details" aria-labelledby="daily-h">
+      <h2 id="daily-h">{t("Export and morning summary")}</h2>
+      <form onSubmit={(e) => e.preventDefault()}>
+        <p className="act-muted">{t("Download confirmed payments as a CSV for your bookkeeping. Days are Manila days, and the range can be up to one year.")}</p>
+        <label className="rc-reason"><span>{t("From")}</span><input type="date" value={from} max={to} onChange={(e) => setFrom(e.target.value)} /></label>
+        <label className="rc-reason"><span>{t("To")}</span><input type="date" value={to} min={from} onChange={(e) => setTo(e.target.value)} /></label>
+        <div className="act-actions">
+          {valid ? <a className="act-button blue" href={`/payments/export.csv?from=${from}&to=${to}`} download>{t("Download payments CSV")}</a> : <span className="act-muted">{t("Choose a start day that is not after the end day.")}</span>}
+        </div>
+      </form>
+      {owner && digest !== null && (
+        <div>
+          <label className="rc-reason">
+            <span><input type="checkbox" checked={digest} onChange={(e) => void flip(e.target.checked)} /> {t("Email me a summary each morning")}</span>
+          </label>
+          <p className="act-muted">{t("Sent between 8 am and noon Manila time to your sign-in email, only on mornings with receipts to review, unpaid orders or failed replies. It has counts and links, never customer details.")}</p>
+          <p role="alert" className="act-alert error" hidden={!error}>{error}</p>
+        </div>
+      )}
     </section>
   );
 }

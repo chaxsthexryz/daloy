@@ -19,6 +19,7 @@ import { EmailSettingsController } from "./email-settings";
 import { EmailSourceController } from "./email-source";
 import { BOSS, CONFIG, DB, RateLimit, type ApiConfig } from "./http";
 import { McpController } from "./mcp";
+import { DigestController } from "./digest";
 import { LanguageController } from "./language";
 import { MembersController, MyRequestsController } from "./members";
 import { PausedFilter } from "./paused";
@@ -47,7 +48,7 @@ export async function createApp({ db, boss, ...config }: AppOptions) {
   await boss.createQueue(SCHEDULE_QUEUE);
 
   @Module({
-    controllers: [AuthController, WorkflowsController, CatalogController, SecretsController, ResourcesController, BookingsController, PaymentsController, PayPageController, TokensController, RunsController, HooksController, PaymongoHooksController, MetaHooksController, FormsController, PublicAssetsController, ApprovalsController, McpController, SettingsController, LanguageController, EmailSettingsController, EmailSourceController, ConnectionsController, OAuthStartController, OAuthCallbackController, GoogleController, GoogleCalendarController, AirtableOAuthController, NotionOAuthController, TrelloOAuthController, DeliveriesController, AiDraftController, AiChatController, MembersController, MyRequestsController, UsageController, BrandController, BrandLogoController, OnboardingController],
+    controllers: [AuthController, WorkflowsController, CatalogController, SecretsController, ResourcesController, BookingsController, PaymentsController, PayPageController, TokensController, RunsController, HooksController, PaymongoHooksController, MetaHooksController, FormsController, PublicAssetsController, ApprovalsController, McpController, SettingsController, LanguageController, DigestController, EmailSettingsController, EmailSourceController, ConnectionsController, OAuthStartController, OAuthCallbackController, GoogleController, GoogleCalendarController, AirtableOAuthController, NotionOAuthController, TrelloOAuthController, DeliveriesController, AiDraftController, AiChatController, MembersController, MyRequestsController, UsageController, BrandController, BrandLogoController, OnboardingController],
     providers: [
       { provide: DB, useValue: db },
       { provide: BOSS, useValue: boss },

@@ -1,6 +1,6 @@
 import "./automations-ops.css";
 import "./guided-pages.css";
-import { templatesForLanguage } from "@daloy/engine";
+import { templatesForLanguage, type TemplateStyle } from "@daloy/engine";
 import { Text, useLanguage } from "./Language";
 import { useState, type FormEvent } from "react";
 import { api, ApiError, type Workflow } from "./api";
@@ -17,7 +17,8 @@ const slugify = (s: string) =>
 /** #/new: every way to start an automation on one page (Doop frame NycmMp8U-t), guided templates first. */
 export function NewAutomationPage({ email }: { email: string }) {
   const { language, t } = useLanguage();
-  const templates = templatesForLanguage(language);
+  const [style, setStyle] = useState<TemplateStyle>("default");
+  const templates = templatesForLanguage(language, style);
   const [name, setName] = useState("");
   const [template, setTemplate] = useState("");
   const [error, setError] = useState("");
@@ -153,9 +154,17 @@ export function NewAutomationPage({ email }: { email: string }) {
                   ))}
                 </select>
               </div>
+              <div className="gp-field">
+                <label htmlFor="wf-style"><Text>Wording</Text></label>
+                <select id="wf-style" value={style} onChange={(e) => setStyle(e.target.value as TemplateStyle)} disabled={!template}>
+                  <option value="default">{t("Workspace language")}</option>
+                  <option value="taglish">{t("Taglish")}</option>
+                </select>
+              </div>
               <button className="ops-button" disabled={busy}><Text>Create and open editor</Text></button>
             </div>
             {template && <p className="gp-hint">{t(templates.find((item) => item.slug === template)!.description)}</p>}
+            {style === "taglish" && <p className="gp-hint">{t("Taglish mixes Tagalog and English in the messages sent to your customers: payment links, reminders and receipts.")}</p>}
             <p role="alert" className="gp-error" hidden={!error}>
               {error}
             </p>

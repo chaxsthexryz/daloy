@@ -24,3 +24,4 @@ export * from "./phone";
 export * from "./onboarding";
 export * from "./catalog";
 export * from "./flow-guide";
+export * from "./digest";

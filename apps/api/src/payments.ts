@@ -1,10 +1,12 @@
-import { centavosToPesos, claimImage, claimUsage, decideClaim, dueByToken, duesForBooking, latestClaim, pendingCheckout, pesosToCentavos, QuotaError, readPaymentSettings, retryReply, reviewList, savePaymentSettings, submitTransferClaim, workspaceLanguage, type Db, type Due } from "@daloy/db";
+import { centavosToPesos, claimImage, claimUsage, decideClaim, dueByToken, duesForBooking, latestClaim, manilaDay, paymentsExport, pendingCheckout, pesosToCentavos, QuotaError, readPaymentSettings, retryReply, reviewList, savePaymentSettings, submitTransferClaim, workspaceLanguage, type Db, type Due } from "@daloy/db";
 import { FILE_MAX_BYTES, FILE_MIME, fileType } from "@daloy/engine";
 import { BadRequestException, Body, ConflictException, Controller, ForbiddenException, Get, Header, HttpCode, HttpStatus, Inject, NotFoundException, Param, Post, Put, Query, Res, StreamableFile, UploadedFile, UseGuards, UseInterceptors } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
 import type { Response } from "express";
 import * as z from "zod";
 import { SessionGuard } from "./auth";
+import { COMPRESS_TAG } from "./compress";
+import { toCsv } from "./csv";
 import { Allow, CurrentUser, DB, MANAGE, OPERATE, RateLimit, ZodPipe, type SessionUser } from "./http";
 import { escapeHtml, page, pageBrand } from "./public";
 
@@ -22,6 +24,13 @@ export const settingsInput = z.object({
   qr: z.string().max(1_400_000).regex(/^[A-Za-z0-9+/]+={0,2}$/, "send the image as base64").nullable().optional(),
 });
 
+const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "use YYYY-MM-DD").refine((d) => new Date(`${d}T00:00:00Z`).toISOString().startsWith(d), "not a real date");
+/** A Manila day range of at most a year, so one download stays a reasonable size. */
+export const exportQuery = z
+  .object({ from: day, to: day })
+  .refine((q) => q.from <= q.to, "from must not be after to")
+  .refine((q) => Date.parse(q.to) - Date.parse(q.from) <= 365 * 86_400_000, "choose at most one year");
+
 const REVIEW_ERRORS = {
   not_found: () => new NotFoundException("receipt not found"),
   conflict: () => new ConflictException("Someone decided this receipt or it changed since you loaded it. Reload and try again."),
@@ -38,6 +47,18 @@ export class PaymentsController {
   @Get("review")
   review(@CurrentUser() user: SessionUser) {
     return reviewList(this.db, user.workspaceId);
+  }
+
+  /** Confirmed payments by Manila day for bookkeeping. Cells go through the same formula escaping as the other downloads (N19). */
+  @Get("export.csv")
+  @Header("Content-Type", "text/csv; charset=utf-8")
+  async exportCsv(@CurrentUser() user: SessionUser, @Query(new ZodPipe(exportQuery)) q: z.output<typeof exportQuery>, @Res({ passthrough: true }) res: Response) {
+    const rows = await paymentsExport(this.db, user.workspaceId, q);
+    res.set("Content-Disposition", `attachment; filename="payments-${q.from}-to-${q.to}.csv"`);
+    return toCsv(
+      ["confirmed_on", "confirmed_at", "reference", "booking", "kind", "amount_php", "total_php", "status", "source", "transfer_reference", "confirmed_by"],
+      rows.map((r) => [manilaDay(r.confirmedAt!), r.confirmedAt!.toISOString(), r.reference, r.booking, r.kind, centavosToPesos(r.amount), r.total === null ? null : centavosToPesos(r.total), r.status, r.source, r.transferRef, r.confirmedBy]),
+    );
   }
 
   @Get("dues")
@@ -268,7 +289,7 @@ export class PayPageController {
 <div class="f"><label for="amount">${copy.amount}</label><input id="amount" name="amount" inputmode="decimal" maxlength="20" value="${v("amount")}"></div>
 <div class="f"><label for="receipt">${copy.receipt}</label><input id="receipt" name="receipt" type="file" accept="image/jpeg,image/png,image/webp,image/heic,.heic"><div class="hint">${copy.receiptHint}</div></div>
 <div aria-hidden="true" style="position:absolute;left:-9999px"><label for="${HONEYPOT}">Website</label><input id="${HONEYPOT}" name="${HONEYPOT}" tabindex="-1" autocomplete="off"></div>
-<button class="btn" type="submit">${copy.send}</button></form>`;
+<button class="btn" type="submit">${copy.send}</button></form>${COMPRESS_TAG}`;
     return page(`${head}${notes.join("")}<p class="lead">${copy.how}</p>${where}${form}`, copy.title, language, brand);
   }
 }

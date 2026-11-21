@@ -97,6 +97,25 @@ describe("workspace language", () => {
   });
 });
 
+describe("morning digest setting (R5)", () => {
+  it("is off by default and only the owner turns it on or off, for its own workspace", async () => {
+    const o = await owner();
+    const operator = await member(o.agent, "operator");
+    const other = await owner();
+    const path = "/settings/digest";
+    await request(server).get(path).expect(401);
+    await operator.agent.get(path).expect(403);
+    await operator.agent.put(path).send({ enabled: true }).expect(403);
+    await o.agent.get(path).expect(200, { enabled: false });
+    await o.agent.put(path).send({ enabled: "yes" }).expect(400);
+    await o.agent.put(path).send({ enabled: true, workspaceId: other.id }).expect(400);
+    await o.agent.put(path).send({ enabled: true }).expect(200, { enabled: true });
+    await o.agent.get(path).expect(200, { enabled: true });
+    await other.agent.get(path).expect(200, { enabled: false });
+    await o.agent.put(path).send({ enabled: false }).expect(200, { enabled: false });
+  });
+});
+
 describe("invites", () => {
   it("returns a one-time link; accepting creates the account in the owner's workspace with the role", async () => {
     const o = await owner();
@@ -258,6 +277,9 @@ describe("role permissions", () => {
       ["get", "/bookings", operate],
       ["get", "/bookings/export.csv", operate],
       ["get", "/payments/review", operate],
+      ["get", "/payments/export.csv?from=2026-11-01&to=2026-11-02", operate],
+      ["get", "/settings/digest", only],
+      ["put", "/settings/digest", only, {}],
       ["get", "/payments/dues?reference=D-1", operate],
       ["get", `/payments/claims/${randomUUID()}/image`, operate],
       ["post", `/payments/claims/${randomUUID()}/decide`, operate, { version: 1, decision: "confirm" }],
@@ -332,7 +354,7 @@ describe("role permissions", () => {
   // auth.ts and password.test.ts, public*.test.ts, paymongo.test.ts and meta.test.ts, approvals.test.ts, mcp.test.ts, oauth.test.ts, microsoft.test.ts, brand.test.ts.
   const outsideMatrix = new Set([
     "POST /auth/register", "POST /auth/login", "POST /auth/invites/:token/accept", "POST /auth/logout", "POST /auth/password", "POST /auth/password-reset", "POST /auth/password-reset/:token",
-    "POST /hooks/:path", "POST /hooks/paymongo/:path", "GET /hooks/meta/:path", "POST /hooks/meta/:path", "GET /forms/:id", "GET /forms/:id/slots", "GET /public/slots.js", "GET /forms/:id/embed", "POST /forms/:id", "POST /forms/:id/embed",
+    "POST /hooks/:path", "POST /hooks/paymongo/:path", "GET /hooks/meta/:path", "POST /hooks/meta/:path", "GET /forms/:id", "GET /forms/:id/slots", "GET /public/slots.js", "GET /public/compress.js", "GET /forms/:id/embed", "POST /forms/:id", "POST /forms/:id/embed",
     "GET /approvals/:token", "POST /approvals/:token", "GET /pay/:token", "GET /pay/:token/qr", "POST /pay/:token", "GET /settings/connections/oauth/callback", "GET /settings/connections/outlook/callback", "GET /brand/logo/:id",
   ]);
 
