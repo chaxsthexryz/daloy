@@ -16,6 +16,7 @@ import { ResourcesPage } from "./Resources";
 import { AiModelPage } from "./Settings";
 import { SettingsPage } from "./AppSettings";
 import { BusinessSetupPage, VerifySenderPage } from "./BusinessSetup";
+import { OnboardingPage } from "./Onboarding";
 import { AppsPage } from "./Apps";
 import { SecretsPage } from "./Secrets";
 import { TokensPage } from "./Tokens";
@@ -30,7 +31,7 @@ const RESET = /^#\/reset-password\/([A-Za-z0-9_-]{43})$/;
 const INVITE = /^#\/invite\/([A-Za-z0-9_-]{43})$/;
 
 /**
- * Hash routes (#/ is Automations, #/advanced the developer menu, #/w/<id>, #/w/<id>/runs, #/w/<id>/versions, #/runs/<id> (and #/runs/<id>/ask), #/tokens, #/secrets, #/settings, #/settings/ai, #/settings/business, #/apps (and #/apps/<app>-<outcome>), #/activity (and #/activity/ask), #/new, #/ai (Build with AI), #/resources, #/bookings,
+ * Hash routes (#/ is Automations, #/advanced the developer menu, #/w/<id>, #/w/<id>/runs, #/w/<id>/versions, #/runs/<id> (and #/runs/<id>/ask), #/tokens, #/secrets, #/settings, #/settings/ai, #/settings/business, #/onboarding (first-time setup), #/apps (and #/apps/<app>-<outcome>), #/activity (and #/activity/ask), #/new, #/ai (Build with AI), #/resources, #/bookings,
  * #/verify-sender/<token> for the Gmail confirmation link, #/team, #/invite/<token> for an invite link,
  * #/forgot-password and #/reset-password/<token> before sign-in, #/account to change the password,
  * #/answer/<token> to sign in before a named approval (decision 0022),
@@ -115,6 +116,7 @@ function Route({ hash, user }: { hash: string; user: User }) {
   const back = /^#\/apps\/([a-z-]+)-([a-z_]+)$/.exec(hash) ?? /^#\/settings\/business\/(outlook)-([a-z_]+)$/.exec(hash);
   if (back) return <AppsPage outcome={{ app: back[1]!, code: back[2]! }} />;
   if (hash === "#/settings/business") return <BusinessSetupPage />;
+  if (hash === "#/onboarding" && user.role === "owner") return <OnboardingPage />;
   if (hash === "#/team" && user.role === "owner") return <TeamPage user={user} />;
   if (hash === "#/resources" && user.role === "owner") return <ResourcesPage />;
   if (hash === "#/bookings" && (user.role === "owner" || user.role === "operator")) return <BookingsPage />;

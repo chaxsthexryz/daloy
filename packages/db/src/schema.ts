@@ -514,6 +514,33 @@ export const businessProfiles = pgTable("business_profiles", {
 ]);
 
 /**
+ * First-time onboarding (roadmap R1, decision 0082): one row per workspace, written after each screen. The business
+ * name, website and logo live in business_profiles and are not copied here. Workspaces that existed before onboarding
+ * got a 'dismissed' row in migration 0042, so only a workspace with no row is new. workflowId is the one draft the
+ * last screen made: a second finish opens it instead of making another.
+ */
+export const onboardingProgress = pgTable("onboarding_progress", {
+  userId: uuid("user_id").primaryKey().references(() => users.id, { onDelete: "cascade" }),
+  status: text("status", { enum: ["in_progress", "completed", "dismissed"] }).notNull().default("in_progress"),
+  // How many screens are saved (0 to 3). The screen to open is the first one after these.
+  completed: integer("completed").notNull().default(0),
+  primaryCategory: text("primary_category"),
+  relatedCategories: text("related_categories").array().notNull().default(sql`'{}'::text[]`),
+  goal: text("goal"),
+  payment: text("payment"),
+  workflowId: uuid("workflow_id").references(() => workflows.id, { onDelete: "set null" }),
+  sample: jsonb("sample"),
+  updatedAt: ts("updated_at").notNull().defaultNow(),
+}, (t) => [
+  check("onboarding_progress_status", sql`${t.status} in ('in_progress', 'completed', 'dismissed')`),
+  check("onboarding_progress_completed", sql`${t.completed} between 0 and 3`),
+  check("onboarding_progress_category", sql`${t.primaryCategory} in ('online_retail', 'food_orders', 'beauty_wellness', 'professional_services', 'other')`),
+  check("onboarding_progress_related", sql`cardinality(${t.relatedCategories}) <= 3`),
+  check("onboarding_progress_goal", sql`${t.goal} in ('receipt_review', 'bookings', 'order_follow_up')`),
+  check("onboarding_progress_payment", sql`${t.payment} in ('manual_qrph', 'gcash_paymongo', 'pay_later')`),
+]);
+
+/**
  * The owner's own Gmail sender. No row: mail goes through the installation's SMTP server (SMTP_* env vars).
  * Any other status than active blocks sending, and nothing ever falls back to another sender (decision 0020).
  * The app password is encrypted like secrets; disconnecting deletes it. Only the SHA-256 of the verify link is stored.

@@ -316,7 +316,7 @@ DeepSeek's review is in `docs/roadmap-review-2026-11-18.md`. Claude's second opi
 
 ## Seller pilot roadmap (docs/roadmap.md, 21 November 2026)
 
-- [ ] R1. Three-screen onboarding (name, business type, first workflow and payment choice), saved per step and resumable.
+- [x] R1. Three-screen onboarding (name, business type, first workflow and payment choice), saved per step and resumable. Decisions 0082 to 0084, migration 0042. Receipt review and order follow-up use stopgap templates until R3 (see `templateFor`).
 - [ ] R2a. App logos and action labels on every node, one step catalog, logos on the Apps page.
 - [ ] R2b. Setup guide, Explain this flow dialog, sample test run and the Turn on summary.
 - [ ] R3. Manual QR Ph transfer review, PayMongo GCash checkout, one Receipts to review list, unpaid-order nudges.

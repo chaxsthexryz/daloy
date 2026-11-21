@@ -153,6 +153,15 @@ Kept current with each phase. A mitigation marked "planned" does not exist in co
 - Scripts on public pages: the pages have no inline script. The booking form loads `/public/slots.js` from the API origin, so `script-src 'self'` stays. The embed route keeps the framing allowance and the plain form keeps `X-Frame-Options`.
 - Taken-time notice for browsers only: it does not stop a double booking, which the booking step's exclusion constraint does.
 
+## First-time onboarding (R1, decisions 0082 to 0084)
+
+- Entry point: `/onboarding` (owner session only, `Allow(MANAGE)`). Operators, approvers and requesters get 403, and no session gets 401 (`onboarding.test.ts`).
+- Input: every screen is validated with zod at the boundary (`identityInput`, `typeInput`, `workflowInput`). The name refuses braces and line breaks (they would become template placeholders or mail headers), the website must be http or https, categories are a fixed list of at most three that differ from the primary one, and unknown keys are refused.
+- Order and races: a screen saves only after the one before it, and the finish route locks the owner's progress row, so concurrent finishes make one draft. Three simultaneous finishes are tested.
+- Isolation: every query filters on the session's workspace id. The draft is created for that workspace only, and the placeholder reviewer address is replaced with the owner's own sign-in address, never a value from the request.
+- Side effects: onboarding connects no app, publishes nothing, sends no message and sends no invitation. The draft is an unpublished version, and the API test checks it has no live version and no run.
+- Logo: reuses `PUT /settings/brand/logo` (PNG, JPEG or WebP by file signature, at most 100 KB, SVG refused).
+
 ## Public demo boundary
 
 The demo page (`apps/web/demo`, published as `site/demo/` on Cloudflare Pages) accepts a free-text request and sample form values. It renders them as React text, keeps them in browser memory, and never sends them anywhere: there is no model call, no API call and no storage. On daloyapp.pages.dev it is a static site with no console behind it. The API also serves it at `/demo/` on an installation, on the console's origin, where it makes no requests either. `e2e/portfolio-demo.spec.ts` runs the whole flow offline and checks that no request was made.

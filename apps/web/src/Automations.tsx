@@ -7,6 +7,7 @@ import { arrange, counts, stateKey, statusOf, triggerLabel, withTrigger, type Fi
 import { RUN_LIMIT, successRate, totals, type OverviewEntry } from "./lib/ops-stats";
 import { ago, plainState } from "./lib/states";
 import { FormEmbed } from "./FormEmbed";
+import { OnboardingPrompt } from "./Onboarding";
 import type { User } from "./Team";
 import "./automations-ops.css";
 
@@ -179,6 +180,7 @@ export function Automations({ user }: { user: User }) {
 
   return (
     <main className="page ops">
+      {owner && <OnboardingPrompt />}
       {!(list && list.length > 0 && !listError) && head}
 
       {listError && (
