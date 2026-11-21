@@ -36,5 +36,32 @@ test("a visitor builds the shop order automation with the scripted helper and ru
   await page.getByRole("button", { name: "Ask the helper" }).click();
   await expect(page.getByText("This demo has no live model, so it cannot draft what you wrote.")).toBeVisible();
   await expect(page.getByRole("button", { name: /Household bill reminder/ })).toBeVisible();
+  // Start over clears the conversation and the run, and the demo still made no request (E11, decision 0079).
+  await page.getByRole("button", { name: "Start over" }).click();
+  await expect(page.getByLabel("What should happen?")).toHaveValue("");
+  await expect(page.getByRole("region", { name: "Simulated inbox" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Start over" })).toHaveCount(0);
   expect(calls).toEqual([]);
+});
+
+test("the demo keeps the approved layout on a desktop: banner on top, sidebar left, diagram beside the draft", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/demo/");
+  const banner = await page.locator(".demo-banner").boundingBox();
+  const side = await page.locator(".dm-side").boundingBox();
+  expect(banner!.width).toBeGreaterThan(1400);
+  expect(side!.x).toBe(0);
+  expect(side!.y).toBeGreaterThanOrEqual(banner!.height - 1);
+  expect(Math.round(side!.width)).toBe(232);
+  await page.getByRole("button", { name: /online-shop order comes in/ }).click();
+  await page.getByRole("button", { name: "My shop sends a web request" }).click();
+  await page.getByRole("button", { name: "Google Sheet" }).click();
+  await page.getByRole("button", { name: "Yes, orders over ₱5,000" }).click();
+  const draft = await page.getByRole("region", { name: /Check the draft/ }).boundingBox();
+  const diagram = await page.getByRole("region", { name: "Diagram" }).boundingBox();
+  expect(diagram!.x).toBeGreaterThan(draft!.x + draft!.width - 1);
+  await page.getByRole("button", { name: "Approve draft" }).click();
+  await page.getByRole("button", { name: "Send the test" }).click();
+  // A step that waits for the visitor reads "Needs you" in the draft, as the approved frame shows.
+  await expect(page.getByRole("region", { name: /Approved draft/ }).getByText("Needs you")).toBeVisible({ timeout: 10_000 });
 });

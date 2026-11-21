@@ -11,7 +11,6 @@ type Decisions = Record<string, "approved" | "rejected">;
 
 const STEP_MS = 900;
 const reducedMotion = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
-const logo = `${import.meta.env.BASE_URL}logo.svg`;
 
 /**
  * The public demo: the Build with AI flow of docs/console-navigation-plan.md section 4, in the console's frame, with
@@ -143,7 +142,8 @@ export function Demo() {
   // The rows runFlow reads, as the worker would write them: the steps shown so far, then the one now working.
   const flowRun: FlowRun | null = run && {
     state: shown < run.steps.length ? "running" : run.state,
-    needsReview: false,
+    // A step waiting for the visitor's own answer reads "Needs you", as in the approved frame.
+    needsReview: shown >= run.steps.length && run.state === "waiting",
     steps: [
       ...run.steps.slice(0, shown).map((r, i) => ({ stepId: r.stepId, state: r.state, branch: r.branch, createdAt: String(i).padStart(4, "0") })),
       ...(shown < run.steps.length ? [{ stepId: run.steps[shown]!.stepId, state: "running", branch: null, createdAt: String(shown).padStart(4, "0") }] : []),
@@ -162,38 +162,42 @@ export function Demo() {
         : "Finished. Nothing was sent: every message is only in this page.";
 
   return (
-    <div className="shell demo">
-      <aside className="sidebar console-header">
-        <div className="sidebar-top">
-          <img src={logo} alt="Daloy" width="28" height="28" />
-          <span className="sidebar-name">Daloy</span>
-          <button type="button" className="quiet menu-button" aria-expanded={menu} aria-controls="demo-menu" onClick={() => setMenu(!menu)}>
-            Menu
-          </button>
-        </div>
-        <nav id="demo-menu" aria-label="Main" className={menu ? "open" : undefined}>
-          <a href="#build" aria-current="page" onClick={() => setMenu(false)}>
-            Build with AI
-          </a>
-          <a href="../">About Daloy</a>
-          <span className="muted who">Demo account. Nothing is saved.</span>
-        </nav>
-      </aside>
-      <main className="shell-main">
-        <div className="page demo-page">
-          <p className="notice demo-note">
-            Demo in your browser. Nothing is saved or sent. The AI replies are scripted examples, not a live model.
-          </p>
-          <header className="toolbar plain console-header">
-            <h1 id="build">Build with AI</h1>
-            {lines.length > 0 && (
-              <div className="actions">
-                <button type="button" className="quiet" onClick={startOver}>
+    <div className="demo">
+      <p className="demo-banner">
+        <b>Demo in your browser.</b> Nothing is saved or sent. The AI replies are scripted examples, not a live model.
+      </p>
+      <div className="dm-app">
+        <aside className="dm-side">
+          <div className="dm-top">
+            <div className="dm-brand">
+              <svg viewBox="0 0 30 30" width="30" height="30" role="img" aria-label="Daloy">
+                <rect width="30" height="30" rx="8" fill="#1b45c9" />
+                <path d="M8 18.5 15 12l7 6.5" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+              <span>Daloy</span>
+            </div>
+            <button type="button" className="dm-menu-button" aria-expanded={menu} aria-controls="demo-menu" onClick={() => setMenu(!menu)}>
+              Menu
+            </button>
+          </div>
+          <nav id="demo-menu" aria-label="Main" className={menu ? "dm-nav open" : "dm-nav"}>
+            <a href="#build" aria-current="page" onClick={() => setMenu(false)}>
+              Build with AI
+            </a>
+            <a href="../">About Daloy</a>
+            <span className="who">Demo account. Nothing is saved.</span>
+          </nav>
+        </aside>
+        <main className="dm-main">
+          <div className="dm-page">
+            <header className="dm-head">
+              <h1 id="build">Build with AI</h1>
+              {lines.length > 0 && (
+                <button type="button" onClick={startOver}>
                   Start over
                 </button>
-              </div>
-            )}
-          </header>
+              )}
+            </header>
 
           <div className={draft ? "demo-grid split" : "demo-grid"}>
             <section className="demo-chat" aria-labelledby="chat-title">
@@ -357,6 +361,7 @@ export function Demo() {
               {draft && (
                 <section aria-label="Diagram" className="demo-canvas">
                   <RunFlow draft={draft.definition} run={flowRun} colorMode="light" />
+                  <p className="demo-caption">Each box becomes Done, Waiting or Needs you as the test runs.</p>
                 </section>
               )}
               {run && (
@@ -406,7 +411,8 @@ export function Demo() {
             </div>
           </div>
         </div>
-      </main>
+        </main>
+      </div>
     </div>
   );
 }
