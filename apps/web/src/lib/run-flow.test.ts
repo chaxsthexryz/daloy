@@ -41,8 +41,10 @@ describe("runFlow nodes", () => {
     expect(runFlow(draft, okThenRunning).nodes.send).toBe("working");
   });
 
-  it("treats a skipped row as not reached", () => {
-    expect(runFlow(draft, run("succeeded", [row("check", "succeeded", "true"), row("other", "skipped")])).nodes.other).toBe("idle");
+  it("shows a turned-off step as skipped and carries the flow through it (decision 0097)", () => {
+    const r = runFlow(draft, run("running", [row("check", "succeeded", "true"), row("send", "skipped")]));
+    expect(r.nodes.send).toBe("skipped");
+    expect(r.edges).toMatchObject({ "check:true": "done", "send:next": "flowing" });
   });
 
   it("marks the last unfinished step Needs you when the run needs review", () => {

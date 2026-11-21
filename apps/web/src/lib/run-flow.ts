@@ -1,6 +1,6 @@
 import { edgeId, entryOf, type Draft } from "./graph";
 
-export type NodeState = "done" | "problem" | "waiting" | "needs_you" | "working" | "idle";
+export type NodeState = "done" | "problem" | "waiting" | "needs_you" | "working" | "skipped" | "idle";
 export type EdgeState = "done" | "flowing" | "skipped" | "idle";
 
 /** The words and symbol each node state shows, so colour is never the only signal. */
@@ -10,6 +10,8 @@ export const STATUS: Record<NodeState, { label: string; symbol: string }> = {
   waiting: { label: "Waiting", symbol: "⏸" },
   needs_you: { label: "Needs you", symbol: "!" },
   working: { label: "Working", symbol: "…" },
+  // A turned-off step: the run passed it without running it (decision 0097).
+  skipped: { label: "Skipped", symbol: "»" },
   idle: { label: "Not reached", symbol: "–" },
 };
 
@@ -18,7 +20,7 @@ type Row = { stepId: string; state: string; branch: string | null; createdAt: st
 export type FlowRun = { state: string; needsReview: boolean; steps: Row[] };
 
 const ACTIVE = new Set(["pending", "queued", "running"]);
-const ROW_STATE: Record<string, NodeState> = { succeeded: "done", failed: "problem", waiting: "waiting", running: "working", pending: "working" };
+const ROW_STATE: Record<string, NodeState> = { succeeded: "done", failed: "problem", waiting: "waiting", running: "working", pending: "working", skipped: "skipped" };
 
 /**
  * Turns a run's step rows into a state for every node and edge of its definition, so the editor and the run page
@@ -37,7 +39,7 @@ export function runFlow(draft: Draft, run: FlowRun | null): { nodes: Record<stri
 
   const active = !!run && ACTIVE.has(run.state);
   const edgeState = (from: string, to: string, on?: string): EdgeState => {
-    if (nodes[from] !== "done") return "idle";
+    if (nodes[from] !== "done" && nodes[from] !== "skipped") return "idle";
     if (on && latest.get(from)?.branch !== on) return "skipped";
     if (nodes[to] === "working" || (nodes[to] === "idle" && active)) return "flowing";
     return nodes[to] === "idle" ? "idle" : "done";

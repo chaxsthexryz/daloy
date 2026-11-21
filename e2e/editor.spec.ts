@@ -245,6 +245,7 @@ test("right-click menus: duplicate, copy and paste, connect to and test this ste
     "DuplicateCtrl+D",
     "CopyCtrl+C",
     "Connect to",
+    "Disable",
     "DeleteDel",
   ]);
   await page.keyboard.press("Escape");

@@ -122,6 +122,17 @@ export function duplicateStep(draft: Draft, id: string): { draft: Draft; id: str
   return { draft: insert(draft, { ...step, id: copy }, { id }), id: copy };
 }
 
+/** Turns a step off or on again. A branching step stays on: a skipped step has no branch to follow (decision 0097). */
+export function setDisabled(draft: Draft, id: string, off: boolean): Draft {
+  const steps = draft.steps.map((s) => {
+    if (s.id !== id || (off && BRANCHES[s.type])) return s;
+    const on = { ...s };
+    delete on.disabled;
+    return off ? { ...on, disabled: true as const } : on;
+  });
+  return { ...draft, steps };
+}
+
 /**
  * The paste check: reads a copied step (`{type, config}` as JSON, from the clipboard) and returns it only when the type is one the
  * add menu offers and the config has that step's shape, with unknown keys dropped. Rules that need the rest of the flow (a drive
@@ -250,7 +261,7 @@ export function toFlow(draft: Draft, selected: string | null, state?: FlowState,
       ariaLabel: `${t("{type} step {id}", { type: stepLabel(step.type, language), id: step.id })}${draft.edges
         .filter((e) => e.from === step.id)
         .map((e) => t(", {branch}goes to {id}", { branch: e.on ? `${t("on {branch}", { branch: t(e.on) })} ` : "", id: e.to }))
-        .join("")}${said(step.id)}`,
+        .join("")}${step.disabled ? t(", turned off") : ""}${said(step.id)}`,
       position: at(step.id),
       data: { step, context: draft.trigger, branches: BRANCHES[step.type], status: state?.nodes[step.id] },
       selected: selected === step.id,

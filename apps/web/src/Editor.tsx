@@ -9,7 +9,7 @@ import { FormEmbed } from "./FormEmbed";
 import { api, type Version, type Workflow } from "./api";
 import { DropLine, editorEdgeTypes, editorNodeTypes, flowAriaLabels, ZoomBar } from "./FlowCanvas";
 import { RunResult, useRun } from "./Runs";
-import { ADDABLE, addStep, blankDraft, canMove, connectSteps, duplicateStep, moveStep, readCopiedStep, removeStep, toFlow, type AddableType, type ConnectError, type Draft } from "./lib/graph";
+import { ADDABLE, addStep, blankDraft, canMove, connectSteps, duplicateStep, moveStep, readCopiedStep, removeStep, setDisabled, toFlow, type AddableType, type ConnectError, type Draft } from "./lib/graph";
 import { record, redo, startHistory, undo } from "./lib/history";
 import { Popover, Sheet, useMedia, usePhone } from "./Sheet";
 import { chosenFor, insertables, nextPaths, setupLeft, unconnectedNodes, type ConnInfo } from "./lib/editor";
@@ -369,6 +369,10 @@ export function Editor({ id }: { id: string }) {
     select(r.id);
     setNote(t("Duplicated {from} as {id}.", { from: stepId, id: r.id }));
   };
+  const turnOff = (stepId: string, off: boolean) => {
+    update(setDisabled(draft, stepId, off));
+    setNote(t(off ? "Turned off {id}. Runs skip it and go on to the next step." : "Turned on {id}.", { id: stepId }));
+  };
   const copyStep = (s: Step) => {
     const copied = { type: s.type as AddableType, config: s.config };
     setClip(copied);
@@ -415,6 +419,7 @@ export function Editor({ id }: { id: string }) {
       items.push({ label: t("Duplicate"), keys: "Ctrl+D", run: () => duplicate(s.id) });
       if (copyable(s)) items.push({ label: t("Copy"), keys: "Ctrl+C", run: () => copyStep(s) });
       items.push({ label: t("Connect to"), run: () => startConnect(s) });
+      if (!BRANCHES[s.type]) items.push({ label: t(s.disabled ? "Enable" : "Disable"), run: () => turnOff(s.id, !s.disabled) });
       items.push({
         label: t("Delete"),
         keys: "Del",

@@ -114,6 +114,37 @@ describe("worker", () => {
     expect(rows[0]!.input).toEqual({ to: "a" });
   });
 
+  it("records a disabled step as skipped without running it, and carries on to the next step (decision 0097)", async () => {
+    const def = flow({ id: "a" }, { id: "b" }, { id: "c" });
+    (def.steps[1] as { disabled?: boolean }).disabled = true;
+    const runId = await createRun(def);
+    await worker.enqueue(runId);
+    expect((await waitForEnd(runId)).state).toBe("succeeded");
+    const rows = await attemptsOf(runId);
+    expect(rows.map((r) => [r.stepId, r.state])).toEqual([
+      ["a", "succeeded"],
+      ["b", "skipped"],
+      ["c", "succeeded"],
+    ]);
+    expect(rows[1]!.output).toEqual({ skipped: "This step is turned off in the editor." });
+    expect(rows[1]!.finishedAt).not.toBeNull();
+    expect(calls).not.toContain(`${runId}:b`);
+  });
+
+  it("skips a disabled first and last step, and a test run shows them as skipped", async () => {
+    const def = flow({ id: "first" }, { id: "mid" }, { id: "last" });
+    (def.steps[0] as { disabled?: boolean }).disabled = true;
+    (def.steps[2] as { disabled?: boolean }).disabled = true;
+    const runId = await createRun(def, {}, { test: true });
+    await worker.enqueue(runId);
+    expect((await waitForEnd(runId)).state).toBe("succeeded");
+    expect((await attemptsOf(runId)).map((r) => [r.stepId, r.state])).toEqual([
+      ["first", "skipped"],
+      ["mid", "succeeded"],
+      ["last", "skipped"],
+    ]);
+  });
+
   it("follows the branch a condition takes", async () => {
     const def = {
       trigger: { type: "manual", config: {} },

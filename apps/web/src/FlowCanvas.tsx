@@ -115,7 +115,7 @@ function EditorStepNode({ data }: NodeProps<Node<EditorNodeData, "step">>) {
   const step = data.step!;
   const entry = stepEntry(step.type);
   return (
-    <div className={nodeClass(`node a7-node${data.needsApp ? " a7-needs-app" : ""}`, data.status)}>
+    <div className={nodeClass(`node a7-node${data.needsApp ? " a7-needs-app" : ""}${step.disabled ? " node-off" : ""}`, data.status)}>
       <Handle type="target" position={Position.Top} isConnectableStart={false} />
       <span className="a7-node-row">
         <span className="a7-node-kicker node-app">
@@ -126,6 +126,7 @@ function EditorStepNode({ data }: NodeProps<Node<EditorNodeData, "step">>) {
       </span>
       <span className="node-title">{entry.action[language]}</span>
       <span className="node-summary">{whereLine(step, data, language)}</span>
+      {step.disabled && <span className="a7-node-note node-off-tag">{t("Turned off")}</span>}
       {data.needsApp && <span className="a7-node-note a7-warn">{t("Connect {app}", { app: t(data.needsApp) })}</span>}
       <Status status={data.status} />
       {data.branches ? (
