@@ -86,12 +86,10 @@ input[type=file]::file-selector-button{margin-right:12px;padding:4px 10px;font:i
 .slots{display:flex;flex-direction:column;gap:8px;margin:0;padding:0;border:0;min-width:0}
 .slots legend{padding:0;font-size:12px;line-height:16px;font-weight:600;color:#3a3f4b}
 .chips{display:flex;flex-wrap:wrap;gap:8px}
-.chips label{position:relative;font-size:13px;font-weight:600;cursor:pointer}
-.chips input{position:absolute;opacity:0;width:1px;height:1px}
-.chips span{display:block;padding:6px 12px;line-height:18px;background:#fff;border:1px solid #d5d9e2;border-radius:6px}
-.chips input:checked+span{color:var(--accent);background:color-mix(in srgb,var(--accent) 8%,#fff);border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
-.chips input:focus-visible+span{outline:2px solid var(--accent);outline-offset:2px}
-.chips input:disabled+span{color:#7a808e;background:#eef0f4;text-decoration:line-through;cursor:not-allowed}
+.slots[hidden]{display:none}
+.chips button{min-height:0;padding:6px 12px;font:inherit;font-size:13px;font-weight:600;line-height:18px;color:#0a0b0f;background:#fff;border:1px solid #d5d9e2;border-radius:6px;cursor:pointer}
+.chips button[aria-pressed=true]{color:var(--accent);background:color-mix(in srgb,var(--accent) 8%,#fff);border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+.chips button:disabled{color:#7a808e;background:#eef0f4;text-decoration:line-through;cursor:not-allowed}
 .wrap{width:min(480px,100%);display:flex;flex-direction:column;align-items:center;gap:18px}
 .wrap main{width:100%;padding:32px;gap:16px}
 .brandbar{display:flex;align-items:center;gap:10px;font-size:16px;line-height:24px;font-weight:700}
@@ -139,3 +137,24 @@ export function approvalShell({ title, heading, body, language, brand, eyebrow }
   const label = !named && eyebrow ? `<p class="eyebrow">${escapeHtml(eyebrow)}</p>` : "";
   return `<!doctype html><html lang="${language}"><head>${head(title, brand, { accent: "#1b45c9", ink: "#ffffff" })}</head><body><div class="wrap"><div class="brandbar">${bar}</div><main${named ? ' class="short"' : ""}>${label}<h1>${heading}</h1>${body}</main></div></body></html>`;
 }
+
+/**
+ * Fills the open times under the date and time field of a booking form (served at /public/slots.js, so the page's
+ * script-src 'self' holds). Without it the form still works: the visitor types a time and the server checks it.
+ */
+export const SLOTS_JS = `(function(){
+var box=document.querySelector("[data-slots]");if(!box)return;
+var res=document.getElementById(box.getAttribute("data-resource")),dt=document.getElementById(box.getAttribute("data-field")),list=box.querySelector(".chips"),legend=box.querySelector("legend"),last="",seq=0;
+if(!res||!dt)return;
+function mark(){var v=dt.value.slice(0,16);Array.prototype.forEach.call(list.children,function(b){b.setAttribute("aria-pressed",String(!b.disabled&&b.getAttribute("data-value")===v))})}
+function show(d){legend.textContent=d.title;list.textContent="";
+if(!d.slots.length){var p=document.createElement("span");p.className="hint";p.textContent=d.empty;list.appendChild(p)}
+d.slots.forEach(function(s){var b=document.createElement("button");b.type="button";b.textContent=s.label;b.disabled=s.taken;b.setAttribute("data-value",s.value);
+b.addEventListener("click",function(){dt.value=s.value;mark()});list.appendChild(b)});mark()}
+function load(){var date=dt.value.slice(0,10);
+if(!res.value||!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(date)){box.hidden=true;last="";return}
+var key=res.value+date;if(key===last){mark();return}last=key;var n=++seq;
+fetch(box.getAttribute("data-url")+"?resource="+encodeURIComponent(res.value)+"&date="+date+"&field="+encodeURIComponent(dt.name),{headers:{Accept:"application/json"}})
+.then(function(r){if(!r.ok)throw 0;return r.json()}).then(function(d){if(n===seq){show(d);box.hidden=false}}).catch(function(){box.hidden=true})}
+res.addEventListener("change",load);dt.addEventListener("change",load);dt.addEventListener("input",load);load()})();
+`;

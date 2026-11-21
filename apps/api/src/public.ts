@@ -1,6 +1,6 @@
 import { publicCopy } from "./public-copy";
 import { createHmac, randomInt, randomUUID, timingSafeEqual } from "node:crypto";
-import { assertNotPaused, claimUsage, constantTimeEqual, downloadMetaImage, keyedRun, MetaImageError, MetaTransientImageError, parseMetaCredential, parseMetaWebhook, QuotaError, readBrand, saveUploads, usageSummary, verifyMetaSignature, workspaceLanguage, businessProfiles, connectionCredential, connections, createKeyedRun, createRun, eventSeen, finishEvent, keptEvent, markPaymentPaid, markPaymentRefunded, centavosToPesos, paymongoMode, readSecret, recordEvent, requests, runs, triggers, verifyPaymongoSignature, WorkflowPausedError, workflows, workflowVersions, type Db, type NewUpload, type Payment } from "@daloy/db";
+import { assertNotPaused, busyBetween, claimUsage, constantTimeEqual, downloadMetaImage, keyedRun, MetaImageError, MetaTransientImageError, parseMetaCredential, parseMetaWebhook, QuotaError, readBrand, saveUploads, usageSummary, verifyMetaSignature, workspaceLanguage, businessProfiles, connectionCredential, connections, createKeyedRun, createRun, eventSeen, finishEvent, keptEvent, markPaymentPaid, markPaymentRefunded, centavosToPesos, paymongoMode, readSecret, recordEvent, requests, runs, triggers, verifyPaymongoSignature, WorkflowPausedError, workflows, workflowVersions, type Db, type NewUpload, type Payment } from "@daloy/db";
 import { definitionSchema, FILE_MAX_BYTES, FILES_PER_FIELD, FILES_PER_SUBMISSION, fileType, OFFICE_REQUEST, parsePayload, PURCHASE_REQUEST, safeFileName, type FileRef, type FormField, type Resource } from "@daloy/engine";
 import {
   BadRequestException,
@@ -20,6 +20,7 @@ import {
   NotFoundException,
   Param,
   Post,
+  Query,
   Req,
   Res,
   ServiceUnavailableException,
@@ -37,7 +38,8 @@ import * as z from "zod";
 import { BOSS, CONFIG, DB, enqueueRun, eventKey, isUniqueViolation, RateLimit, replayedRun, validPayload, ZodPipe, type ApiConfig } from "./http";
 import { sessionUser } from "./auth";
 import { resourcesFor } from "./resources";
-import { escapeHtml, groupFields, shell, splitErrors, type PageBrand } from "./public-pages";
+import { escapeHtml, groupFields, shell, SLOTS_JS, splitErrors, type PageBrand } from "./public-pages";
+import { clock, dayLabel, daySlots, dayWindow, isTaken } from "./slots";
 
 // Starts with "_", which no field name can (definition.ts), so a real "website" field is never mistaken for it.
 const HONEYPOT = "_website";
@@ -57,6 +59,12 @@ const savedTrigger = (definition: unknown, type: string) => {
 /** Both guided templates record a request with a reference, from the form and from MCP; a custom form only starts a run. */
 export const isTracked = (setup: unknown) => [OFFICE_REQUEST, PURCHASE_REQUEST].includes((setup as { template?: string } | null)?.template ?? "");
 const SUBMISSION_KEY = "submission_key";
+
+const slotsQuery = z.object({
+  resource: z.uuid(),
+  date: z.string().regex(/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/).refine((d) => { const t = Date.parse(`${d}T00:00:00Z`); return !Number.isNaN(t) && new Date(t).toISOString().startsWith(d); }, "is not a real date"),
+  field: z.string().max(64).optional(),
+});
 
 /** The parts of a multer file this handler reads (@types/multer is not installed). */
 type Part = { fieldname: string; originalname: string; buffer: Buffer; size: number };
@@ -498,7 +506,26 @@ export class FormsController {
     const { fields, tracked, businessName, workflow } = await this.form(id);
     const embed = isFormEmbed(req.path);
     if (workflow.pausedAt) return this.pausedPage(workflow.userId, embed);
-    return renderForm(fields, await resourcesFor(this.db, workflow.userId, fields), tracked ? randomUUID() : undefined, businessName ?? undefined, await workspaceLanguage(this.db, workflow.userId), await pageBrand(this.db, workflow.userId), { embed });
+    return renderForm(fields, await resourcesFor(this.db, workflow.userId, fields), tracked ? randomUUID() : undefined, businessName ?? undefined, await workspaceLanguage(this.db, workflow.userId), await pageBrand(this.db, workflow.userId), { embed, formId: id });
+  }
+
+  /**
+   * Which open times of a resource are taken on one day, for the booking form (decision 0080). It answers only for a
+   * resource of this form's own workspace, only with times (no reference, no name), and is limited per IP.
+   */
+  @Get(":id/slots")
+  @UseGuards(RateLimit(60))
+  @Header("Cache-Control", "no-store")
+  async slots(@Param("id", new ZodPipe(z.uuid())) id: string, @Query(new ZodPipe(slotsQuery)) q: z.output<typeof slotsQuery>) {
+    const { fields, workflow } = await this.form(id);
+    const field = fields.find((f) => f.type === "datetime" && f.slotMinutes && (q.field === undefined || f.name === q.field));
+    const resource = (await resourcesFor(this.db, workflow.userId, fields)).find((r) => r.id === q.resource);
+    if (workflow.pausedAt || !field || !resource) throw new NotFoundException();
+    const language = await workspaceLanguage(this.db, workflow.userId);
+    const copy = publicCopy[language];
+    const { from, to } = dayWindow(q.date, field.timezone!);
+    const busy = await busyBetween(this.db, workflow.userId, resource.id, from, to);
+    return { title: fill(copy.openTimes, { date: dayLabel(q.date, field.timezone!, language) }), empty: copy.noTimes, slots: daySlots({ date: q.date, timezone: field.timezone!, slotMinutes: field.slotMinutes!, busy, now: Date.now() }) };
   }
 
   @Post(FORM_PATHS)
@@ -521,11 +548,14 @@ export class FormsController {
     const brand = await pageBrand(this.db, workflow.userId);
     // Bots fill every field. Answer as if it worked so they learn nothing.
     if (body?.[HONEYPOT]) return page(`<p class="lead">${copy.thanks}</p>`, copy.form, language, brand, embed);
+    const wantsHtml = req.accepts(["json", "html"]) === "html";
     try {
       const stored = readParts(fields, parts ?? []);
       const hasFiles = fields.some((f) => f.type === "file");
       const parsed = parsePayload(fields, body ?? {}, { resources: await resourcesFor(this.db, workflow.userId, fields), files: hasFiles ? stored.refs : undefined });
       if (!parsed.ok) throw new BadRequestException(parsed.errors);
+      // A browser is told at once when the time it chose was booked meanwhile. An API caller still gets the booking step's "taken" branch (decision 0080).
+      if (wantsHtml) await this.checkSlot(workflow.userId, fields, parsed.data, language);
       const key = z.uuid().safeParse(body?.[SUBMISSION_KEY]);
       if (tracked && !key.success) throw new BadRequestException(`${SUBMISSION_KEY}: reload the form and send it again`);
       // A tracked form claims inside recordRequest, after its key check, so a repeat costs nothing (decision 0057).
@@ -556,10 +586,11 @@ export class FormsController {
     } catch (err) {
       // A browser gets the form back with the reasons beside the fields; an API caller keeps the JSON error (decision 0079).
       const status = err instanceof HttpException ? err.getStatus() : 0;
-      if ((status !== HttpStatus.BAD_REQUEST && status !== HttpStatus.TOO_MANY_REQUESTS) || req.accepts(["json", "html"]) !== "html") throw err;
+      const taken = err instanceof SlotTaken ? err.view : undefined;
+      if ((status !== HttpStatus.BAD_REQUEST && status !== HttpStatus.TOO_MANY_REQUESTS && !taken) || !wantsHtml) throw err;
       res.status(status);
       const resources = await resourcesFor(this.db, workflow.userId, fields);
-      return renderForm(fields, resources, tracked ? randomUUID() : undefined, businessName ?? undefined, language, brand, { values: body, errors: messagesOf(err as HttpException), embed });
+      return renderForm(fields, resources, tracked ? randomUUID() : undefined, businessName ?? undefined, language, brand, { values: body, errors: taken ? undefined : messagesOf(err as HttpException), embed, formId: id, taken });
     }
   }
 
@@ -569,8 +600,41 @@ export class FormsController {
     return page(`<h1>${copy.paused}</h1><span class="pill">${copy.pausedPill}</span><p class="lead">${copy.pausedNote}</p>`, copy.paused, language, await pageBrand(this.db, workspaceId), embed);
   }
 
+  /** Throws SlotTaken when the resource and time in a booking form's answers overlap an active booking. */
+  private async checkSlot(workspaceId: string, fields: FormField[], data: Record<string, unknown>, language: "en" | "tl") {
+    const rf = fields.find((f) => f.type === "resource");
+    const tf = fields.find((f) => f.type === "datetime" && f.slotMinutes);
+    const resource = rf && (data[rf.name] as { id?: string; name?: string } | undefined);
+    const when = tf && data[tf.name];
+    if (!tf || !resource?.id || typeof when !== "string") return;
+    const start = new Date(when);
+    const busy = await busyBetween(this.db, workspaceId, resource.id, start, new Date(start.getTime() + tf.slotMinutes! * 60_000));
+    if (!isTaken(start, tf.slotMinutes!, busy)) return;
+    const copy = publicCopy[language];
+    const label = `${dayLabel(when.slice(0, 10), tf.timezone!, language)}, ${clock(Number(when.slice(11, 13)) * 60 + Number(when.slice(14, 16)))}`;
+    throw new SlotTaken({ field: tf.name, title: copy.slotGone, body: fill(copy.slotGoneBody, { resource: resource.name ?? "", when: label }) });
+  }
+
   private form(id: string) {
     return findForm(this.db, id);
+  }
+}
+
+/** The chosen time was booked while the visitor filled in the form. Carries what the re-rendered form says. */
+class SlotTaken extends HttpException {
+  constructor(readonly view: NonNullable<FormView["taken"]>) {
+    super({ message: view.title }, HttpStatus.CONFLICT);
+  }
+}
+
+/** Serves the small script behind the booking form's open times. Public and static, so script-src 'self' holds. */
+@Controller("public")
+export class PublicAssetsController {
+  @Get("slots.js")
+  @Header("Content-Type", "application/javascript; charset=utf-8")
+  @Header("Cache-Control", "public, max-age=300")
+  slotsScript() {
+    return SLOTS_JS;
   }
 }
 
@@ -654,7 +718,7 @@ export const page = (body: string, title = "Form", language: "en" | "tl" = "en",
 const fill = (text: string, values: Record<string, string>) => text.replace(/\{(\w+)\}/g, (_m, k: string) => values[k] ?? "");
 
 /** What a re-rendered form keeps: the visitor's answers (never files), the reasons it was refused and whether it sits in an iframe. */
-export type FormView = { values?: Record<string, unknown>; errors?: string[]; embed?: boolean };
+export type FormView = { values?: Record<string, unknown>; errors?: string[]; embed?: boolean; formId?: string; taken?: { field: string; title: string; body: string } };
 
 /** businessName comes from the owner's profile, so a form behind a website's contact button says whose form it is. */
 export function renderForm(fields: FormField[], resources: Resource[], submissionKey?: string, businessName?: string, language: "en" | "tl" = "en", brand?: PageBrand, view: FormView = {}) {
@@ -662,7 +726,7 @@ export function renderForm(fields: FormField[], resources: Resource[], submissio
   const { byField, general } = splitErrors(view.errors ?? [], fields.map((f) => f.name));
   const answer = (name: string) => (typeof view.values?.[name] === "string" ? (view.values[name] as string) : "");
   const control = (f: FormField) => {
-    const bad = byField.has(f.name);
+    const bad = byField.has(f.name) || view.taken?.field === f.name;
     const attrs = `id="${f.name}" name="${f.name}"${f.required ? " required" : ""}${bad ? ` class="bad" aria-invalid="true" aria-describedby="e-${f.name}"` : ""}`;
     const value = answer(f.name);
     // The browser's own limits are a convenience; the server checks the same ones (parsePayload).
@@ -681,14 +745,19 @@ export function renderForm(fields: FormField[], resources: Resource[], submissio
     if (f.type === "resource") return `<select ${attrs}><option value="">${copy.choose}</option>${resources.map((r) => `<option value="${r.id}"${r.id === value ? " selected" : ""}>${escapeHtml(r.name)}</option>`).join("")}</select>`;
     return `<input ${attrs} type="${f.type}"${limits}${given}>`;
   };
-  const field = (f: FormField) => `<div class="f"><label for="${f.name}">${escapeHtml(f.label)}</label>${control(f)}${byField.has(f.name) ? `<div class="er" id="e-${f.name}">${escapeHtml(byField.get(f.name)!)}</div>` : ""}</div>`;
+  // A form with a resource and a datetime on a slot grid is a booking form: the open times appear under the date field (script at /public/slots.js).
+  const resourceField = fields.find((f) => f.type === "resource");
+  const slotField = fields.find((f) => f.type === "datetime" && f.slotMinutes);
+  const booking = view.formId && resourceField && slotField ? { id: view.formId, resource: resourceField.name, field: slotField.name } : undefined;
+  const slots = (f: FormField) => (booking && f.name === booking.field ? `<fieldset class="slots" data-slots hidden data-url="/forms/${booking.id}/slots" data-resource="${booking.resource}" data-field="${booking.field}"><legend></legend><div class="chips"></div></fieldset>` : "");
+  const field = (f: FormField) => `<div class="f"><label for="${f.name}">${escapeHtml(f.label)}</label>${control(f)}${byField.has(f.name) ? `<div class="er" id="e-${f.name}">${escapeHtml(byField.get(f.name)!)}</div>` : ""}${slots(f)}</div>`;
   const inputs = groupFields(fields)
     .map((row) => (row.length > 1 ? `<div class="row">${row.map(field).join("")}</div>` : field(row[0]!)))
     .join("");
-  const alert = view.errors?.length ? `<div class="alert" role="alert"><b>${copy.notSent}</b><div>${[...byField].map(([n, m]) => `${escapeHtml(n)}: ${escapeHtml(m)}`).concat(general.map(escapeHtml)).join("<br>")}</div></div>` : "";
+  const alert = view.taken ? `<div class="alert" role="alert"><b>${escapeHtml(view.taken.title)}</b><div>${escapeHtml(view.taken.body)}</div></div>` : view.errors?.length ? `<div class="alert" role="alert"><b>${copy.notSent}</b><div>${[...byField].map(([n, m]) => `${escapeHtml(n)}: ${escapeHtml(m)}`).concat(general.map(escapeHtml)).join("<br>")}</div></div>` : "";
   // Hidden from people (off screen, skipped by tab and screen readers) but visible to bots that fill every input.
   const honeypot = `<div aria-hidden="true" style="position:absolute;left:-9999px"><label for="${HONEYPOT}">Website</label><input id="${HONEYPOT}" name="${HONEYPOT}" tabindex="-1" autocomplete="off"></div>`;
   const key = submissionKey ? `<input type="hidden" name="${SUBMISSION_KEY}" value="${submissionKey}">` : "";
   const heading = businessName ? `<h1>${escapeHtml(businessName)}</h1>` : "";
-  return page(`${heading}${alert}<form method="post"${fields.some((f) => f.type === "file") ? ' enctype="multipart/form-data"' : ""}>${inputs}${honeypot}${key}<button class="btn" type="submit">${copy.send}</button></form>`, businessName ? escapeHtml(businessName) : copy.form, language, brand, view.embed);
+  return page(`${heading}${alert}<form method="post"${fields.some((f) => f.type === "file") ? ' enctype="multipart/form-data"' : ""}>${inputs}${honeypot}${key}<button class="btn" type="submit">${copy.send}</button></form>${booking ? '<script src="/public/slots.js" defer></script>' : ""}`, businessName ? escapeHtml(businessName) : copy.form, language, brand, view.embed);
 }

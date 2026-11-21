@@ -22,7 +22,7 @@ import { McpController } from "./mcp";
 import { LanguageController } from "./language";
 import { MembersController, MyRequestsController } from "./members";
 import { PausedFilter } from "./paused";
-import { FormsController, HooksController, isFormEmbed, MetaHooksController, PaymongoHooksController } from "./public";
+import { FormsController, HooksController, isFormEmbed, MetaHooksController, PaymongoHooksController, PublicAssetsController } from "./public";
 import { RunsController } from "./runs";
 import { BrandController, BrandLogoController } from "./brand";
 import { BookingsController } from "./bookings";
@@ -45,7 +45,7 @@ export async function createApp({ db, boss, ...config }: AppOptions) {
   await boss.createQueue(SCHEDULE_QUEUE);
 
   @Module({
-    controllers: [AuthController, WorkflowsController, CatalogController, SecretsController, ResourcesController, BookingsController, TokensController, RunsController, HooksController, PaymongoHooksController, MetaHooksController, FormsController, ApprovalsController, McpController, SettingsController, LanguageController, EmailSettingsController, EmailSourceController, ConnectionsController, OAuthStartController, OAuthCallbackController, GoogleController, GoogleCalendarController, AirtableOAuthController, NotionOAuthController, TrelloOAuthController, DeliveriesController, AiDraftController, AiChatController, MembersController, MyRequestsController, UsageController, BrandController, BrandLogoController],
+    controllers: [AuthController, WorkflowsController, CatalogController, SecretsController, ResourcesController, BookingsController, TokensController, RunsController, HooksController, PaymongoHooksController, MetaHooksController, FormsController, PublicAssetsController, ApprovalsController, McpController, SettingsController, LanguageController, EmailSettingsController, EmailSourceController, ConnectionsController, OAuthStartController, OAuthCallbackController, GoogleController, GoogleCalendarController, AirtableOAuthController, NotionOAuthController, TrelloOAuthController, DeliveriesController, AiDraftController, AiChatController, MembersController, MyRequestsController, UsageController, BrandController, BrandLogoController],
     providers: [
       { provide: DB, useValue: db },
       { provide: BOSS, useValue: boss },

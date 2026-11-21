@@ -4,6 +4,7 @@ import type { Pool } from "pg";
 import { PgBoss } from "pg-boss";
 import request from "supertest";
 import { workflows, type Db } from "@daloy/db";
+import { sql } from "drizzle-orm";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { freshDatabase } from "../../../test/db";
@@ -37,13 +38,13 @@ const HTML = "text/html,application/xhtml+xml,*/*;q=0.8";
 let seq = 0;
 async function owner(fields: unknown[], tracked = false) {
   const agent = request.agent(server);
-  await agent.post("/auth/register").send({ email: `pub${++seq}@test.local`, password: "correct horse battery" }).expect(201);
+  const reg = await agent.post("/auth/register").send({ email: `pub${++seq}@test.local`, password: "correct horse battery" }).expect(201);
   const wf = await agent.post("/workflows").send({ name: "Requests", slug: `req-${seq}` }).expect(201);
   const definition = { trigger: { type: "form", config: { fields } }, steps: [{ id: "a", type: "delay", config: { seconds: 1 } }], edges: [] };
   await agent.post(`/workflows/${wf.body.id}/versions`).send({ definition, publish: true }).expect(201);
   if (tracked) await db.update(workflows).set({ setup: { template: "office-request" } }).where(eq(workflows.id, wf.body.id));
   const formId = (await agent.get(`/workflows/${wf.body.id}`).expect(200)).body.trigger.id as string;
-  return { agent, formId, workflowId: wf.body.id as string };
+  return { agent, formId, workflowId: wf.body.id as string, id: reg.body.id as string };
 }
 
 const fields = [
@@ -118,5 +119,64 @@ describe("embedded form", () => {
     expect(plain.headers["x-frame-options"]).toBeDefined();
     const bad = await request(server).post(`/forms/${o.formId}/embed`).set("Accept", HTML).type("form").send({ summary: "x", amount: "0" }).expect(400);
     expect(bad.text).toContain('<body class="embed">');
+  });
+});
+
+// E9 (decision 0080): open times for a booking form, and the page a visitor gets when the time was taken meanwhile.
+describe("booking form", () => {
+  const year = new Date().getUTCFullYear() + 1;
+  const bookingFields = [
+    { name: "email", label: "Your email", type: "email", required: true },
+    { name: "room", label: "Resource", type: "resource", required: true },
+    { name: "at", label: "Date and time", type: "datetime", required: true, timezone: "Asia/Manila", slotMinutes: 60 },
+  ];
+  async function bookable() {
+    const o = await owner(bookingFields);
+    const room = (await o.agent.post("/resources").send({ name: "Tasting room" }).expect(201)).body.id as string;
+    // 10:00 to 11:00 in Manila on 20 January is 02:00 to 03:00 UTC.
+    await db.execute(sql`insert into bookings (user_id, test, reference, resource_id, during, timezone) values (${o.id}, false, 'BK-E9TEST', ${room}, tstzrange(${`${year}-01-20T02:00:00Z`}::timestamptz, ${`${year}-01-20T03:00:00Z`}::timestamptz, '[)'), 'Asia/Manila')`);
+    return { ...o, room };
+  }
+
+  it("adds the open times area and its script only to a form with a resource and a slot grid", async () => {
+    const o = await bookable();
+    const page = await request(server).get(`/forms/${o.formId}`).expect(200);
+    expect(page.text).toContain("data-slots");
+    expect(page.text).toContain('src="/public/slots.js"');
+    const plain = await owner(fields);
+    expect((await request(server).get(`/forms/${plain.formId}`).expect(200)).text).not.toContain("data-slots");
+    const script = await request(server).get("/public/slots.js").expect(200);
+    expect(script.headers["content-type"]).toContain("javascript");
+    expect(script.text).toContain("data-slots");
+  });
+
+  it("lists the day's slots with the booked one taken, and nothing about who booked it", async () => {
+    const o = await bookable();
+    const res = await request(server).get(`/forms/${o.formId}/slots`).query({ resource: o.room, date: `${year}-01-20`, field: "at" }).expect(200);
+    expect(res.body.title).toMatch(/^Open times on /);
+    expect(res.body.slots).toHaveLength(8);
+    expect(res.body.slots.filter((s: { taken: boolean }) => s.taken).map((s: { label: string }) => s.label)).toEqual(["10:00 am"]);
+    expect(JSON.stringify(res.body)).not.toContain("BK-E9TEST");
+  });
+
+  it("answers 404 for a resource of another workspace and 400 for a bad date", async () => {
+    const o = await bookable();
+    const other = await bookable();
+    await request(server).get(`/forms/${o.formId}/slots`).query({ resource: other.room, date: `${year}-01-20` }).expect(404);
+    await request(server).get(`/forms/${o.formId}/slots`).query({ resource: o.room, date: `${year}-02-30` }).expect(400);
+    await request(server).get(`/forms/${o.formId}/slots`).query({ resource: "nope", date: `${year}-01-20` }).expect(400);
+  });
+
+  it("gives a browser the form back with the taken notice, and still accepts a free time", async () => {
+    const o = await bookable();
+    const send = (time: string) => request(server).post(`/forms/${o.formId}`).set("Accept", HTML).type("form").send({ email: "jo@sampaguita.ph", room: o.room, at: `${year}-01-20T${time}` });
+    const taken = await send("10:00").expect(409);
+    expect(taken.text).toContain("That time is no longer available");
+    expect(taken.text).toContain("Tasting room is already booked for");
+    expect(taken.text).toContain('value="jo@sampaguita.ph"');
+    expect(taken.text).toContain('value="');
+    await send("11:00").expect(200);
+    // An API caller is not turned away here: the booking step decides and has a taken branch.
+    await request(server).post(`/forms/${o.formId}`).type("form").send({ email: "jo@sampaguita.ph", room: o.room, at: `${year}-01-20T10:00` }).expect(200);
   });
 });
