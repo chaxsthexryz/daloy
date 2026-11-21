@@ -32,6 +32,7 @@ test("sign up, build, test-run, publish and run a workflow", async ({ page }) =>
   await expect(result).toContainText('"mocked": true');
 
   await page.getByRole("button", { name: "Publish" }).click();
+  await page.getByRole("button", { name: "Turn on", exact: true }).click();
   await expect(page.getByRole("status")).toHaveText(/Version \d+ is live/);
 
   // A live run that takes the false branch, which has no step, so the test makes no outside call.

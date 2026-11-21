@@ -44,6 +44,7 @@ test("the owner connects an inbox and a new website inquiry creates one live run
   await page.getByLabel("Value", { exact: true }).fill("{{trigger.subject}}");
   await page.getByLabel("Operator").selectOption("exists");
   await page.getByRole("button", { name: "Publish" }).click();
+  await page.getByRole("button", { name: "Turn on", exact: true }).click();
   await expect(page.getByText(/Version \d+ is live/)).toBeVisible();
   await page.getByRole("button", { name: "Trigger: An email arrives" }).click();
   await expect(page.getByText("Listening for new mail", { exact: true })).toBeVisible({ timeout: 30_000 });

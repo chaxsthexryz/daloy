@@ -81,6 +81,7 @@ test("edit trigger, steps and branches, then test, save and publish", async ({ p
   await page.getByRole("button", { name: "Delete step" }).click();
   await expect(page.getByText("0 of 1 apps connected")).toBeHidden();
   await page.getByRole("button", { name: "Publish" }).click();
+  await page.getByRole("button", { name: "Turn on", exact: true }).click();
   await expect(page.getByRole("status").first()).toHaveText(/Version \d+ is live\./);
   await expect(page.locator(".a7-chip")).toHaveText("Live");
 });
