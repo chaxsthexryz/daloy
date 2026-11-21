@@ -384,8 +384,8 @@ export const pendingCheckout = async (db: Db, dueId: string) => (await db.select
 export const readPaymentSettings = async (db: Db, workspaceId: string) => (await db.select().from(paymentSettings).where(eq(paymentSettings.userId, workspaceId)))[0];
 
 /** The owner's payment details for the pay page. A qr of null removes the image; undefined leaves it. */
-export async function savePaymentSettings(db: Db, workspaceId: string, v: { gcashNumber: string | null; accountName: string | null; qr?: { bytes: Buffer; type: "jpeg" | "png" | "webp" } | null }) {
-  const qr = v.qr === undefined ? {} : { qrImage: v.qr?.bytes ?? null, qrType: v.qr?.type ?? null };
+export async function savePaymentSettings(db: Db, workspaceId: string, v: { gcashNumber: string | null; accountName: string | null; qr?: { bytes: Buffer; type: "jpeg" | "png" | "webp" } | null; receiptRetentionDays?: number }) {
+  const qr = { ...(v.qr === undefined ? {} : { qrImage: v.qr?.bytes ?? null, qrType: v.qr?.type ?? null }), ...(v.receiptRetentionDays === undefined ? {} : { receiptRetentionDays: v.receiptRetentionDays }) };
   await db
     .insert(paymentSettings)
     .values({ userId: workspaceId, gcashNumber: v.gcashNumber, accountName: v.accountName, ...qr })

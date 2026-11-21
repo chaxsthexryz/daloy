@@ -730,6 +730,13 @@ export const page = (body: string, title = "Form", language: "en" | "tl" = "en",
 
 const fill = (text: string, values: Record<string, string>) => text.replace(/\{(\w+)\}/g, (_m, k: string) => values[k] ?? "");
 
+/** The line under a send button: who gets the answers, what for, and that the customer can ask to see or delete them (decision 0094). */
+export function privacyNotice(language: "en" | "tl", business?: string) {
+  const copy = publicCopy[language];
+  const name = business ? escapeHtml(business) : undefined;
+  return `<p class="hint">${fill(copy.notice, { a: name ?? copy.noticeA, b: name ?? copy.noticeB })}</p>`;
+}
+
 /** What a re-rendered form keeps: the visitor's answers (never files), the reasons it was refused and whether it sits in an iframe. */
 export type FormView = { values?: Record<string, unknown>; errors?: string[]; embed?: boolean; formId?: string; taken?: { field: string; title: string; body: string } };
 
@@ -773,5 +780,5 @@ export function renderForm(fields: FormField[], resources: Resource[], submissio
   const key = submissionKey ? `<input type="hidden" name="${SUBMISSION_KEY}" value="${submissionKey}">` : "";
   const heading = businessName ? `<h1>${escapeHtml(businessName)}</h1>` : "";
   const slotsScript = (booking ? '<script src="/public/slots.js" defer></script>' : "") + (fields.some((f) => f.type === "file") ? COMPRESS_TAG : "");
-  return page(`${heading}${alert}<form method="post"${fields.some((f) => f.type === "file") ? ' enctype="multipart/form-data"' : ""}>${inputs}${honeypot}${key}<button class="btn" type="submit">${copy.send}</button></form>${slotsScript}`, businessName ? escapeHtml(businessName) : copy.form, language, brand, view.embed);
+  return page(`${heading}${alert}<form method="post"${fields.some((f) => f.type === "file") ? ' enctype="multipart/form-data"' : ""}>${inputs}${honeypot}${key}<button class="btn" type="submit">${copy.send}</button>${privacyNotice(language, businessName)}</form>${slotsScript}`, businessName ? escapeHtml(businessName) : copy.form, language, brand, view.embed);
 }

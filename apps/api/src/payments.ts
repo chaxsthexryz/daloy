@@ -1,4 +1,4 @@
-import { centavosToPesos, claimImage, claimUsage, decideClaim, dueByToken, duesForBooking, latestClaim, manilaDay, paymentsExport, pendingCheckout, pesosToCentavos, QuotaError, readPaymentSettings, retryReply, reviewList, savePaymentSettings, submitTransferClaim, workspaceLanguage, type Db, type Due } from "@daloy/db";
+import { centavosToPesos, claimImage, claimUsage, decideClaim, dueByToken, duesForBooking, latestClaim, manilaDay, paymentsExport, pendingCheckout, pesosToCentavos, QuotaError, readPaymentSettings, readProfile, retryReply, reviewList, savePaymentSettings, submitTransferClaim, workspaceLanguage, type Db, type Due } from "@daloy/db";
 import { FILE_MAX_BYTES, FILE_MIME, fileType } from "@daloy/engine";
 import { BadRequestException, Body, ConflictException, Controller, ForbiddenException, Get, Header, HttpCode, HttpStatus, Inject, NotFoundException, Param, Post, Put, Query, Res, StreamableFile, UploadedFile, UseGuards, UseInterceptors } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
@@ -8,7 +8,7 @@ import { SessionGuard } from "./auth";
 import { COMPRESS_TAG } from "./compress";
 import { toCsv } from "./csv";
 import { Allow, CurrentUser, DB, MANAGE, OPERATE, RateLimit, ZodPipe, type SessionUser } from "./http";
-import { escapeHtml, page, pageBrand } from "./public";
+import { escapeHtml, page, pageBrand, privacyNotice } from "./public";
 
 /**
  * R3 payments (decisions 0088 to 0090). Staff routes are for the owner and operators of the workspace only: they see
@@ -21,6 +21,8 @@ export const settingsInput = z.object({
   gcashNumber: z.string().trim().max(40).regex(/^[0-9 +()-]*$/, "use digits, spaces, +, ( ) and - only").transform((s) => s || null).nullable(),
   accountName: z.string().trim().max(100).transform((s) => s || null).nullable(),
   // A base64 image of at most 1 MB, or null to remove it. Left out, the stored image stays.
+  // Days a receipt image stays after its payment closes (decision 0094). Left out, the stored value stays.
+  receiptRetentionDays: z.int().min(1).max(3650).optional(),
   qr: z.string().max(1_400_000).regex(/^[A-Za-z0-9+/]+={0,2}$/, "send the image as base64").nullable().optional(),
 });
 
@@ -95,7 +97,7 @@ export class PaymentsController {
   @Get("settings")
   async settings(@CurrentUser() user: SessionUser) {
     const s = await readPaymentSettings(this.db, user.workspaceId);
-    return { gcashNumber: s?.gcashNumber ?? null, accountName: s?.accountName ?? null, hasQr: Boolean(s?.qrImage) };
+    return { gcashNumber: s?.gcashNumber ?? null, accountName: s?.accountName ?? null, hasQr: Boolean(s?.qrImage), receiptRetentionDays: s?.receiptRetentionDays ?? 90 };
   }
 
   /** Where customers send money: the owner alone may change it. */
@@ -109,7 +111,7 @@ export class PaymentsController {
       if (bytes.length > 1024 * 1024 || (type !== "jpeg" && type !== "png" && type !== "webp")) throw new BadRequestException("qr: use a JPEG, PNG or WebP image of at most 1 MB");
       qr = { bytes, type };
     } else qr = body.qr === null ? null : undefined;
-    await savePaymentSettings(this.db, user.workspaceId, { gcashNumber: body.gcashNumber, accountName: body.accountName, qr });
+    await savePaymentSettings(this.db, user.workspaceId, { gcashNumber: body.gcashNumber, accountName: body.accountName, qr, receiptRetentionDays: body.receiptRetentionDays });
     return this.settings(user);
   }
 }
@@ -289,7 +291,7 @@ export class PayPageController {
 <div class="f"><label for="amount">${copy.amount}</label><input id="amount" name="amount" inputmode="decimal" maxlength="20" value="${v("amount")}"></div>
 <div class="f"><label for="receipt">${copy.receipt}</label><input id="receipt" name="receipt" type="file" accept="image/jpeg,image/png,image/webp,image/heic,.heic"><div class="hint">${copy.receiptHint}</div></div>
 <div aria-hidden="true" style="position:absolute;left:-9999px"><label for="${HONEYPOT}">Website</label><input id="${HONEYPOT}" name="${HONEYPOT}" tabindex="-1" autocomplete="off"></div>
-<button class="btn" type="submit">${copy.send}</button></form>${COMPRESS_TAG}`;
+<button class="btn" type="submit">${copy.send}</button>${privacyNotice(language, (await readProfile(this.db, due.userId))?.businessName ?? undefined)}</form>${COMPRESS_TAG}`;
     return page(`${head}${notes.join("")}<p class="lead">${copy.how}</p>${where}${form}`, copy.title, language, brand);
   }
 }

@@ -29,7 +29,7 @@ type Row = {
   replyError: string | null;
   createdAt: string;
 };
-type Settings = { gcashNumber: string | null; accountName: string | null; hasQr: boolean };
+type Settings = { gcashNumber: string | null; accountName: string | null; hasQr: boolean; receiptRetentionDays: number };
 
 const FLAGS: Record<Flag, string> = {
   duplicate_reference: "Reference used before",
@@ -164,6 +164,7 @@ export function ReceiptsPage({ user }: { user: User }) {
         )}
         <PaymentDetails owner={user.role === "owner"} />
         <DailyTools owner={user.role === "owner"} />
+        {user.role === "owner" && <CustomerData />}
       </div>
     </main>
   );
@@ -176,12 +177,14 @@ function PaymentDetails({ owner }: { owner: boolean }) {
   const [number, setNumber] = useState("");
   const [name, setName] = useState("");
   const [qr, setQr] = useState<string | undefined>();
+  const [days, setDays] = useState("90");
   const [msg, setMsg] = useState("");
   useEffect(() => {
     void api<Settings>("GET", "/payments/settings").then((v) => {
       setS(v);
       setNumber(v.gcashNumber ?? "");
       setName(v.accountName ?? "");
+      setDays(String(v.receiptRetentionDays));
     });
   }, []);
   const pick = (file: File | undefined) => {
@@ -193,7 +196,7 @@ function PaymentDetails({ owner }: { owner: boolean }) {
   const save = async () => {
     setMsg("");
     try {
-      setS(await api<Settings>("PUT", "/payments/settings", { gcashNumber: number, accountName: name, ...(qr ? { qr } : {}) }));
+      setS(await api<Settings>("PUT", "/payments/settings", { gcashNumber: number, accountName: name, receiptRetentionDays: Number(days), ...(qr ? { qr } : {}) }));
       setQr(undefined);
       setMsg(t("Saved. Customers see this on their pay page."));
     } catch (e) {
@@ -209,9 +212,68 @@ function PaymentDetails({ owner }: { owner: boolean }) {
         <label className="rc-reason"><span>{t("GCash or account number")}</span><input value={number} onChange={(e) => setNumber(e.target.value)} maxLength={40} disabled={!owner} /></label>
         <label className="rc-reason"><span>{t("Account name")}</span><input value={name} onChange={(e) => setName(e.target.value)} maxLength={100} disabled={!owner} /></label>
         <label className="rc-reason"><span>{s.hasQr ? t("Replace QR Ph image") : t("QR Ph image")}</span><input type="file" accept="image/png,image/jpeg,image/webp" onChange={(e) => pick(e.target.files?.[0])} disabled={!owner} /></label>
+        <label className="rc-reason"><span>{t("Keep receipt images for (days)")}</span><input type="number" min={1} max={3650} step={1} value={days} onChange={(e) => setDays(e.target.value)} disabled={!owner} /></label>
+        <p className="act-muted">{t("Images are deleted this many days after an order is paid, cancelled or refunded. Amounts and decisions stay in the payment history.")}</p>
         {owner && <div className="act-actions"><button className="act-button blue">{t("Save payment details")}</button></div>}
         <p role="status" className="act-muted">{msg}</p>
       </form>
+    </section>
+  );
+}
+
+type Erased = { counts: Record<string, number>; kept: { item: string; reason: string }[] };
+
+/** R6, decision 0094: the owner answers a customer's request to see or delete their data. Owner only; the server checks the role too. */
+function CustomerData() {
+  const { t } = useLanguage();
+  const [who, setWho] = useState("");
+  const [confirm, setConfirm] = useState<string | null>(null);
+  const [done, setDone] = useState<Erased | null>(null);
+  const [msg, setMsg] = useState("");
+  const q = (v: string): Record<string, string> => (v.includes("@") ? { email: v.trim() } : { phone: v.trim() });
+  const exportData = async () => {
+    setMsg("");
+    const res = await fetch(`/privacy/customer?${new URLSearchParams(q(who))}`);
+    if (!res.ok) return setMsg(((await res.json().catch(() => null)) as { message?: string | string[] } | null)?.message?.toString() ?? res.statusText);
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(await res.blob());
+    a.download = "customer-data.json";
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
+  const erase = async () => {
+    setMsg("");
+    try {
+      setDone(await api<Erased>("POST", "/privacy/customer/delete", { ...q(who), confirm }));
+      setConfirm(null);
+    } catch (e) {
+      setMsg((e as Error).message);
+    }
+  };
+  return (
+    <section className="act-card rc-details" aria-labelledby="cust-h">
+      <h2 id="cust-h">{t("Customer data")}</h2>
+      <p className="act-muted">{t("When a customer asks to see or delete what you hold about them, enter the email or phone number they used. Export downloads a file. Delete erases their messages, answers, uploads and receipt images, and keeps amounts and references for your bookkeeping. Data already sent to other apps or email stays there.")}</p>
+      <form onSubmit={(e) => e.preventDefault()}>
+        <label className="rc-reason"><span>{t("Customer email or phone number")}</span><input value={who} onChange={(e) => { setWho(e.target.value); setDone(null); }} maxLength={200} /></label>
+        <div className="act-actions">
+          <button className="act-button blue" disabled={!who.trim()} onClick={() => void exportData()}>{t("Export customer data")}</button>
+          <button className="act-button" disabled={!who.trim()} onClick={() => setConfirm("")}>{t("Delete customer data")}</button>
+        </div>
+        {confirm !== null && (
+          <>
+            <label className="rc-reason"><span>{t("Type DELETE to confirm. This cannot be undone.")}</span><input value={confirm} onChange={(e) => setConfirm(e.target.value)} autoComplete="off" /></label>
+            <div className="act-actions"><button className="act-button" disabled={confirm !== "DELETE"} onClick={() => void erase()}>{t("Delete now")}</button></div>
+          </>
+        )}
+        <p role="status" className="act-muted">{msg}</p>
+      </form>
+      {done && (
+        <div role="status">
+          <p>{t("Deleted. Rows changed or removed:")} {Object.entries(done.counts).filter(([, n]) => n > 0).map(([k, n]) => `${k} ${n}`).join(", ") || t("none")}</p>
+          <ul>{done.kept.map((k) => <li key={k.item}>{k.item}: {k.reason}</li>)}</ul>
+        </div>
+      )}
     </section>
   );
 }

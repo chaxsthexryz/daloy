@@ -1136,3 +1136,34 @@ How it works:
 Edge cases: a worker down at 8 (sends until noon, not later), two workers (one email), a failed send (retried next minute), test runs and other workspaces (never counted), a formula in a reference (quoted), a range over a year or backwards (400), a browser that cannot decode a photo (original uploaded), a visitor with no script (original uploaded, same server checks).
 
 Tests: `apps/worker/src/digest.test.ts` (timing, once a day, empty mornings, opt-in, counts, failure, Tagalog, no customer detail), `packages/engine/src/digest.test.ts`, `packages/engine/src/taglish.test.ts`, `apps/api/src/csv-export.test.ts` (columns, range, escaping, roles), `apps/api/src/compress.test.ts` (the limits, with a faked browser), `apps/api/src/payments.test.ts` and `form-files.test.ts` (the script is loaded and the server still refuses bad bytes and big files), `apps/api/src/members.test.ts` (roles), and `e2e/photo-compression.spec.ts` (a real browser resizes a 3000 x 2000 photo to 2000 x 1333).
+
+
+## Customer privacy: notice, receipt retention, export and delete (R6, decision 0094)
+
+What it does: every public form and the pay page show a short line under the send button saying who gets the answers, what they are used for, and that the customer can ask the business to show or delete them. The owner can export everything the workspace holds about one customer, or erase it, from the Customer data section on the Receipts page. Receipt images are removed a set number of days after an order closes.
+
+How it works:
+
+- Finding a customer (`packages/db/src/privacy.ts`, `matcher`): the owner enters an email or a phone number. A run matches when any string inside its trigger payload holds the whole email (case-insensitive, not as part of a longer address) or a run of digits that reads as the same Philippine mobile number (`0917...`, `+63 917...`, `63917...`). A payment due matches the same way on its `reply_to`, and its run joins the set. Kept PayMongo events match on their payload. Matching is a scan of the workspace's runs, so it fits small-business volumes.
+- Export (`GET /privacy/customer`): one JSON file with the matched runs and everything hanging off them (step inputs and outputs, uploads and receipt images as base64, deliveries, requests, bookings and their results and changes, calendar text, dues, claims, payment history, matched PayMongo events). Nothing from other customers or other workspaces. It is sent as an attachment with `Cache-Control: no-store`.
+- Delete (`POST /privacy/customer/delete`, body needs `confirm: "DELETE"`): one transaction. Payloads become `{"erased": true}`, step inputs and outputs become null, uploads, deliveries and calendar events are deleted, request subjects and booking results are blanked, dues lose `reply_to` and `reply_text`, receipt images are deleted, unfinished runs are cancelled. Amounts, statuses, references, the transfer reference of a confirmed payment, payment history and receipt reference numbers stay for bookkeeping. The response lists counts and what was kept and why.
+- Audit (`privacy_requests`, migration 0045): one row per export or delete with the counts and the kept reasons. It never holds an email, a phone number or any deleted value.
+- Retention (`payment_settings.receipt_retention_days`, 1 to 3650, default 90, a missing settings row counts as 90): the worker's upload sweep also clears the image on claims whose due is confirmed, cancelled or refunded and was last changed longer ago than that. Claims on open dues keep their image.
+- Both endpoints are for the owner only and always filter on the session's workspace.
+
+Edge cases: the same email in two workspaces (each owner sees only their own), a customer who used another email or number (not found, run the request again with each), "annamaria@x.com" when deleting "maria@x.com" (not matched), a phone inside a sentence or a list (found), a longer digit run that contains the digits (not matched), a run still waiting (cancelled so nothing more is sent), a due with no settings row (90 days).
+
+What Daloy cannot reach: data already sent to Google Sheets, Slack, Telegram, Airtable, Notion, Trello, Drive, Google Calendar or email. The export lists the deliveries so the owner knows where to look.
+
+Daloy does not make a business compliant with the Data Privacy Act. It gives the owner the tools to answer a customer's request. The rest is the owner's own work.
+
+Owner's own tasks:
+
+- Register with the National Privacy Commission if the business is required to.
+- Name a Data Protection Officer.
+- Write the business's own privacy policy.
+- Answer customer requests within the time the law sets.
+- Delete copies already sent to Sheets, Slack, Telegram, Airtable, Notion, Trello, Drive, Google Calendar or email.
+- Handle backups, which keep old data until they roll over.
+
+Tests: `packages/db/src/privacy.test.ts` (phone and email matching, retention at 89, 91 and open dues, per-workspace days, batch limit, the 1 to 3650 check), `apps/api/src/privacy.test.ts` (export holds one customer's data only, delete erases it everywhere and keeps bookkeeping, workspace isolation, roles 401 and 403, bad input 400, audit row without customer values, the notice in English and Tagalog with the business name escaped), `apps/api/src/members.test.ts` (route matrix).

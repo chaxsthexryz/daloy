@@ -15,12 +15,14 @@ Kept current with each phase. A mitigation marked "planned" does not exist in co
 - Workspace membership and roles, which decide who can change automations and who can authorize a purchase
 - Run data: trigger payloads and step outputs, which can hold customer personal data
 - Files visitors attach to forms (photos, IDs, receipts), kept 7 days in the database
+- Receipt images on payment claims (kept the retention days after the due closes) and the text of customer DMs inside run data
 - The ability to send email and make HTTP requests from the server
 
 ## Entry points
 
 - Console API (session cookie)
 - Webhook URLs and hosted forms, including anonymous embedded forms (public), and file uploads on those forms
+- Customer privacy export and delete (`GET /privacy/customer`, `POST /privacy/customer/delete`, owner session)
 - File downloads from run details (`GET /runs/:runId/files/:fileId`, owner and operator session)
 - Owner mailbox setup and the worker's outbound IMAP connection
 - Approval links (public, random single-use token; a named approval also needs the approver's session)
@@ -318,3 +320,23 @@ Entry points: `GET /payments/export.csv`, `GET` and `PUT /settings/digest`, `GET
 - Turning the digest on for someone else: only the owner changes it, for their own workspace, and the body is strict (an extra field is a 400).
 - The compression script: it is static, public and served from the same origin, so `script-src 'self'` still holds and no inline script is added. It is a convenience, not a control. The server still reads the file type from the bytes, refuses anything over 5 MB and counts the upload against the quota, so an edited or skipped script gets the same checks. It only touches files the visitor already chose in that input.
 - Remaining risk: the digest says an order is unpaid even while a reminder is already queued, so the number can overstate the work; the digest needs the installation's SMTP server; a worker that is down all morning sends no digest that day.
+
+
+## Customer privacy (R6, decision 0094)
+
+Assets: customers' receipt images, DM and form text inside run data, the export file the owner downloads, the audit rows.
+
+Entry points: `GET /privacy/customer` and `POST /privacy/customer/delete` (owner session), the notice on public forms and the pay page, and the worker's receipt image sweep.
+
+- Someone other than the owner exporting or erasing customer data: both routes are owner-only (403 for operators, approvers and requesters, 401 without a session).
+- Reaching another workspace's customer: every query filters on the session's workspace id, and rows are found through that workspace's runs, dues and events. The same email in two workspaces is two separate customers.
+- Erasing the wrong customer by accident: the delete needs the typed word DELETE, exactly one identifier, and a valid email or phone. An email matches only as a whole address, so `maria@x.com` does not touch `annamaria@x.com`.
+- Abuse of the endpoints: a per-owner rate limit, and a scan limited to one workspace.
+- The audit trail holding the data it is meant to protect: `privacy_requests` stores counts and fixed reasons only, never an email, phone, name or deleted value.
+- The export file leaking: it is an attachment with `Cache-Control: no-store`, and it holds receipt images as base64, so the owner should treat it as sensitive.
+- Matching limits: a customer who used another email or number is not found, and a number written in an unusual way may be missed. The owner can repeat the request per identifier. The scan reads every run in the workspace, which is fine for small workspaces.
+- Data outside Daloy: copies already sent to Sheets, Slack, Telegram, Airtable, Notion, Trello, Drive, Google Calendar or email are not reached. The export lists the deliveries so the owner can find them.
+- Event keys: a `run_keys` row can hold an event key the workflow built from customer data. The delete does not rewrite it.
+- Backups keep old data until they roll over.
+- Old receipt images: removed by the worker after the retention days (default 90) once the due closes. Open dues keep theirs.
+- Remaining risk: Daloy provides tools only. It does not make a business compliant with any law, and the owner's own duties are listed in docs/how-it-works.md.

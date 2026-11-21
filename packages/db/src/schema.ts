@@ -908,5 +908,18 @@ export const paymentSettings = pgTable("payment_settings", {
   accountName: text("account_name"),
   qrImage: bytea("qr_image"),
   qrType: text("qr_type", { enum: ["jpeg", "png", "webp"] }),
+  // R6 (decision 0094): how long a receipt image stays after its due closes.
+  receiptRetentionDays: integer("receipt_retention_days").notNull().default(90),
   updatedAt: ts("updated_at").notNull().defaultNow(),
-});
+}, (t) => [check("payment_settings_retention", sql`${t.receiptRetentionDays} between 1 and 3650`)]);
+
+/** One row per customer data export or delete by the owner (decision 0094). Counts and reasons only, never a customer's value. */
+export const privacyRequests = pgTable("privacy_requests", {
+  id: id(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  actorId: uuid("actor_id").references(() => users.id, { onDelete: "set null" }),
+  action: text("action", { enum: ["export", "delete"] }).notNull(),
+  counts: jsonb("counts").$type<Record<string, number>>().notNull(),
+  kept: jsonb("kept").$type<{ item: string; reason: string }[]>().notNull().default([]),
+  createdAt: createdAt(),
+}, (t) => [check("privacy_requests_action", sql`${t.action} in ('export', 'delete')`)]);
