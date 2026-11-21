@@ -50,9 +50,11 @@ test("the step outline works from the keyboard", async ({ page }) => {
   await page.getByLabel("Password").fill("e2e test password 1");
   await page.keyboard.press("Enter");
   await page.goto("/#/new");
-  await page.getByLabel("Start from").selectOption("inquiry-triage");
-  await page.getByLabel("Name").fill("Keyboard");
-  await page.keyboard.press("Enter");
+  // Enter on a card opens its preview; the name box takes the draft's name and Enter in it is not a submit, so press the button.
+  await page.getByRole("button", { name: "Preview: Inquiry triage" }).press("Enter");
+  const preview = page.getByRole("region", { name: "Inquiry triage" });
+  await preview.getByLabel("Name").fill("Keyboard");
+  await preview.getByRole("button", { name: "Use this", exact: true }).click();
 
   await page.getByRole("button", { name: "List", exact: true }).click();
   const step = page.getByRole("button", { name: /^is_billing / });

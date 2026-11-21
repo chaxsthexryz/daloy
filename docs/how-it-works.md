@@ -1136,6 +1136,16 @@ Edge cases. Duplicating a step with branches is refused with a reason. A copy id
 
 Tests. `apps/web/src/lib/graph.test.ts` (`duplicateStep` ids, placement, the long id, the refusal; `readCopiedStep` accepting a step and refusing other text, unknown types, payment steps and wrong config; the draft staying valid), `e2e/editor.spec.ts` (the plus on each branch of a condition and an approval adds on that branch with no overlap; panel states, close, Escape, double click, folding kept across a reload; drag to empty canvas, onto a step, and a refused loop; right-click menus for duplicate, copy and paste, connect to and test this step), `e2e/phone-editor.spec.ts` (R4 at 390 px, and Shift+F10 opening the step menu with arrow keys and focus return).
 
+## Library: ready-made workflows (U5, decision 0099)
+
+What it does. `#/new` is the Library. It lists every way to start an automation as a card: Blank workflow and Build with AI first, then the templates, with the three guided setups (office request, purchase request, website inquiry). A search box and five category chips (Inquiries, Bookings, Payments and receipts, Orders, Office) narrow the cards. A card shows the name, one line, how it starts and the apps it needs as logos. Clicking a card, or pressing Enter on it, opens a preview: a read-only diagram, the steps in plain words and a name box. Use this makes a draft and opens it in the editor. On a phone the preview is a bottom sheet.
+
+Why it is built this way. The category lives on each template in the engine, so the page, the tests and any later picker agree. The apps on a card come from the step catalog, the same place the editor gets its logos. The diagram is the Runs page's `RunFlow` with no run, so a preview looks like the saved flow will. Use this runs the same two calls as the old template select: create the workflow, then save version 1 unpublished with the owner's address filled in.
+
+Edge cases. If the template's name is taken, the page says so and opens the preview so the name can change. A second click while a draft is being made does nothing. Taglish wording changes the messages in the preview and in the draft, and nothing else.
+
+Tests. `packages/engine/src/templates.test.ts` (every template has one of the five categories), `e2e/library.spec.ts` (search, category chips, preview by keyboard, Use this, a taken name, and the 390 px layout with no sideways scroll).
+
 ## Both payment paths (R3, decisions 0088 to 0091)
 
 What it does: a workflow asks a customer for a deposit, a full payment or a balance with the `payment_due` step. The customer pays the seller's QR Ph code or GCash number and sends the transfer reference on a private pay page, or pays a PayMongo checkout. Staff see one Receipts to review list. Unpaid orders get a reminder and, after a deadline, are cancelled with the booking slot released.

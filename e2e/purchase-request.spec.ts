@@ -62,7 +62,7 @@ test("a purchase request goes from the form to the named approver, then to purch
 
   // Guided setup: the approver, purchasing, Outlook and Teams.
   await page.getByRole("link", { name: "New automation" }).first().click();
-  await page.getByRole("button", { name: "Set up purchase requests" }).click();
+  await page.getByRole("button", { name: "Use this: Purchase request with approval" }).click();
   await page.getByRole("button", { name: "Next" }).click();
   await expect(page.getByLabel("Who approves purchases")).toBeVisible();
   await page.getByLabel("Who approves purchases").selectOption({ label: `${approver} (approver)` });

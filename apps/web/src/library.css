@@ -1,0 +1,64 @@
+/*
+ * Library (#/new, phase U5): filters, a card grid and the preview. Built on the console's ops tokens (automations-ops.css)
+ * and the guided page type (guided-pages.css). Cards are 10px-radius boxes with #E3E6EC borders; the accent is the console blue.
+ */
+.lib-main { display: flex; flex-direction: column; gap: 14px; padding: 22px 28px 40px; min-width: 0; }
+.lib-filters { gap: 12px; }
+/* The guided page styles every input as a bordered 40px box; the search and wording boxes already have their own frame. */
+.lib.gp .ops-search input[type="search"] { min-height: 32px; padding: 0; border: 0; border-radius: 0; background: transparent; }
+.lib.gp label.ops-select select { width: auto; min-height: 0; padding: 0 2px; border: 0; border-radius: 0; background: transparent; }
+
+.lib-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.lib-chip { min-height: 32px; padding: 6px 12px; border: 1px solid var(--o-line); border-radius: 16px; background: var(--o-bg); color: var(--o-ink); font: 600 13px/18px inherit; cursor: pointer; transition: background-color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease); }
+.lib-chip:hover { background: var(--o-canvas); }
+.lib-chip[aria-pressed="true"] { background: var(--o-select); border-color: var(--o-accent); color: var(--o-accent); }
+
+.lib-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin: 0; padding: 0; list-style: none; }
+.lib-card { position: relative; display: flex; flex-direction: column; gap: 6px; min-width: 0; padding: 16px; border: 1px solid var(--o-line); border-radius: 10px; background: var(--o-bg); transition: border-color var(--dur-fast) var(--ease); }
+.lib-card:hover { border-color: var(--o-field); }
+.lib-card[data-selected] { border-color: var(--o-accent); box-shadow: 0 0 0 1px var(--o-accent); }
+.lib-card h3 { margin: 0; }
+.lib-card .gp-sub { flex: 1 1 auto; }
+/* The title button stretches over the whole card, so a click anywhere opens the preview; the controls below sit above it. */
+.lib-open, .lib-open:hover:not(:disabled) { min-height: 0; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; white-space: normal; cursor: pointer; }
+.lib-open::after { content: ""; position: absolute; inset: 0; border-radius: 10px; }
+.lib-open:focus-visible { outline: none; }
+.lib-open:focus-visible::after { outline: 2px solid var(--o-focus); outline-offset: 2px; }
+.lib-line { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0; font-size: 13px; line-height: 18px; color: var(--o-ink); }
+.lib-line > span { min-width: 76px; font-size: 12px; font-weight: 600; color: var(--o-muted); }
+.lib-line em { font-style: normal; color: var(--o-muted); }
+.lib-apps { min-height: 28px; }
+.lib-foot { position: relative; display: flex; align-items: center; gap: 14px; margin-top: 6px; }
+.lib-foot > .ops-button, .lib-blank .ops-button { position: relative; }
+.lib-blank { position: relative; display: flex; flex-direction: column; gap: 10px; margin-top: 6px; }
+
+.lib-preview { display: flex; flex-direction: column; gap: 12px; padding: 18px; border: 1px solid var(--o-accent); border-radius: 10px; background: var(--o-bg); scroll-margin-block: 12px; }
+.lib-preview > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.lib-preview h2 { font-size: 20px; line-height: 26px; }
+.lib-preview h3 { margin: 0 0 6px; font-size: 13px; line-height: 16px; font-weight: 700; color: var(--o-muted); }
+.lib-preview-body { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 16px; align-items: start; }
+.lib-diagram { min-width: 0; }
+.lib-diagram .run-canvas { height: 440px; }
+.lib-steps { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; list-style: none; font-size: 13px; line-height: 18px; color: var(--o-ink); }
+.lib-steps li { overflow-wrap: anywhere; }
+.lib-steps li:first-child { font-weight: 700; }
+.lib-name { max-width: 420px; }
+
+@media (max-width: 1099.98px) {
+  .lib-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .lib-preview-body { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 799.98px) {
+  .lib-main { padding: 16px 16px 32px; }
+  .lib-grid { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .lib-chip { min-height: var(--target); }
+  .lib-chips { flex-wrap: nowrap; overflow-x: auto; margin-inline: -16px; padding-inline: 16px; scrollbar-width: none; }
+  .lib-chip { flex: none; }
+  /* In the sheet the preview has no box of its own, and the diagram sits above the words. */
+  .wk-sheet .lib-preview { padding: 0; border: 0; }
+  .wk-sheet .lib-diagram .run-canvas { height: 340px; }
+  .wk-sheet .lib-preview .ops-button { min-height: var(--target); }
+}
+
+/* The sheet takes its colours from the workspace pages; this page is not one, so it carries them itself. */
+.lib .wk-sheet { --w-bg: var(--o-bg); --w-ink: var(--o-ink); --w-muted: var(--o-muted); --w-line: var(--o-line); }
