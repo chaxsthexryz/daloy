@@ -91,5 +91,7 @@ export const guidedTranslations: Record<string, string> = {
 
   "Approval request to the approver": "Approval request sa approver", "Email to purchasing, once approved": "Email sa purchasing kapag na-approve", "Approved, to the employee": "Na-approve, para sa empleyado", "Not approved, to the employee": "Hindi na-approve, para sa empleyado", "No decision after a week, to the employee": "Walang desisyon makalipas ang isang linggo, para sa empleyado", "Daloy approval link": "Daloy approval link",
 
+  "Library": "Library", "Search the library": "Hanapin sa library", "Category": "Kategorya", "Inquiries": "Mga inquiry", "Payments and receipts": "Mga bayad at resibo", "Orders": "Mga order", "Office": "Opisina", "Blank workflow": "Blankong workflow", "Use this": "Gamitin ito", "Use this: {name}": "Gamitin ito: {name}", "Preview: {name}": "Silipin: {name}", "Diagram of {name}": "Diagram ng {name}", "Needs": "Kailangan", "No apps needed": "Walang kailangang app", "Your business": "Negosyo mo",
+
 };
 

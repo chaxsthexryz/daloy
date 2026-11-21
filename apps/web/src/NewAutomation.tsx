@@ -1,10 +1,29 @@
 import "./automations-ops.css";
 import "./guided-pages.css";
-import { templatesForLanguage, type TemplateStyle } from "@daloy/engine";
+import "./library.css";
+import {
+  defaultAnswers,
+  defaultPurchaseAnswers,
+  explainFlow,
+  markText,
+  officeRequestDefinition,
+  purchaseRequestDefinition,
+  stepEntry,
+  TEMPLATE_CATEGORIES,
+  templatesForLanguage,
+  triggerEntry,
+  websiteInquiryDefinition,
+  type TemplateCategory,
+  type TemplateStyle,
+  type WorkflowDefinition,
+} from "@daloy/engine";
 import { Text, useLanguage } from "./Language";
-import { useState, type FormEvent } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api, ApiError, type Workflow } from "./api";
+import { AppMark } from "./AppMark";
+import { RunFlow } from "./FlowCanvas";
 import { startOfficeSetup, startPurchaseSetup } from "./OfficeRequests";
+import { Sheet, usePhone } from "./Sheet";
 import type { Language } from "./lib/locale";
 
 const slugify = (s: string) =>
@@ -14,42 +33,55 @@ const slugify = (s: string) =>
     .replace(/^-+|-+$/g, "")
     .slice(0, 63);
 
-/** #/new: every way to start an automation on one page (Doop frame NycmMp8U-t), guided templates first. */
+/** One ready-made workflow in the library. `go` starts it; `href` is for a start that lives on another page. */
+type Card = { key: string; category: TemplateCategory; name: string; description: string; definition: WorkflowDefinition; template?: string; go?: () => void; href?: string; label?: string; sample?: string };
+
+/** The apps a workflow needs, once each, from the step catalog. A step Daloy does itself needs no app. */
+function appsOf(def: WorkflowDefinition, language: Language) {
+  const entries = [triggerEntry(def.trigger.type), ...def.steps.map((s) => stepEntry(s.type))].filter((e) => e.app);
+  return [...new Map(entries.map((e) => [e.mark, markText(e, language)])).entries()].map(([mark, name]) => ({ mark, name }));
+}
+
+/** #/new, the Library: every way to start an automation as a card, with a preview before anything is created (decision 0099). */
 export function NewAutomationPage({ email }: { email: string }) {
   const { language, t } = useLanguage();
+  const phone = usePhone();
   const [style, setStyle] = useState<TemplateStyle>("default");
   const templates = templatesForLanguage(language, style);
   const [name, setName] = useState("");
-  const [template, setTemplate] = useState("");
+  const [query, setQuery] = useState("");
+  const [category, setCategory] = useState<TemplateCategory | "All">("All");
+  const [selected, setSelected] = useState<string | null>(null);
+  const [previewName, setPreviewName] = useState("");
   const [error, setError] = useState("");
-  const [startError, setStartError] = useState("");
   // One start or create at a time: a repeated click must not make a second draft.
   const [busy, setBusy] = useState(false);
+  const panel = useRef<HTMLElement>(null);
 
   const start = (go: (email: string, language: Language) => Promise<void>) => {
     if (busy) return;
     setBusy(true);
-    setStartError("");
+    setError("");
     go(email, language).catch((e: Error) => {
-      setStartError(e.message);
+      setError(e.message);
       setBusy(false);
     });
   };
 
-  const create = async (e: FormEvent) => {
-    e.preventDefault();
+  /** Creates the draft: a blank one, or one filled from a template with the owner's address in place of the sample one. */
+  const createDraft = async (slug: string, draftName: string, cardKey = slug) => {
     if (busy) return;
     setError("");
     setBusy(true);
     try {
-      const wf = await api<Workflow>("POST", "/workflows", { name, slug: slugify(name) || "workflow" });
-      const t = templates.find((t) => t.slug === template);
-      if (t) {
+      const wf = await api<Workflow>("POST", "/workflows", { name: draftName, slug: slugify(draftName) || "workflow" });
+      const item = templates.find((x) => x.slug === slug);
+      if (item) {
         const ownerEmail = email.trim();
         const definition = ownerEmail
           ? {
-              ...t.definition,
-              steps: t.definition.steps.map((s) => {
+              ...item.definition,
+              steps: item.definition.steps.map((s) => {
                 const cfg = s.config as Record<string, unknown>;
                 const nextCfg = { ...cfg };
                 if (nextCfg.to === "owner@example.com") nextCfg.to = ownerEmail;
@@ -57,146 +89,224 @@ export function NewAutomationPage({ email }: { email: string }) {
                 return { ...s, config: nextCfg };
               }),
             }
-          : t.definition;
+          : item.definition;
         await api("POST", `/workflows/${wf.id}/versions`, { definition, publish: false });
       }
       location.hash = `#/w/${wf.id}`;
     } catch (err) {
-      setError(err instanceof ApiError && err.status === 409 ? t("An automation with that name already exists.") : (err as Error).message);
+      const taken = err instanceof ApiError && err.status === 409;
+      setError(taken ? t("An automation with that name already exists.") : (err as Error).message);
+      // A taken name can be changed in the preview, so open it.
+      if (taken) open(cardKey, draftName);
       setBusy(false);
     }
   };
 
+  const createBlank = (e: React.FormEvent) => {
+    e.preventDefault();
+    void createDraft("", name);
+  };
+
+  const cards: Card[] = [
+    ...templates.map((item): Card => ({ key: item.slug, category: item.category, name: t(item.name), description: t(item.description), definition: item.definition as unknown as WorkflowDefinition, template: item.slug })),
+    {
+      key: "office",
+      category: "Office",
+      name: t("Track an office request"),
+      description: t("Record requests and notify your office."),
+      definition: officeRequestDefinition(defaultAnswers(email, language), language),
+      go: () => start(startOfficeSetup),
+      sample: "#/try/office-request",
+      label: t("Set up for my office"),
+    },
+    {
+      key: "purchase",
+      category: "Office",
+      name: t("Purchase request with approval"),
+      description: t("Ask a reviewer before notifying purchasing."),
+      definition: purchaseRequestDefinition(defaultPurchaseAnswers(email, language), language),
+      go: () => start(startPurchaseSetup),
+      label: t("Set up purchase requests"),
+    },
+    {
+      key: "inquiry-site",
+      category: "Inquiries",
+      name: t("Reply to a website inquiry"),
+      description: t("Reply to the sender and notify your team."),
+      definition: websiteInquiryDefinition({ businessName: t("Your business"), inquiryEmail: email }, language),
+      href: "#/settings/business",
+      label: t("Business setup: set up inquiry replies"),
+    },
+  ];
+  // Card order follows the category chips, so a category reads as one group.
+  const order = (c: Card) => TEMPLATE_CATEGORIES.indexOf(c.category);
+  cards.sort((a, b) => order(a) - order(b));
+
+  const q = query.trim().toLowerCase();
+  const matches = (...text: string[]) => !q || text.some((x) => x.toLowerCase().includes(q));
+  const shown = cards.filter((c) => (category === "All" || c.category === category) && matches(c.name, c.description, t(c.category)));
+  const blankName = t("Blank workflow");
+  const blankText = t("Choose a trigger, then add and connect the steps in the editor.");
+  const aiName = t("Build with AI");
+  const aiText = t("Say what should happen in your own words, answer a few questions, and check the draft before anything is saved.");
+  const showStarts = category === "All";
+  const card = selected ? cards.find((c) => c.key === selected) : undefined;
+
+  function open(key: string, defaultName?: string) {
+    const c = cards.find((c) => c.key === key);
+    setSelected(key);
+    setPreviewName(defaultName ?? c?.name ?? "");
+  }
+  const close = () => setSelected(null);
+  useEffect(() => {
+    if (card && !phone) panel.current?.scrollIntoView({ block: "nearest", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+  }, [card?.key, phone]);
+
+  const [drawn, setDrawn] = useState(false);
+  useEffect(() => {
+    setDrawn(false);
+    const frame = requestAnimationFrame(() => setDrawn(true));
+    return () => cancelAnimationFrame(frame);
+  }, [card?.key, phone]);
+
+  const preview = card && (
+    <section ref={panel} className="lib-preview" aria-labelledby="lib-preview-title">
+      <header>
+        <div>
+          <p className="gp-eyebrow">{t(card.category)}</p>
+          {!phone && <h2 id="lib-preview-title">{card.name}</h2>}
+        </div>
+        {!phone && <button type="button" className="ops-button" onClick={close}><Text>Close</Text></button>}
+      </header>
+      <p className="gp-lead">{card.description}</p>
+      <div className="lib-preview-body">
+        <div className="lib-diagram" role="group" aria-label={t("Diagram of {name}", { name: card.name })}>
+          {/* Keyed so each card fits its own diagram; held one frame so a sheet is open (and has a size) before the diagram fits itself to it. */}
+          {drawn && <RunFlow key={card.key + style} draft={card.definition} run={null} />}
+        </div>
+        <div className="lib-words">
+          <h3><Text>Steps</Text></h3>
+          <ul className="lib-steps">
+            {explainFlow(card.definition, language).map((line) => <li key={line}>{line}</li>)}
+          </ul>
+        </div>
+      </div>
+      {card.template && (
+        <div className="gp-field lib-name">
+          <label htmlFor="lib-preview-name"><Text>Name</Text></label>
+          <input id="lib-preview-name" value={previewName} onChange={(e) => setPreviewName(e.target.value)} maxLength={200} />
+        </div>
+      )}
+      <p role="alert" className="gp-error" hidden={!error}>{error}</p>
+      <div className="gp-actions">
+        {card.template ? (
+          <button type="button" className="ops-button blue" disabled={busy || !previewName.trim()} onClick={() => void createDraft(card.template!, previewName.trim(), card.key)}><Text>Use this</Text></button>
+        ) : card.href ? (
+          <a className="ops-button blue" href={card.href}><Text>Business setup</Text></a>
+        ) : (
+          <button type="button" className="ops-button blue" disabled={busy} onClick={card.go}><Text>Use this</Text></button>
+        )}
+      </div>
+    </section>
+  );
+
+  const useButton = (c: Card) =>
+    c.href ? (
+      <a className="ops-button" href={c.href} aria-label={c.label}><Text>Business setup</Text></a>
+    ) : (
+      <button type="button" className="ops-button" disabled={busy} aria-label={t("Use this: {name}", { name: c.name })} onClick={() => (c.template ? void createDraft(c.template, c.name, c.key) : c.go?.())}>
+        <Text>Use this</Text>
+      </button>
+    );
+
+  const meta = (def: WorkflowDefinition) => {
+    const apps = appsOf(def, language);
+    return (
+      <>
+        <p className="lib-line"><span><Text>Starts with</Text></span> {triggerEntry(def.trigger.type).action[language]}</p>
+        <p className="lib-line lib-apps">
+          <span><Text>Needs</Text></span>
+          {apps.length ? apps.map((a) => <AppMark key={a.mark} mark={a.mark} name={a.name} size={26} />) : <em><Text>No apps needed</Text></em>}
+        </p>
+      </>
+    );
+  };
+
   return (
-    <main className="page ops gp motion-page">
+    <main className="page ops gp lib motion-page">
       <header className="ops-head">
         <div className="gp-title">
           <p className="gp-crumb"><a href="#/"><Text>Automations</Text></a></p>
-          <h1><Text>New automation</Text></h1>
-        </div>
-        <div className="ops-actions">
-          <a className="ops-button" href="#/ai">{t("Build with AI")}</a>
+          <h1><Text>Library</Text></h1>
         </div>
       </header>
-      <div className="ops-layout">
-        <div className="ops-main">
-          <section className="gp-section" aria-labelledby="guided">
-            <h2 id="guided"><Text>Start with a template</Text></h2>
-            <p className="gp-lead"><Text>Choose the workflow closest to the way your team works.</Text></p>
-            <table className="ops-table gp-table">
-              <thead>
-                <tr>
-                  <th scope="col"><Text>Template</Text></th>
-                  <th scope="col"><Text>Starts with</Text></th>
-                  <th scope="col"><Text>Setup</Text></th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td className="c-main">
-                    <span className="gp-name"><Text>Track an office request</Text></span>
-                    <span className="gp-sub"><Text>Record requests and notify your office.</Text></span>
-                  </td>
-                  <td className="c-start"><Text>Staff form</Text></td>
-                  <td className="c-act">
-                    <button type="button" className="ops-button" disabled={busy} aria-label={t("Set up for my office")} onClick={() => start(startOfficeSetup)}>
-                      <Text>Set up</Text>
-                    </button>
-                  </td>
-                </tr>
-                <tr>
-                  <td className="c-main">
-                    <span className="gp-name"><Text>Purchase request with approval</Text></span>
-                    <span className="gp-sub"><Text>Ask a reviewer before notifying purchasing.</Text></span>
-                  </td>
-                  <td className="c-start"><Text>Purchase form</Text></td>
-                  <td className="c-act">
-                    <button type="button" className="ops-button" disabled={busy} aria-label={t("Set up purchase requests")} onClick={() => start(startPurchaseSetup)}>
-                      <Text>Set up</Text>
-                    </button>
-                  </td>
-                </tr>
-                <tr>
-                  <td className="c-main">
-                    <span className="gp-name"><Text>Reply to a website inquiry</Text></span>
-                    <span className="gp-sub"><Text>Reply to the sender and notify your team.</Text></span>
-                  </td>
-                  <td className="c-start"><Text>Inquiry form</Text></td>
-                  <td className="c-act">
-                    <a className="ops-link" href="#/settings/business" aria-label={t("Business setup: set up inquiry replies")}>
-                      <Text>Business setup</Text>
-                    </a>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-            <p role="alert" className="gp-error" hidden={!startError}>
-              {startError}
-            </p>
-          </section>
-
-          <form onSubmit={create} className="gp-card" aria-labelledby="blank">
-            <h2 id="blank"><Text>Start with a blank workflow</Text></h2>
-            <p className="gp-hint"><Text>Choose a trigger, then add and connect the steps in the editor.</Text></p>
-            <div className="gp-inline">
-              <div className="gp-field">
-                <label htmlFor="wf-name"><Text>Name</Text></label>
-                <input id="wf-name" value={name} onChange={(e) => setName(e.target.value)} required maxLength={200} />
-              </div>
-              <div className="gp-field">
-                <label htmlFor="wf-template"><Text>Start from</Text></label>
-                <select id="wf-template" value={template} onChange={(e) => setTemplate(e.target.value)}>
-                  <option value="">{t("Blank")}</option>
-                  {templates.map((item) => (
-                    <option key={item.slug} value={item.slug}>
-                      {t("Template: {name}", { name: t(item.name) })}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="gp-field">
-                <label htmlFor="wf-style"><Text>Wording</Text></label>
-                <select id="wf-style" value={style} onChange={(e) => setStyle(e.target.value as TemplateStyle)} disabled={!template}>
-                  <option value="default">{t("Workspace language")}</option>
-                  <option value="taglish">{t("Taglish")}</option>
-                </select>
-              </div>
-              <button className="ops-button" disabled={busy}><Text>Create and open editor</Text></button>
-            </div>
-            {template && <p className="gp-hint">{t(templates.find((item) => item.slug === template)!.description)}</p>}
-            {style === "taglish" && <p className="gp-hint">{t("Taglish mixes Tagalog and English in the messages sent to your customers: payment links, reminders and receipts.")}</p>}
-            <p role="alert" className="gp-error" hidden={!error}>
-              {error}
-            </p>
-          </form>
+      <div className="lib-main">
+        <p className="gp-lead"><Text>Choose the workflow closest to the way your team works.</Text></p>
+        <div className="ops-filters lib-filters">
+          <label className="ops-search">
+            <span className="ops-sr"><Text>Search the library</Text></span>
+            <svg width="13" height="13" viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="5" fill="none" stroke="currentColor" strokeWidth="1.6" /><path d="m11 11 3.5 3.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" /></svg>
+            <input type="search" value={query} placeholder={t("Search")} onChange={(e) => setQuery(e.target.value)} />
+          </label>
+          <label className="ops-select">
+            <span><Text>Wording</Text>:</span>
+            <select value={style} onChange={(e) => setStyle(e.target.value as TemplateStyle)}>
+              <option value="default">{t("Workspace language")}</option>
+              <option value="taglish">{t("Taglish")}</option>
+            </select>
+          </label>
         </div>
+        <div className="lib-chips" role="group" aria-label={t("Category")}>
+          {(["All", ...TEMPLATE_CATEGORIES] as const).map((c) => (
+            <button key={c} type="button" className="lib-chip" aria-pressed={category === c} onClick={() => setCategory(c)}>{t(c)}</button>
+          ))}
+        </div>
+        {style === "taglish" && <p className="gp-hint"><Text>Taglish mixes Tagalog and English in the messages sent to your customers: payment links, reminders and receipts.</Text></p>}
+        {!phone && preview}
+        {!card && <p role="alert" className="gp-error" hidden={!error}>{error}</p>}
 
-        <aside className="ops-panel" aria-labelledby="preview-title">
-          <p className="gp-eyebrow"><Text>Preview a template</Text></p>
-          <h2 id="preview-title"><Text>Office requests</Text></h2>
-          <p className="gp-lead"><Text>Try the sample form before setting up a workflow for your team.</Text></p>
-          <ol className="gp-steps">
-            <li>
-              <b aria-hidden="true">1</b>
-              <strong><Text>Submit a request</Text></strong>
-              <span><Text>A staff member describes what they need.</Text></span>
+        <ul className="lib-grid">
+          {showStarts && matches(blankName, blankText) && (
+            <li className="lib-card">
+              <h3 className="gp-name">{blankName}</h3>
+              <p className="gp-sub">{blankText}</p>
+              <form className="lib-blank" onSubmit={createBlank}>
+                <div className="gp-field">
+                  <label htmlFor="wf-name"><Text>Name</Text></label>
+                  <input id="wf-name" value={name} onChange={(e) => setName(e.target.value)} required maxLength={200} />
+                </div>
+                <button className="ops-button" disabled={busy}><Text>Create and open editor</Text></button>
+              </form>
             </li>
-            <li>
-              <b aria-hidden="true">2</b>
-              <strong><Text>Record it</Text></strong>
-              <span><Text>The office gets a reference and a row in its list.</Text></span>
+          )}
+          {showStarts && matches(aiName, aiText) && (
+            <li className="lib-card">
+              <h3 className="gp-name">{aiName}</h3>
+              <p className="gp-sub">{aiText}</p>
+              <div className="lib-foot"><a className="ops-button" href="#/ai">{aiName}</a></div>
             </li>
-            <li>
-              <b aria-hidden="true">3</b>
-              <strong><Text>Send a receipt</Text></strong>
-              <span><Text>The requester gets a copy by email.</Text></span>
+          )}
+          {shown.map((c) => (
+            <li key={c.key} className="lib-card" data-selected={selected === c.key || undefined}>
+              <h3 className="gp-name">
+                <button type="button" className="lib-open" aria-pressed={selected === c.key} aria-label={t("Preview: {name}", { name: c.name })} onClick={() => open(c.key)}>{c.name}</button>
+              </h3>
+              <p className="gp-sub">{c.description}</p>
+              {meta(c.definition)}
+              <div className="lib-foot">
+                {useButton(c)}
+                {c.sample && <a className="ops-link" href={c.sample}><Text>Try the preview</Text></a>}
+              </div>
             </li>
-          </ol>
-          <div className="gp-actions">
-            <a className="ops-button blue" href="#/try/office-request"><Text>Try the preview</Text></a>
-          </div>
-        </aside>
+          ))}
+        </ul>
+        {!shown.length && !(showStarts && (matches(blankName, blankText) || matches(aiName, aiText))) && <p className="gp-hint"><Text>None match.</Text></p>}
       </div>
+      {phone && card && (
+        <Sheet title={card.name} onClose={close}>
+          {preview}
+        </Sheet>
+      )}
     </main>
   );
 }

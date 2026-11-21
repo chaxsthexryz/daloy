@@ -29,7 +29,7 @@ test("an owner starts from the top button, narrows the list, deletes a draft and
   await page.reload();
   await page.getByRole("main").getByRole("link", { name: "New automation" }).click();
   await expect(page).toHaveURL(/#\/new$/);
-  await page.getByRole("button", { name: "Set up for my office" }).click();
+  await page.getByRole("button", { name: "Use this: Track an office request" }).click();
   await expect(page.getByLabel("Automation name")).toBeVisible();
 
   // Problem filter and search, with the failed automation sorted first.

@@ -2,11 +2,16 @@
  * Starter workflows offered by "New from template" in the builder. Phase 9 seeds them for the demo user.
  * Inquiry triage uses an AI classify step; a test run without live calls gets the first label ("billing") from the mock.
  */
+/** The groups the Library page filters by (U5). Every template has exactly one. */
+export const TEMPLATE_CATEGORIES = ["Inquiries", "Bookings", "Payments and receipts", "Orders", "Office"] as const;
+export type TemplateCategory = (typeof TEMPLATE_CATEGORIES)[number];
+
 export const TEMPLATES = [
   {
     slug: "inquiry-triage",
     name: "Inquiry triage",
     description: "Thank the sender, let the model classify the message, then route billing questions and everything else to different inboxes.",
+    category: "Inquiries",
     definition: {
       trigger: {
         type: "form",
@@ -61,6 +66,7 @@ export const TEMPLATES = [
     slug: "invoice-follow-up",
     name: "Invoice follow-up",
     description: "Seven days after an invoice is sent, check whether it is paid and email a reminder if not.",
+    category: "Payments and receipts",
     definition: {
       trigger: { type: "webhook", config: {} },
       steps: [
@@ -92,6 +98,7 @@ export const TEMPLATES = [
     slug: "no-show-follow-up",
     name: "Booking no-show follow-up",
     description: "When a booking is marked as a no-show, wait an hour, then send a link to rebook.",
+    category: "Bookings",
     definition: {
       trigger: { type: "webhook", config: {} },
       steps: [
@@ -118,6 +125,7 @@ export const TEMPLATES = [
     slug: "appointment-reminder",
     name: "Appointment reminder",
     description: "A day before the appointment, email the customer a reminder.",
+    category: "Bookings",
     definition: {
       trigger: {
         type: "form",
@@ -145,6 +153,7 @@ export const TEMPLATES = [
     slug: "request-to-sheets",
     name: "Client request to Sheets",
     description: "A client or teammate sends a request on a form. It is added to your Google Sheet and they get a receipt.",
+    category: "Office",
     definition: {
       trigger: {
         type: "form",
@@ -171,6 +180,7 @@ export const TEMPLATES = [
     slug: "lead-to-booking",
     name: "Lead to booking",
     description: "A lead picks a time on a form. Staff approve before anything is booked. Then Daloy books it, adds it to Google Calendar and confirms by email, or offers another time if the slot is taken.",
+    category: "Bookings",
     definition: {
       trigger: {
         type: "form",
@@ -233,6 +243,7 @@ export const TEMPLATES = [
     slug: "order-to-sheets",
     name: "Order to Sheets with payment link",
     description: "An order form asks you to approve the price first. If you approve, it adds a pending row to your Google Sheet and emails the customer a PayMongo payment link.",
+    category: "Orders",
     definition: {
       trigger: {
         type: "form",
@@ -282,6 +293,7 @@ export const TEMPLATES = [
     slug: "order-paid",
     name: "Order paid",
     description: "When PayMongo confirms a payment, add a paid row to your Google Sheet. Pairs with Order to Sheets.",
+    category: "Orders",
     definition: {
       trigger: { type: "payment", config: { events: ["paid"] } },
       steps: [{ id: "log_paid", type: "sheets", config: { columns: ["{{trigger.paymentId}}", "paid", "{{trigger.amountPesos}}", "PHP"] } }],
@@ -292,6 +304,7 @@ export const TEMPLATES = [
     slug: "invoice-paymongo",
     name: "Invoice with payment link and reminders",
     description: "Email an invoice with a PayMongo link, remind once after a week if it is still unpaid, and tell the owner after two weeks. Nothing is sent once it is paid.",
+    category: "Payments and receipts",
     definition: {
       trigger: {
         type: "webhook",
@@ -348,6 +361,7 @@ export const TEMPLATES = [
     slug: "quote-deposit",
     name: "Quote approval with deposit",
     description: "A quote request goes to the owner for approval. If approved, the customer gets a PayMongo deposit link; if not, a polite decline.",
+    category: "Payments and receipts",
     definition: {
       trigger: {
         type: "form",
@@ -396,6 +410,7 @@ export const TEMPLATES = [
     slug: "renewal-reminders",
     name: "Renewal reminders",
     description: "Add each domain, hosting plan, SSL certificate, permit or insurance policy on a form. Daloy lists it in your Google Sheet and emails you 30 days before it expires.",
+    category: "Office",
     definition: {
       trigger: {
         type: "form",
@@ -426,6 +441,7 @@ export const TEMPLATES = [
     slug: "store-orders",
     name: "Shopify or WooCommerce orders",
     description: "Point a Shopify or WooCommerce order webhook (or a small relay that sends these four fields) at this automation. Each order is added to your Google Sheet, the customer gets a receipt and the owner gets a Slack note.",
+    category: "Orders",
     definition: {
       trigger: {
         type: "webhook",
@@ -458,6 +474,7 @@ export const TEMPLATES = [
     slug: "receipt-expense",
     name: "Receipt to expense row",
     description: "Someone sends a receipt photo on a form. The model reads the shop, total and date, you approve, and Daloy adds a row to your Google Sheet. Needs Google Drive (a shared drive folder), Google Sheets, and an AI model that reads images (Gemini, OpenAI or OpenRouter).",
+    category: "Payments and receipts",
     definition: {
       trigger: {
         type: "form",
@@ -533,6 +550,7 @@ export const TEMPLATES = [
     slug: "meta-receipt-intake",
     name: "FB and IG receipt check",
     description: "When a customer sends a GCash or bank receipt photo on Facebook Messenger or Instagram, Daloy reads the details, saves the photo, logs a pending row to Google Sheets and asks you to verify before replying. Needs Facebook Messenger & Instagram, Google Drive, Google Sheets and an AI model that reads images.",
+    category: "Payments and receipts",
     definition: {
       trigger: {
         type: "meta_dm",
@@ -632,6 +650,7 @@ export const TEMPLATES = [
     slug: "booking-deposit-review",
     name: "Booking with a GCash or QR Ph deposit",
     description: "A customer asks for a time. You approve it, Daloy books it and asks for a deposit to your QR Ph code or GCash number, and the customer sends the transfer reference. You check your own GCash or bank history and confirm in Receipts to review. Unpaid after 6 hours: an SMS reminder. Unpaid after 24 hours: the slot is released and the customer is told. Needs UniSMS.",
+    category: "Bookings",
     definition: {
       trigger: {
         type: "form",
@@ -694,6 +713,7 @@ export const TEMPLATES = [
     slug: "order-gcash-checkout",
     name: "Order with GCash checkout",
     description: "Your shop sends a signed order webhook. The customer gets a PayMongo checkout link (GCash when enabled for your account) and the QR Ph option. Daloy confirms the order only when a verified PayMongo payment matches it, then texts the customer once. Unpaid after a day: a reminder. Unpaid after three days: the order is cancelled and the customer is told. Needs PayMongo and UniSMS.",
+    category: "Orders",
     definition: {
       trigger: {
         type: "webhook",

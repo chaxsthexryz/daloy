@@ -39,9 +39,7 @@ test("the receipt template sends the photo to the model, which fills the approva
   await expect(page.getByText("Rows go to")).toBeVisible();
 
   await page.goto("/#/new");
-  await page.getByLabel("Name").fill("Receipts");
-  await page.getByLabel("Start from").selectOption({ label: "Template: Receipt to expense row" });
-  await page.getByRole("button", { name: "Create" }).click();
+  await page.getByRole("button", { name: "Use this: Receipt to expense row" }).click();
   await page.getByRole("button", { name: "Publish" }).click();
   await page.getByRole("button", { name: "Turn on", exact: true }).click();
   await expect(page.getByRole("status")).toHaveText(/Version \d+ is live/);

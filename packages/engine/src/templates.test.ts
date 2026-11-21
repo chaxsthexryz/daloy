@@ -4,7 +4,7 @@ import { lintDefinition } from "./lint";
 import { defaultAnswers, officeRequestDefinition } from "./office-request";
 import { defaultPurchaseAnswers, purchaseRequestDefinition } from "./purchase-request";
 import { templatesForLanguage } from "./template-language";
-import { TEMPLATES } from "./templates";
+import { TEMPLATES, TEMPLATE_CATEGORIES } from "./templates";
 import { websiteInquiryDefinition } from "./website-inquiry";
 
 const SLUGS = ["inquiry-triage", "invoice-follow-up", "no-show-follow-up", "appointment-reminder", "request-to-sheets", "lead-to-booking", "order-to-sheets", "order-paid", "invoice-paymongo", "quote-deposit", "renewal-reminders", "store-orders", "receipt-expense", "meta-receipt-intake", "booking-deposit-review", "order-gcash-checkout"];
@@ -13,6 +13,12 @@ const parse = (slug: string) => definitionSchema.parse(TEMPLATES.find((t) => t.s
 describe("starter templates", () => {
   it("lists the ready-made templates, simple to complex", () => {
     expect(TEMPLATES.map((t) => t.slug)).toEqual(SLUGS);
+  });
+
+  it("gives every template one of the library categories, and every category at least one template", () => {
+    expect(TEMPLATE_CATEGORIES).toEqual(["Inquiries", "Bookings", "Payments and receipts", "Orders", "Office"]);
+    for (const t of TEMPLATES) expect(TEMPLATE_CATEGORIES as readonly string[], t.slug).toContain(t.category);
+    for (const c of TEMPLATE_CATEGORIES.filter((c) => c !== "Office")) expect(TEMPLATES.some((t) => t.category === c), c).toBe(true);
   });
 
   it.each(TEMPLATES.map((t) => [t.slug, t] as const))("%s is valid, lint-clean and only reads fields and steps that exist", (_slug, t) => {

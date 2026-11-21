@@ -324,3 +324,4 @@ DeepSeek's review is in `docs/roadmap-review-2026-11-18.md`. Claude's second opi
 - [x] R5. Morning digest (email, opt-in), payments CSV export, Taglish templates, receipt compression on the phone. Branch `claude/r5-digest-csv`, migration 0044, decision 0093.
 - [x] R6. Privacy under RA 10173: form notice, receipt image retention, per-customer export and delete. Branch `claude/r6-privacy`, migration 0045, decision 0094.
 - [ ] R7. Demand-led: public-page reading, new templates, integration candidates after an API, cost and terms check.
+- [x] U5. Workflow library on the New automation page.
