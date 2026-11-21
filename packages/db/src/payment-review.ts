@@ -4,7 +4,7 @@ import { and, asc, eq, inArray, ne, or, sql, type SQL } from "drizzle-orm";
 import type { Db } from "./index";
 import { queueDelivery, retryDelivery } from "./deliveries";
 import { normalizeReceiptRef } from "./meta";
-import { bookingResults, bookings, deliveries, paymentClaims, paymentDues, paymentHistory, payments, receiptReferences, users, workspaceMembers, type ClaimFlag, type Role } from "./schema";
+import { bookingResults, bookings, deliveries, paymentClaims, paymentDues, paymentHistory, payments, paymentSettings, receiptReferences, users, workspaceMembers, type ClaimFlag, type Role } from "./schema";
 
 /**
  * The two payment paths of R3 (decisions 0088 and 0089). A due is what a customer owes on one order or booking. It is
@@ -380,3 +380,18 @@ export const bookingReference = async (db: Db, bookingId: string) => (await db.s
 
 /** The open checkout of a due, if it has one. */
 export const pendingCheckout = async (db: Db, dueId: string) => (await db.select().from(payments).where(and(eq(payments.dueId, dueId), eq(payments.status, "pending"))))[0];
+
+export const readPaymentSettings = async (db: Db, workspaceId: string) => (await db.select().from(paymentSettings).where(eq(paymentSettings.userId, workspaceId)))[0];
+
+/** The owner's payment details for the pay page. A qr of null removes the image; undefined leaves it. */
+export async function savePaymentSettings(db: Db, workspaceId: string, v: { gcashNumber: string | null; accountName: string | null; qr?: { bytes: Buffer; type: "jpeg" | "png" | "webp" } | null }) {
+  const qr = v.qr === undefined ? {} : { qrImage: v.qr?.bytes ?? null, qrType: v.qr?.type ?? null };
+  await db
+    .insert(paymentSettings)
+    .values({ userId: workspaceId, gcashNumber: v.gcashNumber, accountName: v.accountName, ...qr })
+    .onConflictDoUpdate({ target: paymentSettings.userId, set: { gcashNumber: v.gcashNumber, accountName: v.accountName, ...qr, updatedAt: sql`now()` } });
+}
+
+/** The latest claim the customer sent for a due, for the pay page: its state and, for a clarification, the reviewer's question. */
+export const latestClaim = async (db: Db, dueId: string) =>
+  (await db.select({ status: paymentClaims.status, reason: paymentClaims.reason, transferRef: paymentClaims.transferRef }).from(paymentClaims).where(and(eq(paymentClaims.dueId, dueId), eq(paymentClaims.channel, "transfer"))).orderBy(sql`${paymentClaims.createdAt} desc`).limit(1))[0];

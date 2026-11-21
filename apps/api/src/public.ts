@@ -1,6 +1,6 @@
 import { publicCopy } from "./public-copy";
 import { createHmac, randomInt, randomUUID, timingSafeEqual } from "node:crypto";
-import { assertNotPaused, busyBetween, claimUsage, constantTimeEqual, downloadMetaImage, keyedRun, MetaImageError, MetaTransientImageError, parseMetaCredential, parseMetaWebhook, QuotaError, readBrand, saveUploads, usageSummary, verifyMetaSignature, workspaceLanguage, businessProfiles, connectionCredential, connections, createKeyedRun, createRun, eventSeen, finishEvent, keptEvent, markPaymentPaid, markPaymentRefunded, centavosToPesos, paymongoMode, readSecret, recordEvent, requests, runs, triggers, verifyPaymongoSignature, WorkflowPausedError, workflows, workflowVersions, type Db, type NewUpload, type Payment } from "@daloy/db";
+import { assertNotPaused, busyBetween, claimUsage, constantTimeEqual, downloadMetaImage, keyedRun, MetaImageError, MetaTransientImageError, parseMetaCredential, parseMetaWebhook, QuotaError, readBrand, saveUploads, usageSummary, verifyMetaSignature, workspaceLanguage, businessProfiles, connectionCredential, connections, createKeyedRun, createRun, eventSeen, finishEvent, keptEvent, markPaymentPaid, markPaymentRefunded, centavosToPesos, paymongoMode, readSecret, recordEvent, requests, runs, settleCheckout, triggers, verifyPaymongoSignature, WorkflowPausedError, workflows, workflowVersions, type Db, type NewUpload, type Payment } from "@daloy/db";
 import { definitionSchema, FILE_MAX_BYTES, FILES_PER_FIELD, FILES_PER_SUBMISSION, fileType, OFFICE_REQUEST, parsePayload, PURCHASE_REQUEST, safeFileName, type FileRef, type FormField, type Resource } from "@daloy/engine";
 import {
   BadRequestException,
@@ -182,6 +182,8 @@ export class PaymongoHooksController {
       const { amount, currency } = paid?.attributes ?? {};
       if (typeof paid?.id === "string" && typeof amount === "number" && typeof currency === "string") {
         const r = await markPaymentPaid(this.db, { userId: owner.userId, sessionId: resource.id, paymentId: paid.id, amount, currency, livemode });
+        // R3: a checkout for a due confirms it only on a full match; anything else goes to Receipts to review (decision 0089).
+        if (r.payment) await settleCheckout(this.db, owner.userId, r.payment.id);
         if (!r.payment) {
           kept = { sessionId: resource.id, paymentId: paid.id, amount, currency, livemode };
         } else {
@@ -192,6 +194,7 @@ export class PaymongoHooksController {
               : undefined;
           if (refund && (refund.payload as { livemode?: boolean } | null)?.livemode === livemode) {
             const ref = await markPaymentRefunded(this.db, { userId: owner.userId, providerPaymentId: r.payment.providerPaymentId!, livemode });
+            if (ref.payment) await settleCheckout(this.db, owner.userId, ref.payment.id);
             if (ref.payment?.status === "refunded") started = { payment: ref.payment, status: "refunded" };
             finishedRefundId = refund.eventId;
           } else if (r.payment.status === "paid") {
@@ -202,6 +205,7 @@ export class PaymongoHooksController {
     } else if (type === "payment.refunded" && typeof resource?.id === "string") {
       const r = await markPaymentRefunded(this.db, { userId: owner.userId, providerPaymentId: resource.id, livemode });
       if (!r.payment) kept = { paymentId: resource.id, livemode };
+      else await settleCheckout(this.db, owner.userId, r.payment.id);
       if (r.payment?.status === "refunded") started = { payment: r.payment, status: "refunded" };
     }
     // Started on the payment's state, not on whether this call changed it: a crash after the update but before the runs
