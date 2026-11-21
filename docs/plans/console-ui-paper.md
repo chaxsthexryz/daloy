@@ -1,6 +1,8 @@
 # Console UI from the Paper file (U1 to U7)
 
-Status: plan only, waiting for the owner's "go". Base: `main` at 8c2dd54 (R1 to R6 done).
+Status: approved by the owner on 21 November 2026 ("go with your defaults"). U1, U4, U5 and U6 run in cloud sessions; U2, U3 and U7 run locally. Base: `main` at 8c2dd54 (R1 to R6 done).
+
+Owner's answers: questions 1 to 6 take the defaults written in each ask below (mono only for the JSON payload and code blocks; actions stay on top of the panel; rail entry renamed "Library" with the five categories; Test this step runs the whole mocked test; Disable comes in U3 after U2; SMS follows the existing plan quotas). Question 7: the AI meter sits by the account at the bottom of the rail, and also on the Settings page.
 
 Sources: the owner's eight asks and screenshots of 21 November 2026, and the Paper file `daloy`, pages "Workflow tab" (artboards "1 Improved current": diagram, list, paused test run) and "Automations tab" (artboard "2 Ops table").
 
@@ -51,7 +53,7 @@ The Paper workflow frames show the panel with a selected step only. The owner's 
    - Existing workspace keys: `unisms` is already in `RETIRED_CONNECTION_PROVIDERS`, so a one-time retire on deploy moves any stored key into `retired_secrets` for the existing purge. No migration: the CHECK constraints keep `unisms` because deliveries still use it.
    - Docs: decision 0074 gets a superseded note, `.env.example`, `docs/live-unisms-check.md` and the threat model (one fewer customer secret) change.
 7. AI usage in the rail (U1)
-   - Under "Build with AI", a small meter for owners: "AI 120 of 500 this month" with a 4px bar, from the existing `GET /usage` (no API change). Hidden when the plan has no AI limit. Collapsed rail: the bar only, with the text as its accessible name. Fetched on load and after a Build with AI or Ask AI reply (a `daloy:usage` window event), not on every page change.
+   - By the account at the bottom of the rail, a small meter for owners: "AI 120 of 500 this month" with a 4px bar, from the existing `GET /usage` (no API change). The same meter, with the other usage lines from `usageLines`, also shows on the Settings page (`Settings.tsx`). Hidden when the plan has no AI limit. Collapsed rail: the bar only, with the text as its accessible name. Fetched on load and after a Build with AI or Ask AI reply (a `daloy:usage` window event), not on every page change.
 8. Automations list (U7)
    - Double click on a row opens the workflow (`#/w/<id>`). Single click selects it and opens the side panel. Enter on the focused name opens the panel, Shift+Enter or the panel's "Open steps" opens the workflow, so the keyboard path matches.
    - No row is selected on load, so the panel is closed and the table uses the full width (today the first row is picked automatically). The panel gets a Close button and Escape; it opens again on the next row click. Phone keeps the bottom sheet.
@@ -62,7 +64,7 @@ Each phase claims its line in `PROJECT.md`, works in its own worktree from `main
 
 | Phase | Asks | Files | Model |
 |---|---|---|---|
-| U1 Rail, fonts, AI meter | 1, 7 | `Nav.tsx`, `Nav.test.tsx`, `console-shell.css`, `styles.css`, `workspace.css`, `activity.css`, `motion.css`, `lib/usage.ts` (+ test), `lib/locale-workspace.ts`, `e2e/navigation.spec.ts` or the existing nav e2e | Sonnet 5.5, medium |
+| U1 Rail, fonts, AI meter | 1, 7 | `Nav.tsx`, `Nav.test.tsx`, `Settings.tsx`, `console-shell.css`, `styles.css`, `workspace.css`, `activity.css`, `motion.css`, `lib/usage.ts` (+ test), `lib/locale-workspace.ts`, `e2e/navigation.spec.ts` or the existing nav e2e | Sonnet 5.5, medium |
 | U2 Editor panel and canvas | 2, 3 | `Editor.tsx`, `FlowCanvas.tsx`, `editor.css`, `Sheet.tsx` (a `Popover` beside `Sheet`), `lib/graph.ts` (+ `duplicateStep`, paste check) and `lib/graph.test.ts`, `lib/locale-editor.ts`, `e2e/editor.spec.ts`, `e2e/phone-editor.spec.ts`, decision 0096 | Opus 5.5, high |
 | U3 Disable a step | 3 | `packages/engine/src/definition.ts` (`disabled?: true` on a step, refused on a branching step), `apps/worker/src/advance.ts` (a disabled step is recorded as skipped and the run follows its one edge), engine and worker tests, then the Disable item in `Editor.tsx` and a greyed node in `FlowCanvas.tsx`, decision 0097 | Opus 5.5, high. Runs after U2 merges (it touches U2's files at the end) |
 | U4 AI builder | 4 | `packages/engine/src/ai-draft.ts`, `ai-chat.ts`, their tests, the definition check for an unread file field (`definition.ts` warning list only, coordinated with U3: U4 goes first or rebases), `e2e/build-with-ai.spec.ts`, `test/fake-providers.ts` only if the fake model needs a canned reply, decision 0098 | Sonnet 5.5, high |
