@@ -323,15 +323,14 @@ DeepSeek's review is in `docs/roadmap-review-2026-11-18.md`. Claude's second opi
 - [x] R4. Phone step editor (add, reorder, edit, undo), then canvas controls. (decision 0095, branch claude/r4-phone-editor)
 - [x] R5. Morning digest (email, opt-in), payments CSV export, Taglish templates, receipt compression on the phone. Branch `claude/r5-digest-csv`, migration 0044, decision 0093.
 - [x] R6. Privacy under RA 10173: form notice, receipt image retention, per-customer export and delete. Branch `claude/r6-privacy`, migration 0045, decision 0094.
-- [x] U1. Calmer rail, Inter everywhere, AI usage meter.
 - [ ] R7. Demand-led: public-page reading, new templates, integration candidates after an API, cost and terms check.
 
 ## Console UI from the Paper file (docs/plans/console-ui-paper.md, 21 November 2026)
 
-- [ ] U1. Rail, Inter everywhere, calmer nav motion, AI usage meter. (claimed: claude, cloud session)
+- [x] U1. Rail, Inter everywhere, calmer nav motion, AI usage meter. (claimed: claude, cloud session)
 - [x] U2. Editor panel and canvas: empty-state actions and AI box, collapsible panel, connection dots, drop to connect, right-click menu, no black Add step button. Decision 0096. (claimed: claude, branch claude/u2-editor-canvas)
 - [ ] U3. Disable a step, after U2. Decision 0097.
-- [ ] U4. AI builder: file upload fields, free-text answers. Decision 0098. (claimed: claude, cloud session)
+- [x] U4. AI builder: file upload fields, free-text answers. Decision 0098. (claimed: claude, cloud session)
 - [ ] U5. Workflow library with categories. Decision 0099. (claimed: claude, cloud session)
 - [x] U6. UniSMS set by the operator, removed from Apps. Decision 0100. (claimed: claude, branch claude/u6-unisms-operator)
 - [x] U7. Automations list: double click opens, panel only on click, collapsible. (claimed: claude, branch claude/u7-automations-list)

@@ -23,6 +23,22 @@ const warned = {
   definition: { trigger: form, steps: [approvalAsk, thank], edges: [{ from: "ask", to: "thank", on: "approved" }] },
 };
 
+// U4: a request that mentions a "semester schedule" photo gets a form with a file field and an AI step that does not
+// list the file, because Build with AI never writes "files". The warning tells the owner which box to tick.
+const scheduleForm = { type: "form", config: { fields: [{ name: "schedule", label: "Photo of your schedule", type: "file", required: true }] } };
+const scheduled = {
+  name: "Schedule photo to Sheets",
+  summary: "Reads a photo of a schedule into text and adds it to Sheets. Tick Let the AI read these files on the AI step.",
+  definition: {
+    trigger: scheduleForm,
+    steps: [
+      { id: "read", type: "ai", config: { task: "summarize", input: "Write the schedule in the photo as plain text." } },
+      { id: "save", type: "sheets", config: { columns: ["{{steps.read.output.text}}"] } },
+    ],
+    edges: [{ from: "read", to: "save" }],
+  },
+};
+
 // N22: what each AI step request carried, so a spec can check which images and text reached the model.
 const aiRequests: { images: string[]; text: string }[] = [];
 
@@ -56,7 +72,7 @@ export function startLlmFake(port: number) {
       if (body.messages.some((m) => m.content.startsWith("You explain why a Daloy automation stopped")))
         return res.end(JSON.stringify({ message: { content: "The automation stopped because a step was set to fail in this preview. Nothing was sent." }, prompt_eval_count: 1, eval_count: 1 }));
       const change = body.messages.some((m) => m.content.startsWith("Change this workflow"));
-      const payload = body.messages.some((m) => m.content.includes("boss approval")) ? warned : change ? changed : built;
+      const payload = body.messages.some((m) => m.content.includes("boss approval")) ? warned : body.messages.some((m) => m.content.includes("semester schedule")) ? scheduled : change ? changed : built;
       // The chat (#/ai, decision 0048) asks for a question or a draft: the first message alone gets the question.
       if (body.messages[0]?.content.startsWith("You help someone build an automation")) {
         const said = body.messages.filter((m) => m.role === "user" && !m.content.startsWith("The current draft is:"));

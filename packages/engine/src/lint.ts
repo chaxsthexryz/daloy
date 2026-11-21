@@ -15,7 +15,16 @@ const LABEL_REF = /^\{\{\s*steps\.([a-z][a-z0-9_]*)\.output\.label\s*\}\}$/;
 
 export type LintRule = "approval_no_edge" | "classify_dead_end" | "test_switch" | "number_no_invalid" | "unreachable_step";
 
-export const lintDefinition = (def: WorkflowDefinition): string[] => lintFindings(def).map((f) => f.message);
+export const lintDefinition = (def: WorkflowDefinition): string[] => [...lintFindings(def).map((f) => f.message), ...aiFileWarnings(def)];
+
+// Advice for the editor and the builder only, so it is not a LintRule: the run explainer has no line for it.
+// An AI step in a form with a file field that reads none: the owner has not allowed it yet (decision 0052).
+function aiFileWarnings(def: WorkflowDefinition): string[] {
+  if (!(triggerFields(def.trigger) ?? []).some((f) => f.type === "file")) return [];
+  return def.steps
+    .filter((s) => s.type === "ai" && !s.config.files?.length)
+    .map((s) => `AI step "${s.id}" reads no file, but the form has a file field. Tick it under "Let the AI read these files" on that step.`);
+}
 
 export function lintFindings(def: WorkflowDefinition): { rule: LintRule; message: string }[] {
   const warnings: { rule: LintRule; message: string }[] = [];

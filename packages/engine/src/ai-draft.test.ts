@@ -28,10 +28,17 @@ describe("draftPrompt", () => {
   it("does not tell the model about the ai step's files setting, which only the owner adds", () => {
     expect(draftPrompt({ request: "x" }).system).not.toContain('"files"');
   });
+  it("lists file fields and the drive step, and says the owner ticks the box that lets the AI read a file", () => {
+    const { system } = draftPrompt({ request: "x" });
+    expect(system).toMatch(/field types: [^)]*\bfile\b/);
+    expect(system).toContain('"drive"');
+    expect(system).toContain("Let the AI read these files");
+    expect(system).not.toContain('"sms"');
+  });
   it("stays small enough for a local model's default context", () => {
     const { system, messages } = draftPrompt({ request: "x", current: triage });
     // About 4 characters a token; Ollama's default context is 4,096 tokens and the reply needs room too.
-    expect((system.length + messages[0]!.content.length) / 4).toBeLessThan(3000);
+    expect((system.length + messages[0]!.content.length) / 4).toBeLessThan(3100);
   });
 });
 

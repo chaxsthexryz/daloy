@@ -265,3 +265,17 @@ describe("rule ids", () => {
     ).toEqual(["unreachable_step"]);
   });
 });
+
+describe("ai step and file fields", () => {
+  const trigger = { type: "form", config: { fields: [{ name: "schedule", label: "Schedule photo", type: "file", required: true }] } };
+  const read = (config: Record<string, unknown> = {}) => ({ id: "read", type: "ai", config: { task: "extract", input: "{{trigger.schedule}}", fields: { subject: "Subject" }, ...config } });
+
+  it("warns when the form has a file field and the ai step reads no file", () => {
+    expect(lint({ trigger, steps: [read()], edges: [] })).toEqual(['AI step "read" reads no file, but the form has a file field. Tick it under "Let the AI read these files" on that step.']);
+  });
+
+  it("is quiet when the ai step reads the file, or the form has no file field", () => {
+    expect(lint({ trigger, steps: [read({ files: ["schedule"] })], edges: [] })).toEqual([]);
+    expect(lint({ trigger: { type: "manual", config: {} }, steps: [read()], edges: [] })).toEqual([]);
+  });
+});
