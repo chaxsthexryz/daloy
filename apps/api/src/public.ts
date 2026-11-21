@@ -37,6 +37,7 @@ import * as z from "zod";
 import { BOSS, CONFIG, DB, enqueueRun, eventKey, isUniqueViolation, RateLimit, replayedRun, validPayload, ZodPipe, type ApiConfig } from "./http";
 import { sessionUser } from "./auth";
 import { resourcesFor } from "./resources";
+import { escapeHtml, groupFields, shell, splitErrors, type PageBrand } from "./public-pages";
 
 // Starts with "_", which no field name can (definition.ts), so a real "website" field is never mistaken for it.
 const HONEYPOT = "_website";
@@ -493,10 +494,11 @@ export class FormsController {
   @Header("Content-Type", "text/html; charset=utf-8")
   // A request form carries a fresh submission key per load. no-store keeps the back button from reusing an old one.
   @Header("Cache-Control", "no-store")
-  async page(@Param("id", new ZodPipe(z.uuid())) id: string) {
+  async page(@Param("id", new ZodPipe(z.uuid())) id: string, @Req() req: Request) {
     const { fields, tracked, businessName, workflow } = await this.form(id);
-    if (workflow.pausedAt) return this.pausedPage(workflow.userId);
-    return renderForm(fields, await resourcesFor(this.db, workflow.userId, fields), tracked ? randomUUID() : undefined, businessName ?? undefined, await workspaceLanguage(this.db, workflow.userId), await pageBrand(this.db, workflow.userId));
+    const embed = isFormEmbed(req.path);
+    if (workflow.pausedAt) return this.pausedPage(workflow.userId, embed);
+    return renderForm(fields, await resourcesFor(this.db, workflow.userId, fields), tracked ? randomUUID() : undefined, businessName ?? undefined, await workspaceLanguage(this.db, workflow.userId), await pageBrand(this.db, workflow.userId), { embed });
   }
 
   @Post(FORM_PATHS)
@@ -507,58 +509,76 @@ export class FormsController {
   @UseInterceptors(AnyFilesInterceptor({ limits: { fileSize: FILE_MAX_BYTES, files: FILES_PER_SUBMISSION, fields: 50, fieldSize: 64 * 1024, parts: 60 } }))
   @Header("Content-Type", "text/html; charset=utf-8")
   async submit(@Param("id", new ZodPipe(z.uuid())) id: string, @Body() body: Record<string, unknown> | undefined, @Req() req: Request, @Res({ passthrough: true }) res: Response, @UploadedFiles() parts: Part[] | undefined) {
-    const { fields, versionId, workflow, tracked } = await this.form(id);
+    const { fields, versionId, workflow, tracked, businessName } = await this.form(id);
+    const embed = isFormEmbed(req.path);
     // Paused (N11b): nothing is stored and the visitor is told, so they can try later or phone the business.
     if (workflow.pausedAt) {
       res.status(HttpStatus.CONFLICT);
-      return this.pausedPage(workflow.userId);
+      return this.pausedPage(workflow.userId, embed);
     }
     const language = await workspaceLanguage(this.db, workflow.userId);
     const copy = publicCopy[language];
     const brand = await pageBrand(this.db, workflow.userId);
     // Bots fill every field. Answer as if it worked so they learn nothing.
-    if (body?.[HONEYPOT]) return page(copy.thanks, copy.form, language, brand);
-    const stored = readParts(fields, parts ?? []);
-    const hasFiles = fields.some((f) => f.type === "file");
-    const parsed = parsePayload(fields, body ?? {}, { resources: await resourcesFor(this.db, workflow.userId, fields), files: hasFiles ? stored.refs : undefined });
-    if (!parsed.ok) throw new BadRequestException(parsed.errors);
-    const key = z.uuid().safeParse(body?.[SUBMISSION_KEY]);
-    if (tracked && !key.success) throw new BadRequestException(`${SUBMISSION_KEY}: reload the form and send it again`);
-    // A tracked form claims inside recordRequest, after its key check, so a repeat costs nothing (decision 0057).
-    const overQuota = (err: unknown): never => {
-      throw err instanceof QuotaError ? new HttpException({ message: OVER_QUOTA }, HttpStatus.TOO_MANY_REQUESTS) : err;
-    };
-    if (!tracked && stored.files.length > 0) await claimUsage(this.db, workflow.userId, "upload", { n: stored.files.length }).catch(overQuota);
-    if (!tracked) {
-      const runId = await createRun(this.db, versionId, parsed.data, stored.files.length > 0 ? { uploads: { userId: workflow.userId, files: stored.files } } : {});
-      await enqueueRun(this.boss, runId);
-      return page(copy.thanks, copy.form, language, brand);
-    }
+    if (body?.[HONEYPOT]) return page(`<p class="lead">${copy.thanks}</p>`, copy.form, language, brand, embed);
+    try {
+      const stored = readParts(fields, parts ?? []);
+      const hasFiles = fields.some((f) => f.type === "file");
+      const parsed = parsePayload(fields, body ?? {}, { resources: await resourcesFor(this.db, workflow.userId, fields), files: hasFiles ? stored.refs : undefined });
+      if (!parsed.ok) throw new BadRequestException(parsed.errors);
+      const key = z.uuid().safeParse(body?.[SUBMISSION_KEY]);
+      if (tracked && !key.success) throw new BadRequestException(`${SUBMISSION_KEY}: reload the form and send it again`);
+      // A tracked form claims inside recordRequest, after its key check, so a repeat costs nothing (decision 0057).
+      const overQuota = (err: unknown): never => {
+        throw err instanceof QuotaError ? new HttpException({ message: OVER_QUOTA }, HttpStatus.TOO_MANY_REQUESTS) : err;
+      };
+      if (!tracked && stored.files.length > 0) await claimUsage(this.db, workflow.userId, "upload", { n: stored.files.length }).catch(overQuota);
+      if (!tracked) {
+        const runId = await createRun(this.db, versionId, parsed.data, stored.files.length > 0 ? { uploads: { userId: workflow.userId, files: stored.files } } : {});
+        await enqueueRun(this.boss, runId);
+        return page(`<p class="lead">${copy.thanks}</p>`, copy.form, language, brand, embed);
+      }
 
-    // A member of this workspace who is signed in is recorded as the requester, for My requests (decision 0022).
-    // SameSite=Lax stops other sites but not a sibling origin of the same site, so only this installation's own origin counts (decision 0057).
-    const sameOrigin = req.get("origin") === new URL(this.config.publicUrl!).origin;
-    const member = isFormEmbed(req.path) || !sameOrigin ? undefined : await sessionUser(this.db, req);
-    const requestedBy = member?.workspaceId === workflow.userId ? member.id : undefined;
-    const { reference, runId } = await recordRequest(this.db, workflow, versionId, key.success ? key.data : "", parsed.data, requestedBy, stored.files).catch(overQuota);
-    if (runId) await enqueueRun(this.boss, runId);
-    return page(
-      `<h1>${copy.received}</h1><p>${copy.reference} <strong>${reference}</strong>. ${copy.receipt}</p><p><a href="">${copy.another}</a></p>`,
-      copy.received,
-      language,
-      brand,
-    );
+      // A member of this workspace who is signed in is recorded as the requester, for My requests (decision 0022).
+      // SameSite=Lax stops other sites but not a sibling origin of the same site, so only this installation's own origin counts (decision 0057).
+      const sameOrigin = req.get("origin") === new URL(this.config.publicUrl!).origin;
+      const member = embed || !sameOrigin ? undefined : await sessionUser(this.db, req);
+      const requestedBy = member?.workspaceId === workflow.userId ? member.id : undefined;
+      const { reference, runId } = await recordRequest(this.db, workflow, versionId, key.success ? key.data : "", parsed.data, requestedBy, stored.files).catch(overQuota);
+      if (runId) await enqueueRun(this.boss, runId);
+      return page(
+        `<h1>${copy.received}</h1><div class="receipt"><div><span class="k">${copy.reference}</span><strong class="ref">${reference}</strong></div><span class="pill">${copy.receivedPill}</span></div><p class="lead">${copy.receipt}</p><p><a href="">${copy.another}</a></p>`,
+        copy.received,
+        language,
+        brand,
+        embed,
+      );
+    } catch (err) {
+      // A browser gets the form back with the reasons beside the fields; an API caller keeps the JSON error (decision 0079).
+      const status = err instanceof HttpException ? err.getStatus() : 0;
+      if ((status !== HttpStatus.BAD_REQUEST && status !== HttpStatus.TOO_MANY_REQUESTS) || req.accepts(["json", "html"]) !== "html") throw err;
+      res.status(status);
+      const resources = await resourcesFor(this.db, workflow.userId, fields);
+      return renderForm(fields, resources, tracked ? randomUUID() : undefined, businessName ?? undefined, language, brand, { values: body, errors: messagesOf(err as HttpException), embed });
+    }
   }
 
-  private async pausedPage(workspaceId: string) {
+  private async pausedPage(workspaceId: string, embed: boolean) {
     const language = await workspaceLanguage(this.db, workspaceId);
     const copy = publicCopy[language];
-    return page(`<h1>${copy.paused}</h1><p>${copy.pausedNote}</p>`, copy.paused, language, await pageBrand(this.db, workspaceId));
+    return page(`<h1>${copy.paused}</h1><span class="pill">${copy.pausedPill}</span><p class="lead">${copy.pausedNote}</p>`, copy.paused, language, await pageBrand(this.db, workspaceId), embed);
   }
 
   private form(id: string) {
     return findForm(this.db, id);
   }
+}
+
+/** The reasons an HttpException carries: a list from parsePayload, or one message. */
+function messagesOf(err: HttpException): string[] {
+  const response = err.getResponse();
+  const message = typeof response === "string" ? response : (response as { message?: unknown }).message;
+  return Array.isArray(message) ? message.map(String) : [typeof message === "string" ? message : err.message];
 }
 
 /**
@@ -622,46 +642,53 @@ export async function recordRequest(db: Db, workflow: { id: string; userId: stri
   }
 }
 
-const ENTITIES: Record<string, string> = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
-export const escapeHtml = (s: string) => s.replace(/[&<>"']/g, (c) => ENTITIES[c]!);
-
-/** What the owner's brand adds to a public page. accent is a checked #rrggbb and ink the readable text colour on it. */
-export type PageBrand = { id: string; name: string | null; accent: string | null; ink: string | null; logo: boolean };
+export { escapeHtml, type PageBrand } from "./public-pages";
 
 export async function pageBrand(db: Db, workspaceId: string): Promise<PageBrand | undefined> {
   const brand = await readBrand(db, workspaceId);
   return brand ? { id: workspaceId, name: brand.name, accent: brand.accent, ink: brand.ink, logo: !!brand.logo } : undefined;
 }
 
-const brandHead = (b: PageBrand) =>
-  `<style>header img{max-height:64px;max-width:240px}${b.accent ? `h1{border-bottom:4px solid ${b.accent};padding-bottom:.3em}button{background:${b.accent};color:${b.ink};border:0;padding:.6em 1.2em;border-radius:4px;font:inherit;cursor:pointer}` : ""}</style>`;
-const brandLogo = (b: PageBrand) => (b.logo ? `<header><img src="/brand/logo/${b.id}" alt="${escapeHtml(b.name ?? "")}"></header>` : "");
+export const page = (body: string, title = "Form", language: "en" | "tl" = "en", brand?: PageBrand, embed = false) => shell({ body, title, language, brand, embed });
 
-export const page = (body: string, title = "Form", language: "en" | "tl" = "en", brand?: PageBrand) =>
-  `<!doctype html><html lang="${language}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${title}</title>${brand ? brandHead(brand) : ""}</head><body>${brand ? brandLogo(brand) : ""}<main>${body}</main></body></html>`;
+const fill = (text: string, values: Record<string, string>) => text.replace(/\{(\w+)\}/g, (_m, k: string) => values[k] ?? "");
+
+/** What a re-rendered form keeps: the visitor's answers (never files), the reasons it was refused and whether it sits in an iframe. */
+export type FormView = { values?: Record<string, unknown>; errors?: string[]; embed?: boolean };
 
 /** businessName comes from the owner's profile, so a form behind a website's contact button says whose form it is. */
-export function renderForm(fields: FormField[], resources: Resource[], submissionKey?: string, businessName?: string, language: "en" | "tl" = "en", brand?: PageBrand) {
+export function renderForm(fields: FormField[], resources: Resource[], submissionKey?: string, businessName?: string, language: "en" | "tl" = "en", brand?: PageBrand, view: FormView = {}) {
   const copy = publicCopy[language];
-  const inputs = fields
-    .map((f) => {
-      const attrs = `id="${f.name}" name="${f.name}"${f.required ? " required" : ""}`;
-      // The browser's own limits are a convenience; the server checks the same ones (parsePayload).
-      const limits = f.type === "number" ? `${f.min !== undefined ? ` min="${f.min}"` : ""}${f.max !== undefined ? ` max="${f.max}"` : ""} step="${f.integer ? 1 : "any"}"` : "";
-      let control = f.type === "textarea" ? `<textarea ${attrs} maxlength="5000"></textarea>` : `<input ${attrs} type="${f.type}"${limits}>`;
-      // The server reads a datetime in the field's zone and checks the slot and "in the future" itself (parseZoned).
-      // The browser counts steps from 1970-01-01T00:00, which meets every local midnight only when the slot divides
-      // the day; other grids get whole minutes here, so no slot the server accepts is blocked (decision 0031).
+  const { byField, general } = splitErrors(view.errors ?? [], fields.map((f) => f.name));
+  const answer = (name: string) => (typeof view.values?.[name] === "string" ? (view.values[name] as string) : "");
+  const control = (f: FormField) => {
+    const bad = byField.has(f.name);
+    const attrs = `id="${f.name}" name="${f.name}"${f.required ? " required" : ""}${bad ? ` class="bad" aria-invalid="true" aria-describedby="e-${f.name}"` : ""}`;
+    const value = answer(f.name);
+    // The browser's own limits are a convenience; the server checks the same ones (parsePayload).
+    const limits = f.type === "number" ? `${f.min !== undefined ? ` min="${f.min}"` : ""}${f.max !== undefined ? ` max="${f.max}"` : ""} step="${f.integer ? 1 : "any"}"` : "";
+    const given = value ? ` value="${escapeHtml(value)}"` : "";
+    if (f.type === "textarea") return `<textarea ${attrs} maxlength="5000">${escapeHtml(value)}</textarea>`;
+    // The server reads a datetime in the field's zone and checks the slot and "in the future" itself (parseZoned).
+    // The browser counts steps from 1970-01-01T00:00, which meets every local midnight only when the slot divides
+    // the day; other grids get whole minutes here, so no slot the server accepts is blocked (decision 0031).
+    if (f.type === "datetime") {
       const slot = f.slotMinutes && 1440 % f.slotMinutes === 0 ? f.slotMinutes : 1;
-      if (f.type === "datetime") control = `<input ${attrs} type="datetime-local" step="${slot * 60}"><br><small>${copy.times} ${escapeHtml(f.timezone!)}</small>`;
-      if (f.type === "file") control = `<input ${attrs} type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif,application/pdf,.heic,.heif" multiple>`;
-      if (f.type === "resource") control = `<select ${attrs}><option value="">${copy.choose}</option>${resources.map((r) => `<option value="${r.id}">${escapeHtml(r.name)}</option>`).join("")}</select>`;
-      return `<p><label for="${f.name}">${escapeHtml(f.label)}</label><br>${control}</p>`;
-    })
+      const grid = f.slotMinutes ? ` ${f.slotMinutes === 60 ? copy.slotHour : fill(copy.slotEvery, { n: String(f.slotMinutes) })}` : "";
+      return `<input ${attrs} type="datetime-local" step="${slot * 60}"${given}><div class="hint">${copy.times} ${escapeHtml(f.timezone!)}.${grid}</div>`;
+    }
+    if (f.type === "file") return `<input ${attrs} type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif,application/pdf,.heic,.heif" multiple><div class="hint">${fill(copy.fileHint, { n: String(FILES_PER_FIELD), mb: String(FILE_MAX_BYTES / 1024 / 1024) })}</div>`;
+    if (f.type === "resource") return `<select ${attrs}><option value="">${copy.choose}</option>${resources.map((r) => `<option value="${r.id}"${r.id === value ? " selected" : ""}>${escapeHtml(r.name)}</option>`).join("")}</select>`;
+    return `<input ${attrs} type="${f.type}"${limits}${given}>`;
+  };
+  const field = (f: FormField) => `<div class="f"><label for="${f.name}">${escapeHtml(f.label)}</label>${control(f)}${byField.has(f.name) ? `<div class="er" id="e-${f.name}">${escapeHtml(byField.get(f.name)!)}</div>` : ""}</div>`;
+  const inputs = groupFields(fields)
+    .map((row) => (row.length > 1 ? `<div class="row">${row.map(field).join("")}</div>` : field(row[0]!)))
     .join("");
+  const alert = view.errors?.length ? `<div class="alert" role="alert"><b>${copy.notSent}</b><div>${[...byField].map(([n, m]) => `${escapeHtml(n)}: ${escapeHtml(m)}`).concat(general.map(escapeHtml)).join("<br>")}</div></div>` : "";
   // Hidden from people (off screen, skipped by tab and screen readers) but visible to bots that fill every input.
   const honeypot = `<div aria-hidden="true" style="position:absolute;left:-9999px"><label for="${HONEYPOT}">Website</label><input id="${HONEYPOT}" name="${HONEYPOT}" tabindex="-1" autocomplete="off"></div>`;
   const key = submissionKey ? `<input type="hidden" name="${SUBMISSION_KEY}" value="${submissionKey}">` : "";
   const heading = businessName ? `<h1>${escapeHtml(businessName)}</h1>` : "";
-  return page(`${heading}<form method="post"${fields.some((f) => f.type === "file") ? ' enctype="multipart/form-data"' : ""}>${inputs}${honeypot}${key}<button type="submit">${copy.send}</button></form>`, businessName ? escapeHtml(businessName) : copy.form, language, brand);
+  return page(`${heading}${alert}<form method="post"${fields.some((f) => f.type === "file") ? ' enctype="multipart/form-data"' : ""}>${inputs}${honeypot}${key}<button class="btn" type="submit">${copy.send}</button></form>`, businessName ? escapeHtml(businessName) : copy.form, language, brand, view.embed);
 }
