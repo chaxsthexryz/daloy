@@ -23,6 +23,14 @@ describe("chatPrompt", () => {
     expect(system).toMatch(/never ask for a password, API key, card number/);
   });
 
+  it("takes a typed answer and moves on, and offers one sheet row per item instead of a grid", () => {
+    const { system } = chatPrompt({ messages: [{ role: "user", content: "x" }] });
+    expect(system).toMatch(/typed answer is the answer.*never ask the same question again/);
+    expect(system).toMatch(/adds one row per run/);
+    expect(system).toMatch(/one row per item/);
+    expect(system).not.toContain('"files"');
+  });
+
   it("names the apps the workspace connected, and only those names", () => {
     expect(chatPrompt({ messages: [{ role: "user", content: "x" }], apps: ["google_sheets", "slack"] }).system).toContain("Apps connected: google_sheets, slack.");
     expect(chatPrompt({ messages: [{ role: "user", content: "x" }] }).system).toContain("Apps connected: none.");

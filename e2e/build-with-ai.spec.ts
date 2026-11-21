@@ -100,6 +100,19 @@ test("a draft with warnings waits, and a change carries it", async ({ page }) =>
   expect(await count(page)).toBe(before + 1);
 });
 
+test("a photo of a schedule builds a file field and an AI step, and says which box to tick (U4)", async ({ page }) => {
+  await signUp(page);
+  const before = await count(page);
+  await start(page, "I upload a photo of my semester schedule on a form, AI turns it into text and puts it in Sheets as a table");
+
+  await expect(page.getByRole("heading", { name: "Check the draft: Schedule photo to Sheets" })).toBeVisible();
+  const review = page.getByRole("region", { name: /Check the draft/ });
+  await expect(review).toContainText('AI step "read" reads no file, but the form has a file field');
+  await expect(review).toContainText("Let the AI read these files");
+  // The warning holds the draft: nothing is created, and the owner, not the model, turns file reading on.
+  expect(await count(page)).toBe(before);
+});
+
 test("with no model the template suggestion appears", async ({ page }) => {
   await signUp(page);
   const before = await count(page);
