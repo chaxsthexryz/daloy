@@ -286,6 +286,8 @@ describe("role permissions", () => {
       ["post", `/payments/dues/${randomUUID()}/retry-reply`, operate, {}],
       ["get", "/payments/settings", operate],
       ["put", "/payments/settings", only, { gcashNumber: null, accountName: null }],
+      ["get", "/privacy/customer?email=a@b.test", only],
+      ["post", "/privacy/customer/delete", only, { email: "a@b.test", confirm: "DELETE" }],
       ["post", `/bookings/${randomUUID()}/cancel`, operate, {}],
       ["post", `/bookings/${randomUUID()}/no-show`, operate, {}],
       ["post", `/bookings/${randomUUID()}/undo-no-show`, operate, {}],
