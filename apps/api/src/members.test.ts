@@ -310,6 +310,12 @@ describe("role permissions", () => {
       ["put", "/settings/brand", only, {}],
       ["put", "/settings/brand/logo", only],
       ["delete", "/settings/brand/logo", only],
+      ["get", "/onboarding", only],
+      ["put", "/onboarding/identity", only, {}],
+      ["put", "/onboarding/type", only, {}],
+      ["put", "/onboarding/workflow", only, {}],
+      ["post", "/onboarding/finish", only],
+      ["post", "/onboarding/dismiss", only],
       // Pause and resume last: a paused automation refuses the runs above.
       ["post", `/workflows/${id}/pause`, only],
       ["post", `/workflows/${id}/resume`, only],
