@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Usage } from "../api";
-import { day, shortDay, usageLines } from "./usage";
+import { aiMeter, day, shortDay, usageLines } from "./usage";
 
 const usage = (ai: number, live = 1, sms = { used: 0, limit: 50, resetsOn: "2026-12-17" }): Usage => ({
   plan: "pilot",
@@ -27,4 +27,17 @@ describe("usageLines", () => {
   it("says what stopped at 100%", () =>
     expect(usageLines(usage(500))).toEqual(["AI actions are used up until 17 December. Steps that need AI stop, and you can press Retry on those runs then."]));
   it("reports the automation limit", () => expect(usageLines(usage(0, 5))).toEqual(["You have 5 of 5 live automations. Publishing another needs a larger plan."]));
+});
+
+describe("aiMeter", () => {
+  it("says what the account used this month", () =>
+    expect(aiMeter(usage(120))).toEqual({ text: "AI 120 of 500 this month", used: 120, limit: 500, percent: 24 }));
+  it("fills the bar at most to the end", () => expect(aiMeter(usage(600))?.percent).toBe(100));
+  it("is hidden when the plan has no AI limit", () => {
+    const u = usage(3);
+    expect(aiMeter({ ...u, ai: { ...u.ai, limit: null } })).toBeNull();
+    expect(aiMeter({ ...u, ai: { ...u.ai, limit: 0 } })).toBeNull();
+  });
+  it("translates the line", () =>
+    expect(aiMeter(usage(5), (source, values) => source === "AI {used} of {limit} this month" ? `AI ${values?.used} sa ${values?.limit} ngayong buwan` : source)?.text).toBe("AI 5 sa 500 ngayong buwan"));
 });

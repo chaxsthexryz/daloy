@@ -1,10 +1,11 @@
 import "./workspace.css";
 import { Text } from "./Language";
-import { useEffect, useState, type ReactNode } from "react";
-import { api, getUsage, type Meter, type Usage } from "./api";
+import { useState, type ReactNode } from "react";
+import { api, type Meter } from "./api";
 import { shortDay } from "./lib/usage";
 import { saveTheme, savedTheme, type Theme } from "./lib/theme";
 import { useLanguage } from "./Language";
+import { AiMeter, useUsage } from "./Nav";
 import { usePhone } from "./Sheet";
 import type { Role, User } from "./Team";
 import { UsageNotice } from "./UsageNotice";
@@ -30,10 +31,7 @@ function Card({ title, id, children }: { title: string; id: string; children: Re
 /** Plan, what this workspace has used and when each count resets. Hidden when /usage cannot be read. */
 function PlanAndUsage({ phone }: { phone: boolean }) {
   const { t } = useLanguage();
-  const [u, setU] = useState<Usage | null>(null);
-  useEffect(() => {
-    getUsage().then(setU, () => undefined);
-  }, []);
+  const u = useUsage();
   if (!u) return null;
   const { automations: a } = u;
   const back = (m: Meter) => <span className="wk-muted">{phone ? t("back {day}", { day: shortDay(m.resetsOn, false) }) : t("back on {day}", { day: shortDay(m.resetsOn) })}</span>;
@@ -41,6 +39,7 @@ function PlanAndUsage({ phone }: { phone: boolean }) {
     <Card title={t("Plan and usage")} id="plan-usage">
       <div className="wk-body">
         <p>{u.plan ? <>{t("Plan:")} <b>{u.label ?? u.plan}</b></> : t("No plan limits are set. The operator sets the plan.")}</p>
+        <AiMeter usage={u} />
         <ul className="wk-usage">
           <li><span>{t("AI actions: {count} this month", { count: ofLimit(u.ai, t) })}</span>{back(u.ai)}</li>
           {u.sms && <li><span>{t("SMS messages: {count} this month", { count: ofLimit(u.sms, t) })}</span>{back(u.sms)}</li>}

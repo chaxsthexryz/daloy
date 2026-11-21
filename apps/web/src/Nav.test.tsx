@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { Shell } from "./Nav";
+import type { Usage } from "./api";
+import { AiMeter, Shell } from "./Nav";
 import type { User } from "./Team";
 
 const user: User = { id: "staff", workspaceId: "workspace", email: "staff@example.test", role: "owner" };
@@ -41,5 +42,35 @@ describe("staff navigation", () => {
     for (const href of ["#/", "#/activity", "#/bookings", "#/settings", "#/account"]) {
       expect(html).toContain(`href="${href}"`);
     }
+  });
+
+  it("calls the #/new entry Library on the rail and the phone menu", () => {
+    const html = render("#/new");
+    expect(html).toContain(">Library</span>");
+    expect(html).not.toContain(">New automation</span>");
+  });
+
+  it("shows the AI meter only to owners, and only once usage has loaded", () => {
+    expect(render("#/")).not.toContain("ai-meter");
+    expect(render("#/", "operator")).not.toContain("ai-meter");
+  });
+});
+
+const usage = (limit: number | null): Usage => ({
+  plan: "pilot", label: "Pilot", limits: {},
+  ai: { used: 120, limit, resetsOn: "2026-12-17" },
+  email: { used: 0, limit: 100, resetsOn: "2026-11-18" }, http: { used: 0, limit: null, resetsOn: "2026-11-18" },
+  automations: { live: 1, limit: 5 }, minScheduleMinutes: 15,
+});
+
+describe("AI meter", () => {
+  it("puts the text in the bar's accessible name and fills it by the share used", () => {
+    const html = renderToStaticMarkup(<AiMeter usage={usage(500)} />);
+    expect(html).toContain('role="progressbar"');
+    expect(html).toContain('aria-label="AI 120 of 500 this month"');
+    expect(html).toContain("width:24%");
+  });
+  it.each([["no AI limit", usage(null)], ["no usage yet", null]])("renders nothing with %s", (_name, u) => {
+    expect(renderToStaticMarkup(<AiMeter usage={u} />)).toBe("");
   });
 });

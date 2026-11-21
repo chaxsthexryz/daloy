@@ -24,6 +24,8 @@ export const workspaceTranslations: Record<string, string> = {
   "Signed in as {role}": "Naka-sign in bilang {role}",
   "System": "System",
   "Language and office settings are managed by the owner.": "Ang owner ang namamahala sa wika at sa mga setting ng opisina.",
+  "AI {used} of {limit} this month": "AI {used} sa {limit} ngayong buwan",
+  "Library": "Library",
   "Enter your current password.": "Ilagay ang kasalukuyang password mo.",
   "The new password needs at least 12 characters.": "Kailangang hindi bababa sa 12 character ang bagong password.",
   "The new password can have at most 200 characters.": "Hindi dapat lumampas sa 200 character ang bagong password.",

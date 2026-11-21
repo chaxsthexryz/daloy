@@ -90,6 +90,9 @@
   --ease: cubic-bezier(0.32, 0.72, 0, 1); /* fast start, long settle, no overshoot */
   --dur-fast: 100ms;    /* hover and pressed colour changes */
   --dur-base: 200ms;    /* menu, details, dialogs */
+  --dur-rail: 280ms;    /* the rail widening, and the phone sheet */
+  --dur-rail-label: 180ms; /* rail labels fading in, after --dur-rail-label-delay */
+  --dur-rail-label-delay: 120ms;
   --dur-reveal: 900ms;  /* scroll reveal, landing page and console */
   --dur-flow: 1200ms;   /* the dot travelling one edge */
   --dur-pulse: 1600ms;  /* the Working node's ring */
@@ -148,14 +151,18 @@ a { color: var(--accent); font-weight: var(--weight-medium); text-underline-offs
 a:hover { color: var(--accent-hover); }
 .muted { color: var(--muted); }
 .hint { font-size: var(--text-sm); }
-code, pre, textarea { font-family: var(--font-mono); font-size: var(--text-sm); }
+code, pre { font-family: var(--font-mono); font-size: var(--text-sm); }
 pre { background: var(--sunken); border-radius: var(--radius-sm); padding: var(--space-3); margin: var(--space-1) 0 0; overflow: auto; max-height: 14rem; }
 :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 
 /* Controls */
 button, input, select, textarea { font: inherit; color: var(--text); }
 input, select, textarea { width: 100%; min-width: 0; min-height: var(--target); padding: 0 var(--space-3); background: var(--surface); border: var(--border-width) solid var(--border); border-radius: var(--radius-md); }
-textarea { min-height: 9rem; resize: vertical; line-height: var(--leading-body); padding: var(--space-2) var(--space-3); font-family: var(--font-mono); font-size: var(--text-sm); }
+textarea { min-height: 9rem; resize: vertical; line-height: var(--leading-body); padding: var(--space-2) var(--space-3); }
+/* Inter everywhere (after "font: inherit" above); monospace stays for code blocks and the raw JSON payload only. */
+input, textarea { font-variant-numeric: tabular-nums; }
+textarea { font-size: var(--text-sm); }
+textarea#payload { font-family: var(--font-mono); }
 button { min-height: var(--target); padding: 0 var(--space-4); background: var(--surface); color: var(--accent); border: var(--border-width) solid var(--accent); border-radius: var(--radius-md); font-weight: var(--weight-medium); white-space: nowrap; cursor: pointer; transition: background-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease); }
 button:hover:not(:disabled) { background: var(--accent-tint); color: var(--accent); }
 button:disabled { border-color: var(--border-soft); color: var(--muted); cursor: not-allowed; }
@@ -265,7 +272,7 @@ details[open] summary::before { content: "\2212"; }
 details summary::-webkit-details-marker { display: none; }
 .technician { margin-top: var(--space-5); padding: 0 var(--space-4) var(--space-2); background: var(--surface); border: var(--border-width) solid var(--border-soft); border-radius: var(--radius-md); }
 .technician h2 { font-size: var(--text-lg); margin-top: var(--space-4); }
-.badge { display: inline-block; min-width: 5.5rem; padding: 4px 8px; border: var(--border-width) solid currentColor; border-radius: var(--radius-sm); font: var(--weight-medium) var(--text-xs)/1.4 var(--font-mono); text-align: center; }
+.badge { display: inline-block; min-width: 5.5rem; padding: 4px 8px; border: var(--border-width) solid currentColor; border-radius: var(--radius-sm); font: var(--weight-medium) var(--text-xs)/1.4 var(--font-sans); font-variant-numeric: tabular-nums; text-align: center; }
 .badge.succeeded { color: var(--ok); }
 .badge.failed, .badge.cancelled { color: var(--danger); }
 .badge.running, .badge.waiting, .badge.pending, .badge.needs_review { color: var(--warn); }
