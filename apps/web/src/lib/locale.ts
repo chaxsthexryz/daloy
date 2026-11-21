@@ -15,6 +15,7 @@ import { activityTranslations } from "./locale-activity";
 import { workspaceTranslations } from "./locale-workspace";
 import { advancedTranslations } from "./locale-advanced";
 import { entryTranslations } from "./locale-entry";
+import { onboardingTranslations } from "./locale-onboarding";
 export type Language = "en" | "tl";
 
 const tagalog: Record<string, string> = {
@@ -35,6 +36,7 @@ const tagalog: Record<string, string> = {
   ...workspaceTranslations,
   ...advancedTranslations,
   ...entryTranslations,
+  ...onboardingTranslations,
   "Plan: {plan}": "Plan: {plan}",
   "{used}, no limit": "{used}, walang limit",
   "{used} of {limit}": "{used} sa {limit}",

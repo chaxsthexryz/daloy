@@ -53,7 +53,7 @@ describe("onboarding input", () => {
 
 describe("closest existing template", () => {
   it("picks a template that exists for every goal and payment choice", () => {
-    const slugs = new Set(TEMPLATES.map((t) => t.slug));
+    const slugs = new Set<string>(TEMPLATES.map((t) => t.slug));
     for (const goal of ONBOARDING_GOALS) {
       for (const payment of [null, "manual_qrph", "gcash_paymongo", "pay_later"] as const) {
         expect(slugs.has(templateFor(goal, payment).slug)).toBe(true);

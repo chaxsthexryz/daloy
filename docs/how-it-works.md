@@ -1062,3 +1062,20 @@ GET shows the request and records nothing; the decision is a POST, as before. Th
 ### Browser demo (E11, `Demo.tsx`, decision 0081)
 
 The demo has its own scoped stylesheet and the console's real flow diagram and checker. A step that waits for the visitor shows "Needs you". Start over and Try another example clear the conversation and the run. `e2e/portfolio-demo.spec.ts` runs the whole path offline and checks that no request is made.
+
+## First-time onboarding (R1, decisions 0082 to 0084)
+
+What it does: a new owner answers three questions on three screens (the name customers see with an optional website and logo, the kind of business with up to three related ones, then the first workflow and how customers pay) and ends with one editable draft and a sample order. Nothing is connected, published, sent or invited by this flow. Each of those is its own action later.
+
+Why it is built this way: the name, website and logo are the workspace's existing business profile and brand kit, so Business settings and onboarding never disagree and existing owners' settings are untouched. Only the answers that live nowhere else go in `onboarding_progress`. Each screen saves on its own (`PUT /onboarding/identity`, `/type`, `/workflow`), which is what makes "Save and close" and "Resume setup" work: the screen to open is the first one not saved yet, and after all three it is the last one, so an owner can edit.
+
+Edge cases it handles:
+- Screens save in order. Skipping ahead gets a 409.
+- Going back to change the name keeps the later answers.
+- A booking goal drops any payment answer. Receipt review and order follow-up need one.
+- The finish route locks the progress row, so a double tap or two tabs make one draft. Running onboarding again, or editing the answers, opens the same draft. If the owner deleted it, the next finish makes a new one.
+- Workspaces that existed before onboarding got a `dismissed` row in migration 0042, so they see no prompt.
+- On a phone the Back and Next bar is fixed to the bottom and lifted above the keyboard using the visual viewport.
+- Until phase R3 adds the receipt-review template, receipt review and order follow-up use the closest existing templates (`receipt-expense`, `store-orders`). The TODO is in `templateFor`.
+
+Tests that prove it: `packages/engine/src/onboarding.test.ts` (input rules, resume step, template choice, sample order), `apps/api/src/onboarding.test.ts` (saved progress, order of screens, the profile and brand kept, three finishes at once make one draft, nothing published or run), `apps/web/src/lib/onboarding.test.ts` (which screen can continue, related categories, initials) and `e2e/onboarding.spec.ts` (desktop flow, Save and close and Resume setup, Not now, the 390px width with a shrunken viewport, and Tagalog).
