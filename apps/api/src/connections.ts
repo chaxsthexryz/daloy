@@ -23,6 +23,13 @@ import {
   outlookSend,
   checkPaymongoKey,
   metaIdentity,
+  checkShopifyConnection,
+  ensureOrderWebhook,
+  normalizeShopDomain,
+  parseShopifyCredential,
+  removeOrderWebhook,
+  shopifyConn,
+  type ShopifyCredential,
   parseMetaCredential,
   paymongoMode,
   PROVIDER_NAMES,
@@ -129,7 +136,19 @@ const metaMessengerInput = z.strictObject({
   appSecret: z.string().trim().min(8, "Paste the Meta App Secret").max(200).optional(),
   verifyToken: z.string().trim().min(6, "Enter a Verify Token of at least 6 characters").max(200).optional(),
 });
-const SLUGS: Record<string, Provider> = { "google-sheets": "google_sheets", slack: "slack", outlook: "outlook", teams: "teams", discord: "discord", telegram: "telegram", "google-calendar": "google_calendar", "google-drive": "google_drive", paymongo: "paymongo", airtable: "airtable", notion: "notion", trello: "trello", unisms: "unisms", "meta-messenger": "meta_messenger" };
+// Shopify (decision 0105): the shop domain, the owner's own app's client secret (it signs the order webhook), and either
+// the app's client ID (an app made in the Dev Dashboard, which gets 24-hour tokens) or the Admin API access token of an
+// app made in the store admin before Shopify closed that. The shop is checked by normalizeShopDomain, so nothing but a
+// *.myshopify.com host can ever receive the secret or a token.
+const shopifyInput = z
+  .strictObject({
+    shop: z.string().trim().min(1, "Enter your shop domain, like your-shop.myshopify.com").max(300),
+    clientId: z.string().trim().regex(/^[A-Za-z0-9_-]{8,200}$/, "Paste the client ID from the app's Settings in the Dev Dashboard").optional(),
+    accessToken: z.string().trim().min(10, "Paste the Admin API access token, which starts with shpat_").max(500).optional(),
+    appSecret: z.string().trim().min(8, "Paste the app's client secret").max(200).optional(),
+  })
+  .refine((b) => (b.clientId === undefined) !== (b.accessToken === undefined), { message: "Paste the app's client ID, or the access token of an older app, but not both", path: ["clientId"] });
+const SLUGS: Record<string, Provider> = { shopify: "shopify", "google-sheets": "google_sheets", slack: "slack", outlook: "outlook", teams: "teams", discord: "discord", telegram: "telegram", "google-calendar": "google_calendar", "google-drive": "google_drive", paymongo: "paymongo", airtable: "airtable", notion: "notion", trello: "trello", unisms: "unisms", "meta-messenger": "meta_messenger" };
 const providerSlug = new ZodPipe(z.enum(Object.keys(SLUGS) as [string, ...string[]]).transform((s) => SLUGS[s]!));
 const uuid = new ZodPipe(z.uuid());
 
@@ -177,8 +196,9 @@ export class ConnectionsController {
       cross join lateral jsonb_array_elements(definition->'steps') as item
       union select id, name, 'paymongo_link' from current_versions where definition->'trigger'->>'type' = 'payment'
       union select id, name, 'meta_messenger' from current_versions where definition->'trigger'->>'type' = 'meta_dm'
+      union select id, name, 'shopify' from current_versions where definition->'trigger'->>'type' = 'shopify_order'
       order by name, id`);
-    const providerFor: Record<string, string> = { email: "gmail", sheets: "google_sheets", drive: "google_drive", calendar: "google_calendar", paymongo_link: "paymongo", payment_status: "paymongo", sms: "unisms", meta_reply: "meta_messenger", google_docs: "google_drive" };
+    const providerFor: Record<string, string> = { email: "gmail", sheets: "google_sheets", drive: "google_drive", calendar: "google_calendar", paymongo_link: "paymongo", payment_status: "paymongo", sms: "unisms", meta_reply: "meta_messenger", shopify_create_product: "shopify", shopify_update_product: "shopify", google_docs: "google_drive" };
     const usage: Record<string, { id: string; name: string }[]> = {};
     const supported = new Set(["gmail", ...Object.keys(PROVIDER_NAMES)]);
     for (const { id, name, kind } of used.rows) {
@@ -189,7 +209,7 @@ export class ConnectionsController {
     }
     const [latestPayment] = await this.db.select({ status: payments.status, updatedAt: payments.updatedAt, live: payments.livemode })
       .from(payments).where(eq(payments.userId, user.workspaceId)).orderBy(desc(payments.updatedAt), desc(payments.id)).limit(1);
-    return { connections: list, outlook: ms, oauth, usage, latestPayment: latestPayment ?? null, shared: await sharedGrants(this.db, user.workspaceId), sharedGoogleApps: await sharedGoogleApps(this.db, user.workspaceId), paymongoWebhookBase: `${this.config.publicUrl}/hooks/paymongo`, metaWebhookBase: `${this.config.publicUrl}/hooks/meta` };
+    return { connections: list, outlook: ms, oauth, usage, latestPayment: latestPayment ?? null, shared: await sharedGrants(this.db, user.workspaceId), sharedGoogleApps: await sharedGoogleApps(this.db, user.workspaceId), paymongoWebhookBase: `${this.config.publicUrl}/hooks/paymongo`, shopifyWebhookBase: `${this.config.publicUrl}/hooks/shopify`, metaWebhookBase: `${this.config.publicUrl}/hooks/meta` };
   }
 
   /** The sheet and tab, checked with a read before saving. Shared by connect and "change sheet". */
@@ -536,12 +556,57 @@ export class ConnectionsController {
   }
 
   /**
+   * Connect or Reconnect Shopify (decision 0105). The shop and token are checked with one read call, which also lists the
+   * scopes the app lacks. orders/create is then registered at Daloy's address for this workspace. If Shopify refuses the
+   * webhook (it only delivers to a public https address) the connection is still saved and the answer says why.
+   * The path of the address and the app secret are kept when the token is replaced.
+   */
+  @Put("shopify")
+  @UseGuards(RateLimit(10))
+  async putShopify(@CurrentUser() user: SessionUser, @Body(new ZodPipe(shopifyInput)) body: z.output<typeof shopifyInput>) {
+    const shop = normalizeShopDomain(body.shop);
+    if (!shop) throw new BadRequestException("That is not a Shopify shop domain. It looks like your-shop.myshopify.com (Shopify admin, Settings, Domains).");
+    const old = await connectionCredential(this.db, this.config.secretsKey, user.workspaceId, "shopify");
+    const oldCred = old ? parseShopifyCredential(old.credential) : null;
+    // A saved secret is only kept for the same app: the same client ID, or another token of an older app.
+    const sameApp = oldCred && (body.clientId !== undefined ? oldCred.clientId === body.clientId : oldCred.accessToken !== undefined);
+    const appSecret = body.appSecret ?? (sameApp ? oldCred.appSecret : undefined);
+    if (!appSecret) throw new BadRequestException("Paste the app's client secret. Daloy uses it to check that orders really come from Shopify.");
+    const cred: ShopifyCredential = body.clientId !== undefined ? { appSecret, clientId: body.clientId } : { appSecret, accessToken: body.accessToken! };
+    const conn = await shopifyConn(this.urls, shop, cred).catch(this.asBadRequest(user.workspaceId));
+    const info = await checkShopifyConnection(this.urls, conn).catch(this.asBadRequest(user.workspaceId));
+    const webhookPath = old?.destination?.webhookPath ?? randomBytes(32).toString("base64url");
+    const base = `${this.config.publicUrl}/hooks/shopify/`;
+    const webhook = await ensureOrderWebhook(this.urls, conn, `${base}${webhookPath}`, base);
+    await saveConnection(this.db, this.config.secretsKey, user.workspaceId, "shopify", {
+      account: shop,
+      credential: JSON.stringify(cred),
+      destination: { shop, shopName: info.name, webhookPath, webhook: webhook.state, ...(webhook.state === "failed" ? { webhookError: webhook.message.slice(0, 300) } : {}) },
+    });
+    const hide = await historyHider(this.db, this.config.secretsKey, user.workspaceId);
+    return { ...(await this.get(user)), webhookUrl: `${base}${webhookPath}`, webhook: webhook.state === "failed" ? { state: "failed", message: hide(webhook.message) as string } : webhook, shop: info.name, missingScopes: info.missingScopes, status: "active" as const };
+  }
+
+  @Post("shopify/test")
+  @HttpCode(200)
+  @UseGuards(RateLimit(5))
+  async testShopify(@CurrentUser() user: SessionUser) {
+    const conn = await this.connection(user.workspaceId, "shopify");
+    return this.test(user.workspaceId, "shopify", conn, async () => {
+      const shop = conn.destination?.shop ?? conn.account;
+      const info = await checkShopifyConnection(this.urls, await shopifyConn(this.urls, shop, parseShopifyCredential(conn.credential)));
+      return { shop: info.name, missingScopes: info.missingScopes.join(", "), webhook: conn.destination?.webhook ?? "unknown" };
+    });
+  }
+
+  /**
    * Disconnect: deletes the stored credential. Queued deliveries fail with "not connected" and keep their payload for
    * Retry. An OAuth grant is then revoked at the provider (decision 0058): 200 with { revoked } says whether that
    * worked. 204 when there was nothing to revoke there, as before.
    */
   @Delete(":provider")
   async remove(@CurrentUser() user: SessionUser, @Param("provider", providerSlug) provider: Provider, @Res({ passthrough: true }) res: Response) {
+    if (provider === "shopify") await this.dropShopifyWebhook(user.workspaceId);
     const def = this.config.oauthProviders.find((d) => d.provider === provider);
     const out = def ? await disconnectOAuth(this.db, this.config.secretsKey, this.urls, user.workspaceId, def) : { removed: await removeConnection(this.db, user.workspaceId, provider), revoked: null };
     if (!out.removed) throw new NotFoundException();
@@ -552,6 +617,18 @@ export class ConnectionsController {
   /** The record apps' calls: an OAuth access token (refreshed first, forced for a test) or the pasted credential (decision 0062). */
   private auth<T>(user: SessionUser, provider: Provider, conn: Awaited<ReturnType<ConnectionsController["connection"]>>, fn: (credential: string) => Promise<T>) {
     return withRecordAuth(this.db, this.config.secretsKey, this.urls, user.workspaceId, this.config.oauthProviders.find((d) => d.provider === provider), conn, fn, { force: true });
+  }
+
+  /** Best effort: takes Daloy's orders/create subscription out of the store before the token goes. Shopify drops a dead one after 8 failed deliveries anyway. */
+  private async dropShopifyWebhook(workspaceId: string) {
+    const conn = await connectionCredential(this.db, this.config.secretsKey, workspaceId, "shopify");
+    if (!conn || conn.status !== "active") return;
+    try {
+      const shop = conn.destination?.shop ?? conn.account;
+      await removeOrderWebhook(this.urls, await shopifyConn(this.urls, shop, parseShopifyCredential(conn.credential)), `${this.config.publicUrl}/hooks/shopify/`);
+    } catch (err) {
+      if (!(err instanceof ProviderError)) throw err;
+    }
   }
 
   private async connection(userId: string, provider: Provider) {

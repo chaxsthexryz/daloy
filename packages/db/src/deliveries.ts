@@ -10,6 +10,7 @@ import { airtableAdd, appendRowOnce, driveUpload, type DriveDestination, notionA
 import { bookingSuperseded, supersededSql } from "./bookings";
 import { bookingForCalendar } from "./calendar";
 import { metaSend, parseMetaCredential } from "./meta";
+import { createShopifyProduct, parseShopifyCredential, shopifyConn, updateShopifyProduct, type ShopifyProductFields } from "./shopify";
 import { bookings, calendarEvents, connections, deliveries, runs, users, type Provider } from "./schema";
 import { readUpload } from "./uploads";
 import { claimUsage, QuotaError, refundUsage } from "./usage";
@@ -45,7 +46,14 @@ export const BOOKING_CHANGED = "The booking was rescheduled or cancelled, so thi
 const bookingMoved = sql`(${deliveries.provider} <> 'google_calendar' and exists (select 1 from ${runs} where ${runs.id} = ${deliveries.runId} and ${supersededSql}))`;
 
 /** Sheets and Calendar writes can be repeated safely, so an unknown outcome is looked at again, never sent to a person. */
-const repeatable = (p: Provider) => p === "google_sheets" || p === "google_calendar";
+const repeatable = (d: Pick<Delivery, "provider" | "payload">) => d.provider === "google_sheets" || d.provider === "google_calendar" || (d.provider === "shopify" && shopifyRepeatable(d.payload as ShopifyPayload));
+
+/**
+ * I2 (decision 0105): a Shopify product step. An update sets values, so it can run again. A create can only run again
+ * when it has a SKU, which is how a retry finds the product an earlier attempt made; without one a person decides.
+ */
+export type ShopifyPayload = { shopify: "create" | "update"; by?: "id" | "sku"; product?: string; fields: ShopifyProductFields };
+const shopifyRepeatable = (p: ShopifyPayload) => p.shopify === "update" || Boolean(p.fields.sku);
 
 /** A short random marker value for a Sheets write; with the id it tells our marker from anyone else's. */
 const markerValue = () => randomBytes(6).toString("base64url");
@@ -154,7 +162,7 @@ async function attempt(db: Db, key: Buffer, urls: ProviderUrls, d: Delivery): Pr
     return { state: "failed", kind: "reconnect", error: "Airtable is connected by table name, which can point to another table after a rename. Reconnect Airtable with the table id (it starts with tbl), then retry." };
   }
   // Slack, Teams, Outlook and UniSMS have no read access to check with, so after a call that may have arrived a person decides.
-  if (d.checkFirst && !repeatable(d.provider)) {
+  if (d.checkFirst && !repeatable(d)) {
     return { state: "needs_review", error: `${name} may have ${verb(d.provider)} this before the connection dropped. ${reviewHint(d.provider, conn.destination)}`, kind: "ambiguous" };
   }
   const activeConn = conn;
@@ -222,6 +230,12 @@ async function attempt(db: Db, key: Buffer, urls: ProviderUrls, d: Delivery): Pr
     if (d.provider === "airtable") return { state: "delivered", result: await auth((t) => airtableAdd(urls, t, destination as { baseId: string; tableId: string }, p.fields)) };
     if (d.provider === "notion") return { state: "delivered", result: await auth((t) => notionAddPage(urls, t, destination as { databaseId: string; titleProperty: string }, p.title, p.fields)) };
     if (d.provider === "trello") return { state: "delivered", result: await auth((t) => trelloAddCard(urls, trelloAuthOf(activeConn.authMethod, t), destination.listId!, p.name, p.desc ?? "")) };
+    if (d.provider === "shopify") {
+      const s = d.payload as ShopifyPayload;
+      const conn = await shopifyConn(urls, destination.shop!, parseShopifyCredential(activeConn.credential));
+      const out = s.shopify === "create" ? await createShopifyProduct(urls, conn, { ...s.fields, title: s.fields.title ?? "" }, { retrying: d.checkFirst }) : await updateShopifyProduct(urls, conn, { by: s.by ?? "id", key: s.product ?? "" }, s.fields);
+      return { state: "delivered", result: out };
+    }
     const text = p.text;
     if (d.provider === "discord") return { state: "delivered", result: await discordPost(urls, activeConn.credential, text) };
     if (d.provider === "teams") return { state: "delivered", result: await teamsPost(urls, activeConn.credential, text) };
@@ -307,7 +321,7 @@ async function attempt(db: Db, key: Buffer, urls: ProviderUrls, d: Delivery): Pr
       case "review":
         return { state: "needs_review", error: e.message, kind: e.kind };
       case "ambiguous":
-        if (!repeatable(d.provider)) return { state: "needs_review", error: `${e.message} ${name} may have ${verb(d.provider)} it. ${reviewHint(d.provider, destination)}`, kind: e.kind };
+        if (!repeatable(d)) return { state: "needs_review", error: `${e.message} ${name} may have ${verb(d.provider)} it. ${reviewHint(d.provider, destination)}`, kind: e.kind };
         return { state: "queued", error: e.message, kind: e.kind, checkFirst: true };
       case "quota":
       case "unavailable":
@@ -316,7 +330,7 @@ async function attempt(db: Db, key: Buffer, urls: ProviderUrls, d: Delivery): Pr
   }
 }
 
-const verb = (p: Provider) => (p === "outlook" || p === "unisms" || p === "meta_messenger" ? "sent" : p === "google_drive" ? "saved" : "posted");
+const verb = (p: Provider) => (p === "outlook" || p === "unisms" || p === "meta_messenger" ? "sent" : p === "google_drive" || p === "shopify" ? "saved" : "posted");
 
 /** The destination as a person would name it, for review messages. */
 function describe(provider: Provider, dest: Record<string, string>) {
@@ -332,6 +346,7 @@ function describe(provider: Provider, dest: Record<string, string>) {
   if (provider === "trello") return `the Trello list ${dest.listName ?? dest.listId}`;
   if (provider === "meta_messenger") return `the Meta Page ${dest.pageName ?? dest.pageId}`;
   if (provider === "discord") return `the Discord channel ${dest.channelName ?? ""}`.trim();
+  if (provider === "shopify") return `the Shopify store ${dest.shopName ?? dest.shop}`;
   return `the Teams channel ${dest.channelName ?? ""}`.trim();
 }
 
@@ -353,7 +368,7 @@ const DESTINATION_ONLY = new Set<Provider>(["airtable", "notion", "trello"]);
 
 /** Same place: the fields that pick where a delivery lands. Display names may change without moving anything. */
 function sameDestination(a: Record<string, string> | null, b: Record<string, string>) {
-  const where = (d: Record<string, string> | null) => JSON.stringify([d?.spreadsheetId, d?.calendarId, d?.folderId, d?.tab, d?.channelId, d?.chatId, d?.baseId, d?.tableId, d?.databaseId, d?.listId, d?.mailbox, d?.channelName, d?.senderId, d?.pageId, d?.instagramAccountId]);
+  const where = (d: Record<string, string> | null) => JSON.stringify([d?.spreadsheetId, d?.calendarId, d?.folderId, d?.tab, d?.channelId, d?.chatId, d?.baseId, d?.tableId, d?.databaseId, d?.listId, d?.mailbox, d?.channelName, d?.senderId, d?.pageId, d?.instagramAccountId, d?.shop]);
   return where(a) === where(b);
 }
 
@@ -361,6 +376,7 @@ function reviewHint(provider: Provider, dest: Record<string, string>) {
   if (provider === "outlook") return `Look in Sent Items of ${dest.mailbox ?? "the mailbox"}, then choose Mark as sent or Send again.`;
   if (provider === "unisms") return `Check your UniSMS delivery logs (Sender ID ${dest.senderId ?? "Unisoft"}), then choose Mark as sent or Send again.`;
   if (provider === "meta_messenger") return `Check the inbox of ${describe(provider, dest)}, then choose Mark as sent or Send again.`;
+  if (provider === "shopify") return `Look under Products in the admin of ${describe(provider, dest)}, then choose Mark as posted or Post again.`;
   return `Check ${describe(provider, dest)}, then choose Mark as posted or Post again.`;
 }
 

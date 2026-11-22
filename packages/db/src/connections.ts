@@ -3,10 +3,10 @@ import { decryptSecret, encryptSecret } from "./crypto";
 import type { Db } from "./index";
 import { connections, retiredSecrets, type AuthMethod, type Provider } from "./schema";
 
-export const PROVIDER_NAMES: Record<Provider, string> = { google_sheets: "Google Sheets", slack: "Slack", outlook: "Outlook", teams: "Microsoft Teams", telegram: "Telegram", google_calendar: "Google Calendar", google_drive: "Google Drive", paymongo: "PayMongo", airtable: "Airtable", notion: "Notion", trello: "Trello", unisms: "UniSMS", meta_messenger: "Facebook Messenger & Instagram", discord: "Discord" };
+export const PROVIDER_NAMES: Record<Provider, string> = { google_sheets: "Google Sheets", slack: "Slack", outlook: "Outlook", teams: "Microsoft Teams", telegram: "Telegram", google_calendar: "Google Calendar", google_drive: "Google Drive", paymongo: "PayMongo", airtable: "Airtable", notion: "Notion", trello: "Trello", unisms: "UniSMS", meta_messenger: "Facebook Messenger & Instagram", shopify: "Shopify", discord: "Discord" };
 
 /** What a pasted credential is, by provider. An Outlook credential is always a Microsoft grant. */
-const PASTED: Record<Provider, AuthMethod> = { google_sheets: "service_account", google_calendar: "service_account", google_drive: "service_account", teams: "webhook_url", outlook: "oauth", slack: "token", telegram: "token", paymongo: "token", airtable: "token", notion: "token", trello: "token", unisms: "token", meta_messenger: "token", discord: "webhook_url" };
+const PASTED: Record<Provider, AuthMethod> = { google_sheets: "service_account", google_calendar: "service_account", google_drive: "service_account", teams: "webhook_url", outlook: "oauth", slack: "token", telegram: "token", paymongo: "token", airtable: "token", notion: "token", trello: "token", unisms: "token", meta_messenger: "token", shopify: "token", discord: "webhook_url" };
 
 /**
  * The server's UniSMS settings: the only source of SMS credentials (decision 0100). Set when both UNISMS_SECRET_KEY and
@@ -40,7 +40,7 @@ export async function retireStoredUnismsKeys(db: Db): Promise<number> {
 
 // The owner id is in the associated data (crypto.ts), so a credential copied to another owner's row does not decrypt.
 const secretName = (provider: Provider) => `connection:${provider}`;
-const RETIRED_CONNECTION_PROVIDERS = new Set<Provider>(["unisms", "meta_messenger"]);
+const RETIRED_CONNECTION_PROVIDERS = new Set<Provider>(["unisms", "meta_messenger", "shopify"]);
 
 async function retireConnectionInTx(tx: Pick<Db, "select" | "insert" | "execute">, userId: string, provider: Provider) {
   const name = secretName(provider);

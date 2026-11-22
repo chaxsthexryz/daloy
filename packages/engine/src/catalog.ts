@@ -31,6 +31,7 @@ const DRIVE = tx("Google Drive", "Google Drive");
 const CALENDAR = tx("Google Calendar", "Google Calendar");
 const DOCS = tx("Google Docs", "Google Docs");
 const PAYMONGO = tx("PayMongo", "PayMongo");
+const SHOPIFY = tx("Shopify", "Shopify");
 const META = tx("Messenger and Instagram", "Messenger at Instagram");
 const queued = [tx("Queued for delivery", "Nakapila para ipadala"), tx("Failed, with the reason", "Nabigo, may dahilan")];
 
@@ -72,6 +73,8 @@ export const STEP_CATALOG: Record<Step["type"], CatalogEntry> = {
   meta_reply: { app: META, mark: "messenger", provider: "meta_messenger", action: tx("Reply to a message", "Sumagot sa mensahe"), description: tx("Reply to the customer in the same conversation, within Meta's 24-hour window.", "Sumagot sa customer sa parehong usapan, sa loob ng 24 oras na window ng Meta."), required: ["text"], input: tx("The reply text. The customer and channel come from the message.", "Ang text ng sagot. Ang customer at channel ay mula sa mensahe."), output: tx("Whether the reply was sent.", "Kung naipadala ang sagot."), outcomes: queued },
   discord: { app: tx("Discord", "Discord"), mark: "discord", provider: "discord", action: tx("Post a message", "Mag-post ng mensahe"), description: tx("Post a short note to the Discord channel your webhook is for. Everyone in the channel can read it.", "Mag-post ng maikling note sa Discord channel ng iyong webhook. Mababasa ito ng lahat sa channel."), required: ["text"], input: tx("The message text, up to 2000 characters.", "Ang text ng mensahe, hanggang 2000 character."), output: tx("Whether the message was posted.", "Kung na-post ang mensahe."), outcomes: queued },
   google_docs: { app: DOCS, mark: "google-docs", provider: "google_drive", action: tx("Make a document", "Gumawa ng dokumento"), description: tx("Copy the template you pick here, fill in its {{placeholders}} and save the copy in the Drive folder chosen there.", "Kopyahin ang template na pipiliin mo rito, punan ang mga {{placeholder}} nito at i-save ang kopya sa Drive folder na pinili roon."), required: ["templateId", "name"], input: tx("A document name, and a value for each placeholder in the template.", "Pangalan ng dokumento, at value para sa bawat placeholder sa template."), output: tx("The new document's link, for later steps.", "Ang link ng bagong dokumento, para sa susunod na steps."), outcomes: [tx("Document made", "Nagawa ang dokumento"), tx("Failed, with the reason", "Nabigo, may dahilan")] },
+  shopify_create_product: { app: SHOPIFY, mark: "shopify", provider: "shopify", action: tx("Create a product", "Gumawa ng product"), description: tx("Add a product to the connected Shopify store, with its price and SKU. It starts as a draft unless you choose active.", "Magdagdag ng product sa naka-connect na Shopify store, kasama ang presyo at SKU. Draft muna ito maliban kung pipiliin mong active."), required: ["title"], input: tx("The title, and if you want, the description, price, SKU, status and a picture link.", "Ang pamagat, at kung gusto mo, ang paglalarawan, presyo, SKU, status at link ng larawan."), output: tx("Whether the product was saved, with its id and link in Shopify.", "Kung na-save ang product, kasama ang id at link nito sa Shopify."), outcomes: [...queued, tx("Needs review, if the outcome is unknown", "Kailangang suriin, kung hindi alam ang resulta")] },
+  shopify_update_product: { app: SHOPIFY, mark: "shopify", provider: "shopify", action: tx("Update a product", "I-update ang product"), description: tx("Find a product by its id or SKU and change only the things you choose, such as the price or the title.", "Hanapin ang product sa id o SKU nito at baguhin lang ang mga pipiliin mo, gaya ng presyo o pamagat."), required: ["product"], input: tx("The product id or SKU, and the things to change.", "Ang product id o SKU, at ang mga babaguhin."), output: tx("Whether the product was saved, with its id and link in Shopify.", "Kung na-save ang product, kasama ang id at link nito sa Shopify."), outcomes: queued },
 };
 
 export const TRIGGER_CATALOG: Record<Trigger["type"], CatalogEntry> = {
@@ -82,6 +85,7 @@ export const TRIGGER_CATALOG: Record<Trigger["type"], CatalogEntry> = {
   form: { app: null, mark: "form", action: tx("A form is submitted", "May nag-submit ng form"), description: tx("Start when someone sends the form. Each request gets a reference.", "Magsimula kapag may nagpadala ng form. May reference ang bawat request."), required: ["fields"], input: tx("The form's fields.", "Ang mga field ng form."), output: tx("The answers as trigger fields.", "Ang mga sagot bilang trigger fields."), outcomes: [tx("Started", "Nagsimula"), tx("Refused, if a field is invalid", "Tinanggihan, kung may maling field")] },
   payment: { app: PAYMONGO, mark: "paymongo", provider: "paymongo", action: tx("A payment is reported", "May naiulat na bayad"), description: tx("Start when PayMongo reports a payment that Daloy has checked.", "Magsimula kapag may iniulat na bayad ang PayMongo na na-check ng Daloy."), required: [], input: tx("A verified PayMongo event.", "Isang beripikadong PayMongo event."), output: tx("The payment as trigger fields.", "Ang bayad bilang trigger fields."), outcomes: [tx("Started", "Nagsimula")] },
   meta_dm: { app: META, mark: "messenger", provider: "meta_messenger", action: tx("A customer sends a message", "May customer na nagpadala ng mensahe"), description: tx("Start when a Messenger or Instagram DM arrives on the connected account.", "Magsimula kapag may DM sa Messenger o Instagram sa naka-connect na account."), required: [], input: tx("The message and any photos.", "Ang mensahe at mga larawan."), output: tx("The message as trigger fields.", "Ang mensahe bilang trigger fields."), outcomes: [tx("Started", "Nagsimula")] },
+  shopify_order: { app: SHOPIFY, mark: "shopify", provider: "shopify", action: tx("A Shopify order comes in", "May pumasok na order sa Shopify"), description: tx("Start for each new order in the connected Shopify store. Daloy checks Shopify's signature first.", "Magsimula sa bawat bagong order sa naka-connect na Shopify store. Sinusuri muna ng Daloy ang signature ng Shopify."), required: [], input: tx("The order: number, customer, total and items.", "Ang order: numero, customer, total at mga item."), output: tx("The order as trigger fields.", "Ang order bilang trigger fields."), outcomes: [tx("Started", "Nagsimula")] },
 };
 
 const pick = (t: Text, language: Language) => t[language];
@@ -108,6 +112,7 @@ const TRIGGER_NOUN: Record<Trigger["type"], Text> = {
   email: tx("the email", "email"),
   payment: tx("the payment", "bayad"),
   meta_dm: tx("the message", "mensahe"),
+  shopify_order: tx("the order", "order"),
   schedule: tx("the schedule", "iskedyul"),
   manual: tx("the sample data", "sample data"),
 };
@@ -172,6 +177,10 @@ export function destination(step: Step, ctx: DestinationContext): string {
       return picked(label("List", "List"));
     case "meta_reply":
       return step.config.recipientId.trim() === "{{trigger.senderId}}" ? line(TO, pick(tx("the customer in the conversation", "ang customer sa usapan"), language)) : line(TO, short(human(step.config.recipientId, ctx)));
+    case "shopify_create_product":
+      return line(label("Product", "Product"), short(human(step.config.title, ctx)));
+    case "shopify_update_product":
+      return line(label("Product", "Product"), short(human(step.config.product, ctx)));
     case "http": {
       let host = step.config.url;
       try { host = new URL(step.config.url).host || host; } catch { /* a template in the address: show it as typed */ }

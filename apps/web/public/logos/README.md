@@ -23,8 +23,9 @@ Public-domain files are copies hosted on Wikimedia Commons. Commons marks each o
 | discord.svg | https://cdn.jsdelivr.net/npm/simple-icons@16.38.0/icons/discord.svg | Simple Icons, CC0 (trademark of Discord Inc.) | fill set to Discord's colour #5865F2 from the Simple Icons data |
 | google-docs.svg | https://cdn.jsdelivr.net/npm/simple-icons@16.38.0/icons/googledocs.svg | Simple Icons, CC0 (trademark of Google) | fill set to Google Docs' colour #4285F4 from the Simple Icons data |
 | trello.svg | https://cdn.jsdelivr.net/npm/simple-icons@16.38.0/icons/trello.svg | Simple Icons, CC0 (trademark of Atlassian) | fill set to Trello's colour #0052CC from the Simple Icons data |
+| shopify.svg | https://cdn.jsdelivr.net/npm/simple-icons@16.38.0/icons/shopify.svg | Simple Icons, CC0 (trademark of Shopify). Added on 22 November 2026 | fill set to Shopify's colour #7AB55C from the Simple Icons data. Shopify's brand assets page is https://www.shopify.com/brand-assets; the owner should read its current rules before a public launch |
 
-Why Simple Icons for two: the Commons copy of the Airtable logo could not be downloaded (HTTP 429 from Wikimedia during the session) and the Commons Trello file is the full wordmark with a gradient, not the icon. Simple Icons draws the icon as one colour, so these two are single-colour versions.
+Why Simple Icons for two (Airtable and Trello; Shopify was added the same way because Commons has no copy that was checked): the Commons copy of the Airtable logo could not be downloaded (HTTP 429 from Wikimedia during the session) and the Commons Trello file is the full wordmark with a gradient, not the icon. Simple Icons draws the icon as one colour, so these two are single-colour versions.
 
 Discord and Google Docs were added on 2026-11-22 (phase I1) from the same Simple Icons package version, for the same reason: one source with a CC0 licence that could be fetched in the session. No Wikimedia Commons copy was looked for. Both are single-colour marks. If the owner prefers the multi-colour Google Docs icon to match the other Google marks, replace `google-docs.svg` with a copy of it from Commons; the name stays the same.
 

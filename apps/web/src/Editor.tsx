@@ -66,6 +66,7 @@ const tomorrowAtTen = () => `${new Date(Date.now() + 86_400_000).toISOString().s
 function samplePayload(trigger: Trigger, resourceId = "a resource id from the Resources page"): string {
   if (trigger.type === "email") return JSON.stringify({ from: "ana@example.com", replyTo: "ana@example.com", to: ["inquiries@example.com"], subject: "Website inquiry", text: "I would like a quote.", messageId: "sample-inquiry@example.com", receivedAt: new Date().toISOString() }, null, 2);
   if (trigger.type === "meta_dm") return JSON.stringify({ channel: trigger.config.channel === "instagram" ? "instagram" : "messenger", senderId: "1234567890", messageId: "m_sample_1", text: "Here is my GCash receipt.", timestamp: new Date().toISOString(), image: [] }, null, 2);
+  if (trigger.type === "shopify_order") return JSON.stringify({ order_id: "820982911946154508", order_number: "#1001", customer_name: "Ana Reyes", customer_email: "ana@example.com", customer_phone: "+639171234567", total: "1250.50", currency: "PHP", financial_status: "pending", created_at: new Date().toISOString(), shop: "your-shop.myshopify.com", item_count: 2, items: "2 x Tote bag [TOTE-BLU]", line_items: [{ title: "Tote bag", variant_title: "", quantity: 2, price: "625.25", sku: "TOTE-BLU" }] }, null, 2);
   if (trigger.type !== "form") return "{}";
   // File fields are left out: a test run takes no files, and the server drops a value sent for one.
   const sample = Object.fromEntries(
@@ -1047,7 +1048,7 @@ function NextUp({ draft, id }: { draft: Draft; id: string }) {
   );
 }
 
-const TRIGGER_ORDER: Trigger["type"][] = ["manual", "webhook", "schedule", "form", "email", "payment", "meta_dm"];
+const TRIGGER_ORDER: Trigger["type"][] = ["manual", "webhook", "schedule", "form", "email", "payment", "meta_dm", "shopify_order"];
 const TRIGGER_DEFAULTS: Record<Trigger["type"], Trigger> = {
   manual: { type: "manual", config: {} },
   email: { type: "email", config: {} },
@@ -1056,6 +1057,7 @@ const TRIGGER_DEFAULTS: Record<Trigger["type"], Trigger> = {
   form: { type: "form", config: { fields: [{ name: "email", label: "Email", type: "email", required: true }] } },
   payment: { type: "payment", config: { events: ["paid"] } },
   meta_dm: { type: "meta_dm", config: { channel: "both", requireImage: false } },
+  shopify_order: { type: "shopify_order", config: {} },
 };
 
 function TriggerPanel({ trigger, wf, onChange }: { trigger: Trigger; wf: Loaded; onChange: (t: Trigger) => void }) {
@@ -1078,6 +1080,12 @@ function TriggerPanel({ trigger, wf, onChange }: { trigger: Trigger; wf: Loaded;
           ))}
         </select>
       </div>
+      {trigger.type === "shopify_order" && (
+        <p className="muted hint">
+          {t("Runs for each new order in your Shopify store. The order number, customer, total and items are available as trigger fields.")}{" "}
+          <a href="#/apps">{t("Connect Shopify in Apps")}</a>
+        </p>
+      )}
       {trigger.type === "meta_dm" && (
         <>
           <div className="field">
@@ -1243,7 +1251,7 @@ function TriggerPanel({ trigger, wf, onChange }: { trigger: Trigger; wf: Loaded;
   );
 }
 
-const OUTSIDE = new Set(["http", "email", "approval", "sheets", "drive", "slack", "outlook", "teams", "telegram", "sms", "calendar", "airtable", "notion", "trello", "meta_reply", "discord", "google_docs"]);
+const OUTSIDE = new Set(["http", "email", "approval", "sheets", "drive", "slack", "outlook", "teams", "telegram", "sms", "calendar", "airtable", "notion", "trello", "meta_reply", "shopify_create_product", "shopify_update_product", "discord", "google_docs"]);
 
 /** Per-step outcomes for a mocked or AI-only test run: a classify label, an approval decision, or a failure. */
 function TestChoices({ steps, choices, onChange }: { steps: Step[]; choices: Record<string, string>; onChange: (c: Record<string, string>) => void }) {

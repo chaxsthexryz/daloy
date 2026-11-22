@@ -21,6 +21,7 @@ Kept current with each phase. A mitigation marked "planned" does not exist in co
 ## Entry points
 
 - Console API (session cookie)
+- Shopify order webhook (`POST /hooks/shopify/:path`, public, signed by Shopify)
 - Webhook URLs and hosted forms, including anonymous embedded forms (public), and file uploads on those forms
 - Customer privacy export and delete (`GET /privacy/customer`, `POST /privacy/customer/delete`, owner session)
 - File downloads from run details (`GET /runs/:runId/files/:fileId`, owner and operator session)
@@ -30,7 +31,7 @@ Kept current with each phase. A mitigation marked "planned" does not exist in co
 - Gmail confirmation links (need the owner's session and a random single-use token)
 - MCP endpoint (bearer token)
 - Password reset links (public, random single-use token)
-- Outbound: HTTP request step, email step (the installation's SMTP server, the owner's Gmail over SMTP, or the Gmail API), the API's test email, LLM calls, Google Sheets, Google Drive, Slack, Outlook and Teams deliveries and connection tests
+- Outbound: HTTP request step, email step (the installation's SMTP server, the owner's Gmail over SMTP, or the Gmail API), the API's test email, LLM calls, Google Sheets, Google Drive, Slack, Outlook, Teams and Shopify deliveries and connection tests, and the Shopify token request
 - Inbound from OAuth providers: the shared consent callback, `GET /settings/connections/oauth/callback`, and Outlook's older address for it, `GET /settings/connections/outlook/callback` (no session needed to reach either; only Microsoft's administrator consent answer is handled without one)
 
 ## Threats and mitigations
@@ -230,6 +231,18 @@ Entry points: `GET` and `POST /pay/<token>`, `GET /pay/<token>/qr`, the PayMongo
 - Rows of another workspace: every query filters by the workspace from the session or the webhook path, and all queries are parameterised through Drizzle.
 - A late or second payment: a payment after the deadline or after a manual confirmation is parked as a checkout claim for a person, never counted as a second confirmation.
 - Remaining risk: the rate limit and the byte budget are per API instance; a holder of one pay link can keep 5 references waiting for that order; reminders can reach a customer who paid but is not confirmed yet; the Expire API is checked against the fake only until the live check.
+
+## Shopify (I2, decision 0105)
+
+- A forged order: the path is 32 random bytes and only finds the connection. `X-Shopify-Hmac-Sha256` must be the base64 HMAC-SHA256 of the raw body with the app's client secret, compared in constant time before the body is read. A bad or missing signature is 401, an unknown path 403, and a signed call for another store (`X-Shopify-Shop-Domain`) 403.
+- Replay: Shopify signs no timestamp, so a captured delivery stays valid. Runs are keyed `shopify:<shop>:order:<order id>` per workflow, so a replay, a retry or a resend with a new webhook id starts nothing. A replay can only repeat an order that already ran.
+- Secret and token leakage: the client secret and any older Admin API token are encrypted per workspace and never returned. Tokens from the client credentials grant live only in process memory. Calls send them in the request body (token request) or the `X-Shopify-Access-Token` header, and no error echoes a header or body. The stored values are in the history redaction list.
+- A secret sent to the wrong host: `normalizeShopDomain` allows only `*.myshopify.com` and runs before every request, including the token request, so an edited destination cannot redirect the secret. `SHOPIFY_API_URL` is env only, for tests.
+- Least privilege: the card asks for `read_orders` and `write_products` only. Customer name, email and phone in the order become run data like a form submission, and fall under the privacy export, delete and retention of decision 0094.
+- A stranger writing to the store: a product step cannot read `{{trigger.*}}` from a public form, an unsigned webhook, inbound email or a DM. Descriptions are HTML-escaped and images must be https links.
+- Duplicate products: Shopify has no idempotency key for product mutations. A create with a SKU checks for that SKU first and on a retry takes the one it finds as its own; a create without a SKU goes to review after an unknown outcome, never to an automatic retry.
+- A changed store: each product delivery is pinned to the shop connected when it was queued; after a reconnect to another store it waits for review.
+- Remaining risk: a leaked client secret lets someone forge orders until it is rotated in the Dev Dashboard and replaced in Apps. Signature handling and the token grant are checked against Shopify's documentation only until the [live check](live-shopify-check.md) is run.
 
 ## Airtable, Notion and Trello (decision 0046)
 

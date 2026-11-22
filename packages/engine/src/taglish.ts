@@ -29,6 +29,9 @@ export const TAGLISH: Record<string, Record<string, Message>> = {
   "no-show-follow-up": {
     offer_rebook: { subject: "Sayang, hindi tayo nagkita", text: "Hi {{trigger.customer_name}}, hindi ka namin nakita sa {{trigger.service}} booking mo. Pili ka ng bagong time dito: {{trigger.rebook_url}}" },
   },
+  "shopify-orders": {
+    send_receipt: { subject: "Natanggap na namin ang order mo {{trigger.order_number}}", text: "Hi {{trigger.customer_name}}, thank you sa order mo {{trigger.order_number}} ({{trigger.total}} {{trigger.currency}}).\n\n{{trigger.items}}\n\nI-email ka namin kapag na-ship na ito." },
+  },
   "store-orders": {
     send_receipt: { subject: "Natanggap na namin ang order mo {{trigger.order_id}}", text: "Hi {{trigger.customer_name}}, thank you sa order mo {{trigger.order_id}} ({{trigger.total}} pesos). I-email ka namin kapag na-ship na ito." },
   },

@@ -66,6 +66,10 @@ export function localizeGeneratedDefinition(definition: WorkflowDefinition, lang
       tell_owner: { subject: "Dalawang linggo nang lampas ang invoice {{trigger.invoice_id}}", text: "Hindi pa nagbabayad si {{trigger.customer_name}} ({{trigger.customer_email}}) sa invoice {{trigger.invoice_id}} ({{trigger.amount}} piso) matapos ang dalawang paalala." },
     },
     "renewal-reminders": { remind: { subject: "Due na sa 30 araw ang renewal: {{trigger.item}}", text: "Mag-e-expire ang {{trigger.item}} sa {{trigger.expires_at}}. I-renew na ito para hindi ma-lapse." } },
+    "shopify-orders": {
+      send_receipt: { subject: "Natanggap namin ang order mo {{trigger.order_number}}", text: "Hi {{trigger.customer_name}}, salamat sa order mo {{trigger.order_number}} ({{trigger.total}} {{trigger.currency}}).\n\n{{trigger.items}}\n\nMag-e-email kami kapag naipadala na ito." },
+      tell_owner: { text: "Bagong order sa Shopify {{trigger.order_number}}: {{trigger.total}} {{trigger.currency}}, {{trigger.item_count}} item. Nasa sheet mo ang mga detalye." },
+    },
     "store-orders": {
       send_receipt: { subject: "Natanggap namin ang order mo {{trigger.order_id}}", text: "Hi {{trigger.customer_name}}, salamat sa order mo {{trigger.order_id}} ({{trigger.total}} piso). Mag-e-email kami kapag naipadala na ito." },
       tell_owner: { text: "Bagong order {{trigger.order_id}}: {{trigger.total}} piso. Nasa sheet mo ang mga detalye." },

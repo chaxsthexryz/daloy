@@ -111,6 +111,8 @@ describe("destination line", () => {
       meta_reply: { recipientId: "{{trigger.senderId}}", channel: "{{trigger.channel}}", text: "t" },
       calendar: { title: "t" },
       sheets: { columns: ["a"] },
+      shopify_create_product: { title: "Tote bag" },
+      shopify_update_product: { product: "TOTE-1" },
     };
     for (const type of STEP_TYPES) {
       const config = configs[type] ?? { to: "a@b.co", subject: "s", text: "t", message: "m" };

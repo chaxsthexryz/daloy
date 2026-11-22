@@ -1,6 +1,6 @@
 import { publicCopy } from "./public-copy";
 import { createHmac, randomInt, randomUUID, timingSafeEqual } from "node:crypto";
-import { assertNotPaused, busyBetween, claimUsage, constantTimeEqual, downloadMetaImage, keyedRun, MetaImageError, MetaTransientImageError, parseMetaCredential, parseMetaWebhook, QuotaError, readBrand, saveUploads, usageSummary, verifyMetaSignature, workspaceLanguage, businessProfiles, connectionCredential, connections, createKeyedRun, createRun, eventSeen, finishEvent, keptEvent, markPaymentPaid, markPaymentRefunded, centavosToPesos, paymongoMode, readSecret, recordEvent, requests, runs, settleCheckout, triggers, verifyPaymongoSignature, WorkflowPausedError, workflows, workflowVersions, type Db, type NewUpload, type Payment } from "@daloy/db";
+import { normalizeShopDomain, parseShopifyCredential, parseShopifyOrder, verifyShopifyHmac, assertNotPaused, busyBetween, claimUsage, constantTimeEqual, downloadMetaImage, keyedRun, MetaImageError, MetaTransientImageError, parseMetaCredential, parseMetaWebhook, QuotaError, readBrand, saveUploads, usageSummary, verifyMetaSignature, workspaceLanguage, businessProfiles, connectionCredential, connections, createKeyedRun, createRun, eventSeen, finishEvent, keptEvent, markPaymentPaid, markPaymentRefunded, centavosToPesos, paymongoMode, readSecret, recordEvent, requests, runs, settleCheckout, triggers, verifyPaymongoSignature, WorkflowPausedError, workflows, workflowVersions, type Db, type NewUpload, type Payment } from "@daloy/db";
 import { definitionSchema, FILE_MAX_BYTES, FILES_PER_FIELD, FILES_PER_SUBMISSION, fileType, OFFICE_REQUEST, parsePayload, PURCHASE_REQUEST, safeFileName, type FileRef, type FormField, type Resource } from "@daloy/engine";
 import {
   BadRequestException,
@@ -393,6 +393,71 @@ export class MetaHooksController {
       }
     }
     return { ok: true, started: startedCount };
+  }
+}
+
+/**
+ * Shopify order webhook (decision 0105). The path finds the workspace's connection. X-Shopify-Hmac-Sha256 is checked against
+ * the raw bytes with the app's client secret in constant time, before anything in the body is used, and the shop header
+ * must be the connected store. Shopify signs no timestamp, so replays are stopped by the order: each run is keyed
+ * "shopify:<shop>:order:<order id>", and a retry, a replay or a second delivery of the same order answers 200 and starts
+ * nothing. A valid call that needs no run (another topic, a paused workflow, no listener) is 200, because Shopify
+ * deletes a webhook that keeps failing.
+ */
+@Controller("hooks/shopify")
+@UseGuards(RateLimit(60))
+export class ShopifyHooksController {
+  constructor(
+    @Inject(DB) private readonly db: Db,
+    @Inject(BOSS) private readonly boss: PgBoss,
+    @Inject(CONFIG) private readonly config: Required<ApiConfig>,
+  ) {}
+
+  @Post(":path")
+  @HttpCode(200)
+  async receive(
+    @Param("path") path: string,
+    @Req() req: RawBodyRequest<Request>,
+    @Headers("x-shopify-hmac-sha256") signature: string | undefined,
+    @Headers("x-shopify-webhook-id") webhookId: string | undefined,
+    @Headers("x-shopify-topic") topic: string | undefined,
+    @Headers("x-shopify-shop-domain") shopHeader: string | undefined,
+  ) {
+    const [owner] = await this.db
+      .select({ userId: connections.userId })
+      .from(connections)
+      .where(and(eq(connections.provider, "shopify"), eq(connections.status, "active"), sql`${connections.destination}->>'webhookPath' = ${path}`));
+    const conn = owner && (await connectionCredential(this.db, this.config.secretsKey, owner.userId, "shopify"));
+    if (!owner || !conn || conn.status !== "active") throw new ForbiddenException();
+    if (!verifyShopifyHmac(req.rawBody ?? Buffer.alloc(0), signature, parseShopifyCredential(conn.credential).appSecret)) throw new UnauthorizedException("invalid signature");
+    if (!webhookId || !/^[A-Za-z0-9._:-]{1,100}$/.test(webhookId)) throw new BadRequestException("missing X-Shopify-Webhook-Id");
+    const shop = conn.destination?.shop ?? conn.account;
+    // Signed by this app but sent for a store this connection is not: refused, since its orders are not this workspace's.
+    if (normalizeShopDomain(shopHeader ?? "") !== shop) throw new ForbiddenException("unknown shop");
+    if (topic !== "orders/create") return { ok: true, started: 0 };
+    const payload = parseShopifyOrder(req.body, shop);
+    if (!payload) return { ok: true, started: 0 };
+
+    // The trigger row and the latest published version come from one snapshot (decision 0057).
+    const listeners = await this.db
+      .select({ workflowId: triggers.workflowId, pausedAt: workflows.pausedAt, version: workflowVersions })
+      .from(triggers)
+      .innerJoin(workflows, eq(workflows.id, triggers.workflowId))
+      .innerJoin(workflowVersions, latestPublished)
+      .where(and(eq(workflows.userId, owner.userId), eq(triggers.type, "shopify_order")));
+    let started = 0;
+    for (const l of listeners) {
+      if (l.pausedAt || !savedTrigger(l.version.definition, "shopify_order")) continue;
+      const run = await createKeyedRun(this.db, l.workflowId, l.version.id, payload, `shopify:${shop}:order:${payload.order_id}`).catch((err: unknown) => {
+        if (err instanceof WorkflowPausedError) return null;
+        throw err;
+      });
+      if (run && !run.duplicate) {
+        await enqueueRun(this.boss, run.runId);
+        started++;
+      }
+    }
+    return { ok: true, started };
   }
 }
 

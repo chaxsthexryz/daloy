@@ -19,11 +19,12 @@ export function nextPaths(draft: Draft, id: string): { on?: string; steps: Step[
 
 const EMAIL_FIELDS = ["from", "subject", "text"];
 const META_DM_FIELDS = ["channel", "senderId", "messageId", "text", "timestamp"];
+const SHOPIFY_ORDER_FIELDS = ["order_number", "order_id", "customer_name", "customer_email", "customer_phone", "total", "currency", "item_count", "items", "financial_status", "created_at", "shop"];
 
 /** The template references a step can use: the trigger's fields, then the output of each step that runs before it, in step order. */
 export function insertables(draft: Draft, id: string): string[] {
   const trigger = draft.trigger;
-  const fields = trigger.type === "email" ? EMAIL_FIELDS : trigger.type === "meta_dm" ? META_DM_FIELDS : trigger.type === "form" || trigger.type === "webhook" ? (trigger.config.fields ?? []).map((f) => f.name) : [];
+  const fields = trigger.type === "email" ? EMAIL_FIELDS : trigger.type === "meta_dm" ? META_DM_FIELDS : trigger.type === "shopify_order" ? SHOPIFY_ORDER_FIELDS : trigger.type === "form" || trigger.type === "webhook" ? (trigger.config.fields ?? []).map((f) => f.name) : [];
   const before = new Set<string>();
   const queue = [id];
   while (queue.length) {
@@ -58,6 +59,8 @@ const NEEDS: Record<string, { provider: string; label: string }> = {
   paymongo_link: { provider: "paymongo", label: "PayMongo" },
   payment_status: { provider: "paymongo", label: "PayMongo" },
   meta_reply: { provider: "meta_messenger", label: "Facebook Messenger & Instagram" },
+  shopify_create_product: { provider: "shopify", label: "Shopify" },
+  shopify_update_product: { provider: "shopify", label: "Shopify" },
 };
 
 function paymentApps(step: Extract<Step, { type: "payment_due" }>) {
