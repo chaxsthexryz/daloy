@@ -325,6 +325,11 @@ DeepSeek's review is in `docs/roadmap-review-2026-11-18.md`. Claude's second opi
 - [x] R6. Privacy under RA 10173: form notice, receipt image retention, per-customer export and delete. Branch `claude/r6-privacy`, migration 0045, decision 0094.
 - [ ] R7. Demand-led: public-page reading, new templates, integration candidates after an API, cost and terms check.
 
+## Integrations requested on 22 November 2026
+
+- [ ] I1. Discord step (post to a channel webhook) and Google Docs step (make a document from a template with values filled in).
+- [ ] I2. Shopify: product create and edit through the Admin API, and a native order trigger in place of the webhook template.
+
 ## Console UI from the Paper file (docs/plans/console-ui-paper.md, 21 November 2026)
 
 - [x] U1. Rail, Inter everywhere, calmer nav motion, AI usage meter. (claimed: claude, cloud session)
