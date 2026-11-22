@@ -1,2 +1,2 @@
-ALTER TABLE "oauth_flows" DROP CONSTRAINT "oauth_flows_provider";--> statement-breakpoint
+ALTER TABLE "oauth_flows" DROP CONSTRAINT IF EXISTS "oauth_flows_provider";--> statement-breakpoint
 ALTER TABLE "oauth_flows" ADD CONSTRAINT "oauth_flows_provider" CHECK ("oauth_flows"."provider" in ('google_sheets', 'slack', 'outlook', 'teams', 'telegram', 'google_calendar', 'paymongo', 'airtable', 'notion', 'trello', 'google_drive', 'gmail'));

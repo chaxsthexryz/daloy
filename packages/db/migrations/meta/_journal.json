@@ -250,14 +250,14 @@
     {
       "idx": 35,
       "version": "7",
-      "when": 1795011181615,
+      "when": 1795067336938,
       "tag": "0035_payment_events_per_workspace",
       "breakpoints": true
     },
     {
       "idx": 36,
       "version": "7",
-      "when": 1795011930341,
+      "when": 1795067336939,
       "tag": "0036_preview_plan",
       "breakpoints": true
     },
@@ -271,14 +271,14 @@
     {
       "idx": 38,
       "version": "7",
-      "when": 1795061946177,
+      "when": 1795100000001,
       "tag": "0038_gmail_oauth_flows",
       "breakpoints": true
     },
     {
       "idx": 39,
       "version": "7",
-      "when": 1795076825096,
+      "when": 1795100000002,
       "tag": "0039_oauth_alerts_shared",
       "breakpoints": true
     },
@@ -313,15 +313,22 @@
     {
       "idx": 44,
       "version": "7",
-      "when": 1795232570537,
+      "when": 1795400000001,
       "tag": "0044_morning_digest",
       "breakpoints": true
     },
     {
       "idx": 45,
       "version": "7",
-      "when": 1795234049019,
+      "when": 1795400000002,
       "tag": "0045_customer_privacy",
+      "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1795400000003,
+      "tag": "0046_repair_skipped_migrations",
       "breakpoints": true
     }
   ]

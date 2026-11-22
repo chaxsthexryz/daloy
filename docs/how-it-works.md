@@ -92,6 +92,8 @@ Why this way: one schema package means the worker and the API (phase 3) can neve
 
 Edge cases: `step_runs` has a unique key on `(run_id, step_id, attempt)`, which is the idempotency key, so the same attempt can never be recorded twice. Session ids and API tokens are stored as hashes. Secrets are stored encrypted with the key outside the database.
 
+Migration order: Drizzle applies a migration only when its journal timestamp is later than the newest one the database has recorded, so an entry older than the one before it is skipped for good on any database upgraded step by step (a fresh database applies everything in one pass and never shows it). `migrations.test.ts` fails on an out-of-order journal. `0046_repair_skipped_migrations` re-applies what earlier out-of-order entries skipped, and is a no-op on a healthy database. When a merge trips the test, raise the new entry's `when` above the previous one (decision 0101).
+
 ## Worker (apps/worker)
 
 What it does: the worker takes `advance-run` jobs from pg-boss. One job does one piece of work for one run: run the next step attempt, or mark the run finished. Then it queues the run again. `advance.ts` holds this logic and `worker.ts` wires it to pg-boss.
