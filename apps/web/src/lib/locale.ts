@@ -18,6 +18,7 @@ import { entryTranslations } from "./locale-entry";
 import { onboardingTranslations } from "./locale-onboarding";
 import { dailyTranslations } from "./locale-daily";
 import { privacyTranslations } from "./locale-privacy";
+import { receiptsTranslations } from "./locale-receipts";
 export type Language = "en" | "tl";
 
 const tagalog: Record<string, string> = {
@@ -41,6 +42,7 @@ const tagalog: Record<string, string> = {
   ...onboardingTranslations,
   ...dailyTranslations,
   ...privacyTranslations,
+  ...receiptsTranslations,
   "Plan: {plan}": "Plan: {plan}",
   "{used}, no limit": "{used}, walang limit",
   "{used} of {limit}": "{used} sa {limit}",
@@ -74,6 +76,11 @@ const tagalog: Record<string, string> = {
   "Find an app": "Maghanap ng app", "Choose an automation": "Pumili ng automation", "Receive website form emails": "Tumanggap ng email mula sa website form", "Your business": "Ang negosyo mo", "Business name": "Pangalan ng negosyo", "Website": "Website", "Inbox for new inquiries": "Inbox para sa mga bagong inquiry", "Reply address (optional)": "Reply address (opsyonal)",
   "Resources": "Mga resource", "AI model": "AI model", "API tokens": "API tokens",
 };
+
+/** True when the Tagalog dictionary has an entry for `source`, even one that keeps the English word. */
+export function hasTagalog(source: string): boolean {
+  return Object.hasOwn(tagalog, source);
+}
 
 export function translate(language: Language, source: string, values: Record<string, string | number> = {}): string {
   const template = language === "tl" ? (tagalog[source] ?? source) : source;
