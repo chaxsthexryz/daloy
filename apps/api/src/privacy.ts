@@ -3,7 +3,8 @@ import { Body, Controller, Get, HttpCode, Inject, Post, Query, Res, UseGuards } 
 import type { Response } from "express";
 import * as z from "zod";
 import { SessionGuard } from "./auth";
-import { Allow, CurrentUser, DB, MANAGE, RateLimit, ZodPipe, type SessionUser } from "./http";
+import { Allow, CONFIG, CurrentUser, DB, MANAGE, RateLimit, ZodPipe, type ApiConfig, type SessionUser } from "./http";
+import { historyHider } from "./mask";
 
 /** R6 (decision 0094): the owner answers a customer's request to see or delete their data. Exactly one of email or phone. */
 const email = z.email().max(200);
@@ -15,12 +16,19 @@ const query = (v: z.output<typeof who>) => (v.email !== undefined ? { email: v.e
 @Controller("privacy")
 @UseGuards(SessionGuard, Allow(MANAGE), RateLimit(20))
 export class PrivacyController {
-  constructor(@Inject(DB) private readonly db: Db) {}
+  constructor(
+    @Inject(DB) private readonly db: Db,
+    @Inject(CONFIG) private readonly config: ApiConfig,
+  ) {}
 
   @Get("customer")
   async export(@CurrentUser() user: SessionUser, @Query(new ZodPipe(who)) q: z.output<typeof who>, @Res({ passthrough: true }) res: Response) {
     res.set({ "Content-Disposition": 'attachment; filename="customer-data.json"', "Cache-Control": "no-store" });
-    return exportCustomer(this.db, user.workspaceId, user.id, query(q));
+    const data = await exportCustomer(this.db, user.workspaceId, user.id, query(q));
+    // The file is handed to the customer, so it hides current and retired workspace secrets like every history reader (review of 22 November, M3).
+    // Through JSON first, so dates are text and the hider walks plain values.
+    const hide = await historyHider(this.db, this.config.secretsKey, user.workspaceId);
+    return hide(JSON.parse(JSON.stringify(data)));
   }
 
   @Post("customer/delete")

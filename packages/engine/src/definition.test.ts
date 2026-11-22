@@ -367,3 +367,27 @@ describe("disabled steps (decision 0097)", () => {
     expect(issues(def).length).toBeGreaterThan(0);
   });
 });
+
+// Review of 22 November, M4: the price of a due must not come from a public visitor, or their own number is what counts as paid.
+describe("payment_due amount", () => {
+  const due = (amount: string, total?: string) => ({ id: "ask", type: "payment_due", config: { reference: "{{trigger.order_id}}", kind: "deposit", amount, ...(total !== undefined && { total }), checkout: true } });
+  const fields = [{ name: "order_id", label: "Order", type: "text", required: true }, { name: "amount", label: "Amount", type: "number", required: true }];
+  const def = (trigger: object, amount: string, total?: string) => ({ trigger, steps: [due(amount, total)], edges: [] });
+  const form = { type: "form", config: { fields } };
+  const signed = { type: "webhook", config: { hmacSecret: "order_webhook_secret", requireTimestamp: true, fields } };
+  const unsigned = { type: "webhook", config: { fields } };
+  const dm = { type: "meta_dm", config: {} };
+
+  it("refuses an amount or total from the trigger of a public form, an unsigned webhook or a direct message", () => {
+    for (const t of [form, unsigned, dm]) {
+      expect(issues(def(t, "{{trigger.amount}}")).join()).toMatch(/payment_due step "ask".*amount/);
+      expect(issues(def(t, "350", "{{ trigger.amount }}")).join()).toMatch(/payment_due step "ask".*amount/);
+    }
+  });
+
+  it("takes a fixed amount anywhere and a trigger amount from a signed webhook or a manual run", () => {
+    expect(issues(def(form, "350", "1200"))).toEqual([]);
+    expect(issues(def(signed, "{{trigger.amount}}"))).toEqual([]);
+    expect(issues(def({ type: "manual", config: { fields } }, "{{trigger.amount}}"))).toEqual([]);
+  });
+});

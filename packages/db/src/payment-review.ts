@@ -4,6 +4,7 @@ import { and, asc, eq, inArray, ne, or, sql, type SQL } from "drizzle-orm";
 import type { Db } from "./index";
 import { queueDelivery, retryDelivery } from "./deliveries";
 import { normalizeReceiptRef } from "./meta";
+import { claimUsageInTx } from "./usage";
 import { bookingResults, bookings, deliveries, paymentClaims, paymentDues, paymentHistory, payments, paymentSettings, receiptReferences, users, workspaceMembers, type ClaimFlag, type Role } from "./schema";
 
 /**
@@ -90,10 +91,21 @@ export const dueByToken = async (db: Db, token: string): Promise<Due | undefined
 
 const READABLE = new Set(["jpeg", "png", "webp", "heic"]);
 
+/** How many references one order can have waiting for the seller at once, so one pay link cannot flood Receipts to review. */
+export const OPEN_CLAIMS_PER_DUE = 5;
+
+export class TooManyClaimsError extends Error {
+  constructor() {
+    super(`This order already has ${OPEN_CLAIMS_PER_DUE} references waiting for the seller.`);
+  }
+}
+
 /**
  * A customer's "I paid" for the due behind a pay page token. It never confirms anything: it puts the order in review,
  * flagged when the transfer reference was used before in this workspace, the amount differs, or the upload is not an
  * image. An unreadable upload is not stored. The same reference sent twice for the same order is one claim.
+ * A stored image spends one upload of the workspace in the same transaction, after the repeat check, so a repeat or an
+ * unreadable file costs nothing (review of 22 November, M2). Throws QuotaError or TooManyClaimsError and stores nothing.
  */
 export async function submitTransferClaim(db: Db, token: string, c: { transferRef: string; submittedCentavos?: number | null; image?: { bytes: Buffer } }): Promise<Claim | undefined> {
   return db.transaction(async (tx) => {
@@ -106,6 +118,11 @@ export async function submitTransferClaim(db: Db, token: string, c: { transferRe
       .from(paymentClaims)
       .where(and(eq(paymentClaims.dueId, d.id), eq(paymentClaims.normalizedRef, normalizedRef), inArray(paymentClaims.status, ["open", "clarify"])));
     if (same) return same;
+    const [waiting] = await tx
+      .select({ n: sql<number>`count(*)::int` })
+      .from(paymentClaims)
+      .where(and(eq(paymentClaims.dueId, d.id), eq(paymentClaims.channel, "transfer"), inArray(paymentClaims.status, ["open", "clarify"])));
+    if (waiting!.n >= OPEN_CLAIMS_PER_DUE) throw new TooManyClaimsError();
 
     const flags: ClaimFlag[] = [];
     const key = normalizeReceiptRef(transferRef);
@@ -120,6 +137,7 @@ export async function submitTransferClaim(db: Db, token: string, c: { transferRe
     if (c.image && !readable) flags.push("unreadable_upload");
     if (d.status === "confirmed" || d.status === "refunded") flags.push("already_confirmed");
     if (d.status === "cancelled") flags.push("late_payment");
+    if (readable) await claimUsageInTx(tx, d.userId, "upload");
 
     const [claim] = await tx
       .insert(paymentClaims)

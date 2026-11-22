@@ -1,5 +1,5 @@
 import { createHmac, randomBytes } from "node:crypto";
-import { connections, createDue, insertPayment, joinWorkspace, paymentDues, runs, sessions, users, workflows, workflowVersions, type Db, type Due } from "@daloy/db";
+import { connections, createDue, insertPayment, joinWorkspace, OPEN_CLAIMS_PER_DUE, paymentDues, runs, sessions, usageSummary, users, workflows, workflowVersions, type Db, type Due } from "@daloy/db";
 import type { INestApplication } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
 import type { Pool } from "pg";
@@ -117,11 +117,29 @@ describe("pay page", () => {
     expect(((await o.agent.get("/payments/review").expect(200)).body as unknown[]).length).toBe(1);
   });
 
-  it("limits uploads per IP", async () => {
+  // Review of 22 November, M2: the allowance was spent before the repeat check, and one link could open claims without end.
+  it("charges one upload for a repeated reference and caps the open references on one order", async () => {
     const o = await owner();
     const d = await due(o.userId);
+    const uploads = async () => (await usageSummary(db, o.userId)).upload.used;
+    await send(d.token, { transfer_ref: "SAME12345" }, PNG).expect(200);
+    await send(d.token, { transfer_ref: "SAME12345" }, PNG).expect(200);
+    expect(await uploads()).toBe(1);
+    // A file that is not an image is not stored, so it costs nothing either.
+    await send(d.token, { transfer_ref: "TEXT12345" }, Buffer.from("not an image")).expect(200);
+    expect(await uploads()).toBe(1);
+    for (let i = 3; i <= OPEN_CLAIMS_PER_DUE; i++) await send(d.token, { transfer_ref: `MORE${i}REF` }, PNG).expect(200);
+    const over = await send(d.token, { transfer_ref: "ONEMORE123" }, PNG).expect(429);
+    expect(over.text).toContain("waiting for the seller");
+    expect(((await o.agent.get("/payments/review").expect(200)).body as unknown[]).length).toBe(OPEN_CLAIMS_PER_DUE);
+    expect(await uploads()).toBe(OPEN_CLAIMS_PER_DUE - 1);
+  });
+
+  it("limits uploads per IP", async () => {
+    const o = await owner();
+    // One order per call, so the cap on open references per order does not answer first.
     const codes: number[] = [];
-    for (let i = 0; i < 11; i++) codes.push((await send(d.token, { transfer_ref: `RATE${i}LIMIT` }, undefined, "10.9.9.9")).status);
+    for (let i = 0; i < 11; i++) codes.push((await send((await due(o.userId)).token, { transfer_ref: `RATE${i}LIMIT` }, undefined, "10.9.9.9")).status);
     expect(codes.slice(0, 10).every((c) => c === 200)).toBe(true);
     expect(codes[10]).toBe(429);
   });
