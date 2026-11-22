@@ -439,8 +439,8 @@ export const TEMPLATES = [
   },
   {
     slug: "store-orders",
-    name: "Shopify or WooCommerce orders",
-    description: "Point a Shopify or WooCommerce order webhook (or a small relay that sends these four fields) at this automation. Each order is added to your Google Sheet, the customer gets a receipt and the owner gets a Slack note.",
+    name: "WooCommerce or other store orders",
+    description: "Point a WooCommerce order webhook (or a small relay that sends these four fields) at this automation. For Shopify, use the Shopify orders template instead. Each order is added to your Google Sheet, the customer gets a receipt and the owner gets a Slack note.",
     category: "Orders",
     definition: {
       trigger: {
@@ -465,6 +465,32 @@ export const TEMPLATES = [
       ],
       edges: [
         { from: "log_order", to: "send_receipt" },
+        { from: "send_receipt", to: "tell_owner" },
+      ],
+    },
+  },
+  // I2: the native Shopify trigger. The order arrives already signed, checked and mapped to these fields (decision 0105).
+  {
+    slug: "shopify-orders",
+    name: "Shopify orders",
+    description: "Connect your Shopify store in Apps. Each new order is added to your Google Sheet, the customer gets a receipt when the order has an email, and the owner gets a Slack note. Daloy checks Shopify's signature before anything runs.",
+    category: "Orders",
+    definition: {
+      trigger: { type: "shopify_order", config: {} },
+      steps: [
+        { id: "log_order", type: "sheets", config: { columns: ["{{trigger.order_number}}", "{{trigger.customer_name}}", "{{trigger.total}}", "{{trigger.items}}"] } },
+        { id: "has_email", type: "condition", config: { condition: { left: "{{trigger.customer_email}}", op: "exists" } } },
+        {
+          id: "send_receipt",
+          type: "email",
+          config: { to: "{{trigger.customer_email}}", subject: "We got your order {{trigger.order_number}}", text: "Hi {{trigger.customer_name}}, thanks for your order {{trigger.order_number}} ({{trigger.total}} {{trigger.currency}}).\n\n{{trigger.items}}\n\nWe will email you when it ships." },
+        },
+        { id: "tell_owner", type: "slack", config: { text: "New Shopify order {{trigger.order_number}}: {{trigger.total}} {{trigger.currency}}, {{trigger.item_count}} items. Details are in your sheet." } },
+      ],
+      edges: [
+        { from: "log_order", to: "has_email" },
+        { from: "has_email", to: "send_receipt", on: "true" },
+        { from: "has_email", to: "tell_owner", on: "false" },
         { from: "send_receipt", to: "tell_owner" },
       ],
     },

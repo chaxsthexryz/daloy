@@ -18,7 +18,7 @@ describe("Taglish templates", () => {
   });
 
   it("changes the customer messages of the payment, reminder and order templates and nothing else", () => {
-    for (const slug of ["booking-deposit-review", "order-gcash-checkout", "invoice-follow-up", "appointment-reminder", "no-show-follow-up", "store-orders"]) {
+    for (const slug of ["booking-deposit-review", "order-gcash-checkout", "invoice-follow-up", "appointment-reminder", "no-show-follow-up", "store-orders", "shopify-orders"]) {
       const a = en.find((t) => t.slug === slug)!;
       const b = tg.find((t) => t.slug === slug)!;
       expect(customerCopy(b.definition as never), slug).not.toEqual(customerCopy(a.definition as never));

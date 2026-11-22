@@ -1,6 +1,7 @@
 import { createHash, createPublicKey, createVerify, type KeyObject } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
+import { createFakeShopify } from "./fake-shopify";
 
 /**
  * A fake Google (token endpoint and Sheets API), Slack Web API, Microsoft sign-in, Microsoft Graph and Teams Workflows
@@ -78,6 +79,8 @@ export async function startFakeProviders(port = 0) {
   const telegram = { token: "", bot: "daloy_test_bot", chats: [{ id: -1001234567890, title: "Office team" }] as { id: number; title: string }[], updates: [] as Record<string, unknown>[], webhook: false, messages: [] as { chat: string; text: string; id: number }[], revoked: false };
   const unisms = { secretKey: "", messages: [] as { id: string; recipient: string; content: string; senderId: string; metadata?: Record<string, unknown> }[], revoked: false };
   // Meta Messenger & Instagram Graph API + CDN fake (N16, decision 0075).
+  // Shopify Admin GraphQL API (decision 0105): the handler and state live in fake-shopify.ts.
+  const shopify = createFakeShopify();
   const meta = {
     token: "",
     pageId: "100200300",
@@ -244,6 +247,8 @@ export async function startFakeProviders(port = 0) {
         unismsMessages: unisms.messages,
         metaMessages: meta.messages,
         paymongoSessions: paymongo.sessions,
+        shopifyProducts: shopify.state.products,
+        shopifyWebhooks: shopify.state.webhooks,
         airtableRecords: airtable.records.map((r) => r.fields),
         notionPages: notion.pages.map((p) => p.properties),
         trelloCards: trello.cards.map((c) => c.name),
@@ -834,6 +839,8 @@ export async function startFakeProviders(port = 0) {
       }
       return json(res, 404, { error: { message: "Unsupported get request", code: 100 } });
     }
+    // Shopify Admin GraphQL API.
+    if (shopify.handle(req, res, path, raw)) return;
     // Fake Meta CDN for image attachment download tests.
     if (req.method === "GET" && path.startsWith("/meta-cdn/")) {
       const file = meta.cdnFiles.get(path.slice("/meta-cdn/".length));
@@ -846,7 +853,7 @@ export async function startFakeProviders(port = 0) {
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 
   return {
-    urls: { googleToken: `${base}/token`, sheets: base, calendar: base, drive: base, paymongo: base, meta: base, metaCdn: base, airtable: base, notion: base, trello: base, slack: base, telegram: base, unisms: base, microsoftLogin: `${base}/ms`, graph: `${base}/graph`, gmail: base, airtableLogin: `${base}/airtable-login`, trelloLogin: `${base}/atlassian`, teamsHosts: ["127.0.0.1"], discordHosts: ["127.0.0.1"], docs: base },
+    urls: { googleToken: `${base}/token`, sheets: base, calendar: base, drive: base, paymongo: base, shopify: base, meta: base, metaCdn: base, airtable: base, notion: base, trello: base, slack: base, telegram: base, unisms: base, microsoftLogin: `${base}/ms`, graph: `${base}/graph`, gmail: base, airtableLogin: `${base}/airtable-login`, trelloLogin: `${base}/atlassian`, teamsHosts: ["127.0.0.1"], discordHosts: ["127.0.0.1"], docs: base },
     /** The installation's OAuth clients for the record apps, as providerUrls() would read them from env (decision 0062). */
     recordClients: () => ({
       airtableClient: { clientId: oauth.airtable!.clientId, clientSecret: oauth.airtable!.clientSecret },
@@ -858,6 +865,7 @@ export async function startFakeProviders(port = 0) {
     telegram,
     unisms,
     meta,
+    shopify: shopify.state,
     airtable,
     notion,
     trello,

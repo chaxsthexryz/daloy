@@ -391,3 +391,36 @@ describe("payment_due amount", () => {
     expect(issues(def({ type: "manual", config: { fields } }, "{{trigger.amount}}"))).toEqual([]);
   });
 });
+
+// I2 (decision 0105): a Shopify step writes to the owner's store, so a stranger's text must not choose what it writes.
+describe("Shopify steps and trigger", () => {
+  const fields = [{ name: "sku", label: "SKU", type: "text", required: true }];
+  const create = (title: string) => ({ id: "make", type: "shopify_create_product", config: { title, price: "10" } });
+  const def = (trigger: object, step: object) => ({ trigger, steps: [step], edges: [] });
+  const form = { type: "form", config: { fields } };
+  const order = { type: "shopify_order", config: {} };
+
+  it("accepts the order trigger and a new product that is a draft unless told otherwise", () => {
+    expect(issues(def(order, create("Tote {{trigger.order_number}}")))).toEqual([]);
+    const parsed = definitionSchema.parse(def(order, { id: "make", type: "shopify_create_product", config: { title: "Tote" } }));
+    expect(parsed.steps[0]).toMatchObject({ config: { status: "draft" } });
+  });
+
+  it("refuses a product step whose fields come from a public form, an unsigned webhook or a message", () => {
+    for (const t of [form, { type: "webhook", config: { fields } }, { type: "meta_dm", config: {} }, { type: "email", config: {} }]) {
+      expect(issues(def(t, create("{{trigger.sku}}"))).join(), t.type).toMatch(/shopify_create_product step "make" cannot take its fields from a/);
+      expect(issues(def(t, { id: "make", type: "shopify_update_product", config: { product: "{{ trigger.sku }}", price: "5" } })).join(), t.type).toMatch(/shopify_update_product step "make"/);
+    }
+  });
+
+  it("takes fixed values from a form, and trigger values from an order, a signed webhook or a manual run", () => {
+    expect(issues(def(form, create("Tote")))).toEqual([]);
+    expect(issues(def({ type: "webhook", config: { hmacSecret: "shop_secret", fields } }, create("{{trigger.sku}}")))).toEqual([]);
+    expect(issues(def({ type: "manual", config: { fields } }, create("{{trigger.sku}}")))).toEqual([]);
+  });
+
+  it("makes an update change something", () => {
+    expect(issues(def(order, { id: "up", type: "shopify_update_product", config: { product: "TOTE-1" } })).join()).toMatch(/choose at least one thing to change/);
+    expect(issues(def(order, { id: "up", type: "shopify_update_product", config: { product: "TOTE-1", price: "12", status: "active" } }))).toEqual([]);
+  });
+});

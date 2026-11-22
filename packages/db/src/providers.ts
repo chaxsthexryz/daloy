@@ -40,6 +40,8 @@ export type ProviderUrls = {
   /** Meta Graph API base and test-only CDN override for Messenger and Instagram DMs (decision 0075). */
   meta?: string;
   metaCdn?: string;
+  /** Test-only base for the Shopify Admin API. Unset: requests go to https://<shop>.myshopify.com (decision 0105). */
+  shopify?: string;
   airtable: string;
   notion: string;
   trello: string;
@@ -80,6 +82,7 @@ export const providerUrls = (env: NodeJS.ProcessEnv = process.env): ProviderUrls
   paymongo: trim(env.PAYMONGO_API_URL ?? "https://api.paymongo.com"),
   meta: trim(env.META_GRAPH_URL ?? "https://graph.facebook.com"),
   metaCdn: env.META_CDN_URL ? trim(env.META_CDN_URL) : undefined,
+  shopify: env.SHOPIFY_API_URL ? trim(env.SHOPIFY_API_URL) : undefined,
   airtable: trim(env.AIRTABLE_API_URL ?? "https://api.airtable.com"),
   notion: trim(env.NOTION_API_URL ?? "https://api.notion.com"),
   trello: trim(env.TRELLO_API_URL ?? "https://api.trello.com"),

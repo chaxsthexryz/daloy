@@ -7,7 +7,7 @@ import { templatesForLanguage } from "./template-language";
 import { TEMPLATES, TEMPLATE_CATEGORIES } from "./templates";
 import { websiteInquiryDefinition } from "./website-inquiry";
 
-const SLUGS = ["inquiry-triage", "invoice-follow-up", "no-show-follow-up", "appointment-reminder", "request-to-sheets", "lead-to-booking", "order-to-sheets", "order-paid", "invoice-paymongo", "quote-deposit", "renewal-reminders", "store-orders", "receipt-expense", "meta-receipt-intake", "booking-deposit-review", "order-gcash-checkout"];
+const SLUGS = ["inquiry-triage", "invoice-follow-up", "no-show-follow-up", "appointment-reminder", "request-to-sheets", "lead-to-booking", "order-to-sheets", "order-paid", "invoice-paymongo", "quote-deposit", "renewal-reminders", "store-orders", "shopify-orders", "receipt-expense", "meta-receipt-intake", "booking-deposit-review", "order-gcash-checkout"];
 const parse = (slug: string) => definitionSchema.parse(TEMPLATES.find((t) => t.slug === slug)!.definition);
 
 describe("starter templates", () => {
@@ -168,6 +168,15 @@ describe("starter templates", () => {
     expect(def.trigger.type).toBe("webhook");
     expect(def.steps.map((s) => s.type)).toEqual(["sheets", "email", "slack"]);
     expect(JSON.stringify(def.steps.find((s) => s.type === "slack"))).not.toContain("customer_email");
+  });
+
+  it("shopify-orders uses the native order trigger, receipts only orders that have an email, and keeps customer details out of the Slack note", () => {
+    const def = parse("shopify-orders");
+    expect(def.trigger.type).toBe("shopify_order");
+    expect(def.steps.map((s) => s.type)).toEqual(["sheets", "condition", "email", "slack"]);
+    expect(def.edges).toContainEqual({ from: "has_email", to: "send_receipt", on: "true" });
+    expect(def.edges).toContainEqual({ from: "has_email", to: "tell_owner", on: "false" });
+    expect(JSON.stringify(def.steps.find((s) => s.type === "slack"))).not.toMatch(/customer_(email|phone|name)/);
   });
 
   it("booking-deposit-review books, asks for a deposit tied to the booking, reminds once and releases the slot at the deadline", () => {

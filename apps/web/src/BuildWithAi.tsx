@@ -26,6 +26,8 @@ const NEEDS: Record<string, { provider: string; label: string }> = {
   paymongo_link: { provider: "paymongo", label: "PayMongo" },
   payment_status: { provider: "paymongo", label: "PayMongo" },
   meta_reply: { provider: "meta_messenger", label: "Facebook Messenger & Instagram" },
+  shopify_create_product: { provider: "shopify", label: "Shopify" },
+  shopify_update_product: { provider: "shopify", label: "Shopify" },
 };
 const OUTPUT: Record<string, string> = {
   approval: "Approval decision",
@@ -37,6 +39,8 @@ const OUTPUT: Record<string, string> = {
   telegram: "Chat message",
   sms: "SMS delivery",
   meta_reply: "DM reply",
+  shopify_create_product: "Shopify product",
+  shopify_update_product: "Shopify product update",
   ai: "AI result",
   delay: "Resume time",
   sheets: "Spreadsheet row",

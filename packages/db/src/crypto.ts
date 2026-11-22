@@ -54,7 +54,7 @@ export async function retireSecret(tx: Pick<Db, "select" | "insert" | "execute">
  * is either still current or already retired here, never missing from both (retest of 6e603de).
  */
 export async function secretValuesToHide(db: Pick<Db, "execute">, key: Buffer, userId: string): Promise<string[]> {
-  const { rows } = await db.execute<EncryptedSecret & { name: string; kind: "plain" | "oauth" | "meta" }>(sql`
+  const { rows } = await db.execute<EncryptedSecret & { name: string; kind: "plain" | "oauth" | "meta" | "shopify" }>(sql`
     select name, ciphertext, iv, auth_tag as "authTag", 'plain' as kind from secrets where user_id = ${userId}
     union all
     select name, ciphertext, iv, auth_tag as "authTag", 'plain' as kind from retired_secrets where user_id = ${userId}
@@ -64,6 +64,8 @@ export async function secretValuesToHide(db: Pick<Db, "execute">, key: Buffer, u
     select 'connection:' || provider, credential_ciphertext, credential_iv, credential_auth_tag, 'plain' as kind from connections where user_id = ${userId} and provider = 'unisms'
     union all
     select 'connection:' || provider, credential_ciphertext, credential_iv, credential_auth_tag, 'meta' as kind from connections where user_id = ${userId} and provider = 'meta_messenger'
+    union all
+    select 'connection:' || provider, credential_ciphertext, credential_iv, credential_auth_tag, 'shopify' as kind from connections where user_id = ${userId} and provider = 'shopify'
     union all
     select 'gmail_oauth', password_ciphertext, password_iv, password_auth_tag, 'oauth' as kind from mail_senders where user_id = ${userId} and auth_method = 'oauth' and password_ciphertext is not null`);
   // OAuth, UniSMS, and Meta tokens too, as defense in depth: they should never reach history at all (decisions 0058, 0074, 0075).
@@ -83,8 +85,17 @@ export async function secretValuesToHide(db: Pick<Db, "execute">, key: Buffer, u
       return [];
     }
   };
+  const shopifyTokens = (plaintext: string): string[] => {
+    try {
+      const parsed = JSON.parse(plaintext) as { accessToken?: unknown; appSecret?: unknown } | null;
+      return [parsed?.accessToken, parsed?.appSecret].filter((v): v is string => typeof v === "string" && v.length > 0);
+    } catch {
+      return [];
+    }
+  };
   return rows.flatMap((r) => {
     if (r.kind === "oauth") return tokens(r);
+    if (r.kind === "shopify" || r.name === "connection:shopify") return [decryptSecret(key, userId, r.name, r), ...shopifyTokens(decryptSecret(key, userId, r.name, r))];
     const plaintext = decryptSecret(key, userId, r.name, r);
     if (r.kind === "meta" || r.name === "connection:meta_messenger") return [plaintext, ...metaTokens(plaintext)];
     return [plaintext];
@@ -93,6 +104,14 @@ export async function secretValuesToHide(db: Pick<Db, "execute">, key: Buffer, u
 
 /** Extracts secret values from a decrypted secret or retired connection row (including all three Meta tokens for connection:meta_messenger). */
 export function extractRetiredSecretValues(name: string, plaintext: string): string[] {
+  if (name === "connection:shopify") {
+    try {
+      const parsed = JSON.parse(plaintext) as { accessToken?: unknown; appSecret?: unknown } | null;
+      return [plaintext, ...[parsed?.accessToken, parsed?.appSecret].filter((v): v is string => typeof v === "string" && v.length > 0)];
+    } catch {
+      return [plaintext];
+    }
+  }
   if (name === "connection:meta_messenger") {
     try {
       const parsed = JSON.parse(plaintext) as { pageAccessToken?: unknown; appSecret?: unknown; verifyToken?: unknown } | null;

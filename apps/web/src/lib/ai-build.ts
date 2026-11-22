@@ -28,7 +28,7 @@ export const withPeople = (def: WorkflowDefinition, real: { owner: string; membe
 export const withLabels = (def: WorkflowDefinition, real: { owner: string; member1?: string }): WorkflowDefinition =>
   swap(def, [[real.owner, PEOPLE.owner], ...(real.member1 ? ([[real.member1, PEOPLE.member1]] as [string, string][]) : [])]);
 
-const WHEN: Record<string, string> = { email: "When an email arrives", payment: "When a payment event arrives", form: "When someone fills the form", webhook: "When another system sends a web request", manual: "When you run it by hand", meta_dm: "When a Messenger or Instagram DM arrives" };
+const WHEN: Record<string, string> = { email: "When an email arrives", payment: "When a payment event arrives", form: "When someone fills the form", webhook: "When another system sends a web request", manual: "When you run it by hand", meta_dm: "When a Messenger or Instagram DM arrives", shopify_order: "When a new Shopify order comes in" };
 const BRANCH: Record<string, string> = {
   approved: "If approved:",
   rejected: "If rejected:",
@@ -98,6 +98,10 @@ function sentence(step: WorkflowDefinition["steps"][number], language: Language)
       return t("Post to your Discord channel");
     case "google_docs":
       return t("Make a Google Docs document from your template");
+    case "shopify_create_product":
+      return t("Create a product in Shopify");
+    case "shopify_update_product":
+      return t("Update a product in Shopify");
     default:
       return t("Do something");
   }

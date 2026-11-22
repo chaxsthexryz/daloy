@@ -150,6 +150,31 @@ export const metaReplyConfigSchema = z.object({
   text: template(2000).min(1),
 });
 export type MetaReplyConfig = z.infer<typeof metaReplyConfigSchema>;
+// Shopify products (decision 0105), queued as deliveries. Every field is a template, read as text when the step runs: price like "499.50" in the
+// store's currency, imageUrl an https link Shopify downloads from. A new product starts as a
+// draft, so nothing goes on sale by surprise. Blank after filling in means "leave as is" for an update.
+const productStatus = z.enum(["draft", "active"]);
+const productText = {
+  description: template(5000).optional().describe("Plain text. Line breaks are kept, and HTML is shown as typed."),
+  price: template(40).optional().describe("In the store's currency, like 499 or 499.50. Leave empty to keep the price as it is."),
+  sku: template(255).optional().describe("The SKU is case-sensitive."),
+  imageUrl: template(2000).optional().describe("A link that starts with https://. Shopify downloads the picture from it."),
+};
+export const shopifyCreateProductConfigSchema = z.object({
+  title: template(255).min(1),
+  ...productText,
+  status: productStatus.default("draft").describe("A new product is a draft until you choose active."),
+});
+// "by" says what "product" holds: a Shopify product id (or the link to it in the Shopify admin) or an exact SKU.
+export const shopifyUpdateProductConfigSchema = z
+  .object({
+    by: z.enum(["id", "sku"]).default("sku").describe("Whether Product below is a Shopify product id or an exact SKU."),
+    product: template(255).min(1).describe("The Shopify product id (or the product's link in the Shopify admin), or the exact SKU."),
+    title: template(255).optional(),
+    ...productText,
+    status: productStatus.optional(),
+  })
+  .refine((c) => [c.title, c.description, c.price, c.sku, c.status, c.imageUrl].some((v) => v !== undefined), "choose at least one thing to change");
 export type SheetsConfig = z.infer<typeof sheetsConfigSchema>;
 export type SlackConfig = z.infer<typeof slackConfigSchema>;
 
@@ -207,6 +232,8 @@ const stepSchema = z.discriminatedUnion("type", [
   z.object({ id: stepId, disabled, type: z.literal("meta_reply"), config: metaReplyConfigSchema }),
   z.object({ id: stepId, disabled, type: z.literal("discord"), config: discordConfigSchema }),
   z.object({ id: stepId, disabled, type: z.literal("google_docs"), config: googleDocsConfigSchema }),
+  z.object({ id: stepId, disabled, type: z.literal("shopify_create_product"), config: shopifyCreateProductConfigSchema }),
+  z.object({ id: stepId, disabled, type: z.literal("shopify_update_product"), config: shopifyUpdateProductConfigSchema }),
 ]);
 export type Step = z.infer<typeof stepSchema>;
 
@@ -274,6 +301,9 @@ const triggerSchema = z.discriminatedUnion("type", [
       })
       .default({ channel: "both", requireImage: false }),
   }),
+  // Starts a run for each new Shopify order (orders/create). Daloy registers the webhook when the store is connected and
+  // checks X-Shopify-Hmac-Sha256 with the app secret. The order arrives as trigger fields (decision 0105).
+  z.object({ type: z.literal("shopify_order"), config: z.strictObject({}).default({}) }),
 ]);
 export type Trigger = z.infer<typeof triggerSchema>;
 
@@ -362,7 +392,7 @@ export function parsePayload(fields: FormField[], data: unknown, context?: Paylo
   return { ok: false, errors: r.error.issues.map((i) => `${i.path.join(".") || "payload"}: ${i.message}`) };
 }
 
-const priceTrusted = (t: Trigger) => t.type === "manual" || t.type === "schedule" || t.type === "payment" || (t.type === "webhook" && t.config.hmacSecret !== undefined);
+const priceTrusted = (t: Trigger) => t.type === "manual" || t.type === "schedule" || t.type === "payment" || t.type === "shopify_order" || (t.type === "webhook" && t.config.hmacSecret !== undefined);
 
 export const definitionSchema = z
   .object({
@@ -401,6 +431,10 @@ export const definitionSchema = z
       // A signed webhook is the shop's own server; staff start manual runs; schedule and payment triggers carry no visitor text.
       if (s.type === "payment_due" && !priceTrusted(def.trigger) && [s.config.amount, s.config.total].some((t) => t !== undefined && /\{\{\s*trigger\./.test(t))) {
         fail(`payment_due step "${s.id}" cannot take its amount or total from a ${def.trigger.type} trigger, which anyone can fill in. Use a fixed amount, a signed webhook or a manual run.`);
+      }
+      // A product step writes to the owner's store, so what a stranger typed (a public form, an email, a message) must not choose its fields.
+      if ((s.type === "shopify_create_product" || s.type === "shopify_update_product") && !priceTrusted(def.trigger) && Object.values(s.config).some((v) => typeof v === "string" && /\{\{\s*trigger\./.test(v))) {
+        fail(`${s.type} step "${s.id}" cannot take its fields from a ${def.trigger.type} trigger, which anyone can fill in. Use fixed values, a signed webhook, a Shopify order or a manual run.`);
       }
       if (s.type !== "booking") continue;
       if (s.config.start !== undefined && !bookingStartField(def.trigger, s.config)) fail(`booking step "${s.id}" needs start to be {{trigger.<field>}} for a datetime field of the trigger`);

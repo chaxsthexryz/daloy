@@ -128,10 +128,10 @@ test("Settings in the menu sets light or dark on this device, and System follows
 test("Apps lists each app as a card, and Connect opens that app's own setup", async ({ page }) => {
   await signUp(page);
   await page.getByRole("link", { name: "Apps" }).first().click();
-  await expect(page.getByRole("button", { name: "All 14" })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("button", { name: "All 15" })).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByRole("button", { name: "Connected 0" })).toBeVisible();
   const more = page.getByRole("region", { name: "More" });
-  for (const name of ["Gmail", "Outlook", "Google Sheets", "Slack", "Microsoft Teams", "Discord", "Telegram", "Facebook Messenger & Instagram", "Google Calendar", "Google Drive", "PayMongo", "Airtable", "Notion", "Trello"]) await expect(more.getByRole("heading", { name, exact: true })).toBeVisible();
+  for (const name of ["Gmail", "Outlook", "Google Sheets", "Slack", "Microsoft Teams", "Discord", "Telegram", "Facebook Messenger & Instagram", "Google Calendar", "Google Drive", "PayMongo", "Airtable", "Notion", "Trello", "Shopify"]) await expect(more.getByRole("heading", { name, exact: true })).toBeVisible();
 
   await page.getByLabel("Find an app").fill("sla");
   await expect(more.getByRole("listitem")).toHaveCount(1);

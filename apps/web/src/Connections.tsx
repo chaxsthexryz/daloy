@@ -5,7 +5,7 @@ import { ConnectPanel, Status, useAction } from "./ConnectPanel";
 import { RecordTargetPicker } from "./RecordTargetPicker";
 import { DiscordSetup, PaymongoSetup, TeamsSetup, TelegramSetup } from "./PasteSetups";
 
-export type Provider = "google_sheets" | "slack" | "outlook" | "teams" | "telegram" | "unisms" | "google_calendar" | "google_drive" | "paymongo" | "airtable" | "notion" | "trello" | "meta_messenger" | "discord";
+export type Provider = "google_sheets" | "slack" | "outlook" | "teams" | "telegram" | "unisms" | "google_calendar" | "google_drive" | "paymongo" | "airtable" | "notion" | "trello" | "meta_messenger" | "shopify" | "discord";
 export type Connection = { provider: Provider; status: "active" | "failed"; authMethod?: "token" | "service_account" | "oauth" | "webhook_url"; account: string; destination: Record<string, string> | null; lastError: string | null; lastTestedAt: string | null };
 export type TestResult = { ok: true; range?: string; channel?: string } | { ok: false; error: string };
 export type OutlookSetup = { configured: boolean; adminConsentUrl?: string };
@@ -760,6 +760,133 @@ export function MetaMessengerConnection({ conn, webhookBase, onChange }: { conn:
   );
 }
 
+/**
+ * Shopify (decision 0105): the shop domain, the app's client secret (it signs the order webhook), and the client ID of an
+ * app made in the Dev Dashboard, or the Admin API access token of an older app made in the store admin.
+ */
+export function ShopifyConnection({ conn, webhookBase, onChange }: { conn: Connection | null; webhookBase: string; onChange: () => Promise<unknown> }) {
+  const { t } = useLanguage();
+  const { error, busy, act } = useAction(onChange);
+  const [editing, setEditing] = useState(false);
+  const [test, setTest] = useState<(TestResult & { missingScopes?: string }) | null>(null);
+  const [missing, setMissing] = useState("");
+  const [form, setForm] = useState({ shop: conn?.destination?.shop ?? "", kind: "dev" as "dev" | "admin", clientId: "", accessToken: "", appSecret: "" });
+  const webhookUrl = conn?.destination?.webhookPath ? `${webhookBase}/${conn.destination.webhookPath}` : null;
+  const webhookFailed = conn?.destination?.webhook === "failed";
+  const save = (e: FormEvent) => {
+    e.preventDefault();
+    void act(async () => {
+      const saved = await api<{ missingScopes?: string[] }>("PUT", "/settings/connections/shopify", {
+        shop: form.shop.trim(),
+        ...(form.kind === "dev" ? { clientId: form.clientId.trim() } : { accessToken: form.accessToken.trim() }),
+        ...(form.appSecret.trim() ? { appSecret: form.appSecret.trim() } : {}),
+      });
+      setMissing((saved.missingScopes ?? []).join(", "));
+      setForm({ ...form, shop: form.shop.trim(), clientId: "", accessToken: "", appSecret: "" });
+      setEditing(false);
+      setTest(null);
+    });
+  };
+  const scopes = missing || (test?.ok ? test.missingScopes ?? "" : "");
+
+  return (
+    <div className="connection" aria-busy={busy} aria-labelledby="shopify-h">
+      <h3 id="shopify-h">Shopify</h3>
+      {conn && <Status conn={conn} label={t("Store")} />}
+      {conn?.destination?.shopName && (
+        <p>
+          {t("Store:")} <strong>{conn.destination.shopName}</strong> ({conn.destination.shop})
+        </p>
+      )}
+      {conn && (
+        <p role={webhookFailed ? "alert" : "status"} className={webhookFailed ? "message error" : undefined}>
+          {webhookFailed
+            ? t("Shopify refused the new-order webhook: {error} Orders will not arrive until it is registered. Fix that, then save again.", { error: conn.destination?.webhookError ?? "" })
+            : t("Daloy registered the new-order webhook in your store.")}
+        </p>
+      )}
+      {webhookUrl && (
+        <p className="muted">
+          {t("Webhook URL:")} <code>{webhookUrl}</code>
+        </p>
+      )}
+      {scopes && <p role="alert" className="message error">{t("The app is missing these access scopes: {scopes}.", { scopes })}</p>}
+      <p className="muted">
+        {t("Make an app in the Shopify Dev Dashboard with the access scopes read_orders and write_products, and install it on your store. Then paste its client ID and client secret from the app's Settings. The app and the store must belong to the same Shopify organization. An older app made in your store admin also works.")}
+      </p>
+      {conn && (
+        <div className="actions">
+          <button type="button" disabled={busy} onClick={() => void act(async () => setTest(await api<TestResult & { missingScopes?: string }>("POST", "/settings/connections/shopify/test")))}>
+            {t("Test connection")}
+          </button>
+          {!editing && (
+            <button type="button" className="quiet" onClick={() => setEditing(true)}>
+              {t("Replace credentials")}
+            </button>
+          )}
+          <button
+            type="button"
+            className="quiet"
+            disabled={busy}
+            onClick={() => window.confirm(t("Disconnect Shopify? New orders stop arriving and the product steps stop working until you reconnect.")) && void act(() => api("DELETE", "/settings/connections/shopify"))}
+          >
+            {t("Disconnect")}
+          </button>
+        </div>
+      )}
+      <Outcome test={test} what={t("Shopify accepted the app")} />
+      {(!conn || editing) && (
+        <form onSubmit={save}>
+          <div className="field">
+            <label htmlFor="shopify-shop">{t("Shop domain")}</label>
+            <input id="shopify-shop" value={form.shop} onChange={(e) => setForm({ ...form, shop: e.target.value })} required placeholder="your-shop.myshopify.com" autoComplete="off" />
+          </div>
+          <fieldset className="field">
+            <legend>{t("Where did you make the app?")}</legend>
+            <label>
+              <input type="radio" name="shopify-kind" checked={form.kind === "dev"} onChange={() => setForm({ ...form, kind: "dev" })} /> {t("In the Dev Dashboard")}
+            </label>
+            <label>
+              <input type="radio" name="shopify-kind" checked={form.kind === "admin"} onChange={() => setForm({ ...form, kind: "admin" })} /> {t("In my store admin, before 2026")}
+            </label>
+          </fieldset>
+          {form.kind === "dev" ? (
+            <div className="field">
+              <label htmlFor="shopify-client-id">{t("Client ID")}</label>
+              <input id="shopify-client-id" value={form.clientId} onChange={(e) => setForm({ ...form, clientId: e.target.value })} required autoComplete="off" />
+            </div>
+          ) : (
+            <div className="field">
+              <label htmlFor="shopify-token">{t("Admin API access token")}</label>
+              <input id="shopify-token" type="password" value={form.accessToken} onChange={(e) => setForm({ ...form, accessToken: e.target.value })} required autoComplete="off" />
+            </div>
+          )}
+          <div className="field">
+            <label htmlFor="shopify-secret">
+              {t("Client secret")}
+              {conn ? t(", leave empty to keep the current secret") : ""}
+            </label>
+            <input id="shopify-secret" type="password" value={form.appSecret} onChange={(e) => setForm({ ...form, appSecret: e.target.value })} required={!conn} autoComplete="off" />
+          </div>
+          <div className="actions">
+            <button type="submit" className="primary" disabled={busy}>
+              {conn ? t("Save") : t("Connect Shopify")}
+            </button>
+            {conn && (
+              <button type="button" className="quiet" onClick={() => setEditing(false)}>
+                {t("Cancel")}
+              </button>
+            )}
+          </div>
+        </form>
+      )}
+      <p role="alert" className="message error" hidden={!error}>
+        {error}
+      </p>
+    </div>
+  );
+}
+
 // ---------------------------------------------------------------- delivery status, for Requests and run details
 
 export type Delivery = {
@@ -773,7 +900,7 @@ export type Delivery = {
   lastError: string | null;
 };
 
-const NAMES: Record<Provider, string> = { google_sheets: "Sheet row", slack: "Slack note", outlook: "Outlook email", teams: "Teams note", discord: "Discord message", telegram: "Telegram message", unisms: "SMS message", google_calendar: "Calendar event", google_drive: "Drive file", paymongo: "PayMongo", airtable: "Airtable record", notion: "Notion page", trello: "Trello card", meta_messenger: "Messenger or Instagram reply" };
+const NAMES: Record<Provider, string> = { google_sheets: "Sheet row", slack: "Slack note", outlook: "Outlook email", teams: "Teams note", discord: "Discord message", telegram: "Telegram message", unisms: "SMS message", google_calendar: "Calendar event", google_drive: "Drive file", paymongo: "PayMongo", airtable: "Airtable record", notion: "Notion page", trello: "Trello card", meta_messenger: "Messenger or Instagram reply", shopify: "Shopify product" };
 
 function describe(d: Delivery, t: ReturnType<typeof useLanguage>["t"]): string {
   const sent = d.provider === "outlook" || d.provider === "unisms" || d.provider === "meta_messenger";

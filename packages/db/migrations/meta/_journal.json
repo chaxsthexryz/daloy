@@ -337,6 +337,13 @@
       "when": 1795400000004,
       "tag": "0047_discord_provider",
       "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1795400000005,
+      "tag": "0048_shopify_connection",
+      "breakpoints": true
     }
   ]
 }

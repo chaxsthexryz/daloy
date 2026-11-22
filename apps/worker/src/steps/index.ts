@@ -8,6 +8,7 @@ import { loadAiFiles } from "./ai-files";
 import { googleDocsStep, type DocsInput } from "./google-docs";
 import { httpRequest } from "./http";
 import { expireCheckout, paymongoLink } from "./paymongo";
+import { shopifyPayload, type ShopifyCreateInput, type ShopifyUpdateInput } from "./shopify";
 import { defaultGuard, type SsrfGuard } from "./ssrf";
 
 /**
@@ -109,6 +110,16 @@ function resolveInput(step: Step, ctx: ExpressionContext): Record<string, unknow
     }
     case "meta_reply":
       return { recipientId: text(step.config.recipientId, ctx), channel: text(step.config.channel, ctx), text: text(step.config.text, ctx) } satisfies MetaReplyInput;
+    case "shopify_create_product": {
+      const c = step.config;
+      const opt = (v: string | undefined) => (v === undefined ? "" : text(v, ctx));
+      return { title: text(c.title, ctx), description: opt(c.description), price: opt(c.price), sku: opt(c.sku), status: c.status, imageUrl: opt(c.imageUrl) } satisfies ShopifyCreateInput;
+    }
+    case "shopify_update_product": {
+      const c = step.config;
+      const opt = (v: string | undefined) => (v === undefined ? "" : text(v, ctx));
+      return { by: c.by, product: text(c.product, ctx), title: opt(c.title), description: opt(c.description), price: opt(c.price), sku: opt(c.sku), imageUrl: opt(c.imageUrl), ...(c.status ? { status: c.status } : {}) } satisfies ShopifyUpdateInput;
+    }
     case "calendar":
       return { title: text(step.config.title, ctx), description: step.config.description === undefined ? "" : text(step.config.description, ctx) } satisfies CalendarInput;
     case "payment_status":
@@ -416,6 +427,16 @@ async function runStep(deps: FullDeps, step: Step, input: unknown, ctx: Expressi
         },
       });
       return { output: { deliveryId: d.id, reference, state: d.state, recipientId } };
+    }
+    case "shopify_create_product":
+    case "shopify_update_product": {
+      // Queued like the other apps (decision 0105): pinned to the store connected now, retried and reviewed on its own.
+      const payload = shopifyPayload(step.type, input as ShopifyCreateInput | ShopifyUpdateInput);
+      const ref = (ctx.trigger as { reference?: unknown } | null)?.reference;
+      const reference = typeof ref === "string" ? ref : runId;
+      if (mock) return { output: { mocked: true, reference, ...payload } };
+      const d = await queueDelivery(deps.db, { userId, runId, stepId: step.id, provider: "shopify", reference, payload });
+      return { output: { deliveryId: d.id, reference, state: d.state } };
     }
     case "payment_status": {
       const cfg = input as { link: string };

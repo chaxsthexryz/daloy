@@ -143,7 +143,7 @@ Open New automation and set up each of these once. Change the text to suit you, 
 | Client request to Sheets | A row per request (needs Sheets) |
 | Quote approval with deposit | Approve one quote, decline one, and let one time out |
 | Renewal reminders | A sheet of domains, hosting and permits; set one due in 30 days to see the mail |
-| Shopify or WooCommerce orders | Send the sample order from Mission 9's webhook steps as if it came from your shop |
+| WooCommerce or other store orders | Send the sample order from Mission 9's webhook steps as if it came from your shop. A Shopify store uses the Shopify orders template and its own trigger instead |
 | Office requests (Set up for my office) | The guided office setup from New automation |
 
 ## Mission 9: webhooks, the signature and the timestamp
