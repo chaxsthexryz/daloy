@@ -342,6 +342,8 @@ export function parsePayload(fields: FormField[], data: unknown, context?: Paylo
   return { ok: false, errors: r.error.issues.map((i) => `${i.path.join(".") || "payload"}: ${i.message}`) };
 }
 
+const priceTrusted = (t: Trigger) => t.type === "manual" || t.type === "schedule" || t.type === "payment" || (t.type === "webhook" && t.config.hmacSecret !== undefined);
+
 export const definitionSchema = z
   .object({
     trigger: triggerSchema,
@@ -375,6 +377,11 @@ export const definitionSchema = z
       if (s.type === "payment_status" && !def.steps.some((o) => o.id === s.config.link && (o.type === "paymongo_link" || o.type === "payment_due"))) fail(`payment_status step "${s.id}" needs link to be the id of a paymongo_link or payment_due step`);
       if (s.type === "payment_expire" && !def.steps.some((o) => o.id === s.config.due && o.type === "payment_due")) fail(`payment_expire step "${s.id}" needs due to be the id of a payment_due step`);
       if (s.type === "payment_due" && s.config.booking !== undefined && !def.steps.some((o) => o.id === s.config.booking && o.type === "booking" && o.config.action === "create")) fail(`payment_due step "${s.id}" needs booking to be the id of a booking step that creates a booking`);
+      // The price of a due is what counts as paid, so a public visitor must not choose it (review of 22 November, M4).
+      // A signed webhook is the shop's own server; staff start manual runs; schedule and payment triggers carry no visitor text.
+      if (s.type === "payment_due" && !priceTrusted(def.trigger) && [s.config.amount, s.config.total].some((t) => t !== undefined && /\{\{\s*trigger\./.test(t))) {
+        fail(`payment_due step "${s.id}" cannot take its amount or total from a ${def.trigger.type} trigger, which anyone can fill in. Use a fixed amount, a signed webhook or a manual run.`);
+      }
       if (s.type !== "booking") continue;
       if (s.config.start !== undefined && !bookingStartField(def.trigger, s.config)) fail(`booking step "${s.id}" needs start to be {{trigger.<field>}} for a datetime field of the trigger`);
       // Changing a booking is for staff (the Run button), MCP (its own tools) and signed webhooks, never a public form.

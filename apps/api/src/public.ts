@@ -462,8 +462,7 @@ const DEFAULT_UPLOAD_BUDGET = 128 * 1024 * 1024;
  * reservation is the most the request can occupy.
  * shortcut: the counter is per process, like RateLimit; several API instances each get their own budget.
  */
-export function UploadBudget() {
-  let used = 0;
+export function UploadBudget(route: { maxBytes: number; check: (db: Db, req: Request) => Promise<void> } = { maxBytes: MULTIPART_MAX_BYTES, check: formTakesFiles }) {
   @Injectable()
   class UploadBudgetGuard implements CanActivate {
     constructor(
@@ -478,21 +477,28 @@ export function UploadBudget() {
       if (!req.is("multipart/form-data")) return true;
       const length = /^\d+$/.test(req.get("content-length") ?? "") ? Number(req.get("content-length")) : 0;
       if (length === 0) throw new HttpException("send the form with its Content-Length", HttpStatus.LENGTH_REQUIRED);
-      if (length > MULTIPART_MAX_BYTES) throw new HttpException("this form is larger than a submission can be", HttpStatus.PAYLOAD_TOO_LARGE);
-      if (used + length > (this.config.uploadBudgetBytes ?? DEFAULT_UPLOAD_BUDGET)) {
+      if (length > route.maxBytes) throw new HttpException("this form is larger than a submission can be", HttpStatus.PAYLOAD_TOO_LARGE);
+      if (uploadBytesInFlight + length > (this.config.uploadBudgetBytes ?? DEFAULT_UPLOAD_BUDGET)) {
         res.setHeader("Retry-After", "5");
         throw new HttpException("the server is taking other uploads, try again in a moment", HttpStatus.SERVICE_UNAVAILABLE);
       }
-      used += length;
-      res.once("close", () => (used -= length));
-      const id = z.uuid().safeParse(req.params.id);
-      if (!id.success) throw new NotFoundException();
-      const { fields } = await findForm(this.db, id.data);
-      if (!fields.some((f) => f.type === "file")) throw new HttpException("this form does not take files", HttpStatus.UNSUPPORTED_MEDIA_TYPE);
+      uploadBytesInFlight += length;
+      res.once("close", () => (uploadBytesInFlight -= length));
+      await route.check(this.db, req);
       return true;
     }
   }
   return UploadBudgetGuard;
+}
+
+/** One budget for every route that reads multipart bodies: forms and the pay page (review of 22 November, M1). */
+let uploadBytesInFlight = 0;
+
+async function formTakesFiles(db: Db, req: Request) {
+  const id = z.uuid().safeParse(req.params.id);
+  if (!id.success) throw new NotFoundException();
+  const { fields } = await findForm(db, id.data);
+  if (!fields.some((f) => f.type === "file")) throw new HttpException("this form does not take files", HttpStatus.UNSUPPORTED_MEDIA_TYPE);
 }
 
 @Controller("forms")

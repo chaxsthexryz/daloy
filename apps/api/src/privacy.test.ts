@@ -115,6 +115,23 @@ describe("export", () => {
     }
   });
 
+  // Review of 22 November, M3: the file goes to the customer, so it hides workspace secrets like every other history reader.
+  it("hides the workspace's secret values that a step saw", async () => {
+    const o = await owner();
+    const value = `synthetic-${randomBytes(12).toString("hex")}`;
+    await o.agent.put("/secrets/shop_api").send({ value }).expect(204);
+    const a = who("Dina Ramos", "dina@secret.test", "0917 222 3333", "+639172223333");
+    await seed(o.userId, a);
+    const [run] = await db.select({ id: runs.id }).from(runs).where(sql`${runs.triggerPayload}->>'name' = ${a.name}`);
+    await db.insert(stepRuns).values({ runId: run!.id, stepId: "post", attempt: 1, state: "failed", input: { url: `https://shop.test/?k=${value}` }, error: `shop answered 401 for ${value}` });
+    const res = await exportOf(o.agent, "email=dina@secret.test").expect(200);
+    const text = JSON.stringify(res.body);
+    expect(text).not.toContain(value);
+    expect(text).toContain("[secret]");
+    expect(text).toContain("Dear Dina Ramos");
+    expect(res.body.uploads[0].dataBase64).toBe(PNG.toString("base64"));
+  });
+
   it("writes an audit row with counts and no customer value", async () => {
     const o = await owner();
     const a = who("Cara Dizon", "cara@audit.test", "0919 000 1111", "+639190001111");

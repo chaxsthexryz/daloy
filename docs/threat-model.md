@@ -221,14 +221,15 @@ Entry points: `GET` and `POST /pay/<token>`, `GET /pay/<token>/qr`, the PayMongo
 
 - A screenshot or an edited receipt: a claim never confirms. Only a reviewer's decision or a verified PayMongo event that matches workspace, checkout, order reference, currency and amount does. Reused references are flagged across the workspace, including references the Messenger receipt check saw.
 - Guessing another order's page: the token is 32 random bytes, so the order reference alone opens nothing. Malformed tokens are refused before any query.
-- Spam and oversized uploads: 10 posts a minute per IP, checked before multer reads the body, one file of at most 5 MB, a honeypot, zod on every field, and the daily `upload` quota for images. A file that is not JPEG, PNG, WebP or HEIC by its bytes is flagged and not stored.
+- Spam and oversized uploads: 10 posts a minute per IP and the shared multipart byte budget, both checked before multer reads the body, with an unknown link refused first; one file of at most 5 MB, a honeypot, zod on every field, and the daily `upload` quota for images, charged inside the claim transaction after the repeat check, so a repeated reference or an unreadable file costs nothing. A file that is not JPEG, PNG, WebP or HEIC by its bytes is flagged and not stored. One order can have at most 5 references waiting for the seller (review of 22 November, M1 and M2, decision 0102).
+- A buyer choosing the price: a `payment_due` amount or total cannot read `{{trigger.*}}` unless the trigger is manual, a schedule, a payment or a signed webhook (review of 22 November, M4, decision 0102). A price taken from a step output is not traced.
 - Seeing receipts: images are served only to owners and operators of the claim's workspace, with `nosniff`, a `sandbox` CSP and `no-store`. Approvers, requesters, other workspaces and the customer get 403, 404 or 401. Decisions and the review list have the same rule.
 - Redirecting payments: only the owner may change the GCash number, account name or QR image. The QR upload must be a JPEG, PNG or WebP of at most 1 MB by its bytes. The checkout link on the page must be `https://` and comes from PayMongo's answer, never from a customer.
 - Two reviewers, or a reviewer and a webhook, at once: the due row is locked first in every path, decisions carry the claim version, and the confirmation reply is a delivery unique per run and step, so one confirmation goes out.
 - An unassigned staff member deciding: a due with an assigned reviewer is decided by that reviewer or the owner (403 otherwise).
 - Rows of another workspace: every query filters by the workspace from the session or the webhook path, and all queries are parameterised through Drizzle.
 - A late or second payment: a payment after the deadline or after a manual confirmation is parked as a checkout claim for a person, never counted as a second confirmation.
-- Remaining risk: the rate limit is per API instance; a holder of one pay link can add claims for that order up to the limit; reminders can reach a customer who paid but is not confirmed yet; the Expire API is checked against the fake only until the live check.
+- Remaining risk: the rate limit and the byte budget are per API instance; a holder of one pay link can keep 5 references waiting for that order; reminders can reach a customer who paid but is not confirmed yet; the Expire API is checked against the fake only until the live check.
 
 ## Airtable, Notion and Trello (decision 0046)
 
@@ -344,6 +345,8 @@ Entry points: `GET /privacy/customer` and `POST /privacy/customer/delete` (owner
 - Abuse of the endpoints: a per-owner rate limit, and a scan limited to one workspace.
 - The audit trail holding the data it is meant to protect: `privacy_requests` stores counts and fixed reasons only, never an email, phone, name or deleted value.
 - The export file leaking: it is an attachment with `Cache-Control: no-store`, and it holds receipt images as base64, so the owner should treat it as sensitive.
+- Workspace secrets in the export: the file goes to the customer, so it passes through the same history hider as the run page (current and retired secret values, then secret-looking keys). Review of 22 November, M3.
+- The identifier in the URL: the export takes the email or phone in the query string, which a proxy may log (review of 22 November, L2). Planned as a POST before the pilot.
 - Matching limits: a customer who used another email or number is not found, and a number written in an unusual way may be missed. The owner can repeat the request per identifier. The scan reads every run in the workspace, which is fine for small workspaces.
 - Data outside Daloy: copies already sent to Sheets, Slack, Telegram, Airtable, Notion, Trello, Drive, Google Calendar or email are not reached. The export lists the deliveries so the owner can find them.
 - Event keys: a `run_keys` row can hold an event key the workflow built from customer data. The delete does not rewrite it.

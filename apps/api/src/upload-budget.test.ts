@@ -1,7 +1,8 @@
 import { randomBytes } from "node:crypto";
 import { request as httpRequest } from "node:http";
 import type { AddressInfo } from "node:net";
-import type { Db } from "@daloy/db";
+import { createDue, runs, users, workflows, workflowVersions, type Db } from "@daloy/db";
+import { eq } from "drizzle-orm";
 import type { INestApplication } from "@nestjs/common";
 import type { Pool } from "pg";
 import { PgBoss } from "pg-boss";
@@ -50,6 +51,16 @@ async function fileForm() {
   const definition = { trigger: { type: "form", config: { fields } }, steps: [{ id: "a", type: "delay", config: { seconds: 1 } }], edges: [] };
   await agent.post(`/workflows/${wf.body.id}/versions`).send({ definition, publish: true }).expect(201);
   return (await agent.get(`/workflows/${wf.body.id}`).expect(200)).body.trigger.id as string;
+}
+
+async function payToken() {
+  const email = `budget${++seq}@test.local`;
+  await request(server).post("/auth/register").send({ email, password: "correct horse battery" }).expect(201);
+  const [u] = await db.select().from(users).where(eq(users.email, email));
+  const [wf] = await db.insert(workflows).values({ userId: u!.id, name: "Deposits", slug: `pay-${seq}` }).returning();
+  const [v] = await db.insert(workflowVersions).values({ workflowId: wf!.id, version: 1, definition: {} }).returning();
+  const [r] = await db.insert(runs).values({ workflowVersionId: v!.id, triggerPayload: {} }).returning();
+  return (await createDue(db, { userId: u!.id, test: false, workflowId: wf!.id, runId: r!.id, stepId: "ask", reference: `B-${seq}`, kind: "deposit", amountCentavos: 35000 })).token;
 }
 
 /** Sends only the headers of a multipart post that declares `length` bytes. The body is never sent, so a server that waits for it hangs. */
@@ -119,6 +130,23 @@ describe("multipart upload budget", () => {
     await agent.post(`/workflows/${wf.body.id}/versions`).send({ definition, publish: true }).expect(201);
     const formId = (await agent.get(`/workflows/${wf.body.id}`).expect(200)).body.trigger.id as string;
     expect((await headersOnly(`/forms/${formId}`, 1000)).status).toBe(415);
+  });
+
+  // Review of 22 November, M1: the pay page read receipts with multer outside the budget, for any token.
+  it("holds the pay page to the same budget, and answers an unknown pay link before reading the body", async () => {
+    expect((await headersOnly(`/pay/${"x".repeat(43)}`, 1000)).status).toBe(404);
+    const token = await payToken();
+    expect((await headersOnly(`/pay/${token}`, 20 * 1024 * 1024)).status).toBe(413);
+    const id = await fileForm();
+    const release = hold(`/forms/${id}`, BUDGET - 500);
+    await until((s) => s === 503);
+    const busy = await headersOnly(`/pay/${token}`, 1000);
+    busy.abort();
+    expect(busy.status).toBe(503);
+    release();
+    await until((s) => s !== 503);
+    const JPEG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.from("jpeg body")]);
+    await request(server).post(`/pay/${token}`).set("X-Forwarded-For", nextIp()).field("transfer_ref", "BUDGET1234").attach("receipt", JPEG, "r.jpg").expect(200);
   });
 
   it("still takes an ordinary small upload and a plain urlencoded post", async () => {

@@ -1,14 +1,14 @@
-import { centavosToPesos, claimImage, claimUsage, decideClaim, dueByToken, duesForBooking, latestClaim, manilaDay, paymentsExport, pendingCheckout, pesosToCentavos, QuotaError, readPaymentSettings, readProfile, retryReply, reviewList, savePaymentSettings, submitTransferClaim, workspaceLanguage, type Db, type Due } from "@daloy/db";
+import { centavosToPesos, claimImage, decideClaim, dueByToken, duesForBooking, latestClaim, manilaDay, paymentsExport, pendingCheckout, pesosToCentavos, QuotaError, readPaymentSettings, readProfile, retryReply, reviewList, savePaymentSettings, submitTransferClaim, TooManyClaimsError, workspaceLanguage, type Db, type Due } from "@daloy/db";
 import { FILE_MAX_BYTES, FILE_MIME, fileType } from "@daloy/engine";
 import { BadRequestException, Body, ConflictException, Controller, ForbiddenException, Get, Header, HttpCode, HttpStatus, Inject, NotFoundException, Param, Post, Put, Query, Res, StreamableFile, UploadedFile, UseGuards, UseInterceptors } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
-import type { Response } from "express";
+import type { Request, Response } from "express";
 import * as z from "zod";
 import { SessionGuard } from "./auth";
 import { COMPRESS_TAG } from "./compress";
 import { toCsv } from "./csv";
 import { Allow, CurrentUser, DB, MANAGE, OPERATE, RateLimit, ZodPipe, type SessionUser } from "./http";
-import { escapeHtml, page, pageBrand, privacyNotice } from "./public";
+import { escapeHtml, page, pageBrand, privacyNotice, UploadBudget } from "./public";
 
 /**
  * R3 payments (decisions 0088 to 0090). Staff routes are for the owner and operators of the workspace only: they see
@@ -144,6 +144,7 @@ const COPY = {
     notFound: "This payment link is not valid.",
     bad: "Check these and send again.",
     tooMany: "Too many uploads today. Please send your reference without the screenshot.",
+    tooManyOpen: "This order already has several references waiting for the seller. Wait for the seller to check them, or message the seller.",
   },
   tl: {
     title: "Bayad",
@@ -172,6 +173,7 @@ const COPY = {
     notFound: "Hindi valid ang payment link na ito.",
     bad: "Tingnan ang mga ito at ipadala muli.",
     tooMany: "Masyadong maraming upload ngayong araw. Ipadala ang reference nang walang screenshot.",
+    tooManyOpen: "May ilang reference na ang order na ito na naghihintay sa seller. Hintaying matingnan ng seller ang mga ito, o i-message ang seller.",
   },
 } as const;
 
@@ -185,6 +187,13 @@ export const payInput = z.object({
 });
 
 type Upload = { buffer: Buffer; size: number };
+
+/** One receipt at its limit plus the small text fields. */
+const PAY_MAX_BYTES = FILE_MAX_BYTES + 64 * 1024;
+async function payLinkExists(db: Db, req: Request) {
+  const token = req.params.token;
+  if (typeof token !== "string" || !TOKEN.safeParse(token).success || !(await dueByToken(db, token))) throw new NotFoundException();
+}
 
 /** The customer's pay page: the seller's QR Ph code and number, the PayMongo link when there is one, and the reference form. */
 @Controller("pay")
@@ -217,7 +226,8 @@ export class PayPageController {
   @Post(":token")
   @HttpCode(200)
   // Guards run before interceptors, so an IP over the limit is refused before multer reads the body.
-  @UseGuards(RateLimit(10))
+  // The shared upload budget, and an unknown link refused, before multer reads a byte (review of 22 November, M1).
+  @UseGuards(RateLimit(10), UploadBudget({ maxBytes: PAY_MAX_BYTES, check: payLinkExists }))
   @UseInterceptors(FileInterceptor("receipt", { limits: { fileSize: FILE_MAX_BYTES, files: 1, fields: 10, fieldSize: 4096, parts: 12 } }))
   @Header("Content-Type", "text/html; charset=utf-8")
   @Header("Cache-Control", "no-store")
@@ -247,16 +257,13 @@ export class PayPageController {
       return this.render(due, { errors, values: body });
     }
     const image = file && file.size > 0 ? { bytes: file.buffer } : undefined;
-    if (image) {
-      try {
-        await claimUsage(this.db, due.userId, "upload", { n: 1 });
-      } catch (err) {
-        if (!(err instanceof QuotaError)) throw err;
-        res.status(HttpStatus.TOO_MANY_REQUESTS);
-        return this.render(due, { errors: [copy.tooMany], values: body });
-      }
+    try {
+      await submitTransferClaim(this.db, token, { transferRef: parsed.data.transfer_ref, submittedCentavos, image });
+    } catch (err) {
+      if (!(err instanceof QuotaError) && !(err instanceof TooManyClaimsError)) throw err;
+      res.status(HttpStatus.TOO_MANY_REQUESTS);
+      return this.render(due, { errors: [err instanceof QuotaError ? copy.tooMany : copy.tooManyOpen], values: body });
     }
-    await submitTransferClaim(this.db, token, { transferRef: parsed.data.transfer_ref, submittedCentavos, image });
     return this.render(due, { sent: true });
   }
 
