@@ -36,7 +36,7 @@ export function insertables(draft: Draft, id: string): string[] {
   }
   const outputs = draft.steps
     .filter((s) => before.has(s.id) && s.id !== id)
-    .flatMap((s) => (s.type === "ai" ? Object.keys(mockAiOutput(s.config)).map((k) => `steps.${s.id}.output.${k}`) : [`steps.${s.id}.output`]));
+    .flatMap((s) => (s.type === "ai" ? Object.keys(mockAiOutput(s.config)).map((k) => `steps.${s.id}.output.${k}`) : s.type === "google_docs" ? ["url", "documentId", "name"].map((k) => `steps.${s.id}.output.${k}`) : [`steps.${s.id}.output`]));
   return [...fields.map((f) => `trigger.${f}`), ...outputs].map((r) => `{{${r}}}`);
 }
 
@@ -53,6 +53,8 @@ const NEEDS: Record<string, { provider: string; label: string }> = {
   airtable: { provider: "airtable", label: "Airtable" },
   notion: { provider: "notion", label: "Notion" },
   trello: { provider: "trello", label: "Trello" },
+  discord: { provider: "discord", label: "Discord" },
+  google_docs: { provider: "google_drive", label: "Google Drive" },
   paymongo_link: { provider: "paymongo", label: "PayMongo" },
   payment_status: { provider: "paymongo", label: "PayMongo" },
   meta_reply: { provider: "meta_messenger", label: "Facebook Messenger & Instagram" },

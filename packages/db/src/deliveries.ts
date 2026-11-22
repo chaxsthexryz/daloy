@@ -5,6 +5,7 @@ import { connectionCredential, markConnectionFailed, PROVIDER_NAMES, SMS_NOT_SET
 import { withGoogle } from "./google-access";
 import { freshToken, oauthProvider, slackToken, trelloAuthOf, withFreshToken, withRecordAuth } from "./oauth";
 import type { Db } from "./index";
+import { discordPost } from "./discord";
 import { airtableAdd, appendRowOnce, driveUpload, type DriveDestination, notionAddPage, trelloAddCard, deleteSheetMarker, outlookSend, ProviderError, slackPost, syncCalendarEvent, teamsPost, telegramSend, unismsSend, type CalendarDestination, type OutlookMessage, type ProviderErrorKind, type ProviderUrls, type SheetDestination } from "./providers";
 import { bookingSuperseded, supersededSql } from "./bookings";
 import { bookingForCalendar } from "./calendar";
@@ -222,6 +223,7 @@ async function attempt(db: Db, key: Buffer, urls: ProviderUrls, d: Delivery): Pr
     if (d.provider === "notion") return { state: "delivered", result: await auth((t) => notionAddPage(urls, t, destination as { databaseId: string; titleProperty: string }, p.title, p.fields)) };
     if (d.provider === "trello") return { state: "delivered", result: await auth((t) => trelloAddCard(urls, trelloAuthOf(activeConn.authMethod, t), destination.listId!, p.name, p.desc ?? "")) };
     const text = p.text;
+    if (d.provider === "discord") return { state: "delivered", result: await discordPost(urls, activeConn.credential, text) };
     if (d.provider === "teams") return { state: "delivered", result: await teamsPost(urls, activeConn.credential, text) };
     if (d.provider === "telegram") return { state: "delivered", result: await telegramSend(urls, activeConn.credential, destination.chatId!, text) };
     if (d.provider === "meta_messenger") {
@@ -329,6 +331,7 @@ function describe(provider: Provider, dest: Record<string, string>) {
   if (provider === "notion") return `the Notion database ${dest.databaseTitle ?? dest.databaseId}`;
   if (provider === "trello") return `the Trello list ${dest.listName ?? dest.listId}`;
   if (provider === "meta_messenger") return `the Meta Page ${dest.pageName ?? dest.pageId}`;
+  if (provider === "discord") return `the Discord channel ${dest.channelName ?? ""}`.trim();
   return `the Teams channel ${dest.channelName ?? ""}`.trim();
 }
 

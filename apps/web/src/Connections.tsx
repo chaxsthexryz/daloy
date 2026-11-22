@@ -3,9 +3,9 @@ import { useEffect, useState, type FormEvent } from "react";
 import { api } from "./api";
 import { ConnectPanel, Status, useAction } from "./ConnectPanel";
 import { RecordTargetPicker } from "./RecordTargetPicker";
-import { PaymongoSetup, TeamsSetup, TelegramSetup } from "./PasteSetups";
+import { DiscordSetup, PaymongoSetup, TeamsSetup, TelegramSetup } from "./PasteSetups";
 
-export type Provider = "google_sheets" | "slack" | "outlook" | "teams" | "telegram" | "unisms" | "google_calendar" | "google_drive" | "paymongo" | "airtable" | "notion" | "trello" | "meta_messenger";
+export type Provider = "google_sheets" | "slack" | "outlook" | "teams" | "telegram" | "unisms" | "google_calendar" | "google_drive" | "paymongo" | "airtable" | "notion" | "trello" | "meta_messenger" | "discord";
 export type Connection = { provider: Provider; status: "active" | "failed"; authMethod?: "token" | "service_account" | "oauth" | "webhook_url"; account: string; destination: Record<string, string> | null; lastError: string | null; lastTestedAt: string | null };
 export type TestResult = { ok: true; range?: string; channel?: string } | { ok: false; error: string };
 export type OutlookSetup = { configured: boolean; adminConsentUrl?: string };
@@ -599,6 +599,35 @@ export function TeamsConnection({ conn, onChange }: { conn: Connection | null; o
   );
 }
 
+export function DiscordConnection({ conn, onChange }: { conn: Connection | null; onChange: () => Promise<unknown> }) {
+  const { t } = useLanguage();
+  const { error, busy, act } = useAction(onChange);
+  const [editing, setEditing] = useState(false);
+  const [test, setTest] = useState<TestResult | null>(null);
+
+  return (
+    <div className="connection" aria-busy={busy} aria-labelledby="discord-h">
+      <h3 id="discord-h">Discord</h3>
+      {conn && <Status conn={conn} label={t("Channel")} />}
+      {conn && <p>{t("Messages go to this one channel, and everyone in it can read them. Keep names, emails and other private details out of the text. Daloy blocks @everyone and role pings.")}</p>}
+      {conn && (
+        <div className="actions">
+          <button type="button" disabled={busy} onClick={() => void act(async () => setTest(await api<TestResult>("POST", "/settings/connections/discord/test")))}>{t("Send a test message")}</button>
+          {!editing && (
+            <button type="button" className="quiet" onClick={() => setEditing(true)}>{t("Replace link")}</button>
+          )}
+          <button type="button" className="quiet" disabled={busy} onClick={() => window.confirm(t("Disconnect Discord? Automations stop posting there until you reconnect.")) && void act(() => api("DELETE", "/settings/connections/discord"))}>{t("Disconnect")}</button>
+        </div>
+      )}
+      {test?.ok ? <p role="status">{t("Discord accepted the test message. Check that it is in ")}{conn?.account}.</p> : <Outcome test={test} what="" />}
+      {(!conn || editing) && <DiscordSetup conn={conn} onChange={onChange} onClose={(result) => { setEditing(false); setTest(result ?? null); }} />}
+      <p role="alert" className="message error" hidden={!error}>
+        {error}
+      </p>
+    </div>
+  );
+}
+
 export function MetaMessengerConnection({ conn, webhookBase, onChange }: { conn: Connection | null; webhookBase: string; onChange: () => Promise<unknown> }) {
   const { t } = useLanguage();
   const { error, busy, act } = useAction(onChange);
@@ -744,7 +773,7 @@ export type Delivery = {
   lastError: string | null;
 };
 
-const NAMES: Record<Provider, string> = { google_sheets: "Sheet row", slack: "Slack note", outlook: "Outlook email", teams: "Teams note", telegram: "Telegram message", unisms: "SMS message", google_calendar: "Calendar event", google_drive: "Drive file", paymongo: "PayMongo", airtable: "Airtable record", notion: "Notion page", trello: "Trello card", meta_messenger: "Messenger or Instagram reply" };
+const NAMES: Record<Provider, string> = { google_sheets: "Sheet row", slack: "Slack note", outlook: "Outlook email", teams: "Teams note", discord: "Discord message", telegram: "Telegram message", unisms: "SMS message", google_calendar: "Calendar event", google_drive: "Drive file", paymongo: "PayMongo", airtable: "Airtable record", notion: "Notion page", trello: "Trello card", meta_messenger: "Messenger or Instagram reply" };
 
 function describe(d: Delivery, t: ReturnType<typeof useLanguage>["t"]): string {
   const sent = d.provider === "outlook" || d.provider === "unisms" || d.provider === "meta_messenger";

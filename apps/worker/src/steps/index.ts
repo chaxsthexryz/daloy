@@ -1,9 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { workspaceLanguage, aiConnection, bookFromStep, bookingOfStep, bookingReference, centavosToPesos, createDue, dueForStep, DueTakenError, expireDue, findReviewer, pendingCheckout, pesosToCentavos, checkReceiptReference, checkRecipients, claimTimeout, claimUsage, createApproval, findPaymentForStep, findApprover, queueCalendarEvent, queueDelivery, readSecrets, redactSecrets, secretForms, sendAs, type Db, type MailDeps, type Provider } from "@daloy/db";
-import { approvalEmailBody, type FileRef, bookingStartField, conditionBranch, normalizePhMobile, parseZoned, SMS_MAX_CHARS, type TestChoice, type Trigger, declaresJson, parseInstant, isRetryable, mockAiOutput, parseJsonTemplate, resolveJsonTemplate, resolveTemplate, StepError, usesSecrets, type ExpressionContext, type Step } from "@daloy/engine";
+import { providerUrls, type ProviderUrls } from "@daloy/db";
+import { approvalEmailBody, checkDiscordContent, type FileRef, bookingStartField, conditionBranch, normalizePhMobile, parseZoned, SMS_MAX_CHARS, type TestChoice, type Trigger, declaresJson, parseInstant, isRetryable, mockAiOutput, parseJsonTemplate, resolveJsonTemplate, resolveTemplate, StepError, usesSecrets, type ExpressionContext, type Step } from "@daloy/engine";
 import type { StepExecutor, StepResult } from "../advance";
 import { runAi } from "./ai";
 import { loadAiFiles } from "./ai-files";
+import { googleDocsStep, type DocsInput } from "./google-docs";
 import { httpRequest } from "./http";
 import { expireCheckout, paymongoLink } from "./paymongo";
 import { defaultGuard, type SsrfGuard } from "./ssrf";
@@ -12,8 +14,8 @@ import { defaultGuard, type SsrfGuard } from "./ssrf";
  * publicUrl (PUBLIC_URL) is where the API is reachable, for approval links. The AI model comes from the owner's settings
  * or the LLM_* env vars. Mail goes out as the owner: their Gmail, or the installation server when they connected none.
  */
-export type ExecutorDeps = { db: Db; secretsKey: Buffer; mail: MailDeps; guard?: SsrfGuard; publicUrl?: string };
-type FullDeps = ExecutorDeps & { guard: SsrfGuard; publicUrl: string };
+export type ExecutorDeps = { db: Db; secretsKey: Buffer; mail: MailDeps; guard?: SsrfGuard; publicUrl?: string; /** Where Google and the other providers live. Defaults to providerUrls() (env); tests point it at the fakes. */ urls?: ProviderUrls };
+type FullDeps = ExecutorDeps & { guard: SsrfGuard; publicUrl: string; urls: ProviderUrls };
 
 // Config fields are templates that must end up as text, even when a placeholder resolves to a number or object.
 function text(template: string, ctx: ExpressionContext): string {
@@ -94,7 +96,13 @@ function resolveInput(step: Step, ctx: ExpressionContext): Record<string, unknow
     case "slack":
     case "teams":
     case "telegram":
+    case "discord":
       return { text: text(step.config.text, ctx) } satisfies SlackInput;
+    case "google_docs": {
+      // Placeholder names are the owner's literals; only the name and the values are templates.
+      const { templateId, templateName, name, values } = step.config;
+      return { templateId, ...(templateName === undefined ? {} : { templateName }), name: text(name, ctx), values: Object.fromEntries(Object.entries(values).map(([k, v]) => [k, text(v, ctx)])) } satisfies DocsInput;
+    }
     case "sms": {
       const { to, message, senderId } = step.config;
       return { to: text(to, ctx), message: text(message, ctx), ...(senderId ? { senderId } : {}) } satisfies SmsInput;
@@ -325,6 +333,16 @@ async function runStep(deps: FullDeps, step: Step, input: unknown, ctx: Expressi
       const d = await queueDelivery(deps.db, { userId, runId, stepId: step.id, provider: "unisms", reference, payload });
       return { output: { deliveryId: d.id, reference, to: phone.value, state: d.state } };
     }
+    case "google_docs": {
+      const cfg = input as DocsInput;
+      if (mock) {
+        const name = cfg.name.trim();
+        if (!name) throw new StepError("The document name is empty after the values were filled in.", false);
+        return { output: { mocked: true, documentId: "mock-document", url: "https://docs.google.com/document/d/mock-document/edit", name, unmatched: [] } };
+      }
+      return { output: await googleDocsStep(deps.db, deps.secretsKey, deps.urls, { userId, runId, stepId: step.id }, cfg, () => claim("http")) };
+    }
+    case "discord":
     case "sheets":
     case "slack":
     case "outlook":
@@ -336,6 +354,11 @@ async function runStep(deps: FullDeps, step: Step, input: unknown, ctx: Expressi
       // The request reference when the run came from a guided form, else the run id, so every row and message can be traced.
       const ref = (ctx.trigger as { reference?: unknown } | null)?.reference;
       const reference = typeof ref === "string" ? ref : runId;
+      if (step.type === "discord") {
+        const content = checkDiscordContent((input as SlackInput).text);
+        if (!content.ok) throw new StepError(content.error, false);
+        (input as SlackInput).text = content.value;
+      }
       const payload =
         step.type === "sheets"
           ? { row: [reference, new Date().toISOString(), ...(input as SheetsInput).columns] }
@@ -477,6 +500,7 @@ export function createExecutor(deps: ExecutorDeps): StepExecutor {
     ...deps,
     guard: deps.guard ?? defaultGuard(),
     publicUrl: (deps.publicUrl ?? "http://localhost:3000").replace(/\/+$/, ""),
+    urls: deps.urls ?? providerUrls(),
   };
   return {
     async execute({ runId, step, userId, workflowId, idempotencyKey, attempt, stepRunId, ctx, mock = false, test, aiLive, choice, claimSend, booking, fileFields }) {

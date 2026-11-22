@@ -8,7 +8,7 @@ const output = (p: Payment) => ({ paymentId: p.id, url: p.url, reference: p.refe
 
 // Same reading of a provider's answer as an HTTP step: a quota or an unreachable PayMongo is retried, a refusal is not,
 // and a timeout after the request left may have created the session, so a person decides (decision 0030).
-function stepError(err: ProviderError): StepError {
+export function stepError(err: ProviderError): StepError {
   const retryable = err.kind === "quota" || err.kind === "unavailable";
   const outcome: Outcome = err.kind === "quota" ? "throttled" : err.kind === "unavailable" ? "not_sent" : err.kind === "ambiguous" || err.kind === "review" ? "unknown" : "rejected";
   return new StepError(err.message, retryable, { cause: err, outcome, retryAfterMs: err.retryAfterMs });

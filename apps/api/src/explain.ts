@@ -87,7 +87,7 @@ export function askFacts(input: FactsInput): AskFacts {
   return { ...failureFacts(input), plainState, steps };
 }
 
-const APPS: Record<string, string> = { google_sheets: "Google Sheets", slack: "Slack", outlook: "Outlook", teams: "Microsoft Teams", telegram: "Telegram", unisms: "UniSMS", google_calendar: "Google Calendar", google_drive: "Google Drive", airtable: "Airtable", notion: "Notion", trello: "Trello", meta_messenger: "Facebook Messenger & Instagram" };
+const APPS: Record<string, string> = { google_sheets: "Google Sheets", slack: "Slack", outlook: "Outlook", teams: "Microsoft Teams", discord: "Discord", telegram: "Telegram", unisms: "UniSMS", google_calendar: "Google Calendar", google_drive: "Google Drive", airtable: "Airtable", notion: "Notion", trello: "Trello", meta_messenger: "Facebook Messenger & Instagram" };
 const APPS_FIX = { href: "#/apps", label: "Check the connection" };
 // Retry, Send again and Mark as posted are on the run page itself, so these need no link.
 const ACTIVITY_FIX = null;
@@ -104,6 +104,7 @@ const PERMISSION: Record<string, string> = {
   slack: "Invite the Daloy app to the channel, then press Retry.",
   outlook: "Check that the connected Outlook account may send email, then press Retry.",
   teams: "Add the connected account to the team and channel, then press Retry.",
+  discord: "Check that the channel still allows the webhook, or paste a new webhook link in Apps, then press Retry.",
   airtable: "Give the Airtable token access to that base and table, then press Retry.",
   notion: "Share the database with the Notion integration, then press Retry.",
   trello: "Make sure the Trello token can edit that board, then press Retry.",
@@ -184,7 +185,7 @@ export function explainFailure(facts: Facts, language: "en" | "tl" = "en"): Expl
 }
 
 // The console's names for step types (apps/web/src/FlowCanvas.tsx TYPE_NAMES), plus booking.
-const TYPE_NAMES: Record<string, string> = { condition: "Condition", http: "HTTP request", email: "Send email", delay: "Delay", ai: "AI task", approval: "Approval", sheets: "Add to Google Sheets", drive: "Save files to Google Drive", slack: "Post to Slack", outlook: "Send from Outlook", teams: "Post to Teams", telegram: "Send to Telegram", sms: "Send SMS", calendar: "Add to Google Calendar", paymongo_link: "Create payment link", payment_status: "Check payment", airtable: "Add to Airtable", notion: "Add to Notion", trello: "Add to Trello", booking: "Booking", meta_reply: "Reply on Messenger or Instagram", payment_due: "Ask for payment", payment_expire: "Cancel if unpaid" };
+const TYPE_NAMES: Record<string, string> = { condition: "Condition", http: "HTTP request", email: "Send email", delay: "Delay", ai: "AI task", approval: "Approval", sheets: "Add to Google Sheets", drive: "Save files to Google Drive", slack: "Post to Slack", outlook: "Send from Outlook", teams: "Post to Teams", discord: "Post to Discord", google_docs: "Make a Google Docs document", telegram: "Send to Telegram", sms: "Send SMS", calendar: "Add to Google Calendar", paymongo_link: "Create payment link", payment_status: "Check payment", airtable: "Add to Airtable", notion: "Add to Notion", trello: "Add to Trello", booking: "Booking", meta_reply: "Reply on Messenger or Instagram", payment_due: "Ask for payment", payment_expire: "Cancel if unpaid" };
 const HEADLINES = { "needs you": "This request needs you before it goes on.", done: "This request is done.", problem: "This request stopped with a problem.", waiting: "This request is waiting.", "in progress": "This request is still going." };
 const OPEN_ACTIVITY = "Open the request in Activity to see every step.";
 

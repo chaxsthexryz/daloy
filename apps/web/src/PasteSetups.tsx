@@ -10,6 +10,7 @@ type Chat = { id: string; type: string; title: string };
 type Props = { conn: Connection | null; onChange: () => Promise<unknown>; onClose: (test?: Test) => void };
 
 const TELEGRAM_BOT_HELP = "https://core.telegram.org/bots/tutorial";
+const DISCORD_WEBHOOK_HELP = "https://support.discord.com/hc/en-us/articles/228383668-Intro-to-Webhooks";
 const TEAMS_WORKFLOWS_HELP = "https://support.microsoft.com/en-us/workflows/send-messages-in-teams-using-incoming-webhooks";
 
 function useStep() {
@@ -128,6 +129,54 @@ export function TelegramSetup({ conn, onChange, onClose }: Props) {
             }
           >
             {conn ? t("Save") : t("Connect Telegram")}
+          </button>
+          <Cancel conn={conn} onClose={onClose} />
+        </div>
+      </GuidedStep>
+    </GuidedSteps>
+  );
+}
+
+export function DiscordSetup({ conn, onChange, onClose }: Props) {
+  const { t } = useLanguage();
+  const step = useStep();
+  const [url, setUrl] = useState("");
+  const [channelName, setChannelName] = useState(conn?.account ?? "");
+  const save = () =>
+    void step.run(async () => {
+      // The server checks that the link is a Discord webhook address. Then Daloy sends one test message so a wrong link shows up now.
+      await api("PUT", "/settings/connections/discord", { url, channelName });
+      setUrl("");
+      const test = await api<Test>("POST", "/settings/connections/discord/test");
+      await onChange();
+      onClose(test);
+      return { state: "ok" };
+    });
+  return (
+    <GuidedSteps>
+      <GuidedStep title="Make a webhook in Discord">
+        <p>
+          {t("In Discord, open the channel's settings, choose Integrations, then Webhooks, and make a new webhook. You need the Manage Webhooks permission on that channel. Menu names may differ.")}{" "}
+          <a href={DISCORD_WEBHOOK_HELP} target="_blank" rel="noreferrer">
+            {t("How to make a webhook")}
+          </a>
+        </p>
+      </GuidedStep>
+      <GuidedStep title="Copy the webhook link">
+        <p>{t("Choose Copy Webhook URL. Anyone who has this link can post to the channel, so do not share it. Daloy keeps it encrypted and never shows it again.")}</p>
+      </GuidedStep>
+      <GuidedStep title="Paste the link and send a test message" check={step.check}>
+        <div className="field">
+          <label htmlFor="dc-url">{t("Webhook link")}</label>
+          <input id="dc-url" type="password" value={url} onChange={(e) => setUrl(e.target.value)} autoComplete="off" placeholder="https://discord.com/api/webhooks/…" />
+        </div>
+        <div className="field">
+          <label htmlFor="dc-channel">{t("Discord channel name, to show in Daloy")}</label>
+          <input id="dc-channel" value={channelName} onChange={(e) => setChannelName(e.target.value)} maxLength={100} placeholder={t("orders")} />
+        </div>
+        <div className="actions">
+          <button type="button" className="primary" disabled={step.busy || !url || !channelName} onClick={save}>
+            {conn ? t("Save link") : t("Connect Discord")}
           </button>
           <Cancel conn={conn} onClose={onClose} />
         </div>

@@ -16,6 +16,7 @@ import { chosenFor, insertables, nextPaths, setupLeft, unconnectedNodes, type Co
 import { warningForLanguage } from "./lib/ai-build";
 import { runFlow } from "./lib/run-flow";
 import { AutomationTabs } from "./Nav";
+import { DocTemplatePicker } from "./DocTemplatePicker";
 import { SchemaForm, type JsonSchema } from "./SchemaForm";
 import { EmailSource } from "./EmailSource";
 import { ExplainSheet, SampleTest, SetupGuide, TurnOnSheet } from "./Guide";
@@ -75,6 +76,8 @@ function samplePayload(trigger: Trigger, resourceId = "a resource id from the Re
 
 // SchemaForm cannot render arrays, so the AI step's files are chosen with checkboxes below it.
 const withoutFiles = (schema: JsonSchema): JsonSchema => ({ ...schema, properties: Object.fromEntries(Object.entries(schema.properties ?? {}).filter(([k]) => k !== "files")) });
+// The template of a Make a document step is chosen with the Google Picker below the form, not typed.
+const withoutTemplate = (schema: JsonSchema): JsonSchema => ({ ...schema, properties: Object.fromEntries(Object.entries(schema.properties ?? {}).filter(([k]) => k !== "templateId" && k !== "templateName")) });
 
 export function Editor({ id }: { id: string }) {
   const { t, language } = useLanguage();
@@ -526,7 +529,10 @@ export function Editor({ id }: { id: string }) {
               {t("{app} is not connected yet.", { app: t(missingApp.get(step.id)!) })} <a href="#/apps">{t("Connect in Apps")}</a>
             </p>
           )}
-          <SchemaForm key={step.id} schema={step.type === "ai" ? withoutFiles(catalog.schemas.ai!) : catalog.schemas[step.type]!} value={step.config as Record<string, unknown>} onChange={editStep} />
+          {step.type === "google_docs" && (
+            <DocTemplatePicker key={`${step.id}-template`} templateId={step.config.templateId} templateName={step.config.templateName} onPick={(templateId, templateName) => editStep({ ...step.config, templateId, templateName })} />
+          )}
+          <SchemaForm key={step.id} schema={step.type === "ai" ? withoutFiles(catalog.schemas.ai!) : step.type === "google_docs" ? withoutTemplate(catalog.schemas.google_docs!) : catalog.schemas[step.type]!} value={step.config as Record<string, unknown>} onChange={editStep} />
           {step.type === "ai" &&
             ((draft.trigger.type === "form" && draft.trigger.config.fields.some((f) => f.type === "file")) || draft.trigger.type === "meta_dm") && (
             <fieldset>
@@ -1237,7 +1243,7 @@ function TriggerPanel({ trigger, wf, onChange }: { trigger: Trigger; wf: Loaded;
   );
 }
 
-const OUTSIDE = new Set(["http", "email", "approval", "sheets", "drive", "slack", "outlook", "teams", "telegram", "sms", "calendar", "airtable", "notion", "trello", "meta_reply"]);
+const OUTSIDE = new Set(["http", "email", "approval", "sheets", "drive", "slack", "outlook", "teams", "telegram", "sms", "calendar", "airtable", "notion", "trello", "meta_reply", "discord", "google_docs"]);
 
 /** Per-step outcomes for a mocked or AI-only test run: a classify label, an approval decision, or a failure. */
 function TestChoices({ steps, choices, onChange }: { steps: Step[]; choices: Record<string, string>; onChange: (c: Record<string, string>) => void }) {

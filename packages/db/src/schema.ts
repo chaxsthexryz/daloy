@@ -575,7 +575,7 @@ export const mailSenders = pgTable("mail_senders", {
   check("mail_senders_auth_method", sql`${t.authMethod} in ('app_password', 'oauth')`),
 ]);
 
-export const PROVIDERS = ["google_sheets", "slack", "outlook", "teams", "telegram", "google_calendar", "paymongo", "airtable", "notion", "trello", "google_drive", "unisms", "meta_messenger"] as const;
+export const PROVIDERS = ["google_sheets", "slack", "outlook", "teams", "telegram", "google_calendar", "paymongo", "airtable", "notion", "trello", "google_drive", "unisms", "meta_messenger", "discord"] as const;
 export type Provider = (typeof PROVIDERS)[number];
 /** What a connection's credential is (decision 0058): a pasted token, a Google service account key, an OAuth token blob, or a webhook URL. */
 export const AUTH_METHODS = ["token", "service_account", "oauth", "webhook_url"] as const;
@@ -620,7 +620,7 @@ export const connections = pgTable(
     primaryKey({ columns: [t.userId, t.provider] }),
     // The same provider account connected elsewhere in Daloy (plan R14).
     index("connections_external_id").on(t.externalId),
-    check("connections_provider", sql`${t.provider} in ('google_sheets', 'slack', 'outlook', 'teams', 'telegram', 'google_calendar', 'paymongo', 'airtable', 'notion', 'trello', 'google_drive', 'unisms', 'meta_messenger')`),
+    check("connections_provider", sql`${t.provider} in ('google_sheets', 'slack', 'outlook', 'teams', 'telegram', 'google_calendar', 'paymongo', 'airtable', 'notion', 'trello', 'google_drive', 'unisms', 'meta_messenger', 'discord')`),
     check("connections_status", sql`${t.status} in ('active', 'failed')`),
     check("connections_auth_method", sql`${t.authMethod} in ('token', 'service_account', 'oauth', 'webhook_url')`),
   ],
@@ -649,7 +649,7 @@ export const oauthFlows = pgTable(
   },
   (t) => [
     index("oauth_flows_expires").on(t.expiresAt),
-    check("oauth_flows_provider", sql`${t.provider} in ('google_sheets', 'slack', 'outlook', 'teams', 'telegram', 'google_calendar', 'paymongo', 'airtable', 'notion', 'trello', 'google_drive', 'unisms', 'meta_messenger', 'gmail')`),
+    check("oauth_flows_provider", sql`${t.provider} in ('google_sheets', 'slack', 'outlook', 'teams', 'telegram', 'google_calendar', 'paymongo', 'airtable', 'notion', 'trello', 'google_drive', 'unisms', 'meta_messenger', 'discord', 'gmail')`),
   ],
 );
 
@@ -704,7 +704,7 @@ export const deliveries = pgTable(
     // The worker polls for due deliveries every couple of seconds.
     index("deliveries_due").on(t.nextAttemptAt).where(sql`${t.state} in ('queued', 'sending')`),
     check("deliveries_state", sql`${t.state} in ('queued', 'sending', 'delivered', 'needs_review', 'failed')`),
-    check("deliveries_provider", sql`${t.provider} in ('google_sheets', 'slack', 'outlook', 'teams', 'telegram', 'google_calendar', 'paymongo', 'airtable', 'notion', 'trello', 'google_drive', 'unisms', 'meta_messenger')`),
+    check("deliveries_provider", sql`${t.provider} in ('google_sheets', 'slack', 'outlook', 'teams', 'telegram', 'google_calendar', 'paymongo', 'airtable', 'notion', 'trello', 'google_drive', 'unisms', 'meta_messenger', 'discord')`),
   ],
 );
 
