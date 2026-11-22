@@ -116,7 +116,7 @@ test("the panel is closed on load, a click opens it, Close and Escape close it, 
   await expect(row.getByRole("link", { name: /Steps of Panel check/ })).toHaveAttribute("href", `#/w/${wf.id}`);
 
   await row.dblclick();
-  await expect(page).toHaveURL(new RegExp(`#/w/${wf.id}$`));
+  await expect.poll(() => new URL(page.url()).hash).toBe(`#/w/${wf.id}`);
 });
 
 test("on a phone a row opens the panel as a sheet that Close dismisses", async ({ page }) => {

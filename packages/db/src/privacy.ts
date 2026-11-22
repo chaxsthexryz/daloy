@@ -29,6 +29,8 @@ export function matcher(q: CustomerQuery): (value: unknown) => boolean {
   if ("email" in q) {
     const escaped = q.email.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     // Not part of a longer address: no address character before, and no more domain or local part after.
+    // Every metacharacter in the validated email is escaped above, so the pattern is a literal plus fixed lookarounds.
+    // nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp
     const re = new RegExp(`(?<![a-z0-9._%+-])${escaped}(?![a-z0-9._%+-]*@|[a-z0-9-]|\\.[a-z])`, "i");
     return walk((leaf) => re.test(String(leaf)));
   }
