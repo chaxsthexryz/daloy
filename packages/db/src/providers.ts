@@ -53,6 +53,10 @@ export type ProviderUrls = {
   trelloClient?: { clientId: string; clientSecret: string };
   /** Host suffixes a Teams Workflows URL may use. 127.0.0.1 (tests only) is the one host allowed over http. */
   teamsHosts?: string[];
+  /** Google Docs API base. Unset in test fakes: google-docs.ts falls back to https://docs.googleapis.com. */
+  docs?: string;
+  /** Extra hosts a Discord webhook URL may use, for tests and local fakes only (decision 0104). discord.com and discordapp.com are built in. */
+  discordHosts?: string[];
   /** The installation's own Microsoft Entra app, for Outlook consent. Unset: Outlook is not offered (decision 0023). */
   microsoft?: { clientId: string; clientSecret: string; tenant: string };
   /** The installation's Google OAuth client and endpoints (decision 0060). Unset: Google keeps its service account form. */
@@ -87,6 +91,8 @@ export const providerUrls = (env: NodeJS.ProcessEnv = process.env): ProviderUrls
   microsoftLogin: trim(env.MICROSOFT_LOGIN_URL ?? "https://login.microsoftonline.com"),
   graph: trim(env.MICROSOFT_GRAPH_URL ?? "https://graph.microsoft.com"),
   gmail: trim(env.GMAIL_API_URL ?? "https://gmail.googleapis.com"),
+  docs: trim(env.GOOGLE_DOCS_URL ?? "https://docs.googleapis.com"),
+  discordHosts: (env.DISCORD_WEBHOOK_HOSTS ?? "").split(",").map((h) => h.trim().toLowerCase()).filter(Boolean),
   teamsHosts: (env.TEAMS_WEBHOOK_HOSTS ?? "logic.azure.com,powerplatform.com").split(",").map((h) => h.trim().toLowerCase()).filter(Boolean),
   microsoft:
     env.MICROSOFT_CLIENT_ID && env.MICROSOFT_CLIENT_SECRET

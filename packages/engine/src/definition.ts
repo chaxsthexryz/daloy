@@ -1,5 +1,6 @@
 import * as z from "zod";
 import { aiConfigSchema } from "./ai";
+import { DISCORD_MAX_CHARS, DOCS_MAX_VALUES, isPlaceholderKey } from "./discord-docs";
 import { FILES_PER_FIELD, type FileRef } from "./file-type";
 import { SENDER_ID_RE } from "./phone";
 import { isTimeZone, parseZoned } from "./zoned";
@@ -122,6 +123,23 @@ export const paymentDueConfigSchema = z
 // The unpaid deadline (R3): cancels the due made by the named payment_due step of this run when it is still unpaid,
 // expires its open checkout and releases the booking slot. Branches: expired, or kept when it was paid meanwhile.
 export const paymentExpireConfigSchema = z.object({ due: stepId.describe("Id of the payment_due step whose payment this cancels.") });
+// A Discord message goes to the channel the owner's webhook posts to (phase I1, decision 0104). The webhook URL is a
+// credential: it lives in the Discord connection in Apps, never in a version. Queued like Slack.
+export const discordConfigSchema = z.object({ text: template(DISCORD_MAX_CHARS).min(1) });
+// A copy of a Google Docs template, saved in the Drive folder picked in Apps (decision 0104). The template is picked in the
+// editor with the Google Picker, which is the only way Daloy's drive.file access can open it; templateId is a file id, not a
+// secret. Each key of values names a {{key}} placeholder in the template; its value is a template filled from the run.
+// Runs inside the step, so a later step can read {{steps.<id>.output.url}}.
+export const googleDocsConfigSchema = z.object({
+  templateId: z.string().regex(/^[\w-]{10,100}$/, "pick a Google Docs template").describe("The Google Docs template to copy. Pick it with the template button."),
+  templateName: z.string().max(200).optional().describe("The template's name, for display."),
+  name: template(200).min(1).describe("The new document's name, such as Invoice {{trigger.reference}}."),
+  values: z
+    .record(z.string().refine(isPlaceholderKey, "a placeholder name uses letters, digits, spaces and _ - . (up to 40 characters), without braces"), template(5000))
+    .refine((v) => Object.keys(v).length <= DOCS_MAX_VALUES, `at most ${DOCS_MAX_VALUES} placeholders`)
+    .default({})
+    .describe("Placeholders to fill. Each name is a {{name}} in the template; its value is the text to put there."),
+});
 // Saves the files a form collected into the Google Drive folder picked in Apps. It takes no settings: the files are
 // the form's file fields. Queued like Sheets.
 export const driveConfigSchema = z.object({}).default({});
@@ -187,6 +205,8 @@ const stepSchema = z.discriminatedUnion("type", [
   z.object({ id: stepId, disabled, type: z.literal("payment_due"), config: paymentDueConfigSchema }),
   z.object({ id: stepId, disabled, type: z.literal("payment_expire"), config: paymentExpireConfigSchema }),
   z.object({ id: stepId, disabled, type: z.literal("meta_reply"), config: metaReplyConfigSchema }),
+  z.object({ id: stepId, disabled, type: z.literal("discord"), config: discordConfigSchema }),
+  z.object({ id: stepId, disabled, type: z.literal("google_docs"), config: googleDocsConfigSchema }),
 ]);
 export type Step = z.infer<typeof stepSchema>;
 

@@ -1,7 +1,7 @@
 import { useState } from "react";
 
 /** Marks that have a picture in public/logos. Everything else (UniSMS, PayMongo, GCash, Messenger, Instagram, Daloy actions) is an icon or a letter tile. Reasons: public/logos/README.md. */
-export const LOGOS = ["gmail", "outlook", "google-sheets", "google-drive", "google-calendar", "slack", "teams", "telegram", "airtable", "notion", "trello"] as const;
+export const LOGOS = ["gmail", "outlook", "google-sheets", "google-drive", "google-docs", "google-calendar", "slack", "teams", "telegram", "airtable", "notion", "trello", "discord"] as const;
 const hasLogo = (mark: string): boolean => (LOGOS as readonly string[]).includes(mark);
 
 /** The app keys the Apps page and the catalog use mapped to a logo file name. */
@@ -17,6 +17,7 @@ export const APP_LOGO: Record<string, string> = {
   airtable: "airtable",
   notion: "notion",
   trello: "trello",
+  discord: "discord",
 };
 
 // Daloy's own line icons for built-in actions: 24px grid, 1.8 stroke, currentColor.

@@ -56,6 +56,8 @@ import {
   telegramIdentity,
   telegramSend,
   spreadsheetIdFrom,
+  discordPost,
+  discordWebhookUrl,
   teamsPost,
   teamsWebhookUrl,
   type Db,
@@ -114,6 +116,7 @@ const calendarInput = z.strictObject({ serviceAccount: z.string().min(2).max(10_
 const driveInput = z.strictObject({ serviceAccount: z.string().min(2).max(10_000), folder: z.string().trim().min(3).max(500) });
 const retryInput = z.strictObject({ postAgain: z.boolean().default(false) });
 const teamsInput = z.strictObject({ url: z.string().trim().min(10).max(2000), channelName: z.string().trim().min(1).max(100) });
+const discordInput = teamsInput;
 const metaMessengerInput = z.strictObject({
   pageId: z.string().trim().regex(/^\d{5,30}$/, "Enter the numeric Facebook Page ID"),
   instagramAccountId: z
@@ -126,7 +129,7 @@ const metaMessengerInput = z.strictObject({
   appSecret: z.string().trim().min(8, "Paste the Meta App Secret").max(200).optional(),
   verifyToken: z.string().trim().min(6, "Enter a Verify Token of at least 6 characters").max(200).optional(),
 });
-const SLUGS: Record<string, Provider> = { "google-sheets": "google_sheets", slack: "slack", outlook: "outlook", teams: "teams", telegram: "telegram", "google-calendar": "google_calendar", "google-drive": "google_drive", paymongo: "paymongo", airtable: "airtable", notion: "notion", trello: "trello", unisms: "unisms", "meta-messenger": "meta_messenger" };
+const SLUGS: Record<string, Provider> = { "google-sheets": "google_sheets", slack: "slack", outlook: "outlook", teams: "teams", discord: "discord", telegram: "telegram", "google-calendar": "google_calendar", "google-drive": "google_drive", paymongo: "paymongo", airtable: "airtable", notion: "notion", trello: "trello", unisms: "unisms", "meta-messenger": "meta_messenger" };
 const providerSlug = new ZodPipe(z.enum(Object.keys(SLUGS) as [string, ...string[]]).transform((s) => SLUGS[s]!));
 const uuid = new ZodPipe(z.uuid());
 
@@ -175,7 +178,7 @@ export class ConnectionsController {
       union select id, name, 'paymongo_link' from current_versions where definition->'trigger'->>'type' = 'payment'
       union select id, name, 'meta_messenger' from current_versions where definition->'trigger'->>'type' = 'meta_dm'
       order by name, id`);
-    const providerFor: Record<string, string> = { email: "gmail", sheets: "google_sheets", drive: "google_drive", calendar: "google_calendar", paymongo_link: "paymongo", payment_status: "paymongo", sms: "unisms", meta_reply: "meta_messenger" };
+    const providerFor: Record<string, string> = { email: "gmail", sheets: "google_sheets", drive: "google_drive", calendar: "google_calendar", paymongo_link: "paymongo", payment_status: "paymongo", sms: "unisms", meta_reply: "meta_messenger", google_docs: "google_drive" };
     const usage: Record<string, { id: string; name: string }[]> = {};
     const supported = new Set(["gmail", ...Object.keys(PROVIDER_NAMES)]);
     for (const { id, name, kind } of used.rows) {
@@ -462,6 +465,24 @@ export class ConnectionsController {
   async testTeams(@CurrentUser() user: SessionUser) {
     const conn = await this.connection(user.workspaceId, "teams");
     return this.test(user.workspaceId, "teams", conn, () => teamsPost(this.urls, conn.credential, "Test message from Daloy. Approved purchase requests will be noted in this channel."));
+  }
+
+  /** Connect, Reconnect or Replace link for Discord: a webhook URL from the channel's Integrations settings. The URL is a credential, so it is stored encrypted and never returned. */
+  @Put("discord")
+  @UseGuards(RateLimit(10))
+  async putDiscord(@CurrentUser() user: SessionUser, @Body(new ZodPipe(discordInput)) body: z.output<typeof discordInput>) {
+    const url = discordWebhookUrl(this.urls, body.url);
+    if (!url) throw new BadRequestException("Paste the webhook link Discord shows in the channel's Integrations settings. It starts with https://discord.com/api/webhooks/.");
+    await saveConnection(this.db, this.config.secretsKey, user.workspaceId, "discord", { account: body.channelName, credential: url, destination: { channelName: body.channelName } });
+    return this.get(user);
+  }
+
+  @Post("discord/test")
+  @HttpCode(200)
+  @UseGuards(RateLimit(5))
+  async testDiscord(@CurrentUser() user: SessionUser) {
+    const conn = await this.connection(user.workspaceId, "discord");
+    return this.test(user.workspaceId, "discord", conn, () => discordPost(this.urls, conn.credential, "Test message from Daloy. Your automations can post to this channel."));
   }
 
   /** Connect or Reconnect Facebook Messenger and Instagram DM. Preserves existing webhookPath across updates. */

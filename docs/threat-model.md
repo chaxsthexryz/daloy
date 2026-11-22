@@ -353,3 +353,13 @@ Entry points: `GET /privacy/customer` and `POST /privacy/customer/delete` (owner
 - Backups keep old data until they roll over.
 - Old receipt images: removed by the worker after the retention days (default 90) once the due closes. Open dues keep theirs.
 - Remaining risk: Daloy provides tools only. It does not make a business compliant with any law, and the owner's own duties are listed in docs/how-it-works.md.
+
+## Discord and Google Docs steps (phase I1, decision 0104)
+
+- The Discord webhook URL carries its own token, so it is a secret: anyone holding it can post to the channel. It is stored encrypted (AES-256-GCM, owner and provider bound in), write-only through the API, and never put in definitions, run history, deliveries, step results, logs, errors or AI prompts. The Apps card shows the channel name only. Remaining risk: with `SECRETS_KEY` and a database copy, an attacker can post to the channel until the owner deletes the webhook in Discord.
+- The one user-entered URL is checked before it is stored and again before every call: https only, host `discord.com` or `discordapp.com` or a subdomain, no user info or query, the exact webhook path, redirects refused. That stops a pasted address from reaching an internal host (SSRF). Only the operator can add a host, with `DISCORD_WEBHOOK_HOSTS` (empty by default, for tests and local fakes), like the other provider address variables.
+- Text from a public form can end up in the channel, so messages are sent with `allowed_mentions.parse` empty and cannot ping `@everyone` or a role. Everyone in the channel can read the text; the Apps card says to keep names and emails out of it. Messages over 2000 characters fail without a request.
+- A Discord post that may have gone out (5xx, connection lost) goes to `needs_review`, so a person decides whether to post again. 429 waits for Discord's own wait.
+- Make a document uses the existing Google Drive grant, `drive.file` only (no new scope). Daloy can open only the template the owner picked in the Picker, the folder picked in Apps and the copies it made itself. The template id from the browser is read with the grant first, so a forged id gets a 404 and nothing is stored. Only a Google Docs document is accepted.
+- A visitor's text used as a placeholder value is inserted as plain text and never read as another placeholder (two-pass replace with a random token). A document made from visitor text lives in the owner's own Drive and is not shared by Daloy.
+- Remaining risk: a retry can leave a second copy of the document when Drive's file list lags; it stays in the owner's folder. A document holds whatever values the workflow puts in it, so a template meant for customers should not receive more than the customer needs.

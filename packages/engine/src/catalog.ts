@@ -29,6 +29,7 @@ const GMAIL = tx("Gmail", "Gmail");
 const SHEETS = tx("Google Sheets", "Google Sheets");
 const DRIVE = tx("Google Drive", "Google Drive");
 const CALENDAR = tx("Google Calendar", "Google Calendar");
+const DOCS = tx("Google Docs", "Google Docs");
 const PAYMONGO = tx("PayMongo", "PayMongo");
 const META = tx("Messenger and Instagram", "Messenger at Instagram");
 const queued = [tx("Queued for delivery", "Nakapila para ipadala"), tx("Failed, with the reason", "Nabigo, may dahilan")];
@@ -69,6 +70,8 @@ export const STEP_CATALOG: Record<Step["type"], CatalogEntry> = {
   paymongo_link: { app: PAYMONGO, mark: "paymongo", provider: "paymongo", action: tx("Create a payment link", "Gumawa ng payment link"), description: tx("Create a checkout link for the amount in pesos. A later step sends it to the customer.", "Gumawa ng checkout link para sa halaga sa piso. Ipapadala ito ng susunod na step sa customer."), required: ["amount", "description", "reference"], input: tx("The amount in pesos, a description and the order reference.", "Ang halaga sa piso, paglalarawan at reference ng order."), output: tx("The checkout link.", "Ang checkout link."), outcomes: [tx("Link created", "Nagawa ang link"), tx("Failed, with the reason", "Nabigo, may dahilan")] },
   payment_status: { app: PAYMONGO, mark: "paymongo", provider: "paymongo", action: tx("Check a payment", "Tingnan ang bayad"), description: tx("Read the current status of a payment link made earlier in this run. It never calls PayMongo.", "Basahin ang kasalukuyang status ng payment link na ginawa kanina sa run na ito. Hindi ito tumatawag sa PayMongo."), required: ["link"], input: tx("The id of the payment link step.", "Ang id ng step ng payment link."), output: tx("Pending, paid, needs review or refunded.", "Pending, bayad na, kailangang suriin o na-refund."), outcomes: [tx("Pending", "Pending"), tx("Paid", "Bayad na"), tx("Needs review", "Kailangang suriin"), tx("Refunded", "Na-refund")] },
   meta_reply: { app: META, mark: "messenger", provider: "meta_messenger", action: tx("Reply to a message", "Sumagot sa mensahe"), description: tx("Reply to the customer in the same conversation, within Meta's 24-hour window.", "Sumagot sa customer sa parehong usapan, sa loob ng 24 oras na window ng Meta."), required: ["text"], input: tx("The reply text. The customer and channel come from the message.", "Ang text ng sagot. Ang customer at channel ay mula sa mensahe."), output: tx("Whether the reply was sent.", "Kung naipadala ang sagot."), outcomes: queued },
+  discord: { app: tx("Discord", "Discord"), mark: "discord", provider: "discord", action: tx("Post a message", "Mag-post ng mensahe"), description: tx("Post a short note to the Discord channel your webhook is for. Everyone in the channel can read it.", "Mag-post ng maikling note sa Discord channel ng iyong webhook. Mababasa ito ng lahat sa channel."), required: ["text"], input: tx("The message text, up to 2000 characters.", "Ang text ng mensahe, hanggang 2000 character."), output: tx("Whether the message was posted.", "Kung na-post ang mensahe."), outcomes: queued },
+  google_docs: { app: DOCS, mark: "google-docs", provider: "google_drive", action: tx("Make a document", "Gumawa ng dokumento"), description: tx("Copy the template you pick here, fill in its {{placeholders}} and save the copy in the Drive folder chosen there.", "Kopyahin ang template na pipiliin mo rito, punan ang mga {{placeholder}} nito at i-save ang kopya sa Drive folder na pinili roon."), required: ["templateId", "name"], input: tx("A document name, and a value for each placeholder in the template.", "Pangalan ng dokumento, at value para sa bawat placeholder sa template."), output: tx("The new document's link, for later steps.", "Ang link ng bagong dokumento, para sa susunod na steps."), outcomes: [tx("Document made", "Nagawa ang dokumento"), tx("Failed, with the reason", "Nabigo, may dahilan")] },
 };
 
 export const TRIGGER_CATALOG: Record<Trigger["type"], CatalogEntry> = {
@@ -153,7 +156,10 @@ export function destination(step: Step, ctx: DestinationContext): string {
       return picked(label("Folder", "Folder"));
     case "slack":
     case "teams":
+    case "discord":
       return picked(label("Channel", "Channel"));
+    case "google_docs":
+      return picked(label("Folder", "Folder"));
     case "telegram":
       return picked(label("Chat", "Chat"));
     case "calendar":

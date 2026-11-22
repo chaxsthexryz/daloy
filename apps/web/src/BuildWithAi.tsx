@@ -21,6 +21,8 @@ const NEEDS: Record<string, { provider: string; label: string }> = {
   airtable: { provider: "airtable", label: "Airtable" },
   notion: { provider: "notion", label: "Notion" },
   trello: { provider: "trello", label: "Trello" },
+  discord: { provider: "discord", label: "Discord" },
+  google_docs: { provider: "google_drive", label: "Google Drive" },
   paymongo_link: { provider: "paymongo", label: "PayMongo" },
   payment_status: { provider: "paymongo", label: "PayMongo" },
   meta_reply: { provider: "meta_messenger", label: "Facebook Messenger & Instagram" },
@@ -47,6 +49,8 @@ const OUTPUT: Record<string, string> = {
   airtable: "Table record",
   notion: "Database page",
   trello: "Board card",
+  discord: "Channel message",
+  google_docs: "Google Docs document",
 };
 const WHY: Record<string, string> = {
   "purchase-request": "You asked for an approval first. This one asks a person you name to approve each purchase.",

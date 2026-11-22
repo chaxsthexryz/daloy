@@ -3,6 +3,7 @@ import {
   createDriveFolder,
   createSpreadsheet,
   driveFolderInfo,
+  docsTemplateInfo,
   pickerToken,
   ProviderError,
   setDestination,
@@ -35,6 +36,7 @@ export function consoleHeaders(providers: ProviderUrls): HelmetOptions | undefin
 const fileId = z.string().regex(/^[\w-]{10,100}$/);
 const sheetPick = z.strictObject({ spreadsheetId: fileId, tab: z.string().trim().min(1).max(100).optional() });
 const folderPick = z.strictObject({ folderId: fileId });
+const templatePick = z.strictObject({ templateId: fileId });
 const APPS = { "google-sheets": "google_sheets", "google-drive": "google_drive" } as const;
 const app = new ZodPipe(z.enum(["google-sheets", "google-drive"]).transform((s) => APPS[s]));
 
@@ -122,6 +124,18 @@ export class GoogleController {
     const { title } = await this.call(user.workspaceId, "google_drive", conn, (auth) => driveFolderInfo(this.config.providers, auth, body.folderId));
     await setDestination(this.db, user.workspaceId, "google_drive", { folderId: body.folderId, title });
     return { folderId: body.folderId, title };
+  }
+
+  /**
+   * A template picked for a "Make a document" step. Read with Daloy's own grant first, like every pick. Nothing is saved
+   * here: the editor keeps the id in the step, so each workflow can use its own template.
+   */
+  @Post("google-drive/template")
+  @HttpCode(200)
+  @UseGuards(RateLimit(20))
+  async checkTemplate(@CurrentUser() user: SessionUser, @Body(new ZodPipe(templatePick)) body: z.output<typeof templatePick>) {
+    const conn = await this.google(user.workspaceId, "google_drive");
+    return this.call(user.workspaceId, "google_drive", conn, (auth) => docsTemplateInfo(this.config.providers, auth, body.templateId));
   }
 
   private async saveSheet(workspaceId: string, spreadsheetId: string, title: string, tabs: string[], tab: string | undefined) {

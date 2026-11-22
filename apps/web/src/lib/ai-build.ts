@@ -94,6 +94,10 @@ function sentence(step: WorkflowDefinition["steps"][number], language: Language)
       return t("Send an SMS to {recipient}", { recipient: who(c.to) });
     case "meta_reply":
       return t("Reply on Messenger or Instagram");
+    case "discord":
+      return t("Post to your Discord channel");
+    case "google_docs":
+      return t("Make a Google Docs document from your template");
     default:
       return t("Do something");
   }

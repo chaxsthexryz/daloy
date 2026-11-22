@@ -12,7 +12,7 @@ import { useLanguage } from "./Language";
 
 type PickerSetup = { accessToken: string; expiresAt: number | null; apiKey: string; appId: string };
 /** Opens a chooser and resolves to the picked file id, or null when the owner closed it. */
-export type PickFn = (kind: "sheet" | "folder", setup: PickerSetup) => Promise<string | null>;
+export type PickFn = (kind: "sheet" | "folder" | "doc", setup: PickerSetup) => Promise<string | null>;
 
 declare global {
   interface Window {
@@ -23,7 +23,7 @@ declare global {
 
 type DocsView = { setIncludeFolders(on: boolean): DocsView; setMimeTypes(types: string): DocsView; setSelectFolderEnabled(on: boolean): DocsView };
 type Builder = { addView(v: DocsView): Builder; setOAuthToken(t: string): Builder; setDeveloperKey(k: string): Builder; setAppId(id: string): Builder; setCallback(fn: (data: { action: string; docs?: { id: string }[] }) => void): Builder; build(): { setVisible(on: boolean): void } };
-type GooglePickerApi = { picker: { DocsView: new (viewId: string) => DocsView; ViewId: { SPREADSHEETS: string; FOLDERS: string }; PickerBuilder: new () => Builder; Action: { PICKED: string; CANCEL: string } } };
+type GooglePickerApi = { picker: { DocsView: new (viewId: string) => DocsView; ViewId: { SPREADSHEETS: string; FOLDERS: string; DOCUMENTS: string }; PickerBuilder: new () => Builder; Action: { PICKED: string; CANCEL: string } } };
 type Gapi = { load(name: string, done: () => void): void };
 
 let loaded: Promise<void> | null = null;
@@ -42,11 +42,11 @@ function loadPicker(): Promise<void> {
   return loaded;
 }
 
-/** The real Google Picker: spreadsheets only, or folders only (view settings unverified against a live Picker). */
+/** The real Google Picker: spreadsheets only, Google Docs only, or folders only (view settings unverified against a live Picker). */
 export const googlePicker: PickFn = async (kind, setup) => {
   await loadPicker();
   const { picker } = (window as unknown as { google: GooglePickerApi }).google;
-  const view = kind === "sheet" ? new picker.DocsView(picker.ViewId.SPREADSHEETS) : new picker.DocsView(picker.ViewId.FOLDERS).setIncludeFolders(true).setMimeTypes("application/vnd.google-apps.folder").setSelectFolderEnabled(true);
+  const view = kind === "sheet" ? new picker.DocsView(picker.ViewId.SPREADSHEETS) : kind === "doc" ? new picker.DocsView(picker.ViewId.DOCUMENTS) : new picker.DocsView(picker.ViewId.FOLDERS).setIncludeFolders(true).setMimeTypes("application/vnd.google-apps.folder").setSelectFolderEnabled(true);
   return new Promise((resolve) => {
     new picker.PickerBuilder()
       .addView(view)
@@ -62,12 +62,12 @@ export const googlePicker: PickFn = async (kind, setup) => {
   });
 };
 
-const defaultPick: PickFn = (kind, setup) => (window.daloyPick ?? googlePicker)(kind, setup);
+export const defaultPick: PickFn = (kind, setup) => (window.daloyPick ?? googlePicker)(kind, setup);
 
 type CardProps = { conn: Connection | null; configured: boolean; outcome?: string; onChange: () => Promise<unknown>; pick?: PickFn };
 
 /** Opens the Picker with a server-minted drive.file token. Only the picked id goes back to the server. */
-async function pickWith(slug: string, kind: "sheet" | "folder", pick: PickFn) {
+export async function pickWith(slug: string, kind: "sheet" | "folder" | "doc", pick: PickFn) {
   const setup = await api<PickerSetup>("POST", `/settings/connections/${slug}/picker-token`);
   return pick(kind, setup);
 }

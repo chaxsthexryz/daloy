@@ -145,6 +145,11 @@ export async function startFakeProviders(port = 0) {
   const driveFiles: { id: string; name: string; parent: string; mimeType: string; size: number; sha256: string }[] = [];
   // keys: Idempotency-Key -> stored response. busy: session ids whose expire answers 400 (a payment in progress).
   const paymongo = { sessions: [] as { id: string; amount: number; status?: "active" | "expired" }[], keys: new Map<string, unknown>(), busy: new Set<string>() };
+  // Discord incoming webhooks (phase I1): id -> token for the webhooks that exist, and what was posted. A deleted webhook answers 404.
+  const discord = { hooks: new Map<string, string>(), posts: [] as { id: string; content: string; allowedMentions: unknown }[] };
+  // Google Docs through Drive and the Docs API (phase I1): documents by id, with drive.file rules (only an editor may copy or edit one).
+  type DocFile = { name: string; text: string; editors: Set<string>; parents: string[]; appProperties: Record<string, string>; template: boolean };
+  const docFiles = new Map<string, DocFile>();
   const teams = { flows: new Set(["flow-purchasing"]), posts: [] as { flow: string; text: string }[] };
   // Gmail API (decision 0063): messages sent with a Google OAuth access token, as the RFC 822 text Google received.
   const gmail = { sent: [] as { id: string; user: string; raw: string }[] };
@@ -400,6 +405,47 @@ export async function startFakeProviders(port = 0) {
       return;
     }
 
+    // Discord incoming webhook: POST /api/webhooks/<id>/<token>?wait=true. 404 once the webhook is deleted, 400 for an empty or over-long message.
+    const hook = /^\/api\/webhooks\/(\d+)\/([\w-]+)$/.exec(path);
+    if (hook && req.method === "POST") {
+      if (discord.hooks.get(hook[1]!) !== hook[2]) return json(res, 404, { message: "Unknown Webhook", code: 10015 });
+      const m = JSON.parse(raw || "{}") as { content?: string; allowed_mentions?: unknown };
+      if (!m.content || m.content.length > 2000) return json(res, 400, { message: "Cannot send an empty message", code: 50006 });
+      discord.posts.push({ id: hook[1]!, content: m.content, allowedMentions: m.allowed_mentions });
+      const id = String(1_100_000_000_000_000_000n + BigInt(discord.posts.length));
+      return url.searchParams.get("wait") === "true" ? answer(200, { id, content: m.content, webhook_id: hook[1] }) : answer(204, {});
+    }
+
+    // Google Docs through Drive (copy, lookup by appProperties) and the Docs API (batchUpdate), with drive.file rules.
+    const docsCopy = /^\/drive\/v3\/files\/([^/]+)\/copy$/.exec(path)?.[1];
+    const docsBatch = /^\/v1\/documents\/([^/]+):batchUpdate$/.exec(path)?.[1];
+    if (docsCopy || docsBatch || (path === "/drive/v3/files" && req.method === "GET")) {
+      const caller = googleCaller(req);
+      if (!caller) return googleError(res, 401, "UNAUTHENTICATED", "Invalid Credentials");
+      if (path === "/drive/v3/files") {
+        const key = /value='([^']+)'/.exec(url.searchParams.get("q") ?? "")?.[1];
+        return answer(200, { files: [...docFiles].filter(([, f]) => f.editors.has(caller.email) && f.appProperties.daloyKey === key).map(([id, f]) => ({ id, name: f.name })) });
+      }
+      if (docsCopy) {
+        const t = docFiles.get(docsCopy);
+        if (!t || !t.editors.has(caller.email)) return googleError(res, 404, "NOT_FOUND", `File not found: ${docsCopy}.`);
+        const meta = JSON.parse(raw || "{}") as { name?: string; parents?: string[]; appProperties?: Record<string, string> };
+        const folder = driveFolders.get(meta.parents?.[0] ?? "");
+        if (!folder || !folder.editors.has(caller.email)) return googleError(res, 404, "NOT_FOUND", "File not found.");
+        const id = `docscopy${String(++seq).padStart(10, "0")}`;
+        docFiles.set(id, { name: meta.name ?? t.name, text: t.text, editors: new Set([caller.email]), parents: meta.parents!, appProperties: meta.appProperties ?? {}, template: false });
+        return answer(200, { id, name: meta.name ?? t.name });
+      }
+      const f = docFiles.get(docsBatch!);
+      if (!f || !f.editors.has(caller.email)) return googleError(res, 404, "NOT_FOUND", "Requested entity was not found.");
+      const replies = (JSON.parse(raw || "{}") as { requests?: { replaceAllText: { containsText: { text: string }; replaceText: string } }[] }).requests?.map((r) => {
+        const n = f.text.split(r.replaceAllText.containsText.text).length - 1;
+        f.text = f.text.split(r.replaceAllText.containsText.text).join(r.replaceAllText.replaceText);
+        return { replaceAllText: n ? { occurrencesChanged: n } : {} };
+      });
+      return answer(200, { documentId: docsBatch, replies });
+    }
+
     // Teams Workflows, "When a Teams webhook request is received": 202 for a known flow, 404 once it is deleted.
     const flow = /^\/teams\/workflows\/([\w-]+)$/.exec(path)?.[1];
     if (flow) {
@@ -437,6 +483,11 @@ export async function startFakeProviders(port = 0) {
         return answer(200, { id, name: meta.name });
       }
       const driveError = (code: number, reason: string, message: string) => json(res, code, { error: { code, message, errors: [{ reason, message }] } });
+      if (driveGet && docFiles.has(driveGet)) {
+        const d = docFiles.get(driveGet)!;
+        if (!d.editors.has(email)) return googleError(res, 404, "NOT_FOUND", `File not found: ${driveGet}.`);
+        return answer(200, { id: driveGet, name: d.name, mimeType: "application/vnd.google-apps.document" });
+      }
       if (driveGet) {
         const f = driveFolders.get(driveGet);
         if (!f || !f.editors.has(email)) return googleError(res, 404, "NOT_FOUND", `File not found: ${driveGet}.`);
@@ -795,7 +846,7 @@ export async function startFakeProviders(port = 0) {
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 
   return {
-    urls: { googleToken: `${base}/token`, sheets: base, calendar: base, drive: base, paymongo: base, meta: base, metaCdn: base, airtable: base, notion: base, trello: base, slack: base, telegram: base, unisms: base, microsoftLogin: `${base}/ms`, graph: `${base}/graph`, gmail: base, airtableLogin: `${base}/airtable-login`, trelloLogin: `${base}/atlassian`, teamsHosts: ["127.0.0.1"] },
+    urls: { googleToken: `${base}/token`, sheets: base, calendar: base, drive: base, paymongo: base, meta: base, metaCdn: base, airtable: base, notion: base, trello: base, slack: base, telegram: base, unisms: base, microsoftLogin: `${base}/ms`, graph: `${base}/graph`, gmail: base, airtableLogin: `${base}/airtable-login`, trelloLogin: `${base}/atlassian`, teamsHosts: ["127.0.0.1"], discordHosts: ["127.0.0.1"], docs: base },
     /** The installation's OAuth clients for the record apps, as providerUrls() would read them from env (decision 0062). */
     recordClients: () => ({
       airtableClient: { clientId: oauth.airtable!.clientId, clientSecret: oauth.airtable!.clientSecret },
@@ -812,6 +863,16 @@ export async function startFakeProviders(port = 0) {
     trello,
     microsoft,
     teams,
+    discord,
+    /** A Discord webhook the fake knows, and its URL (the fake serves /api/webhooks at its root, over http). */
+    addDiscordWebhook: (id = "123456789012345678", token = "fake-webhook-token-AbCdEfGhIjKlMnOpQrStUvWxYz0123456789") => {
+      discord.hooks.set(id, token);
+      return `${base}/api/webhooks/${id}/${token}`;
+    },
+    /** A Google Docs template that these Google users picked (drive.file: only they may copy it). */
+    addDocsTemplate: (id: string, name: string, text: string, editors: string[]) => docFiles.set(id, { name, text, editors: new Set(editors), parents: [], appProperties: {}, template: true }),
+    /** The documents Daloy copied, without the templates. */
+    docsCopies: () => [...docFiles].filter(([, f]) => !f.template).map(([id, f]) => ({ id, ...f, editors: [...f.editors] })),
     gmail,
     oauth,
     /** Adds another generic OAuth app, for a provider phase or a test that needs a second one. */

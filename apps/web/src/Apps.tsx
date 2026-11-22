@@ -4,7 +4,7 @@ import { Text, useLanguage } from "./Language";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { api } from "./api";
 import { GmailCard, PILL, type Settings } from "./BusinessSetup";
-import { MetaMessengerConnection, OutlookConnection, RecordConnection, PaymongoConnection, SlackConnection, TeamsConnection, TelegramConnection, type Connection, type OutlookSetup, type Provider } from "./Connections";
+import { MetaMessengerConnection, OutlookConnection, RecordConnection, PaymongoConnection, DiscordConnection, SlackConnection, TeamsConnection, TelegramConnection, type Connection, type OutlookSetup, type Provider } from "./Connections";
 import { GoogleCalendarCard } from "./GoogleCalendar";
 import { SharedGrants } from "./ConnectPanel";
 import { GoogleDriveCard, GoogleSheetsCard } from "./GoogleConnect";
@@ -20,6 +20,7 @@ const APPS: { key: Key; name: string; line: string }[] = [
   { key: "google_sheets", name: "Google Sheets", line: "Add a row to a sheet for every request." },
   { key: "slack", name: "Slack", line: "Post a short note to a channel." },
   { key: "teams", name: "Microsoft Teams", line: "Post a note to a Teams channel." },
+  { key: "discord", name: "Discord", line: "Post a message to a Discord channel with a webhook link." },
   { key: "telegram", name: "Telegram", line: "Send a message to a Telegram chat." },
   { key: "google_calendar", name: "Google Calendar", line: "Put a booking on a calendar, and move or remove it with the booking." },
   { key: "google_drive", name: "Google Drive", line: "Save the files people attach to a form into a shared drive folder." },
@@ -83,6 +84,7 @@ export function AppsPage({ outcome }: { outcome?: { app: string; code: string } 
     slack: () => <SlackConnection conn={conn("slack")} configured={conns.oauth.includes("slack")} outcome={landed === "slack" ? outcome?.code : undefined} onChange={load} />,
     outlook: () => <OutlookConnection conn={conn("outlook")} setup={conns.outlook} outcome={landed === "outlook" ? outcome?.code : undefined} onChange={load} />,
     teams: () => <TeamsConnection conn={conn("teams")} onChange={load} />,
+    discord: () => <DiscordConnection conn={conn("discord")} onChange={load} />,
     telegram: () => <TelegramConnection conn={conn("telegram")} onChange={load} />,
     google_calendar: () => <GoogleCalendarCard conn={conn("google_calendar")} configured={conns.oauth.includes("google-calendar")} outcome={landed === "google_calendar" ? outcome?.code : undefined} onChange={load} />,
     google_drive: () => <GoogleDriveCard conn={conn("google_drive")} configured={conns.oauth.includes("google-drive")} outcome={landed === "google_drive" ? outcome?.code : undefined} onChange={load} />,

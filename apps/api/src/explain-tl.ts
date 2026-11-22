@@ -8,7 +8,7 @@ const lint: Record<LintRule, string> = {
   number_no_invalid: "May number check na walang kasunod na hakbang kapag hindi numero ang halaga, kaya doon matatapos ang automation.",
   unreachable_step: "May bahagi ng automation na hindi maaabot, kaya hindi ito tatakbo.",
 };
-const apps: Record<string, string> = { google_sheets: "Google Sheets", slack: "Slack", outlook: "Outlook", teams: "Microsoft Teams", telegram: "Telegram", unisms: "UniSMS", google_calendar: "Google Calendar", google_drive: "Google Drive", airtable: "Airtable", notion: "Notion", trello: "Trello", meta_messenger: "Facebook Messenger & Instagram" };
+const apps: Record<string, string> = { google_sheets: "Google Sheets", slack: "Slack", outlook: "Outlook", teams: "Microsoft Teams", discord: "Discord", telegram: "Telegram", unisms: "UniSMS", google_calendar: "Google Calendar", google_drive: "Google Drive", airtable: "Airtable", notion: "Notion", trello: "Trello", meta_messenger: "Facebook Messenger & Instagram" };
 const appsFix = { href: "#/apps", label: "Tingnan ang koneksyon" };
 const booking: Explanation = { headline: "Isinara ito dahil nagbago ang booking.", lines: ["Na-reschedule o nakansela ang booking, kaya wala nang ipapadala."], fix: null };
 const permission: Record<string, string> = {
@@ -16,6 +16,7 @@ const permission: Record<string, string> = {
   slack: "Imbitahan ang Daloy app sa channel, saka pindutin ang Subukan ulit.",
   outlook: "Tingnan kung puwedeng magpadala ng email ang nakakonektang Outlook account, saka pindutin ang Subukan ulit.",
   teams: "Idagdag ang nakakonektang account sa team at channel, saka pindutin ang Subukan ulit.",
+  discord: "Tingnan kung pinapayagan pa ng channel ang webhook, o mag-paste ng bagong webhook link sa Apps, saka pindutin ang Subukan ulit.",
   google_calendar: "I-share ang calendar sa Google service account na ikinonekta mo, piliin ang Make changes to events, saka pindutin ang Subukan ulit.",
   airtable: "Bigyan ng access ang Airtable token sa base at table na iyon, saka pindutin ang Subukan ulit.",
   notion: "I-share ang database sa Notion integration, saka pindutin ang Subukan ulit.",
@@ -68,7 +69,7 @@ export function explainFailureTl(facts: Facts): Explanation {
   const base = facts.deliveries.map(delivery).find(Boolean) ?? (facts.step ? step(facts.step) : null) ?? { headline: "Hindi matukoy ng Daloy kung bakit ito huminto.", lines: ["Nasa detalye para sa technician sa ibaba ang buong tala."], fix: null };
   return { ...base, lines: [...base.lines, ...facts.lint.map((l) => lint[l.rule])] };
 }
-const types: Record<string, string> = { condition: "Kondisyon", http: "HTTP request", email: "Magpadala ng email", delay: "Paghihintay", ai: "AI task", approval: "Pag-apruba", sheets: "Idagdag sa Google Sheets", drive: "I-save ang mga file sa Google Drive", slack: "I-post sa Slack", outlook: "Ipadala mula sa Outlook", teams: "I-post sa Teams", telegram: "Ipadala sa Telegram", sms: "Magpadala ng SMS", calendar: "Idagdag sa Google Calendar", paymongo_link: "Gumawa ng payment link", payment_status: "Tingnan ang bayad", airtable: "Idagdag sa Airtable", notion: "Idagdag sa Notion", trello: "Idagdag sa Trello", booking: "Booking", meta_reply: "Sumagot sa Messenger o Instagram", payment_due: "Humingi ng bayad", payment_expire: "Kanselahin kung hindi bayad" };
+const types: Record<string, string> = { condition: "Kondisyon", http: "HTTP request", email: "Magpadala ng email", delay: "Paghihintay", ai: "AI task", approval: "Pag-apruba", sheets: "Idagdag sa Google Sheets", drive: "I-save ang mga file sa Google Drive", slack: "I-post sa Slack", outlook: "Ipadala mula sa Outlook", teams: "I-post sa Teams", discord: "I-post sa Discord", google_docs: "Gumawa ng dokumento sa Google Docs", telegram: "Ipadala sa Telegram", sms: "Magpadala ng SMS", calendar: "Idagdag sa Google Calendar", paymongo_link: "Gumawa ng payment link", payment_status: "Tingnan ang bayad", airtable: "Idagdag sa Airtable", notion: "Idagdag sa Notion", trello: "Idagdag sa Trello", booking: "Booking", meta_reply: "Sumagot sa Messenger o Instagram", payment_due: "Humingi ng bayad", payment_expire: "Kanselahin kung hindi bayad" };
 const headlines = { "needs you": "Kailangan mong tingnan ang request na ito bago magpatuloy.", done: "Tapos na ang request na ito.", problem: "Huminto ang request na ito dahil may problema.", waiting: "Naghihintay ang request na ito.", "in progress": "Tumatakbo pa ang request na ito." };
 export function answerAllTl(facts: AskFacts): { happened: Explanation; why: Explanation | null; next: Explanation } {
   const happened = [facts.steps.length ? `${facts.steps.length} hakbang ang tumakbo.` : "Wala pang tumatakbong hakbang."];

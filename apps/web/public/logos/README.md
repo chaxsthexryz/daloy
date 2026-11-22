@@ -20,9 +20,13 @@ Public-domain files are copies hosted on Wikimedia Commons. Commons marks each o
 | telegram.svg | https://commons.wikimedia.org/wiki/File:Telegram_2019_Logo.svg | Commons: public domain (simple logo), trademark of Telegram | none |
 | notion.svg | https://commons.wikimedia.org/wiki/File:Notion-logo.svg | Commons: public domain (simple logo), trademark of Notion Labs | none |
 | airtable.svg | https://cdn.jsdelivr.net/npm/simple-icons@16.38.0/icons/airtable.svg | Simple Icons, CC0 (trademark of Airtable) | fill set to Airtable's colour #18BFFF from the Simple Icons data |
+| discord.svg | https://cdn.jsdelivr.net/npm/simple-icons@16.38.0/icons/discord.svg | Simple Icons, CC0 (trademark of Discord Inc.) | fill set to Discord's colour #5865F2 from the Simple Icons data |
+| google-docs.svg | https://cdn.jsdelivr.net/npm/simple-icons@16.38.0/icons/googledocs.svg | Simple Icons, CC0 (trademark of Google) | fill set to Google Docs' colour #4285F4 from the Simple Icons data |
 | trello.svg | https://cdn.jsdelivr.net/npm/simple-icons@16.38.0/icons/trello.svg | Simple Icons, CC0 (trademark of Atlassian) | fill set to Trello's colour #0052CC from the Simple Icons data |
 
 Why Simple Icons for two: the Commons copy of the Airtable logo could not be downloaded (HTTP 429 from Wikimedia during the session) and the Commons Trello file is the full wordmark with a gradient, not the icon. Simple Icons draws the icon as one colour, so these two are single-colour versions.
+
+Discord and Google Docs were added on 2026-11-22 (phase I1) from the same Simple Icons package version, for the same reason: one source with a CC0 licence that could be fetched in the session. No Wikimedia Commons copy was looked for. Both are single-colour marks. If the owner prefers the multi-colour Google Docs icon to match the other Google marks, replace `google-docs.svg` with a copy of it from Commons; the name stays the same.
 
 ## Brands that stay a letter tile
 
