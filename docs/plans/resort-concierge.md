@@ -154,7 +154,7 @@ Three workflows, so the set fits the Business plan's five live automations. Libr
 
 ## Phases
 
-Lanes that can run at the same time: A (C1, then C2, then C7), B (C3, then C4), C (C5). C6 starts after C1. C8 needs C1 to C7. C9 is last. C10 only on request.
+Lanes that can run at the same time: A (C1, then C2, then C7), B (C3, then C4), C (C5). C6 starts after C1. C8 needs C1 to C7. C9 follows. C10 (WhatsApp) comes after C9.
 
 | Phase | What | Model | Tests |
 |---|---|---|---|
@@ -165,24 +165,29 @@ Lanes that can run at the same time: A (C1, then C2, then C7), B (C3, then C4), 
 | C4 | Guarded answers: AI task `answer` (knowledge plus history, output `{reply, entryIds, intent, needsHuman, fields}`), `guardReply`, placeholder redaction, `stay_quote` step, L7 fix for `payment_due`. | Opus 5.5, high | Tests first: invented price replaced; price from an uncited entry replaced; availability words in English and Tagalog replaced; foreign link stripped; quote for 2 nights across a season boundary; `payment_due` refuses an AI output amount; model sees no email or phone |
 | C5 | Stays: booking stay mode (date plus nights, times from knowledge), `bookings.conversation_id`, Confirm stay. | Opus 5.5, high | Overlap across nights refused; reschedule keeps nights; pre-arrival delay lands at check-in minus 2 days in Asia/Manila |
 | C6 | DM receipt photo as a claim on the conversation's open due; email reply threading (`In-Reply-To`, `References`). | Opus 5.5, high (payment boundary) | Photo makes one claim and marks nothing paid; duplicate reference flagged; no open due means no claim; threaded headers present |
-| C7 | Conversations page: Needs staff first, history, Take over, Hand back, edit fields, Send deposit request, Confirm stay, Export and Delete this guest; digest counts conversations waiting for staff. | Sonnet 5.5, high | Playwright at 390 px and desktop; role matrix; English and Tagalog |
+| C7 | Conversations page: Needs staff first, history, Take over, Hand back, edit fields, Send deposit request, Confirm stay, Export and Delete this guest; digest counts conversations waiting for staff; staff alert by Messenger with a Telegram or email fallback when the staff member's window is closed. | Sonnet 5.5, high | Playwright at 390 px and desktop; role matrix; English and Tagalog |
 | C8 | The three templates, Taglish copy, library category, setup guide lines. | Sonnet 5.5, medium | Template definitions parse and lint clean; sample test runs on fake providers cover a menu tap, a priced question, a handoff and a follow-up |
 | C9 | Security review of C1 to C8 and the 50-conversation measurement; threat model sections for conversations and knowledge. | Opus 5.5, high | Review findings each with a failing test before the fix |
-| C10 | WhatsApp Cloud API (N25), only if the resort picks it and pays Meta. | Opus 5.5, high | Fake Cloud API: webhook signature, template send outside the window, cost note in the UI |
+| C10 | WhatsApp Cloud API (N25): inbound webhook, service replies, utility templates for deposit reminders and pre-arrival, cost note in the UI. Starts once the resort's Meta business account is verified with a payment method. | Opus 5.5, high | Fake Cloud API: webhook signature, template send outside the window, cost note in the UI |
 
 Each phase follows the usual rules: plan and the owner's "go", tests first for the logic named above, `docs/how-it-works.md`, `docs/threat-model.md` and a decision record updated, one commit per phase.
 
-## Open questions for the owner
+## Owner answers (22 November 2026)
 
-1. Which channels does the first resort use? Suggested start: Messenger, Instagram and email, SMS for pre-arrival, WhatsApp later, Viber not.
-2. Does the resort sell rooms on Agoda, Booking.com or a booking engine? If so, Daloy never states availability, and staff confirm every stay.
-3. Deposit: a fixed amount or a percent of the stay? Does staff approve before the deposit request goes out (suggested), or does the bot send it once the quote is complete?
-4. Manual QR Ph and GCash transfer review only, or PayMongo checkout too (needs the resort's PayMongo verification)?
-5. Where do staff alerts go (Telegram, Slack or email), and who reviews receipts?
-6. Pricing: which plan covers an AI-heavy concierge, and is the AI key the resort's or the operator's? The Business allowance of 500 AI actions may run out in a week.
-7. Do the resort's rates vary by season, weekday, or per head, and are there day-tour or entrance fees? This sets the knowledge fields and `stay_quote`.
-8. How long should conversations be kept (default 90 days after the last message)?
-9. Whose Meta app do the resorts connect to: one Daloy app that passes App Review once, or each resort's own app?
-10. The bot's name and tone in Taglish, and the Google and Facebook review links.
+1. Channels: Messenger, Instagram, email, SMS for pre-arrival, and WhatsApp. Viber stays out. C10 (WhatsApp) is in scope; it starts after C9 and once the resort has a verified Meta business account with a payment method, since every WhatsApp message is billed to the resort.
+2. The resort also sells rooms on other channels. The bot never states availability, and staff confirm every stay. Daloy stays drive reminders only.
+3. Staff approve each deposit request (Send deposit request on the Conversations page); the amount comes from `stay_quote`.
+4. Both payment routes: manual QR Ph and GCash review, and PayMongo checkout. Checkout needs the resort's PayMongo business verification and an owner-run live check (`docs/live-paymongo-check.md`); PayMongo's fee per payment goes to the resort.
+5. Staff alerts go to Telegram, email, Slack and Messenger. A Messenger alert to a staff member is new work (C7) and has a limit: Meta's 24-hour window applies to staff too, so it only arrives if that staff member messaged the Page in the last 24 hours. Otherwise the alert falls back to Telegram or email, and the Conversations page says so.
+6. AI cost: the operator's model key, sold as a concierge plan above USD 25 with a larger AI allowance. The plan's price and allowance are set before the pilot starts (N6 quota tiers gain a concierge tier in C8).
+7. One Daloy Meta app: the owner passes App Review once (C0), every resort connects its Page to it, and the owner holds the app's platform policy duties.
+8. Conversations are kept 90 days after the last message, adjustable per workspace.
+
+## Still open
+
+1. Do the resort's rates vary by season, weekday, or per head, and are there day-tour or entrance fees? This sets the knowledge fields and `stay_quote`. Is the deposit a fixed amount or a percent?
+2. Who reviews receipts?
+3. The bot's name and tone in Taglish, and the Google and Facebook review links.
+4. The concierge plan's monthly price and AI allowance.
 
 Sources checked on 22 November 2026: Meta's WhatsApp pricing pages (developers.facebook.com/documentation/business-messaging/whatsapp/pricing), Meta's Send API message tags page (did not render; tag dates from third-party notices), Viber's Business Messages rate card (forbusiness.viber.com), Infobip's WhatsApp and Viber price pages.
