@@ -51,6 +51,16 @@ export type AiConnection = { imageTypes?: FileKind[]; provider: string; baseUrl:
  *   and allow 2,048 extra tokens for it on top of each caller's answer budget.
  */
 const LOCAL_HOST = /^(localhost|127\.\d+\.\d+\.\d+|\[::1\]|host\.docker\.internal)$/;
+/** A model on this machine or an Ollama server, which gets the short Build with AI prompt (decision 0106). */
+export function isLocalModel(conn: Pick<AiConnection, "provider" | "baseUrl">): boolean {
+  if (conn.provider === "ollama") return true;
+  try {
+    return LOCAL_HOST.test(new URL(conn.baseUrl).hostname);
+  } catch {
+    return true;
+  }
+}
+
 function thinkingControl(provider: string, baseUrl: string): Pick<AiConnection, "extraBody" | "reasoningTokens" | "jsonMode"> {
   let host: string;
   try {

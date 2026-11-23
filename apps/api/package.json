@@ -5,7 +5,8 @@
   "type": "module",
   "description": "NestJS API: console auth, workflows, secrets, API tokens and triggers.",
   "scripts": {
-    "start": "tsx src/main.ts"
+    "start": "tsx src/main.ts",
+    "ai:stress": "tsx --env-file=../../.env scripts/ai-stress.ts"
   },
   "dependencies": {
     "@daloy/db": "workspace:*",

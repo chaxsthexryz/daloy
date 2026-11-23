@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { draftPrompt, parseDraftReply } from "./ai-draft";
+import { draftPrompt, extractJson, parseDraftReply } from "./ai-draft";
 import { TEMPLATES } from "./templates";
 
 const triage = TEMPLATES[0]!.definition;
@@ -101,5 +101,32 @@ describe("parseDraftReply", () => {
 
   it("needs a name and a summary", () => {
     expect(parseDraftReply(reply({ definition: triage })).ok).toBe(false);
+  });
+});
+
+// Found by the AI stress test (decision 0106): a hosted model given only the short prompt built http and telegram steps
+// for SMS, Messenger and Shopify requests, and replies with one "}" too many were thrown away.
+describe("full prompt for hosted models", () => {
+  it("adds the triggers and steps the short prompt leaves out", () => {
+    const short = draftPrompt({ request: "x" }).system;
+    const full = draftPrompt({ request: "x" }, true).system;
+    for (const type of ["sms", "meta_reply", "discord", "shopify_create_product"]) {
+      expect(short).not.toContain(`"${type}":{`);
+      expect(full).toContain(`"${type}":{`);
+    }
+    for (const trigger of ["meta_dm", "payment", "shopify_order"]) expect(full).toContain(`{"type":"${trigger}"`);
+    expect(full).toMatch(/Use telegram only when the person says Telegram/);
+  });
+});
+
+describe("extractJson", () => {
+  it("accepts a reply that closes the object once too often", () => {
+    expect(extractJson('{"a":{"b":[1]}}}')).toEqual({ a: { b: [1] } });
+    expect(extractJson('Here: {"a":1}} and }')).toEqual({ a: 1 });
+  });
+
+  it("still refuses text that holds no object", () => {
+    expect(extractJson("no json here }")).toBeUndefined();
+    expect(extractJson('{"a":')).toBeUndefined();
   });
 });

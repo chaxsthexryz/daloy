@@ -24,17 +24,17 @@ const withoutFiles = (schema: unknown) => {
  * The part of the prompt that describes a definition: trigger, steps, edges and the rules a draft has to follow.
  * Exported so the chat prompt (ai-chat.ts) describes workflows in exactly the same words.
  */
-const SPEC = [
+const spec = (full: boolean) => [
   "A definition is {trigger, steps, edges}.",
   'trigger is one of: {"type":"manual","config":{}}, {"type":"webhook","config":{}}, {"type":"schedule","config":{"cron":"0 9 * * 1"}},',
   '{"type":"form","config":{"fields":[{"name":"email","label":"Email","type":"email","required":true}]}} (field types: text, email, number, textarea, datetime, resource, file).',
+  ...(full ? [FULL_TRIGGERS] : []),
   'A datetime field needs "timezone" (an IANA name such as "Asia/Manila") and can set "slotMinutes"; times must be in the future and on the slot grid. A resource field takes one of the resources of the workspace (a therapist, a room); use {{trigger.<field>.name}} in messages. A delay can wait "until" a datetime field with "offsetSeconds" (e.g. -86400 for a day before); if that time has passed, the run ends at the delay unless it has an edge with "on": "late".',
   'A file field ("type":"file") holds photos and PDFs, up to 3 per field. To read one, add it and an ai step (task extract or summarize); the owner ticks "Let the AI read these files" on that step, so name that box in the summary. A drive step saves form files to Google Drive.',
   'A number field can set "min", "max" and "integer": true, e.g. {"name":"amount","label":"Amount","type":"number","required":true,"min":0.01}. Put limits on the field instead of adding condition steps that check them; a submission outside the limits is refused before the workflow runs. A webhook trigger can list "fields" the same way to check incoming events, and set "eventKey" (such as "{{trigger.event_id}}") so a repeated event starts no second run.',
   'A condition comparing with gt, gte, lt or lte takes its "invalid" branch when a side is missing or not a number. Give it an "invalid" edge when bad data needs its own handling (such as manual review); without one, the run fails with a message.',
   'steps is a list of {"id","type","config"}. ids use a-z, 0-9 and _. The config of each step type follows this JSON Schema:',
-  // Airtable, Notion, Trello, payment status, sms, meta_reply, discord, google_docs and Shopify steps are left out of the draft prompt to keep it inside a small local model's context.
-  JSON.stringify(Object.fromEntries(Object.entries(stepJsonSchemas()).filter(([type]) => !["airtable", "notion", "trello", "payment_status", "payment_due", "payment_expire", "sms", "meta_reply", "discord", "google_docs", "shopify_create_product", "shopify_update_product"].includes(type)).map(([type, schema]) => [type, type === "ai" ? withoutFiles(schema) : schema]))),
+  JSON.stringify(Object.fromEntries(Object.entries(stepJsonSchemas()).filter(([type]) => full || !HOSTED_ONLY.includes(type)).map(([type, schema]) => [type, type === "ai" ? withoutFiles(schema) : schema]))),
   'edges is a list of {"from","to"} and, from a branching step, "on": ' +
     Object.entries(BRANCHES)
       .map(([type, labels]) => `${type} has ${labels!.map((l) => `"${l}"`).join(", ")}`)
@@ -46,43 +46,66 @@ const SPEC = [
   'Give an approval step an edge for each of "approved", "rejected" and "timeout", so the requester is told either way, and make sure every label of a classify step reaches a step.',
   "Use real-looking placeholders such as you@example.com when the request gives no address. Keep steps to what was asked.",
   "Mock test runs in Daloy fake every email, HTTP call, approval and connected app, and the tester can pick AI labels and approval outcomes, so never add dry-run flags, test fields or branches for testing.",
+  ...(full ? FULL_RULES : []),
+];
+
+// Left out of a small local model's prompt to keep it inside that model's context; a hosted model gets all of them.
+// The stress test (apps/api/scripts/ai-stress.ts) showed a hosted model without them builds http or telegram steps instead.
+const HOSTED_ONLY = ["airtable", "notion", "trello", "payment_status", "payment_due", "payment_expire", "sms", "meta_reply", "discord", "google_docs", "shopify_create_product", "shopify_update_product"];
+const FULL_TRIGGERS =
+  'More triggers: {"type":"meta_dm","config":{"channel":"both"}} for a Facebook Messenger or Instagram DM to the connected Page (channel messenger, instagram or both; fields {{trigger.text}}, {{trigger.senderId}}, {{trigger.channel}}); ' +
+  '{"type":"payment","config":{"events":["paid"]}} for a PayMongo payment (fields {{trigger.reference}}, {{trigger.amountPesos}}, {{trigger.status}}); ' +
+  '{"type":"shopify_order","config":{}} for a new order in the connected Shopify store (fields {{trigger.order_number}}, {{trigger.customer_name}}, {{trigger.customer_email}}, {{trigger.customer_phone}}, {{trigger.total}}, {{trigger.items}}); ' +
+  '{"type":"email","config":{}} for an email to the workspace inbox.';
+const FULL_RULES = [
+  "When the person names an app or channel Daloy has no step for (such as TikTok, Viber or Lazada), say so plainly in the summary and name what the draft uses instead. Never say a step sends through an app it does not use.",
+  "Pick the step the person names: text, SMS or i-text means an sms step; Facebook, Messenger, Instagram or page messages mean the meta_dm trigger, answered with a meta_reply step (recipientId {{trigger.senderId}}, channel {{trigger.channel}}); Discord, Trello, Notion, Airtable, Google Docs and Shopify have their own steps. Use telegram only when the person says Telegram, and http only for an app with no step of its own.",
+  "To text the owner, use an sms step to +639170000000 as a placeholder and say in the summary that they should put their number in.",
+  "An order, booking or inquiry with no source named comes in through a Daloy form, and a payment with no source named is a PayMongo payment. Use shopify_order only when the person says Shopify, and the email trigger only when they say emails come in.",
+  "shopify_create_product and shopify_update_product never take values from a form trigger, because anyone can fill in a form. When the person asks for that, do not ask about it: draft a manual trigger with example values in the step that they change before each run, and say so in the summary.",
 ];
 
 const EXAMPLE = JSON.stringify({ name: example.name, summary: example.description, definition: example.definition });
 
-const SYSTEM = [
+const system = (full: boolean) => [
   "You build workflow definitions for Daloy, a workflow automation tool. Reply with one JSON object and nothing else:",
   '{"name": "<short workflow name>", "summary": "<one sentence on what the workflow does, or what you changed>", "definition": <definition>}',
   "",
-  ...SPEC,
+  ...spec(full),
   "",
   `Example, for "${example.description}":`,
   EXAMPLE,
 ].join("\n");
 
-/** The definition rules, for a prompt that answers in another shape (the chat in ai-chat.ts). */
-export const definitionSpec = () => SPEC.join("\n");
+/**
+ * The definition rules, for a prompt that answers in another shape (the chat in ai-chat.ts). `full` adds the triggers
+ * and steps a small local model has no room for; callers pass it for a hosted model (isLocalModel in @daloy/db).
+ */
+export const definitionSpec = (full = false) => spec(full).join("\n");
 /** A full worked example, so a small model copies the shape instead of inventing one. */
 export const definitionExample = () => `Example, for "${example.description}":\n${EXAMPLE}`;
 
 /** The request, and the current draft when changing one, go in the user message, never in the system prompt. */
-export function draftPrompt(input: { request: string; current?: unknown }) {
+export function draftPrompt(input: { request: string; current?: unknown }, full = false) {
   const content = input.current
     ? `Change this workflow definition:\n${JSON.stringify(input.current)}\n\nRequested change:\n${input.request}`
     : `Build a workflow for this request:\n${input.request}`;
-  return { system: SYSTEM, messages: [{ role: "user" as const, content }] };
+  return { system: system(full), messages: [{ role: "user" as const, content }] };
 }
 
-// The outermost {...} in the reply, so text or a code fence around the JSON does not matter.
+// The outermost {...} in the reply, so text or a code fence around the JSON does not matter. When that does not parse,
+// try ending at each earlier "}": models often close the object once too many ("...]}}}"), seen in the AI stress test.
 export function extractJson(text: string): unknown {
   const start = text.indexOf("{");
-  const end = text.lastIndexOf("}");
-  if (start < 0 || end <= start) return undefined;
-  try {
-    return JSON.parse(text.slice(start, end + 1));
-  } catch {
-    return undefined;
+  if (start < 0) return undefined;
+  for (let end = text.lastIndexOf("}"), tries = 0; end > start && tries < 4; end = text.lastIndexOf("}", end - 1), tries++) {
+    try {
+      return JSON.parse(text.slice(start, end + 1));
+    } catch {
+      // try the "}" before this one
+    }
   }
+  return undefined;
 }
 
 export function parseDraftReply(text: string): DraftResult {

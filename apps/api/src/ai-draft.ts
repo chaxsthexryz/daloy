@@ -1,4 +1,4 @@
-import { aiConnection, claimUsage, QuotaError, type Db } from "@daloy/db";
+import { aiConnection, claimUsage, isLocalModel, QuotaError, type Db } from "@daloy/db";
 import { draftPrompt, lintDefinition, parseDraftReply, type WorkflowDefinition } from "@daloy/engine";
 import { generate, type Message } from "@daloy/llm-ts";
 import { Body, Controller, HttpCode, HttpException, HttpStatus, Inject, Post, UseGuards } from "@nestjs/common";
@@ -30,7 +30,7 @@ export class AiDraftController {
     await claimUsage(this.db, user.workspaceId, "ai").catch((err: unknown) => {
       throw err instanceof QuotaError ? new HttpException({ message: err.message }, HttpStatus.TOO_MANY_REQUESTS) : err;
     });
-    const prompt = draftPrompt(body);
+    const prompt = draftPrompt(body, !isLocalModel(connection));
     const messages: Message[] = [...prompt.messages];
     let errors: string[] = [];
     let firstValid: { name: string; summary: string; definition: WorkflowDefinition; warnings: string[] } | undefined;
