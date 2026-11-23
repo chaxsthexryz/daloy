@@ -20,6 +20,7 @@ export * from "./google-access";
 export * from "./google-docs";
 export * from "./google-calendar";
 export * from "./email-sources";
+export * from "./knowledge";
 export * from "./language";
 export * from "./mail";
 export * from "./mail-senders";

@@ -1,0 +1,23 @@
+/* Knowledge page (decision 0116). Rows are stacked cards, so the page works at 390 px without a wide table. */
+.kn { display: grid; gap: 14px; align-content: start; }
+.kn-publish { display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: center; justify-content: space-between; }
+.kn-publish > div { min-width: 0; flex: 1 1 260px; }
+.kn-list { list-style: none; margin: 0; padding: 0; }
+.kn-list li { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid var(--w-line); }
+.kn-list li:last-child { border-bottom: 0; }
+.kn-main { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; min-width: 0; flex: 1 1 260px; }
+.kn-summary { flex-basis: 100%; overflow-wrap: anywhere; }
+.kn-form textarea, .kn-form select, .kn-form input[type="text"], .kn-form input[type="number"], .kn-form input[type="url"] { width: 100%; box-sizing: border-box; }
+.kn-form fieldset { min-width: 0; margin: 0; padding: 12px; border: 1px solid var(--w-line); border-radius: 8px; display: grid; gap: 12px; }
+.kn-form legend { padding: 0 6px; font-size: 13px; font-weight: 700; }
+.kn-sub { margin: 4px 0 0; font-size: 14px; }
+.kn-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+.kn-rule { display: grid; gap: 12px; padding: 12px; border: 1px solid var(--w-line); border-radius: 8px; background: var(--w-canvas); }
+.kn-form .kn-days { display: flex; flex-wrap: wrap; gap: 6px 14px; padding: 0; border: 0; }
+.kn-form .kn-days legend { padding: 0; margin-bottom: 4px; }
+.kn-form .kn-day { display: inline-flex; align-items: center; gap: 6px; margin: 0; min-height: 32px; font-weight: 500; }
+.kn-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+@media (max-width: 799.98px) {
+  .kn-actions .wk-button, .kn-form .kn-rule > .wk-button, .kn-form fieldset > .wk-button { min-height: 44px; }
+  .kn-list .wk-acts { white-space: normal; }
+}

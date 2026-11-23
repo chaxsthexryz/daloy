@@ -48,6 +48,7 @@ function section(hash: string) {
   if (hash === "#/ai") return "Build with AI";
   if (hash.startsWith("#/bookings")) return "Bookings";
   if (hash === "#/receipts") return "Receipts to review";
+  if (hash === "#/knowledge") return "Knowledge";
   if (hash.startsWith("#/team")) return "Team";
   if (hash.startsWith("#/settings/business/outlook-") || hash === "#/apps" || hash.startsWith("#/apps/") || hash.startsWith("#/verify-sender")) return "Apps";
   if (hash === "#/settings/business") return "Business";
@@ -147,6 +148,7 @@ export function Shell({ user, hash, onSignOut, children }: { user: User; hash: s
           {link("#/activity", "Activity", "activity")}
           {link("#/bookings", "Bookings", "bookings")}
           {(owner || user.role === "operator") && link("#/receipts", "Receipts to review", "receipts")}
+          {(owner || user.role === "operator") && link("#/knowledge", "Knowledge", "knowledge")}
           {owner && <>
             <span className="shell-nav-label rail-label">{t("Build")}</span>
             {link("#/new", "Library", "new")}

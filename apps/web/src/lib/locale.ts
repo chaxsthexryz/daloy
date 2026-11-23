@@ -23,10 +23,12 @@ import { privacyTranslations } from "./locale-privacy";
 import { receiptsTranslations } from "./locale-receipts";
 import { integrationTranslations } from "./locale-integrations";
 import { readPageTranslations } from "./locale-read-page";
+import { knowledgeTranslations } from "./locale-knowledge";
 export type Language = "en" | "tl";
 
 const tagalog: Record<string, string> = {
   // First, so a string another file already translates keeps its wording.
+  ...knowledgeTranslations,
   ...shopifyTranslations,
   ...browserTranslations,
   ...managementTranslations,

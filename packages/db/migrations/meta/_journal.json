@@ -351,6 +351,13 @@
       "when": 1795413855805,
       "tag": "0049_conversations",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1795415937916,
+      "tag": "0050_knowledge",
+      "breakpoints": true
     }
   ]
 }
