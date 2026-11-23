@@ -63,6 +63,9 @@ test("forgot password: the emailed link sets a new password and the old one stop
 test("change password from the account page, then sign in with the new one", async ({ page }) => {
   const email = `change-${Date.now()}@test.local`;
   await register(page, email);
+  // Focus opens the rail and moves Account mid-click; let it open first, as a person would.
+  await page.locator(".sidebar").hover();
+  await expect(page.locator(".sidebar")).toHaveAttribute("data-expanded", /.*/);
   await page.getByRole("link", { name: "Account", exact: true }).click();
   await page.getByLabel("Current password").fill(OLD);
   await page.getByLabel(/New password/).fill(NEW);
