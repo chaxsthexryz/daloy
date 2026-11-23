@@ -387,3 +387,19 @@ C3 and C4 cover T7 (answer from my price list). Decisions from 0115 (0111 to 011
 ## Assistant on Telegram (23 November 2026)
 
 - [ ] J1. "Ask my assistant": a read step for today's Google Calendar events and Daloy bookings, Telegram text as a C1 conversation channel so follow-up questions have memory, and a template (Telegram message, AI picks the intent, read calendar, bookings, unpaid payments or today's runs, AI writes the answer, reply). Read only; acting on your behalf comes later with approvals. After C2, since both touch the conversation code.
+
+## Editor layout and engine usability (docs/plans/editor-and-triggers-roadmap.md, 24 November 2026)
+
+- [ ] E1. Visible leaf and empty-branch `+` add buttons in `FlowCanvas.tsx` and `Editor.tsx`, plus global actions (`Test run`, `Explain`, `Save`, `Publish`) pinned to `a7-head`.
+- [ ] E2. Branch-aware layered DAG auto-layout in `lib/graph.ts` using `BRANCHES` order and measured card heights, plus 1280 px inspector fit improvements.
+- [ ] E3. Clickable variable picker (`{{trigger.*}}`, upstream `{{steps.<id>.output.*}}`) and inline upstream sample output preview in the step inspector.
+- [ ] E4. Multi-way `switch` branching, per-step error policy (`T3`), deterministic `transform` step, and `for_each` / `N30` batched Sheets row appends.
+
+## Triggers and app expansion (docs/plans/editor-and-triggers-roadmap.md, 24 November 2026)
+
+- [ ] G1. Daloy internal triggers (`booking_event`, `payment_event`) and reusable `sub_workflow` triggers/steps.
+- [ ] G2. Google Workspace Tier 1 triggers reusing existing Google OAuth (`sheets_row`, `calendar_event`, `drive_file`).
+- [ ] G3. Connected mailbox triggers (`gmail_message` and `outlook_message` with filter rules).
+- [ ] G4. Web page / RSS monitor trigger (`page_changed`) and team chat triggers (`slack_message`, `teams_message`, `discord_message`).
+- [ ] G5. Record-tool triggers (`airtable_record`, `notion_page`, `trello_card`).
+- [ ] G6. Demand-gated external triggers (Meta comments/Lead Ads, WooCommerce/Shopee/Lazada/TikTok Shop, iCal/Calendly, Xendit/Maya/Stripe, Tally/Typeform/Google Forms).
