@@ -343,7 +343,7 @@ DeepSeek's review is in `docs/roadmap-review-2026-11-18.md`. Claude's second opi
 - [ ] T4. Notes on steps, shown on the canvas card and read by Explain this flow.
 - [ ] T5. One Share panel: form link and embed code, webhook URL, MCP tool name and an API example.
 - [ ] T6. `docker compose --profile local-ai up` runs Ollama with a small model.
-- [ ] T7. Answer from my price list: owner-written price list and answers, an AI `answer` task and a Messenger template.
+- [ ] T7. Answer from my price list: owner-written price list and answers, an AI `answer` task and a Messenger template. Covered by C3 and C4.
 - [ ] T8. Chat as your customer: test a Messenger workflow by typing as the customer.
 - [ ] T9. Telegram message trigger: a photo or PDF sent to your own bot (made with @BotFather) starts a workflow, from your chat only or from anyone. Photos and PDFs become uploads the AI step can read, the telegram step can reply to the sender, and a "Log GCash receipts from Telegram" template adds a Sheets row marked To check. Next, before T2.
 
@@ -367,3 +367,19 @@ Orchestrator: Neon. Onboarding (`Onboarding.tsx`, `onboarding.css`) is out of sc
 - [ ] D4. Secondary console pages, auth and editor consistency (breadcrumbs, select alignment, styled file inputs, disabled button contrast, AppMark letter-tile tints, editor node header spacing). Onboarding untouched. Decision 0114.
 - [ ] D5. Full lint, typecheck, unit, contrast, locale and Playwright E2E verification, Light/Dark/reduced-motion visual QA on a disposable stack, and `docs/how-it-works.md` update.
 
+
+## Resort concierge (docs/plans/resort-concierge.md, 23 November 2026)
+
+C3 and C4 cover T7 (answer from my price list). Decisions from 0115 (0111 to 0114 are held by D1 to D4); migrations from 0049.
+
+- [ ] C0. Owner: run `docs/live-meta-check.md`, start Meta App Review, turn off Business Suite instant replies on the Page.
+- [ ] C1. Conversation state: tables, webhook and email-in upsert, version supersede, 24-hour window edges, echo pause, `conversation_update` step, retention sweep, R6 coverage. (claimed: claude, branch claude/c1-conversations)
+- [ ] C2. Menu buttons: quick replies and postbacks, `trigger.choice`, numbered menu for email. After C1.
+- [ ] C3. Knowledge page and immutable `knowledge_versions`, owner and operator only. (claimed: claude, branch claude/c3-knowledge)
+- [ ] C4. Guarded answers: AI `answer` task, `guardReply`, `stay_quote`, `payment_due` L7 fix. After C3.
+- [ ] C5. Stays: booking stay mode, `bookings.conversation_id`, Confirm stay.
+- [ ] C6. DM receipt photo as a claim on the open due; email reply threading. After C1.
+- [ ] C7. Conversations page and staff alerts (Messenger with Telegram or email fallback). After C2.
+- [ ] C8. Three resort templates, Taglish copy, concierge quota tier. After C1 to C7.
+- [ ] C9. Security review of C1 to C8 and the 50-conversation measurement.
+- [ ] C10. WhatsApp Cloud API (N25). After C9 and the resort's verified Meta business account.
