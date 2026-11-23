@@ -1,5 +1,37 @@
-import { assertNotPaused, bookingById, createKeyedRun, workflows, bookingByReference, bookingChanges, bookingResults, listBookings, publishedVersion, runs, staffChange, staffReplay, stepRuns, type BookingView, type Db, type StaffResult } from "@daloy/db";
-import { bookingStartField, definitionSchema, parseZoned, type WorkflowDefinition } from "@daloy/engine";
+import {
+  assertNotPaused,
+  bookingById,
+  bookingByReference,
+  bookingChanges,
+  bookingResults,
+  confirmStay,
+  createKeyedRun,
+  listBookings,
+  publishedVersion,
+  readKnowledge,
+  runs,
+  staffChange,
+  staffReplay,
+  stayByIdempotencyKey,
+  stepRuns,
+  workflows,
+  type BookingView,
+  type Db,
+  type StaffResult,
+} from "@daloy/db";
+import {
+  bookingStartField,
+  CLOCK_TIME_RE,
+  DEFAULT_STAY_TIMEZONE,
+  definitionSchema,
+  isTimeZone,
+  MAX_STAY_NIGHTS,
+  parseZoned,
+  rescheduleStayRange,
+  stayRange,
+  stayTimesFromKnowledge,
+  type WorkflowDefinition,
+} from "@daloy/engine";
 import { BadRequestException, Body, ConflictException, Controller, Get, Header, HttpCode, Inject, NotFoundException, Param, Post, UseGuards } from "@nestjs/common";
 import { and, asc, eq } from "drizzle-orm";
 import type { PgBoss } from "pg-boss";
@@ -11,7 +43,25 @@ import { Allow, BOSS, CurrentUser, DB, enqueueRun, OPERATE, ZodPipe, type Sessio
 const CHANGED = "This booking changed since you loaded it. Reload and try again.";
 const versionField = z.int().min(1);
 export const cancelInput = z.object({ version: versionField });
-export const rescheduleInput = z.object({ version: versionField, start: z.string().min(1).max(100) });
+export const rescheduleStartField = z.string().min(1).max(100);
+export const rescheduleInput = z
+  .object({
+    version: versionField,
+    start: rescheduleStartField.optional(),
+    checkIn: z.string().min(1).max(100).optional(),
+  })
+  .refine((b) => (b.start !== undefined) !== (b.checkIn !== undefined), { message: "send start or checkIn", path: ["start"] });
+
+export const confirmStayInput = z.object({
+  resourceId: z.uuid(),
+  checkIn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "must be a date as YYYY-MM-DD"),
+  nights: z.int().min(1).max(MAX_STAY_NIGHTS),
+  timezone: z.string().max(64).refine(isTimeZone, "use an IANA timezone name such as Asia/Manila").optional(),
+  checkInTime: z.string().regex(CLOCK_TIME_RE, "must be a 24-hour time as HH:MM").optional(),
+  checkOutTime: z.string().regex(CLOCK_TIME_RE, "must be a 24-hour time as HH:MM").optional(),
+  conversationId: z.uuid().optional(),
+  idempotencyKey: z.string().trim().min(1).max(200).optional(),
+});
 
 type Change = { booking?: BookingView; runId?: string; duplicate?: true };
 
@@ -26,6 +76,7 @@ function answer(r: StaffResult): Change {
 }
 
 const STEP_REF = /\{\{\s*steps\.([a-z][a-z0-9_]*)/g;
+const TRIGGER_FIELD = /^\{\{\s*trigger\.([a-z][a-z0-9_]*)\s*\}\}$/;
 
 /** The steps that can run after `from`, following every edge. */
 function after(def: WorkflowDefinition, from: string): Set<string> {
@@ -38,11 +89,22 @@ function after(def: WorkflowDefinition, from: string): Set<string> {
   return seen;
 }
 
+function checkLaterSteps(def: WorkflowDefinition, stepId: string) {
+  const later = after(def, stepId);
+  for (const s of def.steps.filter((x) => later.has(x.id))) {
+    for (const [, read] of JSON.stringify(s.config).matchAll(STEP_REF)) {
+      if (read !== stepId && !later.has(read!)) {
+        throw new ConflictException(`Step "${s.id}" reads step "${read}", which ran before the booking, so a rescheduled run could not fill it in.`);
+      }
+    }
+  }
+}
+
 /**
- * What a staff reschedule needs before it changes anything: the published version must still have the booking step
- * that made this booking (a create whose start is a datetime field), the new time must pass that field's rules, and
- * no step after it may read a step that ran before it, since the new run starts after the booking step and would send
- * that value blank (decision 0032).
+ * What a staff reschedule needs before it changes anything for a slot booking: the published version must still have
+ * the booking step that made this booking (a create whose start is a datetime field), the new time must pass that
+ * field's rules, and no step after it may read a step that ran before it, since the new run starts after the booking
+ * step and would send that value blank (decision 0032).
  */
 async function reschedulePlan(db: Db, booking: { id: string; workflowId: string | null; timezone: string }, start: string) {
   // The run that created the booking (its change from version 0) and its booking step. Later runs can belong to a desk
@@ -62,12 +124,7 @@ async function reschedulePlan(db: Db, booking: { id: string; workflowId: string 
   const field = step?.type === "booking" && step.config.action === "create" ? bookingStartField(def!.trigger, step.config) : undefined;
   if (!version || !def || !field) throw new ConflictException(`Publish a version with booking step "${made.stepId}" to reschedule this booking.`);
 
-  const later = after(def, made.stepId);
-  for (const s of def.steps.filter((x) => later.has(x.id))) {
-    for (const [, read] of JSON.stringify(s.config).matchAll(STEP_REF)) {
-      if (read !== made.stepId && !later.has(read!)) throw new ConflictException(`Step "${s.id}" reads step "${read}", which ran before the booking, so a rescheduled run could not fill it in.`);
-    }
-  }
+  checkLaterSteps(def, made.stepId);
 
   // Read in the booking's zone, which the Bookings page shows, not the field's: a workflow edit can change the field's zone later.
   const time = parseZoned(start.trim(), { timezone: booking.timezone, slotMinutes: field.slotMinutes });
@@ -75,15 +132,79 @@ async function reschedulePlan(db: Db, booking: { id: string; workflowId: string 
   return { versionId: version.id, stepId: made.stepId, field: field.name, at: time.at, value: time.value, payload: made.payload as Record<string, unknown> };
 }
 
-/** Moves a live booking to a new time and starts its one new run, which resumes after the booking step. */
-export async function rescheduleBooking(db: Db, boss: PgBoss, workspaceId: string, bookingId: string, version: number, start: string, actor: string): Promise<Change> {
+/** Workflow resumption plan for a workflow-created stay booking; returns undefined for a staff-confirmed stay with no workflow. */
+async function stayReschedulePlan(db: Db, booking: { id: string; workflowId: string | null }) {
+  if (!booking.workflowId) return undefined;
+  const [made] = await db
+    .select({ stepId: bookingResults.stepId, payload: runs.triggerPayload })
+    .from(bookingChanges)
+    .innerJoin(bookingResults, and(eq(bookingResults.runId, bookingChanges.runId), eq(bookingResults.bookingId, bookingChanges.bookingId)))
+    .innerJoin(runs, eq(runs.id, bookingChanges.runId))
+    .where(and(eq(bookingChanges.bookingId, booking.id), eq(bookingChanges.fromVersion, 0)))
+    .orderBy(asc(bookingResults.createdAt))
+    .limit(1);
+  if (!made) throw new ConflictException("The run that made this booking is gone, so it cannot be rescheduled here. Cancel it instead.");
+  const version = await publishedVersion(db, booking.workflowId);
+  const def = version ? definitionSchema.parse(version.definition) : undefined;
+  const step = def?.steps.find((s) => s.id === made.stepId);
+  if (!version || !def || step?.type !== "booking" || step.config.action !== "create" || step.config.mode !== "stay") {
+    throw new ConflictException(`Publish a version with booking step "${made.stepId}" to reschedule this booking.`);
+  }
+  checkLaterSteps(def, made.stepId);
+  const checkInField = step.config.checkIn ? TRIGGER_FIELD.exec(step.config.checkIn)?.[1] : undefined;
+  return { versionId: version.id, stepId: made.stepId, checkInField, payload: made.payload as Record<string, unknown> };
+}
+
+/** Moves a live booking to a new time (or new check-in date for stays, keeping nights) and starts its one new run when backed by a workflow. */
+export async function rescheduleBooking(db: Db, boss: PgBoss, workspaceId: string, bookingId: string, version: number, startInput: string, actor: string): Promise<Change> {
   const booking = await bookingById(db, workspaceId, bookingId);
   if (!booking) throw new NotFoundException("booking not found");
+
+  if (booking.nights !== undefined) {
+    // Stay booking: keep nights and local check-in/check-out wall times in the booking's timezone.
+    const existing = { start: new Date(booking.start), end: new Date(booking.end), nights: booking.nights, timezone: booking.timezone };
+    const given = rescheduleStayRange(existing, startInput, -Infinity);
+    const replay = given.ok ? await staffReplay(db, { workspaceId, bookingId, version, action: "reschedule", start: given.start }) : undefined;
+    if (replay) return answer(replay);
+
+    const movedRange = rescheduleStayRange(existing, startInput);
+    if (!movedRange.ok) throw new BadRequestException([movedRange.error]);
+    const plan = await stayReschedulePlan(db, booking);
+
+    const r = await staffChange(
+      db,
+      {
+        workspaceId,
+        bookingId,
+        version,
+        action: "reschedule",
+        start: movedRange.start,
+        end: movedRange.end,
+        ...(plan
+          ? {
+              newRun: async (tx, moved) => {
+                await assertNotPaused(tx, plan.versionId);
+                const triggerPayload = plan.checkInField ? { ...plan.payload, [plan.checkInField]: movedRange.checkIn } : plan.payload;
+                const [run] = await tx.insert(runs).values({ workflowVersionId: plan.versionId, triggerPayload }).returning({ id: runs.id });
+                await tx.insert(stepRuns).values({ runId: run!.id, stepId: plan.stepId, attempt: 1, state: "succeeded", branch: "done", input: { action: "reschedule", by: actor }, output: moved, finishedAt: new Date() });
+                return run!.id;
+              },
+            }
+          : {}),
+      },
+      actor,
+    );
+    const result = answer(r);
+    if (r.result === "done" && r.runId) await enqueueRun(boss, r.runId);
+    return result;
+  }
+
+  // Slot booking (existing behavior):
   // A replay gets its stored answer before any check of the time, which may have passed since (Astra, 7c73879).
-  const given = parseZoned(start.trim(), { timezone: booking.timezone }, -Infinity);
+  const given = parseZoned(startInput.trim(), { timezone: booking.timezone }, -Infinity);
   const replay = given.ok ? await staffReplay(db, { workspaceId, bookingId, version, action: "reschedule", start: given.at }) : undefined;
   if (replay) return answer(replay);
-  const plan = await reschedulePlan(db, booking, start);
+  const plan = await reschedulePlan(db, booking, startInput);
   const r = await staffChange(
     db,
     {
@@ -107,6 +228,42 @@ export async function rescheduleBooking(db: Db, boss: PgBoss, workspaceId: strin
   const result = answer(r);
   if (r.result === "done" && r.runId) await enqueueRun(boss, r.runId);
   return result;
+}
+
+export async function confirmStayBooking(db: Db, workspaceId: string, body: z.output<typeof confirmStayInput>, actor: string): Promise<Change> {
+  if (body.idempotencyKey) {
+    const prior = await stayByIdempotencyKey(db, workspaceId, body.idempotencyKey);
+    if (prior) return { booking: prior, duplicate: true };
+  }
+  const published = await readKnowledge(db, workspaceId);
+  const times = stayTimesFromKnowledge(published?.entries ?? []);
+  const range = stayRange({
+    checkIn: body.checkIn,
+    nights: body.nights,
+    timezone: body.timezone ?? DEFAULT_STAY_TIMEZONE,
+    checkInTime: body.checkInTime ?? times.checkInTime,
+    checkOutTime: body.checkOutTime ?? times.checkOutTime,
+  });
+  if (!range.ok) throw new BadRequestException([range.error]);
+
+  const r = await confirmStay(
+    db,
+    {
+      workspaceId,
+      resourceId: body.resourceId,
+      start: range.start,
+      end: range.end,
+      nights: range.nights,
+      timezone: range.timezone,
+      conversationId: body.conversationId,
+      idempotencyKey: body.idempotencyKey,
+    },
+    actor,
+  );
+  if (r.result === "resource_not_found") throw new NotFoundException("There is no active resource with that id in this workspace.");
+  if (r.result === "conversation_not_found") throw new NotFoundException("conversation not found");
+  if (r.result === "taken") throw new ConflictException("That time is taken.");
+  return { booking: r.booking, ...(r.result === "duplicate" && { duplicate: true }) };
 }
 
 export async function cancelBooking(db: Db, workspaceId: string, bookingId: string, version: number, actor: string): Promise<Change> {
@@ -134,7 +291,7 @@ export async function markNoShow(db: Db, boss: PgBoss, workspaceId: string, book
   if (replay) return answer(replay);
   const follow = await noShowFollowUp(db, workspaceId);
   if (!follow) throw new ConflictException("Set up the Booking no-show follow-up automation and publish it first.");
-  // The guest's details are in the payload of the run that made the booking (its change from version 0), as for a reschedule.
+  // The guest's details are in the payload of the run that made the booking (its change from version 0), or the linked conversation for a stay.
   const [made] = await db
     .select({ payload: runs.triggerPayload })
     .from(bookingChanges)
@@ -142,9 +299,9 @@ export async function markNoShow(db: Db, boss: PgBoss, workspaceId: string, book
     .where(and(eq(bookingChanges.bookingId, bookingId), eq(bookingChanges.fromVersion, 0)));
   const p = (made?.payload ?? {}) as Record<string, unknown>;
   const text = (...keys: string[]) => keys.map((k) => p[k]).find((v): v is string => typeof v === "string" && v.trim() !== "");
-  const customerEmail = text("customer_email", "email");
+  const customerEmail = text("customer_email", "email") ?? booking.guest?.email;
   if (!customerEmail) throw new ConflictException("This booking has no guest email, so there is nobody to follow up with.");
-  const payload = { status: "no_show", customer_email: customerEmail, customer_name: text("customer_name", "name") ?? "", service: text("service") ?? booking.resource.name, reference: booking.reference };
+  const payload = { status: "no_show", customer_email: customerEmail, customer_name: text("customer_name", "name") ?? booking.guest?.name ?? "", service: text("service") ?? booking.resource.name, reference: booking.reference };
   const r = await staffChange(
     db,
     {
@@ -166,7 +323,7 @@ export async function undoNoShow(db: Db, workspaceId: string, bookingId: string,
   return answer(await staffChange(db, { workspaceId, bookingId, version, action: "undo_no_show" }, actor));
 }
 
-/** Live bookings for staff (decision 0032). Test bookings from the builder are never listed. */
+/** Live bookings for staff (decision 0032, stays in decision 0120). Test bookings from the builder are never listed. */
 @Controller("bookings")
 @UseGuards(SessionGuard, Allow(OPERATE))
 export class BookingsController {
@@ -187,6 +344,20 @@ export class BookingsController {
   async exportCsv(@CurrentUser() user: SessionUser) {
     const list = await listBookings(this.db, user.workspaceId);
     return toCsv(["reference", "resource", "start", "end", "minutes", "timezone", "status"], list.map((b) => [b.reference, b.resource.name, b.start, b.end, b.minutes, b.timezone, b.status]));
+  }
+
+  /** Staff Confirm stay (C5, decision 0120): creates a multi-night stay optionally linked to a conversation. */
+  @Post("stays")
+  confirmStay(@CurrentUser() user: SessionUser, @Body(new ZodPipe(confirmStayInput)) body: z.output<typeof confirmStayInput>) {
+    return confirmStayBooking(this.db, user.workspaceId, body, `user:${user.id}`);
+  }
+
+  /** One live booking by id, with stay details and guest contact from any linked conversation. */
+  @Get(":id")
+  async one(@CurrentUser() user: SessionUser, @Param("id", new ZodPipe(z.uuid())) id: string) {
+    const b = await bookingById(this.db, user.workspaceId, id);
+    if (!b) throw new NotFoundException("booking not found");
+    return b;
   }
 
   @Post(":id/cancel")
@@ -210,7 +381,7 @@ export class BookingsController {
   @Post(":id/reschedule")
   @HttpCode(200)
   reschedule(@CurrentUser() user: SessionUser, @Param("id", new ZodPipe(z.uuid())) id: string, @Body(new ZodPipe(rescheduleInput)) body: z.output<typeof rescheduleInput>) {
-    return rescheduleBooking(this.db, this.boss, user.workspaceId, id, body.version, body.start, `user:${user.id}`);
+    return rescheduleBooking(this.db, this.boss, user.workspaceId, id, body.version, (body.checkIn ?? body.start)!, `user:${user.id}`);
   }
 }
 

@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import type { KnowledgeEntry, KnowledgeKind, PriceUnit } from "@daloy/engine";
 import { api } from "./api";
 import { useLanguage } from "./Language";
-import { emptyForm, emptyRule, isPriced, KNOWLEDGE_KINDS, PRICE_UNITS, summaryOf, toForm, toInput, WEEKDAYS, type EntryForm, type RuleForm } from "./lib/knowledge";
+import { emptyForm, emptyRule, hasStayTimes, isPriced, KNOWLEDGE_KINDS, PRICE_UNITS, summaryOf, toForm, toInput, WEEKDAYS, type EntryForm, type RuleForm } from "./lib/knowledge";
 
 type State = {
   entries: KnowledgeEntry[];
@@ -139,6 +139,7 @@ function EntryForm({ initial, onSave, onCancel }: { initial: EntryForm; onSave: 
   const set = <K extends keyof EntryForm>(key: K, value: EntryForm[K]) => setForm((f) => ({ ...f, [key]: value }));
   const setRule = (i: number, patch: Partial<RuleForm>) => set("rules", form.rules.map((r, j) => (j === i ? { ...r, ...patch } : r)));
   const priced = isPriced(form.kind);
+  const stayTimes = hasStayTimes(form.kind);
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     setBusy(true);
@@ -247,6 +248,21 @@ function EntryForm({ initial, onSave, onCancel }: { initial: EntryForm; onSave: 
             </div>
           ))}
           {form.rules.length < 12 && <button type="button" className="wk-button" onClick={() => set("rules", [...form.rules, emptyRule()])}>{t("Add a rule")}</button>}
+        </fieldset>
+      )}
+      {stayTimes && (
+        <fieldset className="kn-price">
+          <legend>{t("Stay hours")}</legend>
+          <div className="kn-row">
+            <div>
+              <label htmlFor="kn-check-in">{t("Check-in time")}</label>
+              <input id="kn-check-in" type="time" value={form.checkInTime} onChange={(e) => set("checkInTime", e.target.value)} />
+            </div>
+            <div>
+              <label htmlFor="kn-check-out">{t("Check-out time")}</label>
+              <input id="kn-check-out" type="time" value={form.checkOutTime} onChange={(e) => set("checkOutTime", e.target.value)} />
+            </div>
+          </div>
         </fieldset>
       )}
       <div>

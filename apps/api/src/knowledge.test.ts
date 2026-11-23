@@ -104,6 +104,16 @@ describe("knowledge sheet", () => {
     expect((await b.agent.get("/knowledge").expect(200)).body).toMatchObject({ entries: [], published: null });
     await b.agent.get("/knowledge/versions/1").expect(404);
     await b.agent.patch(`/knowledge/entries/${created.id}`).send(room).expect(404);
-    await b.agent.delete(`/knowledge/entries/${created.id}`).expect(404);
+    await b.agent.delete(`/knowledge/entries/${created.id}`).send().expect(404);
+  });
+
+  it("saves and publishes arrival check-in and check-out times", async () => {
+    const o = await owner();
+    const arrival = { kind: "arrival", title: "Hours", body: "", fields: { checkInTime: "14:30", checkOutTime: "11:30" } };
+    const created = (await o.agent.post("/knowledge/entries").send(arrival).expect(201)).body;
+    expect(created.fields).toEqual({ checkInTime: "14:30", checkOutTime: "11:30" });
+    await o.agent.post("/knowledge/publish").expect(201);
+    const v1 = (await o.agent.get("/knowledge/versions/1").expect(200)).body;
+    expect(v1.entries[0].fields).toEqual({ checkInTime: "14:30", checkOutTime: "11:30" });
   });
 });

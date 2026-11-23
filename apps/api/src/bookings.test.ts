@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import type { AddressInfo } from "node:net";
-import { bookings, joinWorkspace, runs, sessions, stepRuns, users, type Db, type MailDeps } from "@daloy/db";
+import { bookings, conversations, joinWorkspace, runs, sessions, stepRuns, users, type Db, type MailDeps } from "@daloy/db";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import type { INestApplication } from "@nestjs/common";
 import { hash } from "@node-rs/argon2";
@@ -535,5 +535,125 @@ describe("no-show button (N27)", () => {
     expect(mailSent.at(-1)).toMatchObject({ to: "mia@example.com", subject: "Sorry we missed you" });
     expect((await s.agent.post(`/bookings/${s.b.id}/undo-no-show`).send({ version: 4 }).expect(409)).body.message).toMatch(/already/i);
     expect((await s.listed())[0]).toMatchObject({ status: "no_show" });
+  });
+});
+
+describe("stays and Confirm stay API (C5)", () => {
+  it("confirms a multi-night stay with knowledge check-in/out times, enforces roles, rejects overlaps and cross-workspace conversations, and deduplicates by idempotencyKey", async () => {
+    const o = await owner();
+    const other = await owner();
+    const op = await member(o.agent, "operator");
+    const ap = await member(o.agent, "approver");
+    const reqRole = await member(o.agent, "requester");
+
+    const room = (await o.agent.post("/resources").send({ name: "Garden 1", label: "Garden Room" }).expect(201)).body as { id: string };
+    const foreignRoom = (await other.agent.post("/resources").send({ name: "Other 1" }).expect(201)).body as { id: string };
+
+    // Publish check-in 15:00 / check-out 11:00 in the knowledge sheet.
+    await o.agent.post("/knowledge/entries").send({ kind: "arrival", title: "Arrival hours", body: "Check-in 3 PM, check-out 11 AM.", fields: { checkInTime: "15:00", checkOutTime: "11:00" } }).expect(201);
+    await o.agent.post("/knowledge/publish").expect(201);
+
+    const [convo] = await db
+      .insert(conversations)
+      .values({ userId: o.id, channel: "messenger", externalId: "psid-c5-api", fields: { name: "Rosa Cruz", email: "rosa@resort.test", phone: "+639171110000" } })
+      .returning();
+    const [foreignConvo] = await db.insert(conversations).values({ userId: other.id, channel: "email", externalId: "stranger@other.test" }).returning();
+
+    const payload = { resourceId: room.id, checkIn: `${year}-05-01`, nights: 3, conversationId: convo!.id, idempotencyKey: "confirm-stay-1" };
+
+    // Role checks: approver/requester 403, signed out 401
+    await ap.post("/bookings/stays").send(payload).expect(403);
+    await reqRole.post("/bookings/stays").send(payload).expect(403);
+    await request(app.getHttpServer()).post("/bookings/stays").send(payload).expect(401);
+
+    // Cross-workspace resource & conversation rejected with 404
+    await o.agent.post("/bookings/stays").send({ ...payload, resourceId: foreignRoom.id, idempotencyKey: undefined }).expect(404);
+    await o.agent.post("/bookings/stays").send({ ...payload, conversationId: foreignConvo!.id, idempotencyKey: undefined }).expect(404);
+
+    // Operator confirms stay -> 201 with knowledge times (15:00 -> 11:00) and guest contact
+    const created = (await op.post("/bookings/stays").send(payload).expect(201)).body;
+    expect(created.booking).toMatchObject({
+      resource: { id: room.id, name: "Garden 1", label: "Garden Room" },
+      start: `${year}-05-01T15:00:00+08:00`,
+      end: `${year}-05-04T11:00:00+08:00`,
+      nights: 3,
+      checkIn: `${year}-05-01`,
+      checkOut: `${year}-05-04`,
+      timezone: "Asia/Manila",
+      conversationId: convo!.id,
+      guest: { channel: "messenger", externalId: "psid-c5-api", name: "Rosa Cruz", email: "rosa@resort.test", phone: "+639171110000" },
+    });
+
+    // Idempotent replay returns duplicate: true with the same booking
+    const replay = (await o.agent.post("/bookings/stays").send(payload).expect(201)).body;
+    expect(replay).toEqual({ booking: created.booking, duplicate: true });
+
+    // GET /bookings/:id and GET /bookings expose guest contact & stay details; other workspace gets 404
+    expect((await o.agent.get(`/bookings/${created.booking.id}`).expect(200)).body).toMatchObject({
+      id: created.booking.id,
+      nights: 3,
+      guest: { name: "Rosa Cruz", email: "rosa@resort.test" },
+    });
+    await other.agent.get(`/bookings/${created.booking.id}`).expect(404);
+    expect((await o.agent.get("/bookings").expect(200)).body[0]).toMatchObject({ id: created.booking.id, nights: 3, guest: { name: "Rosa Cruz" } });
+
+    // Overlap across nights refused (409); same-day turnaround May 4-6 allowed (201)
+    await o.agent.post("/bookings/stays").send({ resourceId: room.id, checkIn: `${year}-05-03`, nights: 2 }).expect(409);
+    const turnaround = (await o.agent.post("/bookings/stays").send({ resourceId: room.id, checkIn: `${year}-05-04`, nights: 2 }).expect(201)).body;
+    expect(turnaround.booking).toMatchObject({ start: `${year}-05-04T15:00:00+08:00`, end: `${year}-05-06T11:00:00+08:00`, nights: 2 });
+
+    // Rescheduling the 3-night stay keeps 3 nights and refuses overlap on night 3 (May 4-6 is taken, so May 2-5 clashes!)
+    await o.agent.post(`/bookings/${created.booking.id}/reschedule`).send({ version: 1, checkIn: `${year}-05-02` }).expect(409);
+    const moved = (await o.agent.post(`/bookings/${created.booking.id}/reschedule`).send({ version: 1, checkIn: `${year}-05-10` }).expect(200)).body;
+    expect(moved.booking).toMatchObject({
+      version: 2,
+      start: `${year}-05-10T15:00:00+08:00`,
+      end: `${year}-05-13T11:00:00+08:00`,
+      nights: 3,
+      checkIn: `${year}-05-10`,
+      checkOut: `${year}-05-13`,
+    });
+    // Replay of stay reschedule returns duplicate: true
+    expect((await o.agent.post(`/bookings/${created.booking.id}/reschedule`).send({ version: 1, checkIn: `${year}-05-10` }).expect(200)).body).toMatchObject({ duplicate: true, booking: { version: 2 } });
+  });
+
+  it("runs a stay workflow end to end: pre-arrival delay lands at check-in minus 2 days in Asia/Manila, and staff reschedule updates the reminder", async () => {
+    const o = await owner();
+    const room = (await o.agent.post("/resources").send({ name: "Villa A", label: "Pool Villa" }).expect(201)).body as { id: string };
+    const wf = (await o.agent.post("/workflows").send({ name: "Deposit and stay", slug: `stay-wf-${++seq}` }).expect(201)).body as { id: string };
+
+    const stayWorkflow = {
+      trigger: { type: "manual", config: {} },
+      steps: [
+        { id: "book", type: "booking", config: { action: "create", mode: "stay", resource: "{{trigger.room_id}}", checkIn: "{{trigger.check_in}}", nights: "{{trigger.nights}}", timezone: "Asia/Manila" } },
+        email("confirm", "Stay confirmed {{steps.book.output.reference}}", "{{steps.book.output.checkIn}} to {{steps.book.output.checkOut}} ({{steps.book.output.nights}} nights)"),
+        { id: "pre_arrival", type: "delay", config: { until: "{{steps.book.output.start}}", offsetSeconds: -172_800 } },
+        email("remind", "Pre-arrival {{steps.book.output.reference}}", "Check-in at {{steps.book.output.start}}"),
+      ],
+      edges: [
+        { from: "book", to: "confirm", on: "done" },
+        { from: "confirm", to: "pre_arrival" },
+        { from: "pre_arrival", to: "remind" },
+      ],
+    };
+    await o.agent.post(`/workflows/${wf.id}/versions`).send({ definition: stayWorkflow, publish: true }).expect(201);
+
+    // Start stay workflow for May 10, 3 nights (default 14:00 check-in / 12:00 check-out in Asia/Manila)
+    const runRes = await o.agent.post(`/workflows/${wf.id}/runs`).send({ payload: { email: "guest@resort.test", room_id: room.id, check_in: `${year}-05-10`, nights: 3 } }).expect(202);
+    const firstRun = await drive(runRes.body.id as string);
+    expect(firstRun.state).toBe("waiting");
+    // May 10 14:00+08:00 minus 2 days = May 8 14:00+08:00 = May 8 06:00:00.000Z!
+    expect(firstRun.nextAttemptAt!.toISOString()).toBe(`${year}-05-08T06:00:00.000Z`);
+
+    const [stay] = (await o.agent.get("/bookings").expect(200)).body as { id: string; reference: string; version: number; nights: number; start: string; end: string }[];
+    expect(stay).toMatchObject({ nights: 3, start: `${year}-05-10T14:00:00+08:00`, end: `${year}-05-13T12:00:00+08:00` });
+
+    // Reschedule stay to May 20 -> keeps 3 nights, old run stops when woken, new run waits until May 18 14:00+08:00 (May 18 06:00:00.000Z)!
+    const moved = (await o.agent.post(`/bookings/${stay!.id}/reschedule`).send({ version: 1, checkIn: `${year}-05-20` }).expect(200)).body;
+    expect(moved.booking).toMatchObject({ version: 2, nights: 3, start: `${year}-05-20T14:00:00+08:00`, end: `${year}-05-23T12:00:00+08:00` });
+    const newRun = await drive(moved.runId as string);
+    expect(newRun.state).toBe("waiting");
+    expect(newRun.nextAttemptAt!.toISOString()).toBe(`${year}-05-18T06:00:00.000Z`);
+    expect((await wake(firstRun.id)).state).toBe("cancelled");
   });
 });

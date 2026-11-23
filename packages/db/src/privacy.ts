@@ -71,6 +71,10 @@ async function collect(db: AnyDb, workspaceId: string, q: CustomerQuery) {
   const dueIds = dues.map((d) => d.id);
   const bookingIds = new Set<string>();
   for (const r of await db.select({ id: bookings.id }).from(bookings).where(and(eq(bookings.userId, workspaceId), inRuns(bookings.runId)))) bookingIds.add(r.id);
+  // Stays confirmed by staff link to the guest's conversation via bookings.conversation_id without a run (C5, decision 0120).
+  if (cIds.length) {
+    for (const r of await db.select({ id: bookings.id }).from(bookings).where(and(eq(bookings.userId, workspaceId), inArray(bookings.conversationId, cIds)))) bookingIds.add(r.id);
+  }
   for (const d of dues) if (d.bookingId) bookingIds.add(d.bookingId);
   const results = await db.select().from(bookingResults).where(inRuns(bookingResults.runId));
   for (const r of results) if (r.bookingId) bookingIds.add(r.bookingId);

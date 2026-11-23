@@ -1,19 +1,21 @@
 import { randomInt } from "node:crypto";
-import { formatZoned } from "@daloy/engine";
+import { formatZoned, rescheduleStayRange } from "@daloy/engine";
 import { and, asc, desc, eq, sql } from "drizzle-orm";
 import { queueCalendarSync } from "./calendar";
 import type { Db } from "./index";
 import { cancelRun } from "./runs";
-import { bookingChanges, bookingResults, bookings, resources, runs } from "./schema";
+import { bookingChanges, bookingResults, bookings, conversations, resources, runs } from "./schema";
 
 /**
- * Bookings (decision 0032). The exclusion constraint bookings_no_overlap (migration 0019) is the only availability
- * check: a change that would overlap an active booking of the same workspace, test scope and resource fails with
- * 23P01 inside a savepoint and is answered "taken". Every change raises the version and is logged in booking_changes.
+ * Bookings (decision 0032, stays in decision 0120). The exclusion constraint bookings_no_overlap (migration 0019) is
+ * the only availability check: a change that would overlap an active booking of the same workspace, test scope and
+ * resource fails with 23P01 inside a savepoint and is answered "taken". Every change raises the version and is logged
+ * in booking_changes.
  */
 
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 type Row = typeof bookings.$inferSelect;
+type ConvoRow = { channel: "messenger" | "instagram" | "email"; externalId: string; fields: Record<string, string> };
 
 const ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 // shortcut: 32^6 random references; a collision fails that attempt (the step retries with a new one). Lengthen when volume grows.
@@ -27,39 +29,96 @@ const isOverlap = (err: unknown) => {
 const range = (start: Date, end: Date) => sql`tstzrange(${start.toISOString()}::timestamptz, ${end.toISOString()}::timestamptz, '[)')`;
 const startOf = sql<Date>`lower(${bookings.during})`.mapWith((v: string | Date) => new Date(v));
 const endOf = sql<Date>`upper(${bookings.during})`.mapWith((v: string | Date) => new Date(v));
-const withTimes = { row: bookings, start: startOf, end: endOf, resourceName: resources.name };
+const withTimes = {
+  row: bookings,
+  start: startOf,
+  end: endOf,
+  resourceName: resources.name,
+  resourceLabel: resources.label,
+  convoChannel: conversations.channel,
+  convoExternalId: conversations.externalId,
+  convoFields: conversations.fields,
+};
+
+export type BookingGuest = {
+  channel: "messenger" | "instagram" | "email";
+  externalId: string;
+  name?: string;
+  email?: string;
+  phone?: string;
+};
 
 export type BookingView = {
   id: string;
   reference: string;
-  resource: { id: string; name: string };
+  resource: { id: string; name: string; label?: string };
   start: string;
   end: string;
   minutes: number;
   timezone: string;
   status: "active" | "cancelled" | "no_show";
   version: number;
+  nights?: number;
+  checkIn?: string;
+  checkOut?: string;
+  conversationId?: string;
+  guest?: BookingGuest;
 };
 
-function view(b: { row: Row; start: Date; end: Date; resourceName: string }): BookingView {
+function guestOf(c: ConvoRow | null | undefined): BookingGuest | undefined {
+  if (!c) return undefined;
+  const f = c.fields ?? {};
+  const name = f.name?.trim() || undefined;
+  const email = f.email?.trim() || (c.channel === "email" ? c.externalId : undefined);
+  const phone = f.phone?.trim() || undefined;
+  return {
+    channel: c.channel,
+    externalId: c.externalId,
+    ...(name ? { name } : {}),
+    ...(email ? { email } : {}),
+    ...(phone ? { phone } : {}),
+  };
+}
+
+function convoFrom(b: { convoChannel?: ConvoRow["channel"] | null; convoExternalId?: string | null; convoFields?: Record<string, string> | null }): ConvoRow | null {
+  if (!b.convoChannel || !b.convoExternalId) return null;
+  return { channel: b.convoChannel, externalId: b.convoExternalId, fields: b.convoFields ?? {} };
+}
+
+function view(
+  b: { row: Row; start: Date; end: Date; resourceName: string; resourceLabel?: string | null; convo?: ConvoRow | null },
+  includeGuest = true,
+): BookingView {
   const { row } = b;
+  const start = formatZoned(b.start, row.timezone);
+  const end = formatZoned(b.end, row.timezone);
+  const guest = includeGuest ? guestOf(b.convo) : undefined;
   return {
     id: row.id,
     reference: row.reference,
-    resource: { id: row.resourceId, name: b.resourceName },
-    start: formatZoned(b.start, row.timezone),
-    end: formatZoned(b.end, row.timezone),
+    resource: { id: row.resourceId, name: b.resourceName, ...(b.resourceLabel ? { label: b.resourceLabel } : {}) },
+    start,
+    end,
     minutes: Math.round((b.end.getTime() - b.start.getTime()) / 60_000),
     timezone: row.timezone,
     status: row.status,
     version: row.version,
+    ...(row.nights !== null ? { nights: row.nights, checkIn: start.slice(0, 10), checkOut: end.slice(0, 10) } : {}),
+    ...(row.conversationId ? { conversationId: row.conversationId } : {}),
+    ...(guest ? { guest } : {}),
   };
 }
 
-/** Locks and reads one booking with its times. */
+/** Locks and reads one booking with its times, resource and optional linked conversation. */
 async function lockBooking(tx: Tx, where: ReturnType<typeof and>) {
-  const [b] = await tx.select(withTimes).from(bookings).innerJoin(resources, eq(resources.id, bookings.resourceId)).where(where).for("update", { of: bookings });
-  return b;
+  const [b] = await tx
+    .select(withTimes)
+    .from(bookings)
+    .innerJoin(resources, eq(resources.id, bookings.resourceId))
+    .leftJoin(conversations, eq(conversations.id, bookings.conversationId))
+    .where(where)
+    .for("update", { of: bookings });
+  return b && { ...b, convo: convoFrom(b) };
 }
 
 /** Inside a savepoint, so an overlap leaves the outer transaction usable. Returns false when the time is taken. */
@@ -74,8 +133,8 @@ async function unlessTaken(tx: Tx, write: (sp: Tx) => Promise<void>): Promise<bo
 }
 
 export type StepAction =
-  | { action: "create"; resourceId: string; start: Date; minutes: number; timezone: string }
-  | { action: "reschedule"; reference: string; start: Date; minutes?: number }
+  | { action: "create"; resourceId: string; start: Date; minutes?: number; end?: Date; nights?: number; timezone: string; conversationId?: string }
+  | { action: "reschedule"; reference: string; start?: Date; minutes?: number; checkIn?: string }
   | { action: "cancel"; reference: string };
 export type StepBookingResult = { branch: "done" | "taken" | "not_found"; output: Record<string, unknown> };
 
@@ -90,7 +149,8 @@ export async function bookFromStep(db: Db, at: { workspaceId: string; test: bool
     await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`booking:${at.runId}:${at.stepId}`}, 0))`);
     const [stored] = await tx.select().from(bookingResults).where(and(eq(bookingResults.runId, at.runId), eq(bookingResults.stepId, at.stepId)));
     if (stored) return { branch: stored.branch as StepBookingResult["branch"], output: stored.output as Record<string, unknown> };
-    if (a.action !== "cancel" && a.start.getTime() <= Date.now()) throw new Error(`The booking time has passed (${a.start.toISOString()}).`);
+    if (a.action === "create" && a.start.getTime() <= Date.now()) throw new Error(`The booking time has passed (${a.start.toISOString()}).`);
+    if (a.action === "reschedule" && a.start && a.start.getTime() <= Date.now()) throw new Error(`The booking time has passed (${a.start.toISOString()}).`);
 
     let result: StepBookingResult;
     let bookingId: string | null = null;
@@ -102,15 +162,37 @@ export async function bookFromStep(db: Db, at: { workspaceId: string; test: bool
     if (a.action === "create") {
       // Checked here, in the transaction that books, so a resource archived a moment ago is not booked.
       const [resource] = await tx.select().from(resources).where(and(eq(resources.id, a.resourceId), eq(resources.userId, at.workspaceId), eq(resources.active, true)));
+      let convo: ConvoRow | null = null;
+      let missingConvo = false;
+      if (a.conversationId) {
+        const [c] = await tx
+          .select({ channel: conversations.channel, externalId: conversations.externalId, fields: conversations.fields })
+          .from(conversations)
+          .where(and(eq(conversations.id, a.conversationId), eq(conversations.userId, at.workspaceId)));
+        if (!c) missingConvo = true;
+        else convo = c;
+      }
       if (!resource) {
         result = { branch: "not_found", output: { reason: "There is no active resource with that id in this workspace." } };
+      } else if (missingConvo) {
+        result = { branch: "not_found", output: { reason: "There is no conversation with that id in this workspace." } };
       } else {
-        const end = new Date(a.start.getTime() + a.minutes * 60_000);
+        const end = a.end ?? new Date(a.start.getTime() + a.minutes! * 60_000);
         let created: Row | undefined;
         const free = await unlessTaken(tx, async (sp) => {
           [created] = await sp
             .insert(bookings)
-            .values({ userId: at.workspaceId, test: at.test, reference: newReference(at.test), resourceId: resource.id, during: range(a.start, end) as unknown as string, timezone: a.timezone, workflowId: at.workflowId })
+            .values({
+              userId: at.workspaceId,
+              test: at.test,
+              reference: newReference(at.test),
+              resourceId: resource.id,
+              during: range(a.start, end) as unknown as string,
+              timezone: a.timezone,
+              nights: a.nights ?? null,
+              conversationId: a.conversationId ?? null,
+              workflowId: at.workflowId,
+            })
             .returning();
           await sp.insert(bookingChanges).values({ bookingId: created!.id, fromVersion: 0, action: "create", start: a.start, runId: at.runId, actor: `run:${at.runId}`, result: { version: 1 } });
           await link(sp, created!.id, 1);
@@ -118,7 +200,7 @@ export async function bookFromStep(db: Db, at: { workspaceId: string; test: bool
         if (!free) result = { branch: "taken", output: { reason: "That time is already booked for this resource." } };
         else {
           bookingId = created!.id;
-          result = { branch: "done", output: view({ row: created!, start: a.start, end, resourceName: resource.name }) };
+          result = { branch: "done", output: view({ row: created!, start: a.start, end, resourceName: resource.name, resourceLabel: resource.label, convo }) };
         }
       }
     } else {
@@ -128,22 +210,123 @@ export async function bookFromStep(db: Db, at: { workspaceId: string; test: bool
       } else {
         bookingId = b.row.id;
         const version = b.row.version + 1;
-        const start = a.action === "reschedule" ? a.start : b.start;
-        const end = a.action === "reschedule" ? new Date(a.start.getTime() + (a.minutes !== undefined ? a.minutes * 60_000 : b.end.getTime() - b.start.getTime())) : b.end;
+        let start = b.start;
+        let end = b.end;
+        if (a.action === "reschedule") {
+          if (a.checkIn !== undefined) {
+            if (b.row.nights === null) throw new Error("This booking is not a multi-night stay; reschedule it with a datetime start.");
+            const moved = rescheduleStayRange({ start: b.start, end: b.end, nights: b.row.nights, timezone: b.row.timezone }, a.checkIn);
+            if (!moved.ok) throw new Error(moved.error);
+            start = moved.start;
+            end = moved.end;
+          } else if (b.row.nights !== null && a.minutes === undefined) {
+            const moved = rescheduleStayRange({ start: b.start, end: b.end, nights: b.row.nights, timezone: b.row.timezone }, a.start!.toISOString());
+            if (!moved.ok) throw new Error(moved.error);
+            start = moved.start;
+            end = moved.end;
+          } else {
+            start = a.start!;
+            end = new Date(a.start!.getTime() + (a.minutes !== undefined ? a.minutes * 60_000 : b.end.getTime() - b.start.getTime()));
+          }
+        }
         const status = a.action === "cancel" ? ("cancelled" as const) : ("active" as const);
-        const next = view({ row: { ...b.row, status, version }, start, end, resourceName: b.resourceName });
+        const nextPublic = view({ row: { ...b.row, status, version }, start, end, resourceName: b.resourceName, resourceLabel: b.resourceLabel, convo: b.convo });
+        const nextLogged = view({ row: { ...b.row, status, version }, start, end, resourceName: b.resourceName, resourceLabel: b.resourceLabel, convo: b.convo }, false);
         const free = await unlessTaken(tx, async (sp) => {
           await sp.update(bookings).set({ during: range(start, end) as unknown as string, status, version, updatedAt: new Date() }).where(and(eq(bookings.id, b.row.id), eq(bookings.version, b.row.version)));
-          await sp.insert(bookingChanges).values({ bookingId: b.row.id, fromVersion: b.row.version, action: a.action, start: a.action === "reschedule" ? start : null, runId: at.runId, actor: `run:${at.runId}`, result: { version, booking: next } });
+          await sp.insert(bookingChanges).values({ bookingId: b.row.id, fromVersion: b.row.version, action: a.action, start: a.action === "reschedule" ? start : null, runId: at.runId, actor: `run:${at.runId}`, result: { version, booking: nextLogged } });
           await link(sp, b.row.id, version);
           await queueCalendarSync(sp, b.row.id, version, at.runId);
         });
-        result = free ? { branch: "done", output: next } : { branch: "taken", output: { reason: "That time is already booked for this resource." } };
+        result = free ? { branch: "done", output: nextPublic } : { branch: "taken", output: { reason: "That time is already booked for this resource." } };
       }
     }
     await tx.insert(bookingResults).values({ runId: at.runId, stepId: at.stepId, bookingId, branch: result.branch, output: result.output });
     return result;
   });
+}
+
+export type ConfirmStayRequest = {
+  workspaceId: string;
+  resourceId: string;
+  start: Date;
+  end: Date;
+  nights: number;
+  timezone: string;
+  conversationId?: string;
+  idempotencyKey?: string;
+};
+export type ConfirmStayResult = {
+  result: "done" | "duplicate" | "taken" | "resource_not_found" | "conversation_not_found";
+  booking?: BookingView;
+};
+
+/**
+ * Staff Confirm stay (C5, decision 0120): creates a live multi-night stay booking outside a workflow run, optionally
+ * linked to a conversation for guest contact. An idempotencyKey makes double-clicks and retries return the same stay.
+ */
+export async function confirmStay(db: Db, req: ConfirmStayRequest, actor: string): Promise<ConfirmStayResult> {
+  return db.transaction(async (tx) => {
+    if (req.idempotencyKey) {
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`stay:${req.workspaceId}:${req.idempotencyKey}`}, 0))`);
+      const [existing] = await tx
+        .select(withTimes)
+        .from(bookings)
+        .innerJoin(resources, eq(resources.id, bookings.resourceId))
+        .leftJoin(conversations, eq(conversations.id, bookings.conversationId))
+        .where(and(eq(bookings.userId, req.workspaceId), eq(bookings.idempotencyKey, req.idempotencyKey)));
+      if (existing) return { result: "duplicate", booking: view({ ...existing, convo: convoFrom(existing) }) };
+    }
+
+    const [resource] = await tx
+      .select()
+      .from(resources)
+      .where(and(eq(resources.id, req.resourceId), eq(resources.userId, req.workspaceId), eq(resources.active, true)));
+    if (!resource) return { result: "resource_not_found" };
+
+    let convo: ConvoRow | null = null;
+    if (req.conversationId) {
+      const [c] = await tx
+        .select({ channel: conversations.channel, externalId: conversations.externalId, fields: conversations.fields })
+        .from(conversations)
+        .where(and(eq(conversations.id, req.conversationId), eq(conversations.userId, req.workspaceId)));
+      if (!c) return { result: "conversation_not_found" };
+      convo = c;
+    }
+
+    let created: Row | undefined;
+    const free = await unlessTaken(tx, async (sp) => {
+      [created] = await sp
+        .insert(bookings)
+        .values({
+          userId: req.workspaceId,
+          test: false,
+          reference: newReference(false),
+          resourceId: resource.id,
+          during: range(req.start, req.end) as unknown as string,
+          timezone: req.timezone,
+          nights: req.nights,
+          conversationId: req.conversationId ?? null,
+          idempotencyKey: req.idempotencyKey ?? null,
+        })
+        .returning();
+      const logged = view({ row: created!, start: req.start, end: req.end, resourceName: resource.name, resourceLabel: resource.label, convo }, false);
+      await sp.insert(bookingChanges).values({ bookingId: created!.id, fromVersion: 0, action: "create", start: req.start, actor, result: { version: 1, booking: logged } });
+    });
+    if (!free) return { result: "taken" };
+    return { result: "done", booking: view({ row: created!, start: req.start, end: req.end, resourceName: resource.name, resourceLabel: resource.label, convo }) };
+  });
+}
+
+/** Finds an earlier staff Confirm stay by idempotencyKey before validating time/resource (for safe replays). */
+export async function stayByIdempotencyKey(db: Db, workspaceId: string, idempotencyKey: string): Promise<BookingView | undefined> {
+  const [existing] = await db
+    .select(withTimes)
+    .from(bookings)
+    .innerJoin(resources, eq(resources.id, bookings.resourceId))
+    .leftJoin(conversations, eq(conversations.id, bookings.conversationId))
+    .where(and(eq(bookings.userId, workspaceId), eq(bookings.idempotencyKey, idempotencyKey)));
+  return existing && view({ ...existing, convo: convoFrom(existing) });
 }
 
 export type StaffRequest = { workspaceId: string; bookingId: string; version: number } & (
@@ -152,8 +335,8 @@ export type StaffRequest = { workspaceId: string; bookingId: string; version: nu
   | { action: "no_show"; newRun: (tx: Tx, booking: BookingView) => Promise<string> }
   // Back to active, only while the follow-up of the no_show change it undoes can still be cancelled.
   | { action: "undo_no_show" }
-  // newRun starts the run for the new version, in the same transaction, and returns its id.
-  | { action: "reschedule"; start: Date; newRun: (tx: Tx, booking: BookingView) => Promise<string> }
+  // newRun starts the run for the new version, in the same transaction, and returns its id (omitted for staff-confirmed stays with no workflow).
+  | { action: "reschedule"; start: Date; end?: Date; newRun?: (tx: Tx, booking: BookingView) => Promise<string | undefined> }
 );
 export type StaffReplay = { workspaceId: string; bookingId: string; version: number } & ({ action: "cancel" | "no_show" | "undo_no_show" } | { action: "reschedule"; start: Date });
 export type StaffResult = { result: "done" | "duplicate" | "conflict" | "taken" | "not_found" | "started" | "not_yet"; booking?: BookingView; runId?: string };
@@ -194,9 +377,20 @@ export async function staffChange(db: Db, req: StaffRequest, actor: string): Pro
 
     const version = b.row.version + 1;
     const start = req.action === "reschedule" ? req.start : b.start;
-    const end = req.action === "reschedule" ? new Date(req.start.getTime() + (b.end.getTime() - b.start.getTime())) : b.end;
+    let end = b.end;
+    if (req.action === "reschedule") {
+      if (req.end) end = req.end;
+      else if (b.row.nights !== null) {
+        const moved = rescheduleStayRange({ start: b.start, end: b.end, nights: b.row.nights, timezone: b.row.timezone }, req.start.toISOString(), -Infinity);
+        if (!moved.ok) throw new Error(moved.error);
+        end = moved.end;
+      } else {
+        end = new Date(req.start.getTime() + (b.end.getTime() - b.start.getTime()));
+      }
+    }
     const status = req.action === "cancel" ? ("cancelled" as const) : req.action === "no_show" ? ("no_show" as const) : ("active" as const);
-    const next = view({ row: { ...b.row, status, version }, start, end, resourceName: b.resourceName });
+    const nextPublic = view({ row: { ...b.row, status, version }, start, end, resourceName: b.resourceName, resourceLabel: b.resourceLabel, convo: b.convo });
+    const nextLogged = view({ row: { ...b.row, status, version }, start, end, resourceName: b.resourceName, resourceLabel: b.resourceLabel, convo: b.convo }, false);
     let runId: string | undefined;
     let started = false;
     const free = await unlessTaken(tx, async (sp) => {
@@ -209,19 +403,21 @@ export async function staffChange(db: Db, req: StaffRequest, actor: string): Pro
         }
       }
       await sp.update(bookings).set({ during: range(start, end) as unknown as string, status, version, updatedAt: new Date() }).where(and(eq(bookings.id, b.row.id), eq(bookings.version, b.row.version)));
-      if (req.action === "reschedule") {
-        runId = await req.newRun(sp, next);
-        await sp.update(runs).set({ bookingId: b.row.id, bookingVersion: version }).where(eq(runs.id, runId));
-        await sp.update(bookings).set({ runId }).where(eq(bookings.id, b.row.id));
+      if (req.action === "reschedule" && req.newRun) {
+        runId = await req.newRun(sp, nextPublic);
+        if (runId) {
+          await sp.update(runs).set({ bookingId: b.row.id, bookingVersion: version }).where(eq(runs.id, runId));
+          await sp.update(bookings).set({ runId }).where(eq(bookings.id, b.row.id));
+        }
       }
-      if (req.action === "no_show") runId = await req.newRun(sp, next);
-      await sp.insert(bookingChanges).values({ bookingId: b.row.id, fromVersion: b.row.version, action: req.action, start: req.action === "reschedule" ? start : null, runId, actor, result: { version, ...(runId ? { runId } : {}), booking: next } });
+      if (req.action === "no_show") runId = await req.newRun(sp, nextPublic);
+      await sp.insert(bookingChanges).values({ bookingId: b.row.id, fromVersion: b.row.version, action: req.action, start: req.action === "reschedule" ? start : null, runId, actor, result: { version, ...(runId ? { runId } : {}), booking: nextLogged } });
       // The calendar event stays for a no-show: the booking was made and not kept, not cancelled.
       if (req.action === "cancel" || req.action === "reschedule") await queueCalendarSync(sp, b.row.id, version, runId ?? b.row.runId);
     });
     if (started) return { result: "started", booking: view(b) };
     if (!free) return { result: "taken", booking: view(b) };
-    return { result: "done", booking: next, runId };
+    return { result: "done", booking: nextPublic, runId };
   });
 }
 
@@ -236,23 +432,49 @@ export async function listBookings(db: Db, workspaceId: string): Promise<ListedB
     .select({ ...withTimes, runState: runs.state })
     .from(bookings)
     .innerJoin(resources, eq(resources.id, bookings.resourceId))
+    .leftJoin(conversations, eq(conversations.id, bookings.conversationId))
     .leftJoin(runs, eq(runs.id, bookings.runId))
     .where(and(eq(bookings.userId, workspaceId), eq(bookings.test, false)))
     .orderBy(asc(startOf), desc(bookings.createdAt))
     .limit(500);
-  return rows.map((r) => ({ ...view(r), workflowId: r.row.workflowId, runId: r.row.runId, updatedAt: r.row.updatedAt, attention: r.row.status === "active" && r.runState !== null && ["failed", "needs_review"].includes(r.runState) }));
+  return rows.map((r) => ({
+    ...view({ ...r, convo: convoFrom(r) }),
+    workflowId: r.row.workflowId,
+    runId: r.row.runId,
+    updatedAt: r.row.updatedAt,
+    attention: r.row.status === "active" && r.runState !== null && ["failed", "needs_review"].includes(r.runState),
+  }));
 }
 
 /** A live booking by reference, for MCP. */
 export async function bookingByReference(db: Db, workspaceId: string, reference: string) {
-  const [b] = await db.select(withTimes).from(bookings).innerJoin(resources, eq(resources.id, bookings.resourceId)).where(and(eq(bookings.userId, workspaceId), eq(bookings.test, false), eq(bookings.reference, reference)));
-  return b && { ...view(b), workflowId: b.row.workflowId, runId: b.row.runId };
+  const [b] = await db
+    .select(withTimes)
+    .from(bookings)
+    .innerJoin(resources, eq(resources.id, bookings.resourceId))
+    .leftJoin(conversations, eq(conversations.id, bookings.conversationId))
+    .where(and(eq(bookings.userId, workspaceId), eq(bookings.test, false), eq(bookings.reference, reference)));
+  return b && { ...view({ ...b, convo: convoFrom(b) }), workflowId: b.row.workflowId, runId: b.row.runId };
 }
 
 /** A live booking by id, for staff. */
-export async function bookingById(db: Db, workspaceId: string, id: string) {
-  const [b] = await db.select(withTimes).from(bookings).innerJoin(resources, eq(resources.id, bookings.resourceId)).where(and(eq(bookings.userId, workspaceId), eq(bookings.test, false), eq(bookings.id, id)));
-  return b && { ...view(b), workflowId: b.row.workflowId, runId: b.row.runId };
+export async function bookingById(db: Db, workspaceId: string, id: string): Promise<ListedBooking | undefined> {
+  const [b] = await db
+    .select({ ...withTimes, runState: runs.state })
+    .from(bookings)
+    .innerJoin(resources, eq(resources.id, bookings.resourceId))
+    .leftJoin(conversations, eq(conversations.id, bookings.conversationId))
+    .leftJoin(runs, eq(runs.id, bookings.runId))
+    .where(and(eq(bookings.userId, workspaceId), eq(bookings.test, false), eq(bookings.id, id)));
+  return (
+    b && {
+      ...view({ ...b, convo: convoFrom(b) }),
+      workflowId: b.row.workflowId,
+      runId: b.row.runId,
+      updatedAt: b.row.updatedAt,
+      attention: b.row.status === "active" && b.runState !== null && ["failed", "needs_review"].includes(b.runState),
+    }
+  );
 }
 
 /** True when the run belongs to a booking version that a later change replaced. */
@@ -265,7 +487,6 @@ export async function bookingSuperseded(db: Pick<Db, "select">, run: { bookingId
 
 /** SQL for "this run's booking moved on", for run lists. */
 export const supersededSql = sql<boolean>`(${runs.bookingId} is not null and exists (select 1 from ${bookings} where ${bookings.id} = ${runs.bookingId} and ${bookings.version} <> ${runs.bookingVersion}))`;
-
 
 /**
  * Active, real (not test) bookings of one resource that overlap [from, to). The public booking form uses it to show

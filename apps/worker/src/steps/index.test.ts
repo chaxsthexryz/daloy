@@ -1,7 +1,7 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { approvals, bookings, knowledgeVersions, deliveries, encryptSecret, hashToken, joinWorkspace, payments, recordDecision, resources, runs, saveAiSettings, saveConnection, secrets, stepRuns, usageClaims, usageCounts, manilaDay, users, workflows, workflowVersions, type Db } from "@daloy/db";
+import { approvals, bookings, conversations, knowledgeVersions, deliveries, encryptSecret, hashToken, joinWorkspace, payments, recordDecision, resources, runs, saveAiSettings, saveConnection, secrets, stepRuns, usageClaims, usageCounts, manilaDay, users, workflows, workflowVersions, type Db } from "@daloy/db";
 import type { Step } from "@daloy/engine";
 import { eq } from "drizzle-orm";
 import nodemailer, { type SendMailOptions, type Transporter } from "nodemailer";
@@ -281,6 +281,109 @@ describe("step executor", () => {
       const made = await s.exec({ who: s.resource, at: `${year}-01-20T14:00` }, { mock: true });
       expect(String((made.output as { reference: string }).reference)).toMatch(/^TEST-/);
       expect((await db.select().from(bookings).where(eq(bookings.resourceId, s.resource.id)))[0]).toMatchObject({ test: true });
+    });
+
+    it("books a multi-night stay using published knowledge check-in/out times, links conversation, and schedules pre-arrival delay at check-in minus 2 days in Asia/Manila", async () => {
+      // Create a fresh workspace so published knowledge versions are isolated from other tests.
+      const [ws] = await db.insert(users).values({ email: `stay-${randomUUID().slice(0, 8)}@test.local`, passwordHash: "x" }).returning();
+      const [wf] = await db.insert(workflows).values({ userId: ws!.id, name: "Resort", slug: `resort-${randomUUID().slice(0, 8)}` }).returning();
+      const [v] = await db.insert(workflowVersions).values({ workflowId: wf!.id, version: 1, definition: {} }).returning();
+      const [room] = await db.insert(resources).values({ userId: ws!.id, name: "Beach Villa 1", label: "Beach Villa" }).returning();
+      const [convo] = await db
+        .insert(conversations)
+        .values({ userId: ws!.id, channel: "messenger", externalId: "psid-stay-1", fields: { name: "Mina", phone: "+639171234567" } })
+        .returning();
+      await db.insert(knowledgeVersions).values({
+        userId: ws!.id,
+        version: 1,
+        entries: [{ id: randomUUID(), kind: "arrival", title: "Hours", body: "Check-in 3pm, check-out 11am", fields: { checkInTime: "15:00", checkOutTime: "11:00" } }],
+      });
+
+      const stayStep: Step = {
+        id: "book",
+        type: "booking",
+        config: { action: "create", mode: "stay", resource: "{{trigger.room_id}}", checkIn: "{{trigger.check_in}}", nights: "{{trigger.nights}}", timezone: "Asia/Manila", conversation: "{{trigger.conversation_id}}" },
+      };
+      const makeRun = async () => (await db.insert(runs).values({ workflowVersionId: v!.id, test: false }).returning())[0]!.id;
+      const run1 = await makeRun();
+      const booked = await executor().execute({
+        runId: run1,
+        stepRunId: NO_STEP_RUN,
+        userId: ws!.id,
+        step: stayStep,
+        attempt: 1,
+        idempotencyKey: `${run1}:book`,
+        ctx: { trigger: { room_id: room!.id, check_in: `${year}-05-10`, nights: 3, conversation_id: convo!.id }, steps: {} },
+        booking: { test: false, workflowId: wf!.id, trigger: { type: "manual", config: {} } },
+      });
+
+      expect(booked).toMatchObject({
+        branch: "done",
+        output: {
+          start: `${year}-05-10T15:00:00+08:00`,
+          end: `${year}-05-13T11:00:00+08:00`,
+          nights: 3,
+          checkIn: `${year}-05-10`,
+          checkOut: `${year}-05-13`,
+          timezone: "Asia/Manila",
+          conversationId: convo!.id,
+          guest: { channel: "messenger", externalId: "psid-stay-1", name: "Mina", phone: "+639171234567" },
+          resource: { id: room!.id, name: "Beach Villa 1", label: "Beach Villa" },
+        },
+      });
+
+      // Downstream pre-arrival delay: check-in minus 2 days (-172800s) in Asia/Manila -> May 8 15:00+08:00 (May 8 07:00Z).
+      const delayStep: Step = { id: "pre_arrival", type: "delay", config: { until: "{{steps.book.output.start}}", offsetSeconds: -172_800 } };
+      const pre = await executor().execute({
+        runId: run1,
+        stepRunId: NO_STEP_RUN,
+        userId: ws!.id,
+        step: delayStep,
+        attempt: 1,
+        idempotencyKey: `${run1}:pre_arrival`,
+        ctx: { trigger: {}, steps: { book: { output: booked.output } } },
+      });
+      expect(pre.waitUntil!.toISOString()).toBe(`${year}-05-08T07:00:00.000Z`);
+      expect(pre.output).toEqual({ resumeAt: `${year}-05-08T07:00:00.000Z` });
+
+      // Overlapping stay on May 12-14 is refused as taken.
+      const run2 = await makeRun();
+      const clash = await executor().execute({
+        runId: run2,
+        stepRunId: NO_STEP_RUN,
+        userId: ws!.id,
+        step: stayStep,
+        attempt: 1,
+        idempotencyKey: `${run2}:book`,
+        ctx: { trigger: { room_id: room!.id, check_in: `${year}-05-12`, nights: 2 }, steps: {} },
+        booking: { test: false, workflowId: wf!.id, trigger: { type: "manual", config: {} } },
+      });
+      expect(clash.branch).toBe("taken");
+
+      // Stay reschedule keeps 3 nights and 15:00 / 11:00 wall times.
+      const moveStep: Step = { id: "move", type: "booking", config: { action: "reschedule", mode: "stay", booking: "{{trigger.ref}}", checkIn: "{{trigger.check_in}}" } };
+      const run3 = await makeRun();
+      const moved = await executor().execute({
+        runId: run3,
+        stepRunId: NO_STEP_RUN,
+        userId: ws!.id,
+        step: moveStep,
+        attempt: 1,
+        idempotencyKey: `${run3}:move`,
+        ctx: { trigger: { ref: (booked.output as { reference: string }).reference, check_in: `${year}-05-20` }, steps: {} },
+        booking: { test: false, workflowId: wf!.id, trigger: { type: "manual", config: {} } },
+      });
+      expect(moved).toMatchObject({
+        branch: "done",
+        output: {
+          start: `${year}-05-20T15:00:00+08:00`,
+          end: `${year}-05-23T11:00:00+08:00`,
+          nights: 3,
+          checkIn: `${year}-05-20`,
+          checkOut: `${year}-05-23`,
+          version: 2,
+        },
+      });
     });
   });
 

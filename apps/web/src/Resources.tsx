@@ -5,7 +5,7 @@ import { useLanguage } from "./Language";
 import { countResources } from "./lib/advanced";
 import { Sheet } from "./Sheet";
 
-export type Resource = { id: string; name: string; active: boolean; createdAt: string };
+export type Resource = { id: string; name: string; label?: string | null; active: boolean; createdAt: string };
 
 /**
  * The owner's resources: the therapists, rooms or tables a resource field offers (decision 0031). Archived ones leave
@@ -15,6 +15,7 @@ export function ResourcesPage() {
   const { t } = useLanguage();
   const [list, setList] = useState<Resource[] | null>(null);
   const [name, setName] = useState("");
+  const [label, setLabel] = useState("");
   const [error, setError] = useState("");
   const [renaming, setRenaming] = useState<Resource | null>(null);
   // Only the newest list request may set the list, so a slow first load cannot hide a resource added after it.
@@ -41,8 +42,9 @@ export function ResourcesPage() {
   const add = (e: FormEvent) => {
     e.preventDefault();
     return run(async () => {
-      await api("POST", "/resources", { name });
+      await api("POST", "/resources", { name, ...(label.trim() ? { label: label.trim() } : {}) });
       setName("");
+      setLabel("");
     });
   };
   const counts = list && countResources(list);
@@ -64,6 +66,10 @@ export function ResourcesPage() {
             <label htmlFor="resource-name">{t("Name")}</label>
             <input id="resource-name" type="text" value={name} onChange={(e) => setName(e.target.value)} required maxLength={100} placeholder={t("Chair 3, Table 12, Marco")} />
           </div>
+          <div className="wk-fields">
+            <label htmlFor="resource-label">{t("Room type or label")}</label>
+            <input id="resource-label" type="text" value={label} onChange={(e) => setLabel(e.target.value)} maxLength={80} placeholder={t("Garden room, Beach villa (optional)")} />
+          </div>
           <button className="wk-button blue">{t("Add resource")}</button>
         </div>
       </form>
@@ -79,6 +85,7 @@ export function ResourcesPage() {
               <thead>
                 <tr>
                   <th scope="col">{t("Name")}</th>
+                  <th scope="col">{t("Label")}</th>
                   <th scope="col">{t("Status")}</th>
                   <th scope="col"><span className="wk-sr">{t("Actions")}</span></th>
                 </tr>
@@ -87,6 +94,7 @@ export function ResourcesPage() {
                 {list.map((r) => (
                   <tr key={r.id} className={r.active ? undefined : "off"}>
                     <td className="wk-name">{r.name}</td>
+                    <td>{r.label ? <span className="wk-pill">{r.label}</span> : <span className="wk-muted">-</span>}</td>
                     <td><span className={`wk-pill ${r.active ? "ok" : ""}`}>{r.active ? t("Active") : t("Archived")}</span></td>
                     <td className="wk-acts">
                       <button type="button" className="wk-button" onClick={() => setRenaming(r)}>{t("Rename")}</button>
@@ -107,7 +115,7 @@ export function ResourcesPage() {
           resource={renaming}
           onClose={() => setRenaming(null)}
           onSave={async (next) => {
-            await api("PATCH", `/resources/${renaming.id}`, { name: next });
+            await api("PATCH", `/resources/${renaming.id}`, next);
             setRenaming(null);
             await load();
           }}
@@ -117,16 +125,19 @@ export function ResourcesPage() {
   );
 }
 
-function RenameSheet({ resource, onSave, onClose }: { resource: Resource; onSave: (name: string) => Promise<void>; onClose: () => void }) {
+function RenameSheet({ resource, onSave, onClose }: { resource: Resource; onSave: (patch: { name?: string; label?: string | null }) => Promise<void>; onClose: () => void }) {
   const { t } = useLanguage();
   const [value, setValue] = useState(resource.name);
+  const [label, setLabel] = useState(resource.label ?? "");
   const [error, setError] = useState("");
   const submit = async (e: FormEvent) => {
     e.preventDefault();
-    const next = value.trim();
-    if (!next || next === resource.name) return onClose();
+    const nextName = value.trim();
+    const nextLabel = label.trim() || null;
+    if (!nextName) return onClose();
+    if (nextName === resource.name && nextLabel === (resource.label ?? null)) return onClose();
     try {
-      await onSave(next);
+      await onSave({ ...(nextName !== resource.name ? { name: nextName } : {}), ...(nextLabel !== (resource.label ?? null) ? { label: nextLabel } : {}) });
     } catch (err) {
       setError((err as Error).message);
     }
@@ -138,6 +149,10 @@ function RenameSheet({ resource, onSave, onClose }: { resource: Resource; onSave
         <div>
           <label htmlFor="resource-new-name" className="wk-sr">{t("New name")}</label>
           <input id="resource-new-name" type="text" value={value} onChange={(e) => setValue(e.target.value)} onFocus={(e) => e.target.select()} required maxLength={100} />
+        </div>
+        <div>
+          <label htmlFor="resource-new-label">{t("Room type or label")}</label>
+          <input id="resource-new-label" type="text" value={label} onChange={(e) => setLabel(e.target.value)} maxLength={80} placeholder={t("Garden room, Beach villa (optional)")} />
         </div>
         <p role="alert" className="wk-note bad" hidden={!error}>{error}</p>
         <div className="wk-sheet-actions inline">

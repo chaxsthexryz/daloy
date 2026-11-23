@@ -7,10 +7,18 @@ import "./activity.css";
 import { longDate } from "./lib/activity";
 import { ampm, byDay } from "./lib/agenda";
 
+type BookingGuest = {
+  channel: "messenger" | "instagram" | "email";
+  externalId: string;
+  name?: string;
+  email?: string;
+  phone?: string;
+};
+
 type Booking = {
   id: string;
   reference: string;
-  resource: { id: string; name: string };
+  resource: { id: string; name: string; label?: string };
   start: string;
   end: string;
   timezone: string;
@@ -18,6 +26,11 @@ type Booking = {
   version: number;
   attention: boolean;
   runId: string | null;
+  nights?: number;
+  checkIn?: string;
+  checkOut?: string;
+  conversationId?: string;
+  guest?: BookingGuest;
 };
 
 // "2027-01-20T14:00:00+08:00" -> "2027-01-20 14:00": the booking's own local time, as the customer chose it.
@@ -84,11 +97,14 @@ export function BookingsPage() {
       await api("POST", `/bookings/${b.id}/undo-no-show`, { version: b.version });
       return t("{reference} is active again. The follow-up was stopped.", { reference: b.reference });
     });
-  const reschedule = (b: Booking, start: string) =>
+  const reschedule = (b: Booking, value: string) =>
     run(async () => {
-      const r = await api<{ booking: Booking }>("POST", `/bookings/${b.id}/reschedule`, { version: b.version, start });
+      const body = b.nights !== undefined ? { version: b.version, checkIn: value } : { version: b.version, start: value };
+      const r = await api<{ booking: Booking }>("POST", `/bookings/${b.id}/reschedule`, body);
       setMoving(null);
-      return t("{reference} moved to {time}. A new run sends its messages; the old reminders stop.", { reference: b.reference, time: local(r.booking.start) });
+      return b.nights !== undefined
+        ? t("{reference} moved to {time} ({nights} nights kept).", { reference: b.reference, time: local(r.booking.start), nights: b.nights })
+        : t("{reference} moved to {time}. A new run sends its messages; the old reminders stop.", { reference: b.reference, time: local(r.booking.start) });
     });
 
   const days = byDay(list ?? []);
@@ -113,10 +129,20 @@ export function BookingsPage() {
               <span className="act-mono">{chosen.reference}</span>
               <button type="button" className="act-button act-sheet-close" onClick={() => setSheet(false)}>{t("Close")}</button>
             </div>
-            <h2 id="booking-h">{chosen.resource.name}</h2>
+            <h2 id="booking-h">
+              {chosen.resource.name}
+              {chosen.resource.label && <span className="act-pill">{chosen.resource.label}</span>}
+            </h2>
             <p className="act-muted">
-              {local(chosen.start)}{t(" to ")}{local(chosen.end).slice(11)} ({chosen.timezone})
+              {chosen.nights !== undefined
+                ? `${local(chosen.start)}${t(" to ")}${local(chosen.end)} (${t("{nights} nights", { nights: chosen.nights })}, ${chosen.timezone})`
+                : `${local(chosen.start)}${t(" to ")}${local(chosen.end).slice(11)} (${chosen.timezone})`}
             </p>
+            {chosen.guest && (
+              <p className="act-muted">
+                {t("Guest")}: {[chosen.guest.name, chosen.guest.email, chosen.guest.phone].filter(Boolean).join(" · ") || `${chosen.guest.channel} (${chosen.guest.externalId})`}
+              </p>
+            )}
             <p className="act-status-box">
               {t(STATUS[chosen.status])}
               {chosen.attention && <span className="act-pill problem">{t("needs attention")}</span>}
@@ -132,8 +158,18 @@ export function BookingsPage() {
                   void reschedule(chosen, moving.start);
                 }}
               >
-                <label htmlFor={`move-${chosen.id}`}>{t("New time ({timezone})", { timezone: chosen.timezone })}</label>
-                <input id={`move-${chosen.id}`} type="datetime-local" value={moving.start} onChange={(e) => setMoving({ id: chosen.id, start: e.target.value })} required />
+                <label htmlFor={`move-${chosen.id}`}>
+                  {chosen.nights !== undefined
+                    ? t("New check-in date ({nights} nights kept, {timezone})", { nights: chosen.nights, timezone: chosen.timezone })
+                    : t("New time ({timezone})", { timezone: chosen.timezone })}
+                </label>
+                <input
+                  id={`move-${chosen.id}`}
+                  type={chosen.nights !== undefined ? "date" : "datetime-local"}
+                  value={moving.start}
+                  onChange={(e) => setMoving({ id: chosen.id, start: e.target.value })}
+                  required
+                />
                 <div className="act-actions">
                   <button className="act-button blue"><Text>Move</Text></button>
                   <button type="button" className="act-button" onClick={() => setMoving(null)}>{t("Keep")}</button>
@@ -143,7 +179,13 @@ export function BookingsPage() {
               <div className="act-actions">
                 {chosen.status === "active" && (
                   <>
-                    <button type="button" className="act-button" onClick={() => setMoving({ id: chosen.id, start: chosen.start.slice(0, 16) })}>{t("Reschedule")}</button>
+                    <button
+                      type="button"
+                      className="act-button"
+                      onClick={() => setMoving({ id: chosen.id, start: chosen.nights !== undefined ? (chosen.checkIn ?? chosen.start.slice(0, 10)) : chosen.start.slice(0, 16) })}
+                    >
+                      {t("Reschedule")}
+                    </button>
                     <button type="button" className="act-button" onClick={() => cancel(chosen)}>{t("Cancel booking")}</button>
                     {Date.parse(chosen.start) <= Date.now() && <button type="button" className="act-button" onClick={() => noShow(chosen)}>{t("Mark no-show")}</button>}
                   </>
@@ -170,7 +212,12 @@ export function BookingsPage() {
                         <span className="act-mono">{ampm(b.start.slice(11, 16))}</span>
                         <span className="act-agenda-what">
                           <span className="title">{b.reference}</span>
-                          <span className="act-muted">{b.resource.name} · {local(b.start).slice(11)}{t(" to ")}{local(b.end).slice(11)}</span>
+                          <span className="act-muted">
+                            {b.resource.name}
+                            {b.nights !== undefined
+                              ? ` · ${t("{nights} nights", { nights: b.nights })} · ${b.checkIn ?? b.start.slice(0, 10)}${t(" to ")}${b.checkOut ?? b.end.slice(0, 10)}`
+                              : ` · ${local(b.start).slice(11)}${t(" to ")}${local(b.end).slice(11)}`}
+                          </span>
                         </span>
                         <span className={`act-agenda-state ${b.status}`}>{t(STATUS[b.status])}{b.attention && ` · ${t("needs attention")}`}</span>
                       </button>

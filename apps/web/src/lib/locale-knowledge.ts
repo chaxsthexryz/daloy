@@ -49,6 +49,9 @@ export const knowledgeTranslations: Record<string, string> = {
   "Link": "Link",
   "(optional, https only)": "(opsyonal, https lang)",
   "Save entry": "I-save ang entry",
+  "Stay hours": "Oras ng pananatili",
+  "Check-in time": "Oras ng check-in",
+  "Check-out time": "Oras ng check-out",
   // Kinds, price units and weekdays, looked up through t() in a table.
   "Room": "Kuwarto", "Rate": "Rate", "Fee": "Bayad", "FAQ": "FAQ", "Policy": "Patakaran", "Location": "Lokasyon", "Activity": "Aktibidad", "Arrival": "Pagdating", "Review link": "Link ng review",
   "per night": "bawat gabi", "per person": "bawat tao", "per person per night": "bawat tao bawat gabi", "per stay": "bawat pananatili", "per day": "bawat araw",
