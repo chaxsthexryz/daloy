@@ -361,7 +361,7 @@ DeepSeek's review is in `docs/roadmap-review-2026-11-18.md`. Claude's second opi
 
 Orchestrator: Neon. Onboarding (`Onboarding.tsx`, `onboarding.css`) is out of scope until the owner finishes its design. Desktop sidebar stays fixed at 228 px (non-collapsible).
 
-- [ ] D1. Brand mark (Logo 28 Quarter Tiles), gear Settings icon, Daylight Minimal Light/Dark tokens, zero-dependency motion primitives (`motion.css`, `lib/motion.ts`), and logout hash reset in `App.tsx`. Decision 0111. (claimed: neon, branch neon/d1-daylight-tokens)
+- [x] D1. Brand mark (Logo 28 Quarter Tiles), gear Settings icon, Daylight Minimal Light/Dark tokens, zero-dependency motion primitives (`motion.css`, `lib/motion.ts`), and logout hash reset in `App.tsx`. Decision 0111. (claimed: neon, branch neon/d1-daylight-tokens)
 - [ ] D2. Fixed non-collapsible 228 px Daylight Minimal desktop sidebar, hover pill, always-visible AI meter and Sign out, and `Cmd/Ctrl+K` Quick Jump palette. Updates `Nav.test.tsx`, `e2e/rail.spec.ts`, and `e2e/navigation.spec.ts`. Decision 0112.
 - [ ] D3. Automations dashboard Daylight Minimal revamp, Easy UI micro-animations, inline pause/resume switch with undo toast, row vs panel status sync fix, and inspector overlap fix. Decision 0113.
 - [ ] D4. Secondary console pages, auth and editor consistency (breadcrumbs, select alignment, styled file inputs, disabled button contrast, AppMark letter-tile tints, editor node header spacing). Onboarding untouched. Decision 0114.

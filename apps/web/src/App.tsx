@@ -69,7 +69,7 @@ function Console({ hash }: { hash: string }) {
   useEffect(() => {
     if (user && answer) location.replace(`/approvals/${answer}`);
   }, [user, answer]);
-  const signOut = () => api("POST", "/auth/logout").then(() => setUser(null));
+  const signOut = () => api("POST", "/auth/logout").then(() => { location.hash = "#/"; setUser(null); });
 
   if (user === undefined || (user && answer)) return <main className="page" />;
   const invite = INVITE.exec(hash);
