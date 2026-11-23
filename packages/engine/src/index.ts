@@ -8,6 +8,7 @@ export * from "./expressions";
 export * from "./graph";
 export * from "./json-template";
 export * from "./lint";
+export * from "./menu";
 export * from "./language";
 export * from "./retry";
 export * from "./state-machine";

@@ -1380,6 +1380,23 @@ Edge cases: two webhooks for one guest at the same moment wait on the conversati
 
 Tests: `apps/api/src/conversations.test.ts` (two messages in one second give one reply; a newer message ends the older run's follow-up; window at 23:59 and 24:01 with the `outside_window` edge and without one; Page inbox echo pauses and own echo does not; replayed `mid` adds nothing; notice once; saved details reach the next run; R6 export and delete include messages; the sweep deletes after the retention days), `apps/worker/src/email-in.test.ts` (an email starts a conversation once), `packages/engine/src/definition.test.ts` (the two edges and the trigger rule for `conversation_update`).
 
+## Menu buttons (C2, decision 0118)
+
+What it does: a `meta_reply` step can show up to 13 tap buttons under its text (`quickReplies`, each a title of at most 20 characters and a choice). A tap starts a run like a typed message, with `{{trigger.choice}}` set to the button's choice, so a condition can answer it without an AI call. An `email` or `outlook` step can carry the same menu (`menu`), written under the message as a numbered list; a reply of just "2" sets `{{trigger.choice}}` to the second choice.
+
+How it works (`packages/engine/src/menu.ts`, `packages/db/src/meta.ts`, `apps/api/src/public.ts`, `apps/worker/src/email-in.ts`, `apps/worker/src/steps/index.ts`):
+
+- Choices are a fixed list: `rooms`, `rates`, `location`, `activities`, `book`, `staff`. Titles are the owner's words. Save refuses more than 13 buttons, an empty or 21-character title, an unknown choice, and two email menus in one workflow that number their choices differently.
+- Sending: the delivery carries the menu, and `metaSend` adds `quick_replies` with the choice as each button's payload.
+- Receiving: after the signature check, `parseMetaWebhook` reads `message.quick_reply.payload` and `postback.payload`, and keeps a payload only when it is one of the fixed ids. The webhook then keeps it only for workflows whose published menus offer it. A quick reply with a dropped payload is plain text; a postback with a dropped payload starts nothing and is not stored. A tap joins the conversation and is deduplicated by its `mid`, like any message (decision 0115).
+- Email: `numberedChoice` reads the first non-empty line of the reply. Only a number, with an optional full stop, inside the menu counts. The numbers follow the first email menu of the workflow.
+
+Why this way: a payload is text from the event, so a fixed list keeps `{{trigger.choice}}` to words the workflow expects. Using the message path for taps reuses the signature check, dedup and conversation ordering unchanged.
+
+Edge cases: a replayed tap starts no run. A postback without a `mid` is dropped. "2 adults po" is not a choice. Two buttons may share a choice. The step form does not draw the menu yet; it is kept as saved when other fields change. Known limits: no Get Started button or persistent menu from Daloy (set them in Meta Business Suite with a choice id as the payload), and Instagram's button limits are unverified until the live Meta check.
+
+Tests: `packages/engine/src/menu.test.ts` (13-button and 20-character limits, the fixed list, email menus that disagree, the numbered list, "2" maps to choice 2 and "2 adults" maps to nothing), `apps/api/src/menu.test.ts` (one tap starts one run and a replayed tap none, for quick replies and postbacks; an unknown payload is dropped; a postback still needs the signature; the reply carries the buttons; save refuses 14 buttons and a long title), `apps/worker/src/email-in.test.ts` (an email reply of "2" sets choice 2).
+
 ## Knowledge sheet (phase C3, decision 0116)
 
 What it does: the Knowledge page (menu entry "Knowledge", `#/knowledge`, owner and operator) is where the resort writes what the concierge may say. An entry has a kind (room, rate, fee, FAQ, policy, location, activity, arrival or review link), a title, some text, and for rooms, rates and fees a price block. Nothing a guest sees changes when an entry is saved. Publish saves a numbered copy of every entry, and the page shows the live version, when it was published and whether the drafts differ from it.

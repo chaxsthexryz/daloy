@@ -100,7 +100,7 @@ export async function startFakeProviders(port = 0) {
     pageId: "100200300",
     pageName: "Daloy Test Page",
     revoked: false,
-    messages: [] as { recipientId: string; text: string; messagingType: string; messageId: string }[],
+    messages: [] as { recipientId: string; text: string; messagingType: string; messageId: string; quickReplies?: { content_type: string; title: string; payload: string }[] }[],
     cdnFiles: new Map<string, { contentType: string; data: Buffer }>(),
   };
   // Airtable, Notion and Trello (N15, decision 0046): a bearer or key/token check, one target each, and the records added.
@@ -865,12 +865,12 @@ export async function startFakeProviders(port = 0) {
         return json(res, 200, { id: meta.pageId, name: meta.pageName });
       }
       if (req.method === "POST" && path === "/v21.0/me/messages") {
-        const m = JSON.parse(raw || "{}") as { recipient?: { id?: string }; messaging_type?: string; message?: { text?: string } };
+        const m = JSON.parse(raw || "{}") as { recipient?: { id?: string }; messaging_type?: string; message?: { text?: string; quick_replies?: { content_type: string; title: string; payload: string }[] } };
         if (!m.recipient?.id || !m.message?.text) {
           return json(res, 400, { error: { message: "Missing recipient or text", type: "OAuthException", code: 100 } });
         }
         const messageId = `mid.fake_${++seq}`;
-        meta.messages.push({ recipientId: m.recipient.id, text: m.message.text, messagingType: m.messaging_type ?? "", messageId });
+        meta.messages.push({ recipientId: m.recipient.id, text: m.message.text, messagingType: m.messaging_type ?? "", messageId, ...(m.message.quick_replies ? { quickReplies: m.message.quick_replies } : {}) });
         return answer(200, { recipient_id: m.recipient.id, message_id: messageId });
       }
       return json(res, 404, { error: { message: "Unsupported get request", code: 100 } });

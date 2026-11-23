@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { backoffDelayMs, FILE_MIME, type FileRef, type RetryPolicy } from "@daloy/engine";
+import { backoffDelayMs, FILE_MIME, type FileRef, type Menu, type RetryPolicy } from "@daloy/engine";
 import { and, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { connectionCredential, markConnectionFailed, PROVIDER_NAMES, SMS_NOT_SET_UP, unismsConfig } from "./connections";
 import { withGoogle } from "./google-access";
@@ -249,6 +249,7 @@ async function attempt(db: Db, key: Buffer, urls: ProviderUrls, d: Delivery): Pr
         recipientId?: string;
         channel?: string;
         text?: string;
+        quickReplies?: Menu;
         inboundTimestamp?: string;
         receivingPageId?: string;
         receivingInstagramAccountId?: string;
@@ -269,7 +270,7 @@ async function attempt(db: Db, key: Buffer, urls: ProviderUrls, d: Delivery): Pr
         return { state: "failed", error: PAST_WINDOW, kind: "invalid" };
       }
       const { pageAccessToken } = parseMetaCredential(activeConn.credential);
-      return { state: "delivered", result: await metaSend(urls, pageAccessToken, { recipientId: m.recipientId, channel: m.channel, text: m.text }) };
+      return { state: "delivered", result: await metaSend(urls, pageAccessToken, { recipientId: m.recipientId, channel: m.channel, text: m.text, quickReplies: m.quickReplies }) };
     }
     return { state: "delivered", result: await slackPost(urls, slackToken(activeConn), destination.channelId!, text) };
   };

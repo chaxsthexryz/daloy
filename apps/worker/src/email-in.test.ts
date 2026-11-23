@@ -348,3 +348,21 @@ describe("email intake and pause (N11b)", () => {
     expect(made[0]!.payload).toMatchObject({ messageId: "<two@example.com>" });
   });
 });
+
+describe("email menu (C2)", () => {
+  it("maps a reply of 2 to choice 2 of the workflow's email menu", async () => {
+    const own = await setup();
+    const menu = [
+      { title: "Rooms", choice: "rooms" },
+      { title: "Rates", choice: "rates" },
+    ];
+    const definition = { trigger: { type: "email", config: {} }, steps: [{ id: "answer", type: "email", config: { to: "{{trigger.replyTo}}", subject: "Re: {{trigger.subject}}", text: "Pili po:", menu } }], edges: [] };
+    await db.update(workflowVersions).set({ definition }).where(eq(workflowVersions.workflowId, own.workflowId));
+    await poll(mailbox());
+    await due();
+    const reply = { ...payload, subject: "Re: Pili po", text: "2\n\nOn Mon, the resort wrote:\n> 1. Rooms\n> 2. Rates" };
+    await poll(mailbox({ uidNext: 8, messages: [{ uid: 5, payload: reply }, { uid: 6, payload: { ...reply, messageId: "<six@example.com>", text: "3" } }, { uid: 7, payload: { ...reply, messageId: "<seven@example.com>", text: "2 adults po" } }] }));
+    const made = await db.select({ payload: runs.triggerPayload }).from(runs).innerJoin(workflowVersions, eq(workflowVersions.id, runs.workflowVersionId)).where(eq(workflowVersions.workflowId, own.workflowId));
+    expect(made.map((r) => (r.payload as { choice?: string }).choice).sort()).toEqual(["rates", undefined, undefined]);
+  });
+});
