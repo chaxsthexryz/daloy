@@ -274,6 +274,9 @@ describe("QA-01 sales lead prioritization", () => {
     const payload = { ...lead, budget: 200, details: "x" };
     expect((await testRun(id, qa01.definition, { payload, options: { choices: { classify: { label: "urgent" } } } })).errors).toEqual(['choices.classify: "urgent" is not a label of this classify step']);
     expect((await testRun(id, qa01.definition, { payload, options: { mode: "live", choices: { classify: { label: "standard" } } } })).errors).toEqual(["choices: a live test run makes real calls, so its outcomes cannot be chosen"]);
+    // "Try this step for real" is a faked preview with one live step, and only a step that sends to an app (decision 0110).
+    expect((await testRun(id, qa01.definition, { payload, options: { mode: "ai", choices: { classify: { live: true } } } })).errors).toEqual(["choices.classify: only a preview that fakes every call can send one step for real"]);
+    expect((await testRun(id, qa01.definition, { payload, options: { choices: { classify: { live: true } } } })).errors).toEqual(["choices.classify: only a step that sends to an app can be sent for real, and not an approval, payment or Shopify product"]);
   });
   it("Build with AI is told that test runs mock outside calls, so it adds no dry-run branches", () => {
     expect(engine.draftPrompt({ request: "x" }).system).toMatch(/never add dry-run/i);

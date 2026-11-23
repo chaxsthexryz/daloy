@@ -133,6 +133,10 @@
 .a7-warn-note { margin: 0; padding: 8px 12px; border: 1px solid var(--a7-warn-line); border-radius: 8px; color: var(--text); font-size: 13px; }
 .a7-group { display: flex; flex-direction: column; gap: 8px; padding-top: 16px; border-top: 1px solid var(--border-soft); }
 .a7-group .hint { margin: 0; font-size: 12px; overflow-wrap: anywhere; }
+.a7-step-test-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.a7-last-test h4 { margin: 0 0 4px; font-size: 13px; }
+.a7-last-test p { margin: 0 0 4px; }
+.a7-last-test pre { max-height: 240px; overflow: auto; font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .a7-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; }
 .a7-editor .a7-chips button { min-height: 28px; padding: 4px 8px; border: 0; border-radius: 6px; background: var(--accent-tint); color: var(--a7-chip); font-size: 12px; font-weight: 500; }
 .a7-editor .a7-chips button:hover:not(:disabled) { background: var(--accent-tint); color: var(--a7-chip); text-decoration: underline; }

@@ -265,6 +265,12 @@ async function runNext(deps: AdvanceDeps, run: Run): Promise<void> {
     steps: Object.fromEntries(history.filter((r) => r.state === "succeeded").map((r) => [r.stepId, { output: r.output }])),
   };
 
+  // "Try this step for real" (decision 0110): in a faked preview, the one step chosen as live calls its app and gets
+  // no choice; every other step stays faked.
+  const chosen = (run.testChoices as Record<string, TestChoice> | null)?.[step.id];
+  const liveAlone = mock && chosen !== undefined && "live" in chosen;
+  const fake = mock && !liveAlone;
+
   let result: StepResult;
   try {
     result = await deps.executor.execute({
@@ -276,11 +282,11 @@ async function runNext(deps: AdvanceDeps, run: Run): Promise<void> {
       attempt,
       idempotencyKey: idempotencyKey(run.id, step.id),
       ctx,
-      mock,
+      mock: fake,
       test: run.test,
       aiLive: run.aiLive,
-      choice: (run.testChoices as Record<string, TestChoice> | null)?.[step.id],
-      claimSend: !mock && unsafeToRepeat(step) ? claimSend : undefined,
+      choice: liveAlone ? undefined : chosen,
+      claimSend: !fake && unsafeToRepeat(step) ? claimSend : undefined,
       fileFields: fileFieldsFor(step, def.trigger),
       booking: step.type === "booking" ? { test: run.test, workflowId: version!.workflowId, trigger: def.trigger } : undefined,
     });
@@ -308,7 +314,7 @@ async function runNext(deps: AdvanceDeps, run: Run): Promise<void> {
     const message = err instanceof Error ? err.message : String(err);
     // A faked test run retries within a second, like its delays, so the builder shows the outcome straight away.
     // It sends nothing, so no receiver's Retry-After applies; a live run waits the full delay.
-    const retryAt = decision.kind === "retry" ? new Date(Date.now() + (mock ? Math.min(decision.delayMs, 1000) : decision.delayMs)) : undefined;
+    const retryAt = decision.kind === "retry" ? new Date(Date.now() + (fake ? Math.min(decision.delayMs, 1000) : decision.delayMs)) : undefined;
     await db.transaction(async (tx) => {
       const e = err instanceof StepError ? err : undefined;
       await moveStep(tx, stepRunId, "running", "failed", { input: e?.input ?? null, inputTokens: e?.usage?.inputTokens ?? null, outputTokens: e?.usage?.outputTokens ?? null, error: message, outcome: e?.outcome ?? null, deadLetter: decision.kind === "dead_letter", finishedAt: new Date() }, claimId);

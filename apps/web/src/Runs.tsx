@@ -1,6 +1,6 @@
 import { useLanguage } from "./Language";
 import { useEffect, useState, type ReactNode } from "react";
-import { api, ApiError, type Run, type RunSummary, type Version, type Workflow } from "./api";
+import { api, ApiError, type Run, type RunSummary, type StepRun, type Version, type Workflow } from "./api";
 import { DeliveryList, type Delivery } from "./Connections";
 import { AutomationTabs } from "./Nav";
 import { stepLabel } from "@daloy/engine";
@@ -12,7 +12,7 @@ import { clock, longDate, startedAt } from "./lib/activity";
 import type { Draft } from "./lib/graph";
 import { pollDelay, takingLonger } from "./lib/poll";
 import { fileRefs, fileSize } from "./lib/run-files";
-import { fixFor, ownerError, plainState, runKind } from "./lib/states";
+import { fixFor, ownerError, plainState, runKind, sentAlone } from "./lib/states";
 
 /**
  * Polls a run until it finishes, so the page shows each step as the worker records it: every second while work moves,
@@ -55,7 +55,8 @@ export function duration(from: string, to: string | null): string {
 export const TAKING_LONGER = "Taking longer than usual. Tell the person who runs Daloy.";
 const SUPERSEDED = "Superseded: its booking was rescheduled or cancelled. It stops at its next step and sends nothing more.";
 
-const kind = (r: { test: boolean; live: boolean; aiLive?: boolean }) => (r.test ? (r.live ? "test run, live calls" : r.aiLive ? "test run, real AI, other calls mocked" : "test run, mocked calls") : "live run");
+const kind = (r: { test: boolean; live: boolean; aiLive?: boolean; testChoices?: Record<string, object> | null }) =>
+  r.test ? (r.live ? "test run, live calls" : r.aiLive ? "test run, real AI, other calls mocked" : sentAlone(r) ? "test run, one step live, other calls mocked" : "test run, mocked calls") : "live run";
 const json = (v: unknown) => JSON.stringify(v, null, 2);
 
 // A named approval's step output holds who answered and when (decision 0022).
@@ -70,6 +71,36 @@ const skipped = (output: unknown, t: ReturnType<typeof useLanguage>["t"]) => {
   return typeof s === "string" ? t("Skipped: {reason}", { reason: s }) : null;
 };
 
+/** One step attempt: state, branch, duration, error and the details a technician needs. The run result and the editor's "Last test" share it. */
+export function StepAttempt({ s }: { s: StepRun }) {
+  const { t } = useLanguage();
+  return (
+    <>
+      <span className={`badge ${s.state}`}>{s.state}</span> {s.stepId}
+      {s.attempt > 1 && <span className="muted"> {t("attempt {count}", { count: s.attempt })}</span>}
+      {s.branch && <span className="muted"> → {s.branch}</span>}
+      <span className="muted"> · {t(duration(s.createdAt, s.finishedAt))}</span>
+      {s.inputTokens !== null && <span className="muted"> · {t("{input} in, {output} out tokens", { input: s.inputTokens, output: s.outputTokens ?? 0 })}</span>}
+      {s.error && <p className="message error">{s.error}</p>}
+      {decided(s.output, t) && <p className="muted">{decided(s.output, t)}</p>}
+      {skipped(s.output, t) && <p className="muted">{skipped(s.output, t)}</p>}
+      {s.outcome && <p className="muted">{t("Outcome: {outcome}", { outcome: s.outcome.replace("_", " ") })}</p>}
+      {s.resolvedBy && s.resolvedAt && (
+        <p className="muted">
+          {t("Answered by {name} at {time}", { name: s.resolvedBy, time: new Date(s.resolvedAt).toLocaleString() })}
+        </p>
+      )}
+      {s.input !== null && (
+        <details>
+          <summary>{t("Input")}</summary>
+          <pre aria-label={t("Input of {step}", { step: s.stepId })}>{json(s.input)}</pre>
+        </details>
+      )}
+      {s.output !== null && <pre aria-label={t("Output of {step}", { step: s.stepId })}>{json(s.output)}</pre>}
+    </>
+  );
+}
+
 /** One run's steps: state, branch, attempt, timing, and the input and output the worker stored (secrets masked by the API). */
 export function RunResult({ run }: { run: Run }) {
   const { t } = useLanguage();
@@ -83,27 +114,7 @@ export function RunResult({ run }: { run: Run }) {
       <ol className="steps">
         {run.steps.map((s) => (
           <li key={s.id}>
-            <span className={`badge ${s.state}`}>{s.state}</span> {s.stepId}
-            {s.attempt > 1 && <span className="muted"> {t("attempt {count}", { count: s.attempt })}</span>}
-            {s.branch && <span className="muted"> → {s.branch}</span>}
-            <span className="muted"> · {t(duration(s.createdAt, s.finishedAt))}</span>
-            {s.inputTokens !== null && <span className="muted"> · {t("{input} in, {output} out tokens", { input: s.inputTokens, output: s.outputTokens ?? 0 })}</span>}
-            {s.error && <p className="message error">{s.error}</p>}
-            {decided(s.output, t) && <p className="muted">{decided(s.output, t)}</p>}
-            {skipped(s.output, t) && <p className="muted">{skipped(s.output, t)}</p>}
-            {s.outcome && <p className="muted">{t("Outcome: {outcome}", { outcome: s.outcome.replace("_", " ") })}</p>}
-            {s.resolvedBy && s.resolvedAt && (
-              <p className="muted">
-                {t("Answered by {name} at {time}", { name: s.resolvedBy, time: new Date(s.resolvedAt).toLocaleString() })}
-              </p>
-            )}
-            {s.input !== null && (
-              <details>
-                <summary>{t("Input")}</summary>
-                <pre aria-label={t("Input of {step}", { step: s.stepId })}>{json(s.input)}</pre>
-              </details>
-            )}
-            {s.output !== null && <pre aria-label={t("Output of {step}", { step: s.stepId })}>{json(s.output)}</pre>}
+            <StepAttempt s={s} />
           </li>
         ))}
       </ol>

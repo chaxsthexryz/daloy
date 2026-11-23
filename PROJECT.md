@@ -330,6 +330,17 @@ DeepSeek's review is in `docs/roadmap-review-2026-11-18.md`. Claude's second opi
 - [x] I1. Discord step (post to a channel webhook) and Google Docs step (make a document from a template with values filled in).
 - [x] I2. Shopify: product create and edit through the Admin API, and a native order trigger in place of the webhook template. Decision 0105, migration 0048. (claimed: claude, branch claude/i2-shopify)
 
+## Ideas from n8n, Langflow and the AI starter kit (23 November 2026)
+
+- [x] T1. Test this step in the step's own panel with its last result, and "Try this step for real" for one step while the rest stay faked. Decision 0110, no migration.
+- [ ] T2. "Test with this data" on a run page: open the editor with that run's trigger data as the sample.
+- [ ] T3. "If this step fails": stop, skip and carry on, or take a "failed" path. After B2 merges.
+- [ ] T4. Notes on steps, shown on the canvas card and read by Explain this flow. After B2 merges.
+- [ ] T5. One Share panel: form link and embed code, webhook URL, MCP tool name and an API example.
+- [ ] T6. `docker compose --profile local-ai up` runs Ollama with a small model.
+- [ ] T7. Answer from my price list: owner-written price list and answers, an AI `answer` task and a Messenger template.
+- [ ] T8. Chat as your customer: test a Messenger workflow by typing as the customer.
+
 ## Console UI from the Paper file (docs/plans/console-ui-paper.md, 21 November 2026)
 
 - [x] U1. Rail, Inter everywhere, calmer nav motion, AI usage meter. (claimed: claude, cloud session)

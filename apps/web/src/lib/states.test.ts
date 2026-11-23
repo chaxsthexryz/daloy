@@ -98,6 +98,8 @@ describe("runKind", () => {
     expect(runKind({ test: true, live: false })).toBe("Preview (nothing sent)");
     expect(runKind({ test: true, live: true })).toBe("Preview with real calls");
     expect(runKind({ test: true, live: false, aiLive: true })).toBe("Preview with real AI, other calls mocked");
+    expect(runKind({ test: true, live: false, testChoices: { log: { live: true } } })).toBe("Preview, one step sent for real");
+    expect(runKind({ test: true, live: false, testChoices: { log: { fail: "permanent" } } })).toBe("Preview (nothing sent)");
   });
 });
 

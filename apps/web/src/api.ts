@@ -56,6 +56,9 @@ export type RunSummary = {
   state: string;
   test: boolean;
   live: boolean;
+  aiLive?: boolean;
+  /** Test outcomes the tester chose, by step id (decision 0028); `{live: true}` sent that one step for real (0110). */
+  testChoices?: Record<string, object> | null;
   error: string | null;
   triggerPayload: unknown;
   // The run, or one of its Sheets or Slack deliveries, waits for a person.

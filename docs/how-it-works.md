@@ -931,6 +931,21 @@ Edge cases:
 
 Tests: `apps/web/src/lib/editor.test.ts` (branch paths, loops, references by trigger type and branch, apps needed and connected), `e2e/editor.spec.ts` (create, change the trigger, add approval steps on two branches, the missing Sheets banner, copy a reference, four diagram nodes, zoom, mocked test run, save, publish after dropping the sheet). `Editor.tsx` itself has no component test, so the form fields are covered by the e2e flow only.
 
+#### Test one step (T1, decision 0110)
+
+What it does: the selected step's panel (the phone sheet shows the same panel) has "Test this step" and, for a step that sends to an app, "Try this step for real". "Test this step" runs the usual mocked preview and stays on the step. The "Last test" block under it shows that step's last attempt from the last preview: state, branch, error, input and output, drawn by the same `StepAttempt` component as the run result. "Try this step for real" asks first, naming where the step sends, then starts a mocked preview with the choice `{live: true}` on that step. The worker runs that one step with `mock: false`, and every other step stays faked.
+
+Why it is built this way: the owner sees a step's result where they edit it, and can check one app connection without a live test run that sends every step. The live step is a test choice in `runs.test_choices`, the same place chosen labels and failures go (decision 0028), so the worker, the API check and the run page needed no new column.
+
+Edge cases:
+- `choiceProblems` refuses `{live: true}` outside a `mock` preview, on more than one step, and on a step that does not send to an app (`canSendAlone`). Approvals and Shopify product steps are refused too: an approval has nothing to check on its own, and a real product is not a test. Payment steps are not outside steps, so they are refused as well.
+- The live step gets no other choice, the send claim that every real send gets, and real retry delays instead of the one-second test delay.
+- The live step sends with the sample data and the faked outputs of the steps before it.
+- A preview of an older draft is marked "From before your last change". A preview that never reached the step says so and points at the path before it.
+- Run pages call such a run "Preview, one step sent for real", and the technician label is "test run, one step live, other calls mocked".
+
+Tests: `packages/engine/src/test-run.test.ts` (live choice rules), `apps/worker/src/worker.test.ts` (only the chosen step runs unmocked, with no choice), `apps/api/src/scenarios.test.ts` (the API refuses a live choice in an ai preview and on a step that does not send), `apps/web/src/lib/states.test.ts` (run kind), `e2e/editor.spec.ts` (Test this step from the panel shows the step's last attempt; only a sending step offers Try this step for real).
+
 ## Guided pages (Doop rows A2 to A6, decision 0071)
 
 `apps/web/src/NewAutomation.tsx`, `OfficeRequests.tsx`, `guided-pages.css`, `lib/locale-setup.ts`.

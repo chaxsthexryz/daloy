@@ -1,14 +1,14 @@
 import "./editor.css";
 import { useLanguage } from "./Language";
-import { BRANCHES, configProblems, definitionSchema, destination, lintDefinition, markText, stepEntry, stepLabel, triggerEntry, triggerLabel, type FormField, type Step, type Trigger } from "@daloy/engine";
+import { BRANCHES, canSendAlone, configProblems, definitionSchema, destination, lintDefinition, markText, stepEntry, stepLabel, triggerEntry, triggerLabel, type FormField, type Step, type Trigger } from "@daloy/engine";
 import { AppMark } from "./AppMark";
 import { Background, ReactFlow, type NodeChange } from "@xyflow/react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { AskAi } from "./AiDraft";
 import { FormEmbed } from "./FormEmbed";
-import { api, type Version, type Workflow } from "./api";
+import { api, FINISHED, type Run, type Version, type Workflow } from "./api";
 import { DropLine, editorEdgeTypes, editorNodeTypes, flowAriaLabels, ZoomBar } from "./FlowCanvas";
-import { RunResult, useRun } from "./Runs";
+import { RunResult, StepAttempt, useRun } from "./Runs";
 import { ADDABLE, addStep, blankDraft, canMove, connectSteps, duplicateStep, moveStep, readCopiedStep, removeStep, setDisabled, toFlow, type AddableType, type ConnectError, type Draft } from "./lib/graph";
 import { record, redo, startHistory, undo } from "./lib/history";
 import { Popover, Sheet, useMedia, usePhone } from "./Sheet";
@@ -270,13 +270,15 @@ export function Editor({ id }: { id: string }) {
       throw new Error(t("the sample data is not valid JSON"));
     }
   };
-  const testRun = (testMode: typeof mode = mode) =>
+  // liveStep: "Try this step for real" sends that one step and fakes the rest (decision 0110).
+  const testRun = (testMode: typeof mode = mode, liveStep?: string) =>
     act("Test run", async () => {
+      const chosenOutcomes = Object.fromEntries(draft.steps.flatMap((s) => (choices[s.id] && s.id !== liveStep ? [[s.id, JSON.parse(choices[s.id]!) as unknown]] : [])));
       const r = await api<{ id: string; duplicate?: boolean; mode?: string }>("POST", `/workflows/${id}/test-runs`, {
         definition: draft,
         payload: parsedPayload(),
         mode: testMode,
-        choices: testMode === "live" ? {} : Object.fromEntries(draft.steps.flatMap((s) => (choices[s.id] ? [[s.id, JSON.parse(choices[s.id]!) as unknown]] : []))),
+        choices: testMode === "live" ? {} : liveStep ? { ...chosenOutcomes, [liveStep]: { live: true } } : chosenOutcomes,
       });
       setDirty(false);
       setRunId(r.id);
@@ -412,6 +414,9 @@ export function Editor({ id }: { id: string }) {
       setTestFocus(stepId);
     });
   };
+  const sendForReal = (s: Step) =>
+    window.confirm(t("Send {step} for real? {where} Every other step stays a preview and sends nothing.", { step: s.id, where: destination(s, { language, trigger: draft.trigger, chosen: chosen.get(s.id) }) })) &&
+    void testRun("mock", s.id);
   const nodeMenu = (nodeId: string, at: Point) => {
     const s = draft.steps.find((x) => x.id === nodeId);
     if (s) select(nodeId);
@@ -558,6 +563,14 @@ export function Editor({ id }: { id: string }) {
               <p className="muted hint">{t("Checked files are sent to the AI model you picked on the AI model page. Photos need Gemini, OpenAI or OpenRouter.")}</p>
             </fieldset>
           )}
+          <StepTest
+            step={step}
+            run={sample && sampleRun?.id === sample.runId ? sampleRun : null}
+            stale={!!sample && sample.key !== JSON.stringify(draft)}
+            busy={busy}
+            onTest={() => void testRun("mock")}
+            onReal={canSendAlone(step.type) && !step.disabled ? () => sendForReal(step) : undefined}
+          />
           <section className="a7-group" aria-labelledby="insert-heading">
             <h3 id="insert-heading">{t("Insert data from earlier steps")}</h3>
             <p className="muted hint">
@@ -841,6 +854,45 @@ export function Editor({ id }: { id: string }) {
         />
       )}
     </div>
+  );
+}
+
+/**
+ * "Test this step" in the step's own panel (T1, decision 0110): a preview of the whole flow, with this step's last
+ * attempt shown here so the owner does not have to find it in the run result. "Try this step for real" sends only it.
+ */
+function StepTest({ step, run, stale, busy, onTest, onReal }: { step: Step; run: Run | null; stale: boolean; busy: boolean; onTest: () => void; onReal?: () => void }) {
+  const { t } = useLanguage();
+  const last = run?.steps.filter((s) => s.stepId === step.id).at(-1);
+  const real = run?.testChoices?.[step.id] && "live" in run.testChoices[step.id]!;
+  return (
+    <section className="a7-group a7-step-test" aria-labelledby="step-test-heading">
+      <h3 id="step-test-heading">{t("Test this step")}</h3>
+      <div className="a7-step-test-actions">
+        <button type="button" onClick={onTest} disabled={busy}>
+          {t("Test this step")}
+        </button>
+        {onReal && (
+          <button type="button" onClick={onReal} disabled={busy}>
+            {t("Try this step for real")}
+          </button>
+        )}
+      </div>
+      <p className="muted hint">{t(onReal ? "A test fakes every app. For real sends only this step, with the sample data." : "A test fakes every app and sends nothing.")}</p>
+      {run && (
+        <div className="a7-last-test" aria-live="polite">
+          <h4>{t(real ? "Last test, sent for real" : "Last test")}</h4>
+          {stale && <p className="muted">{t("From before your last change. Test again to see the new result.")}</p>}
+          {last ? (
+            <div className="run">
+              <StepAttempt s={last} />
+            </div>
+          ) : (
+            <p className="muted">{t(FINISHED.has(run.state) ? "The last test did not reach this step. Check the path before it and the sample data." : "Running…")}</p>
+          )}
+        </div>
+      )}
+    </section>
   );
 }
 

@@ -109,4 +109,13 @@ export const editorTranslations: Record<string, string> = {
   ", turned off": ", naka-off",
   "Turned off {id}. Runs skip it and go on to the next step.": "Na-off ang {id}. Nilalaktawan ito ng mga run at tumutuloy sa susunod na hakbang.",
   "Turned on {id}.": "Na-on ang {id}.",
+  "Try this step for real": "Subukan ito nang totoo",
+  "Send {step} for real? {where} Every other step stays a preview and sends nothing.": "Ipadala nang totoo ang {step}? {where} Preview lang ang ibang hakbang at walang ipapadala.",
+  "A test fakes every app. For real sends only this step, with the sample data.": "Kunwari lang ang lahat ng app sa test. Sa totoo, ito lang ang ipapadala, gamit ang sample data.",
+  "A test fakes every app and sends nothing.": "Kunwari lang ang lahat ng app sa test at walang ipinapadala.",
+  "Last test": "Huling test",
+  "Last test, sent for real": "Huling test, ipinadala nang totoo",
+  "From before your last change. Test again to see the new result.": "Mula ito bago ang huli mong pagbabago. Mag-test ulit para makita ang bagong resulta.",
+  "The last test did not reach this step. Check the path before it and the sample data.": "Hindi umabot sa hakbang na ito ang huling test. Tingnan ang daan bago ito at ang sample data.",
+  "Running…": "Tumatakbo…",
 };

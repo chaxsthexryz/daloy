@@ -49,8 +49,11 @@ export const lastEvent = (last: LastRun | null, now = Date.now(), language: Lang
     : last.reference ? `Request ${last.reference} received ${ago(last.createdAt, now)}` : `Last ran ${ago(last.createdAt, now)}`;
 
 /** Owner wording for a run's kind. The old labels ("test run, mocked calls") stay in the technician block. */
-export const runKind = (r: { test: boolean; live: boolean; aiLive?: boolean }) =>
-  r.test ? (r.live ? "Preview with real calls" : r.aiLive ? "Preview with real AI, other calls mocked" : "Preview (nothing sent)") : "Real run";
+export const runKind = (r: { test: boolean; live: boolean; aiLive?: boolean; testChoices?: Record<string, object> | null }) =>
+  r.test ? (r.live ? "Preview with real calls" : r.aiLive ? "Preview with real AI, other calls mocked" : sentAlone(r) ? "Preview, one step sent for real" : "Preview (nothing sent)") : "Real run";
+
+/** The step a preview sent for real on its own ("Try this step for real", decision 0110), if any. */
+export const sentAlone = (r: { testChoices?: Record<string, object> | null }) => Object.entries(r.testChoices ?? {}).find(([, c]) => "live" in c)?.[0];
 
 /** A run error as the owner sees it: the worker's "step <id>: " prefix stays in the technician details. */
 export const ownerError = (error: string) => error.replace(/^step [^:]+: /, "");

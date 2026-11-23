@@ -57,6 +57,17 @@ describe("choiceProblems", () => {
     expect(choiceProblems(def, { ask: { decision: "rejected" } }, "live")).toEqual(["choices: a live test run makes real calls, so its outcomes cannot be chosen"]);
     expect(choiceProblems(def, {}, "live")).toEqual([]);
   });
+  it("sends one step for real in a preview that fakes the rest (decision 0110)", () => {
+    expect(choiceProblems(def, testChoicesSchema.parse({ log: { live: true } }), "mock")).toEqual([]);
+    expect(choiceProblems(def, { log: { live: true } }, "ai")).toEqual(["choices.log: only a preview that fakes every call can send one step for real"]);
+    expect(choiceProblems(def, { log: { live: true } }, "live")).toEqual(["choices: a live test run makes real calls, so its outcomes cannot be chosen"]);
+    expect(choiceProblems(def, { gate: { live: true } }, "mock")).toEqual(["choices.gate: only a step that sends to an app can be sent for real, and not an approval, payment or Shopify product"]);
+    expect(choiceProblems(def, { ask: { live: true }, log: { live: true } }, "mock")).toEqual([
+      "choices.ask: only a step that sends to an app can be sent for real, and not an approval, payment or Shopify product",
+      "choices: only one step can be sent for real at a time",
+    ]);
+    expect(testChoicesSchema.safeParse({ log: { live: false } }).success).toBe(false);
+  });
   it("refuses a choice with an unknown shape or extra keys", () => {
     expect(testChoicesSchema.safeParse({ ask: { decision: "maybe" } }).success).toBe(false);
     expect(testChoicesSchema.safeParse({ ask: { decision: "approved", label: "x" } }).success).toBe(false);

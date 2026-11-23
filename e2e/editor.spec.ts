@@ -279,4 +279,13 @@ test("right-click menus: duplicate, copy and paste, connect to and test this ste
   // Test this step runs the mocked test and shows that step's line.
   await pick("check", "Test this step");
   await expect(page.locator(".a7-test .steps")).toContainText("check", { timeout: 30_000 });
+
+  // The step's own panel tests it and shows its last attempt there, without leaving the step (decision 0110).
+  await node("check").click();
+  const own = page.getByRole("region", { name: "Test this step" });
+  await expect(own.getByRole("button", { name: "Try this step for real" })).toHaveCount(0);
+  await own.getByRole("button", { name: "Test this step" }).click();
+  await expect(own.locator(".a7-last-test .run")).toContainText("check", { timeout: 30_000 });
+  await node("ok_mail").click();
+  await expect(page.getByRole("region", { name: "Test this step" }).getByRole("button", { name: "Try this step for real" })).toBeVisible();
 });

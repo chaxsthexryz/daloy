@@ -3,6 +3,7 @@ export const viewTranslations: Record<string, string> = {
   "test run, live calls": "preview na may totoong tawag",
   "test run, real AI, other calls mocked": "preview na may totoong AI at kunwaring ibang tawag",
   "test run, mocked calls": "preview na may kunwaring tawag",
+  "test run, one step live, other calls mocked": "preview na may isang totoong hakbang at kunwaring ibang tawag",
   "live run": "totoong run",
   "not finished": "hindi pa tapos",
   "Decided by {name} at {time}": "Nagdesisyon si {name} noong {time}",
@@ -66,6 +67,7 @@ export const viewTranslations: Record<string, string> = {
   "Preview with real calls": "Preview na may totoong tawag",
   "Preview with real AI, other calls mocked": "Preview na may totoong AI at kunwaring ibang tawag",
   "Preview (nothing sent)": "Preview (walang ipinadala)",
+  "Preview, one step sent for real": "Preview, isang hakbang ang ipinadala nang totoo",
   "Real run": "Totoong run",
   "Ask what happened": "Itanong kung ano ang nangyari"
 };

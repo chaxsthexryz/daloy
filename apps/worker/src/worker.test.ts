@@ -19,11 +19,14 @@ const calls: string[] = [];
 const bookingOf = new Map<string, string>();
 const changeBooking = (runId: string) => db.update(bookings).set({ version: sql`${bookings.version} + 1` }).where(eq(bookings.id, bookingOf.get(runId)!));
 const approvalTokens = new Map<string, string>();
+// idempotency key -> whether that attempt ran faked, and the test choice it got.
+const modes = new Map<string, { mock?: boolean; choice?: unknown }>();
 
 // Test steps behave according to their id, so each test builds the failure it needs.
 const executor: StepExecutor = {
-  async execute({ runId, stepRunId, step, attempt, idempotencyKey, ctx, claimSend }) {
+  async execute({ runId, stepRunId, step, attempt, idempotencyKey, ctx, claimSend, mock, choice }) {
     calls.push(idempotencyKey);
+    modes.set(idempotencyKey, { mock, choice });
     if (step.id === "staff_changes") await changeBooking(runId);
     if (step.id === "changes_then_fails") {
       await changeBooking(runId);
@@ -112,6 +115,17 @@ describe("worker", () => {
     ]);
     expect(rows[0]!.output).toEqual({ from: "a" });
     expect(rows[0]!.input).toEqual({ to: "a" });
+  });
+
+  it("sends only the step chosen as live in a faked preview, with no choice passed to it (decision 0110)", async () => {
+    const runId = await createRun(flow({ id: "before" }, { id: "real" }, { id: "after" }), {}, { test: true, testChoices: { real: { live: true } } });
+    await worker.enqueue(runId);
+    expect((await waitForEnd(runId)).state).toBe("succeeded");
+    expect(["before", "real", "after"].map((id) => modes.get(`${runId}:${id}`))).toEqual([
+      { mock: true, choice: undefined },
+      { mock: false, choice: undefined },
+      { mock: true, choice: undefined },
+    ]);
   });
 
   it("records a disabled step as skipped without running it, and carries on to the next step (decision 0097)", async () => {
