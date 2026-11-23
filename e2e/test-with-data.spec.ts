@@ -24,6 +24,7 @@ test("a failed run's data becomes the editor's sample, and the test with it fake
   await expect(page.locator(".state").first()).toHaveText("Problem", { timeout: 30_000 });
 
   await page.getByRole("link", { name: "Test with this data" }).click();
+  // nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp
   await expect(page).toHaveURL(new RegExp(`#/w/${wf.id}\\?from=${runId}$`));
   const box = page.getByLabel("Sample trigger data (JSON)");
   await expect(box).toBeVisible();

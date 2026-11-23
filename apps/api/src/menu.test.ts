@@ -73,6 +73,7 @@ async function setup(menu: unknown = MENU) {
   return { userId: u!.id, workflowId: wf.body.id as string, path: (c!.destination as { webhookPath: string }).webhookPath, saved };
 }
 
+// nosemgrep: javascript.lang.security.audit.hardcoded-hmac-key.hardcoded-hmac-key
 const sign = (body: string) => `sha256=${createHmac("sha256", APP_SECRET).update(body).digest("hex")}`;
 const send = (path: string, messaging: unknown[], signature?: string) => {
   const body = JSON.stringify({ object: "page", entry: [{ id: PAGE_ID, messaging }] });

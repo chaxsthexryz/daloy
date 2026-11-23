@@ -12,6 +12,7 @@ import { startFakeProviders, type FakeProviders } from "../../../test/fake-provi
 import { createExecutor } from "../../worker/src/steps";
 import { createApp } from "./app";
 
+// nosemgrep: generic.secrets.security.detected-telegram-bot-api-key.detected-telegram-bot-api-key
 const TOKEN = "123456789:AAsyntheticTelegramTokenForTests_0001"; // gitleaks:allow
 const OWNER_CHAT = -1001234567890;
 const STRANGER_CHAT = 777000111;

@@ -46,10 +46,12 @@ test("a signed webhook shares its URL, the signing rule and a curl call that sig
   await page.goto(`/#/w/${wf.id}`);
   await page.getByRole("button", { name: "Share", exact: true }).click();
   const sheet = page.getByRole("dialog", { name: "Share" });
+  // nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp
   await expect(sheet.getByRole("textbox", { name: "Webhook URL" })).toHaveValue(new RegExp(`/hooks/${path}$`));
   await expect(sheet).toContainText("Calls must be signed with the secret hook_key");
   const curl = sheet.getByRole("textbox", { name: "curl example" });
   await expect(curl).toHaveValue(/X-Daloy-Signature: sha256=\$SIG/);
+  // nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp
   await expect(curl).toHaveValue(new RegExp(`/hooks/${path}`));
   await expect(sheet.getByText("AI assistants (MCP)")).toHaveCount(0);
   await sheet.getByRole("button", { name: "Done" }).click();

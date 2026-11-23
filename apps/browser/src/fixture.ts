@@ -40,6 +40,7 @@ export async function startFixture(): Promise<Fixture> {
     "/redirect": "",
     "/iframe": html(`<h1>Frame host</h1><iframe src="${internalUrl}/from-iframe"></iframe>`),
     "/websocket": html(`<h1>Socket</h1><p id="ws">pending</p><script>
+      // nosemgrep: javascript.lang.security.detect-insecure-websocket.detect-insecure-websocket
       const ws = new WebSocket("ws://${internalUrl.slice(7)}/from-ws");
       ws.onopen = () => document.getElementById("ws").textContent = "open";
       ws.onerror = () => document.getElementById("ws").textContent = "refused";

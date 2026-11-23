@@ -157,6 +157,7 @@ test("inline pause switch shows an undo toast, inspector matches Problem status,
   await expect(failingPanel.locator(".panel-status")).toHaveText("Problem");
 
   // Long two-line title stays non-overlapping inside its row beside the open inspector.
+  // nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp
   const longRow = page.getByRole("row", { name: new RegExp(longName) });
   const longRowBox = (await longRow.boundingBox())!;
   const nameBox = (await longRow.getByRole("button", { name: longName }).boundingBox())!;

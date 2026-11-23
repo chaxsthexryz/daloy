@@ -2,6 +2,7 @@ import { FILE_MAX_BYTES } from "@daloy/engine";
 import { describe, expect, it } from "vitest";
 import { parseTelegramUpdate, telegramWebhookSecret } from "./telegram";
 
+// nosemgrep: generic.secrets.security.detected-telegram-bot-api-key.detected-telegram-bot-api-key
 const TOKEN = "123456789:AAsyntheticTelegramTokenForTests_0001"; // gitleaks:allow
 
 const update = (message: Record<string, unknown> | undefined, over: Record<string, unknown> = {}) => ({
@@ -15,6 +16,7 @@ describe("telegramWebhookSecret", () => {
     const a = telegramWebhookSecret(TOKEN, "path-one");
     expect(a).toBe(telegramWebhookSecret(TOKEN, "path-one"));
     expect(a).not.toBe(telegramWebhookSecret(TOKEN, "path-two"));
+    // nosemgrep: generic.secrets.security.detected-telegram-bot-api-key.detected-telegram-bot-api-key
     expect(a).not.toBe(telegramWebhookSecret("123456789:AAanotherSyntheticTokenForTests_0002", "path-one"));
     expect(a).toMatch(/^[A-Za-z0-9_-]{1,256}$/);
     expect(a).not.toContain(TOKEN.split(":")[1]);
