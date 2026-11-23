@@ -1387,3 +1387,11 @@ What it does: `apps/web/src/Automations.tsx` and `apps/web/src/automations-ops.c
 Why this way: both `Row` and `Panel` read `displayStatus(w, reviewCount)` in `apps/web/src/lib/automations.ts` so a live automation with a failed run or open review shows `Problem` or `Needs you` consistently in both places. Moving flex layout into `.ops-name-cell`, setting `height: auto` on table cells, and hiding `.c-last` while the inspector is open keeps multi-line titles from overlapping.
 
 Tests: `apps/web/src/lib/automations.test.ts` (`displayStatus`, `arrange`, `counts`, `triggerLabel`, `withTrigger`), `apps/web/src/lib/locale-coverage.test.ts` (Tagalog entries in `locale-ops.ts`), `e2e/automations.spec.ts` (inline switch pause/undo toast, row vs inspector `Problem` sync, two-line title spacing, phone layout), and `e2e/navigation.spec.ts`.
+
+## Secondary pages, auth and editor Daylight Minimal polish (phase D4, decision 0114)
+
+What it does: `workspace.css`, `activity.css`, `auth.css`, `ai-workspace.css`, `apps-design.css`, `library.css`, `receipts.css` and `editor.css` use the Daylight Minimal Light and Dark tokens, hairline borders and rounded controls. `Receipts.tsx` and `BusinessSetup.tsx` apply `.file-input` styling over native `<input type="file">` elements, `apps-design.css` and `editor.css` apply subtle brand tints to the 5 letter-tile app marks (`unisms`, `paymongo`, `gcash`, `messenger`, `instagram`) while leaving all 14 SVG marks in `public/logos/` unaltered, `Apps.tsx` reports active connections in `{count} of {total} connected`, `ai-workspace.css` dims disabled buttons, and `editor.css` prevents `.a7-node-row` title vs `.node-id` slug collisions.
+
+Why this way: styling native `<input type="file">` with `::file-selector-button` improves visual consistency without breaking label bindings or file uploads, and keeping third-party SVGs untouched preserves brand permissions (decision 0085).
+
+Tests: `apps/web/src/AppMark.test.ts` (letter-tile tint rules and SVG logo integrity), `e2e/library.spec.ts`, `e2e/build-with-ai.spec.ts`, `e2e/editor.spec.ts`, `e2e/receipt-expense.spec.ts` and `e2e/business-setup.spec.ts`.

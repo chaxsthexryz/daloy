@@ -96,7 +96,7 @@ function BrandKit({ name }: { name?: string | null }) {
       <p className="muted"><Text>Shown on your public forms and in the emails Daloy sends for you. Leave both empty to keep the default look.</Text></p>
       <div className="field">
         <label htmlFor="b-logo"><Text>Logo (PNG, JPEG or WebP, up to 100 KB)</Text></label>
-        <input id="b-logo" ref={file} type="file" accept="image/png,image/jpeg,image/webp" />
+        <input id="b-logo" ref={file} className="file-input" type="file" accept="image/png,image/jpeg,image/webp" />
         {preview && <img src={preview} alt="" style={{ maxHeight: 64, maxWidth: 240 }} />}
         <span className="muted">{brand?.logo ? <Text>A logo is saved.</Text> : <Text>No logo yet.</Text>}</span>
       </div>

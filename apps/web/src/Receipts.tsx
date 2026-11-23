@@ -211,7 +211,7 @@ function PaymentDetails({ owner }: { owner: boolean }) {
       <form onSubmit={(e) => { e.preventDefault(); void save(); }}>
         <label className="rc-reason"><span>{t("GCash or account number")}</span><input value={number} onChange={(e) => setNumber(e.target.value)} maxLength={40} disabled={!owner} /></label>
         <label className="rc-reason"><span>{t("Account name")}</span><input value={name} onChange={(e) => setName(e.target.value)} maxLength={100} disabled={!owner} /></label>
-        <label className="rc-reason"><span>{s.hasQr ? t("Replace QR Ph image") : t("QR Ph image")}</span><input type="file" accept="image/png,image/jpeg,image/webp" onChange={(e) => pick(e.target.files?.[0])} disabled={!owner} /></label>
+        <label className="rc-reason"><span>{s.hasQr ? t("Replace QR Ph image") : t("QR Ph image")}</span><input className="file-input" type="file" accept="image/png,image/jpeg,image/webp" onChange={(e) => pick(e.target.files?.[0])} disabled={!owner} /></label>
         <label className="rc-reason"><span>{t("Keep receipt images for (days)")}</span><input type="number" min={1} max={3650} step={1} value={days} onChange={(e) => setDays(e.target.value)} disabled={!owner} /></label>
         <p className="act-muted">{t("Images are deleted this many days after an order is paid, cancelled or refunded. Amounts and decisions stay in the payment history.")}</p>
         {owner && <div className="act-actions"><button className="act-button blue">{t("Save payment details")}</button></div>}

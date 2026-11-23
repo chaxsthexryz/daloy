@@ -1,21 +1,21 @@
 /* A7 Steps editor, from the approved Doop frame "Workflow - Improved current". Values come from the canvas tokens (--daloy-*). */
 .a7-editor {
-  --text: #0a0b0f; --muted: #5b6170; --surface: #fff; --sunken: #f5f6f8; --bg: #fff;
-  --border: #d5d9e1; --border-soft: #e3e6ec; --accent: #1b45c9; --accent-hover: #14349a; --accent-tint: #e8eeff; --on-accent: #fff;
-  --a7-line: #b8beca; --a7-dot: #cdd2dc; --a7-label: #3a3f4b; --a7-chip: #0f2a85; --a7-progress: #4d7bff;
+  --text: var(--fg, #0f131a); --muted: var(--fg-muted, #5b6372); --surface: var(--daylight-bg, #ffffff); --sunken: var(--subtle, #fafafa); --bg: var(--daylight-bg, #ffffff);
+  --border: var(--border-strong, #d1d5df); --border-soft: var(--border-hairline, #e6e8ee); --accent: var(--blue, #0b66ff); --accent-hover: var(--blue-deep, #0052d9); --accent-tint: var(--blue-soft, #eef4ff); --on-accent: #ffffff;
+  --a7-line: #b8beca; --a7-dot: #cdd2dc; --a7-label: #3a3f4b; --a7-chip: #0052d9; --a7-progress: #4d7bff;
   --a7-warn-line: #e5a93b; --a7-warn: #a3650a;
-  --a7-ok: #17803d; --a7-ok-bg: #e6f4ec; --a7-bad: #b42318; --a7-bad-bg: #fce9e9; --a7-grey-bg: #eef0f4;
-  --a7-bar: #0a0b0f; --a7-bar-text: #fff; --a7-bar-muted: #b8beca; --a7-bar-off: #3a3f4b;
+  --a7-ok: var(--green, #15803d); --a7-ok-bg: var(--green-soft, #ecfdf3); --a7-bad: var(--red, #c92a2a); --a7-bad-bg: var(--red-soft, #fff1f1); --a7-grey-bg: #f4f5f7;
+  --a7-bar: #0f131a; --a7-bar-text: #ffffff; --a7-bar-muted: #b8beca; --a7-bar-off: #3a3f4b;
   display: flex; flex-direction: column; min-height: 100dvh;
-  background: var(--surface); color: var(--text); font-family: Inter, system-ui, sans-serif; font-size: 14px;
+  background: var(--surface); color: var(--text); font-family: var(--font-sans, Inter, system-ui, sans-serif); font-size: 14px;
 }
 :root[data-theme="dark"] .a7-editor {
   color-scheme: dark;
-  --text: #f4f6fa; --muted: #aeb7c8; --surface: #171a21; --sunken: #11131a; --bg: #171a21;
-  --border: #4a5060; --border-soft: #333846; --accent: #7496ff; --accent-hover: #9bb3ff; --accent-tint: #263657; --on-accent: #101320;
+  --text: var(--fg, #eef2ff); --muted: var(--fg-muted, #a3aecb); --surface: var(--daylight-bg, #131a30); --sunken: var(--subtle, #18213c); --bg: var(--daylight-bg, #131a30);
+  --border: var(--border-strong, #374672); --border-soft: var(--border-hairline, #243052); --accent: var(--blue, #8fb0ff); --accent-hover: var(--blue-deep, #b3c8ff); --accent-tint: var(--blue-soft, #1c2a55); --on-accent: #0b1020;
   --a7-line: #5d6475; --a7-dot: #2c313d; --a7-label: #c9cfdb; --a7-chip: #c9d6ff; --a7-progress: #7496ff;
   --a7-warn-line: #c98a1e; --a7-warn: #f0b552;
-  --a7-ok: #6fd193; --a7-ok-bg: #173826; --a7-bad: #ff8f84; --a7-bad-bg: #42201d; --a7-grey-bg: #2a2f3b;
+  --a7-ok: var(--green, #7fcfa3); --a7-ok-bg: var(--green-soft, #173323); --a7-bad: var(--red, #f0a199); --a7-bad-bg: var(--red-soft, #401c18); --a7-grey-bg: #2a2f3b;
   --a7-bar: #262a35; --a7-bar-text: #f4f6fa; --a7-bar-muted: #aeb7c8; --a7-bar-off: #4a5060;
 }
 /* The shared Sheet and its buttons read the workspace tokens (workspace.css), which only `.wk` pages define; without these the step sheet, Explain and Turn on drew with no background. */
@@ -36,7 +36,8 @@
 .a7-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; padding: 20px 28px 0; border-bottom: 1px solid var(--border-soft); }
 .a7-head-main { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .a7-crumb { margin: 0; color: var(--muted); font-size: 13px; }
-.a7-crumb a { color: inherit; }
+.a7-crumb a { color: inherit; text-decoration: none; }
+.a7-crumb a:hover { color: var(--text); text-decoration: underline; text-underline-offset: 3px; }
 .a7-title { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
 .a7-title h1 { margin: 0; font-size: 26px; font-weight: 700; letter-spacing: -.02em; line-height: 32px; }
 .a7-chip { padding: 3px 8px; border: 1px dashed var(--a7-line); border-radius: 6px; background: var(--sunken); color: var(--a7-label); font-size: 12px; font-weight: 600; transition: color var(--dur-fast) var(--ease), background-color var(--dur-fast) var(--ease); }
@@ -79,8 +80,8 @@
 .a7-node { gap: 3px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--text); font-size: 12px; line-height: 16px; }
 .a7-node .node-title { font-size: 14px; font-weight: 600; line-height: 18px; }
 .a7-node .node-summary { color: var(--muted); }
-.a7-node-row { display: flex; justify-content: space-between; gap: 8px; }
-.a7-node-row .a7-node-kicker { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.a7-node-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.a7-node-row .a7-node-kicker { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .a7-node-note { flex: none; color: var(--muted); font-size: 12px; line-height: 14px; white-space: nowrap; }
 .a7-when { color: var(--accent); }
 .a7-warn { color: var(--a7-warn); font-weight: 600; }
@@ -168,7 +169,7 @@
 
 @media (min-width: 1000px) {
   .a7-editor { height: 100dvh; min-height: 0; }
-  .a7-body { grid-template-columns: minmax(0, 1fr) 380px; }
+  .a7-body { grid-template-columns: minmax(0, 1fr) 340px; }
   .a7-canvas { min-height: 0; }
   .a7-body:has(> .a7-side[data-folded]) { grid-template-columns: minmax(0, 1fr) 44px; }
   .a7-side { position: relative; display: flex; min-height: 0; border-left: 1px solid var(--border-soft); background: var(--surface); }
@@ -176,6 +177,10 @@
   /* The fold toggle sits on the panel's left edge; folded, the panel is a 44px strip holding only the toggle. */
   .a7-editor .a7-fold { display: grid; place-items: center; position: absolute; top: 18px; left: -16px; z-index: 6; width: 32px; min-width: 32px; height: 32px; min-height: 32px; padding: 0; border: 1px solid var(--border); border-radius: 50%; background: var(--surface); color: var(--a7-label); font-size: 18px; line-height: 1; }
   .a7-side[data-folded] .a7-fold { left: 5px; }
+}
+@media (min-width: 1400px) {
+  .a7-body { grid-template-columns: minmax(0, 1fr) 380px; }
+  .a7-body:has(> .a7-side[data-folded]) { grid-template-columns: minmax(0, 1fr) 44px; }
 }
 @media (max-width: 599.98px) {
   .a7-head { padding: 16px 16px 0; }
@@ -236,7 +241,7 @@
 .a7-list .a7-list-where { order: 1; flex-basis: 100%; color: var(--muted); font-size: 12px; font-weight: 400; }
 .a7-list button .app-mark { order: -2; align-self: center; }
 .a7-describe { margin: 4px 0 12px; }
-.a7-node-row .node-id { max-width: 90px; overflow: hidden; text-overflow: ellipsis; }
+.a7-node-row .node-id { flex: 0 1 88px; max-width: 88px; text-align: right; font-family: var(--font-mono); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* R2b: setup guide, sample test and the two dialogs reuse the editor's tokens and the shared sheet. */
 .r2b-guide, .r2b-sample { display: grid; gap: 6px; padding: 12px 14px; border: 1px solid var(--a7-line); border-radius: 10px; font-size: 13px; line-height: 18px; }
@@ -251,3 +256,15 @@
 .r2b-guide li[data-done] .r2b-state { color: var(--a7-ok); }
 .r2b-example { padding: 8px 10px; border: 1px dashed var(--a7-line); border-radius: 8px; }
 .r2b-lines { display: grid; gap: 6px; margin-top: 10px; max-height: 50vh; overflow: auto; font-size: 14px; line-height: 20px; }
+
+/* Letter-tile brand tints inside editor nodes and menus (decision 0085 keeps SVG marks unaltered). */
+.a7-editor .app-mark[data-kind="letter"][data-mark="unisms"] { background: #eef4ff; color: #0b66ff; border-color: #cfe0ff; }
+.a7-editor .app-mark[data-kind="letter"][data-mark="paymongo"] { background: #ecfdf3; color: #15803d; border-color: #bfe8cf; }
+.a7-editor .app-mark[data-kind="letter"][data-mark="gcash"] { background: #e6f4ff; color: #0052d9; border-color: #c2e0ff; }
+.a7-editor .app-mark[data-kind="letter"][data-mark="messenger"] { background: #eef0ff; color: #3b5bdb; border-color: #d1d8ff; }
+.a7-editor .app-mark[data-kind="letter"][data-mark="instagram"] { background: #fff0f5; color: #b8255f; border-color: #f7cadb; }
+:root[data-theme="dark"] .a7-editor .app-mark[data-kind="letter"][data-mark="unisms"] { background: #1c2a55; color: #8fb0ff; border-color: #2f4582; }
+:root[data-theme="dark"] .a7-editor .app-mark[data-kind="letter"][data-mark="paymongo"] { background: #173323; color: #7fcfa3; border-color: #26543a; }
+:root[data-theme="dark"] .a7-editor .app-mark[data-kind="letter"][data-mark="gcash"] { background: #162d4f; color: #8fb0ff; border-color: #26487c; }
+:root[data-theme="dark"] .a7-editor .app-mark[data-kind="letter"][data-mark="messenger"] { background: #202754; color: #9fb4ff; border-color: #343f85; }
+:root[data-theme="dark"] .a7-editor .app-mark[data-kind="letter"][data-mark="instagram"] { background: #3d192b; color: #f59ec1; border-color: #632846; }

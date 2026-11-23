@@ -58,6 +58,8 @@ function connectReason(e: ConnectError, t: (source: string, values?: Record<stri
   return t("Pick one of this step's branches.");
 }
 
+const PANEL_STEPS_FIT = { maxZoom: 1, padding: { top: "16px", right: "16px", bottom: "64px", left: "16px" } } as const;
+
 type Catalog = { schemas: Record<string, JsonSchema>; branches: Record<string, string[]> };
 type Loaded = Workflow & { trigger: { id: string; type: string; webhookPath: string | null; legacySignatureAt?: string | null } | null; live: Version | null; latest: Version | null };
 
@@ -689,7 +691,7 @@ export function Editor({ id }: { id: string }) {
                 nodeTypes={editorNodeTypes}
                 edgeTypes={editorEdgeTypes}
                 onNodesChange={onNodesChange}
-                onInit={(instance) => (fitRef.current = () => void instance.fitView({ maxZoom: 1 }))}
+                onInit={(instance) => (fitRef.current = () => void instance.fitView(PANEL_STEPS_FIT))}
                 onPaneClick={() => {
                   select(null);
                   if (connecting) cancelConnect();
@@ -737,7 +739,7 @@ export function Editor({ id }: { id: string }) {
                 colorMode={document.documentElement.dataset.theme === "dark" ? "dark" : "light"}
                 proOptions={{ hideAttribution: true }}
                 fitView
-                fitViewOptions={{ maxZoom: 1 }}
+                fitViewOptions={PANEL_STEPS_FIT}
               >
                 <Background gap={18} size={1.5} />
                 <ZoomBar />
