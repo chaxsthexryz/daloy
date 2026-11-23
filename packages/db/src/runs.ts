@@ -85,7 +85,8 @@ export async function keyedRun(db: AnyDb, workflowId: string, key: string, test 
 }
 
 /** uploads: the files of a hosted form submission, stored in the same transaction as the run. */
-type RunOpts = { test?: boolean; live?: boolean; aiLive?: boolean; testChoices?: unknown; uploads?: { userId: string; files: NewUpload[]; claimKey?: string } };
+// conversationId and conversationVersion: the guest message this run answers (decision 0115).
+type RunOpts = { test?: boolean; live?: boolean; aiLive?: boolean; testChoices?: unknown; conversationId?: string; conversationVersion?: number; uploads?: { userId: string; files: NewUpload[]; claimKey?: string } };
 
 /**
  * Throws WorkflowPausedError when the workflow that owns this version is paused. Call it in the transaction that inserts

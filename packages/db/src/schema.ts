@@ -25,9 +25,14 @@ export const users = pgTable("users", {
   // R5 morning digest (decision 0092): off until the owner turns it on; digestSentOn is the Manila day it last went out or was skipped.
   digestEnabled: boolean("digest_enabled").notNull().default(false),
   digestSentOn: date("digest_sent_on"),
+  // C1 (decision 0115): days a conversation is kept after its last message, and hours the bot stays quiet after a staff reply.
+  conversationRetentionDays: integer("conversation_retention_days").notNull().default(90),
+  staffQuietHours: integer("staff_quiet_hours").notNull().default(12),
 }, (t) => [
   check("users_plan", sql`${t.plan} in ('preview', 'pilot', 'business', 'business_plus')`),
   check("users_language", sql`${t.language} in ('en', 'tl')`),
+  check("users_conversation_retention", sql`${t.conversationRetentionDays} between 1 and 3650`),
+  check("users_staff_quiet", sql`${t.staffQuietHours} between 1 and 168`),
 ]);
 
 /** Metered work per workspace, kind (ai, email, http) and period (a Manila day, or a monthly cycle start). */
@@ -209,9 +214,61 @@ export const runs = pgTable("runs", {
   // The booking version this run belongs to. Once the booking moves on, the run stops at its next step (decision 0032).
   bookingId: uuid("booking_id").references((): AnyPgColumn => bookings.id, { onDelete: "set null" }),
   bookingVersion: integer("booking_version"),
+  // The conversation version this run answers. A newer guest message raises it, and the run stops at its next step (decision 0115).
+  conversationId: uuid("conversation_id").references((): AnyPgColumn => conversations.id, { onDelete: "set null" }),
+  conversationVersion: integer("conversation_version"),
   createdAt: createdAt(),
   finishedAt: ts("finished_at"),
-});
+}, (t) => [index("runs_conversation").on(t.conversationId).where(sql`${t.conversationId} is not null`)]);
+
+/**
+ * One guest thread per workspace, channel and guest id (PSID, Instagram-scoped id or lowercased email), decision 0115.
+ * Every new inbound message raises version. status is bot, staff (someone replied from the Page inbox, so the bot is
+ * quiet until staff_until) or closed. fields are what conversation_update saved: a fixed list of short strings.
+ */
+export const conversations = pgTable(
+  "conversations",
+  {
+    id: id(),
+    userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    channel: text("channel", { enum: ["messenger", "instagram", "email"] }).notNull(),
+    externalId: text("external_id").notNull(),
+    status: text("status", { enum: ["bot", "staff", "closed"] }).notNull().default("bot"),
+    version: integer("version").notNull().default(0),
+    fields: jsonb("fields").$type<Record<string, string>>().notNull().default({}),
+    lastInboundAt: ts("last_inbound_at"),
+    lastOutboundAt: ts("last_outbound_at"),
+    staffUntil: ts("staff_until"),
+    noticeSentAt: ts("notice_sent_at"),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    unique().on(t.userId, t.channel, t.externalId),
+    check("conversations_channel", sql`${t.channel} in ('messenger', 'instagram', 'email')`),
+    check("conversations_status", sql`${t.status} in ('bot', 'staff', 'closed')`),
+  ],
+);
+
+/** A message of a conversation: in (the guest), out (Daloy's reply) or staff (a Page inbox reply). mid dedups replays. */
+export const conversationMessages = pgTable(
+  "conversation_messages",
+  {
+    id: id(),
+    conversationId: uuid("conversation_id").notNull().references(() => conversations.id, { onDelete: "cascade" }),
+    direction: text("direction", { enum: ["in", "out", "staff"] }).notNull(),
+    text: text("text").notNull(),
+    mid: text("mid"),
+    runId: uuid("run_id").references((): AnyPgColumn => runs.id, { onDelete: "set null" }),
+    uploadIds: jsonb("upload_ids").$type<string[]>().notNull().default([]),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    unique().on(t.conversationId, t.mid),
+    index("conversation_messages_at").on(t.conversationId, t.createdAt),
+    check("conversation_messages_direction", sql`${t.direction} in ('in', 'out', 'staff')`),
+    check("conversation_messages_text", sql`length(${t.text}) <= 4000`),
+  ],
+);
 
 /**
  * One row per business event a workflow has started a run for (decision 0029). The key comes from the trigger's

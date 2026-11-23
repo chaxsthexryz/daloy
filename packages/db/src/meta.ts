@@ -144,6 +144,35 @@ export function parseMetaWebhook(body: unknown, dest: Partial<MetaDestination> |
   return out;
 }
 
+/** Sent with every reply and returned by Meta on its echo. */
+export const OWN_ECHO_METADATA = "daloy";
+
+export type MetaEcho = { channel: MetaChannel; guestId: string; messageId: string; text: string; ours: boolean };
+
+/**
+ * Messages the connected Page or Instagram account sent (is_echo), for the conversation of the guest they went to.
+ * ours is true when the echo carries Daloy's metadata mark; anything else is a person replying from the inbox.
+ */
+export function parseMetaEchoes(body: unknown, dest: Partial<MetaDestination> | null | undefined): MetaEcho[] {
+  if (!body || typeof body !== "object" || !dest) return [];
+  const obj = body as { object?: unknown; entry?: unknown };
+  const channel: MetaChannel | undefined = obj.object === "page" ? "messenger" : obj.object === "instagram" ? "instagram" : undefined;
+  const expectedId = channel === "messenger" ? dest.pageId : channel === "instagram" ? dest.instagramAccountId : undefined;
+  if (!channel || !expectedId || !Array.isArray(obj.entry)) return [];
+  const out: MetaEcho[] = [];
+  for (const entry of obj.entry as { id?: unknown; messaging?: unknown }[]) {
+    if (!entry || String(entry.id ?? "") !== expectedId || !Array.isArray(entry.messaging)) continue;
+    for (const ev of entry.messaging as { recipient?: { id?: unknown }; message?: { is_echo?: unknown; mid?: unknown; text?: unknown; metadata?: unknown } }[]) {
+      const m = ev?.message;
+      if (!m || m.is_echo !== true || typeof m.mid !== "string" || !m.mid.trim()) continue;
+      const guestId = ev.recipient?.id !== undefined && ev.recipient?.id !== null ? String(ev.recipient.id).trim() : "";
+      if (!guestId || guestId === expectedId) continue;
+      out.push({ channel, guestId, messageId: m.mid.trim(), text: typeof m.text === "string" ? m.text : "", ours: m.metadata === OWN_ECHO_METADATA });
+    }
+  }
+  return out;
+}
+
 // ---------------------------------------------------------------- Meta CDN image download (SSRF-protected, magic-byte checked)
 
 const BLOCKED_RANGES: [network: string, prefix: number, family: "ipv4" | "ipv6"][] = [
@@ -434,7 +463,8 @@ export async function metaSend(
       body: JSON.stringify({
         recipient: { id: msg.recipientId },
         messaging_type: "RESPONSE",
-        message: { text: msg.text },
+        // Comes back on the echo, so Daloy knows its own reply from a staff reply (decision 0115).
+        message: { text: msg.text, metadata: OWN_ECHO_METADATA },
       }),
     },
     urls.timeoutMs ?? 10_000,

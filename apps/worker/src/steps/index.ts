@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { workspaceLanguage, aiConnection, bookFromStep, bookingOfStep, bookingReference, centavosToPesos, createDue, dueForStep, DueTakenError, expireDue, findReviewer, pendingCheckout, pesosToCentavos, checkReceiptReference, checkRecipients, claimTimeout, claimUsage, createApproval, findPaymentForStep, findApprover, queueCalendarEvent, queueDelivery, readSecrets, redactSecrets, secretForms, sendAs, type Db, type MailDeps, type Provider } from "@daloy/db";
-import { providerUrls, type ProviderUrls } from "@daloy/db";
+import { deliveries, isPaused, PAST_WINDOW, prepareReply, providerUrls, runConversation, runs, saveConversationFields, windowOpen, type ProviderUrls } from "@daloy/db";
+import { and, eq } from "drizzle-orm";
 import { approvalEmailBody, checkDiscordContent, wouldDo, type FileRef, bookingStartField, conditionBranch, normalizePhMobile, parseZoned, SMS_MAX_CHARS, type TestChoice, type Trigger, declaresJson, parseInstant, isRetryable, mockAiOutput, parseJsonTemplate, resolveJsonTemplate, resolveTemplate, StepError, usesSecrets, type ExpressionContext, type Step } from "@daloy/engine";
 import type { StepExecutor, StepResult } from "../advance";
 import { runAi } from "./ai";
@@ -126,6 +127,8 @@ function resolveInput(step: Step, ctx: ExpressionContext): Record<string, unknow
     }
     case "meta_reply":
       return { recipientId: text(step.config.recipientId, ctx), channel: text(step.config.channel, ctx), text: text(step.config.text, ctx) } satisfies MetaReplyInput;
+    case "conversation_update":
+      return { fields: Object.fromEntries(Object.entries(step.config.fields).map(([k, v]) => [k, text(v ?? "", ctx)])) };
     case "shopify_create_product": {
       const c = step.config;
       const opt = (v: string | undefined) => (v === undefined ? "" : text(v, ctx));
@@ -440,27 +443,47 @@ async function runStep(deps: FullDeps, step: Step, input: unknown, ctx: Expressi
         throw new StepError("Meta reply channel must match the incoming message channel.", false);
       }
       if (mock) return { output: { mocked: true, recipientId: cfg.recipientId, channel: cfg.channel, text: cfg.text } };
+      // A run a guest message started checks its conversation first (decision 0115): staff took over, or Meta's window
+      // (24 hours from the guest's last message, not this run's) has closed. Each takes its edge, so a template can
+      // fall back to SMS or email.
+      const [linked] = await deps.db.select({ conversationId: runs.conversationId }).from(runs).where(eq(runs.id, runId));
+      const convo = await runConversation(deps.db, linked?.conversationId);
+      if (convo && isPaused(convo)) return { branch: "paused", output: { skipped: "A staff member replied from the inbox, so the bot did not reply." } };
+      if (convo && !windowOpen(convo.lastInboundAt)) return { branch: "outside_window", output: { skipped: PAST_WINDOW } };
       const ref = trig.reference ?? trig.messageId;
       const reference = typeof ref === "string" ? ref : runId;
-      const inboundTimestamp = typeof trig.timestamp === "string" && trig.timestamp.trim() ? trig.timestamp.trim() : undefined;
+      const inboundTimestamp = convo?.lastInboundAt?.toISOString() ?? (typeof trig.timestamp === "string" && trig.timestamp.trim() ? trig.timestamp.trim() : undefined);
       const receivingPageId = typeof trig.pageId === "string" && trig.pageId.trim() ? trig.pageId.trim() : undefined;
       const receivingInstagramAccountId = typeof trig.instagramAccountId === "string" && trig.instagramAccountId.trim() ? trig.instagramAccountId.trim() : undefined;
-      const d = await queueDelivery(deps.db, {
-        userId,
-        runId,
-        stepId: step.id,
-        provider: "meta_messenger",
-        reference,
-        payload: {
-          recipientId,
-          ...(channel ? { channel } : {}),
-          text: body,
-          ...(inboundTimestamp ? { inboundTimestamp } : {}),
-          ...(receivingPageId ? { receivingPageId } : {}),
-          ...(receivingInstagramAccountId ? { receivingInstagramAccountId } : {}),
-        },
+      const d = await deps.db.transaction(async (tx) => {
+        // A step that runs again gets its first delivery back, without a second history row or notice.
+        const [queued] = await tx.select().from(deliveries).where(and(eq(deliveries.runId, runId), eq(deliveries.stepId, step.id)));
+        if (queued) return queued;
+        const sent = convo ? await prepareReply(tx, { id: convo.id, userId, runId, text: body, max: 2000 }) : body;
+        return queueDelivery(tx, {
+          userId,
+          runId,
+          stepId: step.id,
+          provider: "meta_messenger",
+          reference,
+          payload: {
+            recipientId,
+            ...(channel ? { channel } : {}),
+            text: sent,
+            ...(inboundTimestamp ? { inboundTimestamp } : {}),
+            ...(receivingPageId ? { receivingPageId } : {}),
+            ...(receivingInstagramAccountId ? { receivingInstagramAccountId } : {}),
+          },
+        });
       });
       return { output: { deliveryId: d.id, reference, state: d.state, recipientId } };
+    }
+    case "conversation_update": {
+      const cfg = input as { fields: Record<string, string> };
+      if (mock) return { output: { mocked: true, fields: cfg.fields } };
+      const [linked] = await deps.db.select({ conversationId: runs.conversationId }).from(runs).where(eq(runs.id, runId));
+      if (!linked?.conversationId) throw new StepError("This step saves details on a customer's conversation, and this run was not started by a Messenger, Instagram or email message.", false);
+      return { output: { fields: (await saveConversationFields(deps.db, linked.conversationId, cfg.fields)) ?? {} } };
     }
     case "shopify_create_product":
     case "shopify_update_product": {

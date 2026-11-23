@@ -253,6 +253,30 @@ describe("delay until and the late edge", () => {
   });
 });
 
+describe("conversation steps (decision 0115)", () => {
+  const errs = (input: unknown) => {
+    const r = definitionSchema.safeParse(input);
+    return r.success ? [] : r.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`);
+  };
+  const reply = { id: "reply", type: "meta_reply", config: { text: "Hi" } };
+  const save = { id: "save", type: "conversation_update", config: { fields: { guests: "{{steps.ai.output.guests}}" } } };
+
+  it("lets a Meta reply add outside_window and paused edges, and no other label", () => {
+    const def = (on: string) => ({ trigger: { type: "meta_dm", config: {} }, steps: [reply, step("next", "email"), step("other", "email")], edges: [{ from: "reply", to: "next" }, { from: "reply", to: "other", on }] });
+    expect(errs(def("outside_window"))).toEqual([]);
+    expect(errs(def("paused"))).toEqual([]);
+    expect(errs(def("late"))).toEqual([': step "reply" does not branch, so its edge cannot have a label']);
+  });
+
+  it("saves conversation fields only from a message trigger, with a fixed field list", () => {
+    expect(errs({ trigger: { type: "meta_dm", config: {} }, steps: [save] })).toEqual([]);
+    expect(errs({ trigger: { type: "email", config: {} }, steps: [save] })).toEqual([]);
+    expect(errs({ trigger: { type: "manual", config: {} }, steps: [save] })).toEqual([': conversation_update step "save" needs a meta_dm or email trigger, which starts a conversation']);
+    expect(errs({ trigger: { type: "meta_dm", config: {} }, steps: [{ ...save, config: { fields: { budget: "1" } } }] })).not.toEqual([]);
+    expect(errs({ trigger: { type: "meta_dm", config: {} }, steps: [{ ...save, config: { fields: {} } }] })).not.toEqual([]);
+  });
+});
+
 describe("booking step", () => {
   const at = { name: "at", label: "At", type: "datetime", required: true, timezone: "Asia/Manila", slotMinutes: 60 };
   const who = { name: "who", label: "Who", type: "resource", required: true };
