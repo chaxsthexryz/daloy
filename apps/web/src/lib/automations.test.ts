@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { arrange, counts, triggerLabel, withTrigger } from "./automations";
+import { arrange, counts, displayStatus, triggerLabel, withTrigger } from "./automations";
 
 const last = (state: string, needsReview = false) => ({ runId: "r", state, createdAt: "2026-11-17T00:00:00Z", needsReview, deliveryFailed: false, superseded: false, reference: null });
 const LIST = [
@@ -93,5 +93,52 @@ describe("trigger label and filter", () => {
     expect(ids(withTrigger(rows, "any", of))).toEqual(["a", "b", "c"]);
     expect(ids(withTrigger(rows, "form", of))).toEqual(["a"]);
     expect(ids(withTrigger(rows, "email", of))).toEqual([]);
+  });
+});
+
+describe("displayStatus", () => {
+  it("reports Problem for a live workflow whose last run failed or missed its schedule", () => {
+    expect(displayStatus({ id: "p", name: "Broken", createdAt: "1", live: true, last: last("failed") }, 0)).toEqual({
+      tone: "problem",
+      label: "Problem",
+    });
+    expect(displayStatus({ id: "m", name: "Late", createdAt: "1", live: true, scheduleMissedAt: MISSED, last: last("succeeded") }, 0)).toEqual({
+      tone: "problem",
+      label: "Problem",
+    });
+  });
+
+  it("prioritizes Needs you when a review is open or the last run needs attention", () => {
+    expect(displayStatus({ id: "r", name: "Orders", createdAt: "1", live: true, last: last("succeeded") }, 2)).toEqual({
+      tone: "needs",
+      label: "Needs you",
+    });
+    expect(displayStatus({ id: "r2", name: "Orders", createdAt: "1", live: true, last: last("running", true) }, 0)).toEqual({
+      tone: "needs",
+      label: "Needs you",
+    });
+    expect(displayStatus({ id: "hp", name: "Held", createdAt: "1", live: true, pausedAt: "2026-11-18T01:00:00Z", last: last("running", true) }, 1)).toEqual({
+      tone: "needs",
+      label: "Needs you",
+    });
+  });
+
+  it("maps paused, draft, off, and healthy live workflows consistently", () => {
+    expect(displayStatus({ id: "pa", name: "Paused", createdAt: "1", live: true, pausedAt: "2026-11-18T01:00:00Z", last: last("failed") }, 0)).toEqual({
+      tone: "paused",
+      label: "Paused",
+    });
+    expect(displayStatus({ id: "dr", name: "Draft", createdAt: "1", live: false, setup: { step: "name" }, last: null }, 0)).toEqual({
+      tone: "draft",
+      label: "Draft",
+    });
+    expect(displayStatus({ id: "of", name: "Off", createdAt: "1", live: false, last: null }, 0)).toEqual({
+      tone: "off",
+      label: "Off",
+    });
+    expect(displayStatus({ id: "ok", name: "Healthy", createdAt: "1", live: true, last: last("succeeded") }, 0)).toEqual({
+      tone: "on",
+      label: "On",
+    });
   });
 });

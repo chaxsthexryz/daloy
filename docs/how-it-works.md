@@ -1363,3 +1363,27 @@ Why this way: the resort has not said whether rates vary by season, weekday or h
 Edge cases: Publish is refused with nothing to publish or no change since the live version; two publishes at once get one version number each or a 409. Deleting a draft leaves published copies alone. A price, deposit or rule on an FAQ, policy, location, activity, arrival or link entry is refused. An entry needs text, a price or a link. Prices with centavos are not accepted. Which rule wins when two match is not decided here; `stay_quote` in C4 does that.
 
 Tests: `packages/engine/src/knowledge.test.ts` (entry rules), `apps/api/src/knowledge.test.ts` (publish makes an immutable version, an edit or delete after publish leaves the live version alone, the next publish is version 2, nothing to publish, another workspace sees nothing, the trigger refuses an UPDATE), `apps/api/src/members.test.ts` (role matrix rows: owner and operator only), `apps/web/src/lib/knowledge.test.ts` (form to entry and back) and `e2e/knowledge.spec.ts` (write, publish and edit after publish at 390 px and desktop, in English and Taglish; an operator sees the page).
+
+## Console Daylight Minimal tokens, brand mark and motion primitives (phase D1, decision 0111)
+
+What it does: `apps/web/src/styles.css` defines Daylight Minimal Light and Dark tokens (`--sidebar-bg`, `--daylight-bg`, `--subtle`, `--border-hairline`, `--border-strong`, `--fg`, `--blue`, `--sb-w: 228px`, `--ease-spring`, `--ease-snappy`) alongside the existing console tokens checked by `apps/web/src/lib/run-flow.test.ts`. `apps/web/public/navigation.svg` and `apps/web/public/logo.svg` use the Quarter Tiles mark (`Logo 28`) and a gear icon for Settings. `apps/web/src/motion.css` and `apps/web/src/lib/motion.ts` provide CSS animations and React hooks (`usePrefersReducedMotion`, `useCountUp`, `useSlidingPill`) for sliding hover pills, staggered rows, rising sparkline bars, stretch switches, undo toasts and spring sheets. `signOut()` in `apps/web/src/App.tsx` resets `location.hash` to `#/` on logout.
+
+Why this way: keeping motion in CSS keyframes and small React hooks avoids adding a runtime animation dependency. `useCountUp` snaps directly to the target number and `motion.css` turns off transitions and animations whenever `(prefers-reduced-motion: reduce)` matches.
+
+Tests: `apps/web/src/lib/motion.test.ts` (cubic ease-out interpolation, relative pill measurement, reduced-motion media query subscription, `requestAnimationFrame` count-up lifecycle and SSR hook render) and `apps/web/src/lib/run-flow.test.ts` (WCAG AA contrast in Light and Dark `:root` blocks).
+
+## Fixed 228 px Daylight Minimal sidebar and Quick Jump (phase D2, decision 0112)
+
+What it does: on desktop (`>= 800 px`), `apps/web/src/Nav.tsx` and `apps/web/src/console-shell.css` render a permanently fixed 228 px Daylight Minimal sidebar (`--sidebar-bg` and `--border-hairline`) instead of a collapsing hover rail. Labels, the `AiMeter` usage card (owners only, refreshed on `daloy:usage`), and `Sign out` are always visible. Moving the pointer or keyboard focus over sidebar links slides `.rail-hover-pill` (`useSlidingPill` in `lib/motion.ts`) behind the active item. Pressing `Cmd+K` / `Ctrl+K` or the `Ctrl K` button opens `CommandPalette.tsx` (`Quick jump`), which filters the pages available to the signed-in role (`owner` or `operator`) and navigates with `ArrowUp`, `ArrowDown`, `Enter` or click. Under 800 px, the bottom bar and sheet menu remain unchanged.
+
+Why this way: removing hover expansion removes layout shifts on pointer pass-through and keeps navigation labels, usage limits and Sign out discoverable without extra clicks.
+
+Tests: `apps/web/src/CommandPalette.test.tsx` (role scoping, case-insensitive filtering, index wrapping, `Cmd/Ctrl+K` shortcut matching and dialog render), `apps/web/src/Nav.test.tsx` (active section marking, role isolation, `Library` label, `AiMeter`, fixed sidebar markup), `e2e/rail.spec.ts` and `e2e/navigation.spec.ts` (228 px fixed layout, reduced-motion pill transitions, `Quick jump` navigation, phone sheet and role scoping).
+
+## Automations dashboard Daylight Minimal revamp (phase D3, decision 0113)
+
+What it does: `apps/web/src/Automations.tsx` and `apps/web/src/automations-ops.css` present the Automations home in the Daylight Minimal palette (Light and Dark), with `useCountUp` KPI counters, gliding segmented status tabs alongside the accessible `Status:` and `Trigger:` selectors, expandable search, staggered row entrances (`.motion-stagger-row`), rising 7-day sparkline bars (`.motion-spark-bar`), a spring inspector panel (`.motion-sheet`), and an inline `role="switch"` pause/resume toggle with a 6-second undo toast.
+
+Why this way: both `Row` and `Panel` read `displayStatus(w, reviewCount)` in `apps/web/src/lib/automations.ts` so a live automation with a failed run or open review shows `Problem` or `Needs you` consistently in both places. Moving flex layout into `.ops-name-cell`, setting `height: auto` on table cells, and hiding `.c-last` while the inspector is open keeps multi-line titles from overlapping.
+
+Tests: `apps/web/src/lib/automations.test.ts` (`displayStatus`, `arrange`, `counts`, `triggerLabel`, `withTrigger`), `apps/web/src/lib/locale-coverage.test.ts` (Tagalog entries in `locale-ops.ts`), `e2e/automations.spec.ts` (inline switch pause/undo toast, row vs inspector `Problem` sync, two-line title spacing, phone layout), and `e2e/navigation.spec.ts`.

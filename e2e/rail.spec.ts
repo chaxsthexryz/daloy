@@ -12,32 +12,35 @@ async function signUp(page: Page) {
   await expect(page.getByRole("heading", { name: "Automations", exact: true })).toBeVisible();
 }
 
-test("the rail ignores a quick pass, opens on a rest, and the Library entry keeps its route", async ({ page }) => {
+test("the desktop sidebar stays fixed at 228 px without hover expansion, and Quick jump navigates with Cmd/Ctrl+K", async ({ page }) => {
   await signUp(page);
   const rail = page.locator("aside.sidebar");
+  await expect(rail).toHaveCSS("width", "228px");
   await expect(rail).not.toHaveAttribute("data-expanded", /.*/);
-  // A pass shorter than the open delay never opens it.
   await rail.hover();
-  await page.mouse.move(700, 400);
-  await page.waitForTimeout(400);
-  await expect(rail).not.toHaveAttribute("data-expanded", /.*/);
-  // Resting opens it, and leaving closes it after the close delay.
-  await rail.hover();
-  await expect(rail).toHaveAttribute("data-expanded", "true");
-  await page.mouse.move(700, 400);
+  await expect(rail).toHaveCSS("width", "228px");
   await expect(rail).not.toHaveAttribute("data-expanded", /.*/);
   const library = page.getByRole("link", { name: "Library", exact: true });
   await expect(library).toHaveAttribute("href", "#/new");
+  await expect(rail.getByRole("button", { name: "Sign out" })).toBeVisible();
   await expect(page.getByRole("link", { name: "New automation", exact: true }).first()).toHaveAttribute("href", "#/new");
+
+  await page.keyboard.press("Control+k");
+  const dialog = page.getByRole("dialog", { name: "Quick jump" });
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole("searchbox").fill("book");
+  await page.keyboard.press("Enter");
+  await expect(page).toHaveURL(/#\/bookings$/);
+  await expect(dialog).toBeHidden();
 });
 
-test("reduced motion opens and closes the rail without a transition", async ({ page }) => {
+test("reduced motion disables transitions on the sidebar hover pill", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await signUp(page);
   const rail = page.locator("aside.sidebar");
-  await rail.hover();
-  await expect(rail).toHaveAttribute("data-expanded", "true");
-  expect(await rail.evaluate((el) => getComputedStyle(el).transitionDuration)).toBe("0s");
+  await expect(rail).toHaveCSS("width", "228px");
+  await expect(rail.locator(".rail-hover-pill")).toHaveCSS("transition-duration", "0s");
+  await expect(rail.getByRole("link", { name: "Library", exact: true })).toBeVisible();
 });
 
 const withUsage = (page: Page, limit: number | null) => page.route("**/usage", (route) => route.fulfill({ json: {
