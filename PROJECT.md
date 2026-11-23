@@ -342,7 +342,7 @@ DeepSeek's review is in `docs/roadmap-review-2026-11-18.md`. Claude's second opi
 - [ ] T3. "If this step fails": stop, skip and carry on, or take a "failed" path.
 - [ ] T4. Notes on steps, shown on the canvas card and read by Explain this flow.
 - [ ] T5. One Share panel: form link and embed code, webhook URL, MCP tool name and an API example.
-- [ ] T6. `docker compose --profile local-ai up` runs Ollama with a small model.
+- [x] T6. `docker compose --profile local-ai up` runs Ollama with a small model. `ollama` and a one-shot `ollama-pull` (llama3.2) under the `local-ai` profile; set `LLM_BASE_URL=http://ollama:11434`. Compose and docs only, no code change.
 - [ ] T7. Answer from my price list: owner-written price list and answers, an AI `answer` task and a Messenger template. Covered by C3 and C4.
 - [ ] T8. Chat as your customer: test a Messenger workflow by typing as the customer.
 - [x] T9. Telegram message trigger: a photo or PDF sent to your own bot (made with @BotFather) starts a workflow, from your chat only or from anyone. Photos and PDFs become uploads the AI step can read, the telegram step can reply to the sender, and a "Log GCash receipts from Telegram" template adds a Sheets row marked To check. Decision 0117, no migration. (claimed: claude, branch claude/t9-telegram-trigger)

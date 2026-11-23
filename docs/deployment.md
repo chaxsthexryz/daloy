@@ -150,3 +150,25 @@ The November review asked for these on the real topology. The app side is tested
 6. Upload memory. The API holds at most 128 MB of in-flight form uploads. Check `docker stats` on the VM during a 5 MB upload test and confirm the API container has room for that plus its normal use. A proxy limit of about 30 MB on `/forms/` request bodies is a good second layer.
 7. PayMongo. Run `docs/live-paymongo-check.md` with test keys before turning on real orders: signed test deliveries, event retries, a refund.
 8. Release commit. Repeat the review checks on the exact commit you deploy.
+
+## 9. Local model with Ollama (optional)
+
+Daloy can run its own model next to the rest of the stack. On your own computer:
+
+```bash
+docker compose --profile local-ai up
+```
+
+The `local-ai` profile adds two services. `ollama` (the `ollama/ollama` image, MIT licence, published for amd64 and arm64) keeps its models in the `ollama-models` volume. `ollama-pull` waits until `ollama` answers, runs `ollama pull llama3.2` (about 2 GB), and exits. Later starts find the model in the volume. Then point the api and the worker at it in `.env` and restart them:
+
+```bash
+LLM_PROVIDER=ollama
+LLM_BASE_URL=http://ollama:11434
+LLM_MODEL=llama3.2
+```
+
+Use the base without `/v1`: with `LLM_PROVIDER=ollama` Daloy calls Ollama's own `/api/chat`. With `LLM_PROVIDER=openai` the base would be `http://ollama:11434/v1`. llama3.2 reads text only, so leave `LLM_VISION` unset.
+
+Plan on about 4 GB of free memory for llama3.2 (3B). The container runs the model on the CPU; the compose file gives it no GPU. Without the profile, `docker compose up` starts nothing new, and an Ollama running on the host keeps working with the default `LLM_BASE_URL=http://host.docker.internal:11434`. The `ollama` service publishes no port, so it does not clash with a host Ollama on 11434.
+
+On the Oracle Always Free A1 machine this works, but CPU-only answers are slow, and Build with AI with a 3B model often writes drafts that need fixing. A hosted model such as DeepSeek (`deepseek-flash`, see `.env.example`) stays the recommendation there.

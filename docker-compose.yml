@@ -193,6 +193,34 @@ services:
       migrate:
         condition: service_completed_successfully
 
+  # Optional local model (docs/deployment.md, "Local model with Ollama"). Starts only with
+  # `docker compose --profile local-ai up`; then set LLM_BASE_URL=http://ollama:11434 in .env.
+  # No published port, so an Ollama already running on the host keeps port 11434.
+  ollama:
+    image: ollama/ollama
+    profiles: [local-ai]
+    volumes:
+      - ollama-models:/root/.ollama
+    security_opt: [no-new-privileges:true]
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  # Downloads llama3.2 (about 2 GB) into the volume once, then exits. Later runs find it there and finish quickly.
+  ollama-pull:
+    image: ollama/ollama
+    profiles: [local-ai]
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    entrypoint: ["ollama"]
+    command: ["pull", "llama3.2"]
+    restart: "no"
+    depends_on:
+      ollama:
+        condition: service_healthy
+
 networks:
   default: {}
   # The browser service and the worker only. It reaches the internet; Postgres, Mailpit and the API are not on it.
@@ -200,3 +228,4 @@ networks:
 
 volumes:
   pgdata:
+  ollama-models:
