@@ -11,13 +11,14 @@ import {
 const id = (text: string) => text;
 
 describe("quickJumpItems", () => {
-  it("lists all 12 console pages for owners", () => {
+  it("lists all 13 console pages for owners", () => {
     const items = quickJumpItems("owner", id);
     expect(items.map((item) => item.href)).toEqual([
       "#/",
       "#/activity",
       "#/bookings",
       "#/receipts",
+      "#/knowledge",
       "#/new",
       "#/ai",
       "#/team",
@@ -29,16 +30,30 @@ describe("quickJumpItems", () => {
     ]);
   });
 
-  it("limits operators to their allowed 6 pages", () => {
+  it("limits operators to their allowed 7 pages including receipts and knowledge", () => {
     const items = quickJumpItems("operator", id);
     expect(items.map((item) => item.href)).toEqual([
       "#/",
       "#/activity",
       "#/bookings",
       "#/receipts",
+      "#/knowledge",
       "#/settings",
       "#/account",
     ]);
+  });
+
+  it("limits approvers and requesters to 5 pages without receipts or knowledge", () => {
+    for (const role of ["approver", "requester"] as const) {
+      const items = quickJumpItems(role, id);
+      expect(items.map((item) => item.href)).toEqual([
+        "#/",
+        "#/activity",
+        "#/bookings",
+        "#/settings",
+        "#/account",
+      ]);
+    }
   });
 });
 

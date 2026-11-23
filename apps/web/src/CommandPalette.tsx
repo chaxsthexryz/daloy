@@ -28,8 +28,14 @@ export function quickJumpItems(role: Role, t: (text: string) => string): QuickJu
     { href: "#/", label: t("Automations"), group: work, icon: "automations" },
     { href: "#/activity", label: t("Activity"), group: work, icon: "activity" },
     { href: "#/bookings", label: t("Bookings"), group: work, icon: "bookings" },
-    { href: "#/receipts", label: t("Receipts to review"), group: work, icon: "receipts" },
   ];
+
+  if (owner || role === "operator") {
+    items.push(
+      { href: "#/receipts", label: t("Receipts to review"), group: work, icon: "receipts" },
+      { href: "#/knowledge", label: t("Knowledge"), group: work, icon: "knowledge" },
+    );
+  }
 
   if (owner) {
     items.push(

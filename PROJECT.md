@@ -365,7 +365,7 @@ Orchestrator: Neon. Onboarding (`Onboarding.tsx`, `onboarding.css`) is out of sc
 - [x] D2. Fixed non-collapsible 228 px Daylight Minimal desktop sidebar, hover pill, always-visible AI meter and Sign out, and `Cmd/Ctrl+K` Quick Jump palette. Updates `Nav.test.tsx`, `e2e/rail.spec.ts`, and `e2e/navigation.spec.ts`. Decision 0112. (claimed: neon, branch neon/d2-fixed-sidebar)
 - [x] D3. Automations dashboard Daylight Minimal revamp, Easy UI micro-animations, inline pause/resume switch with undo toast, row vs panel status sync fix, and inspector overlap fix. Decision 0113. (claimed: neon, branch neon/d3-automations-revamp)
 - [x] D4. Secondary console pages, auth and editor consistency (breadcrumbs, select alignment, styled file inputs, disabled button contrast, AppMark letter-tile tints, editor node header spacing). Onboarding untouched. Decision 0114. (claimed: neon, branch neon/d4-secondary-polish)
-- [ ] D5. Full lint, typecheck, unit, contrast, locale and Playwright E2E verification, Light/Dark/reduced-motion visual QA on a disposable stack, and `docs/how-it-works.md` update. (claimed: neon, branch neon/d5-revamp-verify)
+- [x] D5. Full lint, typecheck, unit, contrast, locale and Playwright E2E verification, Light/Dark/reduced-motion visual QA on a disposable stack, and `docs/how-it-works.md` update. (claimed: neon, branch neon/d5-revamp-verify)
 
 
 ## Resort concierge (docs/plans/resort-concierge.md, 23 November 2026)

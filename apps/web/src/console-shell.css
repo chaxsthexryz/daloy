@@ -3,7 +3,7 @@
 .rail-brand { display: block; width: 28px; height: 28px; flex: none; color: var(--blue, #0b66ff); }
 .rail-icon { width: 17px; height: 17px; flex: none; }
 .console-shell .shell-nav-label { text-transform: uppercase; font-size: 11px; font-weight: 600; letter-spacing: .06em; }
-.console-shell .sidebar nav a { box-shadow: none; position: relative; z-index: 1; }
+.console-shell .sidebar nav > a { box-shadow: none; position: relative; z-index: 1; }
 .console-shell .sidebar-name { font-size: 16px; font-weight: 600; letter-spacing: -.025em; }
 /* AI usage meter: a 4 px bar in the sidebar (account area) and on Settings. */
 .ai-meter-bar { height: 4px; overflow: hidden; border-radius: 99px; background: var(--subtle, #f4f5f7); }
@@ -160,7 +160,7 @@
     font-size: 12px;
   }
   .console-shell .rail-account a:hover, .console-shell .rail-account button:hover { background: var(--subtle, var(--sunken)); color: var(--fg, var(--text)); }
-  .rail-account .rail-avatar { position: absolute; left: 2px; bottom: 2px; }
+  .rail-account .rail-avatar { position: absolute; left: 4px; bottom: 4px; }
   .console-shell .shell-main { background: var(--bg); }
 }
 

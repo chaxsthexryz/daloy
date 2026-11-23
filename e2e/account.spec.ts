@@ -63,20 +63,14 @@ test("forgot password: the emailed link sets a new password and the old one stop
 test("change password from the account page, then sign in with the new one", async ({ page }) => {
   const email = `change-${Date.now()}@test.local`;
   await register(page, email);
-  // Focus opens the rail and moves Account mid-click; let it open first, as a person would.
-  await page.locator(".sidebar").hover();
-  await expect(page.locator(".sidebar")).toHaveAttribute("data-expanded", /.*/);
   await page.getByRole("link", { name: "Account", exact: true }).click();
   await page.getByLabel("Current password").fill(OLD);
   await page.getByLabel(/New password/).fill(NEW);
   await page.getByRole("button", { name: "Change password" }).click();
   await expect(page.getByRole("status")).toHaveText("Password changed. Your other sessions are signed out.");
 
-  await page.locator(".sidebar").hover();
   await page.getByRole("button", { name: "Sign out" }).click();
   await signIn(page, email, NEW);
-  // Sign-in keeps the address, so this lands on the account page again.
-  await page.locator(".sidebar").hover();
   await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible();
 });
 
