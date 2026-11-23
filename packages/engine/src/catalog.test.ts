@@ -113,6 +113,7 @@ describe("destination line", () => {
       sheets: { columns: ["a"] },
       shopify_create_product: { title: "Tote bag" },
       shopify_update_product: { product: "TOTE-1" },
+      browser: { url: "https://supplier.example.com/price", actions: [] },
     };
     for (const type of STEP_TYPES) {
       const config = configs[type] ?? { to: "a@b.co", subject: "s", text: "t", message: "m" };

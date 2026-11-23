@@ -98,4 +98,4 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - run: SECRETS_KEY=ci-placeholder POSTGRES_PASSWORD=ci-placeholder APP_DB_PASSWORD=ci-placeholder docker compose build worker api
+      - run: SECRETS_KEY=ci-placeholder POSTGRES_PASSWORD=ci-placeholder APP_DB_PASSWORD=ci-placeholder BROWSER_TOKEN=ci-placeholder docker compose build worker api browser

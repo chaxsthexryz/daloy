@@ -1,0 +1,27 @@
+// Tagalog for the browser step (phase B2, decision 0108). English is the key.
+export const browserTranslations: Record<string, string> = {
+  "Actions on the page": "Mga action sa page",
+  "In order, after the page opens. A selector is CSS, such as .price or #order-button. Daloy never types into password or card fields.":
+    "Sunud-sunod, pagkabukas ng page. Ang selector ay CSS, gaya ng .price o #order-button. Hindi kailanman nagta-type ang Daloy sa password o card field.",
+  "Action {number}": "Action {number}",
+  "Action {number} {field}": "Action {number} {field}",
+  "Action {number} finds by": "Hinahanap ng action {number} gamit ang",
+  "Open an address": "Magbukas ng address",
+  "Click": "Mag-click",
+  "Type into a field": "Mag-type sa field",
+  "Wait for an element": "Hintayin ang isang element",
+  "Read a value": "Magbasa ng value",
+  "Take a screenshot": "Kumuha ng screenshot",
+  "Address": "Address",
+  "Visible text": "Nakikitang text",
+  "Selector": "Selector",
+  "Text to type": "Text na ita-type",
+  "Remove action {number}": "Alisin ang action {number}",
+  "Add action": "Magdagdag ng action",
+  "A browser step has at most {max} actions.": "Hanggang {max} action lang ang browser step.",
+  "Open {host} in Daloy's browser": "Buksan ang {host} sa browser ng Daloy",
+  "a web page": "isang web page",
+  "Values read from the page": "Mga value na nabasa sa page",
+  "The page to open first, such as https://supplier.example.com/price/{{trigger.sku}}.": "Ang unang page na bubuksan, gaya ng https://supplier.example.com/price/{{trigger.sku}}.",
+  "What to do on the page, in order.": "Ang gagawin sa page, sunud-sunod.",
+};

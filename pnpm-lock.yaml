@@ -121,6 +121,21 @@ importers:
         specifier: ^7.3.2
         version: 7.3.2
 
+  apps/browser:
+    dependencies:
+      '@daloy/engine':
+        specifier: workspace:*
+        version: link:../../packages/engine
+      playwright:
+        specifier: 1.65.0
+        version: 1.65.0
+      tsx:
+        specifier: ^4.23.15
+        version: 4.23.15
+      zod:
+        specifier: ^4.6.7
+        version: 4.6.7
+
   apps/web:
     dependencies:
       '@daloy/engine':

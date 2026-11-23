@@ -330,6 +330,10 @@ DeepSeek's review is in `docs/roadmap-review-2026-11-18.md`. Claude's second opi
 - [x] I1. Discord step (post to a channel webhook) and Google Docs step (make a document from a template with values filled in).
 - [x] I2. Shopify: product create and edit through the Admin API, and a native order trigger in place of the webhook template. Decision 0105, migration 0048. (claimed: claude, branch claude/i2-shopify)
 
+## Browsing (plan of 23 November 2026)
+
+- [x] B2. Browser service (`apps/browser`, Playwright Chromium behind a guarded forward proxy, on its own Docker network) and the browser step (up to 20 actions, screenshots as uploads). Decision 0108, no migration. (claimed: claude, branch claude/b2-browser)
+
 ## Console UI from the Paper file (docs/plans/console-ui-paper.md, 21 November 2026)
 
 - [x] U1. Rail, Inter everywhere, calmer nav motion, AI usage meter. (claimed: claude, cloud session)

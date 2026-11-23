@@ -11,6 +11,7 @@ import { opsTranslations } from "./locale-ops";
 import { setupTranslations } from "./locale-setup";
 import { pasteTranslations } from "./locale-paste";
 import { shopifyTranslations } from "./locale-shopify";
+import { browserTranslations } from "./locale-browser";
 import { editorTranslations } from "./locale-editor";
 import { activityTranslations } from "./locale-activity";
 import { workspaceTranslations } from "./locale-workspace";
@@ -26,6 +27,7 @@ export type Language = "en" | "tl";
 const tagalog: Record<string, string> = {
   // First, so a string another file already translates keeps its wording.
   ...shopifyTranslations,
+  ...browserTranslations,
   ...managementTranslations,
   ...builderTranslations,
   ...guidedTranslations,

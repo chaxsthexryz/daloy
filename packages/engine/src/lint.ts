@@ -15,7 +15,14 @@ const LABEL_REF = /^\{\{\s*steps\.([a-z][a-z0-9_]*)\.output\.label\s*\}\}$/;
 
 export type LintRule = "approval_no_edge" | "classify_dead_end" | "test_switch" | "number_no_invalid" | "unreachable_step";
 
-export const lintDefinition = (def: WorkflowDefinition): string[] => [...lintFindings(def).map((f) => f.message), ...aiFileWarnings(def)];
+export const lintDefinition = (def: WorkflowDefinition): string[] => [...lintFindings(def).map((f) => f.message), ...aiFileWarnings(def), ...browserWarnings(def)];
+
+// A browser step (decision 0108) that keeps no value and no picture gives later steps only the last address.
+function browserWarnings(def: WorkflowDefinition): string[] {
+  return def.steps
+    .filter((s) => s.type === "browser" && !s.config.actions.some((a) => a.action === "extract" || a.action === "screenshot"))
+    .map((s) => `Browser step "${s.id}" reads nothing and takes no screenshot, so later steps only get the page address. Add an extract or a screenshot action.`);
+}
 
 // Advice for the editor and the builder only, so it is not a LintRule: the run explainer has no line for it.
 // An AI step in a form with a file field that reads none: the owner has not allowed it yet (decision 0052).

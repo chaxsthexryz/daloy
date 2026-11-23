@@ -99,13 +99,46 @@ services:
       MICROSOFT_TENANT: ${MICROSOFT_TENANT:-organizations}
       # Managed OAuth clients ("Connect with X", docs/oauth-setup.md). Empty means the app keeps its paste form.
       <<: *oauth-clients
+      # The browser service for the browser step (decision 0108), on the "browser" network only.
+      BROWSER_URL: http://browser:3200
+      BROWSER_TOKEN: ${BROWSER_TOKEN:?set BROWSER_TOKEN in .env (openssl rand -hex 32)}
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    # default reaches Postgres and Mailpit; browser reaches the browser service.
+    networks: [default, browser]
     depends_on:
       migrate:
         condition: service_completed_successfully
     # Longer than the worker's 30 second graceful shutdown.
     stop_grace_period: 40s
+
+  # Chromium for the browser step (decision 0108). No published port: only the worker, on the "browser" network, can
+  # call it. Hardened like n8n nod's browser container. mem_limit allows two jobs of about 1 GB each (BROWSER_CONCURRENCY).
+  browser:
+    build:
+      context: .
+      dockerfile: apps/browser/Dockerfile
+    environment:
+      BROWSER_TOKEN: ${BROWSER_TOKEN:?set BROWSER_TOKEN in .env (openssl rand -hex 32)}
+      BROWSER_CONCURRENCY: ${BROWSER_CONCURRENCY:-2}
+      BROWSER_JOB_SECONDS: ${BROWSER_JOB_SECONDS:-60}
+      PORT: "3200"
+    networks: [browser]
+    init: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    read_only: true
+    tmpfs:
+      - /tmp:size=512m
+      - /home/pwuser:uid=1001,gid=1001,mode=700,size=128m
+    pids_limit: 1024
+    shm_size: 1g
+    mem_limit: 2560m
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3200/health').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
 
   api:
     build:
@@ -159,6 +192,11 @@ services:
     depends_on:
       migrate:
         condition: service_completed_successfully
+
+networks:
+  default: {}
+  # The browser service and the worker only. It reaches the internet; Postgres, Mailpit and the API are not on it.
+  browser: {}
 
 volumes:
   pgdata:

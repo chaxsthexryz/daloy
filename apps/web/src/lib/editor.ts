@@ -37,7 +37,7 @@ export function insertables(draft: Draft, id: string): string[] {
   }
   const outputs = draft.steps
     .filter((s) => before.has(s.id) && s.id !== id)
-    .flatMap((s) => (s.type === "ai" ? Object.keys(mockAiOutput(s.config)).map((k) => `steps.${s.id}.output.${k}`) : s.type === "google_docs" ? ["url", "documentId", "name"].map((k) => `steps.${s.id}.output.${k}`) : [`steps.${s.id}.output`]));
+    .flatMap((s) => (s.type === "ai" ? Object.keys(mockAiOutput(s.config)).map((k) => `steps.${s.id}.output.${k}`) : s.type === "google_docs" ? ["url", "documentId", "name"].map((k) => `steps.${s.id}.output.${k}`) : s.type === "browser" ? [...s.config.actions.flatMap((a) => (a.action === "extract" ? [a.name] : [])), "url"].map((k) => `steps.${s.id}.output.${k}`) : [`steps.${s.id}.output`]));
   return [...fields.map((f) => `trigger.${f}`), ...outputs].map((r) => `{{${r}}}`);
 }
 
