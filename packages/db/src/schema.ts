@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { LANGUAGES, RUN_STATES, STEP_STATES, type FileRef } from "@daloy/engine";
+import { LANGUAGES, RUN_STATES, STEP_STATES, type FileRef, type KnowledgeEntry } from "@daloy/engine";
 import { bigint, boolean, check, customType, date, index, integer, jsonb, pgEnum, pgSequence, pgTable, primaryKey, text, timestamp, unique, uniqueIndex, uuid, type AnyPgColumn } from "drizzle-orm/pg-core";
 
 const id = () => uuid("id").primaryKey().defaultRandom();
@@ -923,3 +923,36 @@ export const privacyRequests = pgTable("privacy_requests", {
   kept: jsonb("kept").$type<{ item: string; reason: string }[]>().notNull().default([]),
   createdAt: createdAt(),
 }, (t) => [check("privacy_requests_action", sql`${t.action} in ('export', 'delete')`)]);
+
+/**
+ * What the owner has written for the concierge to answer from (decision 0116). Draft rows: editing one changes nothing
+ * a guest sees until the owner publishes. Business text, not guest data, so privacy.ts does not list it.
+ */
+export const knowledgeEntries = pgTable(
+  "knowledge_entries",
+  {
+    id: id(),
+    userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    kind: text("kind").notNull(),
+    title: text("title").notNull(),
+    body: text("body").notNull().default(""),
+    // Price, unit, capacity, deposit, named rules and a link; the shape is knowledgeFields in the engine.
+    fields: jsonb("fields").notNull().default({}),
+    createdAt: createdAt(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("knowledge_entries_user_idx").on(t.userId)],
+);
+
+/** A published copy of every entry at one moment. Never updated (a trigger refuses it); the highest version per workspace is the one in use. */
+export const knowledgeVersions = pgTable(
+  "knowledge_versions",
+  {
+    id: id(),
+    userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    version: integer("version").notNull(),
+    entries: jsonb("entries").$type<KnowledgeEntry[]>().notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [unique().on(t.userId, t.version)],
+);

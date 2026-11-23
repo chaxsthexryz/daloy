@@ -344,6 +344,13 @@
       "when": 1795400000005,
       "tag": "0048_shopify_connection",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1795413666114,
+      "tag": "0050_knowledge",
+      "breakpoints": true
     }
   ]
 }

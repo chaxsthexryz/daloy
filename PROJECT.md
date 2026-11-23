@@ -375,7 +375,7 @@ C3 and C4 cover T7 (answer from my price list). Decisions from 0115 (0111 to 011
 - [ ] C0. Owner: run `docs/live-meta-check.md`, start Meta App Review, turn off Business Suite instant replies on the Page.
 - [ ] C1. Conversation state: tables, webhook and email-in upsert, version supersede, 24-hour window edges, echo pause, `conversation_update` step, retention sweep, R6 coverage. (claimed: claude, branch claude/c1-conversations)
 - [ ] C2. Menu buttons: quick replies and postbacks, `trigger.choice`, numbered menu for email. After C1.
-- [ ] C3. Knowledge page and immutable `knowledge_versions`, owner and operator only. (claimed: claude, branch claude/c3-knowledge)
+- [x] C3. Knowledge page and immutable `knowledge_versions`, owner and operator only. (claimed: claude, branch claude/c3-knowledge)
 - [ ] C4. Guarded answers: AI `answer` task, `guardReply`, `stay_quote`, `payment_due` L7 fix. After C3.
 - [ ] C5. Stays: booking stay mode, `bookings.conversation_id`, Confirm stay.
 - [ ] C6. DM receipt photo as a claim on the open due; email reply threading. After C1.
