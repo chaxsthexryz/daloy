@@ -1,22 +1,22 @@
-/* The Apps directory, its selected provider, and Business share the Doop console palette. */
+/* The Apps directory, its selected provider, and Business share the Daylight Minimal palette (Light and Dark). */
 main.page:is(.admin-apps,.admin-business,.verify-sender) {
-  --bg: #f7f8fa; --surface: #fff; --text: #14171e; --muted: #555e6c;
-  --border: #c4c9d3; --border-soft: #dfe2e8; --sunken: #f1f3f6;
-  --accent: #1b45c9; --accent-hover: #15379f; --accent-tint: #e8eeff; --focus: #1b45c9;
-  background: var(--bg); font-family: Inter, system-ui, sans-serif; padding: 22px 28px;
+  --bg: var(--subtle, #fafafa); --surface: var(--daylight-bg, #ffffff); --text: var(--fg, #0f131a); --muted: var(--fg-muted, #5b6372);
+  --border: var(--border-strong, #d1d5df); --border-soft: var(--border-hairline, #e6e8ee); --sunken: var(--subtle, #f4f5f7);
+  --accent: var(--blue, #0b66ff); --accent-hover: var(--blue-deep, #0052d9); --accent-tint: var(--blue-soft, #eef4ff); --focus: var(--focus);
+  background: var(--bg); color: var(--text); font-family: var(--font-sans, Inter, system-ui, sans-serif); padding: 22px 28px;
 }
 .admin-apps .apps-directory, .admin-apps .setup-pane { min-width: 0; }
 .admin-apps .console-header { justify-content: flex-start; gap: 14px; align-items: baseline; padding: 0; margin: 0; border: 0; }
 main.page:is(.admin-apps,.admin-business,.verify-sender) h1, .admin-apps .panel-head h2 {
-  font-size: 1.5rem; line-height: 1.25; font-weight: 700; margin: 0; letter-spacing: -.025em;
+  font-size: 1.5rem; line-height: 1.25; font-weight: 650; margin: 0; letter-spacing: -.025em;
 }
 .directory-filters, .app-tabs { display: flex; align-items: center; gap: 8px; }
 .directory-filters { flex-wrap: wrap; margin: 18px 0; }
-.directory-filters input { width: min(100%, 280px); background: white; border-radius: 7px; }
-.app-tabs { border-radius: 8px; background: #e9ecf2; padding: 3px; gap: 2px; }
+.directory-filters input { width: min(100%, 280px); background: var(--surface); border-color: var(--border); color: var(--text); border-radius: 8px; }
+.app-tabs { border-radius: 8px; background: var(--sunken); border: 1px solid var(--border-soft); padding: 3px; gap: 2px; }
 .admin-apps .app-tabs button { border: 0; border-radius: 6px; background: transparent; color: var(--muted); }
-.admin-apps .app-tabs button[aria-pressed="true"] { color: var(--text); background: white; box-shadow: 0 1px 3px #10182820; }
-.admin-apps button, .admin-business button, .verify-sender button { border-radius: 7px; font-weight: 550; }
+.admin-apps .app-tabs button[aria-pressed="true"] { color: var(--text); background: var(--surface); box-shadow: 0 1px 2px rgb(15 19 26 / 0.08); }
+.admin-apps button, .admin-business button, .verify-sender button { border-radius: 8px; font-weight: 550; }
 .admin-apps .directory-group { margin: 0 0 16px; }
 .admin-apps .directory-group h2 { font-size: .75rem; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); margin: 0; padding: 6px 10px; }
 .directory-group ul { list-style: none; padding: 0; margin: 0; }
@@ -38,7 +38,7 @@ main.page:is(.admin-apps,.admin-business,.verify-sender) h1, .admin-apps .panel-
 .admin-apps[data-panel="true"] .apps-directory { border-right: 1px solid var(--border-soft); padding-right: 18px; }
 .admin-apps[data-panel="true"] .directory-row { grid-template-columns: 30px minmax(0,1fr) auto; gap: 8px; padding: 7px 4px; }
 .admin-apps[data-panel="true"] .directory-row :is(.directory-detail,.app-text p,.state-pill) { display: none; }
-.directory-row[data-selected="true"] { background: #e8eeff; border-radius: 7px; }
+.directory-row[data-selected="true"] { background: var(--accent-tint); border-radius: 8px; }
 .admin-apps .setup-pane { max-width: none; margin: 0; border: 0; border-radius: 0; background: transparent; padding: 0; }
 .panel-head { display: flex; align-items: center; gap: 12px; margin: 12px 0 20px; }
 .admin-apps .panel-head h2 { margin: 0; }
@@ -57,7 +57,7 @@ main.page:is(.admin-apps,.admin-business,.verify-sender) h1, .admin-apps .panel-
 .brand-preview { margin-top: 18px; background: var(--sunken); }
 .brand-preview img { display: block; width: auto; max-width: 130px; max-height: 48px; margin: 8px 0; }
 .brand-preview strong { display: block; margin: 12px 0; }
-.example-field { background: white; border: 1px solid var(--border); padding: 8px; border-radius: 6px; }
+.example-field { background: var(--surface); border: 1px solid var(--border); padding: 8px; border-radius: 6px; }
 .preview-send { display: inline-block; padding: 7px 16px; margin-top: 10px; border-radius: 7px; }
 .verify-card { max-width: 490px; margin: clamp(18px,10vh,90px) auto; }
 .verify-card h1 { margin-top: 14px !important; }
@@ -83,3 +83,41 @@ main.page:is(.admin-apps,.admin-business,.verify-sender) h1, .admin-apps .panel-
 .app-warnings { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
 .app-warnings button { background: #fff3e4; color: #784400; border-color: #dfc4a5; }
 .panel-detail li small { display: block; color: var(--muted); }
+
+/* Letter-tile brand tints (the 14 third-party SVG marks keep data-kind="logo" unaltered). */
+.app-mark[data-kind="letter"][data-mark="unisms"] { background: #eef4ff; color: #0b66ff; border-color: #cfe0ff; }
+.app-mark[data-kind="letter"][data-mark="paymongo"] { background: #ecfdf3; color: #15803d; border-color: #bfe8cf; }
+.app-mark[data-kind="letter"][data-mark="gcash"] { background: #e6f4ff; color: #0052d9; border-color: #c2e0ff; }
+.app-mark[data-kind="letter"][data-mark="messenger"] { background: #eef0ff; color: #3b5bdb; border-color: #d1d8ff; }
+.app-mark[data-kind="letter"][data-mark="instagram"] { background: #fff0f5; color: #b8255f; border-color: #f7cadb; }
+:root[data-theme="dark"] .app-mark[data-kind="letter"][data-mark="unisms"] { background: #1c2a55; color: #8fb0ff; border-color: #2f4582; }
+:root[data-theme="dark"] .app-mark[data-kind="letter"][data-mark="paymongo"] { background: #173323; color: #7fcfa3; border-color: #26543a; }
+:root[data-theme="dark"] .app-mark[data-kind="letter"][data-mark="gcash"] { background: #162d4f; color: #8fb0ff; border-color: #26487c; }
+:root[data-theme="dark"] .app-mark[data-kind="letter"][data-mark="messenger"] { background: #202754; color: #9fb4ff; border-color: #343f85; }
+:root[data-theme="dark"] .app-mark[data-kind="letter"][data-mark="instagram"] { background: #3d192b; color: #f59ec1; border-color: #632846; }
+
+/* Styled native file inputs (keeps real <input type="file"> accessible for Playwright setInputFiles). */
+.file-input {
+  display: block;
+  width: 100%;
+  min-height: 44px;
+  padding: 6px 10px;
+  border: 1px dashed var(--border-strong, var(--border));
+  border-radius: 8px;
+  background: var(--subtle, var(--sunken));
+  color: var(--fg-muted, var(--muted));
+  font-size: 13px;
+  cursor: pointer;
+}
+.file-input::file-selector-button {
+  min-height: 30px;
+  margin-right: 10px;
+  padding: 0 12px;
+  border: 1px solid var(--border-strong, var(--border));
+  border-radius: 6px;
+  background: var(--daylight-bg, var(--surface));
+  color: var(--fg, var(--text));
+  font: 600 13px/1 inherit;
+  cursor: pointer;
+}
+.file-input::file-selector-button:hover { background: var(--subtle, var(--sunken)); }

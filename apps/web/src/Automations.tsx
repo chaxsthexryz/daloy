@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type RefObject } from "react";
 import type { WorkflowDefinition } from "@daloy/engine";
 import { useLanguage } from "./Language";
 import { api, getUsage, type RunSummary, type Usage, type Workflow } from "./api";
 import { draftPlan } from "./lib/ai-build";
-import { arrange, counts, stateKey, statusOf, triggerLabel, withTrigger, type Filter } from "./lib/automations";
+import { arrange, counts, displayStatus, statusOf, triggerLabel, withTrigger, type Filter } from "./lib/automations";
+import { useCountUp, useSlidingPill } from "./lib/motion";
 import { RUN_LIMIT, successRate, totals, type OverviewEntry } from "./lib/ops-stats";
 import { ago, plainState } from "./lib/states";
 import { FormEmbed } from "./FormEmbed";
@@ -22,6 +23,15 @@ const STATUS_FILTERS: [Filter, string][] = [
   ["draft", "Draft"],
 ];
 
+const SEG_FILTERS: [Filter, string][] = [
+  ["all", "All"],
+  ["needs_you", "Needs you"],
+  ["problem", "Problem"],
+  ["on", "On"],
+  ["paused", "Paused"],
+  ["draft", "Draft"],
+];
+
 /** What GET /workflows/:id adds to a list row: the trigger, the published version and the newest version. */
 type Detail = {
   trigger: { type: string } | null;
@@ -29,9 +39,12 @@ type Detail = {
   latest: { version: number; definition: WorkflowDefinition } | null;
 };
 
-const PANEL_STEPS = 6;
+type UndoToast = { id: string; name: string; paused: boolean };
 
-/** Home: the ops table. One row per automation, a strip of real counts above it and the selected one's next actions beside it. */
+const PANEL_STEPS = 6;
+const TOAST_MS = 6000;
+
+/** Home: the ops table. One row per automation, animated KPI counts above it and the selected one's inspector beside it. */
 export function Automations({ user }: { user: User }) {
   const { t } = useLanguage();
   const owner = user.role === "owner";
@@ -50,8 +63,10 @@ export function Automations({ user }: { user: User }) {
   const [trigger, setTrigger] = useState("any");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [sheet, setSheet] = useState(false);
+  const [toast, setToast] = useState<UndoToast | null>(null);
   const opener = useRef<HTMLElement | null>(null);
   const closeButton = useRef<HTMLButtonElement>(null);
+  const segPill = useSlidingPill<HTMLDivElement>();
 
   const load = () => {
     api<Workflow[]>("GET", "/workflows").then(
@@ -73,6 +88,12 @@ export function Automations({ user }: { user: User }) {
   };
   useEffect(load, []);
 
+  useEffect(() => {
+    if (!toast) return;
+    const timer = setTimeout(() => setToast(null), TOAST_MS);
+    return () => clearTimeout(timer);
+  }, [toast]);
+
   const all = list ?? [];
   const now = Date.now();
   const total = counts(all);
@@ -83,6 +104,13 @@ export function Automations({ user }: { user: User }) {
   const selected = shown.find((w) => w.id === selectedId) ?? null;
   const stats = overview ? totals(Object.values(overview).map((o) => o.runs)) : null;
   const reviewOf = (id: string) => (review ?? []).filter((r) => r.workflowId === id);
+
+  const todayCount = useCountUp(stats ? stats.today : 0);
+  const needsYouNum = review ? review.length : total.needs_you;
+  const needsYouCount = useCountUp(needsYouNum);
+  const problemsCount = useCountUp(total.problem);
+  const liveCount = useCountUp(usage ? usage.automations.live : 0);
+
   // The steps and versions of the selected automation, and its newest runs, load when it is selected and again after a change.
   const selectedKey = selected?.id;
   useEffect(() => {
@@ -111,11 +139,12 @@ export function Automations({ user }: { user: User }) {
     );
   };
 
-  const setPaused = async (w: Workflow, paused: boolean) => {
+  const setPaused = async (w: Workflow, paused: boolean, showToast = false) => {
     setError("");
     try {
       await api("POST", `/workflows/${w.id}/${paused ? "pause" : "resume"}`);
       load();
+      if (showToast) setToast({ id: w.id, name: w.name, paused });
     } catch (e) {
       setError((e as Error).message);
     }
@@ -168,13 +197,13 @@ export function Automations({ user }: { user: User }) {
   };
   const percent = (n: number) => `${(n * 100).toFixed(1)}%`;
 
-  const needsYou = review ? (review.length >= RUN_LIMIT ? `${RUN_LIMIT}+` : String(review.length)) : String(total.needs_you);
+  const needsYou = review && review.length >= RUN_LIMIT ? `${RUN_LIMIT}+` : String(needsYouCount);
 
   const head = (
     <header className="ops-head">
       <div className="ops-title">
         <h1>{t("Automations")}</h1>
-        {list && !listError && <span>{t("{count} total", { count: list.length })}</span>}
+        {list && !listError && <span className="tnum">{t("{count} total", { count: list.length })}</span>}
       </div>
       {owner && (
         <div className="ops-actions">
@@ -206,24 +235,24 @@ export function Automations({ user }: { user: User }) {
             <section className="ops-kpis" aria-label={t("Overview")}>
               <div>
                 <span>{t("Runs today")}</span>
-                <b>{stats ? stats.today : t("n/a")}</b>
+                <b className="tnum">{stats ? todayCount : t("n/a")}</b>
               </div>
               <div>
                 <span>{t("Success, 7 days")}</span>
-                <b>{stats ? (stats.rate === null ? t("n/a") : percent(stats.rate)) : t("n/a")}</b>
+                <b className="tnum">{stats ? (stats.rate === null ? t("n/a") : percent(stats.rate)) : t("n/a")}</b>
               </div>
               <button type="button" className="needs" aria-pressed={filter === "needs_you"} onClick={() => setFilter(filter === "needs_you" ? "all" : "needs_you")}>
                 <span>{t("Needs you")}</span>
-                <b>{needsYou}</b>
+                <b className="tnum">{needsYou}</b>
               </button>
               <button type="button" className="problems" aria-pressed={filter === "problem"} onClick={() => setFilter(filter === "problem" ? "all" : "problem")}>
                 <span>{t("Problems")}</span>
-                <b>{total.problem}</b>
+                <b className="tnum">{problemsCount}</b>
               </button>
               {usage && (
                 <div>
                   <span>{t("Live automations")}</span>
-                  <b>{usage.automations.live} {usage.automations.limit !== null && <i>{t("of {limit}", { limit: usage.automations.limit })}</i>}</b>
+                  <b className="tnum">{liveCount} {usage.automations.limit !== null && <i>{t("of {limit}", { limit: usage.automations.limit })}</i>}</b>
                 </div>
               )}
             </section>
@@ -237,8 +266,42 @@ export function Automations({ user }: { user: User }) {
             <p role="status" className="ops-muted" hidden={!copied}>{copied}</p>
             <p role="alert" className="ops-alert error" hidden={!error}>{error}</p>
 
+            <div className="ops-seg-row">
+              <div
+                ref={segPill.containerRef}
+                className="ops-seg"
+                role="group"
+                aria-label={t("Filter by status")}
+                onPointerLeave={segPill.onContainerLeave}
+              >
+                <span
+                  className="ops-seg-pill motion-pill"
+                  aria-hidden="true"
+                  style={{
+                    transform: `translate3d(${segPill.pillStyle.left}px, ${segPill.pillStyle.top}px, 0)`,
+                    width: `${segPill.pillStyle.width}px`,
+                    height: `${segPill.pillStyle.height}px`,
+                    opacity: segPill.pillStyle.opacity,
+                  }}
+                />
+                {SEG_FILTERS.map(([key, label]) => (
+                  <button
+                    key={key}
+                    type="button"
+                    className="ops-seg-btn"
+                    aria-pressed={filter === key}
+                    onPointerEnter={(e) => segPill.onItemEnter(e.currentTarget)}
+                    onFocus={(e) => segPill.onItemEnter(e.currentTarget)}
+                    onClick={() => setFilter(key)}
+                  >
+                    {t(label)}
+                  </button>
+                ))}
+              </div>
+            </div>
+
             <div className="ops-filters">
-              <label className="ops-search">
+              <label className="ops-search" data-active={query.trim() ? "true" : undefined}>
                 <span className="ops-sr">{t("Find an automation")}</span>
                 <svg width="13" height="13" viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="5" fill="none" stroke="currentColor" strokeWidth="1.6" /><path d="m11 11 3.5 3.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" /></svg>
                 <input type="search" value={query} placeholder={t("Search")} onChange={(e) => setQuery(e.target.value)} />
@@ -269,22 +332,26 @@ export function Automations({ user }: { user: User }) {
                   <th scope="col" className="c-bars">{t("7 days")}</th>
                   <th scope="col" className="c-rate">{t("Success")}</th>
                   <th scope="col" className="c-last">{t("Last run")}</th>
+                  <th scope="col" className="c-toggle"><span className="ops-sr">{t("Active")}</span></th>
                 </tr>
               </thead>
               <tbody>
                 {shown.length === 0 ? (
-                  <tr><td colSpan={6} className="ops-empty">{t("None match.")}</td></tr>
+                  <tr><td colSpan={7} className="ops-empty">{t("None match.")}</td></tr>
                 ) : (
-                  shown.map((w) => (
+                  shown.map((w, index) => (
                     <Row
                       key={w.id}
                       w={w}
+                      index={index}
+                      owner={owner}
                       selected={selected?.id === w.id}
                       reviewCount={reviewOf(w.id).length}
                       entry={overview?.[w.id]}
                       loading={overview === undefined}
                       now={now}
                       onPick={pick}
+                      onTogglePause={(target, paused) => void setPaused(target, paused, true)}
                     />
                   ))
                 )}
@@ -308,30 +375,53 @@ export function Automations({ user }: { user: User }) {
                 closeRef={closeButton}
                 onClose={closeSheet}
                 onCopy={copy}
-                onPause={setPaused}
+                onPause={(target, paused) => void setPaused(target, paused, false)}
                 onDelete={remove}
               />
             </>
           )}
         </div>
       )}
+
+      {toast && (
+        <div role="status" className="ops-toast motion-toast">
+          <span>{t(toast.paused ? "Paused {name}." : "Resumed {name}.", { name: toast.name })}</span>
+          <button
+            type="button"
+            className="ops-toast-undo"
+            onClick={() => {
+              const target = list?.find((item) => item.id === toast.id);
+              const resumeTo = !toast.paused;
+              setToast(null);
+              if (target) void setPaused(target, resumeTo, false);
+              else void api("POST", `/workflows/${toast.id}/${resumeTo ? "pause" : "resume"}`).then(load, (e) => setError((e as Error).message));
+            }}
+          >
+            {t("Undo")}
+          </button>
+          <button type="button" className="ops-toast-close" aria-label={t("Dismiss")} onClick={() => setToast(null)}>×</button>
+          <i className="ops-toast-bar" aria-hidden="true" />
+        </div>
+      )}
     </main>
   );
 }
 
-function Row({ w, selected, reviewCount, entry, loading, now, onPick }: {
+function Row({ w, index, owner, selected, reviewCount, entry, loading, now, onPick, onTogglePause }: {
   w: Workflow;
+  index: number;
+  owner: boolean;
   selected: boolean;
   reviewCount: number;
   entry: OverviewEntry | undefined;
   loading: boolean;
   now: number;
   onPick: (w: Workflow, from: HTMLElement | null) => void;
+  onTogglePause: (w: Workflow, paused: boolean) => void;
 }) {
   const { t, language } = useLanguage();
   const status = statusOf(w);
-  const key = stateKey(w);
-  const tone = reviewCount > 0 || key === "needs_you" ? "needs" : key === "problem" ? "problem" : status;
+  const badge = displayStatus(w, reviewCount);
   const state = w.last ? plainState(w.last, now) : null;
   const bars = entry?.runs.days ?? null;
   const weekTotal = entry?.runs.week ?? 0;
@@ -354,35 +444,66 @@ function Row({ w, selected, reviewCount, entry, loading, now, onPick }: {
                 : null;
 
   return (
-    <tr className="ops-row" data-selected={selected || undefined} onDoubleClick={() => { location.hash = `#/w/${w.id}`; }} onClick={(e) => {
-      if (!(e.target as HTMLElement).closest("button, a")) onPick(w, e.currentTarget.querySelector("button"));
-    }}>
-      <td className="c-dot"><i className={`dot ${tone}`} aria-hidden="true" /></td>
+    <tr
+      className="ops-row motion-stagger-row"
+      style={{ "--row-index": Math.min(index, 12) } as CSSProperties}
+      data-selected={selected || undefined}
+      onDoubleClick={() => { location.hash = `#/w/${w.id}`; }}
+      onClick={(e) => {
+        if (!(e.target as HTMLElement).closest("button, a")) onPick(w, e.currentTarget.querySelector(".c-name button"));
+      }}
+    >
+      <td className="c-dot"><i className={`dot ${badge.tone}`} aria-hidden="true" /></td>
       <th scope="row" className="c-name">
-        <button
-          type="button"
-          aria-current={selected ? "true" : undefined}
-          onClick={(e) => onPick(w, e.currentTarget)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && e.shiftKey) {
-              e.preventDefault();
-              location.hash = `#/w/${w.id}`;
-            }
-          }}
-        >{w.name}</button>
-        <a className="ops-sr" href={`#/w/${w.id}`}>{t("Steps of {name}", { name: w.name })}</a>
-        {note && <span className={`sub ${note.kind}`}>{note.text}</span>}
+        <div className="ops-name-cell">
+          <button
+            type="button"
+            aria-current={selected ? "true" : undefined}
+            onClick={(e) => onPick(w, e.currentTarget)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && e.shiftKey) {
+                e.preventDefault();
+                location.hash = `#/w/${w.id}`;
+              }
+            }}
+          >{w.name}</button>
+          <a className="ops-sr" href={`#/w/${w.id}`}>{t("Steps of {name}", { name: w.name })}</a>
+          {note && <span className={`sub ${note.kind}`}>{note.text}</span>}
+        </div>
       </th>
       <td className="c-trigger">{loading ? "…" : entry?.trigger ? t(triggerLabel(entry.trigger)) : <span className="dash">-</span>}</td>
       <td className="c-bars">
         {bars === null ? t("n/a") : weekTotal === 0 ? <span className="ops-muted">{t(w.last ? "No runs this week" : "No runs")}</span> : (
           <span className="bars" role="img" aria-label={t("{count} runs in the last 7 days", { count: weekTotal })}>
-            {bars.map((b, i) => <i key={i} className={b.failed ? "bad" : b.total === 0 ? "none" : undefined} style={{ height: b.total === 0 ? 2 : 4 + Math.round((b.total / peak) * 20) }} />)}
+            {bars.map((b, i) => (
+              <i
+                key={i}
+                className={["motion-spark-bar", b.failed ? "bad" : b.total === 0 ? "none" : ""].filter(Boolean).join(" ")}
+                style={{ height: b.total === 0 ? 2 : 4 + Math.round((b.total / peak) * 20), "--bar-index": i } as CSSProperties}
+              />
+            ))}
           </span>
         )}
       </td>
-      <td className="c-rate">{rate === null ? <span className="ops-muted">{t("n/a")}</span> : `${Math.round(rate * 100)}%`}</td>
+      <td className="c-rate tnum">{rate === null ? <span className="ops-muted">{t("n/a")}</span> : `${Math.round(rate * 100)}%`}</td>
       <td className="c-last">{w.last ? <time dateTime={w.last.createdAt}>{ago(w.last.createdAt, now, language)}</time> : <span className="ops-muted">{t("Never")}</span>}</td>
+      <td className="c-toggle">
+        {owner && w.live && (
+          <button
+            type="button"
+            role="switch"
+            aria-checked={!w.pausedAt}
+            aria-label={t(w.pausedAt ? "Resume {name}" : "Pause {name}", { name: w.name })}
+            className="ops-switch motion-switch"
+            onClick={(e) => {
+              e.stopPropagation();
+              onTogglePause(w, !w.pausedAt);
+            }}
+          >
+            <i className="ops-switch-thumb" aria-hidden="true" />
+          </button>
+        )}
+      </td>
     </tr>
   );
 }
@@ -404,6 +525,7 @@ function Panel({ w, owner, detail, entry, runs, review, now, sheet, closeRef, on
 }) {
   const { t, language } = useLanguage();
   const status = statusOf(w);
+  const badge = displayStatus(w, review.length);
   const guided = !!w.setup;
   const oldest = review[review.length - 1];
   const date = (iso: string) => new Date(iso).toLocaleDateString(language === "tl" ? "fil-PH" : "en", { month: "short", day: "numeric" });
@@ -425,12 +547,11 @@ function Panel({ w, owner, detail, entry, runs, review, now, sheet, closeRef, on
     }
   })();
   const mine = runs ?? [];
-  const statusLabel = { on: "On", paused: "Paused", off: "Off", draft: "Draft" }[status];
 
   return (
-    <aside className="ops-panel" aria-labelledby="ops-panel-title" data-sheet={sheet || undefined} role={sheet ? "dialog" : undefined} aria-modal={sheet || undefined}>
+    <aside className="ops-panel motion-sheet" aria-labelledby="ops-panel-title" data-sheet={sheet || undefined} role={sheet ? "dialog" : undefined} aria-modal={sheet || undefined}>
       <div className="panel-top">
-        <span className={`panel-status ${status}`}><i className="dot" aria-hidden="true" />{t(statusLabel)}</span>
+        <span className={`panel-status ${badge.tone}`}><i className="dot" aria-hidden="true" />{t(badge.label)}</span>
         <span className="panel-version">
           {detail?.live ? t("v{version} · published {date}", { version: detail.live.version, date: date(detail.live.createdAt) }) : detail?.latest ? t("v{version} · not published", { version: detail.latest.version }) : ""}
         </span>
@@ -487,7 +608,7 @@ function Panel({ w, owner, detail, entry, runs, review, now, sheet, closeRef, on
       </section>
 
       <dl className="panel-facts">
-        <div><dt>{t("Runs in 7 days")}</dt><dd>{entry ? entry.runs.week : t("n/a")}</dd></div>
+        <div><dt>{t("Runs in 7 days")}</dt><dd className="tnum">{entry ? entry.runs.week : t("n/a")}</dd></div>
         {w.live && w.formId && (
           <div className="panel-form">
             <dt>{t("Public form")}</dt>

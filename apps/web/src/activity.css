@@ -4,42 +4,42 @@
  * the frames' values; dark maps the same roles onto the console's theme variables, as automations-ops.css does.
  */
 .act {
-  --a-bg: var(--surface);
-  --a-canvas: var(--bg);
-  --a-ink: var(--text);
-  --a-muted: var(--muted);
-  --a-line: var(--border-soft);
-  --a-field: var(--border);
-  --a-accent: var(--accent);
+  --a-bg: var(--daylight-bg, var(--surface));
+  --a-canvas: var(--subtle, var(--bg));
+  --a-ink: var(--fg, var(--text));
+  --a-muted: var(--fg-muted, var(--muted));
+  --a-line: var(--border-hairline, var(--border-soft));
+  --a-field: var(--border-strong, var(--border));
+  --a-accent: var(--blue, var(--accent));
   --a-on-accent: var(--on-accent);
-  --a-select: var(--accent-tint);
-  --a-red: var(--danger);
-  --a-red-bg: color-mix(in srgb, var(--danger) 18%, transparent);
-  --a-green: var(--ok);
-  --a-green-bg: color-mix(in srgb, var(--ok) 18%, transparent);
-  --a-amber: var(--warn);
-  --a-grey-bg: color-mix(in srgb, var(--muted) 18%, transparent);
+  --a-select: var(--blue-soft, var(--accent-tint));
+  --a-red: var(--red, var(--danger));
+  --a-red-bg: var(--red-soft, color-mix(in srgb, var(--danger) 18%, transparent));
+  --a-green: var(--green, var(--ok));
+  --a-green-bg: var(--green-soft, color-mix(in srgb, var(--ok) 18%, transparent));
+  --a-amber: var(--amber, var(--warn));
+  --a-grey-bg: color-mix(in srgb, var(--muted) 16%, transparent);
   --a-focus: var(--focus);
   --a-sheet-shadow: var(--shadow-overlay);
 }
 :root[data-theme="light"] .act {
-  --a-bg: #fff;
-  --a-canvas: #f5f6f8;
-  --a-ink: #0a0b0f;
-  --a-muted: #5b6170;
-  --a-line: #e3e6ec;
-  --a-field: #d5d9e2;
-  --a-accent: #1b45c9;
-  --a-on-accent: #fff;
-  --a-select: #e8eeff;
-  --a-red: #b42318;
-  --a-red-bg: #fdecea;
-  --a-green: #17803d;
-  --a-green-bg: #e6f4ea;
-  --a-amber: #8a5a00;
-  --a-grey-bg: #eceef2;
-  --a-focus: #1b45c9;
-  --a-sheet-shadow: 0 -8px 24px rgb(10 11 15 / 0.18);
+  --a-bg: #ffffff;
+  --a-canvas: #fafafa;
+  --a-ink: #0f131a;
+  --a-muted: #5b6372;
+  --a-line: #e6e8ee;
+  --a-field: #d1d5df;
+  --a-accent: #0b66ff;
+  --a-on-accent: #ffffff;
+  --a-select: #eef4ff;
+  --a-red: #c92a2a;
+  --a-red-bg: #fff1f1;
+  --a-green: #15803d;
+  --a-green-bg: #ecfdf3;
+  --a-amber: #8a5300;
+  --a-grey-bg: #f4f5f7;
+  --a-focus: #0b66ff;
+  --a-sheet-shadow: 0 -8px 24px rgb(15 19 26 / 0.16);
 }
 
 main.page.act { max-width: none; width: 100%; margin: 0; padding: 0; min-height: 100%; background: var(--a-canvas); color: var(--a-ink); font-family: "Inter", var(--font-sans); font-size: 14px; line-height: 20px; overflow-wrap: anywhere; }
@@ -85,7 +85,7 @@ main.page.act { max-width: none; width: 100%; margin: 0; padding: 0; min-height:
 
 /* Filters. */
 .act-filters { display: flex; flex-wrap: wrap; gap: 12px; }
-.act-filters input, .act-filters select { width: auto; min-height: 40px; padding: 0 12px; border: 1px solid var(--a-field); border-radius: 8px; background: var(--a-bg); color: var(--a-ink); font: 400 14px/18px inherit; }
+.act-filters input, .act-filters select { width: auto; min-height: 40px; padding: 0 12px; border: 1px solid var(--a-field); border-radius: 8px; background: var(--a-bg); color: var(--a-ink); font: 400 14px/1.25 inherit; vertical-align: middle; }
 .act-filters input { flex: 0 1 280px; min-width: 180px; }
 
 /* Status pills (O1, A8): colour changes over --dur-fast when the state changes. */

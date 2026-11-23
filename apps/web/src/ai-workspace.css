@@ -1,10 +1,19 @@
 main.page.creation-chat {
-  --accent: #1b45c9; --accent-tint: #e8eeff; --text: #0a0b0f; --muted: #5b6170;
-  --surface: #fff; --sunken: #f5f6f8; --border-soft: #e3e6ec; --bg: var(--surface);
+  --accent: var(--blue, #0b66ff); --accent-tint: var(--blue-soft, #eef4ff); --text: var(--fg, #0f131a); --muted: var(--fg-muted, #5b6372);
+  --surface: var(--daylight-bg, #ffffff); --sunken: var(--subtle, #f4f5f7); --border-soft: var(--border-hairline, #e6e8ee); --bg: var(--surface);
   background: var(--surface); color: var(--text); padding: 0; min-height: 100dvh;
 }
 .builder-head { padding: 18px 28px 0; border-bottom: 1px solid var(--border-soft); }
-.builder-head > a { color: var(--muted); font-size: .81rem; }
+.builder-head > a { color: var(--muted); font-size: .81rem; text-decoration: none; }
+.builder-head > a:hover { color: var(--text); text-decoration: underline; text-underline-offset: 3px; }
+main.page.creation-chat button:disabled,
+main.page.creation-chat button.primary:disabled {
+  background: var(--sunken);
+  border-color: var(--border-soft);
+  color: var(--muted);
+  opacity: 0.6;
+  cursor: not-allowed;
+}
 .builder-head .toolbar { border: 0; margin: 4px 0; padding: 0; }
 .builder-head h1 { font-size: 1.63rem; font-weight: 700; }
 .builder-tabs { display: flex; gap: 22px; }
@@ -34,7 +43,7 @@ main.page.creation-chat {
 .plan-table th:first-child { width: 12%; }
 .plan-table th:nth-child(2) { width: 42%; }
 :root[data-theme="dark"] main.page.creation-chat {
-  color-scheme: dark; --text: #f4f6fa; --muted: #aeb7c8; --bg: #171a21; --surface: #171a21; --sunken: #212530; --border-soft: #404655; --accent: #7496ff; --accent-tint: #263657; --on-accent: #101320;
+  color-scheme: dark; --text: var(--fg, #eef2ff); --muted: var(--fg-muted, #a3aecb); --bg: var(--daylight-bg, #131a30); --surface: var(--daylight-bg, #131a30); --sunken: var(--subtle, #18213c); --border-soft: var(--border-hairline, #243052); --accent: var(--blue, #8fb0ff); --accent-tint: var(--blue-soft, #1c2a55); --on-accent: #0b1020;
 }
 :root[data-theme="dark"] .assistant-id img { filter: invert(1); }
 @media (max-width:799px) {

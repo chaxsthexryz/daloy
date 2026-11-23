@@ -54,6 +54,13 @@ describe("staff navigation", () => {
     expect(render("#/")).not.toContain("ai-meter");
     expect(render("#/", "operator")).not.toContain("ai-meter");
   });
+
+  it("renders a fixed non-collapsible sidebar with hover pill and Quick jump button", () => {
+    const html = render("#/");
+    expect(html).not.toContain("data-expanded");
+    expect(html).toContain("rail-hover-pill");
+    expect(html).toContain('aria-keyshortcuts="Control+K Meta+K"');
+  });
 });
 
 const usage = (limit: number | null): Usage => ({

@@ -4,7 +4,7 @@ This file explains each core module in plain language: what it does, why it is b
 
 ## Reviewing the console design
 
-Owners and operators use a 64px navigation rail on screens at least 800px wide. Holding the pointer over it for 150ms shows the labels and expands the rail to 232px. Keyboard focus opens it immediately. Escape collapses it and keeps the focused link available. Reduced motion removes the hover delay and transitions. On a phone, Menu opens the role's links above the bottom bar. Close and Escape return focus to Menu, and changing routes closes the menu. Approvers and requesters keep their own My requests entry. The desktop, phone and role cases in `e2e/navigation.spec.ts` cover these paths.
+Owners and operators use a fixed 228 px Daylight Minimal sidebar on screens at least 800 px wide, with a sliding hover pill, `Cmd/Ctrl+K` Quick Jump, an always-visible AI usage meter (for owners) and Sign out. Reduced motion turns off hover pill, row, sparkline, switch and panel transitions. On a phone under 800 px, Menu opens the role's links above the bottom bar, Close and Escape return focus to Menu, and changing routes closes the menu. Approvers and requesters keep their own My requests entry. The desktop, phone and role cases in `e2e/navigation.spec.ts` and `e2e/rail.spec.ts` cover these paths.
 
 Staff start on Automations to see which workflows need attention. Activity opens the run behind a status, and Bookings lists appointments staff can change. The sidebar groups daily work, creation and workspace settings. On a phone, the bottom navigation and Menu expose the pages available to the signed-in role. The [offline walkthrough](design/console-review.html) shows these screens with sample records. Open it in a browser and switch between Desktop and Phone. The [phase ledger](design/console-redesign-phases.md) records which actions were tested separately.
 
@@ -1363,3 +1363,35 @@ Why this way: the resort has not said whether rates vary by season, weekday or h
 Edge cases: Publish is refused with nothing to publish or no change since the live version; two publishes at once get one version number each or a 409. Deleting a draft leaves published copies alone. A price, deposit or rule on an FAQ, policy, location, activity, arrival or link entry is refused. An entry needs text, a price or a link. Prices with centavos are not accepted. Which rule wins when two match is not decided here; `stay_quote` in C4 does that.
 
 Tests: `packages/engine/src/knowledge.test.ts` (entry rules), `apps/api/src/knowledge.test.ts` (publish makes an immutable version, an edit or delete after publish leaves the live version alone, the next publish is version 2, nothing to publish, another workspace sees nothing, the trigger refuses an UPDATE), `apps/api/src/members.test.ts` (role matrix rows: owner and operator only), `apps/web/src/lib/knowledge.test.ts` (form to entry and back) and `e2e/knowledge.spec.ts` (write, publish and edit after publish at 390 px and desktop, in English and Taglish; an operator sees the page).
+
+## Console Daylight Minimal tokens, brand mark and motion primitives (phase D1, decision 0111)
+
+What it does: `apps/web/src/styles.css` defines Daylight Minimal Light and Dark tokens (`--sidebar-bg`, `--daylight-bg`, `--subtle`, `--border-hairline`, `--border-strong`, `--fg`, `--blue`, `--sb-w: 228px`, `--ease-spring`, `--ease-snappy`) alongside the existing console tokens checked by `apps/web/src/lib/run-flow.test.ts`. `apps/web/public/navigation.svg` and `apps/web/public/logo.svg` use the Quarter Tiles mark (`Logo 28`) and a gear icon for Settings. `apps/web/src/motion.css` and `apps/web/src/lib/motion.ts` provide CSS animations and React hooks (`usePrefersReducedMotion`, `useCountUp`, `useSlidingPill`) for sliding hover pills, staggered rows, rising sparkline bars, stretch switches, undo toasts and spring sheets. `signOut()` in `apps/web/src/App.tsx` resets `location.hash` to `#/` on logout.
+
+Why this way: keeping motion in CSS keyframes and small React hooks avoids adding a runtime animation dependency. `useCountUp` snaps directly to the target number and `motion.css` turns off transitions and animations whenever `(prefers-reduced-motion: reduce)` matches.
+
+Tests: `apps/web/src/lib/motion.test.ts` (cubic ease-out interpolation, relative pill measurement, reduced-motion media query subscription, `requestAnimationFrame` count-up lifecycle and SSR hook render) and `apps/web/src/lib/run-flow.test.ts` (WCAG AA contrast in Light and Dark `:root` blocks).
+
+## Fixed 228 px Daylight Minimal sidebar and Quick Jump (phase D2, decision 0112)
+
+What it does: on desktop (`>= 800 px`), `apps/web/src/Nav.tsx` and `apps/web/src/console-shell.css` render a permanently fixed 228 px Daylight Minimal sidebar (`--sidebar-bg` and `--border-hairline`) instead of a collapsing hover rail. Labels, the `AiMeter` usage card (owners only, refreshed on `daloy:usage`), and `Sign out` are always visible. Moving the pointer or keyboard focus over sidebar links slides `.rail-hover-pill` (`useSlidingPill` in `lib/motion.ts`) behind the active item. Pressing `Cmd+K` / `Ctrl+K` or the `Ctrl K` button opens `CommandPalette.tsx` (`Quick jump`), which matches the sidebar's role-scoped pages (including `Knowledge` and `Receipts to review` for owners and operators, while approvers and requesters see only their permitted routes) and navigates with `ArrowUp`, `ArrowDown`, `Enter` or click. Under 800 px, the bottom bar and sheet menu remain unchanged.
+
+Why this way: removing hover expansion removes layout shifts on pointer pass-through and keeps navigation labels, usage limits and Sign out discoverable without extra clicks.
+
+Tests: `apps/web/src/CommandPalette.test.tsx` (role scoping, case-insensitive filtering, index wrapping, `Cmd/Ctrl+K` shortcut matching and dialog render), `apps/web/src/Nav.test.tsx` (active section marking, role isolation, `Library` label, `AiMeter`, fixed sidebar markup), `e2e/rail.spec.ts` and `e2e/navigation.spec.ts` (228 px fixed layout, reduced-motion pill transitions, `Quick jump` navigation, phone sheet and role scoping).
+
+## Automations dashboard Daylight Minimal revamp (phase D3, decision 0113)
+
+What it does: `apps/web/src/Automations.tsx` and `apps/web/src/automations-ops.css` present the Automations home in the Daylight Minimal palette (Light and Dark), with `useCountUp` KPI counters, gliding segmented status tabs alongside the accessible `Status:` and `Trigger:` selectors, expandable search, staggered row entrances (`.motion-stagger-row`), rising 7-day sparkline bars (`.motion-spark-bar`), a spring inspector panel (`.motion-sheet`), and an inline `role="switch"` pause/resume toggle with a 6-second undo toast.
+
+Why this way: both `Row` and `Panel` read `displayStatus(w, reviewCount)` in `apps/web/src/lib/automations.ts` so a live automation with a failed run or open review shows `Problem` or `Needs you` consistently in both places. Moving flex layout into `.ops-name-cell`, setting `height: auto` on table cells, and hiding `.c-last` while the inspector is open keeps multi-line titles from overlapping.
+
+Tests: `apps/web/src/lib/automations.test.ts` (`displayStatus`, `arrange`, `counts`, `triggerLabel`, `withTrigger`), `apps/web/src/lib/locale-coverage.test.ts` (Tagalog entries in `locale-ops.ts`), `e2e/automations.spec.ts` (inline switch pause/undo toast, row vs inspector `Problem` sync, two-line title spacing, phone layout), and `e2e/navigation.spec.ts`.
+
+## Secondary pages, auth and editor Daylight Minimal polish (phase D4, decision 0114)
+
+What it does: `workspace.css`, `activity.css`, `auth.css`, `ai-workspace.css`, `apps-design.css`, `library.css`, `receipts.css` and `editor.css` use the Daylight Minimal Light and Dark tokens, hairline borders and rounded controls. `Receipts.tsx` and `BusinessSetup.tsx` apply `.file-input` styling over native `<input type="file">` elements, `apps-design.css` and `editor.css` apply subtle brand tints to the 5 letter-tile app marks (`unisms`, `paymongo`, `gcash`, `messenger`, `instagram`) while leaving all 14 SVG marks in `public/logos/` unaltered, `Apps.tsx` reports active connections in `{count} of {total} connected`, `ai-workspace.css` dims disabled buttons, and `editor.css` prevents `.a7-node-row` title vs `.node-id` slug collisions.
+
+Why this way: styling native `<input type="file">` with `::file-selector-button` improves visual consistency without breaking label bindings or file uploads, and keeping third-party SVGs untouched preserves brand permissions (decision 0085).
+
+Tests: `apps/web/src/AppMark.test.ts` (letter-tile tint rules and SVG logo integrity), `e2e/library.spec.ts`, `e2e/build-with-ai.spec.ts`, `e2e/editor.spec.ts`, `e2e/receipt-expense.spec.ts` and `e2e/business-setup.spec.ts`.

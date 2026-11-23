@@ -17,6 +17,21 @@ const rank = (w: Listed) => ({ needs_you: 0, problem: 1 })[stateKey(w) as string
 /** One status per automation: paused wins, then a draft (set up, never turned on), then on, then off. */
 export const statusOf = (w: Listed): "on" | "paused" | "off" | "draft" => (w.pausedAt ? "paused" : isDraft(w) ? "draft" : w.live ? "on" : "off");
 
+export type DisplayTone = "needs" | "problem" | "on" | "paused" | "off" | "draft";
+export type DisplayLabel = "Needs you" | "Problem" | "On" | "Paused" | "Off" | "Draft";
+
+/** Unified status shown in both the table row dot and the inspector panel badge. */
+export function displayStatus(w: Listed, reviewCount = 0): { tone: DisplayTone; label: DisplayLabel } {
+  const key = stateKey(w);
+  if (reviewCount > 0 || key === "needs_you") return { tone: "needs", label: "Needs you" };
+  if (key === "problem") return { tone: "problem", label: "Problem" };
+  const status = statusOf(w);
+  if (status === "paused") return { tone: "paused", label: "Paused" };
+  if (status === "draft") return { tone: "draft", label: "Draft" };
+  if (status === "off") return { tone: "off", label: "Off" };
+  return { tone: "on", label: "On" };
+}
+
 const matches = (w: Listed, filter: Filter) => (filter === "all" ? true : filter === "on" || filter === "paused" || filter === "off" || filter === "draft" ? statusOf(w) === filter : stateKey(w) === filter);
 
 /**

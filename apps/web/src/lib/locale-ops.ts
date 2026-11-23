@@ -45,4 +45,13 @@ export const opsTranslations: Record<string, string> = {
   "v{version} · published {date}": "v{version} · inilathala noong {date}",
   "v{version} · not published": "v{version} · hindi pa nailathala",
   "of {limit}": "sa {limit}",
+  "All": "Lahat",
+  "Active": "Aktibo",
+  "Pause {name}": "I-pause ang {name}",
+  "Resume {name}": "Ipagpatuloy ang {name}",
+  "Paused {name}.": "Na-pause ang {name}.",
+  "Resumed {name}.": "Ipinagpatuloy ang {name}.",
+  "Undo": "I-undo",
+  "Dismiss": "Isara",
+  "Filter by status": "I-filter ayon sa status",
 };
