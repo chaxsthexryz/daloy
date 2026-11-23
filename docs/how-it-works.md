@@ -1321,3 +1321,11 @@ What it does: `apps/web/src/styles.css` defines Daylight Minimal Light and Dark 
 Why this way: keeping motion in CSS keyframes and small React hooks avoids adding a runtime animation dependency. `useCountUp` snaps directly to the target number and `motion.css` turns off transitions and animations whenever `(prefers-reduced-motion: reduce)` matches.
 
 Tests: `apps/web/src/lib/motion.test.ts` (cubic ease-out interpolation, relative pill measurement, reduced-motion media query subscription, `requestAnimationFrame` count-up lifecycle and SSR hook render) and `apps/web/src/lib/run-flow.test.ts` (WCAG AA contrast in Light and Dark `:root` blocks).
+
+## Fixed 228 px Daylight Minimal sidebar and Quick Jump (phase D2, decision 0112)
+
+What it does: on desktop (`>= 800 px`), `apps/web/src/Nav.tsx` and `apps/web/src/console-shell.css` render a permanently fixed 228 px Daylight Minimal sidebar (`--sidebar-bg` and `--border-hairline`) instead of a collapsing hover rail. Labels, the `AiMeter` usage card (owners only, refreshed on `daloy:usage`), and `Sign out` are always visible. Moving the pointer or keyboard focus over sidebar links slides `.rail-hover-pill` (`useSlidingPill` in `lib/motion.ts`) behind the active item. Pressing `Cmd+K` / `Ctrl+K` or the `Ctrl K` button opens `CommandPalette.tsx` (`Quick jump`), which filters the pages available to the signed-in role (`owner` or `operator`) and navigates with `ArrowUp`, `ArrowDown`, `Enter` or click. Under 800 px, the bottom bar and sheet menu remain unchanged.
+
+Why this way: removing hover expansion removes layout shifts on pointer pass-through and keeps navigation labels, usage limits and Sign out discoverable without extra clicks.
+
+Tests: `apps/web/src/CommandPalette.test.tsx` (role scoping, case-insensitive filtering, index wrapping, `Cmd/Ctrl+K` shortcut matching and dialog render), `apps/web/src/Nav.test.tsx` (active section marking, role isolation, `Library` label, `AiMeter`, fixed sidebar markup), `e2e/rail.spec.ts` and `e2e/navigation.spec.ts` (228 px fixed layout, reduced-motion pill transitions, `Quick jump` navigation, phone sheet and role scoping).
