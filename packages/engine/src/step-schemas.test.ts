@@ -5,7 +5,7 @@ describe("stepJsonSchemas", () => {
   const schemas = stepJsonSchemas();
 
   it("covers every step type", () => {
-    expect(Object.keys(schemas).sort()).toEqual(["ai", "airtable", "approval", "booking", "calendar", "condition", "delay", "discord", "drive", "email", "google_docs", "http", "meta_reply", "notion", "outlook", "payment_due", "payment_expire", "payment_status", "paymongo_link", "read_page", "sheets", "shopify_create_product", "shopify_update_product", "slack", "sms", "teams", "telegram", "trello"]);
+    expect(Object.keys(schemas).sort()).toEqual(["ai", "airtable", "approval", "booking", "browser", "calendar", "condition", "delay", "discord", "drive", "email", "google_docs", "http", "meta_reply", "notion", "outlook", "payment_due", "payment_expire", "payment_status", "paymongo_link", "read_page", "sheets", "shopify_create_product", "shopify_update_product", "slack", "sms", "teams", "telegram", "trello"]);
   });
 
   it("describes http as an object with a method enum and required url", () => {

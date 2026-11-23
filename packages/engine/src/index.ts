@@ -1,6 +1,7 @@
 export * from "./ai";
 export * from "./ai-draft";
 export * from "./ai-chat";
+export * from "./browser";
 export * from "./definition";
 export * from "./discord-docs";
 export * from "./expressions";

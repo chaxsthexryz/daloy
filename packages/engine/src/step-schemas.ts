@@ -1,5 +1,6 @@
 import * as z from "zod";
 import { aiConfigSchema } from "./ai";
+import { browserConfigSchema } from "./browser";
 import { approvalConfigSchema, discordConfigSchema, googleDocsConfigSchema, readPageConfigSchema, bookingConfigSchema, calendarConfigSchema, conditionSchema, delayConfigSchema, driveConfigSchema, emailConfigSchema, httpConfigSchema, metaReplyConfigSchema, outlookConfigSchema, paymentDueConfigSchema, paymentExpireConfigSchema, paymentStatusConfigSchema, paymongoLinkConfigSchema, shopifyCreateProductConfigSchema, shopifyUpdateProductConfigSchema, airtableConfigSchema, notionConfigSchema, trelloConfigSchema, sheetsConfigSchema, slackConfigSchema, smsConfigSchema, teamsConfigSchema, telegramConfigSchema, type Step } from "./definition";
 
 /**
@@ -38,5 +39,6 @@ export function stepJsonSchemas(): Record<Step["type"], unknown> {
     read_page: json(readPageConfigSchema),
     shopify_create_product: json(shopifyCreateProductConfigSchema),
     shopify_update_product: json(shopifyUpdateProductConfigSchema),
+    browser: json(browserConfigSchema),
   };
 }

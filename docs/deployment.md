@@ -28,6 +28,8 @@ Install Docker Engine and the compose plugin from Docker's apt repository ([inst
 
 The app images were built for linux/arm64 under emulation on 17 November 2026 at `ce6e26c`: both built (api in about 3 minutes, worker in about 1.5 under QEMU), and the api image loaded `@node-rs/argon2` and the worker image ran `tsx` on arm64. That is a build and load check, not a run of the whole stack on arm64.
 
+The browser service (`browser` in docker-compose.yml, decision 0108) is the largest part of the stack. Its base, `mcr.microsoft.com/playwright:v1.65.0-noble`, is about 1 GB to download for arm64 (984 MB of compressed layers, read from the image manifest on 23 November 2026) and 3.65 GB on disk, because it also carries Firefox and WebKit. The built service image is 4.1 GB on disk, so leave at least 6 GB of free disk for it on top of the other images. The image is published for arm64, so it runs natively on the Ampere A1 machine without emulation; so far it was built and run on amd64 only. Memory: the container is limited to 2560 MB (`mem_limit`), sized for `BROWSER_CONCURRENCY=2` jobs of about 1 GB each on heavy pages. A simple page used about 240 MB for the whole container in a check on 23 November 2026. On Oracle's free 4-core, 24 GB A1 machine the defaults fit with room to spare, and they also fit the 6 GB shape suggested above. On the 1 GB e2-micro fallback set `BROWSER_CONCURRENCY=1` and expect only light pages to work, or leave the browser step unused. `BROWSER_TOKEN` must be set in `.env` (`openssl rand -hex 32`) before `docker compose up`, also on an existing installation that pulls this change.
+
 ## 2. `.env` for this deployment
 
 Fill in, beside the values `.env.example` asks for:

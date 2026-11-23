@@ -104,6 +104,8 @@ function sentence(step: WorkflowDefinition["steps"][number], language: Language)
       return t("Create a product in Shopify");
     case "shopify_update_product":
       return t("Update a product in Shopify");
+    case "browser":
+      return t("Open {host} in Daloy's browser", { host: /^(?:[a-z]+:\/\/)?([^/?#]+)/i.exec(text(c.url, ""))?.[1] ?? t("a web page") });
     default:
       return t("Do something");
   }

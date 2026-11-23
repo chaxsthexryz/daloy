@@ -11,7 +11,7 @@ export type Draft = WorkflowDefinition;
 export type Edge = Draft["edges"][number];
 
 /** Step types the builder can add. */
-export const ADDABLE = ["condition", "http", "email", "delay", "ai", "approval", "sheets", "drive", "slack", "outlook", "teams", "telegram", "sms", "calendar", "airtable", "notion", "trello", "booking", "meta_reply", "shopify_create_product", "shopify_update_product", "discord", "google_docs", "read_page"] as const;
+export const ADDABLE = ["condition", "http", "email", "delay", "ai", "approval", "sheets", "drive", "slack", "outlook", "teams", "telegram", "sms", "calendar", "airtable", "notion", "trello", "booking", "meta_reply", "shopify_create_product", "shopify_update_product", "discord", "google_docs", "browser", "read_page"] as const;
 export type AddableType = (typeof ADDABLE)[number];
 
 export const blankDraft = (): Draft => ({ trigger: { type: "manual", config: {} }, steps: [], edges: [] });
@@ -66,6 +66,9 @@ export function defaultConfig(type: AddableType, language: Language = "en"): Ste
       return { title: t("New product"), status: "draft" };
     case "shopify_update_product":
       return { by: "sku", product: "", price: "" };
+    // Reads one value, so the step is useful as added and the owner only changes the address and the selector.
+    case "browser":
+      return { url: "https://example.com/", actions: [{ action: "extract", selector: "h1", name: "heading" }] };
   }
 }
 

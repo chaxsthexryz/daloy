@@ -1,0 +1,16 @@
+{
+  "name": "@daloy/browser",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Browser service: runs Playwright Chromium jobs for the browser step behind a guarded forward proxy. No public port.",
+  "dependencies": {
+    "@daloy/engine": "workspace:*",
+    "playwright": "1.65.0",
+    "tsx": "^4.23.15",
+    "zod": "^4.6.7"
+  },
+  "scripts": {
+    "start": "tsx src/main.ts"
+  }
+}

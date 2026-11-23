@@ -333,13 +333,14 @@ DeepSeek's review is in `docs/roadmap-review-2026-11-18.md`. Claude's second opi
 ## Browsing (plan: read a page, a browser step, an AI browser agent)
 
 - [x] B1. Read a public page: `read_page` step with robots.txt, a 2 MB cap, the SSRF guard, a CSS selector value and `previous` and `changed` from the last run. Decision 0107. (claimed: claude, branch claude/b1-read-page)
+- [x] B2. Browser service (`apps/browser`, Playwright Chromium behind a guarded forward proxy, on its own Docker network) and the browser step (up to 20 actions, screenshots as uploads). Decision 0108, no migration. (claimed: claude, branch claude/b2-browser)
 
 ## Ideas from n8n, Langflow and the AI starter kit (23 November 2026)
 
 - [x] T1. Test this step in the step's own panel with its last result, and "Try this step for real" for one step while the rest stay faked. Decision 0110, no migration.
 - [ ] T2. "Test with this data" on a run page: open the editor with that run's trigger data as the sample.
-- [ ] T3. "If this step fails": stop, skip and carry on, or take a "failed" path. After B2 merges.
-- [ ] T4. Notes on steps, shown on the canvas card and read by Explain this flow. After B2 merges.
+- [ ] T3. "If this step fails": stop, skip and carry on, or take a "failed" path.
+- [ ] T4. Notes on steps, shown on the canvas card and read by Explain this flow.
 - [ ] T5. One Share panel: form link and embed code, webhook URL, MCP tool name and an API example.
 - [ ] T6. `docker compose --profile local-ai up` runs Ollama with a small model.
 - [ ] T7. Answer from my price list: owner-written price list and answers, an AI `answer` task and a Messenger template.

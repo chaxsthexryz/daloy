@@ -1,9 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { workspaceLanguage, aiConnection, bookFromStep, bookingOfStep, bookingReference, centavosToPesos, createDue, dueForStep, DueTakenError, expireDue, findReviewer, pendingCheckout, pesosToCentavos, checkReceiptReference, checkRecipients, claimTimeout, claimUsage, createApproval, findPaymentForStep, findApprover, queueCalendarEvent, queueDelivery, readSecrets, redactSecrets, secretForms, sendAs, type Db, type MailDeps, type Provider } from "@daloy/db";
 import { providerUrls, type ProviderUrls } from "@daloy/db";
-import { approvalEmailBody, checkDiscordContent, type FileRef, bookingStartField, conditionBranch, normalizePhMobile, parseZoned, SMS_MAX_CHARS, type TestChoice, type Trigger, declaresJson, parseInstant, isRetryable, mockAiOutput, parseJsonTemplate, resolveJsonTemplate, resolveTemplate, StepError, usesSecrets, type ExpressionContext, type Step } from "@daloy/engine";
+import { approvalEmailBody, checkDiscordContent, wouldDo, type FileRef, bookingStartField, conditionBranch, normalizePhMobile, parseZoned, SMS_MAX_CHARS, type TestChoice, type Trigger, declaresJson, parseInstant, isRetryable, mockAiOutput, parseJsonTemplate, resolveJsonTemplate, resolveTemplate, StepError, usesSecrets, type ExpressionContext, type Step } from "@daloy/engine";
 import type { StepExecutor, StepResult } from "../advance";
 import { runAi } from "./ai";
+import { browserService, browserStep, type BrowserInput, type BrowserService } from "./browser";
 import { loadAiFiles } from "./ai-files";
 import { googleDocsStep, type DocsInput } from "./google-docs";
 import { httpRequest } from "./http";
@@ -16,8 +17,18 @@ import { defaultGuard, type SsrfGuard } from "./ssrf";
  * publicUrl (PUBLIC_URL) is where the API is reachable, for approval links. The AI model comes from the owner's settings
  * or the LLM_* env vars. Mail goes out as the owner: their Gmail, or the installation server when they connected none.
  */
-export type ExecutorDeps = { db: Db; secretsKey: Buffer; mail: MailDeps; guard?: SsrfGuard; publicUrl?: string; /** Where Google and the other providers live. Defaults to providerUrls() (env); tests point it at the fakes. */ urls?: ProviderUrls };
-type FullDeps = ExecutorDeps & { guard: SsrfGuard; publicUrl: string; urls: ProviderUrls };
+export type ExecutorDeps = {
+  db: Db;
+  secretsKey: Buffer;
+  mail: MailDeps;
+  guard?: SsrfGuard;
+  publicUrl?: string;
+  /** Where Google and the other providers live. Defaults to providerUrls() (env); tests point it at the fakes. */
+  urls?: ProviderUrls;
+  /** The browser service for the browser step (B2). Defaults to BROWSER_URL and BROWSER_TOKEN; null when there is none. */
+  browser?: BrowserService | null;
+};
+type FullDeps = ExecutorDeps & { guard: SsrfGuard; publicUrl: string; urls: ProviderUrls; browser: BrowserService | null };
 
 // Config fields are templates that must end up as text, even when a placeholder resolves to a number or object.
 function text(template: string, ctx: ExpressionContext): string {
@@ -125,6 +136,9 @@ function resolveInput(step: Step, ctx: ExpressionContext): Record<string, unknow
       const opt = (v: string | undefined) => (v === undefined ? "" : text(v, ctx));
       return { by: c.by, product: text(c.product, ctx), title: opt(c.title), description: opt(c.description), price: opt(c.price), sku: opt(c.sku), imageUrl: opt(c.imageUrl), ...(c.status ? { status: c.status } : {}) } satisfies ShopifyUpdateInput;
     }
+    case "browser":
+      // Addresses and typed values are templates; selectors, texts and names are the owner's literals.
+      return { url: text(step.config.url, ctx), actions: step.config.actions.map((a) => (a.action === "goto" ? { ...a, url: text(a.url, ctx) } : a.action === "fill" ? { ...a, value: text(a.value, ctx) } : a)) } satisfies BrowserInput;
     case "calendar":
       return { title: text(step.config.title, ctx), description: step.config.description === undefined ? "" : text(step.config.description, ctx) } satisfies CalendarInput;
     case "payment_status":
@@ -243,6 +257,13 @@ async function runStep(deps: FullDeps, step: Step, input: unknown, ctx: Expressi
       if (mock) return { output: { mocked: true, status: 200, headers: {}, body: null, request: { method: cfg.method, url: cfg.url } } };
       await claim("http");
       return { output: await httpRequest(cfg, idempotencyKey, { guard: deps.guard, claim: claimSend }) };
+    }
+    case "browser": {
+      const cfg = input as BrowserInput;
+      // A test run opens nothing: it lists what the page would see, with each extract name present but empty.
+      if (mock) return { output: { mocked: true, url: cfg.url, wouldDo: wouldDo(cfg.url, cfg.actions), screenshots: [], ...Object.fromEntries(cfg.actions.flatMap((a) => (a.action === "extract" ? [[a.name, ""]] : []))) } };
+      await claim("http");
+      return { output: await browserStep(deps.db, deps.browser, { userId, runId, stepId: step.id }, cfg) };
     }
     case "email": {
       const mail = input as EmailInput;
@@ -535,6 +556,7 @@ export function createExecutor(deps: ExecutorDeps): StepExecutor {
     guard: deps.guard ?? defaultGuard(),
     publicUrl: (deps.publicUrl ?? "http://localhost:3000").replace(/\/+$/, ""),
     urls: deps.urls ?? providerUrls(),
+    browser: deps.browser === undefined ? browserService() : deps.browser,
   };
   return {
     async execute({ runId, step, userId, workflowId, idempotencyKey, attempt, stepRunId, ctx, mock = false, test, aiLive, choice, claimSend, booking, fileFields }) {

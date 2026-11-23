@@ -1,5 +1,6 @@
 import * as z from "zod";
 import { aiConfigSchema } from "./ai";
+import { browserConfigSchema } from "./browser";
 import { DISCORD_MAX_CHARS, DOCS_MAX_VALUES, isPlaceholderKey } from "./discord-docs";
 import { FILES_PER_FIELD, type FileRef } from "./file-type";
 import { SENDER_ID_RE } from "./phone";
@@ -243,6 +244,8 @@ const stepSchema = z.discriminatedUnion("type", [
   z.object({ id: stepId, disabled, type: z.literal("read_page"), config: readPageConfigSchema }),
   z.object({ id: stepId, disabled, type: z.literal("shopify_create_product"), config: shopifyCreateProductConfigSchema }),
   z.object({ id: stepId, disabled, type: z.literal("shopify_update_product"), config: shopifyUpdateProductConfigSchema }),
+  // Phase B2 (decision 0108): a page opened in the browser service, with a list of actions.
+  z.object({ id: stepId, disabled, type: z.literal("browser"), config: browserConfigSchema }),
 ]);
 export type Step = z.infer<typeof stepSchema>;
 

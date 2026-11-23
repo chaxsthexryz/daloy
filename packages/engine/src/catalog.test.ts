@@ -114,6 +114,7 @@ describe("destination line", () => {
       shopify_create_product: { title: "Tote bag" },
       shopify_update_product: { product: "TOTE-1" },
       read_page: { url: "https://example.com/rice", maxChars: 4000 },
+      browser: { url: "https://supplier.example.com/price", actions: [] },
     };
     for (const type of STEP_TYPES) {
       const config = configs[type] ?? { to: "a@b.co", subject: "s", text: "t", message: "m" };

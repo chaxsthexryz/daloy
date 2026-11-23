@@ -46,6 +46,7 @@ const OUTPUT: Record<string, string> = {
   sheets: "Spreadsheet row",
   drive: "Saved file",
   http: "HTTP response",
+  browser: "Values read from the page",
   booking: "Booking result",
   calendar: "Calendar event",
   paymongo_link: "Payment link",
