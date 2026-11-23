@@ -367,6 +367,17 @@ Entry points: `GET /privacy/customer` and `POST /privacy/customer/delete` (owner
 - Old receipt images: removed by the worker after the retention days (default 90) once the due closes. Open dues keep theirs.
 - Remaining risk: Daloy provides tools only. It does not make a business compliant with any law, and the owner's own duties are listed in docs/how-it-works.md.
 
+## Read a public page (phase B1, decision 0107)
+
+- Asset: the private network around the worker (database, cloud metadata, other services), the daily request cap, and the prompts of later AI steps.
+- Entry points: the `url` of a `read_page` step, which can come from a template and so from a public form; the page that answers; the robots.txt of that host.
+- SSRF: the step uses the same guarded request as the http step, so scheme, port, private, loopback and link-local ranges, DNS answers and every redirect hop are checked as before. A redirect to a private address is refused, and `HTTP_ALLOWED_HOSTS` limits the demo instance. Tests in `read-page.test.ts` cover a private address, a host that resolves to one, a redirect to one and a `file:` address.
+- Large pages: the body is cut off at 2 MB while it is read, only `text/*` and `application/xhtml+xml` are accepted, the request has a total timeout, and `maxChars` (at most 20,000) limits what is kept. robots.txt is read up to 500 KB.
+- Abuse of the owner's quota or of other sites: each step claims one request against the daily cap, the user agent names the bot and a page address, and robots.txt is honoured before the page is fetched. A server error on robots.txt stops the step instead of reading the page.
+- Page text as untrusted input to later AI steps: a page can say anything, including instructions for a model. The AI step puts the resolved input only in the user message, inside `<data>` tags, tells the model it is not instructions, and rewrites a closing `</data` tag inside the text. A test sends a hostile page text through the template and `buildPrompt`. The AI step has no tools, and its output is checked against a schema, so an injected instruction can change a label or a summary but cannot call anything. Other steps that read `{{steps.<id>.output.text}}` (an email, an SMS) put the text in a message the owner designed, so a workflow should not send page text to people without a check.
+- Page content in run history: output is stored like any step output. The step reads public pages only and sends no cookies or credentials, so it cannot read a page behind a login.
+- Remaining risk: a page can change its text on purpose to trigger alerts. The step cannot tell a real price change from one made to be noticed. A DNS answer that changes between the check and the connection is handled by the guarded lookup, which connects to the address it checked.
+
 ## Discord and Google Docs steps (phase I1, decision 0104)
 
 - The Discord webhook URL carries its own token, so it is a secret: anyone holding it can post to the channel. It is stored encrypted (AES-256-GCM, owner and provider bound in), write-only through the API, and never put in definitions, run history, deliveries, step results, logs, errors or AI prompts. The Apps card shows the channel name only. Remaining risk: with `SECRETS_KEY` and a database copy, an attacker can post to the channel until the owner deletes the webhook in Discord.

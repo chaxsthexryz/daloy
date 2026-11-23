@@ -12,6 +12,7 @@
   { "id": "reminder-day-before", "lang": "en", "say": "Remind customers by SMS one day before their appointment.", "expect": { "trigger": "form", "steps": ["delay", "sms"] } },
   { "id": "pay-link", "lang": "en", "say": "When someone orders on my form, send them a PayMongo payment link by email.", "expect": { "trigger": "form", "steps": ["paymongo_link|payment_due", "email"] } },
   { "id": "webhook-discord", "lang": "en", "say": "When my website sends a webhook for a new signup, post it to our Discord channel.", "expect": { "trigger": "webhook", "steps": ["discord"] } },
+  { "id": "watch-page-price", "lang": "en", "say": "Every morning, check this supplier page and text me if the price changed: https://example.com/rice", "expect": { "trigger": "schedule", "steps": ["read_page", "condition", "sms"] } },
   { "id": "shopify-order-sheet", "lang": "en", "say": "When I get a new Shopify order, add a row to Google Sheets with the customer name and total.", "apps": ["google_sheets"], "expect": { "trigger": "shopify_order", "steps": ["sheets"] } },
   { "id": "shopify-new-product", "lang": "en", "say": "When I fill in my new product form, create the product on my Shopify store.", "note": "A form cannot feed a Shopify step (lint), so a manual run is right.", "expect": { "trigger": "manual", "steps": ["shopify_create_product"] } },
   { "id": "shopify-stock", "lang": "en", "say": "Let me update a Shopify product's price from a quick form.", "note": "A form cannot feed a Shopify step (lint), so a manual run is right.", "expect": { "trigger": "manual", "steps": ["shopify_update_product"] } },
@@ -25,6 +26,7 @@
   { "id": "unpaid-nudge", "lang": "en", "say": "If an order isn't paid after 24 hours, send the customer a reminder.", "expect": { "trigger": "form|payment", "steps": ["delay"] } },
 
   { "id": "tl-salamat", "lang": "tl", "say": "Kapag may nag-fill out ng order form ko, padalhan sila ng email na salamat.", "expect": { "trigger": "form", "steps": ["email"] } },
+  { "id": "tl-watch-page-price", "lang": "tl", "say": "Tuwing umaga, tingnan mo ang page ng supplier namin at i-text mo ako kung nagbago ang presyo: https://example.com/rice", "expect": { "trigger": "schedule", "steps": ["read_page", "condition", "sms"] } },
   { "id": "tl-autoreply", "lang": "tl", "say": "Gusto ko na awtomatikong sumagot sa mga nagme-message sa page ko.", "expect": { "trigger": "meta_dm", "steps": ["meta_reply"] } },
   { "id": "tl-sms-bayad", "lang": "tl", "say": "Pag nagbayad ang customer, i-text mo sila na natanggap na namin ang bayad.", "expect": { "trigger": "payment", "steps": ["sms"] } },
   { "id": "tl-araw-araw", "lang": "tl", "say": "Tuwing alas-otso ng umaga, ipadala sa email ko ang mga order kahapon.", "expect": { "trigger": "schedule", "steps": ["email"] } },

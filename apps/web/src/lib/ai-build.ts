@@ -96,6 +96,8 @@ function sentence(step: WorkflowDefinition["steps"][number], language: Language)
       return t("Reply on Messenger or Instagram");
     case "discord":
       return t("Post to your Discord channel");
+    case "read_page":
+      return t("Read a web page");
     case "google_docs":
       return t("Make a Google Docs document from your template");
     case "shopify_create_product":

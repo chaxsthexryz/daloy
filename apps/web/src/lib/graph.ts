@@ -11,7 +11,7 @@ export type Draft = WorkflowDefinition;
 export type Edge = Draft["edges"][number];
 
 /** Step types the builder can add. */
-export const ADDABLE = ["condition", "http", "email", "delay", "ai", "approval", "sheets", "drive", "slack", "outlook", "teams", "telegram", "sms", "calendar", "airtable", "notion", "trello", "booking", "meta_reply", "shopify_create_product", "shopify_update_product", "discord", "google_docs"] as const;
+export const ADDABLE = ["condition", "http", "email", "delay", "ai", "approval", "sheets", "drive", "slack", "outlook", "teams", "telegram", "sms", "calendar", "airtable", "notion", "trello", "booking", "meta_reply", "shopify_create_product", "shopify_update_product", "discord", "google_docs", "read_page"] as const;
 export type AddableType = (typeof ADDABLE)[number];
 
 export const blankDraft = (): Draft => ({ trigger: { type: "manual", config: {} }, steps: [], edges: [] });
@@ -54,6 +54,8 @@ export function defaultConfig(type: AddableType, language: Language = "en"): Ste
     case "booking":
       // Needs a resource field and a datetime field with these names on the trigger before it saves.
       return { action: "create", resource: "{{trigger.therapist}}", start: "{{trigger.appointment_at}}", minutes: 60 };
+    case "read_page":
+      return { url: "https://example.com/", maxChars: 4000 };
     case "google_docs":
       // templateId stays empty until the owner picks a template in the step panel, so the step cannot be saved without one.
       return { templateId: "", name: t("Document for {{trigger.name}}"), values: { name: "{{trigger.name}}" } };

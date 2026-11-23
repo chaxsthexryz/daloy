@@ -8,6 +8,7 @@ import { loadAiFiles } from "./ai-files";
 import { googleDocsStep, type DocsInput } from "./google-docs";
 import { httpRequest } from "./http";
 import { expireCheckout, paymongoLink } from "./paymongo";
+import { previousValue, readPage, SAMPLE_PAGE, type ReadPageInput } from "./read-page";
 import { shopifyPayload, type ShopifyCreateInput, type ShopifyUpdateInput } from "./shopify";
 import { defaultGuard, type SsrfGuard } from "./ssrf";
 
@@ -103,6 +104,10 @@ function resolveInput(step: Step, ctx: ExpressionContext): Record<string, unknow
       // Placeholder names are the owner's literals; only the name and the values are templates.
       const { templateId, templateName, name, values } = step.config;
       return { templateId, ...(templateName === undefined ? {} : { templateName }), name: text(name, ctx), values: Object.fromEntries(Object.entries(values).map(([k, v]) => [k, text(v, ctx)])) } satisfies DocsInput;
+    }
+    case "read_page": {
+      const { url, selector, maxChars } = step.config;
+      return { url: text(url, ctx), ...(selector === undefined ? {} : { selector }), maxChars } satisfies ReadPageInput;
     }
     case "sms": {
       const { to, message, senderId } = step.config;
@@ -352,6 +357,14 @@ async function runStep(deps: FullDeps, step: Step, input: unknown, ctx: Expressi
         return { output: { mocked: true, documentId: "mock-document", url: "https://docs.google.com/document/d/mock-document/edit", name, unmatched: [] } };
       }
       return { output: await googleDocsStep(deps.db, deps.secretsKey, deps.urls, { userId, runId, stepId: step.id }, cfg, () => claim("http")) };
+    }
+    case "read_page": {
+      const cfg = input as ReadPageInput;
+      // A faked run returns one fixed page and no request leaves the machine (decision 0107).
+      if (mock) return { output: { mocked: true, ...SAMPLE_PAGE, value: cfg.selector === undefined ? SAMPLE_PAGE.text : SAMPLE_PAGE.value, previous: null, changed: false } };
+      const page = await readPage(cfg, { guard: deps.guard, publicUrl: deps.publicUrl, idempotencyKey, claim: async () => void (await claim("http")), claimSend });
+      const previous = workflowId ? await previousValue(deps.db, { workflowId, stepId: step.id, runId }) : null;
+      return { output: { ...page, previous, changed: previous !== null && previous !== page.value } };
     }
     case "discord":
     case "sheets":

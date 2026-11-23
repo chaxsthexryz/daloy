@@ -51,7 +51,7 @@ const spec = (full: boolean) => [
 
 // Left out of a small local model's prompt to keep it inside that model's context; a hosted model gets all of them.
 // The stress test (apps/api/scripts/ai-stress.ts) showed a hosted model without them builds http or telegram steps instead.
-const HOSTED_ONLY = ["airtable", "notion", "trello", "payment_status", "payment_due", "payment_expire", "sms", "meta_reply", "discord", "google_docs", "shopify_create_product", "shopify_update_product"];
+const HOSTED_ONLY = ["airtable", "notion", "trello", "payment_status", "payment_due", "payment_expire", "sms", "meta_reply", "discord", "google_docs", "read_page", "shopify_create_product", "shopify_update_product"];
 const FULL_TRIGGERS =
   'More triggers: {"type":"meta_dm","config":{"channel":"both"}} for a Facebook Messenger or Instagram DM to the connected Page (channel messenger, instagram or both; fields {{trigger.text}}, {{trigger.senderId}}, {{trigger.channel}}); ' +
   '{"type":"payment","config":{"events":["paid"]}} for a PayMongo payment (fields {{trigger.reference}}, {{trigger.amountPesos}}, {{trigger.status}}); ' +
@@ -62,6 +62,7 @@ const FULL_RULES = [
   "Pick the step the person names: text, SMS or i-text means an sms step; Facebook, Messenger, Instagram or page messages mean the meta_dm trigger, answered with a meta_reply step (recipientId {{trigger.senderId}}, channel {{trigger.channel}}); Discord, Trello, Notion, Airtable, Google Docs and Shopify have their own steps. Use telegram only when the person says Telegram, and http only for an app with no step of its own.",
   "To text the owner, use an sms step to +639170000000 as a placeholder and say in the summary that they should put their number in.",
   "An order, booking or inquiry with no source named comes in through a Daloy form, and a payment with no source named is a PayMongo payment. Use shopify_order only when the person says Shopify, and the email trigger only when they say emails come in.",
+  "To watch a public page, such as a supplier's price, use a read_page step with a selector for the value. {{steps.<id>.output.changed}} is true when the value differs from the last run, so a condition with left {{steps.<id>.output.changed}}, op eq and right true can send the alert. read_page only reads public pages: it cannot log in or click.",
   "shopify_create_product and shopify_update_product never take values from a form trigger, because anyone can fill in a form. When the person asks for that, do not ask about it: draft a manual trigger with example values in the step that they change before each run, and say so in the summary.",
 ];
 
