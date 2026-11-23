@@ -1329,3 +1329,11 @@ What it does: on desktop (`>= 800 px`), `apps/web/src/Nav.tsx` and `apps/web/src
 Why this way: removing hover expansion removes layout shifts on pointer pass-through and keeps navigation labels, usage limits and Sign out discoverable without extra clicks.
 
 Tests: `apps/web/src/CommandPalette.test.tsx` (role scoping, case-insensitive filtering, index wrapping, `Cmd/Ctrl+K` shortcut matching and dialog render), `apps/web/src/Nav.test.tsx` (active section marking, role isolation, `Library` label, `AiMeter`, fixed sidebar markup), `e2e/rail.spec.ts` and `e2e/navigation.spec.ts` (228 px fixed layout, reduced-motion pill transitions, `Quick jump` navigation, phone sheet and role scoping).
+
+## Automations dashboard Daylight Minimal revamp (phase D3, decision 0113)
+
+What it does: `apps/web/src/Automations.tsx` and `apps/web/src/automations-ops.css` present the Automations home in the Daylight Minimal palette (Light and Dark), with `useCountUp` KPI counters, gliding segmented status tabs alongside the accessible `Status:` and `Trigger:` selectors, expandable search, staggered row entrances (`.motion-stagger-row`), rising 7-day sparkline bars (`.motion-spark-bar`), a spring inspector panel (`.motion-sheet`), and an inline `role="switch"` pause/resume toggle with a 6-second undo toast.
+
+Why this way: both `Row` and `Panel` read `displayStatus(w, reviewCount)` in `apps/web/src/lib/automations.ts` so a live automation with a failed run or open review shows `Problem` or `Needs you` consistently in both places. Moving flex layout into `.ops-name-cell`, setting `height: auto` on table cells, and hiding `.c-last` while the inspector is open keeps multi-line titles from overlapping.
+
+Tests: `apps/web/src/lib/automations.test.ts` (`displayStatus`, `arrange`, `counts`, `triggerLabel`, `withTrigger`), `apps/web/src/lib/locale-coverage.test.ts` (Tagalog entries in `locale-ops.ts`), `e2e/automations.spec.ts` (inline switch pause/undo toast, row vs inspector `Problem` sync, two-line title spacing, phone layout), and `e2e/navigation.spec.ts`.
