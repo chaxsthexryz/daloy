@@ -330,6 +330,10 @@ DeepSeek's review is in `docs/roadmap-review-2026-11-18.md`. Claude's second opi
 - [x] I1. Discord step (post to a channel webhook) and Google Docs step (make a document from a template with values filled in).
 - [x] I2. Shopify: product create and edit through the Admin API, and a native order trigger in place of the webhook template. Decision 0105, migration 0048. (claimed: claude, branch claude/i2-shopify)
 
+## Browsing (plan: read a page, a browser step, an AI browser agent)
+
+- [x] B1. Read a public page: `read_page` step with robots.txt, a 2 MB cap, the SSRF guard, a CSS selector value and `previous` and `changed` from the last run. Decision 0107. (claimed: claude, branch claude/b1-read-page)
+
 ## Ideas from n8n, Langflow and the AI starter kit (23 November 2026)
 
 - [x] T1. Test this step in the step's own panel with its last result, and "Try this step for real" for one step while the rest stay faked. Decision 0110, no migration.

@@ -55,6 +55,7 @@ const OUTPUT: Record<string, string> = {
   trello: "Board card",
   discord: "Channel message",
   google_docs: "Google Docs document",
+  read_page: "Page text",
 };
 const WHY: Record<string, string> = {
   "purchase-request": "You asked for an approval first. This one asks a person you name to approve each purchase.",

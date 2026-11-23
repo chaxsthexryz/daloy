@@ -140,6 +140,14 @@ export const googleDocsConfigSchema = z.object({
     .default({})
     .describe("Placeholders to fill. Each name is a {{name}} in the template; its value is the text to put there."),
 });
+// Reads one public web page (phase B1, decision 0107): its title, its main text and, with a selector, one value such as
+// a price. previous and changed come from this step's last successful run. A GET through the same guard as the http step.
+export const READ_PAGE_MAX_CHARS = 20_000;
+export const readPageConfigSchema = z.object({
+  url: template(2000).min(1).describe("The page to read, such as https://example.com/rice. Only public web pages are read."),
+  selector: z.string().min(1).max(500).optional().describe("A CSS selector for one value, such as .price. Leave empty to use the whole page text."),
+  maxChars: z.int().min(100).max(READ_PAGE_MAX_CHARS).default(4000).describe("The most characters of page text to keep."),
+});
 // Saves the files a form collected into the Google Drive folder picked in Apps. It takes no settings: the files are
 // the form's file fields. Queued like Sheets.
 export const driveConfigSchema = z.object({}).default({});
@@ -232,6 +240,7 @@ const stepSchema = z.discriminatedUnion("type", [
   z.object({ id: stepId, disabled, type: z.literal("meta_reply"), config: metaReplyConfigSchema }),
   z.object({ id: stepId, disabled, type: z.literal("discord"), config: discordConfigSchema }),
   z.object({ id: stepId, disabled, type: z.literal("google_docs"), config: googleDocsConfigSchema }),
+  z.object({ id: stepId, disabled, type: z.literal("read_page"), config: readPageConfigSchema }),
   z.object({ id: stepId, disabled, type: z.literal("shopify_create_product"), config: shopifyCreateProductConfigSchema }),
   z.object({ id: stepId, disabled, type: z.literal("shopify_update_product"), config: shopifyUpdateProductConfigSchema }),
 ]);

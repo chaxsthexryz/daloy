@@ -8,6 +8,7 @@
     "@daloy/db": "workspace:*",
     "@daloy/engine": "workspace:*",
     "@daloy/llm-ts": "workspace:*",
+    "cheerio": "^1.2.0",
     "cron-parser": "5.10.4",
     "drizzle-orm": "^0.45.4",
     "imapflow": "2.11.0",
@@ -15,6 +16,7 @@
     "nodemailer": "^10.5.0",
     "pdfjs-dist": "6.5.438",
     "pg-boss": "^12.38.2",
+    "robots-parser": "^3.0.1",
     "tsx": "^4.23.15",
     "zod": "^4.6.7"
   },
