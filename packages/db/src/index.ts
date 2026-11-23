@@ -25,6 +25,7 @@ export * from "./mail-senders";
 export * from "./members";
 export * from "./meta";
 export * from "./shopify";
+export * from "./telegram";
 export * from "./oauth";
 export * from "./paymongo";
 export * from "./providers";

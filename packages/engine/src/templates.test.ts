@@ -7,7 +7,7 @@ import { templatesForLanguage } from "./template-language";
 import { TEMPLATES, TEMPLATE_CATEGORIES } from "./templates";
 import { websiteInquiryDefinition } from "./website-inquiry";
 
-const SLUGS = ["inquiry-triage", "invoice-follow-up", "no-show-follow-up", "appointment-reminder", "request-to-sheets", "lead-to-booking", "order-to-sheets", "order-paid", "invoice-paymongo", "quote-deposit", "renewal-reminders", "store-orders", "shopify-orders", "receipt-expense", "meta-receipt-intake", "booking-deposit-review", "order-gcash-checkout"];
+const SLUGS = ["inquiry-triage", "invoice-follow-up", "no-show-follow-up", "appointment-reminder", "request-to-sheets", "lead-to-booking", "order-to-sheets", "order-paid", "invoice-paymongo", "quote-deposit", "renewal-reminders", "store-orders", "shopify-orders", "receipt-expense", "meta-receipt-intake", "telegram-gcash-receipts", "booking-deposit-review", "order-gcash-checkout"];
 const parse = (slug: string) => definitionSchema.parse(TEMPLATES.find((t) => t.slug === slug)!.definition);
 
 describe("starter templates", () => {

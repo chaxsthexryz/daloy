@@ -1,6 +1,6 @@
 import { publicCopy } from "./public-copy";
 import { createHmac, randomInt, randomUUID, timingSafeEqual } from "node:crypto";
-import { normalizeShopDomain, parseShopifyCredential, parseShopifyOrder, verifyShopifyHmac, assertNotPaused, busyBetween, claimUsage, constantTimeEqual, downloadMetaImage, keyedRun, MetaImageError, MetaTransientImageError, parseMetaCredential, parseMetaWebhook, QuotaError, readBrand, saveUploads, usageSummary, verifyMetaSignature, workspaceLanguage, businessProfiles, connectionCredential, connections, createKeyedRun, createRun, eventSeen, finishEvent, keptEvent, markPaymentPaid, markPaymentRefunded, centavosToPesos, paymongoMode, readSecret, recordEvent, requests, runs, settleCheckout, triggers, verifyPaymongoSignature, WorkflowPausedError, workflows, workflowVersions, type Db, type NewUpload, type Payment } from "@daloy/db";
+import { downloadTelegramFile, parseTelegramUpdate, ProviderError, telegramWebhookSecret, normalizeShopDomain, parseShopifyCredential, parseShopifyOrder, verifyShopifyHmac, assertNotPaused, busyBetween, claimUsage, constantTimeEqual, downloadMetaImage, keyedRun, MetaImageError, MetaTransientImageError, parseMetaCredential, parseMetaWebhook, QuotaError, readBrand, saveUploads, usageSummary, verifyMetaSignature, workspaceLanguage, businessProfiles, connectionCredential, connections, createKeyedRun, createRun, eventSeen, finishEvent, keptEvent, markPaymentPaid, markPaymentRefunded, centavosToPesos, paymongoMode, readSecret, recordEvent, requests, runs, settleCheckout, triggers, verifyPaymongoSignature, WorkflowPausedError, workflows, workflowVersions, type Db, type NewUpload, type Payment } from "@daloy/db";
 import { definitionSchema, FILE_MAX_BYTES, FILES_PER_FIELD, FILES_PER_SUBMISSION, fileType, OFFICE_REQUEST, parsePayload, PURCHASE_REQUEST, safeFileName, type FileRef, type FormField, type Resource } from "@daloy/engine";
 import {
   BadRequestException,
@@ -450,6 +450,92 @@ export class ShopifyHooksController {
       if (l.pausedAt || !savedTrigger(l.version.definition, "shopify_order")) continue;
       const run = await createKeyedRun(this.db, l.workflowId, l.version.id, payload, `shopify:${shop}:order:${payload.order_id}`).catch((err: unknown) => {
         if (err instanceof WorkflowPausedError) return null;
+        throw err;
+      });
+      if (run && !run.duplicate) {
+        await enqueueRun(this.boss, run.runId);
+        started++;
+      }
+    }
+    return { ok: true, started };
+  }
+}
+
+/**
+ * Telegram message webhook (T9, decision 0117). The path finds the workspace's Telegram connection, and the
+ * X-Telegram-Bot-Api-Secret-Token header must equal the secret derived from its bot token, compared in constant time,
+ * before the body is used. Each run is keyed "telegram:<bot id>:<update_id>", so Telegram's retries start one run.
+ * "my_chat" listeners take only the chat chosen in Apps. A photo or PDF is downloaded once, capped at FILE_MAX_BYTES and
+ * checked by its bytes. A file server that is down answers 503 so Telegram sends the update again; everything else is
+ * 200, since Telegram keeps retrying an update that fails.
+ */
+@Controller("hooks/telegram")
+@UseGuards(RateLimit(120))
+export class TelegramHooksController {
+  constructor(
+    @Inject(DB) private readonly db: Db,
+    @Inject(BOSS) private readonly boss: PgBoss,
+    @Inject(CONFIG) private readonly config: Required<ApiConfig>,
+  ) {}
+
+  @Post(":path")
+  @HttpCode(200)
+  async receive(@Param("path") path: string, @Body() body: unknown, @Headers("x-telegram-bot-api-secret-token") secret: string | undefined) {
+    const [owner] = await this.db
+      .select({ userId: connections.userId })
+      .from(connections)
+      .where(and(eq(connections.provider, "telegram"), eq(connections.status, "active"), sql`${connections.destination}->>'webhookPath' = ${path}`));
+    const conn = owner && (await connectionCredential(this.db, this.config.secretsKey, owner.userId, "telegram"));
+    if (!owner || !conn || conn.status !== "active") throw new ForbiddenException();
+    if (!secret || !constantTimeEqual(secret, telegramWebhookSecret(conn.credential, path))) throw new UnauthorizedException("invalid secret token");
+    const msg = parseTelegramUpdate(body);
+    if (!msg) return { ok: true, started: 0 };
+
+    // The trigger row and the latest published version come from one snapshot (decision 0057).
+    const listeners = await this.db
+      .select({ workflowId: triggers.workflowId, pausedAt: workflows.pausedAt, version: workflowVersions })
+      .from(triggers)
+      .innerJoin(workflows, eq(workflows.id, triggers.workflowId))
+      .innerJoin(workflowVersions, latestPublished)
+      .where(and(eq(workflows.userId, owner.userId), eq(triggers.type, "telegram_message")));
+    const key = `telegram:${conn.credential.split(":")[0]}:${msg.updateId}`;
+    const pending: (typeof listeners[number] & { requireFile: boolean })[] = [];
+    for (const l of listeners) {
+      const cfg = savedTrigger(l.version.definition, "telegram_message") as { from?: string; requireFile?: boolean } | undefined;
+      if (l.pausedAt || !cfg) continue;
+      if (cfg.from !== "anyone" && msg.chatId !== conn.destination?.chatId) continue;
+      const requireFile = cfg.requireFile !== false;
+      if (requireFile && !msg.file) continue;
+      if (!(await keyedRun(this.db, l.workflowId, key, false))) pending.push({ ...l, requireFile });
+    }
+    if (pending.length === 0) return { ok: true, started: 0 };
+
+    let file: Awaited<ReturnType<typeof downloadTelegramFile>> = null;
+    if (msg.file) {
+      const { upload } = await usageSummary(this.db, owner.userId);
+      if (upload.limit === null || upload.used < upload.limit) {
+        file = await downloadTelegramFile(this.config.providers, conn.credential, msg.file).catch((err: unknown) => {
+          if (err instanceof ProviderError) throw new ServiceUnavailableException(err.message);
+          throw err;
+        });
+      }
+    }
+
+    const payload = { chatId: msg.chatId, chatType: msg.chatType, fromId: msg.fromId, fromName: msg.fromName, username: msg.username, messageId: msg.messageId, updateId: msg.updateId, date: msg.date, text: msg.text, fileRefused: msg.fileRefused || (msg.file !== null && file === null) };
+    let started = 0;
+    for (const l of pending) {
+      if (l.requireFile && !file) continue;
+      const runFiles: NewUpload[] = file ? [{ id: randomUUID(), field: "file", name: file.name, type: file.type, data: file.data }] : [];
+      const refs: FileRef[] = runFiles.map((f) => ({ id: f.id, name: f.name, type: f.type, size: f.data.length }));
+      const options = runFiles.length > 0 ? { uploads: { userId: owner.userId, files: runFiles, claimKey: `telegram-upload:${l.workflowId}:${key}` } } : {};
+      const start = (p: object, o: Parameters<typeof createKeyedRun>[5]) =>
+        createKeyedRun(this.db, l.workflowId, l.version.id, p, key, o).catch((err: unknown) => {
+          if (err instanceof WorkflowPausedError) return null;
+          throw err;
+        });
+      const run = await start({ ...payload, file: refs }, options).catch((err: unknown) => {
+        // Out of upload space: a listener that needs the file does not start, the others start without it.
+        if (err instanceof QuotaError) return l.requireFile ? null : start({ ...payload, file: [], fileRefused: true }, {});
         throw err;
       });
       if (run && !run.duplicate) {

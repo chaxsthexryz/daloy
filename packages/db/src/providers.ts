@@ -543,7 +543,7 @@ export async function slackPost(urls: ProviderUrls, token: string, channel: stri
 const TELEGRAM_WEBHOOK_SET = "This bot has a webhook set, so Telegram will not list its chats. Type the chat id instead, or remove the webhook in the Bot API.";
 
 /** Telegram's Bot API answers { ok, result } with an HTTP status that matches (401, 403, 400, 429). The token sits in the URL path, so no error here may echo the URL. */
-async function telegramCall(urls: ProviderUrls, token: string, method: string, params: Record<string, string>, write = false) {
+async function telegramCall(urls: ProviderUrls, token: string, method: string, params: Record<string, unknown>, write = false) {
   const res = await call(`${urls.telegram}/bot${token}/${method}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(params) }, urls.timeoutMs ?? 10_000, write, "Telegram");
   if (res.status === 429) {
     const s = Number((res.body.parameters as { retry_after?: unknown } | undefined)?.retry_after);
@@ -599,6 +599,26 @@ export async function telegramChats(urls: ProviderUrls, token: string) {
 export async function telegramSend(urls: ProviderUrls, token: string, chatId: string, text: string) {
   const msg = await telegramCall(urls, token, "sendMessage", { chat_id: chatId, text, disable_web_page_preview: "true" }, true);
   return { chatId, messageId: String(msg.message_id) };
+}
+
+/**
+ * setWebhook for the Telegram message trigger (T9, decision 0117): Telegram posts each new message to url and sends
+ * secret_token back in X-Telegram-Bot-Api-Secret-Token. Only "message" updates are asked for.
+ */
+export async function telegramSetWebhook(urls: ProviderUrls, token: string, url: string, secret: string) {
+  await telegramCall(urls, token, "setWebhook", { url, secret_token: secret, allowed_updates: ["message"], max_connections: 10 });
+}
+
+/** deleteWebhook: the bot goes back to getUpdates, so the connect wizard can list its chats again. */
+export async function telegramDeleteWebhook(urls: ProviderUrls, token: string) {
+  await telegramCall(urls, token, "deleteWebhook", {});
+}
+
+/** getFile: where the file sits on Telegram's file server, and its size when Telegram knows it. */
+export async function telegramFileInfo(urls: ProviderUrls, token: string, fileId: string) {
+  const f = await telegramCall(urls, token, "getFile", { file_id: fileId });
+  const size = Number(f.file_size);
+  return { path: typeof f.file_path === "string" ? f.file_path : "", size: Number.isFinite(size) ? size : undefined };
 }
 
 // ---------------------------------------------------------------- Airtable, Notion, Trello (decision 0046)

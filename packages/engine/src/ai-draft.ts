@@ -56,6 +56,7 @@ const FULL_TRIGGERS =
   'More triggers: {"type":"meta_dm","config":{"channel":"both"}} for a Facebook Messenger or Instagram DM to the connected Page (channel messenger, instagram or both; fields {{trigger.text}}, {{trigger.senderId}}, {{trigger.channel}}); ' +
   '{"type":"payment","config":{"events":["paid"]}} for a PayMongo payment (fields {{trigger.reference}}, {{trigger.amountPesos}}, {{trigger.status}}); ' +
   '{"type":"shopify_order","config":{}} for a new order in the connected Shopify store (fields {{trigger.order_number}}, {{trigger.customer_name}}, {{trigger.customer_email}}, {{trigger.customer_phone}}, {{trigger.total}}, {{trigger.items}}); ' +
+  '{"type":"telegram_message","config":{"from":"my_chat","requireFile":true}} for a photo, PDF or message sent to the Telegram bot of the owner (from my_chat or anyone; fields {{trigger.text}}, {{trigger.chatId}}, {{trigger.fromName}}, {{trigger.date}}; the photo or PDF is the file field "file" for an ai step; reply with a telegram step whose chatId is {{trigger.chatId}}); ' +
   '{"type":"email","config":{}} for an email to the workspace inbox.';
 const FULL_RULES = [
   "When the person names an app or channel Daloy has no step for (such as TikTok, Viber or Lazada), say so plainly in the summary and name what the draft uses instead. Never say a step sends through an app it does not use.",

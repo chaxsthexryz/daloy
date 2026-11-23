@@ -46,6 +46,7 @@ export function TelegramSetup({ conn, onChange, onClose }: Props) {
   const saveStep = useStep();
   const [token, setToken] = useState("");
   const [chatId, setChatId] = useState(conn?.destination?.chatId ?? "");
+  const [receive, setReceive] = useState(Boolean(conn?.destination?.webhookPath));
   const [chats, setChats] = useState<Chat[] | null>(null);
 
   // One route proves the token (getMe) and lists the chats the bot has recently seen. The token travels in the body, never in the address.
@@ -113,6 +114,13 @@ export function TelegramSetup({ conn, onChange, onClose }: Props) {
           <input id="tg-chat" value={chatId} onChange={(e) => setChatId(e.target.value)} placeholder="-1001234567890 or @channelname" autoComplete="off" />
           <p className="muted">{t("Tapping a chat above fills this in. You can also type the chat id.")}</p>
         </div>
+        <div className="field">
+          <label className="check">
+            <input type="checkbox" checked={receive} onChange={(e) => setReceive(e.target.checked)} />{" "}
+            {t("Receive messages: start automations when someone messages this bot")}
+          </label>
+          <p className="muted">{t("Telegram then sends the bot's messages to Daloy, so the chat list above stays empty until you turn this off. Needs Daloy on a public https address.")}</p>
+        </div>
         <div className="actions">
           <button
             type="button"
@@ -120,7 +128,7 @@ export function TelegramSetup({ conn, onChange, onClose }: Props) {
             disabled={saveStep.busy || !token || !chatId}
             onClick={() =>
               void saveStep.run(async () => {
-                await api("PUT", "/settings/connections/telegram", { token, chatId });
+                await api("PUT", "/settings/connections/telegram", { token, chatId, receive });
                 setToken("");
                 await onChange();
                 onClose();

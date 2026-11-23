@@ -62,6 +62,9 @@ import {
   telegramChats,
   telegramIdentity,
   telegramSend,
+  telegramSetWebhook,
+  telegramDeleteWebhook,
+  telegramWebhookSecret,
   spreadsheetIdFrom,
   discordPost,
   discordWebhookUrl,
@@ -88,9 +91,15 @@ const destinationInput = sheetsInput.omit({ serviceAccount: true });
 const slackInput = z.strictObject({ token: z.string().trim().regex(/^xoxb-[A-Za-z0-9-]{10,200}$/, "Paste the Bot User OAuth Token, which starts with xoxb-") });
 const channelInput = z.strictObject({ channelId: z.string().regex(/^[CG][A-Z0-9]{2,20}$/) });
 // A bot token is <bot id>:<secret>; a chat is a numeric id (negative for groups) or a public @name.
+/** For best-effort calls such as removing a webhook: a provider's refusal is ignored, anything else is a real error. */
+const ignoreProviderError = (err: unknown) => {
+  if (!(err instanceof ProviderError)) throw err;
+};
 const telegramInput = z.strictObject({
   token: z.string().trim().regex(/^\d{6,12}:[A-Za-z0-9_-]{30,50}$/, "Paste the bot token from BotFather, like 123456789:AA..."),
   chatId: z.string().trim().regex(/^(-?\d{1,20}|@[A-Za-z][A-Za-z0-9_]{4,31})$/, "Enter the chat id (a number) or the public @name"),
+  // T9: Telegram sends the bot's new messages to Daloy, for the Telegram message trigger.
+  receive: z.boolean().optional(),
 });
 const telegramChatsInput = z.strictObject({ token: telegramInput.shape.token });
 // PayMongo's secret key and the signing secret of the webhook the owner made in PayMongo. Both are kept encrypted and never returned.
@@ -197,6 +206,7 @@ export class ConnectionsController {
       union select id, name, 'paymongo_link' from current_versions where definition->'trigger'->>'type' = 'payment'
       union select id, name, 'meta_messenger' from current_versions where definition->'trigger'->>'type' = 'meta_dm'
       union select id, name, 'shopify' from current_versions where definition->'trigger'->>'type' = 'shopify_order'
+      union select id, name, 'telegram' from current_versions where definition->'trigger'->>'type' = 'telegram_message'
       order by name, id`);
     const providerFor: Record<string, string> = { email: "gmail", sheets: "google_sheets", drive: "google_drive", calendar: "google_calendar", paymongo_link: "paymongo", payment_status: "paymongo", sms: "unisms", meta_reply: "meta_messenger", shopify_create_product: "shopify", shopify_update_product: "shopify", google_docs: "google_drive" };
     const usage: Record<string, { id: string; name: string }[]> = {};
@@ -321,7 +331,25 @@ export class ConnectionsController {
   async putTelegram(@CurrentUser() user: SessionUser, @Body(new ZodPipe(telegramInput)) body: z.output<typeof telegramInput>) {
     const { bot } = await telegramIdentity(this.urls, body.token).catch(this.asBadRequest(user.workspaceId));
     const chat = await telegramChat(this.urls, body.token, body.chatId).catch(this.asBadRequest(user.workspaceId));
-    await saveConnection(this.db, this.config.secretsKey, user.workspaceId, "telegram", { account: bot, credential: body.token, destination: chat });
+    const old = await connectionCredential(this.db, this.config.secretsKey, user.workspaceId, "telegram");
+    let destination: Record<string, string> = chat;
+    if (body.receive) {
+      // T9 (decision 0117): the path is kept across reconnects; the secret is derived from the token, so a new token gets a new one.
+      const webhookPath = old?.destination?.webhookPath ?? randomBytes(32).toString("base64url");
+      const url = `${this.config.publicUrl}/hooks/telegram/${webhookPath}`;
+      const webhook = await telegramSetWebhook(this.urls, body.token, url, telegramWebhookSecret(body.token, webhookPath)).then(
+        () => "registered",
+        (err: unknown) => {
+          // Telegram only delivers to a public https address. The connection still sends; the Apps page says receiving failed.
+          if (err instanceof ProviderError) return "failed";
+          throw err;
+        },
+      );
+      destination = { ...chat, webhookPath, webhook };
+    } else if (old?.destination?.webhookPath) {
+      await telegramDeleteWebhook(this.urls, old.credential).catch(ignoreProviderError);
+    }
+    await saveConnection(this.db, this.config.secretsKey, user.workspaceId, "telegram", { account: bot, credential: body.token, destination });
     return this.get(user);
   }
 
@@ -607,6 +635,7 @@ export class ConnectionsController {
   @Delete(":provider")
   async remove(@CurrentUser() user: SessionUser, @Param("provider", providerSlug) provider: Provider, @Res({ passthrough: true }) res: Response) {
     if (provider === "shopify") await this.dropShopifyWebhook(user.workspaceId);
+    if (provider === "telegram") await this.dropTelegramWebhook(user.workspaceId);
     const def = this.config.oauthProviders.find((d) => d.provider === provider);
     const out = def ? await disconnectOAuth(this.db, this.config.secretsKey, this.urls, user.workspaceId, def) : { removed: await removeConnection(this.db, user.workspaceId, provider), revoked: null };
     if (!out.removed) throw new NotFoundException();
@@ -629,6 +658,12 @@ export class ConnectionsController {
     } catch (err) {
       if (!(err instanceof ProviderError)) throw err;
     }
+  }
+
+  /** Best effort: the bot stops sending to Daloy and can list its chats again. The hook refuses calls once the row is gone anyway. */
+  private async dropTelegramWebhook(workspaceId: string) {
+    const conn = await connectionCredential(this.db, this.config.secretsKey, workspaceId, "telegram");
+    if (conn?.destination?.webhookPath) await telegramDeleteWebhook(this.urls, conn.credential).catch(ignoreProviderError);
   }
 
   private async connection(userId: string, provider: Provider) {
