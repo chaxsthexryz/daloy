@@ -29,4 +29,7 @@ export const workspaceTranslations: Record<string, string> = {
   "Enter your current password.": "Ilagay ang kasalukuyang password mo.",
   "The new password needs at least 12 characters.": "Kailangang hindi bababa sa 12 character ang bagong password.",
   "The new password can have at most 200 characters.": "Hindi dapat lumampas sa 200 character ang bagong password.",
+  "Quick jump": "Mabilis na lipat",
+  "Jump to a page...": "Lumipat sa pahina...",
+  "No matching pages.": "Walang tugmang pahina.",
 };
