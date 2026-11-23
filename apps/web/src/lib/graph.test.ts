@@ -155,6 +155,14 @@ describe("duplicateStep (U2)", () => {
     expect(valid(r.draft)).toEqual([]);
   });
 
+  it("keeps the step's note on the copy (T4)", () => {
+    const d = straight();
+    d.steps[0] = { ...d.steps[0]!, note: "Sends the order to the shop" };
+    const r = duplicateStep(d, "post");
+    if (!("draft" in r)) throw new Error("refused");
+    expect(r.draft.steps.find((s) => s.id === "post_copy")!.note).toBe("Sends the order to the shop");
+  });
+
   it("numbers later copies _copy_2, _copy_3 and copies the last step onto the end", () => {
     let d = straight();
     const ids: string[] = [];
@@ -190,6 +198,13 @@ describe("readCopiedStep (U2 paste check)", () => {
 
   it("reads a copied step and drops keys the step schema does not know", () => {
     expect(readCopiedStep(copied({ type: "delay", config: { seconds: 30, extra: "x" } }))).toEqual({ type: "delay", config: { seconds: 30 } });
+  });
+
+  it("carries a copied step's note, and drops a note that is too long (T4)", () => {
+    expect(readCopiedStep(copied({ type: "delay", config: { seconds: 30 }, note: "Wait for the bank" }))).toEqual({ type: "delay", config: { seconds: 30 }, note: "Wait for the bank" });
+    expect(readCopiedStep(copied({ type: "delay", config: { seconds: 30 }, note: "x".repeat(301) }))).toEqual({ type: "delay", config: { seconds: 30 } });
+    const pasted = addStep(blankDraft(), "delay", undefined, "en", { seconds: 30 }, "Wait for the bank");
+    expect(pasted.draft.steps[0]!.note).toBe("Wait for the bank");
   });
 
   it("refuses text that is not a step Daloy can add", () => {

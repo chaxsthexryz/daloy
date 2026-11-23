@@ -9,7 +9,7 @@ import { destination, entryLabel, stepEntry, triggerEntry, type Text } from "./c
  */
 const pick = (t: Text, l: Language) => t[l];
 
-export type StepLine = { id: string; label: string; where: string; after?: string };
+export type StepLine = { id: string; label: string; where: string; after?: string; note?: string };
 
 /** Every step in the order a run reaches it (breadth first from the entry), then any step no edge reaches. `chosen` maps a step id to the destination picked in Apps. */
 export function stepLines(def: WorkflowDefinition, language: Language, chosen: Record<string, string> = {}): StepLine[] {
@@ -20,7 +20,7 @@ export function stepLines(def: WorkflowDefinition, language: Language, chosen: R
   const visit = (step: Step, after?: string) => {
     if (seen.has(step.id)) return;
     seen.add(step.id);
-    out.push({ id: step.id, label: entryLabel(stepEntry(step.type), language), where: destination(step, { language, trigger: def.trigger, chosen: chosen[step.id] }), after });
+    out.push({ id: step.id, label: entryLabel(stepEntry(step.type), language), where: destination(step, { language, trigger: def.trigger, chosen: chosen[step.id] }), after, ...(step.note?.trim() && { note: step.note.trim() }) });
     for (const e of def.edges.filter((x) => x.from === step.id)) {
       const next = def.steps.find((s) => s.id === e.to);
       if (next) queue.push({ step: next, after: e.on });
@@ -36,13 +36,14 @@ export function stepLines(def: WorkflowDefinition, language: Language, chosen: R
 
 const STARTS = { en: "Starts when", tl: "Nagsisimula kapag" };
 const AFTER = { en: "After", tl: "Pagkatapos ng" };
+const NOTE = { en: "Your note", tl: "Tala mo" };
 
-/** The "Explain this flow" lines: how it starts, then one numbered line per step with who or where it acts on. */
+/** The "Explain this flow" lines: how it starts, then one numbered line per step with who or where it acts on, and the owner's note quoted as typed. */
 export function explainFlow(def: WorkflowDefinition, language: Language, chosen: Record<string, string> = {}): string[] {
   const t = triggerEntry(def.trigger.type);
   return [
     `${STARTS[language]}: ${pick(t.action, language)}. ${pick(t.description, language)}`,
-    ...stepLines(def, language, chosen).map((l, i) => `${i + 1}. ${l.after ? `${AFTER[language]} ${l.after}: ` : ""}${l.label}. ${l.where}`),
+    ...stepLines(def, language, chosen).map((l, i) => `${i + 1}. ${l.after ? `${AFTER[language]} ${l.after}: ` : ""}${l.label}. ${l.where}${l.note ? ` ${NOTE[language]}: "${l.note}"` : ""}`),
   ];
 }
 

@@ -327,6 +327,8 @@ details summary::-webkit-details-marker { display: none; }
 .node-type { color: var(--text); }
 .node-title { font-size: var(--text-sm); font-weight: var(--weight-bold); }
 .node-summary { color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* T4: the owner's note under the title, clipped to two lines. */
+.node-note { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; color: var(--muted); font-style: italic; }
 .node-status { margin-top: 2px; font-weight: var(--weight-bold); color: var(--muted); font-variant-emoji: text; }
 .react-flow__node.selected .node { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
 .node.run-idle { border-style: dashed; border-color: var(--run-idle); }

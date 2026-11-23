@@ -1,5 +1,5 @@
 import { translate, type Language } from "./locale";
-import { BRANCHES, definitionSchema, stepLabel, triggerLabel, type Step, type WorkflowDefinition } from "@daloy/engine";
+import { BRANCHES, definitionSchema, stepLabel, stepNoteSchema, triggerLabel, type Step, type WorkflowDefinition } from "@daloy/engine";
 import type { Edge as FlowEdge, Node as FlowNode } from "@xyflow/react";
 import { STATUS, type EdgeState, type NodeState } from "./run-flow";
 
@@ -90,9 +90,9 @@ export const edgeId = (e: Edge) => `${e.from}:${e.on ?? "next"}`;
  * leads somewhere, the new step is inserted in between. Without `after`, the step becomes the new entry.
  * `config` defaults to the type's starting config; a pasted step brings its own.
  */
-export function addStep(draft: Draft, type: AddableType, after?: { id: string; on?: string }, language: Language = "en", config: Step["config"] = defaultConfig(type, language)): { draft: Draft; id: string } {
+export function addStep(draft: Draft, type: AddableType, after?: { id: string; on?: string }, language: Language = "en", config: Step["config"] = defaultConfig(type, language), note?: string): { draft: Draft; id: string } {
   const id = newStepId(draft, type);
-  return { draft: insert(draft, { id, type, config } as Step, after), id };
+  return { draft: insert(draft, { id, type, config, ...(note && { note }) } as Step, after), id };
 }
 
 function insert(draft: Draft, step: Step, after?: { id: string; on?: string }): Draft {
@@ -148,11 +148,11 @@ export function setDisabled(draft: Draft, id: string, off: boolean): Draft {
 }
 
 /**
- * The paste check: reads a copied step (`{type, config}` as JSON, from the clipboard) and returns it only when the type is one the
+ * The paste check: reads a copied step (`{type, config, note}` as JSON, from the clipboard) and returns it only when the type is one the
  * add menu offers and the config has that step's shape, with unknown keys dropped. Rules that need the rest of the flow (a drive
  * step needs a form with a file field) are left to the save check, as for a step added from the menu.
  */
-export function readCopiedStep(text: string): { type: AddableType; config: Step["config"] } | null {
+export function readCopiedStep(text: string): { type: AddableType; config: Step["config"]; note?: string } | null {
   let value: unknown;
   try {
     value = JSON.parse(text);
@@ -160,11 +160,14 @@ export function readCopiedStep(text: string): { type: AddableType; config: Step[
     return null;
   }
   if (!value || typeof value !== "object") return null;
-  const { type, config } = value as { type?: unknown; config?: unknown };
+  const { type, config, note: copiedNote } = value as { type?: unknown; config?: unknown; note?: unknown };
   if (!(ADDABLE as readonly unknown[]).includes(type)) return null;
+  // A note that does not fit (too long, not text) is dropped; the step itself still pastes.
+  const note = stepNoteSchema.safeParse(copiedNote).data;
+  const withNote = note ? { note } : {};
   const r = definitionSchema.safeParse({ ...blankDraft(), steps: [{ id: "pasted", type, config }] });
-  if (r.success) return { type: type as AddableType, config: r.data.steps[0]!.config };
-  return r.error.issues.every((i) => i.code === "custom") ? { type: type as AddableType, config: config as Step["config"] } : null;
+  if (r.success) return { type: type as AddableType, config: r.data.steps[0]!.config, ...withNote };
+  return r.error.issues.every((i) => i.code === "custom") ? { type: type as AddableType, config: config as Step["config"], ...withNote } : null;
 }
 
 /** Removes a step. A step with one parent and one child is bridged, keeping the parent's branch label. */

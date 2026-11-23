@@ -392,6 +392,26 @@ describe("disabled steps (decision 0097)", () => {
   });
 });
 
+describe("step notes (T4)", () => {
+  const noted = (note: unknown) => {
+    const def = triage();
+    def.steps[0] = { ...def.steps[0]!, note } as never;
+    return def;
+  };
+
+  it("keeps a note of up to 300 characters as typed, braces and all", () => {
+    expect(definitionSchema.parse(noted("x".repeat(300))).steps[0]!.note).toHaveLength(300);
+    expect(definitionSchema.parse(noted("Ask {{trigger.name}} first")).steps[0]!.note).toBe("Ask {{trigger.name}} first");
+    expect(definitionSchema.parse(triage()).steps[0]!.note).toBeUndefined();
+  });
+
+  it("refuses a note over 300 characters or one that is not text", () => {
+    expect(issues(noted("x".repeat(301))).length).toBeGreaterThan(0);
+    expect(issues(noted(42)).length).toBeGreaterThan(0);
+    expect(issues(noted(["a"])).length).toBeGreaterThan(0);
+  });
+});
+
 // Review of 22 November, M4: the price of a due must not come from a public visitor, or their own number is what counts as paid.
 describe("payment_due amount", () => {
   const due = (amount: string, total?: string) => ({ id: "ask", type: "payment_due", config: { reference: "{{trigger.order_id}}", kind: "deposit", amount, ...(total !== undefined && { total }), checkout: true } });

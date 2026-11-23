@@ -35,6 +35,12 @@ describe("explainFlow", () => {
     const loose = { trigger: { type: "manual", config: {} }, steps: [{ id: "a", type: "slack", config: { text: "x" } }, { id: "b", type: "slack", config: { text: "y" } }], edges: [] } as WorkflowDefinition;
     expect(explainFlow(loose, "en")).toHaveLength(3);
   });
+  it("adds the owner's note after its step, quoted and not translated (T4)", () => {
+    const noted = { ...receipt, steps: receipt.steps.map((s) => (s.id === "mail" ? { ...s, note: "Only for paid orders" } : s)) };
+    expect(explainFlow(noted, "en")[2]).toMatch(/Customer email from the form.* Your note: "Only for paid orders"$/);
+    expect(explainFlow(noted, "tl")[2]).toMatch(/ Tala mo: "Only for paid orders"$/);
+    expect(explainFlow(receipt, "en")[2]).not.toContain("note");
+  });
   it("uses the destination the owner picked in Apps", () => {
     const lines = stepLines(receipt, "en", { slack: "#orders" });
     expect(lines.find((l) => l.id === "slack")!.where).toContain("#orders");

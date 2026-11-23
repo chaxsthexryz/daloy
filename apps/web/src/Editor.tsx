@@ -1,6 +1,6 @@
 import "./editor.css";
 import { useLanguage } from "./Language";
-import { BRANCHES, canSendAlone, configProblems, definitionSchema, destination, lintDefinition, markText, stepEntry, stepLabel, triggerEntry, triggerLabel, type FormField, type Step, type Trigger } from "@daloy/engine";
+import { BRANCHES, canSendAlone, configProblems, definitionSchema, destination, lintDefinition, markText, stepEntry, stepLabel, STEP_NOTE_MAX, triggerEntry, triggerLabel, type FormField, type Step, type Trigger } from "@daloy/engine";
 import { AppMark } from "./AppMark";
 import { Background, ReactFlow, type NodeChange } from "@xyflow/react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
@@ -103,7 +103,7 @@ export function Editor({ id, from }: { id: string; from?: string }) {
   // The right-click menu (U2): its items and where it opens.
   const [context, setContext] = useState<{ label: string; at: Point; items: MenuItem[] } | null>(null);
   // The last copied step, so paste works when the system clipboard is refused or holds something else.
-  const [clip, setClip] = useState<{ type: AddableType; config: Step["config"] } | null>(null);
+  const [clip, setClip] = useState<{ type: AddableType; config: Step["config"]; note?: string } | null>(null);
   // Connect mode from the right-click menu: the next step clicked becomes where this path leads.
   const [connecting, setConnecting] = useState<{ from: string; on?: string } | null>(null);
   const [folded, setFolded] = useState(panelFolded);
@@ -337,6 +337,16 @@ export function Editor({ id, from }: { id: string; from?: string }) {
     if (next) setFolded(false);
   };
   const editStep = (config: unknown) => update({ ...draft, steps: draft.steps.map((s) => (s.id === step!.id ? ({ ...s, config } as Step) : s)) }, `config:${step!.id}`);
+  // T4: an empty note leaves no key, so a step without one saves as it did before.
+  const editNote = (note: string) => {
+    const steps = draft.steps.map((s) => {
+      if (s.id !== step!.id) return s;
+      const next = { ...s };
+      delete next.note;
+      return note ? { ...next, note } : next;
+    });
+    update({ ...draft, steps }, `note:${step!.id}`);
+  };
   const move = (id: string, dir: "up" | "down") => {
     const next = moveStep(draft, id, dir);
     if (next === draft) return;
@@ -400,9 +410,9 @@ export function Editor({ id, from }: { id: string; from?: string }) {
     setNote(t(off ? "Turned off {id}. Runs skip it and go on to the next step." : "Turned on {id}.", { id: stepId }));
   };
   const copyStep = (s: Step) => {
-    const copied = { type: s.type as AddableType, config: s.config };
+    const copied = { type: s.type as AddableType, config: s.config, ...(s.note && { note: s.note }) };
     setClip(copied);
-    // Only the type and config: a config holds {{secrets.name}} references, never secret values. The system clipboard may refuse.
+    // Only the type, config and note: a config holds {{secrets.name}} references, never secret values. The system clipboard may refuse.
     void Promise.resolve()
       .then(() => navigator.clipboard.writeText(JSON.stringify(copied)))
       .catch(() => undefined);
@@ -412,7 +422,7 @@ export function Editor({ id, from }: { id: string; from?: string }) {
     const s = readCopiedStep(text) ?? clip;
     if (!s) return setNote(t("Nothing to paste. Copy a step first."));
     const { after } = where();
-    const r = addStep(draft, s.type, after ? { id: after } : undefined, language, s.config);
+    const r = addStep(draft, s.type, after ? { id: after } : undefined, language, s.config, s.note);
     update(r.draft);
     select(r.id);
     setNote(t("Pasted {id}.", { id: r.id }));
@@ -591,6 +601,13 @@ export function Editor({ id, from }: { id: string; from?: string }) {
               <p className="muted hint">{t("Checked files are sent to the AI model you picked on the AI model page. Photos need Gemini, OpenAI or OpenRouter.")}</p>
             </fieldset>
           )}
+          <div className="field">
+            <label htmlFor="step-note">{t("Note")}</label>
+            <textarea id="step-note" rows={2} maxLength={STEP_NOTE_MAX} value={step.note ?? ""} onChange={(e) => editNote(e.target.value)} aria-describedby="step-note-count" placeholder={t("What this step is for, in your own words.")} />
+            <p id="step-note-count" className="muted hint">
+              {t("{count} of {max} characters. Shown on the step and in Explain this flow.", { count: step.note?.length ?? 0, max: STEP_NOTE_MAX })}
+            </p>
+          </div>
           <StepTest
             step={step}
             run={sample && sampleRun?.id === sample.runId ? sampleRun : null}
@@ -959,6 +976,7 @@ function StepList({ draft, selected, onSelect, onMove, chosen }: { draft: Draft;
                 {i + 1} · {stepLabel(s.type, language)}
               </span>
               <span className="a7-list-where">{destination(s, { language, trigger: draft.trigger, chosen: chosen.get(s.id) })}</span>
+              {s.note && <span className="a7-list-note">{s.note}</span>}
               {into.map((e) => (
                 <span key={e.from} className="a7-branch" data-branch={e.on}>
                   {t("{from} on {branch}", { from: e.from, branch: t(e.on!) })}

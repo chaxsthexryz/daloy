@@ -228,39 +228,43 @@ export type BookingConfig = z.infer<typeof bookingConfigSchema>;
 
 // A disabled step is recorded as skipped and the run follows its one edge (decision 0097). Only true, so an enabled step has no key.
 const disabled = z.literal(true).optional();
+// T4: the owner's own words about a step, shown on its card and in Explain this flow. Plain text, never resolved as a template.
+export const STEP_NOTE_MAX = 300;
+export const stepNoteSchema = z.string().max(STEP_NOTE_MAX).optional();
+const note = stepNoteSchema;
 
 const stepSchema = z.discriminatedUnion("type", [
-  z.object({ id: stepId, disabled, type: z.literal("condition"), config: z.object({ condition: conditionSchema }) }),
-  z.object({ id: stepId, disabled, type: z.literal("http"), config: httpConfigSchema }),
-  z.object({ id: stepId, disabled, type: z.literal("email"), config: emailConfigSchema }),
-  z.object({ id: stepId, disabled, type: z.literal("delay"), config: delayConfigSchema }),
-  z.object({ id: stepId, disabled, type: z.literal("ai"), config: aiConfigSchema }),
-  z.object({ id: stepId, disabled, type: z.literal("approval"), config: approvalConfigSchema }),
-  z.object({ id: stepId, disabled, type: z.literal("sheets"), config: sheetsConfigSchema }),
-  z.object({ id: stepId, disabled, type: z.literal("drive"), config: driveConfigSchema }),
-  z.object({ id: stepId, disabled, type: z.literal("slack"), config: slackConfigSchema }),
-  z.object({ id: stepId, disabled, type: z.literal("outlook"), config: outlookConfigSchema }),
-  z.object({ id: stepId, disabled, type: z.literal("teams"), config: teamsConfigSchema }),
-  z.object({ id: stepId, disabled, type: z.literal("telegram"), config: telegramConfigSchema }),
-  z.object({ id: stepId, disabled, type: z.literal("sms"), config: smsConfigSchema }),
-  z.object({ id: stepId, disabled, type: z.literal("calendar"), config: calendarConfigSchema }),
-  z.object({ id: stepId, disabled, type: z.literal("airtable"), config: airtableConfigSchema }),
-  z.object({ id: stepId, disabled, type: z.literal("notion"), config: notionConfigSchema }),
-  z.object({ id: stepId, disabled, type: z.literal("trello"), config: trelloConfigSchema }),
-  z.object({ id: stepId, disabled, type: z.literal("booking"), config: bookingConfigSchema }),
-  z.object({ id: stepId, disabled, type: z.literal("paymongo_link"), config: paymongoLinkConfigSchema }),
-  z.object({ id: stepId, disabled, type: z.literal("payment_status"), config: paymentStatusConfigSchema }),
-  z.object({ id: stepId, disabled, type: z.literal("payment_due"), config: paymentDueConfigSchema }),
-  z.object({ id: stepId, disabled, type: z.literal("payment_expire"), config: paymentExpireConfigSchema }),
-  z.object({ id: stepId, disabled, type: z.literal("meta_reply"), config: metaReplyConfigSchema }),
-  z.object({ id: stepId, disabled, type: z.literal("conversation_update"), config: conversationUpdateConfigSchema }),
-  z.object({ id: stepId, disabled, type: z.literal("discord"), config: discordConfigSchema }),
-  z.object({ id: stepId, disabled, type: z.literal("google_docs"), config: googleDocsConfigSchema }),
-  z.object({ id: stepId, disabled, type: z.literal("read_page"), config: readPageConfigSchema }),
-  z.object({ id: stepId, disabled, type: z.literal("shopify_create_product"), config: shopifyCreateProductConfigSchema }),
-  z.object({ id: stepId, disabled, type: z.literal("shopify_update_product"), config: shopifyUpdateProductConfigSchema }),
+  z.object({ id: stepId, disabled, note, type: z.literal("condition"), config: z.object({ condition: conditionSchema }) }),
+  z.object({ id: stepId, disabled, note, type: z.literal("http"), config: httpConfigSchema }),
+  z.object({ id: stepId, disabled, note, type: z.literal("email"), config: emailConfigSchema }),
+  z.object({ id: stepId, disabled, note, type: z.literal("delay"), config: delayConfigSchema }),
+  z.object({ id: stepId, disabled, note, type: z.literal("ai"), config: aiConfigSchema }),
+  z.object({ id: stepId, disabled, note, type: z.literal("approval"), config: approvalConfigSchema }),
+  z.object({ id: stepId, disabled, note, type: z.literal("sheets"), config: sheetsConfigSchema }),
+  z.object({ id: stepId, disabled, note, type: z.literal("drive"), config: driveConfigSchema }),
+  z.object({ id: stepId, disabled, note, type: z.literal("slack"), config: slackConfigSchema }),
+  z.object({ id: stepId, disabled, note, type: z.literal("outlook"), config: outlookConfigSchema }),
+  z.object({ id: stepId, disabled, note, type: z.literal("teams"), config: teamsConfigSchema }),
+  z.object({ id: stepId, disabled, note, type: z.literal("telegram"), config: telegramConfigSchema }),
+  z.object({ id: stepId, disabled, note, type: z.literal("sms"), config: smsConfigSchema }),
+  z.object({ id: stepId, disabled, note, type: z.literal("calendar"), config: calendarConfigSchema }),
+  z.object({ id: stepId, disabled, note, type: z.literal("airtable"), config: airtableConfigSchema }),
+  z.object({ id: stepId, disabled, note, type: z.literal("notion"), config: notionConfigSchema }),
+  z.object({ id: stepId, disabled, note, type: z.literal("trello"), config: trelloConfigSchema }),
+  z.object({ id: stepId, disabled, note, type: z.literal("booking"), config: bookingConfigSchema }),
+  z.object({ id: stepId, disabled, note, type: z.literal("paymongo_link"), config: paymongoLinkConfigSchema }),
+  z.object({ id: stepId, disabled, note, type: z.literal("payment_status"), config: paymentStatusConfigSchema }),
+  z.object({ id: stepId, disabled, note, type: z.literal("payment_due"), config: paymentDueConfigSchema }),
+  z.object({ id: stepId, disabled, note, type: z.literal("payment_expire"), config: paymentExpireConfigSchema }),
+  z.object({ id: stepId, disabled, note, type: z.literal("meta_reply"), config: metaReplyConfigSchema }),
+  z.object({ id: stepId, disabled, note, type: z.literal("conversation_update"), config: conversationUpdateConfigSchema }),
+  z.object({ id: stepId, disabled, note, type: z.literal("discord"), config: discordConfigSchema }),
+  z.object({ id: stepId, disabled, note, type: z.literal("google_docs"), config: googleDocsConfigSchema }),
+  z.object({ id: stepId, disabled, note, type: z.literal("read_page"), config: readPageConfigSchema }),
+  z.object({ id: stepId, disabled, note, type: z.literal("shopify_create_product"), config: shopifyCreateProductConfigSchema }),
+  z.object({ id: stepId, disabled, note, type: z.literal("shopify_update_product"), config: shopifyUpdateProductConfigSchema }),
   // Phase B2 (decision 0108): a page opened in the browser service, with a list of actions.
-  z.object({ id: stepId, disabled, type: z.literal("browser"), config: browserConfigSchema }),
+  z.object({ id: stepId, disabled, note, type: z.literal("browser"), config: browserConfigSchema }),
 ]);
 export type Step = z.infer<typeof stepSchema>;
 

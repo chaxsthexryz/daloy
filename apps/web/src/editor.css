@@ -239,6 +239,9 @@
 
 /* Under a step's title: where it acts, in words. */
 .a7-list .a7-list-where { order: 1; flex-basis: 100%; color: var(--muted); font-size: 12px; font-weight: 400; }
+/* T4: the owner's note, clipped to two lines like .node-note on the card. */
+.a7-list .a7-list-note { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; color: var(--muted); font-size: 12px; font-style: italic; font-weight: 400; }
+.a7-list .a7-list-note { order: 1; flex-basis: 100%; }
 .a7-list button .app-mark { order: -2; align-self: center; }
 .a7-describe { margin: 4px 0 12px; }
 .a7-node-row .node-id { flex: 0 1 88px; max-width: 88px; text-align: right; font-family: var(--font-mono); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
