@@ -345,6 +345,7 @@ DeepSeek's review is in `docs/roadmap-review-2026-11-18.md`. Claude's second opi
 - [ ] T6. `docker compose --profile local-ai up` runs Ollama with a small model.
 - [ ] T7. Answer from my price list: owner-written price list and answers, an AI `answer` task and a Messenger template.
 - [ ] T8. Chat as your customer: test a Messenger workflow by typing as the customer.
+- [ ] T9. Telegram message trigger: a photo or PDF sent to your own bot (made with @BotFather) starts a workflow, from your chat only or from anyone. Photos and PDFs become uploads the AI step can read, the telegram step can reply to the sender, and a "Log GCash receipts from Telegram" template adds a Sheets row marked To check. Next, before T2.
 
 ## Console UI from the Paper file (docs/plans/console-ui-paper.md, 21 November 2026)
 
@@ -355,3 +356,14 @@ DeepSeek's review is in `docs/roadmap-review-2026-11-18.md`. Claude's second opi
 - [x] U5. Workflow library with categories. Decision 0099. (claimed: claude, cloud session)
 - [x] U6. UniSMS set by the operator, removed from Apps. Decision 0100. (claimed: claude, branch claude/u6-unisms-operator)
 - [x] U7. Automations list: double click opens, panel only on click, collapsible. (claimed: claude, branch claude/u7-automations-list)
+
+## Console Daylight Minimal revamp (docs/plans/console-daylight-revamp.md, 23 November 2026)
+
+Orchestrator: Neon. Onboarding (`Onboarding.tsx`, `onboarding.css`) is out of scope until the owner finishes its design. Desktop sidebar stays fixed at 228 px (non-collapsible).
+
+- [ ] D1. Brand mark (Logo 28 Quarter Tiles), gear Settings icon, Daylight Minimal Light/Dark tokens, zero-dependency motion primitives (`motion.css`, `lib/motion.ts`), and logout hash reset in `App.tsx`. Decision 0111. (claimed: neon, branch neon/d1-daylight-tokens)
+- [ ] D2. Fixed non-collapsible 228 px Daylight Minimal desktop sidebar, hover pill, always-visible AI meter and Sign out, and `Cmd/Ctrl+K` Quick Jump palette. Updates `Nav.test.tsx`, `e2e/rail.spec.ts`, and `e2e/navigation.spec.ts`. Decision 0112.
+- [ ] D3. Automations dashboard Daylight Minimal revamp, Easy UI micro-animations, inline pause/resume switch with undo toast, row vs panel status sync fix, and inspector overlap fix. Decision 0113.
+- [ ] D4. Secondary console pages, auth and editor consistency (breadcrumbs, select alignment, styled file inputs, disabled button contrast, AppMark letter-tile tints, editor node header spacing). Onboarding untouched. Decision 0114.
+- [ ] D5. Full lint, typecheck, unit, contrast, locale and Playwright E2E verification, Light/Dark/reduced-motion visual QA on a disposable stack, and `docs/how-it-works.md` update.
+
