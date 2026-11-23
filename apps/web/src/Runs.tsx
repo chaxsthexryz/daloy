@@ -386,6 +386,8 @@ export function RunPage({ runId, owner, ask }: { runId: string; owner: boolean; 
   }
   const working = run.state === "pending" || run.state === "running" || run.state === "queued";
   const activity = `#/w/${run.workflowId}/runs`;
+  // Opens the editor with this run's trigger data as the sample; the test still fakes every app (T2).
+  const retest = `#/w/${run.workflowId}?from=${run.id}`;
   return (
     <main className="page act run-detail">
       <PageHead
@@ -394,8 +396,10 @@ export function RunPage({ runId, owner, ask }: { runId: string; owner: boolean; 
         sub={[run.reference && t("Run {reference}", { reference: run.reference }), t(runKind(run))].filter(Boolean).join(" · ")}
         actions={
           <>
+            {run.state === "failed" && <a className="act-button" href={retest}>{t("Test with this data")}</a>}
             <a className="act-button" href={activity}>{t("Activity")}</a>
             {ask && run.reference && <a className="act-button blue" href={`#/runs/${run.id}/ask`}>{t("Ask what happened")}</a>}
+            {run.state !== "failed" && <a className="act-button" href={retest}>{t("Test with this data")}</a>}
           </>
         }
       />

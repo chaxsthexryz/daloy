@@ -194,6 +194,8 @@ export const builderTranslations: Record<string, string> = {
   "Steps": "Mga hakbang",
   "Delete step": "Burahin ang hakbang",
   "Sample trigger data (JSON)": "Sample data ng trigger (JSON)",
+  "Sample data from request {reference}. Values hidden as [secret] stay hidden.": "Sample data mula sa request {reference}. Nakatago pa rin ang mga value na [secret].",
+  "Couldn't load that run's data, so the sample data is the usual example.": "Hindi ma-load ang data ng run na iyon, kaya ang karaniwang halimbawa ang sample data.",
   "Test calls": "Mga test call",
   "Mocked: nothing is sent and no model is called": "Mocked: walang ipinapadala at walang tinatawag na model",
   "Real AI only: the model is called, everything else is mocked": "Totoong AI lang: tatawagin ang model, mocked ang lahat ng iba pa",

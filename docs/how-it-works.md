@@ -946,6 +946,17 @@ Edge cases:
 
 Tests: `packages/engine/src/test-run.test.ts` (live choice rules), `apps/worker/src/worker.test.ts` (only the chosen step runs unmocked, with no choice), `apps/api/src/scenarios.test.ts` (the API refuses a live choice in an ai preview and on a step that does not send), `apps/web/src/lib/states.test.ts` (run kind), `e2e/editor.spec.ts` (Test this step from the panel shows the step's last attempt; only a sending step offers Try this step for real).
 
+#### Test with a real run's data (T2)
+
+Every run page has a "Test with this data" link, placed first when the run failed. It opens `#/w/<workflowId>?from=<runId>`, so only ids go in the URL and no customer data lands in browser history. The editor reads `GET /runs/:id` and puts the run's `triggerPayload` in the sample data box, opens Test settings, and notes "Sample data from request REQ-…". The API already hides secret fields in run history as `[secret]`, so the sample shows `[secret]` too and the real value never reaches the browser. The test mode stays Mocked, so pressing Test run sends nothing again. This is n8n's "Debug in editor" without pinned data: the sample is a copy in the box, and the owner can edit it.
+
+Edge cases:
+- A run from another workflow (an edited URL) is ignored, and the usual example stays.
+- A run that cannot be loaded shows an error and keeps the usual example.
+- Changing the trigger type replaces the sample with that type's example, as before.
+
+Tests: `e2e/test-with-data.spec.ts` (a failed run's data, with a password field shown as `[secret]`, becomes the sample, and the test run posts it in mock mode).
+
 ## Guided pages (Doop rows A2 to A6, decision 0071)
 
 `apps/web/src/NewAutomation.tsx`, `OfficeRequests.tsx`, `guided-pages.css`, `lib/locale-setup.ts`.

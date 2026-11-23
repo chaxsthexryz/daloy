@@ -86,7 +86,7 @@ const withoutTemplate = (schema: JsonSchema): JsonSchema => ({ ...schema, proper
 // A browser step's actions are a list, edited with BrowserActions below the form.
 const withoutActions = (schema: JsonSchema): JsonSchema => ({ ...schema, properties: Object.fromEntries(Object.entries(schema.properties ?? {}).filter(([k]) => k !== "actions")) });
 
-export function Editor({ id }: { id: string }) {
+export function Editor({ id, from }: { id: string; from?: string }) {
   const { t, language } = useLanguage();
   const [wf, setWf] = useState<Loaded | null>(null);
   const [catalog, setCatalog] = useState<Catalog | null>(null);
@@ -118,6 +118,8 @@ export function Editor({ id }: { id: string }) {
   const [message, setMessage] = useState<{ kind: "error" | "ok"; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [payload, setPayload] = useState("{}");
+  // The reference of the run whose trigger data is the sample, after "Test with this data" on a run page (T2).
+  const [fromRun, setFromRun] = useState<string | null>(null);
   const [mode, setMode] = useState<"mock" | "ai" | "live">("mock");
   // stepId -> a test choice as JSON text ("" = the default outcome), so a <select> can hold it.
   const [choices, setChoices] = useState<Record<string, string>>({});
@@ -150,6 +152,16 @@ export function Editor({ id }: { id: string }) {
         setDraft(d);
         setFirstResource(r.find((x) => x.active)?.id);
         setPayload(samplePayload(d.trigger, r.find((x) => x.active)?.id));
+        if (from) {
+          void api<Run>("GET", `/runs/${from}`).then(
+            (x) => {
+              if (x.workflowId !== id) return;
+              setPayload(JSON.stringify(x.triggerPayload ?? {}, null, 2));
+              setFromRun(x.reference ?? x.id.slice(0, 8));
+            },
+            () => setMessage({ kind: "error", text: t("Couldn't load that run's data, so the sample data is the usual example.") }),
+          );
+        }
         setCatalog(c);
         // After guided setup, show the explanation once for a draft that is not live yet.
         if (w.setup && !w.live && d.steps.length > 0 && !wasExplained(id)) setShowExplain(true);
@@ -796,11 +808,12 @@ export function Editor({ id }: { id: string }) {
                       }}
                     />
                   </div>
-                  <details className="a7-test-settings">
+                  <details className="a7-test-settings" open={fromRun !== null}>
                     <summary>{t("Test settings")}</summary>
                     <div className="field">
                       <label htmlFor="payload">{t("Sample trigger data (JSON)")}</label>
                       <textarea id="payload" rows={5} value={payload} onChange={(e) => setPayload(e.target.value)} spellCheck={false} />
+                      {fromRun && <p className="muted hint" role="status">{t("Sample data from request {reference}. Values hidden as [secret] stay hidden.", { reference: fromRun })}</p>}
                     </div>
                     <div className="field">
                       <label htmlFor="test-mode">{t("Test calls")}</label>

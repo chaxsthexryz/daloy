@@ -338,7 +338,7 @@ DeepSeek's review is in `docs/roadmap-review-2026-11-18.md`. Claude's second opi
 ## Ideas from n8n, Langflow and the AI starter kit (23 November 2026)
 
 - [x] T1. Test this step in the step's own panel with its last result, and "Try this step for real" for one step while the rest stay faked. Decision 0110, no migration.
-- [ ] T2. "Test with this data" on a run page: open the editor with that run's trigger data as the sample.
+- [x] T2. "Test with this data" on a run page: open the editor with that run's trigger data as the sample. No decision record, no migration.
 - [ ] T3. "If this step fails": stop, skip and carry on, or take a "failed" path.
 - [ ] T4. Notes on steps, shown on the canvas card and read by Explain this flow.
 - [ ] T5. One Share panel: form link and embed code, webhook URL, MCP tool name and an API example.

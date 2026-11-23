@@ -69,5 +69,6 @@ export const viewTranslations: Record<string, string> = {
   "Preview (nothing sent)": "Preview (walang ipinadala)",
   "Preview, one step sent for real": "Preview, isang hakbang ang ipinadala nang totoo",
   "Real run": "Totoong run",
-  "Ask what happened": "Itanong kung ano ang nangyari"
+  "Ask what happened": "Itanong kung ano ang nangyari",
+  "Test with this data": "I-test gamit ang data na ito"
 };

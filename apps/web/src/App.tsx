@@ -92,10 +92,11 @@ function Console({ hash }: { hash: string }) {
 
 function Route({ hash, user }: { hash: string; user: User }) {
   const canAsk = user.ask === true && (user.role === "owner" || user.role === "operator");
-  const page = /^#\/w\/([0-9a-f-]{36})(?:\/(runs|versions))?$/.exec(hash);
+  // #/w/<id>?from=<runId> opens the editor with that run's trigger data as the sample (T2). Only ids go in the URL.
+  const page = /^#\/w\/([0-9a-f-]{36})(?:\/(runs|versions)|\?from=([0-9a-f-]{36}))?$/.exec(hash);
   if (page?.[2] === "runs") return <RunsPage key={page[1]} workflowId={page[1]!} ask={canAsk} />;
   if (page?.[2] === "versions") return <VersionsPage key={page[1]} workflowId={page[1]!} />;
-  if (page) return <Editor key={page[1]} id={page[1]!} />;
+  if (page) return <Editor key={page[1]} id={page[1]!} from={page[3]} />;
   const run = /^#\/runs\/([0-9a-f-]{36})(\/ask)?$/.exec(hash);
   if (run?.[2] && canAsk) return <AskRunPage key={run[1]} runId={run[1]!} />;
   if (run) return <RunPage key={run[1]} runId={run[1]!} owner={user.role === "owner"} ask={canAsk} />;
