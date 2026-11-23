@@ -33,7 +33,7 @@ export const managementTranslations: Record<string, string> = {
   "Create a bot with BotFather in Telegram, add it to the chat, and send any message there. Paste the bot token and the chat id.": "Gumawa ng bot gamit ang BotFather sa Telegram, idagdag ito sa chat, at magpadala ng anumang mensahe roon. I-paste ang bot token at chat id.",
   "How to create a Telegram bot": "Paano gumawa ng Telegram bot", "Connect Telegram": "Ikonekta ang Telegram",
   "-1001234567890 or @channelname": "-1001234567890 o @channelname",
-  "Task": "Gawain", "Instructions": "Mga tagubilin", "classify": "uriin", "extract": "kunin ang datos", "summarize": "ibuod",
+  "Task": "Gawain", "Instructions": "Mga tagubilin", "classify": "uriin", "extract": "kunin ang datos", "summarize": "ibuod", "answer": "sagutin",
   "Small (3B) and fast on most computers. Fine for classify steps; often gets Build with AI wrong.": "Maliit (3B) at mabilis sa karamihan ng computer. Puwede para sa classify steps; madalas magkamali sa Build with AI.",
   "Larger (8B) and better at following instructions. Needs more memory: run ollama pull hermes3 first.": "Mas malaki (8B) at mas mahusay sumunod sa tagubilin. Kailangan ng mas maraming memory: patakbuhin muna ang ollama pull hermes3.",
   "Built for agents and complex workflows. The best pick here for Build with AI.": "Ginawa para sa agents at masalimuot na workflows. Pinakamainam na pagpipilian dito para sa Build with AI.",

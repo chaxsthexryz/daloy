@@ -5,7 +5,7 @@ describe("stepJsonSchemas", () => {
   const schemas = stepJsonSchemas();
 
   it("covers every step type", () => {
-    expect(Object.keys(schemas).sort()).toEqual(["ai", "airtable", "approval", "booking", "browser", "calendar", "condition", "conversation_update", "delay", "discord", "drive", "email", "google_docs", "http", "meta_reply", "notion", "outlook", "payment_due", "payment_expire", "payment_status", "paymongo_link", "read_page", "sheets", "shopify_create_product", "shopify_update_product", "slack", "sms", "teams", "telegram", "trello"]);
+    expect(Object.keys(schemas).sort()).toEqual(["ai", "airtable", "approval", "booking", "browser", "calendar", "condition", "conversation_update", "delay", "discord", "drive", "email", "google_docs", "http", "meta_reply", "notion", "outlook", "payment_due", "payment_expire", "payment_status", "paymongo_link", "read_page", "sheets", "shopify_create_product", "shopify_update_product", "slack", "sms", "stay_quote", "teams", "telegram", "trello"]);
   });
 
   it("describes http as an object with a method enum and required url", () => {
@@ -26,7 +26,7 @@ describe("stepJsonSchemas", () => {
   it("gives ai a task enum and string maps, and approval a bounded timeout, in shapes SchemaForm renders", () => {
     const ai = schemas.ai as { type: string; required: string[]; properties: Record<string, { type?: string; enum?: string[]; additionalProperties?: { type: string } }> };
     expect(ai.type).toBe("object");
-    expect(ai.properties.task!.enum).toEqual(["classify", "extract", "summarize", "draft"]);
+    expect(ai.properties.task!.enum).toEqual(["classify", "extract", "summarize", "draft", "answer"]);
     expect(ai.properties.labels).toMatchObject({ type: "object", additionalProperties: { type: "string" } });
     expect(ai.required).toEqual(["task", "input"]);
     const approval = schemas.approval as { properties: { timeoutSeconds: object } };

@@ -110,6 +110,7 @@ describe("destination line", () => {
       payment_status: { link: "pay_1" },
       meta_reply: { recipientId: "{{trigger.senderId}}", channel: "{{trigger.channel}}", text: "t" },
       conversation_update: { fields: { guests: "2" } },
+      stay_quote: { room: "Garden room", checkIn: "{{trigger.check_in}}", nights: "2", guests: "2" },
       calendar: { title: "t" },
       sheets: { columns: ["a"] },
       shopify_create_product: { title: "Tote bag" },

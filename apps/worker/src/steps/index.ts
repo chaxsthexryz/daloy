@@ -1,10 +1,10 @@
 import { randomUUID } from "node:crypto";
-import { workspaceLanguage, aiConnection, bookFromStep, bookingOfStep, bookingReference, centavosToPesos, createDue, dueForStep, DueTakenError, expireDue, findReviewer, pendingCheckout, pesosToCentavos, checkReceiptReference, checkRecipients, claimTimeout, claimUsage, createApproval, findPaymentForStep, findApprover, queueCalendarEvent, queueDelivery, readSecrets, redactSecrets, secretForms, sendAs, type Db, type MailDeps, type Provider } from "@daloy/db";
+import { workspaceLanguage, readKnowledge, aiConnection, bookFromStep, bookingOfStep, bookingReference, centavosToPesos, createDue, dueForStep, DueTakenError, expireDue, findReviewer, pendingCheckout, pesosToCentavos, checkReceiptReference, checkRecipients, claimTimeout, claimUsage, createApproval, findPaymentForStep, findApprover, queueCalendarEvent, queueDelivery, readSecrets, redactSecrets, secretForms, sendAs, type Db, type MailDeps, type Provider } from "@daloy/db";
 import { deliveries, isPaused, PAST_WINDOW, prepareReply, providerUrls, runConversation, runs, saveConversationFields, windowOpen, type ProviderUrls } from "@daloy/db";
 import { and, eq } from "drizzle-orm";
-import { approvalEmailBody, checkDiscordContent, numberedMenu, type Menu, wouldDo, type FileRef, bookingStartField, conditionBranch, normalizePhMobile, parseZoned, SMS_MAX_CHARS, type TestChoice, type Trigger, declaresJson, parseInstant, isRetryable, mockAiOutput, parseJsonTemplate, resolveJsonTemplate, resolveTemplate, StepError, usesSecrets, type ExpressionContext, type Step } from "@daloy/engine";
+import { approvalEmailBody, checkDiscordContent, numberedMenu, type Menu, wouldDo, type FileRef, bookingStartField, conditionBranch, normalizePhMobile, parseZoned, SMS_MAX_CHARS, type TestChoice, type Trigger, declaresJson, parseInstant, isRetryable, mockAiOutput, parseJsonTemplate, resolveJsonTemplate, resolveTemplate, StepError, usesSecrets, type ExpressionContext, type HistoryItem, type Language, quoteStay, QuoteError, type Step } from "@daloy/engine";
 import type { StepExecutor, StepResult } from "../advance";
-import { runAi } from "./ai";
+import { runAi, runAnswer } from "./ai";
 import { browserService, browserStep, type BrowserInput, type BrowserService } from "./browser";
 import { loadAiFiles } from "./ai-files";
 import { googleDocsStep, type DocsInput } from "./google-docs";
@@ -133,6 +133,10 @@ ${numberedMenu(menu)}` : text(body, ctx) } satisfies EmailInput;
       return { recipientId: text(step.config.recipientId, ctx), channel: text(step.config.channel, ctx), text: text(step.config.text, ctx), ...(step.config.quickReplies ? { quickReplies: step.config.quickReplies } : {}) } satisfies MetaReplyInput;
     case "conversation_update":
       return { fields: Object.fromEntries(Object.entries(step.config.fields).map(([k, v]) => [k, text(v ?? "", ctx)])) };
+    case "stay_quote": {
+      const { room, checkIn, nights, guests } = step.config;
+      return { room: text(room, ctx).trim(), checkIn: text(checkIn, ctx).trim(), nights: text(nights, ctx).trim(), guests: text(guests, ctx).trim() };
+    }
     case "shopify_create_product": {
       const c = step.config;
       const opt = (v: string | undefined) => (v === undefined ? "" : text(v, ctx));
@@ -292,6 +296,14 @@ async function runStep(deps: FullDeps, step: Step, input: unknown, ctx: Expressi
       // Each file is one more AI action. The claim key is the step key, so a retry is not counted twice; the checks
       // and the PDF reading happen before, so a refused file costs nothing.
       await claim("ai", 1 + refs.length);
+      if (step.config.task === "answer") {
+        const published = await readKnowledge(deps.db, userId);
+        if (!published) throw new StepError("Publish the knowledge sheet (Business, Knowledge) before the concierge can answer.", false);
+        const convo = trigger.conversation as { history?: unknown } | undefined;
+        const history = Array.isArray(convo?.history) ? (convo.history as HistoryItem[]).filter((h) => typeof h?.text === "string") : [];
+        const language = (await workspaceLanguage(deps.db, userId)) as Language;
+        return await runAnswer(step.config, (input as AiInput).input, { connection, model, attempt, entries: published.entries, version: published.version, history, language });
+      }
       const aiRes = await runAi(step.config, (input as AiInput).input, { connection, model, attempt, files });
       if (step.config.task === "extract" && refs.length > 0 && aiRes.output && typeof aiRes.output === "object") {
         const out = aiRes.output as Record<string, unknown>;
@@ -494,6 +506,22 @@ async function runStep(deps: FullDeps, step: Step, input: unknown, ctx: Expressi
       const [linked] = await deps.db.select({ conversationId: runs.conversationId }).from(runs).where(eq(runs.id, runId));
       if (!linked?.conversationId) throw new StepError("This step saves details on a customer's conversation, and this run was not started by a Messenger, Instagram or email message.", false);
       return { output: { fields: (await saveConversationFields(deps.db, linked.conversationId, cfg.fields)) ?? {} } };
+    }
+    case "stay_quote": {
+      // Read-only, so a test run quotes for real. The prices are the published version's; the run only picks the room and counts.
+      const cfg = input as { room: string; checkIn: string; nights: string; guests: string };
+      const published = await readKnowledge(deps.db, userId);
+      if (!published) throw new StepError("Publish the knowledge sheet (Business, Knowledge) before quoting a stay.", false);
+      const wanted = cfg.room.toLowerCase();
+      const entry = published.entries.find((e) => e.id === cfg.room) ?? published.entries.find((e) => e.title.toLowerCase() === wanted);
+      if (!entry) throw new StepError(`No entry "${cfg.room.slice(0, 100)}" in knowledge version ${published.version}.`, false);
+      const count = (s: string) => (/^\d{1,4}$/.test(s) ? Number(s) : NaN);
+      try {
+        return { output: { ...quoteStay(entry, { checkIn: cfg.checkIn, nights: count(cfg.nights), guests: count(cfg.guests) }), knowledgeVersion: published.version } };
+      } catch (err) {
+        if (err instanceof QuoteError) throw new StepError(err.message, false);
+        throw err;
+      }
     }
     case "shopify_create_product":
     case "shopify_update_product": {

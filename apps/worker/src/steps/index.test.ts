@@ -1,7 +1,7 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { approvals, bookings, deliveries, encryptSecret, hashToken, joinWorkspace, payments, recordDecision, resources, runs, saveAiSettings, saveConnection, secrets, stepRuns, usageClaims, usageCounts, manilaDay, users, workflows, workflowVersions, type Db } from "@daloy/db";
+import { approvals, bookings, knowledgeVersions, deliveries, encryptSecret, hashToken, joinWorkspace, payments, recordDecision, resources, runs, saveAiSettings, saveConnection, secrets, stepRuns, usageClaims, usageCounts, manilaDay, users, workflows, workflowVersions, type Db } from "@daloy/db";
 import type { Step } from "@daloy/engine";
 import { eq } from "drizzle-orm";
 import nodemailer, { type SendMailOptions, type Transporter } from "nodemailer";
@@ -613,5 +613,20 @@ describe("drive step", () => {
     const s = await setup();
     expect((await s.exec({ photos: [ref("a.png"), ref("b.png")] }, ["photos"], true)).output).toEqual({ mocked: true, files: 2 });
     expect(await db.select().from(deliveries).where(eq(deliveries.runId, s.runId))).toHaveLength(0);
+  });
+});
+
+// C4 (decision 0119): stay_quote prices from the published knowledge version only.
+describe("stay_quote step", () => {
+  it("quotes from the published version by title, and fails clearly without one", async () => {
+    const [u] = await db.insert(users).values({ email: `quote-${randomUUID()}@test.local`, passwordHash: "x" }).returning();
+    const step = (room: string): Step => ({ id: "quote", type: "stay_quote", config: { room, checkIn: "{{trigger.check_in}}", nights: "2", guests: "2" } });
+    const exec = (room: string) => executor().execute({ runId: randomUUID(), stepRunId: NO_STEP_RUN, userId: u!.id, step: step(room), attempt: 1, idempotencyKey: `q:${room}`, ctx: { trigger: { check_in: "2026-12-14" }, steps: {} }, workflowId: randomUUID() });
+    await expect(exec("Garden room")).rejects.toThrow(/Publish the knowledge sheet/);
+    const garden = { id: "a6b0c7f2-0000-4000-8000-000000000001", kind: "room" as const, title: "Garden room", body: "", fields: { price: 3500, unit: "night" as const, deposit: { mode: "percent" as const, value: 30 }, rules: [{ name: "Peak season", price: 4800, from: "12-15", to: "01-10" }] } };
+    await db.insert(knowledgeVersions).values({ userId: u!.id, version: 1, entries: [garden] });
+    const out = await exec("garden ROOM");
+    expect(out.output).toMatchObject({ entryId: garden.id, subtotal: 8300, total: 8300, deposit: 2490, knowledgeVersion: 1 });
+    await expect(exec("Penthouse")).rejects.toThrow(/No entry "Penthouse"/);
   });
 });

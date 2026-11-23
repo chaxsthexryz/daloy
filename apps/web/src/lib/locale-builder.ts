@@ -258,7 +258,7 @@ export const builderTranslations: Record<string, string> = {
   "classify: {labels}": "uriin: {labels}",
   "classify": "uriin",
   "extract": "kunin ang detalye",
-  "summarize": "ibuod",
+  "summarize": "ibuod", "answer": "sagutin",
   "draft": "gumawa ng draft",
   "ask {person}": "humingi ng pag-apruba kay {person}",
   "{count} columns, reference first": "{count} column, reference muna",
