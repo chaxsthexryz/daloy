@@ -97,4 +97,29 @@ describe("bounded incoming message", () => {
     const raw = Buffer.from(`From: ana@example.com\r\n\r\n${"a".repeat(30_000)}`);
     expect((await parseIncomingEmail(raw, receivedAt))!.text).toHaveLength(20_000);
   });
+
+  it("extracts sanitized Message-ID, In-Reply-To and References and drops malformed header injection (C6)", async () => {
+    const threaded = Buffer.from(
+      "From: guest@example.com\r\nTo: resort@example.com\r\nSubject: Re: Rates\r\nMessage-ID: <m3@guest.example>\r\nIn-Reply-To: <m2@resort.example>\r\nReferences: <m1@guest.example> <m2@resort.example>\r\n\r\nThanks!",
+    );
+    const parsed = await parseIncomingEmail(threaded, receivedAt);
+    expect(parsed.messageId).toBe("<m3@guest.example>");
+    expect(parsed.inReplyTo).toBe("<m2@resort.example>");
+    expect(parsed.references).toEqual(["<m1@guest.example>", "<m2@resort.example>"]);
+
+    // Falls back to In-Reply-To when References is omitted.
+    const replyOnly = Buffer.from(
+      "From: guest@example.com\r\nTo: resort@example.com\r\nSubject: Re: Rates\r\nMessage-ID: <m4@guest.example>\r\nIn-Reply-To: <m3@resort.example>\r\n\r\nHello",
+    );
+    const parsedReplyOnly = await parseIncomingEmail(replyOnly, receivedAt);
+    expect(parsedReplyOnly.references).toEqual(["<m3@resort.example>"]);
+
+    // Malformed / non-message-id headers are dropped cleanly, and injected header lines never enter references.
+    const hostile = Buffer.from(
+      "From: guest@example.com\r\nTo: resort@example.com\r\nSubject: Bad\r\nMessage-ID: not-valid-id\r\nReferences: <good@example.com> bad-token <no-at-sign>\r\n\r\nHi",
+    );
+    const parsedHostile = await parseIncomingEmail(hostile, receivedAt);
+    expect(parsedHostile.messageId).toBeNull();
+    expect(parsedHostile.references).toEqual(["<good@example.com>"]);
+  });
 });

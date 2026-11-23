@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNotNull, lt, sql } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, lt, or, sql } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import {
@@ -61,13 +61,18 @@ async function collect(db: AnyDb, workspaceId: string, q: CustomerQuery) {
   for (const t of texts) if (match(t.text)) convIds.add(t.conversationId);
   for (const r of allRuns) if (r.conversationId && runIds.has(r.id)) convIds.add(r.conversationId);
   for (const r of allRuns) if (r.conversationId && convIds.has(r.conversationId)) runIds.add(r.id);
+  const openDueIds = new Set(allConversations.filter((c) => convIds.has(c.id) && c.openDueId).map((c) => c.openDueId!));
   const cIds = [...convIds];
   const events = (await db.select().from(paymongoEvents).where(and(eq(paymongoEvents.userId, workspaceId), isNotNull(paymongoEvents.payload)))).filter((e) => match(e.payload));
   const ids = [...runIds];
   const inRuns = (col: AnyPgColumn) => (ids.length ? inArray(col, ids) : sql`false`);
+  const linkedDueIds = [...openDueIds];
 
   const runRows = ids.length ? await db.select().from(runs).where(inArray(runs.id, ids)) : [];
-  const dues = await db.select().from(paymentDues).where(and(eq(paymentDues.userId, workspaceId), inRuns(paymentDues.runId)));
+  const dues = await db
+    .select()
+    .from(paymentDues)
+    .where(and(eq(paymentDues.userId, workspaceId), linkedDueIds.length ? or(inRuns(paymentDues.runId), inArray(paymentDues.id, linkedDueIds)) : inRuns(paymentDues.runId)));
   const dueIds = dues.map((d) => d.id);
   const bookingIds = new Set<string>();
   for (const r of await db.select({ id: bookings.id }).from(bookings).where(and(eq(bookings.userId, workspaceId), inRuns(bookings.runId)))) bookingIds.add(r.id);

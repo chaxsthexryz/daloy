@@ -4,9 +4,9 @@ import type { Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { freshDatabase } from "../../../test/db";
 import type { Db } from "./index";
-import { createDue, decideClaim, DueTakenError, duesForBooking, expireDue, retryReply, reviewList, settleCheckout, submitTransferClaim, type Due } from "./payment-review";
+import { createDue, decideClaim, DueTakenError, duesForBooking, expireDue, extractDmReceiptAmount, extractDmReceiptRef, retryReply, reviewList, settleCheckout, submitDmReceiptClaim, submitTransferClaim, type Due } from "./payment-review";
 import { insertPayment, markPaymentPaid, markPaymentRefunded } from "./paymongo";
-import { deliveries, paymentClaims, paymentDues, paymentHistory, payments, runs, users, workflows, workflowVersions, workspaceMembers } from "./schema";
+import { conversations, deliveries, paymentClaims, paymentDues, paymentHistory, payments, receiptReferences, runs, users, workflows, workflowVersions, workspaceMembers } from "./schema";
 
 const PNG = Buffer.from("89504e470d0a1a0a0000000d49484452", "hex");
 
@@ -276,5 +276,89 @@ describe("deposits and balances on a booking", () => {
     const [bal] = await duesForBooking(db, owner, { reference: "D-LATER" });
     expect(bal).toMatchObject({ kind: "balance", status: "pending", outstanding: 120000 });
     expect(await duesForBooking(db, other, { reference: "D-LATER" })).toEqual([]);
+  });
+});
+
+describe("DM receipt claims and open_due_id lifecycle (C6)", () => {
+  it("extracts transfer references and explicit peso amounts from DM captions without false positives", () => {
+    expect(extractDmReceiptRef("Ref: 5012 3456 7890")).toBe("5012 3456 7890");
+    expect(extractDmReceiptRef("GCash ref# 1002-5555-8888 paid")).toBe("1002-5555-8888");
+    expect(extractDmReceiptRef("Reference number: GC0001112223")).toBe("GC0001112223");
+    expect(extractDmReceiptRef("5012 3456 7890")).toBe("5012 3456 7890");
+    expect(extractDmReceiptRef("ABC123456")).toBe("ABC123456");
+    expect(extractDmReceiptRef("Here is my receipt 5012 3456 7890")).toBe("5012 3456 7890");
+    expect(extractDmReceiptRef("Call me at 0917 555 1234")).toBeNull();
+    expect(extractDmReceiptRef("Dec 20 to 22, 2 adults")).toBeNull();
+    expect(extractDmReceiptRef("Paid!")).toBeNull();
+
+    expect(extractDmReceiptAmount("Paid PHP 350.00")).toBe(35000);
+    expect(extractDmReceiptAmount("Sent ₱1,500.50")).toBe(150050);
+    expect(extractDmReceiptAmount("P300 ref 501234567890")).toBe(30000);
+    expect(extractDmReceiptAmount("350 pesos")).toBe(35000);
+    expect(extractDmReceiptAmount("Dec 20, 2 adults")).toBeNull();
+  });
+
+  it("links open_due_id on createDue and clears it when confirmed manually, via checkout, or expired", async () => {
+    const conv = async (ext: string) =>
+      (await db.insert(conversations).values({ userId: owner, channel: "messenger", externalId: ext }).returning())[0]!;
+    const readOpen = async (id: string) => (await db.select({ openDueId: conversations.openDueId }).from(conversations).where(eq(conversations.id, id)))[0]!.openDueId;
+
+    // 1. Manual confirm clears open_due_id.
+    const c1 = await conv("psid-c6-confirm");
+    const d1 = await due({ conversationId: c1.id });
+    expect(await readOpen(c1.id)).toBe(d1.id);
+    const claim = (await submitDmReceiptClaim(db, { userId: owner, dueId: d1.id, sourceMid: "mid_dm_confirm_1", channel: "messenger", caption: "Ref 8800112233", image: { bytes: PNG } }))!;
+    expect(claim.status).toBe("open");
+    expect((await fresh(d1.id)).status).toBe("pending");
+    await decideClaim(db, { workspaceId: owner, actor: asOwner, claimId: claim.id, version: 1, decision: "confirm" });
+    expect(await readOpen(c1.id)).toBeNull();
+
+    // 2. PayMongo checkout settle clears open_due_id.
+    const c2 = await conv("psid-c6-checkout");
+    const d2 = await due({ conversationId: c2.id });
+    expect(await readOpen(c2.id)).toBe(d2.id);
+    const p2 = await checkout(d2);
+    await paid(p2, 35000);
+    expect(await readOpen(c2.id)).toBeNull();
+
+    // 3. expireDue clears open_due_id.
+    const c3 = await conv("psid-c6-expire");
+    const d3 = await due({ conversationId: c3.id });
+    expect(await readOpen(c3.id)).toBe(d3.id);
+    await expireDue(db, { userId: owner, runId: d3.runId, stepId: "expire", dueStepId: "ask" });
+    expect(await readOpen(c3.id)).toBeNull();
+
+    // 4. Test due never sets open_due_id.
+    const c4 = await conv("psid-c6-test");
+    await due({ conversationId: c4.id, test: true });
+    expect(await readOpen(c4.id)).toBeNull();
+  });
+
+  it("creates one claim per mid, flags duplicate references and amount mismatches, never marks paid, and ignores closed dues", async () => {
+    const first = await due();
+    await db.insert(receiptReferences).values({ userId: owner, normalizedRef: "REUSED998877", firstRunId: first.runId });
+
+    const d = await due();
+    const a = (await submitDmReceiptClaim(db, { userId: owner, dueId: d.id, sourceMid: "mid_dm_dup_1", channel: "messenger", caption: "Paid PHP 300 ref REUSED-998877", image: { bytes: PNG } }))!;
+    expect(a.flags.sort()).toEqual(["amount_mismatch", "duplicate_reference"]);
+    expect(a.transferRef).toBe("REUSED-998877");
+    expect(a.submittedCentavos).toBe(30000);
+    expect(a.imageType).toBe("png");
+    expect((await fresh(d.id)).status).toBe("pending");
+    expect((await reviewList(db, owner)).some((r) => r.claimId === a.id && r.hasImage)).toBe(true);
+
+    // Replaying the same mid returns the same claim and inserts no second row.
+    const replay = (await submitDmReceiptClaim(db, { userId: owner, dueId: d.id, sourceMid: "mid_dm_dup_1", channel: "messenger", caption: "Paid PHP 300 ref REUSED-998877", image: { bytes: PNG } }))!;
+    expect(replay.id).toBe(a.id);
+    expect(await db.select().from(paymentClaims).where(eq(paymentClaims.dueId, d.id))).toHaveLength(1);
+
+    // Confirm the due, then another DM photo with a new mid creates NO claim.
+    await decideClaim(db, { workspaceId: owner, actor: asOwner, claimId: a.id, version: 1, decision: "confirm" });
+    expect(await submitDmReceiptClaim(db, { userId: owner, dueId: d.id, sourceMid: "mid_dm_after_confirm", channel: "messenger", image: { bytes: PNG } })).toBeUndefined();
+
+    // Expired due also creates NO claim.
+    const exp = await due();
+    await expireDue(db, { userId: owner, runId: exp.runId, stepId: "expire", dueStepId: "ask" });
+    expect(await submitDmReceiptClaim(db, { userId: owner, dueId: exp.id, sourceMid: "mid_dm_after_expire", channel: "messenger", image: { bytes: PNG } })).toBeUndefined();
   });
 });

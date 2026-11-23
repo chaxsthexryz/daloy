@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 import {
+  conversationMessages,
   conversations,
   emailSources,
   readEmailSource,
@@ -13,12 +14,17 @@ import {
   workflowVersions,
   triggers,
   type Db,
+  type MailDeps,
+  type Mailer,
 } from "@daloy/db";
-import { eq, sql } from "drizzle-orm";
+import { asc, eq, sql } from "drizzle-orm";
+import nodemailer, { type SendMailOptions } from "nodemailer";
 import type { Pool } from "pg";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { freshDatabase } from "../../../test/db";
+import { advance } from "./advance";
 import { pollEmailSources, UID_CHANGED, type ImapAdapter, type ImapMessage } from "./email-in";
+import { createExecutor } from "./steps";
 
 let db: Db;
 let pool: Pool;
@@ -364,5 +370,144 @@ describe("email menu (C2)", () => {
     await poll(mailbox({ uidNext: 8, messages: [{ uid: 5, payload: reply }, { uid: 6, payload: { ...reply, messageId: "<six@example.com>", text: "3" } }, { uid: 7, payload: { ...reply, messageId: "<seven@example.com>", text: "2 adults po" } }] }));
     const made = await db.select({ payload: runs.triggerPayload }).from(runs).innerJoin(workflowVersions, eq(workflowVersions.id, runs.workflowVersionId)).where(eq(workflowVersions.workflowId, own.workflowId));
     expect(made.map((r) => (r.payload as { choice?: string }).choice).sort()).toEqual(["rates", undefined, undefined]);
+  });
+});
+
+describe("email reply threading (C6)", () => {
+  it("threads replies to the guest with In-Reply-To and References, records the outbound message, and never leaks headers to staff alerts", async () => {
+    const own = await setup();
+    const definition = {
+      trigger: { type: "email", config: {} },
+      steps: [
+        { id: "reply", type: "email", config: { to: "{{trigger.replyTo}}", subject: "Re: {{trigger.subject}}", text: "Thanks for writing!" } },
+        { id: "alert", type: "email", config: { to: "staff@resort.example", subject: "Guest inquiry", text: "New message from {{trigger.replyTo}}" } },
+        { id: "both", type: "email", config: { to: "{{trigger.replyTo}}, staff@resort.example", subject: "Copy", text: "Copied" } },
+      ],
+      edges: [
+        { from: "reply", to: "alert" },
+        { from: "alert", to: "both" },
+      ],
+    };
+    await db.update(workflowVersions).set({ definition }).where(eq(workflowVersions.workflowId, own.workflowId));
+    await poll(mailbox());
+    await due();
+
+    const threadedPayload = {
+      ...payload,
+      from: "guest@example.com",
+      replyTo: "Guest@Example.com",
+      messageId: "<m2@guest.example>",
+      inReplyTo: "<m1@resort.example>",
+      references: ["<m0@guest.example>", "<m1@resort.example>"],
+    };
+    await poll(mailbox({ uidNext: 6, messages: [{ uid: 5, payload: threadedPayload }] }));
+    const [run] = await db
+      .select()
+      .from(runs)
+      .innerJoin(workflowVersions, eq(workflowVersions.id, runs.workflowVersionId))
+      .where(eq(workflowVersions.workflowId, own.workflowId));
+    expect(run!.runs.conversationId).not.toBeNull();
+
+    const sent: { to: { address: string }[]; messageId: string; inReplyTo?: string; references?: string; text: string }[] = [];
+    const mail: MailDeps = {
+      installation: {
+        from: "Resort <concierge@resort.example>",
+        transport: {
+          sendMail: async (msg: SendMailOptions) => {
+            const info = await nodemailer.createTransport({ jsonTransport: true }).sendMail(msg);
+            sent.push(JSON.parse(String(info.message)));
+            return info;
+          },
+        } as unknown as Mailer["transport"],
+      },
+      gmail: () => {
+        throw new Error("unused");
+      },
+      sharedMail: "open",
+    };
+    const deps = { db, executor: createExecutor({ db, secretsKey: key, mail }), owner: "c6-mail", leaseMs: 5000, retryPolicy: { maxAttempts: 2, baseDelayMs: 1, maxDelayMs: 1 }, enqueue: async () => {} };
+    for (let i = 0; i < 10; i++) {
+      const [r] = await db.select({ state: runs.state }).from(runs).where(eq(runs.id, run!.runs.id));
+      if (!r || !["pending", "running"].includes(r.state)) break;
+      await advance(deps, run!.runs.id);
+    }
+
+    expect(sent).toHaveLength(3);
+    // 1. Direct reply to guest carries In-Reply-To and full References chain (nodemailer normalizes domain case).
+    expect(sent[0]!.to.map((t) => t.address.toLowerCase())).toEqual(["guest@example.com"]);
+    expect(sent[0]!.inReplyTo).toBe("<m2@guest.example>");
+    expect(sent[0]!.references).toBe("<m0@guest.example> <m1@resort.example> <m2@guest.example>");
+    // 2. Staff alert to a different address gets NO guest thread headers.
+    expect(sent[1]!.to.map((t) => t.address)).toEqual(["staff@resort.example"]);
+    expect(sent[1]!.inReplyTo).toBeUndefined();
+    expect(sent[1]!.references).toBeUndefined();
+    // 3. Multi-recipient email including guest and staff also does NOT leak guest thread headers.
+    expect(sent[2]!.inReplyTo).toBeUndefined();
+    expect(sent[2]!.references).toBeUndefined();
+
+    // Outbound reply to guest is recorded in conversation_messages; staff alerts are not.
+    const msgs = await db
+      .select()
+      .from(conversationMessages)
+      .where(eq(conversationMessages.conversationId, run!.runs.conversationId!))
+      .orderBy(asc(conversationMessages.createdAt), asc(conversationMessages.id));
+    expect(msgs.map((m) => m.direction)).toEqual(["in", "out"]);
+    expect(msgs[1]!.mid).toBe(sent[0]!.messageId);
+    expect(msgs[1]!.text).toBe("Thanks for writing!");
+  });
+
+  it("never emits injected headers when inbound Message-ID or References contain CR/LF", async () => {
+    const own = await setup();
+    const definition = {
+      trigger: { type: "email", config: {} },
+      steps: [{ id: "reply", type: "email", config: { to: "{{trigger.replyTo}}", subject: "Re: {{trigger.subject}}", text: "Hello" } }],
+      edges: [],
+    };
+    await db.update(workflowVersions).set({ definition }).where(eq(workflowVersions.workflowId, own.workflowId));
+    await poll(mailbox());
+    await due();
+
+    const hostile = {
+      ...payload,
+      from: "attacker@example.com",
+      replyTo: "attacker@example.com",
+      messageId: "<evil@example.com>\r\nBcc: victim@example.com",
+      references: ["<ok@example.com>\r\nX-Evil: 1", "not-an-id"],
+    };
+    await poll(mailbox({ uidNext: 6, messages: [{ uid: 5, payload: hostile }] }));
+    const [run] = await db
+      .select()
+      .from(runs)
+      .innerJoin(workflowVersions, eq(workflowVersions.id, runs.workflowVersionId))
+      .where(eq(workflowVersions.workflowId, own.workflowId));
+
+    const rawBytes: string[] = [];
+    const mail: MailDeps = {
+      installation: {
+        from: "Resort <concierge@resort.example>",
+        transport: {
+          sendMail: async (msg: SendMailOptions) => {
+            const info = await nodemailer.createTransport({ streamTransport: true, buffer: true }).sendMail(msg);
+            rawBytes.push((info.message as Buffer).toString("utf8"));
+            return info;
+          },
+        } as unknown as Mailer["transport"],
+      },
+      gmail: () => {
+        throw new Error("unused");
+      },
+      sharedMail: "open",
+    };
+    const deps = { db, executor: createExecutor({ db, secretsKey: key, mail }), owner: "c6-inject", leaseMs: 5000, retryPolicy: { maxAttempts: 2, baseDelayMs: 1, maxDelayMs: 1 }, enqueue: async () => {} };
+    for (let i = 0; i < 5; i++) {
+      const [r] = await db.select({ state: runs.state }).from(runs).where(eq(runs.id, run!.runs.id));
+      if (!r || !["pending", "running"].includes(r.state)) break;
+      await advance(deps, run!.runs.id);
+    }
+    expect(rawBytes).toHaveLength(1);
+    expect(rawBytes[0]).not.toMatch(/In-Reply-To:/i);
+    expect(rawBytes[0]).not.toMatch(/References:/i);
+    expect(rawBytes[0]).not.toMatch(/Bcc:/i);
+    expect(rawBytes[0]).not.toMatch(/X-Evil:/i);
   });
 });

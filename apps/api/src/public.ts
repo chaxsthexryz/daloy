@@ -1,6 +1,6 @@
 import { publicCopy } from "./public-copy";
 import { createHmac, randomInt, randomUUID, timingSafeEqual } from "node:crypto";
-import { downloadTelegramFile, parseTelegramUpdate, ProviderError, telegramWebhookSecret, conversationPayload, parseMetaEchoes, recordEcho, recordInbound, normalizeShopDomain, parseShopifyCredential, parseShopifyOrder, verifyShopifyHmac, assertNotPaused, busyBetween, claimUsage, constantTimeEqual, downloadMetaImage, keyedRun, MetaImageError, MetaTransientImageError, parseMetaCredential, parseMetaWebhook, QuotaError, readBrand, saveUploads, usageSummary, verifyMetaSignature, workspaceLanguage, businessProfiles, connectionCredential, connections, createKeyedRun, createRun, eventSeen, finishEvent, keptEvent, markPaymentPaid, markPaymentRefunded, centavosToPesos, paymongoMode, readSecret, recordEvent, requests, runs, settleCheckout, triggers, verifyPaymongoSignature, WorkflowPausedError, workflows, workflowVersions, type Db, type NewUpload, type Payment } from "@daloy/db";
+import { dmClaimByMid, downloadTelegramFile, openDueForGuest, parseTelegramUpdate, ProviderError, submitDmReceiptClaim, telegramWebhookSecret, TooManyClaimsError, conversationPayload, parseMetaEchoes, recordEcho, recordInbound, normalizeShopDomain, parseShopifyCredential, parseShopifyOrder, verifyShopifyHmac, assertNotPaused, busyBetween, claimUsage, constantTimeEqual, downloadMetaImage, keyedRun, MetaImageError, MetaTransientImageError, parseMetaCredential, parseMetaWebhook, QuotaError, readBrand, saveUploads, usageSummary, verifyMetaSignature, workspaceLanguage, businessProfiles, connectionCredential, connections, createKeyedRun, createRun, eventSeen, finishEvent, keptEvent, markPaymentPaid, markPaymentRefunded, centavosToPesos, paymongoMode, readSecret, recordEvent, requests, runs, settleCheckout, triggers, verifyPaymongoSignature, WorkflowPausedError, workflows, workflowVersions, type Db, type NewUpload, type Payment } from "@daloy/db";
 import { definitionSchema, workflowChoices, FILE_MAX_BYTES, FILES_PER_FIELD, FILES_PER_SUBMISSION, fileType, OFFICE_REQUEST, parsePayload, PURCHASE_REQUEST, safeFileName, type FileRef, type FormField, type Resource } from "@daloy/engine";
 import {
   BadRequestException,
@@ -318,6 +318,8 @@ export class MetaHooksController {
 
     let startedCount = 0;
     for (const ev of events) {
+      // C6 (decision 0121): check whether this guest has a pending open payment due before skipping unmatched events.
+      const openDueId = ev.imageUrls.length > 0 ? await openDueForGuest(this.db, found.userId, ev.channel, ev.senderId) : null;
       const matching = listeners.filter((l) => {
         if (l.pausedAt) return false;
         const cfg = savedTrigger(l.version.definition, "meta_dm") as { channel?: string; requireImage?: boolean } | undefined;
@@ -329,14 +331,16 @@ export class MetaHooksController {
         if (ev.postback && !workflowChoices(l.version.definition).includes(ev.choice!)) return false;
         return true;
       });
-      if (matching.length === 0) continue;
+      if (matching.length === 0 && !openDueId) continue;
 
       const key = `meta:${ev.messageId}`;
       const pending: typeof matching = [];
       for (const l of matching) {
         if (!(await keyedRun(this.db, l.workflowId, key, false))) pending.push(l);
       }
-      if (pending.length === 0) continue;
+      const existingClaim = openDueId ? await dmClaimByMid(this.db, found.userId, ev.messageId) : undefined;
+      const needsClaim = Boolean(openDueId && !existingClaim);
+      if (pending.length === 0 && !needsClaim) continue;
 
       const downloaded: { name: string; type: "jpeg" | "png" | "webp"; data: Buffer }[] = [];
       if (ev.imageUrls.length > 0) {
@@ -356,6 +360,24 @@ export class MetaHooksController {
           }
         }
       }
+
+      // Create at most one transfer claim on the conversation's open due, in its own transaction (locks only payment_dues,
+      // never conversations, so it cannot deadlock against confirm/expireDue). Replays deduplicate by (userId, sourceMid).
+      let claim = existingClaim;
+      if (needsClaim && openDueId && downloaded.length > 0) {
+        claim = await submitDmReceiptClaim(this.db, {
+          userId: found.userId,
+          dueId: openDueId,
+          sourceMid: ev.messageId,
+          channel: ev.channel,
+          caption: ev.text,
+          image: { bytes: downloaded[0]!.data },
+        }).catch((err: unknown) => {
+          if (err instanceof QuotaError || err instanceof TooManyClaimsError) return undefined;
+          throw err;
+        });
+      }
+      if (pending.length === 0 && !claim) continue;
 
       // The message joins its conversation and every run that answers it commits together, so a replayed mid adds
       // nothing and two messages at once get versions one after the other (decision 0115).
@@ -377,6 +399,7 @@ export class MetaHooksController {
             text: ev.text,
             timestamp: ev.timestamp,
             image: imageRefs,
+            ...(claim ? { claimId: claim.id } : {}),
             ...(ev.choice && workflowChoices(l.version.definition).includes(ev.choice) ? { choice: ev.choice } : {}),
             conversation,
             ...(found.conn.destination?.pageId ? { pageId: found.conn.destination.pageId } : {}),

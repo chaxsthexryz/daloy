@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { workspaceLanguage, readKnowledge, aiConnection, bookFromStep, bookingOfStep, bookingReference, centavosToPesos, createDue, dueForStep, DueTakenError, expireDue, findReviewer, pendingCheckout, pesosToCentavos, checkReceiptReference, checkRecipients, claimTimeout, claimUsage, createApproval, findPaymentForStep, findApprover, queueCalendarEvent, queueDelivery, readSecrets, redactSecrets, secretForms, sendAs, type Db, type MailDeps, type Provider } from "@daloy/db";
-import { deliveries, isPaused, PAST_WINDOW, prepareReply, providerUrls, runConversation, runs, saveConversationFields, windowOpen, type ProviderUrls } from "@daloy/db";
+import { deliveries, emailThreadFor, isPaused, PAST_WINDOW, prepareReply, providerUrls, recordOutboundEmail, runConversation, runs, saveConversationFields, windowOpen, type ProviderUrls } from "@daloy/db";
 import { and, eq } from "drizzle-orm";
 import { approvalEmailBody, checkDiscordContent, numberedMenu, type Menu, wouldDo, type FileRef, bookingStartField, conditionBranch, normalizePhMobile, parseZoned, SMS_MAX_CHARS, type TestChoice, type Trigger, declaresJson, parseInstant, isRetryable, mockAiOutput, parseJsonTemplate, resolveJsonTemplate, resolveTemplate, StepError, usesSecrets, type ExpressionContext, type HistoryItem, type Language, quoteStay, QuoteError, type Step } from "@daloy/engine";
 import type { StepExecutor, StepResult } from "../advance";
@@ -279,10 +279,20 @@ async function runStep(deps: FullDeps, step: Step, input: unknown, ctx: Expressi
     case "email": {
       const mail = input as EmailInput;
       if (mock) return { output: { mocked: true, to: mail.to, subject: mail.subject } };
-      await claim("email", checkRecipients(mail.to).length);
+      const recipients = checkRecipients(mail.to);
+      await claim("email", recipients.length);
+      // C6 (decision 0121): thread only direct replies to the conversation's own email address, never staff alerts or
+      // multi-recipient messages, so guest thread headers cannot leak to another recipient.
+      const [linked] = UUID.test(runId) ? await deps.db.select({ conversationId: runs.conversationId }).from(runs).where(eq(runs.id, runId)) : [];
+      const convo = await runConversation(deps.db, linked?.conversationId);
+      const isGuestReply = Boolean(convo && convo.channel === "email" && recipients.length === 1 && recipients[0]!.toLowerCase() === convo.externalId.toLowerCase());
+      const thread = isGuestReply ? await emailThreadFor(deps.db, convo!.id) : undefined;
       // The Message-ID stays per attempt; the step key is the same on every attempt.
       // An email may not be sent twice on its own: sendAs claims the send once the sender is known.
-      const sent = await sendAs(deps.db, deps.secretsKey, deps.mail, userId, mail, `${idempotencyKey}:${attempt}`, { claim: claimSend, capKey: idempotencyKey });
+      const sent = await sendAs(deps.db, deps.secretsKey, deps.mail, userId, mail, `${idempotencyKey}:${attempt}`, { claim: claimSend, capKey: idempotencyKey, thread });
+      if (isGuestReply) {
+        await recordOutboundEmail(deps.db, { conversationId: convo!.id, runId, text: mail.text, messageId: sent.messageId, references: thread?.references });
+      }
       return { output: { messageId: sent.messageId, to: sent.to, from: sent.from } };
     }
     case "ai": {
@@ -573,9 +583,10 @@ async function runStep(deps: FullDeps, step: Step, input: unknown, ctx: Expressi
       const reviewer = cfg.reviewer ? await findReviewer(deps.db, userId, cfg.reviewer) : null;
       if (cfg.reviewer && !reviewer) throw new StepError(`${cfg.reviewer} is not an owner or operator of this workspace, so they cannot review payments.`, false);
       const booked = cfg.booking ? await bookingOfStep(deps.db, runId, cfg.booking) : undefined;
+      const [linked] = UUID.test(runId) ? await deps.db.select({ conversationId: runs.conversationId }).from(runs).where(eq(runs.id, runId)) : [];
       let due;
       try {
-        due = await createDue(deps.db, { userId, test: test === true, workflowId: workflowId ?? null, runId, stepId: step.id, reference: cfg.reference, kind: cfg.kind, amountCentavos, totalCentavos, bookingId: booked?.id ?? null, reviewerId: reviewer?.id ?? null, replyChannel: cfg.channel ?? null, replyTo, replyText: cfg.confirmedMessage || null });
+        due = await createDue(deps.db, { userId, test: test === true, workflowId: workflowId ?? null, runId, stepId: step.id, reference: cfg.reference, kind: cfg.kind, amountCentavos, totalCentavos, bookingId: booked?.id ?? null, reviewerId: reviewer?.id ?? null, replyChannel: cfg.channel ?? null, replyTo, replyText: cfg.confirmedMessage || null, conversationId: linked?.conversationId ?? null });
       } catch (err) {
         throw err instanceof DueTakenError ? new StepError(err.message, false) : err;
       }

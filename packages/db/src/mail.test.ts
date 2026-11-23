@@ -6,7 +6,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { startFakeSmtp } from "../../../test/fake-smtp";
 import { freshDatabase } from "../../../test/db";
 import { createDb, type Db } from "./index";
-import { approveSharedMail, mailDeps, sendAs, sendEmail, type MailDeps, type Mailer } from "./mail";
+import { approveSharedMail, buildThreadHeaders, mailDeps, rawMessage, sanitizeMessageId, sanitizeReferences, sendAs, sendEmail, type MailDeps, type Mailer } from "./mail";
 import { saveBrand } from "./brand";
 import { claimVerifyToken, connectGmail, issueVerifyToken, readSender, saveProfile } from "./mail-senders";
 import { sharedMailUsage, users } from "./schema";
@@ -40,6 +40,53 @@ describe("sendEmail", () => {
     });
     await expect(sendEmail(failing(451), email("a@example.com"), "k")).rejects.toMatchObject({ retryable: true });
     await expect(sendEmail(failing(550), email("a@example.com"), "k")).rejects.toMatchObject({ retryable: false });
+  });
+
+  it("sets In-Reply-To and References on SMTP and Gmail raw MIME replies and rejects header injection (C6)", async () => {
+    expect(sanitizeMessageId("<msg-1@example.com>")).toBe("<msg-1@example.com>");
+    expect(sanitizeMessageId("  <msg-2@mail.gmail.com>  ")).toBe("<msg-2@mail.gmail.com>");
+    expect(sanitizeMessageId("<ok@example.com>\r\nBcc: evil@attacker.com")).toBeNull();
+    expect(sanitizeMessageId("<ok@example.com>\nX-Evil: 1")).toBeNull();
+    expect(sanitizeMessageId("imap:mailbox:77:5")).toBeNull();
+    expect(sanitizeMessageId("not-an-id")).toBeNull();
+
+    expect(sanitizeReferences("<a@x.com> <b@x.com> junk <a@x.com>")).toEqual(["<a@x.com>", "<b@x.com>"]);
+    expect(sanitizeReferences(["<a@x.com>", "<bad@x.com>\r\nBcc: evil@x.com", "<c@x.com>"])).toEqual(["<a@x.com>", "<c@x.com>"]);
+    expect(sanitizeReferences("<a@x.com>\r\nBcc: evil@x.com")).toEqual([]);
+    // Keeps root + most recent when over the 20-id cap.
+    const many = Array.from({ length: 25 }, (_, i) => `<m${i}@x.com>`);
+    const capped = sanitizeReferences(many);
+    expect(capped).toHaveLength(20);
+    expect(capped[0]).toBe("<m0@x.com>");
+    expect(capped.at(-1)).toBe("<m24@x.com>");
+
+    expect(buildThreadHeaders({ inReplyTo: "<m2@guest.test>", references: ["<m0@guest.test>", "<m1@guest.test>"] })).toEqual({
+      inReplyTo: "<m2@guest.test>",
+      references: ["<m0@guest.test>", "<m1@guest.test>", "<m2@guest.test>"],
+    });
+    expect(buildThreadHeaders({ inReplyTo: "<bad@x>\r\nBcc: evil@x", references: ["<bad2@x>\nX-Bad: 1"] })).toEqual({});
+
+    const thread = { inReplyTo: "<m2@guest.test>", references: ["<m0@guest.test>", "<m1@guest.test>"] };
+    const smtpOut = await sendEmail(mailer, email("guest@example.com"), "run-t:reply:1", undefined, null, thread);
+    const parsed = JSON.parse(smtpOut.raw!) as { inReplyTo?: string; references?: string };
+    expect(parsed.inReplyTo).toBe("<m2@guest.test>");
+    expect(parsed.references).toBe("<m0@guest.test> <m1@guest.test> <m2@guest.test>");
+
+    // Gmail API uses rawMessage (RFC 822 bytes): verify headers appear verbatim and injection is blocked.
+    const mime = await rawMessage(mailer, email("guest@example.com"), "run-t:reply:1", null, thread);
+    const rfc822 = mime.raw.toString("utf8");
+    expect(rfc822).toContain("In-Reply-To: <m2@guest.test>\r\n");
+    expect(rfc822).toContain("References: <m0@guest.test> <m1@guest.test> <m2@guest.test>\r\n");
+
+    const hostile = await rawMessage(mailer, email("guest@example.com"), "run-t:reply:2", null, {
+      inReplyTo: "<ok@guest.test>\r\nBcc: evil@attacker.com",
+      references: ["<ok@guest.test>\nX-Injected: yes"],
+    });
+    const hostileText = hostile.raw.toString("utf8");
+    expect(hostileText).not.toMatch(/In-Reply-To:/i);
+    expect(hostileText).not.toMatch(/References:/i);
+    expect(hostileText).not.toMatch(/Bcc:/i);
+    expect(hostileText).not.toMatch(/X-Injected:/i);
   });
 });
 

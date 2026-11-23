@@ -1,5 +1,5 @@
 import { createHmac, randomBytes } from "node:crypto";
-import { connections, conversationMessages, conversations, deleteCustomer, exportCustomer, purgeConversations, runDueDeliveries, runs, stepRuns, users, windowOpen, workflowVersions, type Db } from "@daloy/db";
+import { connections, conversationMessages, conversations, createDue, decideClaim, deleteCustomer, expireDue, exportCustomer, paymentClaims, paymentDues, purgeConversations, receiptReferences, runDueDeliveries, runs, stepRuns, submitTransferClaim, users, windowOpen, workflowVersions, type Db } from "@daloy/db";
 import type { INestApplication } from "@nestjs/common";
 import { and, asc, eq, inArray } from "drizzle-orm";
 import type { Pool } from "pg";
@@ -53,6 +53,9 @@ beforeEach(() => {
   fake.meta.pageName = "Bahay Kubo Resort";
   fake.meta.revoked = false;
   fake.meta.messages.length = 0;
+  fake.meta.cdnFiles.clear();
+  fake.meta.cdnFiles.set("receipt.png", { contentType: "image/png", data: Buffer.from("89504e470d0a1a0a0000000d49484452", "hex") });
+  fake.meta.cdnFiles.set("receipt2.png", { contentType: "image/png", data: Buffer.from("89504e470d0a1a0a0000000d49484452", "hex") });
 });
 
 const deps = () => ({ db, executor: createExecutor({ db, secretsKey, mail: {} as never, urls: fake.urls }), owner: "c1", leaseMs: 5000, retryPolicy: { maxAttempts: 2, baseDelayMs: 1, maxDelayMs: 1 }, enqueue: async () => {} });
@@ -77,7 +80,7 @@ async function setup(steps?: unknown[], edges?: unknown[]) {
   const definition = { trigger: { type: "meta_dm", config: {} }, steps: steps ?? [{ id: "reply", type: "meta_reply", config: { text: "Salamat! {{trigger.text}}" } }], edges: edges ?? [] };
   await agent.post(`/workflows/${wf.body.id}/versions`).send({ definition, publish: true }).expect(201);
   const [c] = await db.select().from(connections).where(and(eq(connections.userId, u!.id), eq(connections.provider, "meta_messenger")));
-  return { userId: u!.id, workflowId: wf.body.id as string, path: (c!.destination as { webhookPath: string }).webhookPath };
+  return { agent, userId: u!.id, workflowId: wf.body.id as string, path: (c!.destination as { webhookPath: string }).webhookPath };
 }
 
 // nosemgrep: javascript.lang.security.audit.hardcoded-hmac-key.hardcoded-hmac-key
@@ -283,5 +286,140 @@ describe("conversation privacy", () => {
     expect(await messagesOf(recent.id)).toHaveLength(1);
     const linked = (await runsOf(s.workflowId)).find((r) => (r.triggerPayload as { text?: string }).text === undefined);
     expect(linked?.triggerPayload).toEqual({ erased: true });
+  });
+});
+
+describe("DM receipt photo claims on open due (C6)", () => {
+  const photoMsg = (psid: string, mid: string, text: string, files: string[] = ["receipt.png"]) => ({
+    sender: { id: psid },
+    recipient: { id: PAGE_ID },
+    timestamp: Date.now(),
+    message: {
+      mid,
+      text,
+      attachments: files.map((f) => ({ type: "image", payload: { url: `${fake.urls.metaCdn}/meta-cdn/${f}` } })),
+    },
+  });
+
+  it("payment_due step sets open_due_id, DM photo creates one claim in Receipts to review and never marks paid, replay creates no second claim, and confirm clears open_due_id", async () => {
+    const s = await setup([
+      { id: "due", type: "payment_due", config: { reference: "RES-6001", kind: "deposit", amount: "1500", channel: "messenger", to: "{{trigger.senderId}}" } },
+    ]);
+    // 1. First DM triggers payment_due, which sets conversations.open_due_id.
+    await post(s.path, [inbound("psid-pay-1", "m_pay_ask", "Ready to pay deposit")]);
+    const [askRun] = await runsOf(s.workflowId);
+    expect(await drive(askRun!.id)).toBe("succeeded");
+    const c = await conversationOf(s.userId, "psid-pay-1");
+    expect(c.openDueId).not.toBeNull();
+    const dueId = c.openDueId!;
+
+    // 2. Guest sends a DM receipt photo (even with 2 attachments in one message): creates ONE claim and leaves due pending.
+    const msg = photoMsg("psid-pay-1", "m_pay_photo_1", "Here is my GCash receipt Ref: 7001 8888 9999", ["receipt.png", "receipt2.png"]);
+    await post(s.path, [msg]);
+    const claims = await db.select().from(paymentClaims).where(eq(paymentClaims.dueId, dueId));
+    expect(claims).toHaveLength(1);
+    expect(claims[0]).toMatchObject({ channel: "transfer", status: "open", transferRef: "7001 8888 9999", imageType: "png", sourceMid: "m_pay_photo_1", flags: [] });
+    expect((await db.select().from(paymentDues).where(eq(paymentDues.id, dueId)))[0]!.status).toBe("pending");
+
+    // Visible in Receipts to review with downloadable receipt image.
+    const review = (await s.agent.get("/payments/review").expect(200)).body as { claimId: string; reference: string; hasImage: boolean; flags: string[]; version: number }[];
+    const item = review.find((r) => r.claimId === claims[0]!.id)!;
+    expect(item).toMatchObject({ reference: "RES-6001", hasImage: true, flags: [] });
+    expect((await s.agent.get(`/payments/claims/${item.claimId}/image`).expect(200)).headers["content-type"]).toBe("image/png");
+
+    // 3. Replaying the exact same webhook mid creates NO second claim.
+    await post(s.path, [msg]);
+    expect(await db.select().from(paymentClaims).where(eq(paymentClaims.dueId, dueId))).toHaveLength(1);
+
+    // 4. Reviewer confirms the claim -> clears conversations.open_due_id.
+    await decideClaim(db, { workspaceId: s.userId, actor: { id: s.userId, role: "owner" }, claimId: item.claimId, version: item.version, decision: "confirm" });
+    expect((await conversationOf(s.userId, "psid-pay-1")).openDueId).toBeNull();
+
+    // 5. A DM photo sent AFTER confirmation creates NO claim.
+    await post(s.path, [photoMsg("psid-pay-1", "m_pay_photo_after", "Sending again")]);
+    expect(await db.select().from(paymentClaims).where(eq(paymentClaims.dueId, dueId))).toHaveLength(1);
+  });
+
+  it("handles Instagram DM receipt photos on an open due even when no workflow matches", async () => {
+    const s = await setup();
+    const IG_ID = "900800700601";
+    await s.agent
+      .put("/settings/connections/meta-messenger")
+      .send({ pageId: PAGE_ID, instagramAccountId: IG_ID, pageAccessToken: PAGE_TOKEN, appSecret: APP_SECRET, verifyToken: VERIFY_TOKEN })
+      .expect(200);
+    await s.agent.post(`/workflows/${s.workflowId}/pause`).expect(204);
+    const [c] = await db.insert(conversations).values({ userId: s.userId, channel: "instagram", externalId: "igsid-pay-1" }).returning();
+    const [v] = await db.select().from(workflowVersions).where(eq(workflowVersions.workflowId, s.workflowId));
+    const [r] = await db.insert(runs).values({ workflowVersionId: v!.id, triggerPayload: {} }).returning();
+    const d = await createDue(db, { userId: s.userId, test: false, workflowId: s.workflowId, runId: r!.id, stepId: "ig_due", reference: "RES-IG-1", kind: "deposit", amountCentavos: 100000, conversationId: c!.id });
+
+    const body = JSON.stringify({
+      object: "instagram",
+      entry: [{ id: IG_ID, messaging: [{ sender: { id: "igsid-pay-1" }, recipient: { id: IG_ID }, timestamp: Date.now(), message: { mid: "m_ig_receipt_1", text: "Ref IG99887766", attachments: [{ type: "image", payload: { url: `${fake.urls.metaCdn}/meta-cdn/receipt.png` } }] } }] }],
+    });
+    await request(server).post(`/hooks/meta/${s.path}`).set("content-type", "application/json").set("x-hub-signature-256", sign(body)).send(body).expect(200);
+    const claims = await db.select().from(paymentClaims).where(eq(paymentClaims.dueId, d.id));
+    expect(claims).toHaveLength(1);
+    expect(claims[0]).toMatchObject({ transferRef: "IG99887766", imageType: "png", sourceMid: "m_ig_receipt_1", status: "open" });
+    expect((await db.select().from(paymentDues).where(eq(paymentDues.id, d.id)))[0]!.status).toBe("pending");
+  });
+
+  it("flags duplicate reference on a DM receipt photo against earlier claims and receipt_references", async () => {
+    const s = await setup();
+    await post(s.path, [inbound("psid-dup", "m_dup_hello", "Hi")]);
+    const c = await conversationOf(s.userId, "psid-dup");
+    const [firstRun] = await runsOf(s.workflowId);
+
+    // Seed an earlier pay-page claim with reference DUP555111222 on another due, plus a receipt_references entry.
+    const otherDue = await createDue(db, { userId: s.userId, test: false, workflowId: s.workflowId, runId: firstRun!.id, stepId: "other_due", reference: "RES-OLD", kind: "deposit", amountCentavos: 50000 });
+    await submitTransferClaim(db, otherDue.token, { transferRef: "DUP 5551 11222" });
+    await db.insert(receiptReferences).values({ userId: s.userId, normalizedRef: "AISEEN444333", firstRunId: firstRun!.id });
+
+    const openDue = await createDue(db, { userId: s.userId, test: false, workflowId: s.workflowId, runId: firstRun!.id, stepId: "open_due", reference: "RES-NEW", kind: "deposit", amountCentavos: 50000, conversationId: c.id });
+
+    await post(s.path, [photoMsg("psid-dup", "m_dup_1", "Ref DUP-5551-11222")]);
+    await post(s.path, [photoMsg("psid-dup", "m_dup_2", "Ref AISEEN444333")]);
+    const claims = await db.select().from(paymentClaims).where(eq(paymentClaims.dueId, openDue.id));
+    expect(claims).toHaveLength(2);
+    expect(claims.every((cl) => cl.flags.includes("duplicate_reference"))).toBe(true);
+    expect((await db.select().from(paymentDues).where(eq(paymentDues.id, openDue.id)))[0]!.status).toBe("pending");
+  });
+
+  it("creates no claim when the conversation has no open due or its due expired", async () => {
+    const s = await setup();
+    // No open due at all.
+    await post(s.path, [photoMsg("psid-nodue", "m_nodue_1", "Here is a photo of my dog")]);
+    expect(await db.select().from(paymentClaims).where(eq(paymentClaims.userId, s.userId))).toHaveLength(0);
+
+    // Create a due, expire it (clears open_due_id), then send a photo -> no claim.
+    const c = await conversationOf(s.userId, "psid-nodue");
+    const [run] = await runsOf(s.workflowId);
+    const d = await createDue(db, { userId: s.userId, test: false, workflowId: s.workflowId, runId: run!.id, stepId: "exp_due", reference: "RES-EXP", kind: "deposit", amountCentavos: 50000, conversationId: c.id });
+    expect((await conversationOf(s.userId, "psid-nodue")).openDueId).toBe(d.id);
+    await expireDue(db, { userId: s.userId, runId: run!.id, stepId: "expire", dueStepId: "exp_due" });
+    expect((await conversationOf(s.userId, "psid-nodue")).openDueId).toBeNull();
+    await post(s.path, [photoMsg("psid-nodue", "m_nodue_2", "Late receipt photo")]);
+    expect(await db.select().from(paymentClaims).where(eq(paymentClaims.dueId, d.id))).toHaveLength(0);
+  });
+
+  it("R6 export and delete cover a due linked through conversations.open_due_id and its DM receipt image", async () => {
+    const s = await setup();
+    await post(s.path, [inbound("psid-r6-due", "m_r6d_1", "Email me at guest.r6@resort.test")]);
+    const c = await conversationOf(s.userId, "psid-r6-due");
+    // Due created by a separate run (no email in trigger payload) linked only via conversations.open_due_id.
+    const [v] = await db.select().from(workflowVersions).where(eq(workflowVersions.workflowId, s.workflowId));
+    const [staffRun] = await db.insert(runs).values({ workflowVersionId: v!.id, triggerPayload: { staff: true } }).returning();
+    const d = await createDue(db, { userId: s.userId, test: false, workflowId: s.workflowId, runId: staffRun!.id, stepId: "ask_dep", reference: "RES-R6", kind: "deposit", amountCentavos: 50000, conversationId: c.id });
+    await post(s.path, [photoMsg("psid-r6-due", "m_r6d_2", "Ref R6RECEIPT99")]);
+
+    const exp = await exportCustomer(db, s.userId, s.userId, { email: "guest.r6@resort.test" });
+    expect(exp.counts).toMatchObject({ conversations: 1, dues: 1, claims: 1 });
+    expect(exp.claims[0]!.imageBase64).not.toBeNull();
+
+    const del = await deleteCustomer(db, s.userId, s.userId, { email: "guest.r6@resort.test" });
+    expect(del.kept.map((k) => k.item)).toContain("payment_dues");
+    const [claimAfter] = await db.select().from(paymentClaims).where(eq(paymentClaims.dueId, d.id));
+    expect(claimAfter!.image).toBeNull();
+    expect(claimAfter!.transferRef).toBeNull();
   });
 });

@@ -240,10 +240,13 @@ export const conversations = pgTable(
     lastOutboundAt: ts("last_outbound_at"),
     staffUntil: ts("staff_until"),
     noticeSentAt: ts("notice_sent_at"),
+    // C6 (decision 0121): the currently pending payment due for this guest, cleared once confirmed or expired.
+    openDueId: uuid("open_due_id").references((): AnyPgColumn => paymentDues.id, { onDelete: "set null" }),
     createdAt: createdAt(),
   },
   (t) => [
     unique().on(t.userId, t.channel, t.externalId),
+    index("conversations_open_due").on(t.openDueId).where(sql`${t.openDueId} is not null`),
     check("conversations_channel", sql`${t.channel} in ('messenger', 'instagram', 'email')`),
     check("conversations_status", sql`${t.status} in ('bot', 'staff', 'closed')`),
   ],
@@ -258,6 +261,8 @@ export const conversationMessages = pgTable(
     direction: text("direction", { enum: ["in", "out", "staff"] }).notNull(),
     text: text("text").notNull(),
     mid: text("mid"),
+    // C6 (decision 0121): sanitized RFC 5322 References chain for email conversations (at most 20 message-ids).
+    emailReferences: text("email_references").array().$type<string[]>().notNull().default(sql`'{}'::text[]`),
     runId: uuid("run_id").references((): AnyPgColumn => runs.id, { onDelete: "set null" }),
     uploadIds: jsonb("upload_ids").$type<string[]>().notNull().default([]),
     createdAt: createdAt(),
@@ -267,6 +272,7 @@ export const conversationMessages = pgTable(
     index("conversation_messages_at").on(t.conversationId, t.createdAt),
     check("conversation_messages_direction", sql`${t.direction} in ('in', 'out', 'staff')`),
     check("conversation_messages_text", sql`length(${t.text}) <= 4000`),
+    check("conversation_messages_email_references", sql`cardinality(${t.emailReferences}) <= 20`),
   ],
 );
 
@@ -920,6 +926,8 @@ export const paymentClaims = pgTable(
     normalizedRef: text("normalized_ref"),
     submittedCentavos: integer("submitted_centavos"),
     paymentId: uuid("payment_id").unique().references(() => payments.id, { onDelete: "cascade" }),
+    // C6 (decision 0121): Meta message id for a DM receipt claim, unique per workspace so webhook replays create one claim.
+    sourceMid: text("source_mid"),
     image: bytea("image"),
     imageType: text("image_type", { enum: ["jpeg", "png", "webp", "heic"] }),
     imageSize: integer("image_size"),
@@ -934,6 +942,7 @@ export const paymentClaims = pgTable(
   (t) => [
     index("payment_claims_open").on(t.userId, t.status),
     index("payment_claims_ref").on(t.userId, t.normalizedRef),
+    uniqueIndex("payment_claims_source_mid").on(t.userId, t.sourceMid).where(sql`${t.sourceMid} is not null`),
     check("payment_claims_status", sql`${t.status} in ('open', 'clarify', 'confirmed', 'rejected')`),
     check("payment_claims_flags", sql`${t.flags} <@ array['duplicate_reference', 'amount_mismatch', 'unreadable_upload', 'already_confirmed', 'paid_twice', 'late_payment']::text[]`),
     check("payment_claims_image", sql`(${t.image} is null) = (${t.imageType} is null) and (${t.imageSize} is null or ${t.imageSize} between 1 and 5242880)`),
