@@ -106,6 +106,10 @@ export const editorTranslations: Record<string, string> = {
   "Disable": "I-off",
   "Enable": "I-on",
   "Turned off": "Naka-off",
+  // T4: notes on steps.
+  Note: "Tala",
+  "What this step is for, in your own words.": "Para saan ang hakbang na ito, sa sarili mong salita.",
+  "{count} of {max} characters. Shown on the step and in Explain this flow.": "{count} sa {max} na character. Makikita sa hakbang at sa Ipaliwanag ang flow na ito.",
   ", turned off": ", naka-off",
   "Turned off {id}. Runs skip it and go on to the next step.": "Na-off ang {id}. Nilalaktawan ito ng mga run at tumutuloy sa susunod na hakbang.",
   "Turned on {id}.": "Na-on ang {id}.",

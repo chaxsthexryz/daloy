@@ -1313,6 +1313,16 @@ Not supported: albums (each photo is its own update and its own run), voice, vid
 
 Tests: `packages/db/src/telegram.test.ts` (secret, update parsing, photo size choice, type and size refusals), `apps/api/src/telegram.test.ts` (setWebhook with the secret, path kept, deleteWebhook on off and disconnect, refused address, publish needs receiving on, 403 and 401 before the body, one run for a repeated update including concurrent ones, my chat only against anyone, JPEG and PDF stored as uploads, fakes and oversize files refused, 503 when the file server is down, reply only to the sender's chat), `packages/engine/src/templates.test.ts`. The fake Bot API is in `test/fake-providers.ts`. Not run against the live Bot API yet.
 
+## Notes on steps (T4)
+
+Each step can carry an optional `note`: the owner's own words about why the step is there, such as "Only for customers who paid". It is plain text of at most 300 characters (`stepNoteSchema` in `packages/engine/src/definition.ts`). The engine never resolves it, so `{{trigger.name}}` in a note stays as typed, and the AI draft prompt does not mention it, so a model never writes one.
+
+In the editor the step panel has a Note box with a character count. The note shows under the step title on the canvas card (the editor and the run diagram) and in the step list that phones use, clipped to two lines. Duplicate keeps the note because it copies the whole step; copy and paste put the note on the clipboard next to the type and config, and a pasted note that is too long is dropped while the step still pastes. Clearing the box removes the key, so a step without a note saves as before.
+
+Explain this flow (`explainFlow` in `packages/engine/src/flow-guide.ts`) adds the note after its step's line as `Your note: "..."` (`Tala mo: "..."` in Tagalog). The note is quoted as typed and never translated. The run explanation in `apps/api/src/explain.ts` does not use it, since that one only reads facts that are safe to send to a model.
+
+Tests: `definition.test.ts` (300 accepted, 301 and non-text refused, braces kept), `graph.test.ts` (duplicate keeps it, paste carries it and drops one that is too long), `flow-guide.test.ts` (quoted after the step in both languages) and `e2e/step-note.spec.ts` (typed in the panel, shown on the card, kept after a save).
+
 ## Console rail: calmer motion, Inter and the AI meter (roadmap U1)
 
 - The rail opens on hover intent: the pointer must rest 250 ms to open it and must leave for 200 ms to close it, so passing over it does not flicker. It widens over 280 ms and the labels fade in over 180 ms after a 120 ms delay, all on `--ease` with no overshoot. These are `--dur-rail`, `--dur-rail-label` and `--dur-rail-label-delay` in `styles.css`; the phone sheet uses `--dur-rail` too. With reduced motion there is no delay and no transition.
