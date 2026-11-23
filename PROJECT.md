@@ -403,3 +403,8 @@ C3 and C4 cover T7 (answer from my price list). Decisions from 0115 (0111 to 011
 - [ ] G4. Web page / RSS monitor trigger (`page_changed`) and team chat triggers (`slack_message`, `teams_message`, `discord_message`).
 - [ ] G5. Record-tool triggers (`airtable_record`, `notion_page`, `trello_card`).
 - [ ] G6. Demand-gated external triggers (Meta comments/Lead Ads, WooCommerce/Shopee/Lazada/TikTok Shop, iCal/Calendly, Xendit/Maya/Stripe, Tally/Typeform/Google Forms).
+
+## Platform admin and ops (24 November 2026)
+
+- [ ] A1. Internal Super-Admin page (`#/admin`, gated by `PLATFORM_ADMINS` env allowlist, never a workspace role): total and new users/workspaces, cross-tenant AI/SMS/run usage, failed and `needs_review` counts, plan overrides, `SHARED_MAIL` approval, and read-only run metadata without decrypting customer secrets.
+- [ ] A2. Error reporting hook (Sentry or GlitchTip DSN optional in `api`, `worker`, and `web`) and uptime monitor setup alongside `docs/deployment.md`.
