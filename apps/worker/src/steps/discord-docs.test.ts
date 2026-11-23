@@ -13,7 +13,7 @@ import { createExecutor } from "./index";
 const key = randomBytes(32);
 const NO_STEP_RUN = "00000000-0000-0000-0000-000000000000";
 const GOOGLE_USER = { id: "google-user-1", email: "ana@google.example" };
-const ACCESS = "ya29.worker-test-access-token"; // gitleaks:allow (synthetic)
+const ACCESS = "worker-test-access-token"; // synthetic, no provider prefix so secret scanners stay quiet
 const TEMPLATE = "1TemplateDocIdAbCdEf";
 const FOLDER = "1FolderIdForInvoicesAbC";
 const BODY = "Invoice for {{name}}. Total {{total}}. Thanks, {{name}}.";

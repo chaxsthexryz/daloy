@@ -6,7 +6,7 @@ import { ProviderError, type ProviderUrls } from "./providers";
 
 // Phase I1, decision 0104. The Drive and Docs APIs are a local stub that keeps files in memory and applies
 // replaceAllText the way Docs does, so the tests see the copied text and not only the requests.
-const TOKEN = "ya29.synthetic-access-token-for-tests"; // gitleaks:allow (synthetic)
+const TOKEN = "synthetic-access-token-for-tests"; // synthetic, no provider prefix so secret scanners stay quiet
 const TEMPLATE = "1TemplateIdAbCdEfGh";
 const FOLDER = "1FolderIdAbCdEfGhIj";
 const BODY = "Dear {{name}}, you owe {{total}}. Ref {{ref}}. Again {{name}}.";

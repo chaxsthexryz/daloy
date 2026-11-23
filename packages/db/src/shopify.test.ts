@@ -74,6 +74,7 @@ describe("verifyShopifyHmac", () => {
     expect(verifyShopifyHmac(body, sign(body).slice(0, -4), secret)).toBe(false);
     expect(verifyShopifyHmac(body, `${sign(body)}AAAA`, secret)).toBe(false);
     // The hex form is not what Shopify sends, so it never passes.
+    // nosemgrep: javascript.lang.security.audit.hardcoded-hmac-key.hardcoded-hmac-key
     expect(verifyShopifyHmac(body, createHmac("sha256", secret).update(body).digest("hex"), secret)).toBe(false);
   });
   it("is the same answer for a replay: the check has no clock, the webhook id does the de-duplication", () => {
