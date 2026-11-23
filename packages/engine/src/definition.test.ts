@@ -434,6 +434,30 @@ describe("payment_due amount", () => {
     expect(issues(def(signed, "{{trigger.amount}}"))).toEqual([]);
     expect(issues(def({ type: "manual", config: { fields } }, "{{trigger.amount}}"))).toEqual([]);
   });
+
+  // L7 (decision 0119): a price is followed through the steps it is read from, so model output cannot become an amount.
+  const manual = { type: "manual", config: { fields: [{ name: "room", label: "Room", type: "text", required: true }] } };
+  const ai = { id: "read", type: "ai", config: { task: "extract", input: "{{trigger.room}}", fields: { amount: "the amount" } } };
+  const quote = (nights: string) => ({ id: "quote", type: "stay_quote", config: { room: "{{trigger.room}}", checkIn: "2026-12-14", nights, guests: "2" } });
+  const chain = (trigger: object, steps: { id: string }[], amount: string) => {
+    const all = [...steps, due(amount)];
+    return { trigger, steps: all, edges: all.slice(1).map((s, i) => ({ from: all[i]!.id, to: s.id })) };
+  };
+
+  it("refuses an amount read from an AI step, directly or through another step", () => {
+    expect(issues(chain(manual, [ai], "{{steps.read.output.amount}}")).join()).toMatch(/payment_due step "ask".*AI step "read"/);
+    const relay = { id: "relay", type: "http", config: { method: "POST", url: "https://example.com/price", headers: {}, body: "{{steps.read.output.amount}}" } };
+    expect(issues(chain(manual, [ai, relay], "{{steps.relay.output.body}}")).join()).toMatch(/AI step "read"/);
+    expect(issues(chain(manual, [ai, quote("{{steps.read.output.amount}}")], "{{steps.quote.output.deposit}}")).join()).toMatch(/AI step "read"/);
+  });
+
+  it("refuses an amount from a step that reads a public visitor's text", () => {
+    expect(issues(chain(dm, [quote("{{trigger.text}}")], "{{steps.quote.output.deposit}}")).join()).toMatch(/payment_due step "ask".*meta_dm trigger/);
+  });
+
+  it("takes a stay_quote deposit when its inputs come from staff", () => {
+    expect(issues(chain(manual, [quote("{{trigger.room}}")], "{{steps.quote.output.deposit}}"))).toEqual([]);
+  });
 });
 
 // I2 (decision 0105): a Shopify step writes to the owner's store, so a stranger's text must not choose what it writes.

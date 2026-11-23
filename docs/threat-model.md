@@ -352,6 +352,16 @@ The list of apps sharing a Google sign-in joins OAuth grants by Google account I
 - A replayed tap: the tap's `mid` keys the run in `run_keys` and the conversation message, so a replay starts nothing. A postback without a `mid` is dropped.
 - Email numbers: a reply's number only picks from the workflow's own email menu; a number outside it, or a line with more than a number, sets nothing.
 
+## Guarded answers and stay quote (C4, decision 0119)
+
+- Assets: rate accuracy on guest quotes, payment due amounts, guest email and phone data, and the integrity of links sent under the resort's Page.
+- Entry points: inbound guest messages routed into an `ai` (`answer`) step, model responses returned to `runAnswer`, `stay_quote` step inputs, and `payment_due` step `amount` and `total` templates.
+- Invented or uncited prices and availability claims: `guardReply` parses every peso figure and rate-phrase number in the model reply and replaces the reply whenever any number is absent from the priced entries (`room`, `rate`, `fee`) listed in `entryIds`. Availability claims in English or Tagalog are replaced with a fixed team-check message and `needsHuman: true`.
+- Prompt injection and phishing links: guest messages stay inside delimited `<data>` blocks in the user message, never in the system prompt, and `guardReply` strips any URL or bare domain not present in the published knowledge sheet or the step's pay link, as well as `{{...}}` braces and contact placeholders.
+- Guest contact data sent to the AI provider: `answerPrompt` runs `redactContacts` over both the current message and conversation history before calling the model, replacing emails and phone numbers with `[email]` and `[phone]`, while `contactsIn` extracts them locally in code.
+- Tampered payment amounts (L7): `untrustedSource` in `definitionSchema` walks step references transitively across `payment_due.amount` and `total` and rejects any chain reaching an `ai` step or a `{{trigger.*}}` field from an untrusted trigger (`meta_dm`, `form`, `email`, `telegram_message`, or unsigned `webhook`), so guest text or model output cannot set a payment amount through `stay_quote` or an intermediate step.
+- Remaining risks: live model answer quality in English and Taglish is unverified until C9's 50-conversation measurement; `guardReply` rate and availability regexes can false-positive on harmless phrasing, erring on the side of handing off to staff.
+
 ## Daily tools (R5, decision 0093)
 
 Assets: the owner's inbox, confirmed payment records, customers' receipt photos.

@@ -14,10 +14,14 @@ export type DraftResult = { ok: true; name: string; summary: string; definition:
 const example = TEMPLATES[0]!;
 
 // "files" is the owner's consent to let the model read a form file, so Build with AI never hears of it. Menus (decision
-// 0118) come from templates, and leaving them out keeps the prompt inside a local model's default context.
-const without = (schema: unknown, key: string) => {
-  const properties = { ...(schema as { properties: Record<string, unknown> }).properties };
+// 0118) come from templates, and leaving them out keeps the prompt inside a local model's default context. A local model
+// also drafts without the concierge answer task (it needs a published knowledge sheet).
+const without = (schema: unknown, key: string, full: boolean) => {
+  const properties = { ...(schema as { properties: Record<string, { enum?: string[] }> }).properties };
   delete properties[key];
+  if (!full && properties.task?.enum) {
+    properties.task = { ...properties.task, enum: properties.task.enum.filter((t) => t !== "answer") };
+  }
   return { ...(schema as object), properties };
 };
 const LEFT_OUT: Record<string, string> = { ai: "files", email: "menu", outlook: "menu", meta_reply: "quickReplies" };
@@ -36,7 +40,7 @@ const spec = (full: boolean) => [
   'A number field can set "min", "max" and "integer": true, e.g. {"name":"amount","label":"Amount","type":"number","required":true,"min":0.01}. Put limits on the field instead of adding condition steps that check them; a submission outside the limits is refused before the workflow runs. A webhook trigger can list "fields" the same way to check incoming events, and set "eventKey" (such as "{{trigger.event_id}}") so a repeated event starts no second run.',
   'A condition comparing with gt, gte, lt or lte takes its "invalid" branch when a side is missing or not a number. Give it an "invalid" edge when bad data needs its own handling (such as manual review); without one, the run fails with a message.',
   'steps is a list of {"id","type","config"}. ids use a-z, 0-9 and _. The config of each step type follows this JSON Schema:',
-  JSON.stringify(Object.fromEntries(Object.entries(stepJsonSchemas()).filter(([type]) => full || !HOSTED_ONLY.includes(type)).map(([type, schema]) => [type, LEFT_OUT[type] ? without(schema, LEFT_OUT[type]) : schema]))),
+  JSON.stringify(Object.fromEntries(Object.entries(stepJsonSchemas()).filter(([type]) => full || !HOSTED_ONLY.includes(type)).map(([type, schema]) => [type, LEFT_OUT[type] ? without(schema, LEFT_OUT[type], full) : schema]))),
   'edges is a list of {"from","to"} and, from a branching step, "on": ' +
     Object.entries(BRANCHES)
       .map(([type, labels]) => `${type} has ${labels!.map((l) => `"${l}"`).join(", ")}`)
@@ -53,7 +57,7 @@ const spec = (full: boolean) => [
 
 // Left out of a small local model's prompt to keep it inside that model's context; a hosted model gets all of them.
 // The stress test (apps/api/scripts/ai-stress.ts) showed a hosted model without them builds http or telegram steps instead.
-const HOSTED_ONLY = ["airtable", "notion", "trello", "payment_status", "payment_due", "payment_expire", "sms", "meta_reply", "conversation_update", "discord", "google_docs", "read_page", "shopify_create_product", "shopify_update_product", "browser"];
+const HOSTED_ONLY = ["airtable", "notion", "trello", "payment_status", "payment_due", "payment_expire", "sms", "meta_reply", "conversation_update", "stay_quote", "discord", "google_docs", "read_page", "shopify_create_product", "shopify_update_product", "browser"];
 const FULL_TRIGGERS =
   'More triggers: {"type":"meta_dm","config":{"channel":"both"}} for a Facebook Messenger or Instagram DM to the connected Page (channel messenger, instagram or both; fields {{trigger.text}}, {{trigger.senderId}}, {{trigger.channel}}); ' +
   '{"type":"payment","config":{"events":["paid"]}} for a PayMongo payment (fields {{trigger.reference}}, {{trigger.amountPesos}}, {{trigger.status}}); ' +

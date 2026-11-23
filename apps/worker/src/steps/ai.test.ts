@@ -2,7 +2,7 @@ import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { aiConfigSchema } from "@daloy/engine";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { runAi } from "./ai";
+import { runAi, runAnswer } from "./ai";
 
 // A fake Ollama: records each /api/chat body and answers with whatever `reply` is set to.
 let server: Server;
@@ -84,5 +84,28 @@ describe("runAi with an uploaded file", () => {
     await runAi(classify, JSON.stringify(trigger), { model: "m", attempt: 1 });
     expect(JSON.stringify(bodies)).not.toContain(marker);
     expect(JSON.stringify(bodies)).toContain("id.pdf");
+  });
+});
+
+// C4 (decision 0119): the answer task reads the published knowledge and the conversation, and its reply is guarded.
+describe("runAnswer", () => {
+  const entries = [{ id: "room-garden", kind: "room" as const, title: "Garden room", body: "", fields: { price: 3500, unit: "night" as const } }];
+  const answer = aiConfigSchema.parse({ task: "answer", input: "{{trigger.text}}" });
+  const history = [{ direction: "in", text: "Hi, ana.cruz@example.com here", at: "2026-11-23T01:00:00Z" }];
+  const run = (content: string, input = "Rate for the garden room? Text me at 0917 123 4567") => {
+    reply = { status: 200, content };
+    return runAnswer(answer, input, { model: "m", attempt: 1, entries, version: 3, history, language: "en" });
+  };
+
+  it("sends no email or phone to the model, and fills them in from fixed patterns", async () => {
+    const out = await run('{"reply":"The Garden room is ₱3,500 per night.","entryIds":["room-garden"],"intent":"rates","needsHuman":false,"fields":{"check_in":null,"check_out":null,"guests":"2","name":"Ana"}}');
+    expect(JSON.stringify(bodies)).not.toMatch(/ana\.cruz|0917|123 4567/);
+    expect(out.output).toMatchObject({ reply: "The Garden room is ₱3,500 per night.", entryIds: ["room-garden"], needsHuman: false, guarded: [], knowledgeVersion: 3, fields: { guests: "2", name: "Ana", phone: "+639171234567" } });
+  });
+
+  it("replaces an invented price, drops unknown citations and asks for a person", async () => {
+    const out = await run('{"reply":"Only ₱1,999 tonight!","entryIds":["room-garden","made-up"],"intent":"rates","needsHuman":false,"fields":{}}');
+    expect(out.output).toMatchObject({ entryIds: ["room-garden"], needsHuman: true, guarded: ["price"] });
+    expect(String(out.output.reply)).not.toContain("1,999");
   });
 });

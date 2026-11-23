@@ -45,6 +45,14 @@ describe("explainFlow", () => {
     const lines = stepLines(receipt, "en", { slack: "#orders" });
     expect(lines.find((l) => l.id === "slack")!.where).toContain("#orders");
   });
+  it("explains a stay_quote step with its room and note", () => {
+    const quoted = parse({
+      trigger: { type: "manual", config: {} },
+      steps: [{ id: "quote", note: "Ask staff before discounting", type: "stay_quote", config: { room: "Garden room", checkIn: "2026-12-14", nights: "2", guests: "2" } }],
+      edges: [],
+    });
+    expect(explainFlow(quoted, "en")[1]).toBe('1. Quote a stay. Room: Garden room Your note: "Ask staff before discounting"');
+  });
 });
 
 describe("configProblems", () => {

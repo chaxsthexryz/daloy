@@ -173,6 +173,14 @@ export const CONVERSATION_FIELD_NAMES = ["check_in", "check_out", "guests", "nam
 export const conversationUpdateConfigSchema = z.object({
   fields: z.partialRecord(z.enum(CONVERSATION_FIELD_NAMES), template(500)).refine((f) => Object.keys(f).length > 0, "set at least one field"),
 });
+// The price of a stay from the published knowledge sheet (C4, decision 0119). room is an entry id or title; the nights,
+// guests and check-in only count, so the price and deposit always come from the owner's sheet, never from the run.
+export const stayQuoteConfigSchema = z.object({
+  room: template(200).min(1).describe("The id or title of a room or rate entry of the knowledge sheet."),
+  checkIn: template(100).min(1).describe("Check-in date as YYYY-MM-DD."),
+  nights: template(20).min(1).describe("Number of nights, 1 to 30."),
+  guests: template(20).min(1).describe("Number of guests."),
+});
 // Shopify products (decision 0105), queued as deliveries. Every field is a template, read as text when the step runs: price like "499.50" in the
 // store's currency, imageUrl an https link Shopify downloads from. A new product starts as a
 // draft, so nothing goes on sale by surprise. Blank after filling in means "leave as is" for an update.
@@ -258,6 +266,7 @@ const stepSchema = z.discriminatedUnion("type", [
   z.object({ id: stepId, disabled, note, type: z.literal("payment_expire"), config: paymentExpireConfigSchema }),
   z.object({ id: stepId, disabled, note, type: z.literal("meta_reply"), config: metaReplyConfigSchema }),
   z.object({ id: stepId, disabled, note, type: z.literal("conversation_update"), config: conversationUpdateConfigSchema }),
+  z.object({ id: stepId, disabled, note, type: z.literal("stay_quote"), config: stayQuoteConfigSchema }),
   z.object({ id: stepId, disabled, note, type: z.literal("discord"), config: discordConfigSchema }),
   z.object({ id: stepId, disabled, note, type: z.literal("google_docs"), config: googleDocsConfigSchema }),
   z.object({ id: stepId, disabled, note, type: z.literal("read_page"), config: readPageConfigSchema }),
@@ -439,6 +448,26 @@ export function parsePayload(fields: FormField[], data: unknown, context?: Paylo
   return { ok: false, errors: r.error.issues.map((i) => `${i.path.join(".") || "payload"}: ${i.message}`) };
 }
 
+const STEP_REF = /\{\{\s*steps\.([a-z][a-z0-9_]*)/g;
+/**
+ * L7 (decision 0119): what a price read from other steps comes from. Each step the template reads is followed through
+ * its own config, so model output or a stranger's text cannot become an amount by way of an http, stay_quote or any
+ * other step. Returns the first untrusted source, or null.
+ */
+function untrustedSource(template: string, steps: Map<string, Step>, trigger: Trigger, seen = new Set<string>()): string | null {
+  for (const [, id] of template.matchAll(STEP_REF)) {
+    const s = steps.get(id!);
+    if (!s || seen.has(id!)) continue;
+    seen.add(id!);
+    if (s.type === "ai") return `the AI step "${id}"`;
+    const config = JSON.stringify(s.config);
+    if (!priceTrusted(trigger) && /\{\{\s*trigger\./.test(config)) return `step "${id}", which reads a ${trigger.type} trigger that anyone can fill in`;
+    const deeper = untrustedSource(config, steps, trigger, seen);
+    if (deeper) return deeper;
+  }
+  return null;
+}
+
 const priceTrusted = (t: Trigger) => t.type === "manual" || t.type === "schedule" || t.type === "payment" || t.type === "shopify_order" || (t.type === "webhook" && t.config.hmacSecret !== undefined);
 
 export const definitionSchema = z
@@ -495,6 +524,12 @@ export const definitionSchema = z
     // A reply of "2" means the second choice, so every email menu of one workflow must number its choices the same way.
     const emailMenus = def.steps.flatMap((s) => ((s.type === "email" || s.type === "outlook") && s.config.menu ? [s.config.menu.map((m) => m.choice).join(",")] : []));
     if (new Set(emailMenus).size > 1) fail("every email menu in a workflow must list the same choices in the same order, so a reply's number means one thing");
+
+    for (const s of def.steps) {
+      if (s.type !== "payment_due") continue;
+      const source = untrustedSource([s.config.amount, s.config.total ?? ""].join(" "), byId, def.trigger);
+      if (source) fail(`payment_due step "${s.id}" cannot take its amount or total from ${source}. Take prices from a stay_quote step, a fixed amount or a manual run.`);
+    }
 
     for (const s of def.steps) if (s.disabled && BRANCHES[s.type]) fail(`${s.type} step "${s.id}" branches, so it cannot be turned off`);
 

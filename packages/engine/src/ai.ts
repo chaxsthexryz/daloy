@@ -17,7 +17,8 @@ const nameMap = z.record(name, literal(300));
 
 export const aiConfigSchema = z
   .object({
-    task: z.enum(["classify", "extract", "summarize", "draft"]),
+    // answer (C4, decision 0119): the resort concierge. The worker adds the published knowledge sheet and the conversation.
+    task: z.enum(["classify", "extract", "summarize", "draft", "answer"]),
     // The only template. It resolves to the data the model works on and goes in the user message.
     input: z.string().min(1).max(5000),
     instructions: literal(2000).optional(),
@@ -37,6 +38,19 @@ export const aiConfigSchema = z
   });
 export type AiConfig = z.infer<typeof aiConfigSchema>;
 
+/** What a guest's message is about, from the answer task. */
+export const ANSWER_INTENTS = ["question", "rates", "book", "staff", "other"] as const;
+const answerField = z.string().max(200).nullable();
+const answerSchema = z.object({
+  reply: z.string().max(2000),
+  // Ids of the knowledge entries the reply used. The guard trusts a price only from these.
+  entryIds: z.array(z.string().max(100)).max(20),
+  intent: z.enum(ANSWER_INTENTS),
+  needsHuman: z.boolean(),
+  // The stay details the guest gave. Phone and email are never asked of the model: the worker finds them by pattern.
+  fields: z.object({ check_in: answerField, check_out: answerField, guests: answerField, name: answerField }).partial(),
+});
+
 /** The JSON the model must return for this config. The worker validates the reply against it. */
 export function aiOutputSchema(cfg: AiConfig): z.ZodType<Record<string, unknown>> {
   switch (cfg.task) {
@@ -51,6 +65,8 @@ export function aiOutputSchema(cfg: AiConfig): z.ZodType<Record<string, unknown>
       return z.object({ summary: z.string().max(10_000) });
     case "draft":
       return z.object({ draft: z.string().max(20_000) });
+    case "answer":
+      return answerSchema;
   }
 }
 
@@ -71,6 +87,18 @@ const TASK_PROMPTS: Record<AiConfig["task"], (cfg: AiConfig) => string> = {
   extract: (cfg) => `Extract these fields from the data. Use null for a field the data does not contain.\n${list(cfg.fields)}\nReply with one JSON key per field.`,
   summarize: () => `Summarise the data in a few plain sentences. Reply as {"summary": "<text>"}.`,
   draft: () => `Draft a reply to the data. Reply as {"draft": "<text>"}.`,
+  answer: () =>
+    [
+      "You answer a guest of a resort who wrote on Messenger, Instagram or email.",
+      "Use only the facts in the knowledge sheet below. Put the id of every entry you used in entryIds.",
+      "Never say whether a room or date is available, free, open, booked, reserved or full: say the team will check.",
+      "Never write a price, fee, discount, deposit or total that is not written in a cited entry, and never add prices up.",
+      "Never ask for an ID, a card number or health details. Contact details appear as [email] and [phone]: never write them.",
+      "Set needsHuman to true when the guest asks for a person, complains, asks for a refund or a cancellation, mentions a medical or safety matter, or the sheet does not answer the question.",
+      `intent is one of ${ANSWER_INTENTS.join(", ")}. fields holds the stay details the guest gave: check_in and check_out as YYYY-MM-DD, guests as a number, name; null when not given.`,
+      "Reply in the guest's language (English, Tagalog or Taglish), in at most 640 characters.",
+      'Reply as {"reply": "<text>", "entryIds": ["<id>"], "intent": "<intent>", "needsHuman": false, "fields": {"check_in": null, "check_out": null, "guests": null, "name": null}}.',
+    ].join("\n"),
 };
 
 /**
@@ -109,5 +137,7 @@ export function mockAiOutput(cfg: AiConfig): Record<string, unknown> {
       return { summary: "Mock summary. Test runs without live calls do not call the model." };
     case "draft":
       return { draft: "Mock draft. Test runs without live calls do not call the model." };
+    case "answer":
+      return { reply: "Mock reply. Test runs without live calls do not call the model.", entryIds: [], intent: "question", needsHuman: false, fields: {}, guarded: [], knowledgeVersion: 0 };
   }
 }

@@ -60,6 +60,19 @@ describe("insertables", () => {
     expect(insertables({ ...receipt, trigger: { type: "email", config: {} } } as Draft, "save_receipt")).toEqual(["{{trigger.from}}", "{{trigger.subject}}", "{{trigger.text}}"]);
     expect(insertables({ ...receipt, trigger: { type: "manual", config: {} } } as Draft, "save_receipt")).toEqual([]);
   });
+  it("lists stay_quote output fields for steps after it", () => {
+    const quoted: Draft = {
+      trigger: { type: "manual", config: {} },
+      steps: [
+        { id: "quote", type: "stay_quote", config: { room: "Garden room", checkIn: "2026-12-14", nights: "2", guests: "2" } },
+        { id: "due", type: "payment_due", config: { reference: "R-1", amount: "{{steps.quote.output.deposit}}", kind: "deposit", checkout: false } },
+      ],
+      edges: [{ from: "quote", to: "due" }],
+    } as unknown as Draft;
+    const items = insertables(quoted, "due");
+    expect(items).toContain("{{steps.quote.output.deposit}}");
+    expect(items).toContain("{{steps.quote.output.total}}");
+  });
 });
 
 describe("setupLeft", () => {
