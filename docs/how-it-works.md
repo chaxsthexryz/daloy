@@ -957,6 +957,23 @@ Edge cases:
 
 Tests: `e2e/test-with-data.spec.ts` (a failed run's data, with a password field shown as `[secret]`, becomes the sample, and the test run posts it in mock mode).
 
+#### One Share panel (T5)
+
+A form or webhook workflow has a Share button in the editor toolbar. It reloads the workflow, then opens one sheet (`apps/web/src/SharePanel.tsx`) with what someone outside Daloy needs to start the published version. Nothing new on the API side: it reads the same published trigger as the trigger panel.
+
+- Form: the public link with Copy and Open, the embed code (`FormEmbed`), and the MCP part. An MCP client starts a published form workflow as the tool named after the workflow slug (`apps/api/src/mcp.ts`), so the sheet shows that name, the `/mcp` server address and a link to API tokens, since the client needs a token with Run access.
+- Webhook: the URL with Copy, how calls are signed when the trigger has a signing secret (`X-Daloy-Signature: sha256=` and the hex HMAC-SHA256 of `<timestamp>.<raw body>`, with `X-Daloy-Timestamp`), or a warning that anyone with the URL can start a run when it has none. A curl example signs with `openssl` when a secret is set; the secret itself is a `$SECRET` placeholder and never shown.
+
+The plan also had a curl example for `POST /workflows/:id/runs`. That route takes the console session only, and API tokens work on `/mcp` alone, so the sheet does not offer it: the webhook is the way to start a run from a script.
+
+Edge cases:
+- A draft that was never published, or whose published trigger is a different type, says "Publish first".
+- Other triggers (manual, schedule, email, Messenger and the rest) have no Share button, since there is nothing to hand out.
+- A refused clipboard says so, and the read-only field selects itself for copying by hand.
+- A webhook URL replaced with "New URL" shows the new one, because Share reloads first.
+
+Tests: `e2e/share.spec.ts` (a draft says publish first; a published form copies its link and shows the embed and the MCP tool; a signed webhook shows its URL, the signing rule and a curl call that signs; a manual workflow has no Share). The shell signing in the curl example was checked against Node's `createHmac` by hand.
+
 ## Guided pages (Doop rows A2 to A6, decision 0071)
 
 `apps/web/src/NewAutomation.tsx`, `OfficeRequests.tsx`, `guided-pages.css`, `lib/locale-setup.ts`.

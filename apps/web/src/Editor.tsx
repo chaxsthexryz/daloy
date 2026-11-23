@@ -6,6 +6,7 @@ import { Background, ReactFlow, type NodeChange } from "@xyflow/react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { AskAi } from "./AiDraft";
 import { FormEmbed } from "./FormEmbed";
+import { shareable, ShareSheet } from "./SharePanel";
 import { api, FINISHED, type Run, type Version, type Workflow } from "./api";
 import { DropLine, editorEdgeTypes, editorNodeTypes, flowAriaLabels, ZoomBar } from "./FlowCanvas";
 import { RunResult, StepAttempt, useRun } from "./Runs";
@@ -137,6 +138,7 @@ export function Editor({ id, from }: { id: string; from?: string }) {
   const [sample, setSample] = useState<SampleResult | null>(null);
   const { run: sampleRun } = useRun(sample?.runId ?? null);
   const [showExplain, setShowExplain] = useState(false);
+  const [showShare, setShowShare] = useState(false);
   const [showTurnOn, setShowTurnOn] = useState(false);
   const [explained, setExplained] = useState(() => wasExplained(id));
 
@@ -498,6 +500,11 @@ export function Editor({ id, from }: { id: string; from?: string }) {
       <button type="button" aria-label={t("Explain this flow")} onClick={() => setShowExplain(true)} disabled={draft.steps.length === 0}>
         {t("Explain")}
       </button>
+      {shareable(draft.trigger.type) && (
+        <button type="button" onClick={() => void reload().then(() => setShowShare(true), () => setShowShare(true))}>
+          {t("Share")}
+        </button>
+      )}
       <button type="button" onClick={() => save(false)} disabled={busy || draft.steps.length === 0}>
         {t("Save")}
       </button>
@@ -861,6 +868,17 @@ export function Editor({ id, from }: { id: string; from?: string }) {
       {menu && <AddMenu draft={draft} after={menu.after ? draft.steps.find((s) => s.id === menu.after) : undefined} on={menu.on} at={menu.at} onPick={addFromMenu} onClose={() => setMenu(null)} />}
       {context && <ContextMenu label={context.label} at={context.at} items={context.items} onClose={() => setContext(null)} />}
       {showExplain && <ExplainSheet draft={draft} chosen={chosen} onClose={closeExplain} />}
+      {showShare && wf && (
+        <ShareSheet
+          info={{
+            slug: wf.slug,
+            live: wf.live ? (definitionSchema.safeParse(wf.live.definition).data?.trigger ?? null) : null,
+            triggerId: wf.trigger?.id ?? null,
+            webhookPath: wf.trigger?.webhookPath ?? null,
+          }}
+          onClose={() => setShowShare(false)}
+        />
+      )}
       {showTurnOn && (
         <TurnOnSheet
           draft={draft}

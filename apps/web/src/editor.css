@@ -268,3 +268,8 @@
 :root[data-theme="dark"] .a7-editor .app-mark[data-kind="letter"][data-mark="gcash"] { background: #162d4f; color: #8fb0ff; border-color: #26487c; }
 :root[data-theme="dark"] .a7-editor .app-mark[data-kind="letter"][data-mark="messenger"] { background: #202754; color: #9fb4ff; border-color: #343f85; }
 :root[data-theme="dark"] .a7-editor .app-mark[data-kind="letter"][data-mark="instagram"] { background: #3d192b; color: #f59ec1; border-color: #632846; }
+
+/* T5 Share sheet: a read-only value with its Copy button beside it, wrapping under it on a phone. */
+.share-copy { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; }
+.share-copy label { flex: 1 1 240px; display: grid; gap: 4px; min-width: 0; }
+.share-copy input, .share-copy textarea { width: 100%; font-family: var(--font-mono); font-size: 12px; }
