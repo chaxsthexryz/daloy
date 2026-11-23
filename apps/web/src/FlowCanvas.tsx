@@ -197,13 +197,13 @@ export function DropLine({ fromX, fromY, toX, toY }: ConnectionLineComponentProp
 export const editorNodeTypes = { trigger: EditorTriggerNode, step: EditorStepNode };
 export const editorEdgeTypes = { editor: EditorEdge };
 
-/** Zoom out, the zoom level, zoom in and fit, in the canvas's bottom-left corner. */
+/** Zoom out, the zoom level, zoom in and fit, in the canvas's bottom-right corner. */
 export function ZoomBar() {
   const { t } = useLanguage();
   const { zoomIn, zoomOut, fitView } = useReactFlow();
   const { zoom } = useViewport();
   return (
-    <Panel position="bottom-left" className="a7-zoom">
+    <Panel position="bottom-right" className="a7-zoom">
       <button type="button" aria-label={t("Zoom Out")} onClick={() => void zoomOut()}>
         <span aria-hidden="true">−</span>
       </button>
@@ -211,7 +211,13 @@ export function ZoomBar() {
       <button type="button" aria-label={t("Zoom In")} onClick={() => void zoomIn()}>
         <span aria-hidden="true">+</span>
       </button>
-      <button type="button" className="a7-fit" onClick={() => void fitView({ maxZoom: 1 })}>
+      <button
+        type="button"
+        className="a7-fit"
+        onClick={() =>
+          void fitView({ maxZoom: 1, padding: { top: "16px", right: "16px", bottom: "64px", left: "16px" } })
+        }
+      >
         {t("Fit")}
       </button>
     </Panel>

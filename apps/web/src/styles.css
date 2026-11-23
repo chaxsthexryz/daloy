@@ -1,4 +1,5 @@
 /* Daloy design tokens (DESIGN.md). run-flow.test.ts parses the two :root blocks below for contrast, so keep their shape. */
+@import "./motion.css";
 @font-face { font-family: "Inter"; src: url("/fonts/inter-variable.woff2") format("woff2"); font-weight: 100 900; font-style: normal; font-display: swap; }
 @font-face { font-family: "IBM Plex Mono"; src: url("/fonts/ibm-plex-mono-400.woff2") format("woff2"); font-weight: 400; font-style: normal; font-display: swap; }
 @font-face { font-family: "IBM Plex Mono"; src: url("/fonts/ibm-plex-mono-500.woff2") format("woff2"); font-weight: 500; font-style: normal; font-display: swap; }
@@ -98,6 +99,27 @@
   --dur-pulse: 1600ms;  /* the Working node's ring */
   --reveal-shift: 64px;
   --reveal-blur: 8px;
+
+  /* Daylight Minimal tokens */
+  --sidebar-bg: #fafafa;
+  --daylight-bg: #ffffff;
+  --subtle: #f4f5f7;
+  --border-hairline: #e6e8ee;
+  --border-strong: #d1d5df;
+  --fg: #0f131a;
+  --fg-muted: #5b6372;
+  --blue: #0b66ff;
+  --blue-deep: #0052d9;
+  --blue-soft: #eef4ff;
+  --red: #c92a2a;
+  --red-soft: #fff1f1;
+  --green: #15803d;
+  --green-soft: #ecfdf3;
+  --amber: #8a5300;
+  --amber-soft: #fef6e7;
+  --sb-w: 228px;
+  --ease-spring: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-snappy: cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 /* The theme is an attribute set before the first paint by public/theme.js: System follows the device, and Settings can
@@ -139,6 +161,24 @@
   --run-idle: #6b7799;
 
   --shadow-overlay: 0 8px 24px rgb(0 0 0 / 0.5);
+
+  /* Daylight Minimal dark counterparts */
+  --sidebar-bg: #0e1424;
+  --daylight-bg: #131a30;
+  --subtle: #18213c;
+  --border-hairline: #243052;
+  --border-strong: #374672;
+  --fg: #eef2ff;
+  --fg-muted: #a3aecb;
+  --blue: #8fb0ff;
+  --blue-deep: #b3c8ff;
+  --blue-soft: #1c2a55;
+  --red: #f0a199;
+  --red-soft: #401c18;
+  --green: #7fcfa3;
+  --green-soft: #173323;
+  --amber: #e6c26a;
+  --amber-soft: #3a2f10;
 }
 
 * { box-sizing: border-box; }
@@ -158,6 +198,7 @@ pre { background: var(--sunken); border-radius: var(--radius-sm); padding: var(-
 /* Controls */
 button, input, select, textarea { font: inherit; color: var(--text); }
 input, select, textarea { width: 100%; min-width: 0; min-height: var(--target); padding: 0 var(--space-3); background: var(--surface); border: var(--border-width) solid var(--border); border-radius: var(--radius-md); }
+select { line-height: 1.25; padding-block: 0; vertical-align: middle; }
 textarea { min-height: 9rem; resize: vertical; line-height: var(--leading-body); padding: var(--space-2) var(--space-3); }
 /* Inter everywhere (after "font: inherit" above); monospace stays for code blocks and the raw JSON payload only. */
 input, textarea { font-variant-numeric: tabular-nums; }
@@ -165,7 +206,7 @@ textarea { font-size: var(--text-sm); }
 textarea#payload { font-family: var(--font-mono); }
 button { min-height: var(--target); padding: 0 var(--space-4); background: var(--surface); color: var(--accent); border: var(--border-width) solid var(--accent); border-radius: var(--radius-md); font-weight: var(--weight-medium); white-space: nowrap; cursor: pointer; transition: background-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease); }
 button:hover:not(:disabled) { background: var(--accent-tint); color: var(--accent); }
-button:disabled { border-color: var(--border-soft); color: var(--muted); cursor: not-allowed; }
+button:disabled, button.primary:disabled { background: var(--sunken); border-color: var(--border-soft); color: var(--muted); opacity: 0.65; cursor: not-allowed; }
 button.primary, a.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
 button.primary:hover:not(:disabled), a.primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); color: var(--on-accent); }
 a.primary { display: inline-flex; align-items: center; min-height: var(--target); padding: 0 var(--space-4); border: var(--border-width) solid var(--accent); border-radius: var(--radius-md); font-weight: var(--weight-medium); text-decoration: none; white-space: nowrap; }
@@ -360,6 +401,7 @@ details summary::-webkit-details-marker { display: none; }
 
 /* Parts the mockups do not show. Same recipe: --surface fill, --border-width line, --radius-md, token sizes. */
 .brand { display: flex; align-items: center; gap: var(--space-2); }
+.rail-brand { color: var(--blue, #0b66ff); }
 .row .field { flex: 1 1 12rem; }
 .row > button { margin-bottom: var(--space-3); }
 .check { display: flex; gap: var(--space-2); align-items: center; font-size: var(--text-sm); }

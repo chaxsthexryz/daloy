@@ -5,14 +5,14 @@
  */
 .au, .mr {
   color-scheme: light;
-  --a-ink: #0a0b0f;
-  --a-muted: #5b6170;
-  --a-line: #e3e6ec;
-  --a-field: #d5d9e2;
-  --a-accent: #1b45c9;
-  --a-red: #b42318;
-  --a-green: #12803f;
-  font-family: "Inter", var(--font-sans);
+  --a-ink: #0f131a;
+  --a-muted: #5b6372;
+  --a-line: #e6e8ee;
+  --a-field: #d1d5df;
+  --a-accent: #0b66ff;
+  --a-red: #c92a2a;
+  --a-green: #15803d;
+  font-family: var(--font-sans, "Inter", sans-serif);
   font-size: 14px;
   line-height: 20px;
   color: var(--a-ink);
@@ -22,20 +22,20 @@
 .au :where(h1, p, ul), .mr :where(h1, p) { margin: 0; }
 
 /* Split page. */
-.au { display: grid; grid-template-columns: 560px minmax(0, 1fr); min-height: 100vh; min-height: 100dvh; background: #fff; }
-.au-side { display: flex; flex-direction: column; padding: 48px 56px; background: #0a0b0f; color: #fff; }
+.au { display: grid; grid-template-columns: 560px minmax(0, 1fr); min-height: 100vh; min-height: 100dvh; background: #ffffff; }
+.au-side { display: flex; flex-direction: column; padding: 48px 56px; background: #0e1424; color: #ffffff; }
 .au-brand { display: inline-flex; align-items: center; gap: 10px; font-size: 20px; line-height: 30px; font-weight: 700; letter-spacing: -0.02em; }
 .au-brand.light { color: var(--a-ink); font-size: 16px; }
-.au-mark { width: 30px; height: 30px; flex: none; }
+.au-mark { width: 30px; height: 30px; flex: none; color: #8fb0ff; }
 .au-pitch { flex: 1; display: flex; flex-direction: column; justify-content: center; max-width: 400px; padding-bottom: 64px; }
-.au-headline { font-size: 32px; line-height: 40px; font-weight: 700; letter-spacing: -0.02em; }
-.au-pitch ul { margin-top: 24px; padding: 0; list-style: none; display: grid; gap: 14px; color: #b6bac6; }
+.au-headline { font-size: 32px; line-height: 40px; font-weight: 700; letter-spacing: -0.025em; }
+.au-pitch ul { margin-top: 24px; padding: 0; list-style: none; display: grid; gap: 14px; color: #c4ccde; }
 .au-pitch li { position: relative; padding-left: 18px; }
-.au-pitch li::before { content: ""; position: absolute; left: 0; top: 8px; width: 6px; height: 6px; border-radius: 50%; background: #3b6bff; }
+.au-pitch li::before { content: ""; position: absolute; left: 0; top: 8px; width: 6px; height: 6px; border-radius: 50%; background: #8fb0ff; }
 
 .au-main { display: grid; place-items: center; padding: 40px 32px; }
 .au-form { width: min(400px, 100%); }
-.au-title { margin: 0 0 16px; font-size: 28px; line-height: 34px; font-weight: 700; letter-spacing: -0.02em; }
+.au-title { margin: 0 0 16px; font-size: 28px; line-height: 34px; font-weight: 700; letter-spacing: -0.025em; }
 .au-form > .au-note + .au-title { margin-top: 16px; }
 .au-lead { margin-bottom: 16px; color: var(--a-muted); }
 .au-fields { display: grid; gap: 16px; }
@@ -43,23 +43,23 @@
 .au-label-row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 6px; }
 .au-label-row label { font-size: 13px; line-height: 18px; font-weight: 700; }
 .au-label-row label span { font-weight: 400; color: var(--a-muted); }
-.au-field input { box-sizing: border-box; width: 100%; height: 42px; padding: 0 12px; border: 1px solid var(--a-field); border-radius: 6px; background: #fff; color: var(--a-ink); font: inherit; transition: border-color var(--dur-fast) var(--ease); }
+.au-field input { box-sizing: border-box; width: 100%; height: 42px; padding: 0 12px; border: 1px solid var(--a-field); border-radius: 8px; background: #ffffff; color: var(--a-ink); font: inherit; transition: border-color var(--dur-fast) var(--ease); }
 .au-field input::placeholder { color: #8a90a0; }
 .au-field input[aria-invalid="true"] { border-color: var(--a-red); }
 .au-link { color: var(--a-accent); font-size: 13px; line-height: 18px; font-weight: 600; text-decoration: none; }
 .au-link:hover { text-decoration: underline; text-underline-offset: 3px; }
 button.au-link, button.au-link:hover:not(:disabled) { min-height: 0; padding: 0; border: 0; background: none; color: var(--a-accent); font-family: inherit; cursor: pointer; }
-.au-button { box-sizing: border-box; width: 100%; height: 44px; margin-top: 16px; border: 0; border-radius: 6px; background: #0a0b0f; color: #fff; font: inherit; font-weight: 700; cursor: pointer; transition: background-color var(--dur-fast) var(--ease); }
-.au-button:hover:not(:disabled) { background: #232634; color: #fff; }
-.au-button:disabled { border: 0; background: #0a0b0f; color: #fff; opacity: 0.6; cursor: default; }
+.au-button { box-sizing: border-box; width: 100%; height: 44px; margin-top: 16px; border: 0; border-radius: 8px; background: #0f131a; color: #ffffff; font: inherit; font-weight: 600; cursor: pointer; transition: background-color var(--dur-fast) var(--ease); }
+.au-button:hover:not(:disabled) { background: #202736; color: #ffffff; }
+.au-button:disabled { border: 0; background: #646d7d; color: #ffffff; opacity: 0.7; cursor: not-allowed; }
 .au-aside { margin-top: 16px; color: var(--a-muted); font-size: 13px; line-height: 18px; }
 .au-aside button.au-link { margin-left: 4px; }
 .au-forgot-below { display: none; }
 
 .au-note { display: flex; gap: 10px; align-items: flex-start; font-size: 13px; line-height: 18px; }
-.au-note.info, .au-note.ok { padding: 10px 14px; border-radius: 6px; }
-.au-note.info { background: #e8eeff; color: #1b3fb0; }
-.au-note.ok { background: #e6f4ea; color: var(--a-green); }
+.au-note.info, .au-note.ok { padding: 10px 14px; border-radius: 8px; }
+.au-note.info { background: #eef4ff; color: #0052d9; }
+.au-note.ok { background: #ecfdf3; color: var(--a-green); }
 .au-note.error { margin-top: 8px; color: var(--a-red); gap: 8px; }
 .au-icon { width: 16px; height: 16px; flex: none; margin-top: 1px; }
 
@@ -77,8 +77,8 @@ button.au-link, button.au-link:hover:not(:disabled) { min-height: 0; padding: 0;
 }
 
 /* My requests (E6): a top bar over one bordered card. */
-.mr { min-height: 100vh; min-height: 100dvh; background: #f5f6f8; }
-.mr-bar { display: flex; align-items: center; gap: 18px; min-height: 60px; padding: 0 40px; background: #fff; border-bottom: 1px solid var(--a-line); }
+.mr { min-height: 100vh; min-height: 100dvh; background: #fafafa; }
+.mr-bar { display: flex; align-items: center; gap: 18px; min-height: 60px; padding: 0 40px; background: #ffffff; border-bottom: 1px solid var(--a-line); }
 .mr-bar .au-brand { margin-right: auto; }
 .mr-who { color: var(--a-muted); font-size: 13px; }
 .mr-bar a { color: var(--a-accent); font-size: 13px; font-weight: 600; text-decoration: none; }

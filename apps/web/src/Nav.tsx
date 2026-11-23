@@ -2,13 +2,11 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import "./console-shell.css";
 import "./motion.css";
 import { getUsage, type Usage } from "./api";
+import { CommandPalette, isQuickJumpShortcut } from "./CommandPalette";
 import { useLanguage } from "./Language";
+import { useSlidingPill } from "./lib/motion";
 import { aiMeter } from "./lib/usage";
 import type { User } from "./Team";
-
-/** Hover intent: the rail opens after the pointer rests 250 ms and closes 200 ms after it leaves, so passing over does not flicker. */
-const OPEN_DELAY = 250;
-const CLOSE_DELAY = 200;
 
 /** GET /usage once on load, and again when something that spends or frees usage fires a `daloy:usage` window event. */
 export function useUsage(enabled = true) {
@@ -24,7 +22,7 @@ export function useUsage(enabled = true) {
   return usage;
 }
 
-/** "AI 120 of 500 this month" with a 4 px bar. The collapsed rail shows the bar only; the text is its accessible name. */
+/** "AI 120 of 500 this month" with a 4 px bar and visible count. */
 export function AiMeter({ usage, className }: { usage: Usage | null; className?: string }) {
   const { t } = useLanguage();
   const meter = usage && aiMeter(usage, t);
@@ -57,23 +55,26 @@ function section(hash: string) {
 }
 
 /**
- * The console frame: one menu on the left of every page for staff (a bar with a Menu button under 800 px),
- * so the links, the account and Sign out never move between pages.
+ * The console frame: a fixed 228 px sidebar on desktop (a bar with a Menu button under 800 px),
+ * so the links, Quick jump, the account and Sign out stay in one steady place across pages.
  */
 export function Shell({ user, hash, onSignOut, children }: { user: User; hash: string; onSignOut: () => void; children: ReactNode }) {
   const { t } = useLanguage();
   const [open, setOpen] = useState(false);
   const [closing, setClosing] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
   const menuButton = useRef<HTMLButtonElement>(null);
-  const menu = useRef<HTMLElement>(null);
+  const pill = useSlidingPill<HTMLElement>();
+  const menu = pill.containerRef;
   const owner = user.role === "owner";
   const usage = useUsage(owner);
   const here = section(hash);
-  // The phone menu closes on any page change, the browser's Back button included.
-  useEffect(() => { setOpen(false); setClosing(false); }, [hash]);
+
+  // The phone menu and Quick jump close on any page change, the browser's Back button included.
+  useEffect(() => { setOpen(false); setClosing(false); setPaletteOpen(false); }, [hash]);
   useEffect(() => {
     if (open && !closing) menu.current?.querySelector<HTMLAnchorElement>("a")?.focus();
-  }, [open, closing]);
+  }, [open, closing, menu]);
   useEffect(() => {
     if (!closing) return;
     const reduced = matchMedia("(prefers-reduced-motion: reduce)");
@@ -82,67 +83,83 @@ export function Shell({ user, hash, onSignOut, children }: { user: User; hash: s
     finish();
     return () => reduced.removeEventListener("change", finish);
   }, [closing]);
-  const [hovered, setHovered] = useState(false);
-  const [focused, setFocused] = useState(false);
-  const hoverTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => {
     const wide = matchMedia("(min-width: 800px)");
     const reset = () => {
-      clearTimeout(hoverTimer.current);
-      setHovered(false);
-      setFocused(false);
       setOpen(false);
       setClosing(false);
     };
     wide.addEventListener("change", reset);
-    return () => { clearTimeout(hoverTimer.current); wide.removeEventListener("change", reset); };
+    return () => wide.removeEventListener("change", reset);
   }, []);
+  useEffect(() => {
+    const onKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (!isQuickJumpShortcut(event)) return;
+      event.preventDefault();
+      setPaletteOpen((was) => !was);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
   function closePhone() {
     menuButton.current?.focus();
     if (matchMedia("(prefers-reduced-motion: reduce)").matches) setOpen(false);
     else setClosing(true);
   }
   function link(href: string, text: string, icon?: string, name = text) {
-    return <a href={href} aria-current={here === name ? "page" : undefined} onClick={() => setOpen(false)}>
-      {icon && <svg className="rail-icon" aria-hidden="true"><use href={`/navigation.svg#${icon}`} /></svg>}
-      <span className={icon ? "rail-label" : undefined}>{t(text)}</span>
-    </a>;
+    return (
+      <a
+        href={href}
+        aria-current={here === name ? "page" : undefined}
+        onPointerEnter={icon ? (event) => pill.onItemEnter(event.currentTarget) : undefined}
+        onFocus={icon ? (event) => pill.onItemEnter(event.currentTarget) : undefined}
+        onClick={() => setOpen(false)}
+      >
+        {icon && <svg className="rail-icon" aria-hidden="true"><use href={`/navigation.svg#${icon}`} /></svg>}
+        <span className={icon ? "rail-label" : undefined}>{t(text)}</span>
+      </a>
+    );
   }
   return (
     <div className="shell console-shell" data-phone-open={open || undefined} onKeyDown={event => {
       if (event.key !== "Escape") return;
-      clearTimeout(hoverTimer.current);
-      setHovered(false);
-      setFocused(false);
+      if (paletteOpen) { setPaletteOpen(false); return; }
       if (open) closePhone();
     }}>
-      <aside className="sidebar console-header" data-expanded={hovered || focused || undefined}
+      <aside className="sidebar console-header"
         data-closing={closing || undefined} inert={closing}
         onAnimationEnd={event => {
           if (event.animationName === "rail-sheet-out") { setOpen(false); setClosing(false); }
-        }}
-        onPointerEnter={event => {
-          if (event.pointerType === "touch" || !matchMedia("(min-width: 800px)").matches) return;
-          clearTimeout(hoverTimer.current);
-          if (matchMedia("(prefers-reduced-motion: reduce)").matches) setHovered(true);
-          else hoverTimer.current = setTimeout(() => setHovered(true), OPEN_DELAY);
-        }}
-        onPointerLeave={event => {
-          clearTimeout(hoverTimer.current);
-          if (matchMedia("(prefers-reduced-motion: reduce)").matches) setHovered(false);
-          else hoverTimer.current = setTimeout(() => setHovered(false), CLOSE_DELAY);
-          if (!event.currentTarget.querySelector(":focus-visible")) setFocused(false);
-        }}
-        onFocusCapture={() => setFocused(true)}
-        onBlurCapture={event => { if (!event.currentTarget.contains(event.relatedTarget)) setFocused(false); }}>
+        }}>
         <div className="sidebar-top">
           <svg className="rail-brand" aria-label="Daloy" role="img"><use href="/navigation.svg#mark" /></svg>
           <span className="sidebar-name rail-label">Daloy</span>
+          <button
+            type="button"
+            className="quiet rail-quick-jump"
+            aria-label={t("Quick jump")}
+            aria-keyshortcuts="Control+K Meta+K"
+            title={t("Quick jump")}
+            onClick={() => setPaletteOpen(true)}
+          >
+            <kbd>Ctrl K</kbd>
+          </button>
           {open
             ? <button type="button" className="quiet phone-close" onClick={closePhone}>{t("Close")}</button>
             : owner && <a href="#/new" className="primary top-new">{t("New")}</a>}
         </div>
-        <nav ref={menu} id="main-menu" aria-label={t("Main")} className={open ? "open" : undefined}>
+        <nav ref={menu} id="main-menu" aria-label={t("Main")} className={open ? "open" : undefined} onPointerLeave={pill.onContainerLeave}>
+          <span
+            className="rail-hover-pill motion-pill"
+            aria-hidden="true"
+            style={{
+              transform: `translate3d(${pill.pillStyle.left}px, ${pill.pillStyle.top}px, 0)`,
+              width: `${pill.pillStyle.width}px`,
+              height: `${pill.pillStyle.height}px`,
+              opacity: pill.pillStyle.opacity,
+            }}
+          />
           <span className="shell-nav-label rail-label">{t("Work")}</span>
           {link("#/", "Automations", "automations")}
           {link("#/activity", "Activity", "activity")}
@@ -165,7 +182,14 @@ export function Shell({ user, hash, onSignOut, children }: { user: User; hash: s
           {owner && <AiMeter usage={usage} className="ai-meter rail-usage" />}
           <div className="rail-account">
             <span className="who rail-label">{user.email}</span>
-            <a className="account-link" href="#/account" aria-current={here === "Account" ? "page" : undefined} onClick={() => setOpen(false)}>
+            <a
+              className="account-link"
+              href="#/account"
+              aria-current={here === "Account" ? "page" : undefined}
+              onPointerEnter={(event) => pill.onItemEnter(event.currentTarget)}
+              onFocus={(event) => pill.onItemEnter(event.currentTarget)}
+              onClick={() => setOpen(false)}
+            >
               <span className="rail-avatar" aria-hidden="true">{user.email.slice(0, 1).toUpperCase()}</span>
               <span className="rail-label">{t("Account")}</span>
             </a>
@@ -183,6 +207,7 @@ export function Shell({ user, hash, onSignOut, children }: { user: User; hash: s
         </button>
       </nav>
       <div className="shell-main" inert={open}>{children}</div>
+      <CommandPalette open={paletteOpen} role={user.role} currentHash={hash} onClose={() => setPaletteOpen(false)} />
     </div>
   );
 }

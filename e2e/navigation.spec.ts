@@ -145,45 +145,30 @@ test("Apps lists each app as a card, and Connect opens that app's own setup", as
   await expect(page.getByText("Nothing is connected yet.")).toBeVisible();
 });
 
-test("desktop rail pushes the page, supports keyboard dismissal and respects reduced motion", async ({ page }) => {
+test("desktop rail stays fixed at 228 px, supports keyboard navigation and Quick jump, and respects reduced motion", async ({ page }) => {
   await signUp(page);
   const rail = page.locator(".sidebar");
   const main = page.locator(".shell-main");
-  await page.mouse.move(500, 600);
-  await expect(rail).toHaveCSS("width", "64px");
+  await expect(rail).toHaveCSS("width", "228px");
   const left = () => main.evaluate(node => node.getBoundingClientRect().left);
-  expect(await left()).toBe(64);
-  await page.screenshot({ path: test.info().outputPath("desktop-collapsed.png") });
-  // Advance the hover timer deterministically before allowing browser animations to run.
-  await page.clock.install();
-  await page.clock.pauseAt(new Date(Date.now() + 1000));
-  await page.mouse.move(20, 130);
-  await page.clock.runFor(149);
-  await expect(rail).not.toHaveAttribute("data-expanded", "true");
-  await page.mouse.move(500, 600);
-  await page.clock.runFor(200);
-  await expect(rail).not.toHaveAttribute("data-expanded", "true");
-  await page.clock.resume();
-  await rail.hover();
-  await expect(rail).toHaveCSS("width", "232px");
-  expect(await left()).toBe(232);
-  await page.mouse.move(600, 600);
-  await expect(rail).toHaveCSS("width", "64px");
+  expect(await left()).toBe(228);
+  await page.screenshot({ path: test.info().outputPath("desktop-fixed-sidebar.png") });
+
   await page.emulateMedia({ reducedMotion: "reduce" });
   const team = rail.getByRole("link", { name: "Team", exact: true });
   await rail.getByRole("link", { name: "Build with AI", exact: true }).focus();
   await page.keyboard.press("Tab");
   await expect(team).toBeFocused();
-  await expect(rail).toHaveCSS("width", "232px");
-  await expect(rail).toHaveCSS("transition-duration", "0s");
-  await page.keyboard.press("Escape");
-  await expect(rail).toHaveCSS("width", "64px");
-  await expect(team).toBeFocused();
+  await expect(rail).toHaveCSS("width", "228px");
+  await expect(rail.locator(".rail-hover-pill")).toHaveCSS("transition-duration", "0s");
   await page.keyboard.press("Enter");
   await expect(team).toHaveAttribute("aria-current", "page");
-  // hover() waits until the rail receives the pointer; a bare mouse.move can land while the new page renders.
-  await rail.hover({ position: { x: 20, y: 90 } });
-  await expect(rail).toHaveCSS("width", "232px");
+
+  await page.keyboard.press("Control+k");
+  const dialog = page.getByRole("dialog", { name: "Quick jump" });
+  await expect(dialog).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
   await page.screenshot({ path: test.info().outputPath("desktop-team.png") });
 });
 

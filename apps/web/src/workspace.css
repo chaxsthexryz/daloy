@@ -4,32 +4,32 @@
  * values; dark maps the same roles onto the console's theme variables, as activity.css does.
  */
 .wk {
-  --w-bg: var(--surface);
-  --w-canvas: var(--sunken);
-  --w-ink: var(--text);
-  --w-muted: var(--muted);
-  --w-line: var(--border-soft);
-  --w-field: var(--border);
-  --w-accent: var(--accent);
+  --w-bg: var(--daylight-bg, var(--surface));
+  --w-canvas: var(--subtle, var(--sunken));
+  --w-ink: var(--fg, var(--text));
+  --w-muted: var(--fg-muted, var(--muted));
+  --w-line: var(--border-hairline, var(--border-soft));
+  --w-field: var(--border-strong, var(--border));
+  --w-accent: var(--blue, var(--accent));
   --w-on-accent: var(--on-accent);
-  --w-select: var(--accent-tint);
-  --w-red: var(--danger);
-  --w-green: var(--ok);
+  --w-select: var(--blue-soft, var(--accent-tint));
+  --w-red: var(--red, var(--danger));
+  --w-green: var(--green, var(--ok));
   --w-focus: var(--focus);
 }
 :root[data-theme="light"] .wk {
-  --w-bg: #fff;
-  --w-canvas: #f5f6f8;
-  --w-ink: #0a0b0f;
-  --w-muted: #5b6170;
-  --w-line: #e3e6ec;
-  --w-field: #d5d9e2;
-  --w-accent: #1b45c9;
-  --w-on-accent: #fff;
-  --w-select: #e8eeff;
-  --w-red: #b42318;
-  --w-green: #12b76a;
-  --w-focus: #1b45c9;
+  --w-bg: #ffffff;
+  --w-canvas: #fafafa;
+  --w-ink: #0f131a;
+  --w-muted: #5b6372;
+  --w-line: #e6e8ee;
+  --w-field: #d1d5df;
+  --w-accent: #0b66ff;
+  --w-on-accent: #ffffff;
+  --w-select: #eef4ff;
+  --w-red: #c92a2a;
+  --w-green: #15803d;
+  --w-focus: #0b66ff;
 }
 
 main.page.wk { display: flex; flex-direction: column; gap: 16px; width: 100%; max-width: none; min-height: 100%; margin: 0; padding: 22px 28px; box-sizing: border-box; background: var(--w-bg); color: var(--w-ink); font-family: "Inter", var(--font-sans); font-size: 14px; line-height: 20px; overflow-wrap: anywhere; }
@@ -71,7 +71,7 @@ main.page.wk { display: flex; flex-direction: column; gap: 16px; width: 100%; ma
 /* Invite form and notices. */
 .wk-invite { display: grid; gap: 12px; }
 .wk-invite-row { display: grid; grid-template-columns: minmax(0, 1fr) 200px auto; gap: 10px; align-items: center; }
-.wk input[type="email"], .wk input[type="password"], .wk input[type="text"], .wk select { box-sizing: border-box; width: 100%; height: 38px; min-height: 0; padding: 0 12px; border: 1px solid var(--w-field); border-radius: 7px; background: var(--w-bg); color: var(--w-ink); font: inherit; }
+.wk input[type="email"], .wk input[type="password"], .wk input[type="text"], .wk select { box-sizing: border-box; width: 100%; height: 38px; min-height: 0; padding: 0 12px; border: 1px solid var(--w-field); border-radius: 8px; background: var(--w-bg); color: var(--w-ink); font: inherit; line-height: 1.25; vertical-align: middle; }
 .wk input::placeholder { color: var(--w-muted); opacity: .8; }
 .wk-note { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 10px 12px; border-radius: 8px; background: var(--w-canvas); box-shadow: inset 3px 0 var(--w-green); font-size: 13px; }
 .wk-note p { flex: 1; min-width: 0; }

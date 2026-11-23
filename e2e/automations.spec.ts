@@ -131,3 +131,47 @@ test("on a phone a row opens the panel as a sheet that Close dismisses", async (
   await sheet.getByRole("button", { name: "Close" }).click();
   await expect(sheet).toHaveCount(0);
 });
+
+test("inline pause switch shows an undo toast, inspector matches Problem status, and two-line titles stay clear", async ({ page }) => {
+  await signUp(page, "d3ops");
+  const stamp = Date.now();
+  const longName = "Customer inquiry routing and weekly follow-up reminder for clinic front desk";
+  const healthy = await (await page.request.post("/workflows", { data: { name: longName, slug: `long-${stamp}` } })).json();
+  const okDef = { trigger: { type: "manual", config: {} }, steps: [{ id: "pause", type: "delay", config: { seconds: 1 } }], edges: [] };
+  expect((await page.request.post(`/workflows/${healthy.id}/versions`, { data: { definition: okDef, publish: true } })).status()).toBe(201);
+
+  const broken = await (await page.request.post("/workflows", { data: { name: "Failing flow", slug: `failing-${stamp}` } })).json();
+  const failDef = { trigger: { type: "manual", config: {} }, steps: [{ id: "check", type: "condition", config: { condition: { left: "{{trigger.amount}}", op: "gt", right: 100 } } }], edges: [] };
+  expect((await page.request.post(`/workflows/${broken.id}/versions`, { data: { definition: failDef, publish: true } })).status()).toBe(201);
+  expect((await page.request.post(`/workflows/${broken.id}/runs`, { data: { payload: {} } })).status()).toBe(202);
+
+  await expect(async () => {
+    await page.reload();
+    await expect(page.getByRole("row", { name: /Failing flow/ }).locator(".dot.problem")).toBeVisible({ timeout: 1000 });
+  }).toPass({ timeout: 30_000 });
+
+  // Row and inspector agree on Problem (not On).
+  const failingRow = page.getByRole("row", { name: /Failing flow/ });
+  await failingRow.getByRole("button", { name: "Failing flow" }).click();
+  const failingPanel = page.getByRole("complementary", { name: "Failing flow" });
+  await expect(failingPanel.locator(".panel-status")).toHaveText("Problem");
+
+  // Long two-line title stays non-overlapping inside its row beside the open inspector.
+  const longRow = page.getByRole("row", { name: new RegExp(longName) });
+  const longRowBox = (await longRow.boundingBox())!;
+  const nameBox = (await longRow.getByRole("button", { name: longName }).boundingBox())!;
+  const failingBox = (await failingRow.boundingBox())!;
+  expect(nameBox.height).toBeGreaterThanOrEqual(28);
+  expect(nameBox.y + nameBox.height).toBeLessThanOrEqual(longRowBox.y + longRowBox.height + 1);
+  expect(longRowBox.y).toBeGreaterThanOrEqual(failingBox.y + failingBox.height - 1);
+
+  // Inline switch pauses and shows the Undo toast; Undo resumes it.
+  const toggle = longRow.getByRole("switch", { name: `Pause ${longName}` });
+  await expect(toggle).toHaveAttribute("aria-checked", "true");
+  await toggle.click();
+  const toast = page.locator(".ops-toast");
+  await expect(toast).toContainText(`Paused ${longName}.`);
+  await expect(longRow.getByRole("switch")).toHaveAttribute("aria-checked", "false");
+  await toast.getByRole("button", { name: "Undo" }).click();
+  await expect(longRow.getByRole("switch")).toHaveAttribute("aria-checked", "true");
+});

@@ -78,6 +78,7 @@ export function AppsPage({ outcome }: { outcome?: { app: string; code: string } 
   const connected = found.filter((a) => state(a.key));
   const more = found.filter((a) => !state(a.key));
   const total = APPS.filter((a) => state(a.key)).length;
+  const activeTotal = APPS.filter((a) => state(a.key) === "Connected").length;
   const failed = APPS.filter((a) => a.key === "gmail" ? mail.sender?.status === "failed" : conn(a.key)?.status === "failed");
   const setup: Record<Key, () => ReactNode> = {
     gmail: () => <GmailCard data={mail} google={conns.oauth.includes("gmail")} outcome={landed === "gmail" ? outcome?.code : undefined} onChange={load} />,
@@ -132,7 +133,7 @@ export function AppsPage({ outcome }: { outcome?: { app: string; code: string } 
   return (
     <main className="page workspace-admin admin-apps" data-panel={!!open}>
       <div className="apps-directory">
-        <Header title={t("Apps")} action={<span className="muted">{t("{count} of {total} connected", { count: total, total: APPS.length })}</span>} />
+        <Header title={t("Apps")} action={<span className="muted">{t("{count} of {total} connected", { count: activeTotal, total: APPS.length })}</span>} />
         {!open && <p className="muted">{t("Everything here is optional. Each app is used only by the automations you turn on, and the demo works without any of them.")}</p>}
         {outcome && !landed && <p role="alert" className="message error">{t("That sign-in took too long or was started by someone else. Start again from the app's Connect button.")}</p>}
         <div className="directory-filters">
