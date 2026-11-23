@@ -61,7 +61,7 @@ type EmailInput = { to: string; subject: string; text: string };
 type AiInput = { input: string };
 type ApprovalInput = { to?: string; approver?: string; subject: string; message: string; timeoutSeconds: number };
 type SheetsInput = { columns: string[] };
-type SlackInput = { text: string };
+type SlackInput = { text: string; chatId?: string };
 type SmsInput = { to: string; message: string; senderId?: string };
 type CalendarInput = { title: string; description: string };
 type MetaReplyInput = { recipientId: string; channel?: string; text: string };
@@ -107,9 +107,10 @@ function resolveInput(step: Step, ctx: ExpressionContext): Record<string, unknow
       return { columns: step.config.columns.map((c) => text(c, ctx)) } satisfies SheetsInput;
     case "drive":
       return {};
+    case "telegram":
+      return { text: text(step.config.text, ctx), ...(step.config.chatId === undefined ? {} : { chatId: text(step.config.chatId, ctx).trim() }) } satisfies SlackInput;
     case "slack":
     case "teams":
-    case "telegram":
     case "discord":
       return { text: text(step.config.text, ctx) } satisfies SlackInput;
     case "google_docs": {
@@ -407,6 +408,11 @@ async function runStep(deps: FullDeps, step: Step, input: unknown, ctx: Expressi
         if (!content.ok) throw new StepError(content.error, false);
         (input as SlackInput).text = content.value;
       }
+      // T9: a reply goes only to the chat the run's Telegram message came from, so run data cannot point the bot elsewhere.
+      const chatId = step.type === "telegram" ? (input as SlackInput).chatId : undefined;
+      if (chatId !== undefined && (!/^-?\d{1,20}$/.test(chatId) || chatId !== (ctx.trigger as { chatId?: unknown } | null)?.chatId)) {
+        throw new StepError("A Telegram reply can only go to the chat the message came from. Use {{trigger.chatId}}.", false);
+      }
       const payload =
         step.type === "sheets"
           ? { row: [reference, new Date().toISOString(), ...(input as SheetsInput).columns] }
@@ -414,7 +420,7 @@ async function runStep(deps: FullDeps, step: Step, input: unknown, ctx: Expressi
             ? { ...(input as EmailInput), to: checkRecipients((input as EmailInput).to).join(",") }
             : step.type === "airtable" || step.type === "notion" || step.type === "trello"
               ? (input as RecordInput)
-              : { text: (input as SlackInput).text };
+              : { text: (input as SlackInput).text, ...(chatId === undefined ? {} : { chatId }) };
       if (mock) return { output: { mocked: true, reference, ...payload } };
       if (step.type === "outlook") {
         const n = (payload as { to: string }).to.split(",").length;

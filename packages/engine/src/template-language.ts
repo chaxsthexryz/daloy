@@ -113,6 +113,9 @@ export function localizeGeneratedDefinition(definition: WorkflowDefinition, lang
         text: "Hindi nasuri sa loob ng 24 oras ang resibo mula sa {{trigger.channel}} (reference {{steps.read_receipt.output.reference}}, halaga {{steps.read_receipt.output.amount}}). Maaaring sarado na ang 24-hour reply window ng Meta, kaya sumagot nang direkta sa Page inbox mo.",
       },
     },
+    "telegram-gcash-receipts": {
+      reply: { text: "Naitala bilang To check: {{steps.read_receipt.output.amount}} mula kay {{steps.read_receipt.output.sender_name}}, reference {{steps.read_receipt.output.reference}}. {{steps.read_receipt.output.duplicate_warning}}" },
+    },
   };
   if (result.trigger.type === "form") {
     result.trigger.config.fields = result.trigger.config.fields.map((f) => ({ ...f, label: LABELS[f.label] ?? f.label }));

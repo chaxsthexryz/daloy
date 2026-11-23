@@ -23,6 +23,7 @@ Kept current with each phase. A mitigation marked "planned" does not exist in co
 
 - Console API (session cookie)
 - Shopify order webhook (`POST /hooks/shopify/:path`, public, signed by Shopify)
+- Telegram message webhook (`POST /hooks/telegram/:path`, public, checked by Telegram's secret token header)
 - Webhook URLs and hosted forms, including anonymous embedded forms (public), and file uploads on those forms
 - Customer privacy export and delete (`GET /privacy/customer`, `POST /privacy/customer/delete`, owner session)
 - File downloads from run details (`GET /runs/:runId/files/:fileId`, owner and operator session)
@@ -233,6 +234,16 @@ Entry points: `GET` and `POST /pay/<token>`, `GET /pay/<token>/qr`, the PayMongo
 - Rows of another workspace: every query filters by the workspace from the session or the webhook path, and all queries are parameterised through Drizzle.
 - A late or second payment: a payment after the deadline or after a manual confirmation is parked as a checkout claim for a person, never counted as a second confirmation.
 - Remaining risk: the rate limit and the byte budget are per API instance; a holder of one pay link can keep 5 references waiting for that order; reminders can reach a customer who paid but is not confirmed yet; the Expire API is checked against the fake only until the live check.
+
+## Telegram message trigger (T9, decision 0117)
+
+- A forged message: the path is 32 random bytes and only finds the connection. `X-Telegram-Bot-Api-Secret-Token` must equal an HMAC of the path keyed with the encrypted bot token, compared in constant time before the body is parsed. An unknown path is 403, a missing or wrong secret 401. The secret is never returned or logged; it is only sent to Telegram in `setWebhook`.
+- Replay and retries: runs are keyed `telegram:<bot id>:<update_id>` per workflow, so a replayed or retried update starts nothing new.
+- Strangers: with "my chat only" (the default) a message from any other chat starts nothing. With "anyone" a stranger can start runs and spend AI and upload usage, which the plan limits cap.
+- Hostile files: one file per message, from Telegram's fixed file server (`TELEGRAM_API_URL`, env only), with no redirects. Sizes are capped at 5 MB at every step and while reading, the `file_path` must match a plain path pattern, and the bytes must sniff as JPEG, PNG, WebP or PDF. The token is in the download URL, so no error includes the URL.
+- The bot sent elsewhere: a reply's chat id is allowed only under this trigger and must equal the run's `trigger.chatId`, so text in a message cannot redirect the bot.
+- Personal data: sender names and chat ids become run data like a DM, under the privacy export, delete and retention of decision 0094.
+- Remaining risk: Telegram shares a few source addresses, so the per-address rate limit is shared by every bot on the installation. Untested against the live Bot API.
 
 ## Shopify (I2, decision 0105)
 

@@ -670,6 +670,49 @@ export const TEMPLATES = [
       ],
     },
   },
+  // T9 (decision 0117): the seller forwards GCash receipts to their own bot. A screenshot is never proof of payment, so
+  // the row says "To check" until the owner matches it against the real GCash history.
+  {
+    slug: "telegram-gcash-receipts",
+    name: "Log GCash receipts from Telegram",
+    description: "Forward a GCash or bank receipt screenshot or PDF to your own Telegram bot. The AI step reads the reference, amount, sender and date, Daloy adds a row to your Google Sheet marked To check, and the bot replies with what it read. Needs Telegram (your bot from @BotFather, with receiving turned on), Google Sheets and an AI model that reads images.",
+    category: "Payments and receipts",
+    definition: {
+      trigger: { type: "telegram_message", config: { from: "my_chat", requireFile: true } },
+      steps: [
+        {
+          id: "read_receipt",
+          type: "ai",
+          config: {
+            task: "extract",
+            input: "Caption: {{trigger.text}}",
+            files: ["file"],
+            fields: {
+              is_receipt: "Reply yes if this is a GCash, Maya or bank transfer receipt, otherwise no",
+              reference: "Reference or transaction number on the receipt",
+              amount: "Amount paid, digits and a decimal point only",
+              sender_name: "Sender name on the receipt",
+              date: "Date on the receipt as YYYY-MM-DD",
+            },
+          },
+        },
+        {
+          id: "log_receipt",
+          type: "sheets",
+          config: { columns: ["To check", "{{steps.read_receipt.output.date}}", "{{steps.read_receipt.output.sender_name}}", "{{steps.read_receipt.output.amount}}", "{{steps.read_receipt.output.reference}}", "{{trigger.text}}"] },
+        },
+        {
+          id: "reply",
+          type: "telegram",
+          config: { chatId: "{{trigger.chatId}}", text: "Logged as To check: {{steps.read_receipt.output.amount}} from {{steps.read_receipt.output.sender_name}}, reference {{steps.read_receipt.output.reference}}. {{steps.read_receipt.output.duplicate_warning}}" },
+        },
+      ],
+      edges: [
+        { from: "read_receipt", to: "log_receipt" },
+        { from: "log_receipt", to: "reply" },
+      ],
+    },
+  },
   // R3 (decision 0090): the receipt-review path. The customer pays the shop's QR Ph code or GCash number and sends the
   // transfer reference on the pay page. Staff confirm in Receipts to review. The nudge and the deadline are steps here.
   {

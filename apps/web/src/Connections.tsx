@@ -496,6 +496,8 @@ export function TelegramConnection({ conn, onChange }: { conn: Connection | null
           {t("Messages go to")} <strong>{conn.destination.chatTitle}</strong>. {t("Everyone in that chat can read them.")}
         </p>
       )}
+      {conn?.destination?.webhook === "registered" && <p>{t("Receiving messages: automations with a Telegram message trigger start when someone messages this bot.")}</p>}
+      {conn?.destination?.webhook === "failed" && <p className="message error">{t("Telegram did not accept Daloy's address, so messages to the bot do not arrive. Telegram only sends to a public https address. Save again once Daloy runs on one.")}</p>}
       {conn && (
         <div className="actions">
           <button type="button" disabled={busy} onClick={() => void act(async () => setTest(await api<TestResult>("POST", "/settings/connections/telegram/test")))}>

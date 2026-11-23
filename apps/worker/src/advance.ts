@@ -10,6 +10,7 @@ import {
   isIdempotent,
   nextStep,
   StepError,
+  triggerFileFields,
   type ExpressionContext,
   type RetryPolicy,
   type RunState,
@@ -26,7 +27,7 @@ import { and, asc, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
  */
 const fileFieldsFor = (step: Step, trigger: Trigger) => {
   if (step.type !== "drive" && step.type !== "ai") return undefined;
-  const names = trigger.type === "form" ? trigger.config.fields.filter((f) => f.type === "file").map((f) => f.name) : trigger.type === "meta_dm" ? ["image"] : [];
+  const names = triggerFileFields(trigger);
   if (names.length === 0) return undefined;
   return step.type === "ai" ? names.filter((n) => step.config.files?.includes(n)) : names;
 };

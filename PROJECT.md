@@ -345,7 +345,7 @@ DeepSeek's review is in `docs/roadmap-review-2026-11-18.md`. Claude's second opi
 - [ ] T6. `docker compose --profile local-ai up` runs Ollama with a small model.
 - [ ] T7. Answer from my price list: owner-written price list and answers, an AI `answer` task and a Messenger template. Covered by C3 and C4.
 - [ ] T8. Chat as your customer: test a Messenger workflow by typing as the customer.
-- [ ] T9. Telegram message trigger: a photo or PDF sent to your own bot (made with @BotFather) starts a workflow, from your chat only or from anyone. Photos and PDFs become uploads the AI step can read, the telegram step can reply to the sender, and a "Log GCash receipts from Telegram" template adds a Sheets row marked To check. Next, before T2. (claimed: claude, branch claude/t9-telegram-trigger)
+- [x] T9. Telegram message trigger: a photo or PDF sent to your own bot (made with @BotFather) starts a workflow, from your chat only or from anyone. Photos and PDFs become uploads the AI step can read, the telegram step can reply to the sender, and a "Log GCash receipts from Telegram" template adds a Sheets row marked To check. Decision 0117, no migration. (claimed: claude, branch claude/t9-telegram-trigger)
 
 ## Console UI from the Paper file (docs/plans/console-ui-paper.md, 21 November 2026)
 

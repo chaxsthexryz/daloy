@@ -83,7 +83,10 @@ export const slackConfigSchema = z.object({ text: template(3000).min(1) });
 export const outlookConfigSchema = emailConfigSchema;
 export const teamsConfigSchema = slackConfigSchema;
 // A Telegram message goes to the one chat picked in Apps, as plain text (decision 0042). Queued like Slack.
-export const telegramConfigSchema = slackConfigSchema;
+// chatId (T9) answers the person who messaged the bot: it must render to the chat of the run's Telegram message.
+export const telegramConfigSchema = slackConfigSchema.extend({
+  chatId: template(200).min(1).optional(),
+});
 // Philippine SMS through UniSMS (phase N7, decision 0074). Queued as a delivery with needs_review on unknown outcomes.
 export const smsConfigSchema = z.object({
   to: template(500).min(1).describe("Philippine mobile number (+639XXXXXXXXX, 639XXXXXXXXX or 09XXXXXXXXX) or a template such as {{trigger.phone}}."),
@@ -323,8 +326,24 @@ const triggerSchema = z.discriminatedUnion("type", [
   // Starts a run for each new Shopify order (orders/create). Daloy registers the webhook when the store is connected and
   // checks X-Shopify-Hmac-Sha256 with the app secret. The order arrives as trigger fields (decision 0105).
   z.object({ type: z.literal("shopify_order"), config: z.strictObject({}).default({}) }),
+  // T9: starts when someone messages the owner's own Telegram bot (decision 0117). "my_chat" takes only the chat chosen
+  // in Apps; "anyone" takes every chat that messages the bot. A photo or PDF arrives as the upload field "file".
+  z.object({
+    type: z.literal("telegram_message"),
+    config: z
+      .strictObject({ from: z.enum(["my_chat", "anyone"]).default("my_chat"), requireFile: z.boolean().default(true) })
+      .default({ from: "my_chat", requireFile: true }),
+  }),
 ]);
 export type Trigger = z.infer<typeof triggerSchema>;
+
+/** The upload fields a trigger brings in, which an AI step may read and a drive step saves. */
+export function triggerFileFields(trigger: Trigger): string[] {
+  if (trigger.type === "form") return trigger.config.fields.filter((f) => f.type === "file").map((f) => f.name);
+  if (trigger.type === "meta_dm") return ["image"];
+  if (trigger.type === "telegram_message") return ["file"];
+  return [];
+}
 
 const TRIGGER_FIELD = /^\{\{\s*trigger\.([a-z][a-z0-9_]*)\s*\}\}$/;
 /** The datetime field a booking step's start reads, or undefined when start is anything else (decision 0032). */
@@ -436,13 +455,14 @@ export const definitionSchema = z
     for (const s of def.steps) {
       if (byId.has(s.id)) fail(`duplicate step id "${s.id}"`);
       byId.set(s.id, s);
-      if (s.type === "drive" && !((def.trigger.type === "form" && def.trigger.config.fields.some((f) => f.type === "file")) || def.trigger.type === "meta_dm")) {
+      if (s.type === "drive" && !((def.trigger.type === "form" && def.trigger.config.fields.some((f) => f.type === "file")) || def.trigger.type === "meta_dm" || def.trigger.type === "telegram_message")) {
         fail(`drive step "${s.id}" needs a form trigger with at least one file field`);
       }
       if (s.type === "ai") {
-        const fileFields = def.trigger.type === "form" ? def.trigger.config.fields.filter((f) => f.type === "file").map((f) => f.name) : def.trigger.type === "meta_dm" ? ["image"] : [];
+        const fileFields = triggerFileFields(def.trigger);
         for (const name of s.config.files ?? []) if (!fileFields.includes(name)) fail(`ai step "${s.id}" reads "${name}", which is not a file field of the form`);
       }
+      if (s.type === "telegram" && s.config.chatId !== undefined && def.trigger.type !== "telegram_message") fail(`telegram step "${s.id}" can only set a chat with a Telegram message trigger`);
       if (s.type === "payment_status" && !def.steps.some((o) => o.id === s.config.link && (o.type === "paymongo_link" || o.type === "payment_due"))) fail(`payment_status step "${s.id}" needs link to be the id of a paymongo_link or payment_due step`);
       if (s.type === "payment_expire" && !def.steps.some((o) => o.id === s.config.due && o.type === "payment_due")) fail(`payment_expire step "${s.id}" needs due to be the id of a payment_due step`);
       if (s.type === "payment_due" && s.config.booking !== undefined && !def.steps.some((o) => o.id === s.config.booking && o.type === "booking" && o.config.action === "create")) fail(`payment_due step "${s.id}" needs booking to be the id of a booking step that creates a booking`);

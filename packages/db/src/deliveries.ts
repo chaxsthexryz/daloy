@@ -242,7 +242,8 @@ async function attempt(db: Db, key: Buffer, urls: ProviderUrls, d: Delivery): Pr
     const text = p.text;
     if (d.provider === "discord") return { state: "delivered", result: await discordPost(urls, activeConn.credential, text) };
     if (d.provider === "teams") return { state: "delivered", result: await teamsPost(urls, activeConn.credential, text) };
-    if (d.provider === "telegram") return { state: "delivered", result: await telegramSend(urls, activeConn.credential, destination.chatId!, text) };
+    // A reply (T9) carries the sender's chat, which the step already checked against the run's message.
+    if (d.provider === "telegram") return { state: "delivered", result: await telegramSend(urls, activeConn.credential, (d.payload as { chatId?: string }).chatId ?? destination.chatId!, text) };
     if (d.provider === "meta_messenger") {
       const m = d.payload as {
         recipientId?: string;

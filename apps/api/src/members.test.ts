@@ -365,7 +365,7 @@ describe("role permissions", () => {
   // auth.ts and password.test.ts, public*.test.ts, paymongo.test.ts and meta.test.ts, approvals.test.ts, mcp.test.ts, oauth.test.ts, microsoft.test.ts, brand.test.ts.
   const outsideMatrix = new Set([
     "POST /auth/register", "POST /auth/login", "POST /auth/invites/:token/accept", "POST /auth/logout", "POST /auth/password", "POST /auth/password-reset", "POST /auth/password-reset/:token",
-    "POST /hooks/:path", "POST /hooks/paymongo/:path", "GET /hooks/meta/:path", "POST /hooks/meta/:path", "POST /hooks/shopify/:path", "GET /forms/:id", "GET /forms/:id/slots", "GET /public/slots.js", "GET /public/compress.js", "GET /forms/:id/embed", "POST /forms/:id", "POST /forms/:id/embed",
+    "POST /hooks/:path", "POST /hooks/paymongo/:path", "GET /hooks/meta/:path", "POST /hooks/meta/:path", "POST /hooks/shopify/:path", "POST /hooks/telegram/:path", "GET /forms/:id", "GET /forms/:id/slots", "GET /public/slots.js", "GET /public/compress.js", "GET /forms/:id/embed", "POST /forms/:id", "POST /forms/:id/embed",
     "GET /approvals/:token", "POST /approvals/:token", "GET /pay/:token", "GET /pay/:token/qr", "POST /pay/:token", "GET /settings/connections/oauth/callback", "GET /settings/connections/outlook/callback", "GET /brand/logo/:id",
   ]);
 

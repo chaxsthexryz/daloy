@@ -363,6 +363,7 @@ export class WorkflowsController {
     const needed = new Set(definition.steps.flatMap((s) => CHECKED_PROVIDERS[s.type] ?? []));
     if (definition.trigger.type === "meta_dm") needed.add("meta_messenger");
     if (definition.trigger.type === "shopify_order") needed.add("shopify");
+    if (definition.trigger.type === "telegram_message") needed.add("telegram");
     if (definition.steps.some((s) => s.type === "sms") && !unismsConfig()) throw new BadRequestException(SMS_NOT_SET_UP);
     const makesDocs = definition.steps.some((s) => s.type === "google_docs" && !s.disabled);
     if (needed.size === 0 && !makesDocs) return;
@@ -379,6 +380,9 @@ export class WorkflowsController {
       const where = provider === "slack" ? " and pick a channel" : provider === "telegram" ? " and choose a chat" : provider === "google_sheets" ? " and pick a sheet" : provider === "google_calendar" ? " and choose a calendar" : provider === "airtable" || provider === "notion" || provider === "trello" ? " and choose where it goes" : provider === "discord" ? " with a webhook link" : "";
       if (!c || !c.destination) throw new BadRequestException(`Connect ${name}${where} in Apps before turning this on.`);
       if (c.status !== "active") throw new BadRequestException(`${name} needs to be connected again in Apps before turning this on.`);
+    }
+    if (definition.trigger.type === "telegram_message" && !conns.find((x) => x.provider === "telegram")?.destination?.webhookPath) {
+      throw new BadRequestException("Turn on Receive messages for Telegram in Apps before turning this on.");
     }
   }
 

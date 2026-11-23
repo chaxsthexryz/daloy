@@ -76,7 +76,21 @@ export async function startFakeProviders(port = 0) {
   const tokens = new Map<string, string>(); // access token -> email
   const sheets = new Map<string, { title: string; tabs: Map<string, string[][]>; editors: Set<string>; metadata: Map<number, SheetMeta> }>();
   const slack = { token: "", team: "Lim Dental", channels: [{ id: "C0REQ", name: "office-requests", is_member: true }], messages: [] as { channel: string; text: string; ts: string }[], revoked: false, installs: new Map<string, { teamId: string; team: string }>(), revokedInstalls: [] as string[] };
-  const telegram = { token: "", bot: "daloy_test_bot", chats: [{ id: -1001234567890, title: "Office team" }] as { id: number; title: string }[], updates: [] as Record<string, unknown>[], webhook: false, messages: [] as { chat: string; text: string; id: number }[], revoked: false };
+  const telegram = {
+    token: "",
+    bot: "daloy_test_bot",
+    chats: [{ id: -1001234567890, title: "Office team" }] as { id: number; title: string }[],
+    updates: [] as Record<string, unknown>[],
+    webhook: false,
+    // T9: setWebhook's address and secret_token, a refused address, the files getFile knows, and a file server that is down.
+    webhookUrl: "",
+    webhookSecret: "",
+    denyWebhook: false,
+    files: new Map<string, { path: string; data: Buffer; hideSize?: boolean }>(),
+    fileDown: false,
+    messages: [] as { chat: string; text: string; id: number }[],
+    revoked: false,
+  };
   const unisms = { secretKey: "", messages: [] as { id: string; recipient: string; content: string; senderId: string; metadata?: Record<string, unknown> }[], revoked: false };
   // Meta Messenger & Instagram Graph API + CDN fake (N16, decision 0075).
   // Shopify Admin GraphQL API (decision 0105): the handler and state live in fake-shopify.ts.
@@ -719,11 +733,33 @@ export async function startFakeProviders(port = 0) {
       return answer(200, response);
     }
     // Telegram Bot API: the token is in the path, answers are { ok, result } or { ok: false, description } with a matching HTTP status.
+    const tgFile = /^\/file\/bot([^/]+)\/(.+)$/.exec(path);
+    if (tgFile) {
+      if (telegram.fileDown) return json(res, 502, {});
+      const f = [...telegram.files.values()].find((x) => tgFile[1] === telegram.token && x.path === tgFile[2]);
+      if (!f) return json(res, 404, {});
+      res.writeHead(200, { "content-type": "application/octet-stream" });
+      return void res.end(f.data);
+    }
     const tg = /^\/bot([^/]+)\/(\w+)$/.exec(path);
     if (tg) {
-      const body = raw ? (JSON.parse(raw) as { chat_id?: string; text?: string }) : {};
+      const body = raw ? (JSON.parse(raw) as { chat_id?: string; text?: string; url?: string; secret_token?: string; file_id?: string }) : {};
       if (!telegram.token || tg[1] !== telegram.token || telegram.revoked) return json(res, 401, { ok: false, error_code: 401, description: "Unauthorized" });
       if (tg[2] === "getMe") return json(res, 200, { ok: true, result: { id: 123456789, is_bot: true, username: telegram.bot } });
+      if (tg[2] === "setWebhook") {
+        if (telegram.denyWebhook || !body.url?.startsWith("https://")) return json(res, 400, { ok: false, error_code: 400, description: "Bad Request: bad webhook: HTTPS url must be provided for webhook" });
+        Object.assign(telegram, { webhook: true, webhookUrl: body.url, webhookSecret: body.secret_token ?? "" });
+        return json(res, 200, { ok: true, result: true });
+      }
+      if (tg[2] === "deleteWebhook") {
+        Object.assign(telegram, { webhook: false, webhookUrl: "", webhookSecret: "" });
+        return json(res, 200, { ok: true, result: true });
+      }
+      if (tg[2] === "getFile") {
+        const f = telegram.files.get(body.file_id ?? "");
+        if (!f) return json(res, 400, { ok: false, error_code: 400, description: "Bad Request: invalid file_id" });
+        return json(res, 200, { ok: true, result: { file_id: body.file_id, file_path: f.path, ...(f.hideSize ? {} : { file_size: f.data.length }) } });
+      }
       // getUpdates (P7): what the bot recently saw. A set webhook makes it answer 409 like the real Bot API.
       if (tg[2] === "getUpdates") return telegram.webhook ? json(res, 409, { ok: false, error_code: 409, description: "Conflict: can't use getUpdates method while webhook is active" }) : json(res, 200, { ok: true, result: telegram.updates });
       const chat = telegram.chats.find((c) => String(c.id) === body.chat_id);
