@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 import {
+  conversationPayload,
   createKeyedRun,
+  recordInbound,
   EMAIL_UID_CHANGED,
   emailSourcePassword,
   emailSources,
@@ -183,14 +185,16 @@ export async function pollEmailSources({ db, secretsKey, adapter, enqueue, inter
       let warning: string | undefined;
       for (const message of batch.messages) {
         if (message.payload) {
+          const key = `imap:${current.mailboxId}:${session!.uidValidity}:${message.uid}`;
+          // The sender's conversation, keyed by the address replies go to (decision 0115). A message without a
+          // Message-ID is deduplicated by its mailbox position instead.
+          const p = message.payload;
+          const convo = p.replyTo.trim()
+            ? await recordInbound(tx, { userId: workflow.userId, channel: "email", externalId: p.replyTo.trim().toLowerCase(), mid: p.messageId ?? key, text: `${p.subject}\n\n${p.text}`, at: new Date(p.receivedAt) })
+            : undefined;
+          const payload = convo ? { ...p, conversation: await conversationPayload(tx, convo) } : p;
           // Paused (N11b): the message is skipped, and the checkpoint below still moves past it, so a resume does not replay a burst.
-          const result = await createKeyedRun(
-            tx,
-            current.workflowId,
-            version.id,
-            message.payload,
-            `imap:${current.mailboxId}:${session!.uidValidity}:${message.uid}`,
-          ).catch((err: unknown) => {
+          const result = await createKeyedRun(tx, current.workflowId, version.id, payload, key, convo ? { conversationId: convo.id, conversationVersion: convo.version } : {}).catch((err: unknown) => {
             if (err instanceof WorkflowPausedError) return null;
             throw err;
           });

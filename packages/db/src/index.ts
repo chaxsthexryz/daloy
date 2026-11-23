@@ -12,6 +12,7 @@ export * from "./payment-review";
 export * from "./privacy";
 export * from "./calendar";
 export * from "./connections";
+export * from "./conversations";
 export * from "./crypto";
 export * from "./deliveries";
 export * from "./discord";

@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 import {
+  conversations,
   emailSources,
   readEmailSource,
   saveEmailSource,
@@ -92,11 +93,17 @@ describe("email intake checkpoint", () => {
     await poll(mailbox({ uidNext: 6, messages: [{ uid: 5, payload }] }));
     const first = await db.select().from(runs);
     expect(first).toHaveLength(1);
-    expect(first[0]!.triggerPayload).toEqual(payload);
+    expect(first[0]!.triggerPayload).toMatchObject(payload);
     await due();
     await poll(mailbox({ uidNext: 6, messages: [{ uid: 5, payload }] }));
     expect(await db.select().from(runs)).toHaveLength(1);
+    // The sender's conversation (decision 0115), keyed by the lowercased reply address, holds the message once.
+    const [c] = await db.select().from(conversations).where(eq(conversations.externalId, "visitor@example.com"));
+    expect(c).toMatchObject({ channel: "email", version: 1 });
+    expect(first[0]).toMatchObject({ conversationId: c!.id, conversationVersion: 1 });
+    expect((first[0]!.triggerPayload as { conversation: { history: { text: string }[] } }).conversation.history).toEqual([expect.objectContaining({ text: "New inquiry\n\nA website inquiry." })]);
   });
+
   it("only one of two simultaneous polls claims a source", async () => {
     const own = await setup();
     await poll(mailbox());

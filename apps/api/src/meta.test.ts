@@ -428,20 +428,23 @@ describe("Meta webhook challenge verification and HMAC intake", () => {
     expect((mocked.output as Record<string, unknown>).mocked).toBe(true);
     expect(fake.meta.messages).toHaveLength(0);
 
+    // From run2: the guest's second message superseded run1, so only the newer run replies (decision 0115).
     await exec.execute({
-      runId: run1.id,
+      runId: run2.id,
       stepRunId: "00000000-0000-0000-0000-000000000004",
       userId: o.userId,
       workflowId: wfId,
       attempt: 1,
-      idempotencyKey: `${run1.id}:reply:live`,
+      idempotencyKey: `${run2.id}:reply:live`,
       step: replyStep,
-      ctx: { trigger: payload1, steps: {} },
+      ctx: { trigger: run2.triggerPayload, steps: {} },
       mock: false,
     });
     await runDueDeliveries(db, secretsKey, fake.urls);
     expect(fake.meta.messages).toHaveLength(1);
-    expect(fake.meta.messages[0]).toMatchObject({ recipientId: "psid-good", text: "Verified!" });
+    expect(fake.meta.messages[0]).toMatchObject({ recipientId: "psid-good" });
+    // The first reply of the conversation carries the privacy notice in front.
+    expect(fake.meta.messages[0]!.text).toMatch(/automated assistant[\s\S]*\n\nVerified!$/);
     expect((await db.select().from(uploads).where(eq(uploads.userId, o.userId))).length).toBe(2);
 
     // Paused workflow starts no new run on webhook intake (returns 200 without creating a run).

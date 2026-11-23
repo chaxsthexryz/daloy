@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { approvals, bookingSuperseded, claimTimeout, runs, stepRuns, workflows, workflowVersions, type Db } from "@daloy/db";
+import { approvals, claimTimeout, PAST_WINDOW, runSuperseded, runs, stepRuns, workflows, workflowVersions, type Db } from "@daloy/db";
 import {
   assertTransition,
   decideRetry,
@@ -78,8 +78,12 @@ async function moveStep(w: Writer, id: string, from: StepState, to: StepState, e
   if (moved.length !== 1) throw new Error(`step run ${id} was not ${from}${claimId ? " under this worker's claim" : ""}`);
 }
 
-/** Why a run linked to a booking stopped: staff, MCP or another run changed the booking after this run's version. */
-const superseded = (stepId: string) => `The booking was rescheduled or cancelled, so this run stopped before step ${stepId}.`;
+/**
+ * Why a run stopped: staff, MCP or another run changed its booking after this run's version (decision 0032), or the guest
+ * sent a newer message, which a newer run answers (decision 0115).
+ */
+const superseded = (stepId: string, why: "booking" | "conversation" | false) =>
+  why === "conversation" ? `The customer sent a newer message, so this run stopped before step ${stepId} and the newer run answers.` : `The booking was rescheduled or cancelled, so this run stopped before step ${stepId}.`;
 
 /** A send that must not be repeated without a person deciding: an email, or an HTTP call that is not idempotent. */
 const unsafeToRepeat = (step: Step) => step.type === "email" || (step.type === "http" && !isIdempotent(step.config));
@@ -205,10 +209,11 @@ async function runNext(deps: AdvanceDeps, run: Run): Promise<void> {
 
   // A run of an older booking version stops before any attempt: a new step, a retry, a resumed wait, or an operator's
   // Send again or Retry, so nothing goes out for a time that has changed (decision 0032).
-  if (await bookingSuperseded(db, run)) {
+  const stale = await runSuperseded(db, run);
+  if (stale) {
     return db.transaction(async (tx) => {
-      if (stepRunId) await moveStep(tx, stepRunId, "running", "failed", { error: superseded(step.id), outcome: last?.dispatchedAt ? "unknown" : "not_sent", finishedAt: new Date() });
-      await moveRun(tx, run.id, "running", "cancelled", { error: superseded(step.id), finishedAt: new Date() });
+      if (stepRunId) await moveStep(tx, stepRunId, "running", "failed", { error: superseded(step.id, stale), outcome: last?.dispatchedAt ? "unknown" : "not_sent", finishedAt: new Date() });
+      await moveRun(tx, run.id, "running", "cancelled", { error: superseded(step.id, stale), finishedAt: new Date() });
     });
   }
 
@@ -253,7 +258,8 @@ async function runNext(deps: AdvanceDeps, run: Run): Promise<void> {
             if (!held) throw lost();
             // Read under a share lock held until the request is on its way: a booking change either committed before
             // this check (nothing is sent) or waits until the send has started (decision 0032).
-            if (await bookingSuperseded(tx, run, true)) throw new StepError(superseded(step.id), false, { outcome: "not_sent" });
+            const why = await runSuperseded(tx, run, true);
+            if (why) throw new StepError(superseded(step.id, why), false, { outcome: "not_sent" });
             await new Promise<void>((released) => ready(released));
           });
         })
@@ -296,6 +302,11 @@ async function runNext(deps: AdvanceDeps, run: Run): Promise<void> {
       const { left, op, right } = result.input as { left: unknown; op: string; right: unknown };
       throw new StepError(`"${step.id}" needs a number on both sides of ${op}, but got ${JSON.stringify(left) ?? "nothing"} and ${JSON.stringify(right) ?? "nothing"}. Add an "invalid" branch or check the field.`, false, { input: result.input });
     }
+    // Outside Meta's window with no "outside_window" edge to fall back on: the reply cannot go, so the step fails and
+    // run history says why. With no "paused" edge, a conversation staff took over just ends the run (decision 0115).
+    if (step.type === "meta_reply" && result.branch === "outside_window" && !def.edges.some((e) => e.from === step.id && e.on === "outside_window")) {
+      throw new StepError(PAST_WINDOW, false, { input: result.input });
+    }
     // A wake-up time that has passed with no "late" edge ends the run here, so a reminder is never sent late.
     // Run history says so (decision 0031).
     if (step.type === "delay" && result.branch === "late" && !def.edges.some((e) => e.from === step.id && e.on === "late")) {
@@ -303,11 +314,12 @@ async function runNext(deps: AdvanceDeps, run: Run): Promise<void> {
     }
   } catch (err) {
     // The booking changed during this attempt: stop instead of retrying or asking for review.
-    if (await bookingSuperseded(db, run)) {
+    const why = await runSuperseded(db, run);
+    if (why) {
       const e = err instanceof StepError ? err : undefined;
       return db.transaction(async (tx) => {
         await moveStep(tx, stepRunId, "running", "failed", { input: e?.input ?? null, error: err instanceof Error ? err.message : String(err), outcome: e?.outcome ?? null, finishedAt: new Date() }, claimId);
-        await moveRun(tx, run.id, "running", "cancelled", { error: superseded(step.id), finishedAt: new Date() });
+        await moveRun(tx, run.id, "running", "cancelled", { error: superseded(step.id, why), finishedAt: new Date() });
       });
     }
     const decision = decideRetry(err, attempt, deps.retryPolicy ?? DEFAULT_RETRY_POLICY);

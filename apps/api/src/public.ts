@@ -1,6 +1,6 @@
 import { publicCopy } from "./public-copy";
 import { createHmac, randomInt, randomUUID, timingSafeEqual } from "node:crypto";
-import { normalizeShopDomain, parseShopifyCredential, parseShopifyOrder, verifyShopifyHmac, assertNotPaused, busyBetween, claimUsage, constantTimeEqual, downloadMetaImage, keyedRun, MetaImageError, MetaTransientImageError, parseMetaCredential, parseMetaWebhook, QuotaError, readBrand, saveUploads, usageSummary, verifyMetaSignature, workspaceLanguage, businessProfiles, connectionCredential, connections, createKeyedRun, createRun, eventSeen, finishEvent, keptEvent, markPaymentPaid, markPaymentRefunded, centavosToPesos, paymongoMode, readSecret, recordEvent, requests, runs, settleCheckout, triggers, verifyPaymongoSignature, WorkflowPausedError, workflows, workflowVersions, type Db, type NewUpload, type Payment } from "@daloy/db";
+import { conversationPayload, parseMetaEchoes, recordEcho, recordInbound, normalizeShopDomain, parseShopifyCredential, parseShopifyOrder, verifyShopifyHmac, assertNotPaused, busyBetween, claimUsage, constantTimeEqual, downloadMetaImage, keyedRun, MetaImageError, MetaTransientImageError, parseMetaCredential, parseMetaWebhook, QuotaError, readBrand, saveUploads, usageSummary, verifyMetaSignature, workspaceLanguage, businessProfiles, connectionCredential, connections, createKeyedRun, createRun, eventSeen, finishEvent, keptEvent, markPaymentPaid, markPaymentRefunded, centavosToPesos, paymongoMode, readSecret, recordEvent, requests, runs, settleCheckout, triggers, verifyPaymongoSignature, WorkflowPausedError, workflows, workflowVersions, type Db, type NewUpload, type Payment } from "@daloy/db";
 import { definitionSchema, FILE_MAX_BYTES, FILES_PER_FIELD, FILES_PER_SUBMISSION, fileType, OFFICE_REQUEST, parsePayload, PURCHASE_REQUEST, safeFileName, type FileRef, type FormField, type Resource } from "@daloy/engine";
 import {
   BadRequestException,
@@ -301,6 +301,10 @@ export class MetaHooksController {
     const rawBody = req.rawBody ?? Buffer.alloc(0);
     if (!verifyMetaSignature(rawBody, signature, found.cred.appSecret)) throw new UnauthorizedException("invalid signature");
 
+    // A reply from the Page inbox hands the conversation to staff; Daloy's own reply changes nothing (decision 0115).
+    for (const e of parseMetaEchoes(req.body, found.conn.destination)) {
+      await recordEcho(this.db, { userId: found.userId, channel: e.channel, externalId: e.guestId, mid: e.messageId, text: e.text, ours: e.ours });
+    }
     const events = parseMetaWebhook(req.body, found.conn.destination);
     if (events.length === 0) return { ok: true, started: 0 };
 
@@ -351,46 +355,55 @@ export class MetaHooksController {
         }
       }
 
-      for (const l of pending) {
-        const cfg = savedTrigger(l.version.definition, "meta_dm") as { requireImage?: boolean } | undefined;
-        if (cfg?.requireImage && downloaded.length === 0) continue;
+      // The message joins its conversation and every run that answers it commits together, so a replayed mid adds
+      // nothing and two messages at once get versions one after the other (decision 0115).
+      const started = await this.db.transaction(async (tx) => {
+        const convo = await recordInbound(tx, { userId: found.userId, channel: ev.channel, externalId: ev.senderId, mid: ev.messageId, text: ev.text, at: new Date(ev.timestamp) });
+        const conversation = await conversationPayload(tx, convo);
+        const linked = { conversationId: convo.id, conversationVersion: convo.version };
+        const ids: string[] = [];
+        for (const l of pending) {
+          const cfg = savedTrigger(l.version.definition, "meta_dm") as { requireImage?: boolean } | undefined;
+          if (cfg?.requireImage && downloaded.length === 0) continue;
 
-        const runFiles: NewUpload[] = downloaded.map((img) => ({ id: randomUUID(), field: "image", name: img.name, type: img.type, data: img.data }));
-        const imageRefs: FileRef[] = runFiles.map((f) => ({ id: f.id, name: f.name, type: f.type, size: f.data.length }));
-        const payload = {
-          channel: ev.channel,
-          senderId: ev.senderId,
-          messageId: ev.messageId,
-          text: ev.text,
-          timestamp: ev.timestamp,
-          image: imageRefs,
-          ...(found.conn.destination?.pageId ? { pageId: found.conn.destination.pageId } : {}),
-          ...(found.conn.destination?.instagramAccountId ? { instagramAccountId: found.conn.destination.instagramAccountId } : {}),
-        };
-        const uploadClaimKey = `meta-upload:${l.workflowId}:${ev.messageId}`;
-        const started = await createKeyedRun(
-          this.db,
-          l.workflowId,
-          l.version.id,
-          payload,
-          key,
-          runFiles.length > 0 ? { uploads: { userId: found.userId, files: runFiles, claimKey: uploadClaimKey } } : {},
-        ).catch(async (err: unknown) => {
-          if (err instanceof WorkflowPausedError) return null;
-          if (err instanceof QuotaError) {
-            if (cfg?.requireImage) return null;
-            return createKeyedRun(this.db, l.workflowId, l.version.id, { ...payload, image: [] }, key).catch((e: unknown) => {
-              if (e instanceof WorkflowPausedError) return null;
-              throw e;
-            });
-          }
-          throw err;
-        });
-        if (started && !started.duplicate) {
-          await enqueueRun(this.boss, started.runId);
-          startedCount++;
+          const runFiles: NewUpload[] = downloaded.map((img) => ({ id: randomUUID(), field: "image", name: img.name, type: img.type, data: img.data }));
+          const imageRefs: FileRef[] = runFiles.map((f) => ({ id: f.id, name: f.name, type: f.type, size: f.data.length }));
+          const payload = {
+            channel: ev.channel,
+            senderId: ev.senderId,
+            messageId: ev.messageId,
+            text: ev.text,
+            timestamp: ev.timestamp,
+            image: imageRefs,
+            conversation,
+            ...(found.conn.destination?.pageId ? { pageId: found.conn.destination.pageId } : {}),
+            ...(found.conn.destination?.instagramAccountId ? { instagramAccountId: found.conn.destination.instagramAccountId } : {}),
+          };
+          const uploadClaimKey = `meta-upload:${l.workflowId}:${ev.messageId}`;
+          const run = await createKeyedRun(
+            tx,
+            l.workflowId,
+            l.version.id,
+            payload,
+            key,
+            runFiles.length > 0 ? { ...linked, uploads: { userId: found.userId, files: runFiles, claimKey: uploadClaimKey } } : linked,
+          ).catch(async (err: unknown) => {
+            if (err instanceof WorkflowPausedError) return null;
+            if (err instanceof QuotaError) {
+              if (cfg?.requireImage) return null;
+              return createKeyedRun(tx, l.workflowId, l.version.id, { ...payload, image: [] }, key, linked).catch((e: unknown) => {
+                if (e instanceof WorkflowPausedError) return null;
+                throw e;
+              });
+            }
+            throw err;
+          });
+          if (run && !run.duplicate) ids.push(run.runId);
         }
-      }
+        return ids;
+      });
+      for (const runId of started) await enqueueRun(this.boss, runId);
+      startedCount += started.length;
     }
     return { ok: true, started: startedCount };
   }

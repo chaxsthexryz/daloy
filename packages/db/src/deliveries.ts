@@ -7,7 +7,8 @@ import { freshToken, oauthProvider, slackToken, trelloAuthOf, withFreshToken, wi
 import type { Db } from "./index";
 import { discordPost } from "./discord";
 import { airtableAdd, appendRowOnce, driveUpload, type DriveDestination, notionAddPage, trelloAddCard, deleteSheetMarker, outlookSend, ProviderError, slackPost, syncCalendarEvent, teamsPost, telegramSend, unismsSend, type CalendarDestination, type OutlookMessage, type ProviderErrorKind, type ProviderUrls, type SheetDestination } from "./providers";
-import { bookingSuperseded, supersededSql } from "./bookings";
+import { supersededSql } from "./bookings";
+import { runSuperseded } from "./conversations";
 import { bookingForCalendar } from "./calendar";
 import { metaSend, parseMetaCredential } from "./meta";
 import { createShopifyProduct, parseShopifyCredential, shopifyConn, updateShopifyProduct, type ShopifyProductFields } from "./shopify";
@@ -41,6 +42,8 @@ const STALE_SENDING = "2 minutes";
 
 /** Why a delivery of a run whose booking moved on was not sent, shown in the Requests list. */
 export const BOOKING_CHANGED = "The booking was rescheduled or cancelled, so this was not sent.";
+export const NEWER_MESSAGE = "The customer sent a newer message, so this was not sent; the run for the newer message answers instead.";
+export const PAST_WINDOW = "Past Meta's 24-hour reply window. Reply directly from your Facebook Page or Instagram inbox.";
 
 /** A delivery of a run whose booking moved on: Retry and Post again leave it alone. A calendar sync is the exception: a changed booking is what it syncs. */
 const bookingMoved = sql`(${deliveries.provider} <> 'google_calendar' and exists (select 1 from ${runs} where ${runs.id} = ${deliveries.runId} and ${supersededSql}))`;
@@ -62,7 +65,7 @@ const markerValue = () => randomBytes(6).toString("base64url");
  * Called by the sheets, slack, outlook and teams steps. One row per run and step: a step that runs again gets the
  * first row back. Pins the connection as it is now; an empty pin means nothing was connected yet, pinned on first send.
  */
-export async function queueDelivery(db: Db, d: { userId: string; runId: string; stepId: string; provider: Provider; reference: string; payload: DeliveryPayload }): Promise<Delivery> {
+export async function queueDelivery(db: Pick<Db, "select" | "insert">, d: { userId: string; runId: string; stepId: string; provider: Provider; reference: string; payload: DeliveryPayload }): Promise<Delivery> {
   // SMS never reads a workspace connection row: the server's env is the only source (decision 0100).
   const operator = d.provider === "unisms" ? unismsConfig() : null;
   const [conn] = d.provider === "unisms" ? [] : await db.select({ account: connections.account, destination: connections.destination, externalId: connections.externalId }).from(connections).where(and(eq(connections.userId, d.userId), eq(connections.provider, d.provider)));
@@ -262,11 +265,7 @@ async function attempt(db: Db, key: Buffer, urls: ProviderUrls, d: Delivery): Pr
       }
       const inboundAt = m.inboundTimestamp ? Date.parse(m.inboundTimestamp) : Number.NaN;
       if (Number.isFinite(inboundAt) && Date.now() - inboundAt > 24 * 3600_000) {
-        return {
-          state: "failed",
-          error: "Past Meta's 24-hour reply window. Reply directly from your Facebook Page or Instagram inbox.",
-          kind: "invalid",
-        };
+        return { state: "failed", error: PAST_WINDOW, kind: "invalid" };
       }
       const { pageAccessToken } = parseMetaCredential(activeConn.credential);
       return { state: "delivered", result: await metaSend(urls, pageAccessToken, { recipientId: m.recipientId, channel: m.channel, text: m.text }) };
@@ -286,9 +285,12 @@ async function attempt(db: Db, key: Buffer, urls: ProviderUrls, d: Delivery): Pr
     // until the provider answers: a cancel or reschedule either committed before this check (nothing is sent) or waits
     // for the call to return (decision 0032).
     const outcome = await db.transaction(async (tx) => {
-      const [run] = await tx.select({ bookingId: runs.bookingId, bookingVersion: runs.bookingVersion }).from(runs).where(eq(runs.id, d.runId));
-      if (run && d.provider !== "google_calendar" && (await bookingSuperseded(tx, run, true))) {
-        return { state: "failed", error: d.checkFirst ? `${BOOKING_CHANGED} An earlier attempt may have reached ${name}.` : BOOKING_CHANGED, kind: "booking_changed" } as const;
+      const [run] = await tx.select({ bookingId: runs.bookingId, bookingVersion: runs.bookingVersion, conversationId: runs.conversationId, conversationVersion: runs.conversationVersion }).from(runs).where(eq(runs.id, d.runId));
+      // A newer guest message moves the conversation on the same way (decision 0115): the newer run answers instead.
+      const why = run && d.provider !== "google_calendar" ? await runSuperseded(tx, run, true) : false;
+      if (why) {
+        const said = why === "conversation" ? NEWER_MESSAGE : BOOKING_CHANGED;
+        return { state: "failed", error: d.checkFirst ? `${said} An earlier attempt may have reached ${name}.` : said, kind: "booking_changed" } as const;
       }
       // Shared lock on the booking until Google answers, so a cancel cannot commit under an older write (decision 0055).
       if (d.provider === "google_calendar") await tx.execute(sql`select 1 from ${bookings} where ${bookings.id} = ${(d.payload as { bookingId: string }).bookingId} for share`);

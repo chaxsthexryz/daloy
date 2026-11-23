@@ -109,6 +109,7 @@ describe("destination line", () => {
       payment_expire: { due: "ask_deposit" },
       payment_status: { link: "pay_1" },
       meta_reply: { recipientId: "{{trigger.senderId}}", channel: "{{trigger.channel}}", text: "t" },
+      conversation_update: { fields: { guests: "2" } },
       calendar: { title: "t" },
       sheets: { columns: ["a"] },
       shopify_create_product: { title: "Tote bag" },

@@ -159,6 +159,12 @@ export const metaReplyConfigSchema = z.object({
   text: template(2000).min(1),
 });
 export type MetaReplyConfig = z.infer<typeof metaReplyConfigSchema>;
+// Saves what the guest told so far on the conversation (decision 0115), for the next message's run. A fixed list of short
+// values; an empty value after filling in keeps the saved one.
+export const CONVERSATION_FIELD_NAMES = ["check_in", "check_out", "guests", "name", "phone", "email"] as const;
+export const conversationUpdateConfigSchema = z.object({
+  fields: z.partialRecord(z.enum(CONVERSATION_FIELD_NAMES), template(500)).refine((f) => Object.keys(f).length > 0, "set at least one field"),
+});
 // Shopify products (decision 0105), queued as deliveries. Every field is a template, read as text when the step runs: price like "499.50" in the
 // store's currency, imageUrl an https link Shopify downloads from. A new product starts as a
 // draft, so nothing goes on sale by surprise. Blank after filling in means "leave as is" for an update.
@@ -239,6 +245,7 @@ const stepSchema = z.discriminatedUnion("type", [
   z.object({ id: stepId, disabled, type: z.literal("payment_due"), config: paymentDueConfigSchema }),
   z.object({ id: stepId, disabled, type: z.literal("payment_expire"), config: paymentExpireConfigSchema }),
   z.object({ id: stepId, disabled, type: z.literal("meta_reply"), config: metaReplyConfigSchema }),
+  z.object({ id: stepId, disabled, type: z.literal("conversation_update"), config: conversationUpdateConfigSchema }),
   z.object({ id: stepId, disabled, type: z.literal("discord"), config: discordConfigSchema }),
   z.object({ id: stepId, disabled, type: z.literal("google_docs"), config: googleDocsConfigSchema }),
   z.object({ id: stepId, disabled, type: z.literal("read_page"), config: readPageConfigSchema }),
@@ -448,6 +455,7 @@ export const definitionSchema = z
       if ((s.type === "shopify_create_product" || s.type === "shopify_update_product") && !priceTrusted(def.trigger) && Object.values(s.config).some((v) => typeof v === "string" && /\{\{\s*trigger\./.test(v))) {
         fail(`${s.type} step "${s.id}" cannot take its fields from a ${def.trigger.type} trigger, which anyone can fill in. Use fixed values, a signed webhook, a Shopify order or a manual run.`);
       }
+      if (s.type === "conversation_update" && def.trigger.type !== "meta_dm" && def.trigger.type !== "email") fail(`conversation_update step "${s.id}" needs a meta_dm or email trigger, which starts a conversation`);
       if (s.type !== "booking") continue;
       if (s.config.start !== undefined && !bookingStartField(def.trigger, s.config)) fail(`booking step "${s.id}" needs start to be {{trigger.<field>}} for a datetime field of the trigger`);
       // Changing a booking is for staff (the Run button), MCP (its own tools) and signed webhooks, never a public form.
@@ -474,6 +482,9 @@ export const definitionSchema = z
       // A delay until a time may add a "late" edge next to its usual one (decision 0031).
       if (!labels && e.on === "late" && from.type === "delay") {
         if (from.config.until === undefined) fail(`only a delay with "until" can have a "late" edge, and "${from.id}" waits a fixed time`);
+        // A Meta reply may add fallbacks for a closed 24-hour window and for a conversation staff took over (decision 0115).
+      } else if (!labels && from.type === "meta_reply" && (e.on === "outside_window" || e.on === "paused")) {
+        // allowed
       } else if (!labels && e.on !== undefined) fail(`step "${from.id}" does not branch, so its edge cannot have a label`);
 
       const label = e.on ?? "next";

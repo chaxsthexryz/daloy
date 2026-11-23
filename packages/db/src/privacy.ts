@@ -2,7 +2,7 @@ import { and, eq, inArray, isNotNull, lt, sql } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import {
-  bookingChanges, bookingResults, bookings, calendarEvents, deliveries, paymentClaims, paymentDues, paymentHistory, paymentSettings, paymongoEvents, privacyRequests, receiptReferences, requests, runs, stepRuns, uploads, workflows, workflowVersions,
+  bookingChanges, bookingResults, bookings, calendarEvents, conversationMessages, conversations, deliveries, paymentClaims, paymentDues, paymentHistory, paymentSettings, paymongoEvents, privacyRequests, receiptReferences, requests, runs, stepRuns, uploads, users, workflows, workflowVersions,
 } from "./schema";
 
 type AnyDb = NodePgDatabase<Record<string, unknown>>;
@@ -45,13 +45,23 @@ async function collect(db: AnyDb, workspaceId: string, q: CustomerQuery) {
   const match = matcher(q);
   // shortcut: scans every run in the workspace, add an index or customer table if workspaces reach many thousands of runs.
   const allRuns = await db
-    .select({ id: runs.id, triggerPayload: runs.triggerPayload })
+    .select({ id: runs.id, triggerPayload: runs.triggerPayload, conversationId: runs.conversationId })
     .from(runs)
     .innerJoin(workflowVersions, eq(workflowVersions.id, runs.workflowVersionId))
     .innerJoin(workflows, eq(workflows.id, workflowVersions.workflowId))
     .where(eq(workflows.userId, workspaceId));
   const runIds = new Set(allRuns.filter((r) => match(r.triggerPayload)).map((r) => r.id));
   for (const d of await db.select({ runId: paymentDues.runId, replyTo: paymentDues.replyTo }).from(paymentDues).where(and(eq(paymentDues.userId, workspaceId), isNotNull(paymentDues.replyTo)))) if (match(d.replyTo)) runIds.add(d.runId);
+  // Conversations (decision 0115): by saved fields, the email address one is keyed by, any message text, or a matched
+  // run's conversation. Every run of a matched conversation belongs to the customer too.
+  // shortcut: scans every message in the workspace, like the runs above; the retention sweep keeps the table bounded.
+  const allConversations = await db.select().from(conversations).where(eq(conversations.userId, workspaceId));
+  const convIds = new Set(allConversations.filter((c) => match(c.fields) || (c.channel === "email" && match(c.externalId))).map((c) => c.id));
+  const texts = await db.select({ conversationId: conversationMessages.conversationId, text: conversationMessages.text }).from(conversationMessages).innerJoin(conversations, eq(conversations.id, conversationMessages.conversationId)).where(eq(conversations.userId, workspaceId));
+  for (const t of texts) if (match(t.text)) convIds.add(t.conversationId);
+  for (const r of allRuns) if (r.conversationId && runIds.has(r.id)) convIds.add(r.conversationId);
+  for (const r of allRuns) if (r.conversationId && convIds.has(r.conversationId)) runIds.add(r.id);
+  const cIds = [...convIds];
   const events = (await db.select().from(paymongoEvents).where(and(eq(paymongoEvents.userId, workspaceId), isNotNull(paymongoEvents.payload)))).filter((e) => match(e.payload));
   const ids = [...runIds];
   const inRuns = (col: AnyPgColumn) => (ids.length ? inArray(col, ids) : sql`false`);
@@ -83,6 +93,8 @@ async function collect(db: AnyDb, workspaceId: string, q: CustomerQuery) {
     history: dueIds.length ? await db.select().from(paymentHistory).where(and(eq(paymentHistory.userId, workspaceId), inArray(paymentHistory.dueId, dueIds))) : [],
     paymongoEvents: events,
     receiptReferences: await db.select().from(receiptReferences).where(and(eq(receiptReferences.userId, workspaceId), inRuns(receiptReferences.firstRunId))),
+    conversations: allConversations.filter((c) => convIds.has(c.id)),
+    conversationMessages: cIds.length ? await db.select().from(conversationMessages).where(inArray(conversationMessages.conversationId, cIds)).orderBy(conversationMessages.createdAt) : [],
   };
 }
 type Found = Awaited<ReturnType<typeof collect>>;
@@ -99,6 +111,7 @@ function keptOf(f: Found): { item: string; reason: string }[] {
     ["history", "payment_history", "amounts, events and who decided stay for bookkeeping"],
     ["receiptReferences", "receipt_references", "reference numbers stay to catch a reused receipt; they hold no name"],
   ];
+  // conversations and conversationMessages are not listed: a delete removes them outright, so nothing of them stays.
   const kept = all.filter(([k]) => f[k].length > 0).map(([, item, reason]) => ({ item, reason }));
   if (f.claims.some((c) => c.status === "confirmed")) kept.push({ item: "payment_claims", reason: "the transfer reference of a confirmed payment stays for bookkeeping; the receipt image is deleted" });
   return kept;
@@ -123,6 +136,18 @@ export async function exportCustomer(db: AnyDb, workspaceId: string, actorId: st
   };
 }
 
+/** Erases what runs hold about a customer and stops the ones still going. Their state and times stay for history and usage. */
+async function eraseRuns(tx: AnyDb, workspaceId: string, runIds: string[]) {
+  if (!runIds.length) return;
+  await tx.update(runs).set({ triggerPayload: { erased: true }, error: null }).where(inArray(runs.id, runIds));
+  await tx.update(runs).set({ state: "cancelled", finishedAt: new Date() }).where(and(inArray(runs.id, runIds), inArray(runs.state, ["pending", "running", "waiting", "needs_review"])));
+  await tx.update(stepRuns).set({ input: null, output: null, error: null }).where(inArray(stepRuns.runId, runIds));
+  await tx.delete(uploads).where(and(eq(uploads.userId, workspaceId), inArray(uploads.runId, runIds)));
+  await tx.delete(deliveries).where(and(eq(deliveries.userId, workspaceId), inArray(deliveries.runId, runIds)));
+  await tx.update(requests).set({ subject: "Deleted on request" }).where(and(eq(requests.userId, workspaceId), inArray(requests.runId, runIds)));
+  await tx.update(bookingResults).set({ output: {} }).where(inArray(bookingResults.runId, runIds));
+}
+
 /** Erases the customer's content in one transaction and keeps what bookkeeping needs. Writes an audit row. */
 export async function deleteCustomer(db: AnyDb, workspaceId: string, actorId: string, q: CustomerQuery) {
   return db.transaction(async (tx) => {
@@ -131,15 +156,10 @@ export async function deleteCustomer(db: AnyDb, workspaceId: string, actorId: st
     const kept = keptOf(f);
     const runIds = f.runs.map((r) => r.id);
     const bookingIds = f.bookings.map((b) => b.id);
-    if (runIds.length) {
-      await tx.update(runs).set({ triggerPayload: { erased: true }, error: null }).where(inArray(runs.id, runIds));
-      await tx.update(runs).set({ state: "cancelled", finishedAt: new Date() }).where(and(inArray(runs.id, runIds), inArray(runs.state, ["pending", "running", "waiting", "needs_review"])));
-      await tx.update(stepRuns).set({ input: null, output: null, error: null }).where(inArray(stepRuns.runId, runIds));
-      await tx.delete(uploads).where(and(eq(uploads.userId, workspaceId), inArray(uploads.runId, runIds)));
-      await tx.delete(deliveries).where(and(eq(deliveries.userId, workspaceId), inArray(deliveries.runId, runIds)));
-      await tx.update(requests).set({ subject: "Deleted on request" }).where(and(eq(requests.userId, workspaceId), inArray(requests.runId, runIds)));
-      await tx.update(bookingResults).set({ output: {} }).where(inArray(bookingResults.runId, runIds));
-    }
+    await eraseRuns(tx as unknown as AnyDb, workspaceId, runIds);
+    const convIds = f.conversations.map((c) => c.id);
+    // Messages go with their conversation (on delete cascade).
+    if (convIds.length) await tx.delete(conversations).where(and(eq(conversations.userId, workspaceId), inArray(conversations.id, convIds)));
     if (bookingIds.length) {
       await tx.update(bookingResults).set({ output: {} }).where(inArray(bookingResults.bookingId, bookingIds));
       await tx.update(bookingChanges).set({ result: {} }).where(inArray(bookingChanges.bookingId, bookingIds));
@@ -183,4 +203,27 @@ export async function purgeReceiptImages(db: AnyDb, now = new Date(), limit = 20
     .limit(limit);
   const gone = await db.update(paymentClaims).set({ image: null, imageType: null, imageSize: null }).where(inArray(paymentClaims.id, old)).returning({ id: paymentClaims.id });
   return gone.length;
+}
+
+/**
+ * Retention (decision 0115): deletes conversations whose last message, in or out, is older than the workspace's
+ * conversation retention days (90 unless changed), with their messages, and erases the runs that answered them the way
+ * a customer delete does, since their trigger payload carries the message history. At most limit conversations per call.
+ */
+export async function purgeConversations(db: AnyDb, now = new Date(), limit = 200): Promise<number> {
+  const old = await db
+    .select({ id: conversations.id, userId: conversations.userId })
+    .from(conversations)
+    .innerJoin(users, eq(users.id, conversations.userId))
+    .where(lt(sql`coalesce(greatest(${conversations.lastInboundAt}, ${conversations.lastOutboundAt}), ${conversations.createdAt})`, sql`${now.toISOString()}::timestamptz - make_interval(days => ${users.conversationRetentionDays})`))
+    .limit(limit);
+  for (const workspaceId of new Set(old.map((c) => c.userId))) {
+    const ids = old.filter((c) => c.userId === workspaceId).map((c) => c.id);
+    await db.transaction(async (tx) => {
+      const linked = await tx.select({ id: runs.id }).from(runs).where(inArray(runs.conversationId, ids));
+      await eraseRuns(tx as unknown as AnyDb, workspaceId, linked.map((r) => r.id));
+      await tx.delete(conversations).where(inArray(conversations.id, ids));
+    });
+  }
+  return old.length;
 }
