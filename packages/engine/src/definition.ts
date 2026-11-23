@@ -3,6 +3,7 @@ import { aiConfigSchema } from "./ai";
 import { browserConfigSchema } from "./browser";
 import { DISCORD_MAX_CHARS, DOCS_MAX_VALUES, isPlaceholderKey } from "./discord-docs";
 import { FILES_PER_FIELD, type FileRef } from "./file-type";
+import { menuSchema } from "./menu";
 import { SENDER_ID_RE } from "./phone";
 import { isTimeZone, parseZoned } from "./zoned";
 
@@ -36,6 +37,8 @@ export const emailConfigSchema = z.object({
   to: template(2000).min(1),
   subject: template(500).min(1),
   text: template(50_000).min(1),
+  // The same menu as the Messenger buttons, added below the text as a numbered list; a reply of "2" picks choice 2 (decision 0118).
+  menu: menuSchema.optional().describe("Choices listed under the message as 1, 2, 3. A reply with just the number picks that choice."),
 });
 
 // A fixed wait, or until a time from the run (a datetime field) moved by offsetSeconds. A wake-up time that has
@@ -160,6 +163,8 @@ export const metaReplyConfigSchema = z.object({
   recipientId: template(200).min(1).default("{{trigger.senderId}}"),
   channel: template(100).min(1).default("{{trigger.channel}}"),
   text: template(2000).min(1),
+  // Tap buttons under the reply (decision 0118). A tap starts a run with {{trigger.choice}} set to the button's choice.
+  quickReplies: menuSchema.optional().describe("Buttons under the reply, up to 13. A tap sets {{trigger.choice}}."),
 });
 export type MetaReplyConfig = z.infer<typeof metaReplyConfigSchema>;
 // Saves what the guest told so far on the conversation (decision 0115), for the next message's run. A fixed list of short
@@ -482,6 +487,10 @@ export const definitionSchema = z
       const signed = def.trigger.type === "manual" || (def.trigger.type === "webhook" && def.trigger.config.hmacSecret !== undefined);
       if (s.config.action !== "create" && !signed) fail(`booking step "${s.id}" can reschedule or cancel only from a manual trigger or a webhook with a signing secret`);
     }
+
+    // A reply of "2" means the second choice, so every email menu of one workflow must number its choices the same way.
+    const emailMenus = def.steps.flatMap((s) => ((s.type === "email" || s.type === "outlook") && s.config.menu ? [s.config.menu.map((m) => m.choice).join(",")] : []));
+    if (new Set(emailMenus).size > 1) fail("every email menu in a workflow must list the same choices in the same order, so a reply's number means one thing");
 
     for (const s of def.steps) if (s.disabled && BRANCHES[s.type]) fail(`${s.type} step "${s.id}" branches, so it cannot be turned off`);
 

@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { workspaceLanguage, aiConnection, bookFromStep, bookingOfStep, bookingReference, centavosToPesos, createDue, dueForStep, DueTakenError, expireDue, findReviewer, pendingCheckout, pesosToCentavos, checkReceiptReference, checkRecipients, claimTimeout, claimUsage, createApproval, findPaymentForStep, findApprover, queueCalendarEvent, queueDelivery, readSecrets, redactSecrets, secretForms, sendAs, type Db, type MailDeps, type Provider } from "@daloy/db";
 import { deliveries, isPaused, PAST_WINDOW, prepareReply, providerUrls, runConversation, runs, saveConversationFields, windowOpen, type ProviderUrls } from "@daloy/db";
 import { and, eq } from "drizzle-orm";
-import { approvalEmailBody, checkDiscordContent, wouldDo, type FileRef, bookingStartField, conditionBranch, normalizePhMobile, parseZoned, SMS_MAX_CHARS, type TestChoice, type Trigger, declaresJson, parseInstant, isRetryable, mockAiOutput, parseJsonTemplate, resolveJsonTemplate, resolveTemplate, StepError, usesSecrets, type ExpressionContext, type Step } from "@daloy/engine";
+import { approvalEmailBody, checkDiscordContent, numberedMenu, type Menu, wouldDo, type FileRef, bookingStartField, conditionBranch, normalizePhMobile, parseZoned, SMS_MAX_CHARS, type TestChoice, type Trigger, declaresJson, parseInstant, isRetryable, mockAiOutput, parseJsonTemplate, resolveJsonTemplate, resolveTemplate, StepError, usesSecrets, type ExpressionContext, type Step } from "@daloy/engine";
 import type { StepExecutor, StepResult } from "../advance";
 import { runAi } from "./ai";
 import { browserService, browserStep, type BrowserInput, type BrowserService } from "./browser";
@@ -64,7 +64,7 @@ type SheetsInput = { columns: string[] };
 type SlackInput = { text: string; chatId?: string };
 type SmsInput = { to: string; message: string; senderId?: string };
 type CalendarInput = { title: string; description: string };
-type MetaReplyInput = { recipientId: string; channel?: string; text: string };
+type MetaReplyInput = { recipientId: string; channel?: string; text: string; quickReplies?: Menu };
 type RecordInput = { fields?: Record<string, string>; title?: string; name?: string; desc?: string };
 type DueInput = { reference: string; kind: "deposit" | "full" | "balance"; amount: string; total?: string; booking?: string; checkout: boolean; reviewer?: string; channel?: "sms" | "messenger"; to?: string; confirmedMessage?: string };
 
@@ -91,8 +91,11 @@ function resolveInput(step: Step, ctx: ExpressionContext): Record<string, unknow
     }
     case "email":
     case "outlook": {
-      const { to, subject, text: body } = step.config;
-      return { to: text(to, ctx), subject: text(subject, ctx), text: text(body, ctx) } satisfies EmailInput;
+      const { to, subject, text: body, menu } = step.config;
+      // The menu goes below the message as 1, 2, 3; email-in reads a reply of just a number back as that choice (decision 0118).
+      return { to: text(to, ctx), subject: text(subject, ctx), text: menu ? `${text(body, ctx)}
+
+${numberedMenu(menu)}` : text(body, ctx) } satisfies EmailInput;
     }
     case "ai":
       // Only input is a template; labels, fields and instructions are literals (decision 0010).
@@ -127,7 +130,7 @@ function resolveInput(step: Step, ctx: ExpressionContext): Record<string, unknow
       return { to: text(to, ctx), message: text(message, ctx), ...(senderId ? { senderId } : {}) } satisfies SmsInput;
     }
     case "meta_reply":
-      return { recipientId: text(step.config.recipientId, ctx), channel: text(step.config.channel, ctx), text: text(step.config.text, ctx) } satisfies MetaReplyInput;
+      return { recipientId: text(step.config.recipientId, ctx), channel: text(step.config.channel, ctx), text: text(step.config.text, ctx), ...(step.config.quickReplies ? { quickReplies: step.config.quickReplies } : {}) } satisfies MetaReplyInput;
     case "conversation_update":
       return { fields: Object.fromEntries(Object.entries(step.config.fields).map(([k, v]) => [k, text(v ?? "", ctx)])) };
     case "shopify_create_product": {
@@ -476,6 +479,7 @@ async function runStep(deps: FullDeps, step: Step, input: unknown, ctx: Expressi
             recipientId,
             ...(channel ? { channel } : {}),
             text: sent,
+            ...(cfg.quickReplies ? { quickReplies: cfg.quickReplies } : {}),
             ...(inboundTimestamp ? { inboundTimestamp } : {}),
             ...(receivingPageId ? { receivingPageId } : {}),
             ...(receivingInstagramAccountId ? { receivingInstagramAccountId } : {}),

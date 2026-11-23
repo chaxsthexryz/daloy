@@ -12,6 +12,7 @@ import {
   workflows,
   type Db,
 } from "@daloy/db";
+import { emailMenu, numberedChoice } from "@daloy/engine";
 import { and, eq, isNull, lte, or, sql } from "drizzle-orm";
 
 export const UID_CHANGED = EMAIL_UID_CHANGED;
@@ -192,7 +193,9 @@ export async function pollEmailSources({ db, secretsKey, adapter, enqueue, inter
           const convo = p.replyTo.trim()
             ? await recordInbound(tx, { userId: workflow.userId, channel: "email", externalId: p.replyTo.trim().toLowerCase(), mid: p.messageId ?? key, text: `${p.subject}\n\n${p.text}`, at: new Date(p.receivedAt) })
             : undefined;
-          const payload = convo ? { ...p, conversation: await conversationPayload(tx, convo) } : p;
+          // A reply of just a number picks that line of the workflow's email menu (decision 0118).
+          const choice = numberedChoice(p.text, emailMenu(version.definition));
+          const payload = { ...p, ...(choice ? { choice } : {}), ...(convo ? { conversation: await conversationPayload(tx, convo) } : {}) };
           // Paused (N11b): the message is skipped, and the checkpoint below still moves past it, so a resume does not replay a burst.
           const result = await createKeyedRun(tx, current.workflowId, version.id, payload, key, convo ? { conversationId: convo.id, conversationVersion: convo.version } : {}).catch((err: unknown) => {
             if (err instanceof WorkflowPausedError) return null;

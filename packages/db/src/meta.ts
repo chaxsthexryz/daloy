@@ -3,7 +3,7 @@ import { lookup as dnsLookup } from "node:dns/promises";
 import http, { type IncomingMessage } from "node:http";
 import https from "node:https";
 import { BlockList, isIP, type LookupFunction } from "node:net";
-import { FILE_MAX_BYTES, FILES_PER_FIELD, fileType, safeFileName } from "@daloy/engine";
+import { FILE_MAX_BYTES, FILES_PER_FIELD, fileType, isMenuChoice, safeFileName, type Menu, type MenuChoice } from "@daloy/engine";
 import { and, eq } from "drizzle-orm";
 import type { Db } from "./index";
 import { call, ProviderError, providerUrls, retryAfter, type ProviderUrls, type Reply } from "./providers";
@@ -31,6 +31,10 @@ export type MetaIncomingMessage = {
   text: string;
   timestamp: string;
   imageUrls: string[];
+  /** A menu tap (decision 0118): the button's payload, kept only when it is one of the fixed choices. */
+  choice?: MenuChoice;
+  /** A postback has no text of its own, so it is dropped wherever its choice is not accepted. */
+  postback?: true;
 };
 
 export class MetaImageError extends Error {
@@ -84,6 +88,8 @@ export function verifyMetaSignature(rawBody: Buffer | string, header: string | u
 /**
  * Extracts incoming Messenger (object = "page") and Instagram (object = "instagram") DM events matching the connected
  * Page ID or Instagram Business Account ID. Ignores echoes, delivery/read receipts, and unlinked accounts.
+ * A quick-reply tap keeps its text and gains a choice when its payload is one of the fixed choices; a postback is kept
+ * only then, with its button title as the text (decision 0118).
  */
 export function parseMetaWebhook(body: unknown, dest: Partial<MetaDestination> | null | undefined): MetaIncomingMessage[] {
   if (!body || typeof body !== "object" || !dest) return [];
@@ -117,8 +123,20 @@ export function parseMetaWebhook(body: unknown, dest: Partial<MetaDestination> |
           text?: unknown;
           is_echo?: unknown;
           attachments?: unknown;
+          quick_reply?: { payload?: unknown };
         };
+        postback?: { mid?: unknown; title?: unknown; payload?: unknown };
       };
+      const ts = typeof ev.timestamp === "number" && Number.isFinite(ev.timestamp) ? new Date(ev.timestamp).toISOString() : new Date().toISOString();
+      if (ev.postback && typeof ev.postback === "object") {
+        const pb = ev.postback;
+        const senderId = ev.sender?.id !== undefined && ev.sender?.id !== null ? String(ev.sender.id).trim() : "";
+        const mid = typeof pb.mid === "string" ? pb.mid.trim() : "";
+        // Without a mid there is nothing to deduplicate a replay by, so the tap is dropped.
+        if (!mid || !senderId || senderId === expectedId || senderId === dest.pageId || senderId === dest.instagramAccountId || !isMenuChoice(pb.payload)) continue;
+        out.push({ channel, senderId, messageId: mid, text: typeof pb.title === "string" ? pb.title.slice(0, 100) : "", timestamp: ts, imageUrls: [], choice: pb.payload, postback: true });
+        continue;
+      }
       if (!ev.message || typeof ev.message !== "object") continue;
       if (ev.message.is_echo === true) continue;
       const mid = typeof ev.message.mid === "string" ? ev.message.mid.trim() : "";
@@ -137,8 +155,8 @@ export function parseMetaWebhook(body: unknown, dest: Partial<MetaDestination> |
           }
         }
       }
-      const ts = typeof ev.timestamp === "number" && Number.isFinite(ev.timestamp) ? new Date(ev.timestamp).toISOString() : new Date().toISOString();
-      out.push({ channel, senderId, messageId: mid, text, timestamp: ts, imageUrls });
+      const payload = ev.message.quick_reply?.payload;
+      out.push({ channel, senderId, messageId: mid, text, timestamp: ts, imageUrls, ...(isMenuChoice(payload) ? { choice: payload } : {}) });
     }
   }
   return out;
@@ -452,7 +470,7 @@ export async function metaIdentity(urls: ProviderUrls = providerUrls(), pageAcce
 export async function metaSend(
   urls: ProviderUrls = providerUrls(),
   pageAccessToken: string,
-  msg: { recipientId: string; channel?: string; text: string },
+  msg: { recipientId: string; channel?: string; text: string; quickReplies?: Menu },
 ): Promise<{ recipientId: string; messageId: string }> {
   const base = urls.meta ?? "https://graph.facebook.com";
   const res = await call(
@@ -464,7 +482,12 @@ export async function metaSend(
         recipient: { id: msg.recipientId },
         messaging_type: "RESPONSE",
         // Comes back on the echo, so Daloy knows its own reply from a staff reply (decision 0115).
-        message: { text: msg.text, metadata: OWN_ECHO_METADATA },
+        message: {
+          text: msg.text,
+          metadata: OWN_ECHO_METADATA,
+          // The payload is the choice id, which comes back on the tap (decision 0118).
+          ...(msg.quickReplies?.length ? { quick_replies: msg.quickReplies.map((q) => ({ content_type: "text", title: q.title, payload: q.choice })) } : {}),
+        },
       }),
     },
     urls.timeoutMs ?? 10_000,

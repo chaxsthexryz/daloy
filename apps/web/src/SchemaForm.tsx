@@ -17,6 +17,7 @@ export type JsonSchema = {
   minimum?: number;
   maximum?: number;
   description?: string;
+  items?: JsonSchema;
 };
 type Obj = Record<string, unknown>;
 
@@ -27,7 +28,8 @@ const label = (key: string, schema?: JsonSchema) =>
 export function SchemaForm({ schema, value, onChange }: { schema: JsonSchema; value: Obj; onChange: (v: Obj) => void }) {
   return (
     <>
-      {Object.entries(schema.properties ?? {}).map(([key, s]) => (
+      {/* A list of objects (a menu's buttons) has no form yet; it is kept as saved, since onChange copies the whole value. */}
+      {Object.entries(schema.properties ?? {}).filter(([, s]) => !(s.type === "array" && s.items?.type === "object")).map(([key, s]) => (
         <Field
           key={key}
           name={key}

@@ -13,12 +13,14 @@ export type DraftResult = { ok: true; name: string; summary: string; definition:
 
 const example = TEMPLATES[0]!;
 
-// "files" is the owner's consent to let the model read a form file, so Build with AI never hears of it.
-const withoutFiles = (schema: unknown) => {
+// "files" is the owner's consent to let the model read a form file, so Build with AI never hears of it. Menus (decision
+// 0118) come from templates, and leaving them out keeps the prompt inside a local model's default context.
+const without = (schema: unknown, key: string) => {
   const properties = { ...(schema as { properties: Record<string, unknown> }).properties };
-  delete properties.files;
+  delete properties[key];
   return { ...(schema as object), properties };
 };
+const LEFT_OUT: Record<string, string> = { ai: "files", email: "menu", outlook: "menu", meta_reply: "quickReplies" };
 
 /**
  * The part of the prompt that describes a definition: trigger, steps, edges and the rules a draft has to follow.
@@ -34,7 +36,7 @@ const spec = (full: boolean) => [
   'A number field can set "min", "max" and "integer": true, e.g. {"name":"amount","label":"Amount","type":"number","required":true,"min":0.01}. Put limits on the field instead of adding condition steps that check them; a submission outside the limits is refused before the workflow runs. A webhook trigger can list "fields" the same way to check incoming events, and set "eventKey" (such as "{{trigger.event_id}}") so a repeated event starts no second run.',
   'A condition comparing with gt, gte, lt or lte takes its "invalid" branch when a side is missing or not a number. Give it an "invalid" edge when bad data needs its own handling (such as manual review); without one, the run fails with a message.',
   'steps is a list of {"id","type","config"}. ids use a-z, 0-9 and _. The config of each step type follows this JSON Schema:',
-  JSON.stringify(Object.fromEntries(Object.entries(stepJsonSchemas()).filter(([type]) => full || !HOSTED_ONLY.includes(type)).map(([type, schema]) => [type, type === "ai" ? withoutFiles(schema) : schema]))),
+  JSON.stringify(Object.fromEntries(Object.entries(stepJsonSchemas()).filter(([type]) => full || !HOSTED_ONLY.includes(type)).map(([type, schema]) => [type, LEFT_OUT[type] ? without(schema, LEFT_OUT[type]) : schema]))),
   'edges is a list of {"from","to"} and, from a branching step, "on": ' +
     Object.entries(BRANCHES)
       .map(([type, labels]) => `${type} has ${labels!.map((l) => `"${l}"`).join(", ")}`)

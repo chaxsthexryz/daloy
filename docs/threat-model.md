@@ -345,6 +345,13 @@ The list of apps sharing a Google sign-in joins OAuth grants by Google account I
 - Sending outside Meta's window or after a staff takeover: `meta_reply` checks `last_inbound_at` and the staff status before queuing and takes `outside_window` or `paused`; the delivery checks the window again before sending.
 - Notice: the first reply says the bot is automated, what is kept, for how long, and that messages go to the AI provider. Remaining gap: no link to the resort's own privacy notice yet.
 
+## Menu buttons (C2, decision 0118)
+
+- A forged tap: quick replies and postbacks go through the same `X-Hub-Signature-256` check as messages, so an unsigned or wrongly signed postback is refused with 401 before anything is read.
+- A payload chosen by someone other than the Page: anyone can send the Page an event with any payload. Only the fixed choice ids are kept, and only for a workflow whose published menu offers that choice. Anything else is dropped (a postback whole, a quick reply down to its text), so `{{trigger.choice}}` is always a known word and a payload can never carry a template, a step id or a link.
+- A replayed tap: the tap's `mid` keys the run in `run_keys` and the conversation message, so a replay starts nothing. A postback without a `mid` is dropped.
+- Email numbers: a reply's number only picks from the workflow's own email menu; a number outside it, or a line with more than a number, sets nothing.
+
 ## Daily tools (R5, decision 0093)
 
 Assets: the owner's inbox, confirmed payment records, customers' receipt photos.

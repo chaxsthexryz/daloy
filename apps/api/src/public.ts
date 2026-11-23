@@ -1,7 +1,7 @@
 import { publicCopy } from "./public-copy";
 import { createHmac, randomInt, randomUUID, timingSafeEqual } from "node:crypto";
 import { downloadTelegramFile, parseTelegramUpdate, ProviderError, telegramWebhookSecret, conversationPayload, parseMetaEchoes, recordEcho, recordInbound, normalizeShopDomain, parseShopifyCredential, parseShopifyOrder, verifyShopifyHmac, assertNotPaused, busyBetween, claimUsage, constantTimeEqual, downloadMetaImage, keyedRun, MetaImageError, MetaTransientImageError, parseMetaCredential, parseMetaWebhook, QuotaError, readBrand, saveUploads, usageSummary, verifyMetaSignature, workspaceLanguage, businessProfiles, connectionCredential, connections, createKeyedRun, createRun, eventSeen, finishEvent, keptEvent, markPaymentPaid, markPaymentRefunded, centavosToPesos, paymongoMode, readSecret, recordEvent, requests, runs, settleCheckout, triggers, verifyPaymongoSignature, WorkflowPausedError, workflows, workflowVersions, type Db, type NewUpload, type Payment } from "@daloy/db";
-import { definitionSchema, FILE_MAX_BYTES, FILES_PER_FIELD, FILES_PER_SUBMISSION, fileType, OFFICE_REQUEST, parsePayload, PURCHASE_REQUEST, safeFileName, type FileRef, type FormField, type Resource } from "@daloy/engine";
+import { definitionSchema, workflowChoices, FILE_MAX_BYTES, FILES_PER_FIELD, FILES_PER_SUBMISSION, fileType, OFFICE_REQUEST, parsePayload, PURCHASE_REQUEST, safeFileName, type FileRef, type FormField, type Resource } from "@daloy/engine";
 import {
   BadRequestException,
   Body,
@@ -325,6 +325,8 @@ export class MetaHooksController {
         const channel = cfg.channel ?? "both";
         if (channel !== "both" && channel !== ev.channel) return false;
         if (cfg.requireImage && ev.imageUrls.length === 0) return false;
+        // A postback is only a tap, so it starts nothing where the workflow's menu does not offer its choice (decision 0118).
+        if (ev.postback && !workflowChoices(l.version.definition).includes(ev.choice!)) return false;
         return true;
       });
       if (matching.length === 0) continue;
@@ -375,6 +377,7 @@ export class MetaHooksController {
             text: ev.text,
             timestamp: ev.timestamp,
             image: imageRefs,
+            ...(ev.choice && workflowChoices(l.version.definition).includes(ev.choice) ? { choice: ev.choice } : {}),
             conversation,
             ...(found.conn.destination?.pageId ? { pageId: found.conn.destination.pageId } : {}),
             ...(found.conn.destination?.instagramAccountId ? { instagramAccountId: found.conn.destination.instagramAccountId } : {}),
