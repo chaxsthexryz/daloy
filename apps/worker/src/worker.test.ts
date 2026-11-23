@@ -401,16 +401,18 @@ describe("schedule guard (plan minimum interval)", () => {
 });
 
 describe("booking versions (decision 0032)", () => {
-  async function linkedRun(definition: object) {
-    const runId = await createRun(definition);
+  async function linkedRun(definition: object, beforeRelease?: (runId: string) => Promise<void>) {
+    const runId = await createRun(definition, {}, { leaseOwner: "setup", leaseExpiresAt: new Date(Date.now() + 60_000) });
     const [owner] = await db.select({ userId: workflows.userId }).from(runs).innerJoin(workflowVersions, eq(workflowVersions.id, runs.workflowVersionId)).innerJoin(workflows, eq(workflows.id, workflowVersions.workflowId)).where(eq(runs.id, runId));
     const [res] = await db.insert(resources).values({ userId: owner!.userId, name: "Ana" }).returning();
     const [b] = await db
       .insert(bookings)
       .values({ userId: owner!.userId, test: false, reference: `BK-${String(++seq).padStart(6, "0")}`, resourceId: res!.id, during: sql`tstzrange(now() + interval '1 day', now() + interval '25 hours')` as unknown as string, timezone: "UTC", runId })
       .returning();
-    await db.update(runs).set({ bookingId: b!.id, bookingVersion: 1 }).where(eq(runs.id, runId));
     bookingOf.set(runId, b!.id);
+    await db.update(runs).set({ bookingId: b!.id, bookingVersion: 1 }).where(eq(runs.id, runId));
+    if (beforeRelease) await beforeRelease(runId);
+    await db.update(runs).set({ leaseOwner: null, leaseExpiresAt: null }).where(eq(runs.id, runId));
     return runId;
   }
   const stopped = (step: string) => `The booking was rescheduled or cancelled, so this run stopped before step ${step}.`;
@@ -447,10 +449,11 @@ describe("booking versions (decision 0032)", () => {
   });
 
   it("lets a run whose own booking step moved the link carry on", async () => {
-    const runId = await linkedRun(flow({ id: "own_change" }, { id: "remind" }));
-    // As the booking step does: the change and the run's link move together.
-    await db.update(runs).set({ bookingVersion: 2 }).where(eq(runs.id, runId));
-    await changeBooking(runId);
+    const runId = await linkedRun(flow({ id: "own_change" }, { id: "remind" }), async (id) => {
+      // As the booking step does: the change and the run's link move together.
+      await db.update(runs).set({ bookingVersion: 2 }).where(eq(runs.id, id));
+      await changeBooking(id);
+    });
     await worker.enqueue(runId);
     expect((await waitForEnd(runId)).state).toBe("succeeded");
   });
