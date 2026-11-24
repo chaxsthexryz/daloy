@@ -19,7 +19,7 @@ export function nextPaths(draft: Draft, id: string): { on?: string; steps: Step[
 
 const EMAIL_FIELDS = ["from", "subject", "text"];
 const META_DM_FIELDS = ["channel", "senderId", "messageId", "text", "timestamp"];
-const TELEGRAM_FIELDS = ["text", "chatId", "fromName", "username", "date", "fileRefused"];
+const TELEGRAM_FIELDS = ["text", "chatId", "fromName", "username", "date", "fileRefused", "conversation.history"];
 const SHOPIFY_ORDER_FIELDS = ["order_number", "order_id", "customer_name", "customer_email", "customer_phone", "total", "currency", "item_count", "items", "financial_status", "created_at", "shop"];
 // G2 (decision 0127). A sheet row's header cells are {{trigger.cells.<header>}}, which depend on the sheet.
 const GOOGLE_TRIGGER_FIELDS: Record<string, string[]> = {
@@ -70,7 +70,7 @@ export function insertables(draft: Draft, id: string): string[] {
   const before = upstreamIds(draft, id);
   const outputs = draft.steps
     .filter((s) => before.has(s.id))
-    .flatMap((s) => (s.type === "ai" ? Object.keys(mockAiOutput(s.config)).map((k) => `steps.${s.id}.output.${k}`) : s.type === "booking" ? ["reference", "start", "end", "nights", "checkIn", "checkOut", "timezone"].map((k) => `steps.${s.id}.output.${k}`) : s.type === "stay_quote" ? ["title", "checkIn", "guests", "subtotal", "extraGuests", "extraGuestFee", "total", "deposit", "knowledgeVersion"].map((k) => `steps.${s.id}.output.${k}`) : s.type === "read_page" ? ["title", "text", "value", "previous", "changed"].map((k) => `steps.${s.id}.output.${k}`) : s.type === "google_docs" ? ["url", "documentId", "name"].map((k) => `steps.${s.id}.output.${k}`) : s.type === "call_workflow" ? ["runId", "workflowId", "workflowSlug", "duplicate"].map((k) => `steps.${s.id}.output.${k}`) : s.type === "browser" ? [...s.config.actions.flatMap((a) => (a.action === "extract" ? [a.name] : [])), "url"].map((k) => `steps.${s.id}.output.${k}`) : [`steps.${s.id}.output`]));
+    .flatMap((s) => (s.type === "ai" ? Object.keys(mockAiOutput(s.config)).map((k) => `steps.${s.id}.output.${k}`) : s.type === "booking" ? ["reference", "start", "end", "nights", "checkIn", "checkOut", "timezone"].map((k) => `steps.${s.id}.output.${k}`) : s.type === "stay_quote" ? ["title", "checkIn", "guests", "subtotal", "extraGuests", "extraGuestFee", "total", "deposit", "knowledgeVersion"].map((k) => `steps.${s.id}.output.${k}`) : s.type === "read_page" ? ["title", "text", "value", "previous", "changed"].map((k) => `steps.${s.id}.output.${k}`) : s.type === "google_docs" ? ["url", "documentId", "name"].map((k) => `steps.${s.id}.output.${k}`) : s.type === "call_workflow" ? ["runId", "workflowId", "workflowSlug", "duplicate"].map((k) => `steps.${s.id}.output.${k}`) : s.type === "assistant_read" ? ["date", "timezone", "what", "summaryText", "calendar.events", "bookings.items", "payments.items", "runs"].map((k) => `steps.${s.id}.output.${k}`) : s.type === "browser" ? [...s.config.actions.flatMap((a) => (a.action === "extract" ? [a.name] : [])), "url"].map((k) => `steps.${s.id}.output.${k}`) : [`steps.${s.id}.output`]));
   return [...fields.map((f) => `trigger.${f}`), ...outputs].map((r) => `{{${r}}}`);
 }
 

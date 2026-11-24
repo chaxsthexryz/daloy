@@ -182,6 +182,27 @@ export const stayQuoteConfigSchema = z.object({
   nights: template(20).min(1).describe("Number of nights, 1 to 30."),
   guests: template(20).min(1).describe("Number of guests."),
 });
+// J1 (decision 0135): strictly read-only workspace summary for the owner's assistant.
+export const ASSISTANT_READ_SCOPES = ["all", "calendar", "bookings", "payments", "runs"] as const;
+export type AssistantReadScope = (typeof ASSISTANT_READ_SCOPES)[number];
+export const assistantReadConfigSchema = z
+  .object({
+    what: template(100)
+      .min(1)
+      .default("all")
+      .describe("What to read for today: all, calendar, bookings, payments or runs (or a template such as {{steps.pick_intent.output.label}})."),
+    timezone: z.string().max(64).optional().describe("IANA timezone for today's dates (defaults to Asia/Manila)."),
+  })
+  .strict()
+  .superRefine((c, ctx) => {
+    if (c.timezone !== undefined && !isTimeZone(c.timezone)) {
+      ctx.addIssue({ code: "custom", path: ["timezone"], message: "use an IANA timezone name such as Asia/Manila" });
+    }
+    if (!c.what.includes("{{") && !(ASSISTANT_READ_SCOPES as readonly string[]).includes(c.what.trim().toLowerCase())) {
+      ctx.addIssue({ code: "custom", path: ["what"], message: "what must be all, calendar, bookings, payments, runs or a {{...}} template" });
+    }
+  });
+export type AssistantReadConfig = z.infer<typeof assistantReadConfigSchema>;
 // Shopify products (decision 0105), queued as deliveries. Every field is a template, read as text when the step runs: price like "499.50" in the
 // store's currency, imageUrl an https link Shopify downloads from. A new product starts as a
 // draft, so nothing goes on sale by surprise. Blank after filling in means "leave as is" for an update.
@@ -320,6 +341,7 @@ const stepSchema = z.discriminatedUnion("type", [
   z.object({ id: stepId, disabled, note, type: z.literal("meta_reply"), config: metaReplyConfigSchema }),
   z.object({ id: stepId, disabled, note, type: z.literal("conversation_update"), config: conversationUpdateConfigSchema }),
   z.object({ id: stepId, disabled, note, type: z.literal("stay_quote"), config: stayQuoteConfigSchema }),
+  z.object({ id: stepId, disabled, note, type: z.literal("assistant_read"), config: assistantReadConfigSchema }),
   z.object({ id: stepId, disabled, note, type: z.literal("discord"), config: discordConfigSchema }),
   z.object({ id: stepId, disabled, note, type: z.literal("google_docs"), config: googleDocsConfigSchema }),
   z.object({ id: stepId, disabled, note, type: z.literal("read_page"), config: readPageConfigSchema }),

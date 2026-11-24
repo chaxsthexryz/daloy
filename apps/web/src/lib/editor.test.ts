@@ -242,5 +242,18 @@ describe("openExits", () => {
       "{{steps.sub.output.workflowSlug}}",
       "{{steps.sub.output.duplicate}}",
     ]);
+
+    const assistantDraft: Draft = {
+      trigger: { type: "telegram_message", config: { from: "anyone", requireFile: false } },
+      steps: [
+        { id: "read_data", type: "assistant_read", config: { what: "all", timezone: "Asia/Manila" } },
+        { id: "reply", type: "telegram", config: { chatId: "{{trigger.chatId}}", text: "{{steps.read_data.output.summaryText}}" } },
+      ],
+      edges: [{ from: "read_data", to: "reply" }],
+    };
+    const vars = insertables(assistantDraft, "reply");
+    expect(vars).toContain("{{trigger.conversation.history}}");
+    expect(vars).toContain("{{steps.read_data.output.summaryText}}");
+    expect(vars).toContain("{{steps.read_data.output.calendar.events}}");
   });
 });

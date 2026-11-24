@@ -166,7 +166,7 @@ export class ConversationsController {
       ...(body.guests !== undefined ? { guests: String(body.guests) } : detail.fields.guests ? { guests: detail.fields.guests } : {}),
       conversation_id: detail.id,
       channel: detail.channel,
-      senderId: detail.channel === "email" ? "" : detail.externalId,
+      senderId: detail.channel === "messenger" || detail.channel === "instagram" ? detail.externalId : "",
       conversation: convoSummary,
     };
 

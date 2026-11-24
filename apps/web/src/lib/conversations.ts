@@ -1,6 +1,6 @@
 export type ConversationSummary = {
   id: string;
-  channel: "messenger" | "instagram" | "email";
+  channel: "messenger" | "instagram" | "email" | "telegram";
   externalId: string;
   status: "bot" | "staff" | "closed";
   paused: boolean;
@@ -35,6 +35,7 @@ export function guestDisplayName(c: Pick<ConversationSummary, "fields" | "channe
 export function channelLabel(channel: ConversationSummary["channel"]): string {
   if (channel === "messenger") return "Messenger";
   if (channel === "instagram") return "Instagram";
+  if (channel === "telegram") return "Telegram";
   return "Email";
 }
 

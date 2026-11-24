@@ -612,3 +612,41 @@ describe("Google triggers", () => {
     expect(definitionSchema.safeParse({ trigger: { type: "drive_file", config: { folderId: "x" } }, steps: [s], edges: [] }).success).toBe(false);
   });
 });
+
+describe("assistant_read step (J1)", () => {
+  it("defaults what to all (the worker reads in Asia/Manila unless a timezone is set), and accepts each read scope", () => {
+    const def = definitionSchema.parse({
+      trigger: { type: "telegram_message" },
+      steps: [{ id: "read_data", type: "assistant_read", config: {} }],
+      edges: [],
+    });
+    expect(def.steps[0]?.config).toEqual({ what: "all" });
+
+    for (const what of ["all", "calendar", "bookings", "payments", "runs"] as const) {
+      const parsed = definitionSchema.parse({
+        trigger: { type: "telegram_message" },
+        steps: [{ id: "read_data", type: "assistant_read", config: { what, timezone: "UTC" } }],
+        edges: [],
+      });
+      expect(parsed.steps[0]?.config).toEqual({ what, timezone: "UTC" });
+    }
+  });
+
+  it("rejects invalid scopes, non-IANA timezones, and extra keys", () => {
+    expect(definitionSchema.safeParse({
+      trigger: { type: "telegram_message" },
+      steps: [{ id: "read_data", type: "assistant_read", config: { what: "secrets" } }],
+      edges: [],
+    }).success).toBe(false);
+    expect(definitionSchema.safeParse({
+      trigger: { type: "telegram_message" },
+      steps: [{ id: "read_data", type: "assistant_read", config: { timezone: "+08:00" } }],
+      edges: [],
+    }).success).toBe(false);
+    expect(definitionSchema.safeParse({
+      trigger: { type: "telegram_message" },
+      steps: [{ id: "read_data", type: "assistant_read", config: { what: "all", userId: "other" } }],
+      edges: [],
+    }).success).toBe(false);
+  });
+});

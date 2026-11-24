@@ -7,6 +7,7 @@ import * as schema from "./schema";
 export * from "./admin";
 export * from "./ai-settings";
 export * from "./approvals";
+export * from "./assistant";
 export * from "./brand";
 export * from "./bookings";
 export * from "./payment-review";

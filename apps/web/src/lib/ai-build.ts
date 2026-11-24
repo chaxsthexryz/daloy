@@ -108,6 +108,8 @@ function sentence(step: WorkflowDefinition["steps"][number], language: Language)
       return t("Open {host} in kymavo's browser", { host: /^(?:[a-z]+:\/\/)?([^/?#]+)/i.exec(text(c.url, ""))?.[1] ?? t("a web page") });
     case "call_workflow":
       return t("Run automation {slug}", { slug: text(c.workflowSlug, t("another automation")) });
+    case "assistant_read":
+      return t("Read today's summary");
     default:
       return t("Do something");
   }

@@ -55,4 +55,7 @@ export const TAGLISH: Record<string, Record<string, Message>> = {
     send_pre_arrival: { subject: "Ready na para sa stay mo ({{steps.book_stay.output.reference}})", text: "Hi {{trigger.name}},\n\nSee you sa {{steps.quote.output.title}} on {{steps.book_stay.output.checkIn}} (check-out {{steps.book_stay.output.checkOut}}, reference {{steps.book_stay.output.reference}}).\nReply ka lang dito o sa Messenger kung kailangan mo ng directions or arrival help." },
     send_review: { subject: "Thank you sa pag-stay sa amin ({{steps.book_stay.output.reference}})", text: "Hi {{trigger.name}},\n\nThank you sa pag-stay sa amin! Welcome ang honest feedback ng lahat ng guests sa Google profile at Facebook page namin. Reply ka lang dito kung may notes ka para sa team." },
   },
+  "telegram-assistant": {
+    reply: { text: "kymavo assistant update:\n{{steps.write_answer.output.draft}}" },
+  },
 };

@@ -7,7 +7,7 @@ import { templatesForLanguage } from "./template-language";
 import { TEMPLATES, TEMPLATE_CATEGORIES } from "./templates";
 import { websiteInquiryDefinition } from "./website-inquiry";
 
-const SLUGS = ["inquiry-triage", "invoice-follow-up", "no-show-follow-up", "appointment-reminder", "request-to-sheets", "lead-to-booking", "order-to-sheets", "order-paid", "invoice-paymongo", "quote-deposit", "renewal-reminders", "store-orders", "shopify-orders", "receipt-expense", "meta-receipt-intake", "telegram-gcash-receipts", "booking-deposit-review", "order-gcash-checkout", "resort-concierge-dm", "resort-concierge-email", "resort-deposit-and-stay"];
+const SLUGS = ["inquiry-triage", "invoice-follow-up", "no-show-follow-up", "appointment-reminder", "request-to-sheets", "lead-to-booking", "order-to-sheets", "order-paid", "invoice-paymongo", "quote-deposit", "renewal-reminders", "store-orders", "shopify-orders", "receipt-expense", "meta-receipt-intake", "telegram-gcash-receipts", "booking-deposit-review", "order-gcash-checkout", "resort-concierge-dm", "resort-concierge-email", "resort-deposit-and-stay", "telegram-assistant"];
 const parse = (slug: string) => definitionSchema.parse(TEMPLATES.find((t) => t.slug === slug)!.definition);
 
 describe("starter templates", () => {
@@ -223,5 +223,15 @@ describe("starter templates", () => {
     expect(def.edges).toContainEqual({ from: "release_stay", to: "tell_released", on: "expired" });
     expect(def.steps.find((s) => s.id === "wait_pre_arrival")).toMatchObject({ type: "delay", config: { until: "{{steps.book_stay.output.start}}", offsetSeconds: -172_800 } });
     expect(def.steps.find((s) => s.id === "wait_post_checkout")).toMatchObject({ type: "delay", config: { until: "{{steps.book_stay.output.end}}", offsetSeconds: 86_400 } });
+  });
+
+  it("telegram-assistant is read-only, classifies intent, reads workspace summary, drafts answer, and replies to the sender chat", () => {
+    const def = parse("telegram-assistant");
+    expect(def.trigger).toEqual({ type: "telegram_message", config: { from: "my_chat", requireFile: false } });
+    expect(def.steps.map((s) => s.type)).toEqual(["ai", "assistant_read", "ai", "telegram"]);
+    expect(def.steps.find((s) => s.id === "pick_intent")).toMatchObject({ type: "ai", config: { task: "classify" } });
+    expect(def.steps.find((s) => s.id === "read_data")).toMatchObject({ type: "assistant_read", config: { what: "{{steps.pick_intent.output.label}}" } });
+    expect(def.steps.find((s) => s.id === "reply")).toMatchObject({ type: "telegram", config: { chatId: "{{trigger.chatId}}" } });
+    expect(JSON.stringify(def)).not.toMatch(/[\u2013\u2014]/);
   });
 });

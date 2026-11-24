@@ -562,29 +562,43 @@ export class TelegramHooksController {
       }
     }
 
-    const payload = { chatId: msg.chatId, chatType: msg.chatType, fromId: msg.fromId, fromName: msg.fromName, username: msg.username, messageId: msg.messageId, updateId: msg.updateId, date: msg.date, text: msg.text, fileRefused: msg.fileRefused || (msg.file !== null && file === null) };
-    let started = 0;
-    for (const l of pending) {
-      if (l.requireFile && !file) continue;
-      const runFiles: NewUpload[] = file ? [{ id: randomUUID(), field: "file", name: file.name, type: file.type, data: file.data }] : [];
-      const refs: FileRef[] = runFiles.map((f) => ({ id: f.id, name: f.name, type: f.type, size: f.data.length }));
-      const options = runFiles.length > 0 ? { uploads: { userId: owner.userId, files: runFiles, claimKey: `telegram-upload:${l.workflowId}:${key}` } } : {};
-      const start = (p: object, o: Parameters<typeof createKeyedRun>[5]) =>
-        createKeyedRun(this.db, l.workflowId, l.version.id, p, key, o).catch((err: unknown) => {
-          if (err instanceof WorkflowPausedError) return null;
+    const eligible = pending.filter((l) => !l.requireFile || file !== null);
+    if (eligible.length === 0) return { ok: true, started: 0 };
+
+    const started = await this.db.transaction(async (tx) => {
+      const convo = await recordInbound(tx, {
+        userId: owner.userId,
+        channel: "telegram",
+        externalId: msg.chatId,
+        mid: key,
+        text: msg.text,
+        at: new Date(msg.date),
+      });
+      if (convo.replayed) return [];
+      const conversation = await conversationPayload(tx, convo);
+      const linked = { conversationId: convo.id, conversationVersion: convo.version };
+      const payload = { chatId: msg.chatId, chatType: msg.chatType, fromId: msg.fromId, fromName: msg.fromName, username: msg.username, messageId: msg.messageId, updateId: msg.updateId, date: msg.date, text: msg.text, fileRefused: msg.fileRefused || (msg.file !== null && file === null), conversation };
+      const ids: string[] = [];
+      for (const l of eligible) {
+        const runFiles: NewUpload[] = file ? [{ id: randomUUID(), field: "file", name: file.name, type: file.type, data: file.data }] : [];
+        const refs: FileRef[] = runFiles.map((f) => ({ id: f.id, name: f.name, type: f.type, size: f.data.length }));
+        const options = runFiles.length > 0 ? { ...linked, uploads: { userId: owner.userId, files: runFiles, claimKey: `telegram-upload:${l.workflowId}:${key}` } } : linked;
+        const start = (p: object, o: Parameters<typeof createKeyedRun>[5]) =>
+          createKeyedRun(tx, l.workflowId, l.version.id, p, key, o).catch((err: unknown) => {
+            if (err instanceof WorkflowPausedError) return null;
+            throw err;
+          });
+        const run = await start({ ...payload, file: refs }, options).catch((err: unknown) => {
+          // Out of upload space: a listener that needs the file does not start, the others start without it.
+          if (err instanceof QuotaError) return l.requireFile ? null : start({ ...payload, file: [], fileRefused: true }, linked);
           throw err;
         });
-      const run = await start({ ...payload, file: refs }, options).catch((err: unknown) => {
-        // Out of upload space: a listener that needs the file does not start, the others start without it.
-        if (err instanceof QuotaError) return l.requireFile ? null : start({ ...payload, file: [], fileRefused: true }, {});
-        throw err;
-      });
-      if (run && !run.duplicate) {
-        await enqueueRun(this.boss, run.runId);
-        started++;
+        if (run && !run.duplicate) ids.push(run.runId);
       }
-    }
-    return { ok: true, started };
+      return ids;
+    });
+    for (const runId of started) await enqueueRun(this.boss, runId);
+    return { ok: true, started: started.length };
   }
 }
 

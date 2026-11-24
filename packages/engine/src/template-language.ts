@@ -148,6 +148,9 @@ export function localizeGeneratedDefinition(definition: WorkflowDefinition, lang
       send_pre_arrival: { subject: "Paghahanda para sa stay mo ({{steps.book_stay.output.reference}})", text: "Hi {{trigger.name}},\n\nExcited na kaming tanggapin ka sa {{steps.quote.output.title}} sa {{steps.book_stay.output.checkIn}} (check-out {{steps.book_stay.output.checkOut}}, reference {{steps.book_stay.output.reference}}).\nSumagot sa email na ito o mag-message sa Messenger kung kailangan mo ng direksyon o tulong sa pagdating." },
       send_review: { subject: "Salamat sa pag-stay sa amin ({{steps.book_stay.output.reference}})", text: "Hi {{trigger.name}},\n\nSalamat sa pag-stay sa amin! Bukas kami sa tapat na feedback mula sa bawat guest sa aming Google profile at Facebook page. Sumagot lang dito kung may mensahe ka para sa aming team." },
     },
+    "telegram-assistant": {
+      reply: { text: "Sagot ng kymavo assistant:\n{{steps.write_answer.output.draft}}" },
+    },
   };
   if (result.trigger.type === "form") {
     result.trigger.config.fields = result.trigger.config.fields.map((f) => ({ ...f, label: LABELS[f.label] ?? f.label }));

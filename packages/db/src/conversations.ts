@@ -12,7 +12,7 @@ import { bookings, businessProfiles, connections, conversationMessages, conversa
 type AnyDb = NodePgDatabase<Record<string, unknown>>;
 type Reader = Pick<AnyDb, "select">;
 
-export type ConversationChannel = "messenger" | "instagram" | "email";
+export type ConversationChannel = "messenger" | "instagram" | "email" | "telegram";
 export type Conversation = typeof conversations.$inferSelect;
 
 /** Meta's standard messaging window: a reply may go out up to 24 hours after the guest's last message. */
@@ -143,6 +143,17 @@ export async function recordOutboundEmail(
     .insert(conversationMessages)
     .values({ conversationId: o.conversationId, direction: "out", text: cap(o.text).trim(), mid, emailReferences, runId: o.runId })
     .onConflictDoNothing();
+  await db.update(conversations).set({ lastOutboundAt: sql`now()` }).where(eq(conversations.id, o.conversationId));
+}
+
+/** Records an outbound reply (e.g. Telegram) in conversation history without adding the booking privacy notice (J1, decision 0135). */
+export async function recordOutboundReply(
+  db: Pick<AnyDb, "insert" | "update">,
+  o: { conversationId: string; runId: string; text: string },
+): Promise<void> {
+  await db
+    .insert(conversationMessages)
+    .values({ conversationId: o.conversationId, direction: "out", text: cap(o.text).trim(), runId: o.runId });
   await db.update(conversations).set({ lastOutboundAt: sql`now()` }).where(eq(conversations.id, o.conversationId));
 }
 
@@ -544,7 +555,7 @@ export async function sendStaffAlert(
     c.fields.check_in ? cleanAlertText(c.fields.check_out ? `${c.fields.check_in} to ${c.fields.check_out}` : c.fields.check_in, 45) : "",
     c.fields.guests ? cleanAlertText(`${c.fields.guests} guests`, 30) : "",
   ].filter(Boolean);
-  const channelLabel = c.channel === "messenger" ? "Messenger" : c.channel === "instagram" ? "Instagram" : "Email";
+  const channelLabel = c.channel === "messenger" ? "Messenger" : c.channel === "instagram" ? "Instagram" : c.channel === "telegram" ? "Telegram" : "Email";
   const reason = cleanAlertText(opts.reason ?? "", 120) || (owner.language === "tl" ? "Kailangan ng sagot ng staff" : "Needs staff reply");
   const base = deps.publicUrl?.replace(/\/+$/, "");
   const consoleLink = base ? `${base}/#/conversations` : "";

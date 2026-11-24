@@ -263,7 +263,7 @@ export const runs = pgTable("runs", {
 }, (t) => [index("runs_conversation").on(t.conversationId).where(sql`${t.conversationId} is not null`)]);
 
 /**
- * One guest thread per workspace, channel and guest id (PSID, Instagram-scoped id or lowercased email), decision 0115.
+ * One guest thread per workspace, channel and guest id (PSID, Instagram-scoped id, lowercased email or Telegram chat id), decision 0115 & 0135.
  * Every new inbound message raises version. status is bot, staff (someone replied from the Page inbox, so the bot is
  * quiet until staff_until) or closed. fields are what conversation_update saved: a fixed list of short strings.
  */
@@ -272,7 +272,7 @@ export const conversations = pgTable(
   {
     id: id(),
     userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
-    channel: text("channel", { enum: ["messenger", "instagram", "email"] }).notNull(),
+    channel: text("channel", { enum: ["messenger", "instagram", "email", "telegram"] }).notNull(),
     externalId: text("external_id").notNull(),
     status: text("status", { enum: ["bot", "staff", "closed"] }).notNull().default("bot"),
     version: integer("version").notNull().default(0),
@@ -288,7 +288,7 @@ export const conversations = pgTable(
   (t) => [
     unique().on(t.userId, t.channel, t.externalId),
     index("conversations_open_due").on(t.openDueId).where(sql`${t.openDueId} is not null`),
-    check("conversations_channel", sql`${t.channel} in ('messenger', 'instagram', 'email')`),
+    check("conversations_channel", sql`${t.channel} in ('messenger', 'instagram', 'email', 'telegram')`),
     check("conversations_status", sql`${t.status} in ('bot', 'staff', 'closed')`),
   ],
 );
