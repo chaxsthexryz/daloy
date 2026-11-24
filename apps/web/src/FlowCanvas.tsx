@@ -92,8 +92,13 @@ function RunEdge({ id, sourceX, sourceY, targetX, targetY, sourcePosition, targe
   );
 }
 
-/** Editor node data: the shared node data plus the step's place in the list and an app it still needs. */
-export type EditorNodeData = StepNodeData & { index?: number; needsApp?: string };
+/** Editor node data: the shared node data plus the step's place in the list, an app it still needs, and open add exits. */
+export type EditorNodeData = StepNodeData & {
+  index?: number;
+  needsApp?: string;
+  openExits?: { on?: string }[];
+  onAdd?: (on: string | undefined, at: { x: number; y: number }) => void;
+};
 
 function EditorTriggerNode({ data }: NodeProps<Node<EditorNodeData, "trigger">>) {
   const { t, language } = useLanguage();
@@ -107,6 +112,22 @@ function EditorTriggerNode({ data }: NodeProps<Node<EditorNodeData, "trigger">>)
       <span className="node-title">{triggerLabel(data.trigger!.type, language)}</span>
       <Status status={data.status} />
       <Handle type="source" position={Position.Bottom} isConnectable={false} />
+      {!!data.openExits?.length && data.onAdd && (
+        <div className="a7-exit-adds nodrag nopan">
+          <button
+            type="button"
+            className="a7-leaf-add"
+            aria-label={t("Add a step at the start")}
+            onClick={(e) => {
+              e.stopPropagation();
+              const r = e.currentTarget.getBoundingClientRect();
+              data.onAdd!(undefined, { x: r.left, y: r.bottom });
+            }}
+          >
+            <span aria-hidden="true">+</span>
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -137,6 +158,30 @@ function EditorStepNode({ data }: NodeProps<Node<EditorNodeData, "step">>) {
         ))
       ) : (
         <Handle type="source" position={Position.Bottom} title={t("Drag from here to connect")} />
+      )}
+      {!!data.openExits?.length && data.onAdd && (
+        <div className="a7-exit-adds nodrag nopan">
+          {data.openExits.map((exit) => (
+            <button
+              key={exit.on ?? "next"}
+              type="button"
+              className={exit.on ? "a7-branch-add" : "a7-leaf-add"}
+              data-branch={exit.on}
+              aria-label={
+                exit.on
+                  ? t("Add a step on {branch} after {step}", { branch: t(exit.on), step: step.id })
+                  : t("Add a step after {step}", { step: step.id })
+              }
+              onClick={(e) => {
+                e.stopPropagation();
+                const r = e.currentTarget.getBoundingClientRect();
+                data.onAdd!(exit.on, { x: r.left, y: r.bottom });
+              }}
+            >
+              {exit.on ? `+ ${t(exit.on)}` : <span aria-hidden="true">+</span>}
+            </button>
+          ))}
+        </div>
       )}
     </div>
   );
