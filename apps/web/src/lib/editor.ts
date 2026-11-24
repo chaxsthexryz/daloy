@@ -1,4 +1,4 @@
-import { BRANCHES, mockAiOutput, stepEntry, triggerEntry, type Step } from "@daloy/engine";
+import { mockAiOutput, stepBranches, stepEntry, triggerEntry, type Step } from "@daloy/engine";
 import { entryOf, type Draft } from "./graph";
 
 /** What happens after a step: one path per outgoing edge, each the chain of steps until a fork, a join already listed, or the end. */
@@ -70,7 +70,41 @@ export function insertables(draft: Draft, id: string): string[] {
   const before = upstreamIds(draft, id);
   const outputs = draft.steps
     .filter((s) => before.has(s.id))
-    .flatMap((s) => (s.type === "ai" ? Object.keys(mockAiOutput(s.config)).map((k) => `steps.${s.id}.output.${k}`) : s.type === "booking" ? ["reference", "start", "end", "nights", "checkIn", "checkOut", "timezone"].map((k) => `steps.${s.id}.output.${k}`) : s.type === "stay_quote" ? ["title", "checkIn", "guests", "subtotal", "extraGuests", "extraGuestFee", "total", "deposit", "knowledgeVersion"].map((k) => `steps.${s.id}.output.${k}`) : s.type === "read_page" ? ["title", "text", "value", "previous", "changed"].map((k) => `steps.${s.id}.output.${k}`) : s.type === "google_docs" ? ["url", "documentId", "name"].map((k) => `steps.${s.id}.output.${k}`) : s.type === "call_workflow" ? ["runId", "workflowId", "workflowSlug", "duplicate"].map((k) => `steps.${s.id}.output.${k}`) : s.type === "assistant_read" ? ["date", "timezone", "what", "summaryText", "calendar.events", "bookings.items", "payments.items", "runs"].map((k) => `steps.${s.id}.output.${k}`) : s.type === "browser" ? [...s.config.actions.flatMap((a) => (a.action === "extract" ? [a.name] : [])), "url"].map((k) => `steps.${s.id}.output.${k}`) : [`steps.${s.id}.output`]));
+    .flatMap((s) => {
+      const base =
+        s.type === "ai"
+          ? Object.keys(mockAiOutput(s.config)).map((k) => `steps.${s.id}.output.${k}`)
+          : s.type === "switch"
+            ? ["value", "branch", "matched"].map((k) => `steps.${s.id}.output.${k}`)
+            : s.type === "transform"
+              ? s.config.op === "pick"
+                ? Object.keys(s.config.fields ?? {}).map((k) => `steps.${s.id}.output.${k}`)
+                : s.config.op === "split"
+                  ? ["result", "items", "first", "last", "count"].map((k) => `steps.${s.id}.output.${k}`)
+                  : s.config.op === "format_date"
+                    ? ["result", "iso", "timezone"].map((k) => `steps.${s.id}.output.${k}`)
+                    : s.config.op === "format_peso"
+                      ? ["result", "plain", "code", "amount"].map((k) => `steps.${s.id}.output.${k}`)
+                      : s.config.op === "normalize_phone"
+                        ? ["result", "local"].map((k) => `steps.${s.id}.output.${k}`)
+                        : [`steps.${s.id}.output.result`]
+              : s.type === "booking"
+                ? ["reference", "start", "end", "nights", "checkIn", "checkOut", "timezone"].map((k) => `steps.${s.id}.output.${k}`)
+                : s.type === "stay_quote"
+                  ? ["title", "checkIn", "guests", "subtotal", "extraGuests", "extraGuestFee", "total", "deposit", "knowledgeVersion"].map((k) => `steps.${s.id}.output.${k}`)
+                  : s.type === "read_page"
+                    ? ["title", "text", "value", "previous", "changed"].map((k) => `steps.${s.id}.output.${k}`)
+                    : s.type === "google_docs"
+                      ? ["url", "documentId", "name"].map((k) => `steps.${s.id}.output.${k}`)
+                      : s.type === "call_workflow"
+                        ? ["runId", "workflowId", "workflowSlug", "duplicate"].map((k) => `steps.${s.id}.output.${k}`)
+                        : s.type === "assistant_read"
+                          ? ["date", "timezone", "what", "summaryText", "calendar.events", "bookings.items", "payments.items", "runs"].map((k) => `steps.${s.id}.output.${k}`)
+                          : s.type === "browser"
+                            ? [...s.config.actions.flatMap((a) => (a.action === "extract" ? [a.name] : [])), "url"].map((k) => `steps.${s.id}.output.${k}`)
+                            : [`steps.${s.id}.output`];
+      return "onError" in s && (s.onError === "skip" || s.onError === "failed_edge") ? [...base, `steps.${s.id}.output.error`] : base;
+    });
   return [...fields.map((f) => `trigger.${f}`), ...outputs].map((r) => `{{${r}}}`);
 }
 
@@ -176,8 +210,13 @@ export function openExits(draft: Draft, nodeId: string): { on?: string }[] {
         ? step.config.action === "create"
           ? (["done", "taken"] as const)
           : (["done", "not_found"] as const)
-        : BRANCHES[step.type];
-  if (!branches) return draft.edges.some((e) => e.from === nodeId) ? [] : [{}];
+        : stepBranches(step);
+  if (!branches) {
+    const exits: { on?: string }[] = [];
+    if (!draft.edges.some((e) => e.from === nodeId && e.on === undefined)) exits.push({});
+    if ("onError" in step && step.onError === "failed_edge" && !draft.edges.some((e) => e.from === nodeId && e.on === "failed")) exits.push({ on: "failed" });
+    return exits;
+  }
   const taken = new Set(draft.edges.filter((e) => e.from === nodeId && e.on).map((e) => e.on!));
   return branches.filter((on) => !taken.has(on)).map((on) => ({ on }));
 }

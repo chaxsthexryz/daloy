@@ -40,6 +40,8 @@ const BRANCH: Record<string, string> = {
   done: "If it is booked:",
   taken: "If the time is taken:",
   not_found: "If the booking is not found:",
+  failed: "If this step fails:",
+  default: "Otherwise:",
 };
 const OPS: Record<string, string> = { eq: "is", neq: "is not", gt: "is more than", gte: "is at least", lt: "is less than", lte: "is at most", contains: "contains" };
 const AI_TASKS: Record<string, string> = { classify: "sort it into a group", extract: "pull out the details", summarize: "summarize it", draft: "write a draft" };
@@ -84,6 +86,10 @@ function sentence(step: WorkflowDefinition["steps"][number], language: Language)
       const right = op === "exists" ? "" : ` ${text(cond.right, "")}`;
       return t("Check {left} {operator}{right}", { left: text(cond.left, t("a value")), operator: t(op === "exists" ? "is filled in" : (OPS[op] ?? "matches")), right }).trimEnd();
     }
+    case "switch":
+      return t("Match {value} to a branch", { value: text(c.value, t("a value")) });
+    case "transform":
+      return t("Format or transform {value}", { value: c.op === "pick" ? t("fields") : text(c.value, t("a value")) });
     case "ai":
       return t("Ask the AI to {task}", { task: t(AI_TASKS[String(c.task)] ?? "help") });
     case "http":
@@ -159,6 +165,7 @@ export function warningForLanguage(warning: string, language: Language): string 
   const patterns: [RegExp, string, string[]][] = [
     [/^Approval step "([^"]+)" has no "([^"]+)" edge, so the run ends there and nobody is told\.$/, 'Approval step "{step}" has no "{branch}" edge, so the run ends there and nobody is told.', ["step", "branch"]],
     [/^Classify label "([^"]+)" of "([^"]+)" reaches condition "([^"]+)" and takes its "([^"]+)" branch, which has no edge, so the run ends there\.$/, 'Classify label "{label}" of "{step}" reaches condition "{condition}" and takes its "{branch}" branch, which has no edge, so the run ends there.', ["label", "step", "condition", "branch"]],
+    [/^Classify label "([^"]+)" of "([^"]+)" reaches switch "([^"]+)" and takes its "([^"]+)" branch, which has no edge, so the run ends there\.$/, 'Classify label "{label}" of "{step}" reaches switch "{condition}" and takes its "{branch}" branch, which has no edge, so the run ends there.', ["label", "step", "condition", "branch"]],
     [/^"([^"]+)" looks like a switch for testing\. Mock test runs already send nothing, but a Live run or a real event follows the branch and can send, so remove it and its branch and test with Mock mode\.$/, '"{field}" looks like a switch for testing. Mock test runs already send nothing, but a Live run or a real event follows the branch and can send, so remove it and its branch and test with Mock mode.', ["field"]],
     [/^Condition "([^"]+)" compares numbers but has no "invalid" edge, so a missing or non-number value fails the run\.$/, 'Condition "{step}" compares numbers but has no "invalid" edge, so a missing or non-number value fails the run.', ["step"]],
     [/^Step "([^"]+)" can never run: only an "invalid" edge that cannot be taken leads to it\.$/, 'Step "{step}" can never run: only an "invalid" edge that cannot be taken leads to it.', ["step"]],

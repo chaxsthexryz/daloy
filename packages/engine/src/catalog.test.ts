@@ -95,6 +95,8 @@ describe("destination line", () => {
   it("gives every step type a destination line", () => {
     const configs: Record<string, object> = {
       condition: { condition: { left: "{{trigger.n}}", op: "gt", right: "1" } },
+      switch: { value: "{{trigger.type}}", cases: [{ label: "a", equals: "x" }] },
+      transform: { op: "trim", value: "{{trigger.name}}" },
       http: { method: "POST", url: "https://example.com/hook", headers: {} },
       delay: { seconds: 60 },
       ai: { task: "extract", fields: {} },

@@ -56,6 +56,11 @@ function StepNode({ data }: NodeProps<Node<StepNodeData, "step">>) {
         data.branches.map((b, i) => (
           <Handle key={b} id={b} type="source" position={Position.Bottom} isConnectable={false} style={{ left: `${((i + 1) / (data.branches!.length + 1)) * 100}%` }} />
         ))
+      ) : data.hasFailedEdge ? (
+        <>
+          <Handle type="source" position={Position.Bottom} isConnectable={false} style={{ left: "33%" }} />
+          <Handle key="failed" id="failed" type="source" position={Position.Bottom} isConnectable={false} style={{ left: "67%" }} />
+        </>
       ) : (
         <Handle type="source" position={Position.Bottom} isConnectable={false} />
       )}
@@ -156,6 +161,11 @@ function EditorStepNode({ data }: NodeProps<Node<EditorNodeData, "step">>) {
         data.branches.map((b, i) => (
           <Handle key={b} id={b} type="source" position={Position.Bottom} title={t("Drag from here to connect {branch}", { branch: t(b) })} style={{ left: `${((i + 1) / (data.branches!.length + 1)) * 100}%` }} />
         ))
+      ) : data.hasFailedEdge ? (
+        <>
+          <Handle type="source" position={Position.Bottom} title={t("Drag from here to connect")} style={{ left: "33%" }} />
+          <Handle key="failed" id="failed" type="source" position={Position.Bottom} title={t("Drag from here to connect {branch}", { branch: t("failed") })} style={{ left: "67%" }} />
+        </>
       ) : (
         <Handle type="source" position={Position.Bottom} title={t("Drag from here to connect")} />
       )}

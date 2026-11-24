@@ -6,6 +6,7 @@ import { FILES_PER_FIELD, type FileRef } from "./file-type";
 import { CLOCK_TIME_RE } from "./knowledge";
 import { menuSchema } from "./menu";
 import { SENDER_ID_RE } from "./phone";
+import { TRANSFORM_OPS } from "./transform";
 import { isTimeZone, parseZoned } from "./zoned";
 
 // Ids end up inside expression paths ({{steps.<id>.output}}), so keep them to a safe charset.
@@ -17,6 +18,70 @@ export const conditionSchema = z.object({
   right: z.union([z.string().max(1000), z.number(), z.boolean(), z.null()]).optional(),
 });
 export type Condition = z.infer<typeof conditionSchema>;
+
+const switchBranchLabel = z
+  .string()
+  .regex(/^[a-z][a-z0-9_]{0,31}$/, "branch labels use a-z, 0-9 and _, up to 32 characters, starting with a letter");
+
+export const SWITCH_MAX_CASES = 10;
+export const switchCaseSchema = z.object({
+  label: switchBranchLabel,
+  equals: z.union([z.string().max(1000), z.number(), z.boolean()]),
+});
+export type SwitchCase = z.infer<typeof switchCaseSchema>;
+
+export const switchConfigSchema = z
+  .object({
+    value: z.string().max(1000).min(1).describe("The value to match, such as {{steps.classify.output.label}} or {{trigger.type}}."),
+    cases: z.array(switchCaseSchema).min(1).max(SWITCH_MAX_CASES),
+  })
+  .superRefine((c, ctx) => {
+    const seen = new Set<string>();
+    c.cases.forEach((item, i) => {
+      if (item.label === "default") {
+        ctx.addIssue({ code: "custom", path: ["cases", i, "label"], message: '"default" is reserved for the fallback branch' });
+      }
+      if (seen.has(item.label)) {
+        ctx.addIssue({ code: "custom", path: ["cases", i, "label"], message: `duplicate branch label "${item.label}"` });
+      }
+      seen.add(item.label);
+    });
+  });
+export type SwitchConfig = z.infer<typeof switchConfigSchema>;
+
+export const transformConfigSchema = z
+  .object({
+    op: z.enum(TRANSFORM_OPS),
+    value: z.string().max(10_000).optional().describe("The text or value to transform, such as {{trigger.phone}}."),
+    timezone: z.string().max(64).optional().describe("IANA timezone for format_date, such as Asia/Manila."),
+    format: z.enum(["readable", "iso", "date", "time", "datetime"]).optional().describe("Output style for format_date."),
+    separator: z.string().min(1).max(50).optional().describe("Separator for split, such as a comma."),
+    fields: z
+      .record(z.string().regex(/^[a-zA-Z][a-zA-Z0-9_-]{0,63}$/, "field names use letters, digits, _ and -"), z.string().max(2000))
+      .refine((f) => Object.keys(f).length <= 30, "at most 30 fields")
+      .optional()
+      .describe("Fields to build an object for pick."),
+  })
+  .superRefine((c, ctx) => {
+    const issue = (path: string, message: string) => ctx.addIssue({ code: "custom", path: [path], message });
+    if (c.op === "pick") {
+      if (!c.fields || Object.keys(c.fields).length === 0) issue("fields", "pick needs at least one field");
+      if (c.timezone !== undefined) issue("timezone", "timezone is only for format_date");
+      if (c.format !== undefined) issue("format", "format is only for format_date");
+      if (c.separator !== undefined) issue("separator", "separator is only for split");
+      return;
+    }
+    if (c.value === undefined || c.value.length === 0) issue("value", `${c.op} needs a value`);
+    if (c.fields !== undefined) issue("fields", "fields is only for pick");
+    if (c.op === "format_date") {
+      if (c.timezone !== undefined && !isTimeZone(c.timezone)) issue("timezone", "use an IANA timezone name such as Asia/Manila");
+    } else {
+      if (c.timezone !== undefined) issue("timezone", "timezone is only for format_date");
+      if (c.format !== undefined) issue("format", "format is only for format_date");
+    }
+    if (c.op !== "split" && c.separator !== undefined) issue("separator", "separator is only for split");
+  });
+export type TransformConfig = z.infer<typeof transformConfigSchema>;
 
 // String fields are templates: {{trigger...}}, {{steps...}} and {{secrets...}} are resolved when the step runs.
 const template = (max: number) => z.string().max(max);
@@ -77,9 +142,35 @@ export const approvalConfigSchema = z
 export type ApprovalConfig = z.infer<typeof approvalConfigSchema>;
 
 // Sheets and Slack go to the destination the owner picked in Apps (decision 0021). The worker queues them
-// as deliveries, so the run carries on and each one is retried on its own. The row starts with the request reference
-// and the time, then these columns. Keep private details out of Slack text: everyone in the channel can read it.
-export const sheetsConfigSchema = z.object({ columns: z.array(template(2000)).min(1).max(20) });
+// as deliveries, so the run carries on and each one is retried on its own. Single-row mode prepends the request reference
+// and time; batched mode (N30) accepts up to 100 rows x 20 columns and an optional header row written once per tab.
+export const SHEETS_MAX_ROWS = 100;
+export const SHEETS_MAX_COLS = 20;
+export const sheetsConfigSchema = z
+  .object({
+    columns: z.array(template(2000)).min(1).max(SHEETS_MAX_COLS).optional(),
+    rows: z
+      .union([
+        template(2000).min(1),
+        z.array(z.array(template(2000)).min(1).max(SHEETS_MAX_COLS)).min(1).max(SHEETS_MAX_ROWS),
+      ])
+      .optional()
+      .describe("Optional list template (such as {{trigger.line_items}}) or up to 100 rows x 20 columns for one batched append."),
+    header: z
+      .array(template(500))
+      .min(1)
+      .max(SHEETS_MAX_COLS)
+      .optional()
+      .describe("Optional header row written once if the tab is empty."),
+  })
+  .superRefine((c, ctx) => {
+    if (c.columns === undefined && c.rows === undefined) {
+      ctx.addIssue({ code: "custom", path: ["columns"], message: "set columns or rows" });
+    }
+    if (Array.isArray(c.rows) && c.columns !== undefined) {
+      ctx.addIssue({ code: "custom", path: ["columns"], message: "use either columns or a 2D rows array, not both" });
+    }
+  });
 export const slackConfigSchema = z.object({ text: template(3000).min(1) });
 // Outlook mail is sent from the mailbox the owner consented with, and a Teams note goes to the channel their Teams
 // workflow posts to (decision 0023). Both are queued deliveries too. A Teams note is a notification only: approvals
@@ -314,46 +405,53 @@ const disabled = z.literal(true).optional();
 export const STEP_NOTE_MAX = 300;
 export const stepNoteSchema = z.string().max(STEP_NOTE_MAX).optional();
 const note = stepNoteSchema;
+// T3 (decision 0131): per-step error policy on non-branching action steps.
+export const stepErrorPolicySchema = z.enum(["stop", "skip", "failed_edge"]).optional();
+export type StepErrorPolicy = NonNullable<z.infer<typeof stepErrorPolicySchema>>;
+const onError = stepErrorPolicySchema;
 
 const stepSchema = z.discriminatedUnion("type", [
-  z.object({ id: stepId, disabled, note, type: z.literal("condition"), config: z.object({ condition: conditionSchema }) }),
-  z.object({ id: stepId, disabled, note, type: z.literal("http"), config: httpConfigSchema }),
-  z.object({ id: stepId, disabled, note, type: z.literal("email"), config: emailConfigSchema }),
-  z.object({ id: stepId, disabled, note, type: z.literal("delay"), config: delayConfigSchema }),
-  z.object({ id: stepId, disabled, note, type: z.literal("ai"), config: aiConfigSchema }),
-  z.object({ id: stepId, disabled, note, type: z.literal("approval"), config: approvalConfigSchema }),
-  z.object({ id: stepId, disabled, note, type: z.literal("sheets"), config: sheetsConfigSchema }),
-  z.object({ id: stepId, disabled, note, type: z.literal("drive"), config: driveConfigSchema }),
-  z.object({ id: stepId, disabled, note, type: z.literal("slack"), config: slackConfigSchema }),
-  z.object({ id: stepId, disabled, note, type: z.literal("outlook"), config: outlookConfigSchema }),
-  z.object({ id: stepId, disabled, note, type: z.literal("teams"), config: teamsConfigSchema }),
-  z.object({ id: stepId, disabled, note, type: z.literal("telegram"), config: telegramConfigSchema }),
-  z.object({ id: stepId, disabled, note, type: z.literal("sms"), config: smsConfigSchema }),
-  z.object({ id: stepId, disabled, note, type: z.literal("calendar"), config: calendarConfigSchema }),
-  z.object({ id: stepId, disabled, note, type: z.literal("airtable"), config: airtableConfigSchema }),
-  z.object({ id: stepId, disabled, note, type: z.literal("notion"), config: notionConfigSchema }),
-  z.object({ id: stepId, disabled, note, type: z.literal("trello"), config: trelloConfigSchema }),
-  z.object({ id: stepId, disabled, note, type: z.literal("booking"), config: bookingConfigSchema }),
-  z.object({ id: stepId, disabled, note, type: z.literal("paymongo_link"), config: paymongoLinkConfigSchema }),
-  z.object({ id: stepId, disabled, note, type: z.literal("payment_status"), config: paymentStatusConfigSchema }),
-  z.object({ id: stepId, disabled, note, type: z.literal("payment_due"), config: paymentDueConfigSchema }),
-  z.object({ id: stepId, disabled, note, type: z.literal("payment_expire"), config: paymentExpireConfigSchema }),
-  z.object({ id: stepId, disabled, note, type: z.literal("meta_reply"), config: metaReplyConfigSchema }),
-  z.object({ id: stepId, disabled, note, type: z.literal("conversation_update"), config: conversationUpdateConfigSchema }),
-  z.object({ id: stepId, disabled, note, type: z.literal("stay_quote"), config: stayQuoteConfigSchema }),
-  z.object({ id: stepId, disabled, note, type: z.literal("assistant_read"), config: assistantReadConfigSchema }),
-  z.object({ id: stepId, disabled, note, type: z.literal("discord"), config: discordConfigSchema }),
-  z.object({ id: stepId, disabled, note, type: z.literal("google_docs"), config: googleDocsConfigSchema }),
-  z.object({ id: stepId, disabled, note, type: z.literal("read_page"), config: readPageConfigSchema }),
-  z.object({ id: stepId, disabled, note, type: z.literal("shopify_create_product"), config: shopifyCreateProductConfigSchema }),
-  z.object({ id: stepId, disabled, note, type: z.literal("shopify_update_product"), config: shopifyUpdateProductConfigSchema }),
+  z.object({ id: stepId, disabled, note, onError, type: z.literal("condition"), config: z.object({ condition: conditionSchema }) }),
+  z.object({ id: stepId, disabled, note, onError, type: z.literal("switch"), config: switchConfigSchema }),
+  z.object({ id: stepId, disabled, note, onError, type: z.literal("transform"), config: transformConfigSchema }),
+  z.object({ id: stepId, disabled, note, onError, type: z.literal("http"), config: httpConfigSchema }),
+  z.object({ id: stepId, disabled, note, onError, type: z.literal("email"), config: emailConfigSchema }),
+  z.object({ id: stepId, disabled, note, onError, type: z.literal("delay"), config: delayConfigSchema }),
+  z.object({ id: stepId, disabled, note, onError, type: z.literal("ai"), config: aiConfigSchema }),
+  z.object({ id: stepId, disabled, note, onError, type: z.literal("approval"), config: approvalConfigSchema }),
+  z.object({ id: stepId, disabled, note, onError, type: z.literal("sheets"), config: sheetsConfigSchema }),
+  z.object({ id: stepId, disabled, note, onError, type: z.literal("drive"), config: driveConfigSchema }),
+  z.object({ id: stepId, disabled, note, onError, type: z.literal("slack"), config: slackConfigSchema }),
+  z.object({ id: stepId, disabled, note, onError, type: z.literal("outlook"), config: outlookConfigSchema }),
+  z.object({ id: stepId, disabled, note, onError, type: z.literal("teams"), config: teamsConfigSchema }),
+  z.object({ id: stepId, disabled, note, onError, type: z.literal("telegram"), config: telegramConfigSchema }),
+  z.object({ id: stepId, disabled, note, onError, type: z.literal("sms"), config: smsConfigSchema }),
+  z.object({ id: stepId, disabled, note, onError, type: z.literal("calendar"), config: calendarConfigSchema }),
+  z.object({ id: stepId, disabled, note, onError, type: z.literal("airtable"), config: airtableConfigSchema }),
+  z.object({ id: stepId, disabled, note, onError, type: z.literal("notion"), config: notionConfigSchema }),
+  z.object({ id: stepId, disabled, note, onError, type: z.literal("trello"), config: trelloConfigSchema }),
+  z.object({ id: stepId, disabled, note, onError, type: z.literal("booking"), config: bookingConfigSchema }),
+  z.object({ id: stepId, disabled, note, onError, type: z.literal("paymongo_link"), config: paymongoLinkConfigSchema }),
+  z.object({ id: stepId, disabled, note, onError, type: z.literal("payment_status"), config: paymentStatusConfigSchema }),
+  z.object({ id: stepId, disabled, note, onError, type: z.literal("payment_due"), config: paymentDueConfigSchema }),
+  z.object({ id: stepId, disabled, note, onError, type: z.literal("payment_expire"), config: paymentExpireConfigSchema }),
+  z.object({ id: stepId, disabled, note, onError, type: z.literal("meta_reply"), config: metaReplyConfigSchema }),
+  z.object({ id: stepId, disabled, note, onError, type: z.literal("conversation_update"), config: conversationUpdateConfigSchema }),
+  z.object({ id: stepId, disabled, note, onError, type: z.literal("stay_quote"), config: stayQuoteConfigSchema }),
+  z.object({ id: stepId, disabled, note, onError, type: z.literal("assistant_read"), config: assistantReadConfigSchema }),
+  z.object({ id: stepId, disabled, note, onError, type: z.literal("discord"), config: discordConfigSchema }),
+  z.object({ id: stepId, disabled, note, onError, type: z.literal("google_docs"), config: googleDocsConfigSchema }),
+  z.object({ id: stepId, disabled, note, onError, type: z.literal("read_page"), config: readPageConfigSchema }),
+  z.object({ id: stepId, disabled, note, onError, type: z.literal("shopify_create_product"), config: shopifyCreateProductConfigSchema }),
+  z.object({ id: stepId, disabled, note, onError, type: z.literal("shopify_update_product"), config: shopifyUpdateProductConfigSchema }),
   // Phase B2 (decision 0108): a page opened in the browser service, with a list of actions.
-  z.object({ id: stepId, disabled, note, type: z.literal("browser"), config: browserConfigSchema }),
+  z.object({ id: stepId, disabled, note, onError, type: z.literal("browser"), config: browserConfigSchema }),
   // G1 (decision 0123): start another published sub_workflow in the same workspace.
   z.object({
     id: stepId,
     disabled,
     note,
+    onError,
     type: z.literal("call_workflow"),
     config: z.object({
       workflowSlug: z.string().regex(/^[a-z0-9][a-z0-9-]{0,79}$/, "use a-z, 0-9 and -").describe("The slug of the target automation (started by Run from another automation)."),
@@ -375,6 +473,14 @@ export const BRANCHES: Partial<Record<Step["type"], readonly string[]>> = {
   booking: ["done", "taken", "not_found"],
   payment_expire: ["expired", "kept"],
 };
+
+/** Dynamic and static branch labels for a step instance (switch uses its case labels + "default"). */
+export function stepBranches(step: Pick<Step, "type" | "config">): readonly string[] | undefined {
+  if (step.type === "switch") {
+    return [...(step.config as SwitchConfig).cases.map((c) => c.label), "default"];
+  }
+  return BRANCHES[step.type];
+}
 
 const edgeSchema = z.object({ from: stepId, to: stepId, on: z.string().max(32).optional() });
 
@@ -664,7 +770,8 @@ export const definitionSchema = z
       }
     }
 
-    for (const s of def.steps) if (s.disabled && BRANCHES[s.type]) fail(`${s.type} step "${s.id}" branches, so it cannot be turned off`);
+    for (const s of def.steps) if (s.disabled && stepBranches(s)) fail(`${s.type} step "${s.id}" branches, so it cannot be turned off`);
+    for (const s of def.steps) if ("onError" in s && s.onError !== undefined && stepBranches(s)) fail(`${s.type} step "${s.id}" branches, so it cannot set onError`);
 
     for (const e of def.edges) {
       for (const id of [e.from, e.to]) if (!byId.has(id)) fail(`edge refers to unknown step "${id}"`);
@@ -675,7 +782,7 @@ export const definitionSchema = z
     const seen = new Set<string>();
     for (const e of def.edges) {
       const from = byId.get(e.from)!;
-      const labels = BRANCHES[from.type];
+      const labels = stepBranches(from);
       if (labels && e.on === undefined) fail(`edge from ${from.type} step "${from.id}" needs a branch label`);
       if (labels && e.on !== undefined && !labels.includes(e.on)) {
         fail(`"${e.on}" is not a branch of ${from.type} step "${from.id}"`);
@@ -686,6 +793,10 @@ export const definitionSchema = z
         // A Meta reply may add fallbacks for a closed 24-hour window and for a conversation staff took over (decision 0115).
       } else if (!labels && from.type === "meta_reply" && (e.on === "outside_window" || e.on === "paused")) {
         // allowed
+      } else if (!labels && e.on === "failed") {
+        if (!("onError" in from) || from.onError !== "failed_edge") {
+          fail(`step "${from.id}" only allows a "failed" edge when onError is "failed_edge"`);
+        }
       } else if (!labels && e.on !== undefined) fail(`step "${from.id}" does not branch, so its edge cannot have a label`);
 
       const label = e.on ?? "next";

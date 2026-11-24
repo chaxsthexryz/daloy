@@ -39,6 +39,10 @@ export function runFlow(draft: Draft, run: FlowRun | null): { nodes: Record<stri
 
   const active = !!run && ACTIVE.has(run.state);
   const edgeState = (from: string, to: string, on?: string): EdgeState => {
+    if (nodes[from] === "problem" && latest.get(from)?.branch === "failed") {
+      if (on !== "failed") return "skipped";
+      return nodes[to] === "working" || (nodes[to] === "idle" && active) ? "flowing" : nodes[to] === "idle" ? "idle" : "done";
+    }
     if (nodes[from] !== "done" && nodes[from] !== "skipped") return "idle";
     if (on && latest.get(from)?.branch !== on) return "skipped";
     if (nodes[to] === "working" || (nodes[to] === "idle" && active)) return "flowing";

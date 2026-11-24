@@ -21,7 +21,7 @@ export type JsonSchema = {
 };
 type Obj = Record<string, unknown>;
 
-const LABELS: Record<string, string> = { amount: "Amount (pesos)", reference: "Order reference", op: "Operator", url: "URL", selector: "CSS selector", maxChars: "Most characters to keep", to: "To (comma-separated)", text: "Message", message: "Message", senderId: "Sender ID", left: "Value", right: "Compare with", timeoutSeconds: "Timeout (seconds)", seconds: "Wait (seconds)", offsetSeconds: "Offset (seconds)", sku: "SKU", imageUrl: "Image link", by: "Find the product by", product: "Product id or SKU", workflowSlug: "Automation slug", payload: "Inputs", what: "What to read", timezone: "Time zone" };
+const LABELS: Record<string, string> = { amount: "Amount (pesos)", reference: "Order reference", op: "Operator", url: "URL", selector: "CSS selector", maxChars: "Most characters to keep", to: "To (comma-separated)", text: "Message", message: "Message", senderId: "Sender ID", left: "Value", right: "Compare with", timeoutSeconds: "Timeout (seconds)", seconds: "Wait (seconds)", offsetSeconds: "Offset (seconds)", sku: "SKU", imageUrl: "Image link", by: "Find the product by", product: "Product id or SKU", workflowSlug: "Automation slug", payload: "Inputs", what: "What to read", value: "Value", timezone: "Time zone", format: "Date format", separator: "Separator", fields: "Fields", columns: "Columns", rows: "Rows list", header: "Header row" };
 const label = (key: string, schema?: JsonSchema) =>
   key === "to" && schema?.description?.includes("Philippine mobile") ? "Recipient phone" : (LABELS[key] ?? key.charAt(0).toUpperCase() + key.slice(1));
 
@@ -64,11 +64,15 @@ function Field({ name, schema, required, value, onChange }: { name: string; sche
   if (schema.type === "object" && typeof schema.additionalProperties === "object") {
     return <MapField name={name} value={(value as Record<string, string>) ?? {}} onChange={onChange} />;
   }
+  if (schema.type === "array" && schema.items?.type === "string") {
+    return <ListField name={name} value={Array.isArray(value) ? (value as string[]) : []} required={required} onChange={(next) => onChange(next.length === 0 && !required ? undefined : next)} />;
+  }
 
   let input;
   if (schema.enum) {
     input = (
-      <select id={id} value={String(value ?? "")} onChange={(e) => onChange(e.target.value)}>
+      <select id={id} value={String(value ?? "")} onChange={(e) => onChange(e.target.value === "" && !required ? undefined : e.target.value)}>
+        {!required && <option value="">{t("(default)")}</option>}
         {schema.enum.map((o) => (
           <option key={o} value={o}>{t(o)}</option>
         ))}
@@ -87,9 +91,22 @@ function Field({ name, schema, required, value, onChange }: { name: string; sche
       />
     );
   } else if (schema.anyOf) {
-    // Numbers and true/false are stored as values, so "gt 100" compares numbers.
-    const parse = (v: string) => (v === "true" ? true : v === "false" ? false : v.trim() !== "" && !Number.isNaN(Number(v)) ? Number(v) : v);
-    input = <input id={id} data-variable-target value={value === undefined || value === null ? "" : String(value)} onChange={(e) => onChange(e.target.value === "" ? undefined : parse(e.target.value))} />;
+    const acceptsArray = schema.anyOf.some((s) => s.type === "array");
+    const parse = (v: string) => {
+      if (acceptsArray && v.trim().startsWith("[")) {
+        try {
+          const parsed: unknown = JSON.parse(v);
+          if (Array.isArray(parsed)) return parsed;
+        } catch {
+          // keep as string until valid JSON
+        }
+      }
+      if (v === "true") return true;
+      if (v === "false") return false;
+      return v.trim() !== "" && !Number.isNaN(Number(v)) ? Number(v) : v;
+    };
+    const shown = value === undefined || value === null ? "" : Array.isArray(value) ? JSON.stringify(value) : String(value);
+    input = <input id={id} data-variable-target value={shown} onChange={(e) => onChange(e.target.value === "" ? undefined : parse(e.target.value))} />;
   } else if ((schema.maxLength ?? 0) > 2000) {
     input = <textarea id={id} data-variable-target rows={4} required={required} maxLength={schema.maxLength} value={String(value ?? "")} onChange={(e) => text(e.target.value)} />;
   } else {
@@ -124,6 +141,25 @@ function MapField({ name, value, onChange }: { name: string; value: Record<strin
       {/* New names must already pass the schema: headers allow capitals and dashes, ai labels and fields only a-z, 0-9 and _. */}
       <button type="button" className="quiet" onClick={() => set([...rows, [name === "headers" ? `X-Header-${rows.length + 1}` : `${name.replace(/s$/, "")}_${rows.length + 1}`, ""]])}>{t(name === "headers" ? "Add header" : "Add entry")}
       </button>
+    </fieldset>
+  );
+}
+
+function ListField({ name, value, required, onChange }: { name: string; value: string[]; required: boolean; onChange: (v: string[]) => void }) {
+  const { t } = useLanguage();
+  return (
+    <fieldset>
+      <legend>
+        {t(label(name))}
+        {!required && <span className="muted">{t(" (optional)")}</span>}
+      </legend>
+      {value.map((item, i) => (
+        <div className="row" key={i}>
+          <input data-variable-target aria-label={t("{field} {number}", { field: t(label(name)), number: i + 1 })} value={item} onChange={(e) => onChange(value.map((x, j) => (j === i ? e.target.value : x)))} />
+          <button type="button" className="quiet" onClick={() => onChange(value.filter((_, j) => j !== i))} aria-label={t("Remove {field} {number}", { field: t(label(name)), number: i + 1 })}>{t("Remove")}</button>
+        </div>
+      ))}
+      <button type="button" className="quiet" onClick={() => onChange([...value, ""])}>{t("Add item")}</button>
     </fieldset>
   );
 }

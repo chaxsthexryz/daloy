@@ -1,5 +1,5 @@
 import { triggerFields, type Condition, type WorkflowDefinition } from "./definition";
-import { conditionBranch, toNumber } from "./expressions";
+import { conditionBranch, switchBranch, toNumber } from "./expressions";
 import { entryStep } from "./graph";
 
 /**
@@ -48,7 +48,7 @@ export function lintFindings(def: WorkflowDefinition): { rule: LintRule; message
     }
   }
 
-  // Follow each classify label through the conditions that test it. A label that lands on a branch with no edge ends the run.
+  // Follow each classify label through the conditions or switches that test it. A label that lands on a branch with no edge ends the run.
   for (const s of def.steps) {
     if (s.type !== "ai" || s.config.task !== "classify") continue;
     for (const label of Object.keys(s.config.labels ?? {})) {
@@ -58,19 +58,31 @@ export function lintFindings(def: WorkflowDefinition): { rule: LintRule; message
       while (at && !seen.has(at)) {
         seen.add(at);
         const step = byId.get(at);
-        if (step?.type !== "condition") break;
-        // The branch is only known when one side is this label and the other is a fixed value, whichever way round.
-        const { left, right } = step.config.condition;
-        const isLabel = (v: unknown) => typeof v === "string" && LABEL_REF.exec(v)?.[1] === s.id;
-        const fixed = (v: unknown) => typeof v !== "string" || !v.includes("{{");
-        if (!((isLabel(left) && (fixed(right) || isLabel(right))) || (isLabel(right) && fixed(left)))) break;
-        const branch = safeBranch(step.config.condition, ctx);
-        const next = branch && edgeTo(step.id, branch);
-        if (!next) {
-          warn("classify_dead_end", `Classify label "${label}" of "${s.id}" reaches condition "${step.id}" and takes its "${branch ?? "unknown"}" branch, which has no edge, so the run ends there.`);
+        if (step?.type === "condition") {
+          // The branch is only known when one side is this label and the other is a fixed value, whichever way round.
+          const { left, right } = step.config.condition;
+          const isLabel = (v: unknown) => typeof v === "string" && LABEL_REF.exec(v)?.[1] === s.id;
+          const fixed = (v: unknown) => typeof v !== "string" || !v.includes("{{");
+          if (!((isLabel(left) && (fixed(right) || isLabel(right))) || (isLabel(right) && fixed(left)))) break;
+          const branch = safeBranch(step.config.condition, ctx);
+          const next = branch && edgeTo(step.id, branch);
+          if (!next) {
+            warn("classify_dead_end", `Classify label "${label}" of "${s.id}" reaches condition "${step.id}" and takes its "${branch ?? "unknown"}" branch, which has no edge, so the run ends there.`);
+            break;
+          }
+          at = next;
+        } else if (step?.type === "switch") {
+          if (LABEL_REF.exec(step.config.value)?.[1] !== s.id) break;
+          const branch = switchBranch(step.config, ctx);
+          const next = edgeTo(step.id, branch);
+          if (!next) {
+            warn("classify_dead_end", `Classify label "${label}" of "${s.id}" reaches switch "${step.id}" and takes its "${branch}" branch, which has no edge, so the run ends there.`);
+            break;
+          }
+          at = next;
+        } else {
           break;
         }
-        at = next;
       }
     }
   }
@@ -78,14 +90,17 @@ export function lintFindings(def: WorkflowDefinition): { rule: LintRule; message
   // Test runs already fake every outside call (decision 0028), so a switch for testing only changes real behaviour.
   const names = new Set<string>();
   for (const f of triggerFields(def.trigger) ?? []) if (SWITCH_NAME.test(f.name)) names.add(f.name);
-  for (const { cond } of conditions) {
-    for (const text of [cond.left, typeof cond.right === "string" ? cond.right : ""]) {
-      for (const m of text.matchAll(PLACEHOLDER)) {
-        const name = /^trigger\.([a-z][a-z0-9_]*)$/.exec(m[1]!)?.[1];
-        if (name && SWITCH_NAME.test(name)) names.add(name);
-      }
+  const checkTestRef = (text: string) => {
+    for (const m of text.matchAll(PLACEHOLDER)) {
+      const name = /^trigger\.([a-z][a-z0-9_]*)$/.exec(m[1]!)?.[1];
+      if (name && SWITCH_NAME.test(name)) names.add(name);
     }
+  };
+  for (const { cond } of conditions) {
+    checkTestRef(cond.left);
+    if (typeof cond.right === "string") checkTestRef(cond.right);
   }
+  for (const s of def.steps) if (s.type === "switch") checkTestRef(s.config.value);
   for (const name of names) warn("test_switch", `"${name}" looks like a switch for testing. Mock test runs already send nothing, but a Live run or a real event follows the branch and can send, so remove it and its branch and test with Mock mode.`);
 
   // A number comparison on a value that may be missing or text needs an "invalid" edge, or bad data fails the run (decision 0027).

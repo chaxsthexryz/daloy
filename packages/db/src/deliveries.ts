@@ -6,7 +6,7 @@ import { withGoogle } from "./google-access";
 import { freshToken, oauthProvider, slackToken, trelloAuthOf, withFreshToken, withRecordAuth } from "./oauth";
 import type { Db } from "./index";
 import { discordPost } from "./discord";
-import { airtableAdd, appendRowOnce, driveUpload, type DriveDestination, notionAddPage, trelloAddCard, deleteSheetMarker, outlookSend, ProviderError, slackPost, syncCalendarEvent, teamsPost, telegramSend, unismsSend, type CalendarDestination, type OutlookMessage, type ProviderErrorKind, type ProviderUrls, type SheetDestination } from "./providers";
+import { airtableAdd, appendRowsOnce, driveUpload, type DriveDestination, notionAddPage, trelloAddCard, deleteSheetMarker, outlookSend, ProviderError, slackPost, syncCalendarEvent, teamsPost, telegramSend, unismsSend, type CalendarDestination, type OutlookMessage, type ProviderErrorKind, type ProviderUrls, type SheetDestination } from "./providers";
 import { supersededSql } from "./bookings";
 import { runSuperseded } from "./conversations";
 import { bookingForCalendar } from "./calendar";
@@ -192,9 +192,11 @@ async function attempt(db: Db, key: Buffer, urls: ProviderUrls, d: Delivery): Pr
       }
     }
     if (d.provider === "google_sheets") {
-      // Retrying the same marked write is safe: Google adds the row at most once (decision 0021).
-      const out = await withGoogle(db, key, urls, d.userId, "google_sheets", activeConn, (auth) => appendRowOnce(urls, auth, destination as SheetDestination, (d.payload as { row: string[] }).row, { id: d.sheetMetaId!, value: d.sheetMetaValue! }));
-      return { state: "delivered", result: out.reconciled ? { sheet: out.sheet, reconciled: true } : { sheet: out.sheet } };
+      // Retrying the same marked write is safe: Google adds the row(s) at most once (decision 0021).
+      const p = d.payload as { row?: string[]; rows?: string[][]; header?: string[] };
+      const rows = p.rows ?? (p.row ? [p.row] : []);
+      const out = await withGoogle(db, key, urls, d.userId, "google_sheets", activeConn, (auth) => appendRowsOnce(urls, auth, destination as SheetDestination, rows, { id: d.sheetMetaId!, value: d.sheetMetaValue! }, p.header));
+      return { state: "delivered", result: { sheet: out.sheet, ...(p.rows ? { rows: out.rows } : {}), ...(out.headerWritten ? { headerWritten: true } : {}), ...(out.reconciled ? { reconciled: true } : {}) } };
     }
     if (d.provider === "google_calendar") {
       const { bookingId } = d.payload as { bookingId: string };

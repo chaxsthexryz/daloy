@@ -120,7 +120,7 @@ export function previewOfficeRequest(answers: OfficeRequestAnswers, sample: Reco
     notification: notify!,
     receipt: receipt!,
     // The row as the worker would write it: reference, time, then the columns.
-    ...(sheet?.type === "sheets" ? { sheetRow: [reference, "(time of the request)", ...sheet.config.columns.map(text)] } : {}),
+    ...(sheet?.type === "sheets" ? { sheetRow: [reference, "(time of the request)", ...(sheet.config.columns ?? []).map(text)] } : {}),
     ...(slack?.type === "slack" ? { slackMessage: text(slack.config.text) } : {}),
   };
 }

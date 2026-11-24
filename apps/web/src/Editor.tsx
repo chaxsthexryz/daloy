@@ -1,6 +1,6 @@
 import "./editor.css";
 import { useLanguage } from "./Language";
-import { BRANCHES, canSendAlone, configProblems, definitionSchema, destination, lintDefinition, markText, stepEntry, stepLabel, STEP_NOTE_MAX, triggerEntry, triggerLabel, type FormField, type Step, type Trigger } from "@daloy/engine";
+import { canSendAlone, configProblems, definitionSchema, destination, lintDefinition, markText, stepBranches, stepEntry, stepLabel, STEP_NOTE_MAX, triggerEntry, triggerLabel, type FormField, type Step, type StepErrorPolicy, type Trigger } from "@daloy/engine";
 import { AppMark } from "./AppMark";
 import { Background, ReactFlow, type NodeChange } from "@xyflow/react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
@@ -19,6 +19,7 @@ import { runFlow } from "./lib/run-flow";
 import { AutomationTabs } from "./Nav";
 import { DocTemplatePicker } from "./DocTemplatePicker";
 import { BrowserActions } from "./BrowserActions";
+import { SwitchCases } from "./SwitchCases";
 import { SchemaForm, type JsonSchema } from "./SchemaForm";
 import { EmailSource } from "./EmailSource";
 import { GoogleTriggerSettings } from "./GoogleTriggerSettings";
@@ -95,6 +96,17 @@ const withoutFiles = (schema: JsonSchema): JsonSchema => ({ ...schema, propertie
 const withoutTemplate = (schema: JsonSchema): JsonSchema => ({ ...schema, properties: Object.fromEntries(Object.entries(schema.properties ?? {}).filter(([k]) => k !== "templateId" && k !== "templateName")) });
 // A browser step's actions are a list, edited with BrowserActions below the form.
 const withoutActions = (schema: JsonSchema): JsonSchema => ({ ...schema, properties: Object.fromEntries(Object.entries(schema.properties ?? {}).filter(([k]) => k !== "actions")) });
+// A switch step's cases are a list of objects, edited with SwitchCases below the form.
+const withoutCases = (schema: JsonSchema): JsonSchema => ({ ...schema, properties: Object.fromEntries(Object.entries(schema.properties ?? {}).filter(([k]) => k !== "cases")) });
+const TRANSFORM_VISIBLE: Record<string, readonly string[]> = {
+  format_date: ["op", "value", "timezone", "format"],
+  split: ["op", "value", "separator"],
+  pick: ["op", "fields"],
+};
+const transformSchema = (schema: JsonSchema, op: string): JsonSchema => {
+  const keep = new Set(TRANSFORM_VISIBLE[op] ?? ["op", "value"]);
+  return { ...schema, properties: Object.fromEntries(Object.entries(schema.properties ?? {}).filter(([k]) => keep.has(k))) };
+};
 
 export function Editor({ id, from }: { id: string; from?: string }) {
   const { t, language } = useLanguage();
@@ -357,7 +369,32 @@ export function Editor({ id, from }: { id: string; from?: string }) {
     setSelected(next);
     if (next) setFolded(false);
   };
-  const editStep = (config: unknown) => update({ ...draft, steps: draft.steps.map((s) => (s.id === step!.id ? ({ ...s, config } as Step) : s)) }, `config:${step!.id}`);
+  const editStep = (config: unknown) => {
+    let nextConfig = config;
+    if (step?.type === "transform") {
+      const c = { ...(config as Record<string, unknown>) };
+      const op = String(c.op ?? "trim");
+      const allowed = new Set(TRANSFORM_VISIBLE[op] ?? ["op", "value"]);
+      for (const k of ["value", "timezone", "format", "separator", "fields"]) {
+        if (!allowed.has(k)) delete c[k];
+      }
+      if (op === "pick" && !c.fields) c.fields = { value: "{{trigger}}" };
+      if (op !== "pick" && c.value === undefined) c.value = "{{trigger.text}}";
+      nextConfig = c;
+    }
+    update({ ...draft, steps: draft.steps.map((s) => (s.id === step!.id ? ({ ...s, config: nextConfig } as Step) : s)) }, `config:${step!.id}`);
+  };
+  const editOnError = (policy: StepErrorPolicy) => {
+    const steps = draft.steps.map((s) => {
+      if (s.id !== step!.id) return s;
+      const next = { ...s } as Step & { onError?: StepErrorPolicy };
+      if (policy === "stop") delete next.onError;
+      else next.onError = policy;
+      return next as Step;
+    });
+    const edges = policy === "failed_edge" ? draft.edges : draft.edges.filter((e) => !(e.from === step!.id && e.on === "failed"));
+    update({ ...draft, steps, edges }, `onError:${step!.id}`);
+  };
   // T4: an empty note leaves no key, so a step without one saves as it did before.
   const editNote = (note: string) => {
     const steps = draft.steps.map((s) => {
@@ -444,7 +481,7 @@ export function Editor({ id, from }: { id: string; from?: string }) {
     setNote(t("Pasted {id}.", { id: r.id }));
   };
   const startConnect = (s: Step) => {
-    const labels = BRANCHES[s.type];
+    const labels = stepBranches(s);
     const on = labels?.find((l) => !draft.edges.some((e) => e.from === s.id && e.on === l)) ?? labels?.[0];
     setConnecting({ from: s.id, on });
     setNote(on ? t("Click the step {from} goes to on {branch}. Escape cancels.", { from: s.id, branch: t(on) }) : t("Click the step {from} goes to. Escape cancels.", { from: s.id }));
@@ -474,7 +511,7 @@ export function Editor({ id, from }: { id: string; from?: string }) {
       items.push({ label: t("Duplicate"), keys: "Ctrl+D", run: () => duplicate(s.id) });
       if (copyable(s)) items.push({ label: t("Copy"), keys: "Ctrl+C", run: () => copyStep(s) });
       items.push({ label: t("Connect to"), run: () => startConnect(s) });
-      if (!BRANCHES[s.type]) items.push({ label: t(s.disabled ? "Enable" : "Disable"), run: () => turnOff(s.id, !s.disabled) });
+      if (!stepBranches(s)) items.push({ label: t(s.disabled ? "Enable" : "Disable"), run: () => turnOff(s.id, !s.disabled) });
       items.push({
         label: t("Delete"),
         keys: "Del",
@@ -590,8 +627,19 @@ export function Editor({ id, from }: { id: string; from?: string }) {
           {step.type === "google_docs" && (
             <DocTemplatePicker key={`${step.id}-template`} templateId={step.config.templateId} templateName={step.config.templateName} onPick={(templateId, templateName) => editStep({ ...step.config, templateId, templateName })} />
           )}
-          <SchemaForm key={step.id} schema={step.type === "ai" ? withoutFiles(catalog.schemas.ai!) : step.type === "google_docs" ? withoutTemplate(catalog.schemas.google_docs!) : step.type === "browser" ? withoutActions(catalog.schemas.browser!) : catalog.schemas[step.type]!} value={step.config as Record<string, unknown>} onChange={editStep} />
+          <SchemaForm key={step.id} schema={step.type === "ai" ? withoutFiles(catalog.schemas.ai!) : step.type === "google_docs" ? withoutTemplate(catalog.schemas.google_docs!) : step.type === "browser" ? withoutActions(catalog.schemas.browser!) : step.type === "switch" ? withoutCases(catalog.schemas.switch!) : step.type === "transform" ? transformSchema(catalog.schemas.transform!, step.config.op) : catalog.schemas[step.type]!} value={step.config as Record<string, unknown>} onChange={editStep} />
           {step.type === "browser" && <BrowserActions key={`${step.id}-actions`} actions={step.config.actions} onChange={(actions) => editStep({ ...step.config, actions })} />}
+          {step.type === "switch" && <SwitchCases key={`${step.id}-cases`} cases={step.config.cases} onChange={(cases) => editStep({ ...step.config, cases })} />}
+          {!stepBranches(step) && (
+            <div className="field">
+              <label htmlFor="step-on-error">{t("If this step fails")}</label>
+              <select id="step-on-error" value={("onError" in step ? step.onError : undefined) ?? "stop"} onChange={(e) => editOnError(e.target.value as StepErrorPolicy)}>
+                <option value="stop">{t("Stop the automation (default)")}</option>
+                <option value="skip">{t("Skip and continue to the next step")}</option>
+                <option value="failed_edge">{t("Follow the failed branch")}</option>
+              </select>
+            </div>
+          )}
           {step.type === "ai" &&
             ((draft.trigger.type === "form" && draft.trigger.config.fields.some((f) => f.type === "file")) || draft.trigger.type === "meta_dm" || draft.trigger.type === "telegram_message" || draft.trigger.type === "drive_file") && (
             <fieldset>
@@ -1002,7 +1050,8 @@ function AddMenu({ draft, after, on, at, onPick, onClose }: { draft: Draft; afte
   const phone = usePhone();
   const [query, setQuery] = useState("");
   const [branch, setBranch] = useState("");
-  const labels = after && on === undefined ? BRANCHES[after.type] : undefined;
+  const branchLabels = after && on === undefined ? stepBranches(after) : undefined;
+  const labels = branchLabels ?? (after && on === undefined && "onError" in after && after.onError === "failed_edge" ? (["failed"] as const) : undefined);
   const q = query.trim().toLowerCase();
   const found = ADDABLE.filter((kind) => !q || `${stepLabel(kind, language)} ${stepEntry(kind).description[language]} ${kind}`.toLowerCase().includes(q));
   const where = after ? t("after {id}", { id: after.id }) : t(draft.steps.length ? "at the start" : "as the first step");
@@ -1021,7 +1070,7 @@ function AddMenu({ draft, after, on, at, onPick, onClose }: { draft: Draft; afte
       <input type="search" autoFocus aria-label={t("Search steps")} placeholder={t("Search steps")} value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => e.key === "Enter" && found[0] && go(found[0])} />
       {labels && (
         <select aria-label={t("Branch")} value={branch} onChange={(e) => setBranch(e.target.value)}>
-          <option value="">{t("next free branch")}</option>
+          <option value="">{t(branchLabels ? "next free branch" : "next step (default)")}</option>
           {labels.map((b) => (
             <option key={b} value={b}>
               {t("on {branch}", { branch: t(b) })}
@@ -1096,7 +1145,7 @@ function ConnectTo({ draft, step, onConnect }: { draft: Draft; step: Step; onCon
   const [error, setError] = useState<ConnectError | null>(null);
   const others = draft.steps.filter((s) => s.id !== step.id);
   if (others.length === 0) return null;
-  const paths: readonly (string | undefined)[] = BRANCHES[step.type] ?? [undefined];
+  const paths: readonly (string | undefined)[] = stepBranches(step) ?? ("onError" in step && step.onError === "failed_edge" ? [undefined, "failed"] : [undefined]);
   return (
     <section className="a7-group" aria-labelledby={`connect-${step.id}`}>
       <h3 id={`connect-${step.id}`}>{t("Connect to")}</h3>

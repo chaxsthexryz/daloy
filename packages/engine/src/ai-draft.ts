@@ -25,7 +25,7 @@ const without = (schema: unknown, keys: readonly string[], full: boolean) => {
   return { ...(schema as object), properties };
 };
 const LEFT_OUT: Record<string, readonly string[]> = { ai: ["files"], email: ["menu"], outlook: ["menu"], meta_reply: ["quickReplies"] };
-const LOCAL_LEFT_OUT: Record<string, readonly string[]> = { booking: ["mode", "checkIn", "nights", "timezone", "checkInTime", "checkOutTime", "conversation"] };
+const LOCAL_LEFT_OUT: Record<string, readonly string[]> = { booking: ["mode", "checkIn", "nights", "timezone", "checkInTime", "checkOutTime", "conversation"], sheets: ["rows", "header"] };
 
 /**
  * The part of the prompt that describes a definition: trigger, steps, edges and the rules a draft has to follow.
@@ -67,7 +67,7 @@ const spec = (full: boolean) => [
 
 // Left out of a small local model's prompt to keep it inside that model's context; a hosted model gets all of them.
 // The stress test (apps/api/scripts/ai-stress.ts) showed a hosted model without them builds http or telegram steps instead.
-const HOSTED_ONLY = ["airtable", "notion", "trello", "payment_status", "payment_due", "payment_expire", "sms", "meta_reply", "conversation_update", "stay_quote", "assistant_read", "discord", "google_docs", "read_page", "shopify_create_product", "shopify_update_product", "browser", "call_workflow"];
+const HOSTED_ONLY = ["airtable", "notion", "trello", "payment_status", "payment_due", "payment_expire", "sms", "meta_reply", "conversation_update", "stay_quote", "assistant_read", "discord", "google_docs", "read_page", "shopify_create_product", "shopify_update_product", "browser", "call_workflow", "switch", "transform"];
 const FULL_TRIGGERS =
   'More triggers: {"type":"meta_dm","config":{"channel":"both"}} for a Facebook Messenger or Instagram DM to the connected Page (channel messenger, instagram or both; fields {{trigger.text}}, {{trigger.senderId}}, {{trigger.channel}}); ' +
   '{"type":"payment","config":{"events":["paid"]}} for a PayMongo payment (fields {{trigger.reference}}, {{trigger.amountPesos}}, {{trigger.status}}); ' +
@@ -87,6 +87,7 @@ const FULL_RULES = [
   "An order, booking or inquiry with no source named comes in through a kymavo form, and a payment with no source named is a PayMongo payment. Use shopify_order only when the person says Shopify, and the email trigger only when they say emails come in.",
   "To watch a public page, such as a supplier's price, use a read_page step with a selector for the value. {{steps.<id>.output.changed}} is true when the value differs from the last run, so a condition with left {{steps.<id>.output.changed}}, op eq and right true can send the alert. read_page only reads public pages: it cannot log in or click.",
   "shopify_create_product and shopify_update_product never take values from a form trigger, because anyone can fill in a form. When the person asks for that, do not ask about it: draft a manual trigger with example values in the step that they change before each run, and say so in the summary.",
+  'A switch step compares "value" against up to 10 literal "cases" ({label, equals}) and uses "on": "<label>" or "on": "default" on outgoing edges. A transform step formats dates, pesos, PH mobile numbers, text case, splits or picks objects deterministically. Non-branching steps may set "onError": "stop" | "skip" | "failed_edge" (with an optional "on": "failed" edge).',
 ];
 
 const EXAMPLE = JSON.stringify({ name: example.name, summary: example.description, definition: example.definition });

@@ -188,7 +188,7 @@ async function runNext(deps: AdvanceDeps, run: Run): Promise<void> {
   const mock = run.test && !run.live;
   if (!last) {
     step = entryStep(def);
-  } else if (last.state === "succeeded" || last.state === "skipped") {
+  } else if (last.state === "succeeded" || last.state === "skipped" || (last.state === "failed" && last.branch === "failed")) {
     const next = nextStep(def, last.stepId, last.branch ?? undefined);
     if (!next) return moveRun(db, run.id, "running", "succeeded", { finishedAt: new Date() });
     step = next;
@@ -272,7 +272,11 @@ async function runNext(deps: AdvanceDeps, run: Run): Promise<void> {
 
   const ctx: ExpressionContext = {
     trigger: run.triggerPayload,
-    steps: Object.fromEntries(history.filter((r) => r.state === "succeeded").map((r) => [r.stepId, { output: r.output }])),
+    steps: Object.fromEntries(
+      history
+        .filter((r) => r.state === "succeeded" || (r.state === "skipped" && r.output !== null) || (r.state === "failed" && r.branch === "failed" && r.output !== null))
+        .map((r) => [r.stepId, { output: r.output }]),
+    ),
   };
 
   // "Try this step for real" (decision 0110): in a faked preview, the one step chosen as live calls its app and gets
@@ -331,15 +335,30 @@ async function runNext(deps: AdvanceDeps, run: Run): Promise<void> {
     // A faked test run retries within a second, like its delays, so the builder shows the outcome straight away.
     // It sends nothing, so no receiver's Retry-After applies; a live run waits the full delay.
     const retryAt = decision.kind === "retry" ? new Date(Date.now() + (fake ? Math.min(decision.delayMs, 1000) : decision.delayMs)) : undefined;
+    const policy = "onError" in step ? step.onError : undefined;
+    const hasFailedEdge = policy === "failed_edge" && def.edges.some((edge) => edge.from === step.id && edge.on === "failed");
+    const canRecover = decision.kind === "fail" || decision.kind === "dead_letter";
+    const e = err instanceof StepError ? err : undefined;
+    const errorOutput = { error: message, ...(e?.outcome ? { outcome: e.outcome } : {}) };
+    let enqueued = Boolean(retryAt);
     await db.transaction(async (tx) => {
-      const e = err instanceof StepError ? err : undefined;
+      if (canRecover && policy === "skip") {
+        await moveStep(tx, stepRunId, "running", "skipped", { input: e?.input ?? null, output: { skipped: true, ...errorOutput }, inputTokens: e?.usage?.inputTokens ?? null, outputTokens: e?.usage?.outputTokens ?? null, error: message, outcome: e?.outcome ?? null, deadLetter: decision.kind === "dead_letter", finishedAt: new Date() }, claimId);
+        enqueued = true;
+        return;
+      }
+      if (canRecover && hasFailedEdge) {
+        await moveStep(tx, stepRunId, "running", "failed", { input: e?.input ?? null, output: { failed: true, ...errorOutput }, branch: "failed", inputTokens: e?.usage?.inputTokens ?? null, outputTokens: e?.usage?.outputTokens ?? null, error: message, outcome: e?.outcome ?? null, deadLetter: decision.kind === "dead_letter", finishedAt: new Date() }, claimId);
+        enqueued = true;
+        return;
+      }
       await moveStep(tx, stepRunId, "running", "failed", { input: e?.input ?? null, inputTokens: e?.usage?.inputTokens ?? null, outputTokens: e?.usage?.outputTokens ?? null, error: message, outcome: e?.outcome ?? null, deadLetter: decision.kind === "dead_letter", finishedAt: new Date() }, claimId);
       if (retryAt) await tx.update(runs).set({ nextAttemptAt: retryAt }).where(eq(runs.id, run.id));
       // It may have gone through and is not safe to repeat: nothing more is sent until a person decides.
       else if (decision.kind === "review") await moveRun(tx, run.id, "running", "needs_review", { error: `step ${step.id}: ${message}` });
       else await moveRun(tx, run.id, "running", "failed", { error: `step ${step.id}: ${message}`, finishedAt: new Date() });
     });
-    if (retryAt) await deps.enqueue(run.id, retryAt);
+    if (enqueued) await deps.enqueue(run.id, retryAt);
     return;
   }
 
