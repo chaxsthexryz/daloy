@@ -210,6 +210,8 @@ export class ConnectionsController {
       union select id, name, 'google_sheets' from current_versions where definition->'trigger'->>'type' = 'sheets_row'
       union select id, name, 'google_calendar' from current_versions where definition->'trigger'->>'type' = 'calendar_event'
       union select id, name, 'google_drive' from current_versions where definition->'trigger'->>'type' = 'drive_file'
+      union select id, name, 'gmail' from current_versions where definition->'trigger'->>'type' = 'gmail_message'
+      union select id, name, 'outlook' from current_versions where definition->'trigger'->>'type' = 'outlook_message'
       order by name, id`);
     const providerFor: Record<string, string> = { email: "gmail", sheets: "google_sheets", drive: "google_drive", calendar: "google_calendar", paymongo_link: "paymongo", payment_status: "paymongo", sms: "unisms", meta_reply: "meta_messenger", shopify_create_product: "shopify", shopify_update_product: "shopify", google_docs: "google_drive" };
     const usage: Record<string, { id: string; name: string }[]> = {};

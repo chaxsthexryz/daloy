@@ -147,11 +147,30 @@ export async function startFakeProviders(port = 0) {
     clientSecret: "fake-client-secret",
     user: { id: "ms-user-ana", mail: "ana@contoso.example", displayName: "Ana Lim" },
     consent: "grant" as "grant" | "admin_required" | "declined",
+    grantScopes: null as string[] | null,
     mailboxEnabled: true,
     codes: new Map<string, { challenge: string; redirectUri: string; scope: string }>(),
     refreshTokens: new Set<string>(),
     accessTokens: new Set<string>(),
     sent: [] as { to: string; subject: string; text: string }[],
+    folders: [
+      { id: "inbox", displayName: "Inbox" },
+      { id: "sentitems", displayName: "Sent Items" },
+      { id: "orders-folder", displayName: "Orders" },
+    ] as { id: string; displayName: string }[],
+    inbox: [] as {
+      id: string;
+      internetMessageId?: string;
+      from: string;
+      fromName?: string;
+      replyTo?: string;
+      to?: string[];
+      subject: string;
+      text: string;
+      receivedDateTime: string;
+      parentFolderId?: string;
+      isDraft?: boolean;
+    }[],
   };
   // Google Calendar: events by calendar id then event id. Like Google, a deleted event stays as "cancelled" and its id cannot be inserted again.
   type CalendarEvent = { id: string; status: "confirmed" | "cancelled"; summary?: string; description?: string; start?: { dateTime?: string; date?: string; timeZone?: string }; end?: { dateTime?: string; date?: string; timeZone?: string }; created?: string; updated?: string };
@@ -170,8 +189,29 @@ export async function startFakeProviders(port = 0) {
   type DocFile = { name: string; text: string; editors: Set<string>; parents: string[]; appProperties: Record<string, string>; template: boolean };
   const docFiles = new Map<string, DocFile>();
   const teams = { flows: new Set(["flow-purchasing"]), posts: [] as { flow: string; text: string }[] };
-  // Gmail API (decision 0063): messages sent with a Google OAuth access token, as the RFC 822 text Google received.
-  const gmail = { sent: [] as { id: string; user: string; raw: string }[] };
+  // Gmail API (decision 0063 + G3): messages sent and fake inbox messages/labels for polling tests.
+  const gmail = {
+    sent: [] as { id: string; user: string; raw: string }[],
+    labels: [
+      { id: "INBOX", name: "INBOX" },
+      { id: "SENT", name: "SENT" },
+      { id: "Label_orders", name: "Orders" },
+    ] as { id: string; name: string }[],
+    inbox: [] as {
+      id: string;
+      threadId?: string;
+      labelIds?: string[];
+      from: string;
+      replyTo?: string;
+      to?: string[];
+      subject: string;
+      text: string;
+      messageId?: string;
+      inReplyTo?: string;
+      references?: string[];
+      internalDate: string;
+    }[],
+  };
   // "v2" is Slack's "Connect Slack" install (/oauth/v2/authorize, and /api/oauth.v2.access below): bot tokens that never expire.
   // Its user stands for the installing workspace: id is the team id and email the team name.
   // The record apps' consent and token endpoints, as the real ones want them (decision 0062).
@@ -353,7 +393,7 @@ export async function startFakeProviders(port = 0) {
       return answer(200, { token_type: "Bearer", access_token: access, ...(refreshToken ? { refresh_token: refreshToken } : {}), ...(app.expiresIn === undefined ? {} : { expires_in: app.expiresIn }), scope: grant.scope });
     }
 
-    // Gmail API users.messages.send: a Google OAuth app's access token and the message as base64url.
+    // Gmail API: send, labels, messages list & message get.
     if (path === "/gmail/v1/users/me/messages/send" && req.method === "POST") {
       const user = oauth.google?.accessTokens.get((req.headers.authorization ?? "").replace(/^Bearer /, ""));
       if (!user) return googleError(res, 401, "UNAUTHENTICATED", "Request had invalid authentication credentials.");
@@ -362,6 +402,55 @@ export async function startFakeProviders(port = 0) {
       const id = `gmail-${++seq}`;
       gmail.sent.push({ id, user: user.email, raw: Buffer.from(message, "base64url").toString("utf8") });
       return answer(200, { id, threadId: id, labelIds: ["SENT"] });
+    }
+    if (path === "/gmail/v1/users/me/labels" && req.method === "GET") {
+      const user = oauth.google?.accessTokens.get((req.headers.authorization ?? "").replace(/^Bearer /, ""));
+      if (!user) return googleError(res, 401, "UNAUTHENTICATED", "Request had invalid authentication credentials.");
+      return answer(200, { labels: gmail.labels });
+    }
+    if (path === "/gmail/v1/users/me/messages" && req.method === "GET") {
+      const user = oauth.google?.accessTokens.get((req.headers.authorization ?? "").replace(/^Bearer /, ""));
+      if (!user) return googleError(res, 401, "UNAUTHENTICATED", "Request had invalid authentication credentials.");
+      const q = url.searchParams.get("q") ?? "";
+      const afterSec = Number(/after:(\d+)/.exec(q)?.[1] ?? "0");
+      const wantLabels = url.searchParams.getAll("labelIds");
+      const maxResults = Math.min(Number(url.searchParams.get("maxResults") ?? "20"), 100);
+      const matched = gmail.inbox
+        .filter((m) => (afterSec ? Number(m.internalDate) >= afterSec * 1000 : true))
+        .filter((m) => wantLabels.length === 0 || wantLabels.every((l) => (m.labelIds ?? ["INBOX"]).includes(l)))
+        .sort((a, b) => Number(b.internalDate) - Number(a.internalDate));
+      return answer(200, {
+        messages: matched.slice(0, maxResults).map((m) => ({ id: m.id, threadId: m.threadId ?? m.id })),
+        ...(matched.length > maxResults ? { nextPageToken: "next" } : {}),
+      });
+    }
+    const gmailGet = /^\/gmail\/v1\/users\/me\/messages\/([^/]+)$/.exec(path);
+    if (gmailGet && req.method === "GET") {
+      const user = oauth.google?.accessTokens.get((req.headers.authorization ?? "").replace(/^Bearer /, ""));
+      if (!user) return googleError(res, 401, "UNAUTHENTICATED", "Request had invalid authentication credentials.");
+      const m = gmail.inbox.find((x) => x.id === gmailGet[1]);
+      if (!m) return googleError(res, 404, "NOT_FOUND", "Requested entity was not found.");
+      const headers = [
+        { name: "From", value: m.from },
+        ...(m.replyTo ? [{ name: "Reply-To", value: m.replyTo }] : []),
+        { name: "To", value: (m.to ?? [user.email]).join(", ") },
+        { name: "Subject", value: m.subject },
+        ...(m.messageId ? [{ name: "Message-ID", value: m.messageId }] : []),
+        ...(m.inReplyTo ? [{ name: "In-Reply-To", value: m.inReplyTo }] : []),
+        ...(m.references?.length ? [{ name: "References", value: m.references.join(" ") }] : []),
+      ];
+      return answer(200, {
+        id: m.id,
+        threadId: m.threadId ?? m.id,
+        labelIds: m.labelIds ?? ["INBOX"],
+        internalDate: m.internalDate,
+        snippet: m.text.slice(0, 120),
+        payload: {
+          mimeType: "text/plain",
+          headers,
+          body: { data: Buffer.from(m.text, "utf8").toString("base64url") },
+        },
+      });
     }
 
     // Microsoft identity platform v2.0, for any tenant: authorize (consents at once, or answers like a blocked
@@ -410,15 +499,46 @@ export async function startFakeProviders(port = 0) {
       const refresh = `ms-refresh-${++seq}`;
       microsoft.accessTokens.add(access);
       microsoft.refreshTokens.add(refresh);
-      return answer(200, { token_type: "Bearer", access_token: access, refresh_token: refresh, expires_in: 3599, scope: "Mail.Send User.Read" });
+      const granted = microsoft.grantScopes ? microsoft.grantScopes.join(" ") : "Mail.Send Mail.Read User.Read";
+      return answer(200, { token_type: "Bearer", access_token: access, refresh_token: refresh, expires_in: 3599, scope: granted });
     }
 
-    // Microsoft Graph v1.0: /me and /me/sendMail (202 with no body, like the real one).
-    if (path === "/graph/v1.0/me" || path === "/graph/v1.0/me/sendMail") {
+    // Microsoft Graph v1.0: /me, /me/sendMail, /me/mailFolders, /me/messages.
+    const msFolderMsgs = /^\/graph\/v1\.0\/me\/mailFolders\/([^/]+)\/messages$/.exec(path);
+    if (path === "/graph/v1.0/me" || path === "/graph/v1.0/me/sendMail" || path === "/graph/v1.0/me/mailFolders" || path === "/graph/v1.0/me/messages" || msFolderMsgs) {
       if (!microsoft.accessTokens.has((req.headers.authorization ?? "").replace(/^Bearer /, ""))) {
         return json(res, 401, { error: { code: "InvalidAuthenticationToken", message: "Access token has expired or is not yet valid." } });
       }
-      if (req.method === "GET") return json(res, 200, { id: microsoft.user.id, displayName: microsoft.user.displayName, mail: microsoft.user.mail, userPrincipalName: microsoft.user.mail });
+      if (path === "/graph/v1.0/me" && req.method === "GET") return json(res, 200, { id: microsoft.user.id, displayName: microsoft.user.displayName, mail: microsoft.user.mail, userPrincipalName: microsoft.user.mail });
+      if (path === "/graph/v1.0/me/mailFolders" && req.method === "GET") return answer(200, { value: microsoft.folders });
+      if ((path === "/graph/v1.0/me/messages" || msFolderMsgs) && req.method === "GET") {
+        const folderId = msFolderMsgs?.[1];
+        if (folderId && !microsoft.folders.some((f) => f.id.toLowerCase() === folderId.toLowerCase())) {
+          return json(res, 404, { error: { code: "ErrorItemNotFound", message: "The specified object was not found in the store." } });
+        }
+        const filter = url.searchParams.get("$filter") ?? "";
+        const sinceIso = /receivedDateTime ge (\S+)/.exec(filter)?.[1] ?? "";
+        const sinceMs = sinceIso ? Date.parse(sinceIso) : 0;
+        const top = Math.min(Number(url.searchParams.get("$top") ?? "20"), 100);
+        const matched = microsoft.inbox
+          .filter((m) => (folderId ? (m.parentFolderId ?? "inbox").toLowerCase() === folderId.toLowerCase() : true))
+          .filter((m) => (!Number.isNaN(sinceMs) && sinceMs > 0 ? Date.parse(m.receivedDateTime) >= sinceMs : true))
+          .sort((a, b) => Date.parse(a.receivedDateTime) - Date.parse(b.receivedDateTime));
+        const value = matched.slice(0, top).map((m) => ({
+          id: m.id,
+          internetMessageId: m.internetMessageId ?? `<${m.id}@contoso.example>`,
+          subject: m.subject,
+          from: { emailAddress: { name: m.fromName ?? "", address: m.from } },
+          replyTo: m.replyTo ? [{ emailAddress: { address: m.replyTo } }] : [],
+          toRecipients: (m.to ?? [microsoft.user.mail]).map((address) => ({ emailAddress: { address } })),
+          receivedDateTime: m.receivedDateTime,
+          bodyPreview: m.text.slice(0, 120),
+          body: { contentType: "text", content: m.text },
+          parentFolderId: m.parentFolderId ?? "inbox",
+          isDraft: m.isDraft === true,
+        }));
+        return answer(200, { value, ...(matched.length > top ? { "@odata.nextLink": `${base}/graph/v1.0/me/messages?$skip=${top}` } : {}) });
+      }
       if (!microsoft.mailboxEnabled) return json(res, 403, { error: { code: "ErrorAccessDenied", message: "Access is denied. Check credentials and try again." } });
       const { message } = JSON.parse(raw) as { message: { subject: string; body: { content: string }; toRecipients: { emailAddress: { address: string } }[] } };
       microsoft.sent.push({ to: message.toRecipients.map((r) => r.emailAddress.address).join(","), subject: message.subject, text: message.body.content });

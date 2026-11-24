@@ -1,8 +1,8 @@
 import { consentOutcome, outlookMailbox, ProviderError, type ProviderUrls } from "../providers";
 import type { OAuthProvider } from "./core";
 
-/** Delegated permissions for Outlook: send as the signed-in mailbox, keep access without a sign-in each time, read the address. */
-export const OUTLOOK_SCOPES = "offline_access https://graph.microsoft.com/Mail.Send https://graph.microsoft.com/User.Read";
+/** Delegated permissions for Outlook: send and read mail as the signed-in mailbox, keep access without a sign-in each time, read the address. */
+export const OUTLOOK_SCOPES = "offline_access https://graph.microsoft.com/Mail.Send https://graph.microsoft.com/Mail.Read https://graph.microsoft.com/User.Read";
 
 function microsoftBase(urls: ProviderUrls) {
   if (!urls.microsoft || !urls.microsoftLogin) throw new ProviderError("Outlook is not set up on this installation. Set MICROSOFT_CLIENT_ID and MICROSOFT_CLIENT_SECRET.", "invalid");
@@ -38,6 +38,6 @@ export const outlook: OAuthProvider = {
 
 /** The page an administrator opens to approve kymavo for the whole organization. */
 export function outlookAdminConsentUrl(urls: ProviderUrls, redirectUri: string) {
-  const q = new URLSearchParams({ client_id: urls.microsoft?.clientId ?? "", redirect_uri: redirectUri, scope: "https://graph.microsoft.com/Mail.Send https://graph.microsoft.com/User.Read" });
+  const q = new URLSearchParams({ client_id: urls.microsoft?.clientId ?? "", redirect_uri: redirectUri, scope: "https://graph.microsoft.com/Mail.Send https://graph.microsoft.com/Mail.Read https://graph.microsoft.com/User.Read" });
   return `${microsoftBase(urls)}/v2.0/adminconsent?${q}`;
 }

@@ -595,3 +595,35 @@ describe("Google triggers", () => {
     expect(definitionSchema.safeParse({ trigger: { type: "drive_file", config: { folderId: "x" } }, steps: [s], edges: [] }).success).toBe(false);
   });
 });
+
+// G3 (decision 0132): Connected mailbox triggers.
+describe("Mailbox triggers", () => {
+  const s = step("a");
+  it("defaults empty config and trims optional filters for gmail_message and outlook_message", () => {
+    expect(definitionSchema.parse({ trigger: { type: "gmail_message" }, steps: [s], edges: [] }).trigger).toEqual({ type: "gmail_message", config: {} });
+    expect(definitionSchema.parse({ trigger: { type: "outlook_message" }, steps: [s], edges: [] }).trigger).toEqual({ type: "outlook_message", config: {} });
+    expect(
+      definitionSchema.parse({
+        trigger: { type: "gmail_message", config: { from: " orders@example.com ", subjectContains: " Invoice ", label: " INBOX " } },
+        steps: [s],
+        edges: [],
+      }).trigger,
+    ).toEqual({ type: "gmail_message", config: { from: "orders@example.com", subjectContains: "Invoice", label: "INBOX" } });
+    expect(
+      definitionSchema.parse({
+        trigger: { type: "outlook_message", config: { from: " orders@example.com ", subjectContains: " Receipt ", folder: " Orders " } },
+        steps: [s],
+        edges: [],
+      }).trigger,
+    ).toEqual({ type: "outlook_message", config: { from: "orders@example.com", subjectContains: "Receipt", folder: "Orders" } });
+  });
+
+  it("refuses blank strings, unknown keys, and untrusted payment amounts from mailbox triggers", () => {
+    expect(definitionSchema.safeParse({ trigger: { type: "gmail_message", config: { from: "   " } }, steps: [s], edges: [] }).success).toBe(false);
+    expect(definitionSchema.safeParse({ trigger: { type: "gmail_message", config: { folder: "Inbox" } }, steps: [s], edges: [] }).success).toBe(false);
+    expect(definitionSchema.safeParse({ trigger: { type: "outlook_message", config: { label: "INBOX" } }, steps: [s], edges: [] }).success).toBe(false);
+    const dueStep = { id: "due", type: "payment_due", config: { reference: "R-1", amount: "{{trigger.text}}", kind: "deposit", checkout: false } };
+    expect(definitionSchema.safeParse({ trigger: { type: "gmail_message", config: {} }, steps: [dueStep], edges: [] }).success).toBe(false);
+    expect(definitionSchema.safeParse({ trigger: { type: "outlook_message", config: {} }, steps: [dueStep], edges: [] }).success).toBe(false);
+  });
+});

@@ -541,7 +541,7 @@ export function OutlookConnection({ conn, setup, outcome, onChange }: { conn: Co
       removeHint="kymavo deleted its access to the mailbox. Microsoft has no way for kymavo to withdraw the permission itself, so also remove kymavo from the apps your Microsoft account allows."
       unavailable={<p className="muted">{t("Outlook is not set up on this installation. The person who runs kymavo registers a free Microsoft Entra app and sets MICROSOFT_CLIENT_ID and MICROSOFT_CLIENT_SECRET (see the README). Email keeps going through the mail server in this installation's settings.")}</p>}
       intro={
-        <p>{t("Microsoft will ask you to let kymavo send email as you (Mail.Send), keep that access without asking each time, and read your name and address. Many organizations only let an administrator approve a new app. If Microsoft says you need admin approval, send your administrator")}{" "}
+        <p>{t("Microsoft will ask you to let kymavo send and read email as you (Mail.Send, Mail.Read), keep that access without asking each time, and read your name and address. Many organizations only let an administrator approve a new app. If Microsoft says you need admin approval, send your administrator")}{" "}
           {setup.adminConsentUrl && (
             <a href={setup.adminConsentUrl} target="_blank" rel="noreferrer">{t("this approval link")}</a>
           )}{t(", then connect again.")}{" "}

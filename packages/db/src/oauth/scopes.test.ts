@@ -6,7 +6,7 @@ import { authorizeUrl, FORBIDDEN_SCOPES, gmail, GOOGLE_FEATURE_SCOPES, googleShe
 describe("scope manifest", () => {
   it("asks each provider for exactly these scopes", () => {
     expect(Object.fromEntries(OAUTH_PROVIDERS.map((d) => [d.slug, { scopes: d.scopes, required: d.requiredScopes, pkce: d.pkce }]))).toEqual({
-      outlook: { scopes: ["offline_access", "https://graph.microsoft.com/Mail.Send", "https://graph.microsoft.com/User.Read"], required: ["Mail.Send", "User.Read"], pkce: true },
+      outlook: { scopes: ["offline_access", "https://graph.microsoft.com/Mail.Send", "https://graph.microsoft.com/Mail.Read", "https://graph.microsoft.com/User.Read"], required: ["Mail.Send", "User.Read"], pkce: true },
       "google-sheets": { scopes: ["openid", "email", "https://www.googleapis.com/auth/drive.file"], required: ["https://www.googleapis.com/auth/drive.file"], pkce: true },
       "google-drive": { scopes: ["openid", "email", "https://www.googleapis.com/auth/drive.file"], required: ["https://www.googleapis.com/auth/drive.file"], pkce: true },
       // Decision 0063: send only, a sensitive scope. Never a Gmail read, modify, compose or full mail scope.
@@ -25,7 +25,7 @@ describe("scope manifest", () => {
   it("builds the same authorize URL for Outlook", () => {
     const urls = { microsoftLogin: "https://login.microsoftonline.com", microsoft: { clientId: "client-1", clientSecret: "unused", tenant: "organizations" } } as Parameters<typeof authorizeUrl>[1];
     expect(authorizeUrl(outlook, urls, { redirectUri: redirectUri("https://daloy.example", outlook), state: "STATE", codeChallenge: "CHALLENGE" })).toBe(
-      "https://login.microsoftonline.com/organizations/oauth2/v2.0/authorize?client_id=client-1&response_type=code&redirect_uri=https%3A%2F%2Fdaloy.example%2Fsettings%2Fconnections%2Foutlook%2Fcallback&scope=offline_access+https%3A%2F%2Fgraph.microsoft.com%2FMail.Send+https%3A%2F%2Fgraph.microsoft.com%2FUser.Read&state=STATE&code_challenge=CHALLENGE&code_challenge_method=S256&response_mode=query&prompt=select_account",
+      "https://login.microsoftonline.com/organizations/oauth2/v2.0/authorize?client_id=client-1&response_type=code&redirect_uri=https%3A%2F%2Fdaloy.example%2Fsettings%2Fconnections%2Foutlook%2Fcallback&scope=offline_access+https%3A%2F%2Fgraph.microsoft.com%2FMail.Send+https%3A%2F%2Fgraph.microsoft.com%2FMail.Read+https%3A%2F%2Fgraph.microsoft.com%2FUser.Read&state=STATE&code_challenge=CHALLENGE&code_challenge_method=S256&response_mode=query&prompt=select_account",
     );
   });
 

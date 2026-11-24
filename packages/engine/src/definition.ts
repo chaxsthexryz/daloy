@@ -445,6 +445,27 @@ const triggerSchema = z.discriminatedUnion("type", [
   }),
   // drive_file: a new file in the folder chosen for Google Drive. requireFile: only files Daloy can attach (type and size limits).
   z.object({ type: z.literal("drive_file"), config: z.strictObject({ requireFile: z.boolean().default(false) }).default({ requireFile: false }) }),
+  // G3 (decision 0132): connected mailbox triggers on existing Gmail and Outlook OAuth grants, read by the worker's poll.
+  z.object({
+    type: z.literal("gmail_message"),
+    config: z
+      .strictObject({
+        from: z.string().trim().min(1).max(254).optional(),
+        subjectContains: z.string().trim().min(1).max(200).optional(),
+        label: z.string().trim().min(1).max(100).optional(),
+      })
+      .default({}),
+  }),
+  z.object({
+    type: z.literal("outlook_message"),
+    config: z
+      .strictObject({
+        from: z.string().trim().min(1).max(254).optional(),
+        subjectContains: z.string().trim().min(1).max(200).optional(),
+        folder: z.string().trim().min(1).max(100).optional(),
+      })
+      .default({}),
+  }),
 ]);
 export type Trigger = z.infer<typeof triggerSchema>;
 

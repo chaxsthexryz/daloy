@@ -21,6 +21,7 @@ export * from "./google-access";
 export * from "./google-docs";
 export * from "./google-calendar";
 export * from "./google-triggers";
+export * from "./mailbox-triggers";
 export * from "./email-sources";
 export * from "./knowledge";
 export * from "./internal-triggers";
