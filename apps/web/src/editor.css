@@ -175,6 +175,9 @@
   .a7-editor .a7-fold { display: grid; place-items: center; position: absolute; top: 18px; left: -16px; z-index: 6; width: 32px; min-width: 32px; height: 32px; min-height: 32px; padding: 0; border: 1px solid var(--border); border-radius: 50%; background: var(--surface); color: var(--a7-label); font-size: 18px; line-height: 1; }
   .a7-side[data-folded] .a7-fold { left: 5px; }
 }
+@media (min-width: 1000px) and (max-width: 1359.98px) {
+  .a7-body { grid-template-columns: minmax(0, 1fr) 312px; }
+}
 @media (min-width: 1400px) {
   .a7-body { grid-template-columns: minmax(0, 1fr) 380px; }
   .a7-body:has(> .a7-side[data-folded]) { grid-template-columns: minmax(0, 1fr) 44px; }

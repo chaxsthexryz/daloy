@@ -232,7 +232,7 @@ export function Editor({ id, from }: { id: string; from?: string }) {
     line?.scrollIntoView({ block: "center" });
     setTestFocus(null);
   }, [run, runId, testFocus]);
-  const flow = useMemo(() => toFlow(draft, selected, run ? runFlow(draft, run) : undefined, language), [draft, selected, run, language]);
+  const flow = useMemo(() => toFlow(draft, selected, run ? runFlow(draft, run) : undefined, language, measured), [draft, selected, run, language, measured]);
   // Advice only (decision 0033): a draft that does not parse yet is a work in progress, so it gets no checks.
   const warnings = useMemo(() => {
     const parsed = definitionSchema.safeParse(draft);
@@ -259,7 +259,14 @@ export function Editor({ id, from }: { id: string; from?: string }) {
 
   const onNodesChange = (changes: NodeChange[]) => {
     for (const c of changes) {
-      if (c.type === "dimensions" && c.dimensions) setMeasured((m) => ({ ...m, [c.id]: c.dimensions! }));
+      if (c.type === "dimensions" && c.dimensions) {
+        const next = c.dimensions;
+        setMeasured((m) => {
+          const prev = m[c.id];
+          if (prev && Math.abs(prev.width - next.width) < 1 && Math.abs(prev.height - next.height) < 1) return m;
+          return { ...m, [c.id]: next };
+        });
+      }
       if (c.type === "select" && c.selected) {
         setSelected(c.id);
         setFolded(false); // selecting a step opens a folded panel

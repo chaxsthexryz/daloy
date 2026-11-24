@@ -249,3 +249,65 @@ describe("setDisabled (U3)", () => {
     expect(setDisabled(d, "check", true)).toEqual(d);
   });
 });
+
+describe("branch-aware DAG layout (E2)", () => {
+  const trigger = { type: "manual", config: {} } as const;
+  const mail = (to: string) => ({ to, subject: "Hello", text: "Hi" });
+
+  it("orders condition branches left-to-right (true then false) regardless of step array order", () => {
+    const d: Draft = {
+      trigger,
+      steps: [
+        { id: "check", type: "condition", config: { condition: { left: "{{trigger.n}}", op: "gt", right: 1 } } },
+        { id: "falseStep", type: "email", config: mail("f@example.com") },
+        { id: "trueStep", type: "email", config: mail("t@example.com") },
+      ],
+      edges: [
+        { from: "check", to: "falseStep", on: "false" },
+        { from: "check", to: "trueStep", on: "true" },
+      ],
+    };
+    const pos = layout(d);
+    expect(pos.trueStep!.x).toBeLessThan(pos.falseStep!.x);
+  });
+
+  it("keeps asymmetric subtree leaves non-overlapping and centers parents over their children", () => {
+    const d: Draft = {
+      trigger,
+      steps: [
+        { id: "check", type: "condition", config: { condition: { left: "{{trigger.amount}}", op: "gt", right: 100 } } },
+        { id: "ask", type: "approval", config: { to: "boss@example.com", subject: "Approve?", message: "Ok?", timeoutSeconds: 3600 } },
+        { id: "no_mail", type: "email", config: mail("no@example.com") },
+        { id: "ok_mail", type: "email", config: mail("ok@example.com") },
+        { id: "bad_mail", type: "email", config: mail("bad@example.com") },
+        { id: "late_mail", type: "email", config: mail("late@example.com") },
+      ],
+      edges: [
+        { from: "check", to: "ask", on: "true" },
+        { from: "check", to: "no_mail", on: "false" },
+        { from: "ask", to: "ok_mail", on: "approved" },
+        { from: "ask", to: "bad_mail", on: "rejected" },
+        { from: "ask", to: "late_mail", on: "timeout" },
+      ],
+    };
+    const pos = layout(d);
+    expect(pos.ok_mail!.x).toBeLessThan(pos.bad_mail!.x);
+    expect(pos.bad_mail!.x).toBeLessThan(pos.late_mail!.x);
+    expect(pos.no_mail!.x).toBeGreaterThan(pos.late_mail!.x);
+    expect(pos.ask!.x).toBeLessThan(pos.no_mail!.x);
+    expect(pos.ask!.x).toBe((pos.ok_mail!.x + pos.late_mail!.x) / 2);
+  });
+
+  it("expands row spacing from measured node heights so tall cards do not crowd the next row", () => {
+    const d: Draft = {
+      trigger,
+      steps: [
+        { id: "check", type: "condition", config: { condition: { left: "{{trigger.n}}", op: "gt", right: 1 } } },
+        { id: "wait", type: "delay", config: { seconds: 5 } },
+      ],
+      edges: [{ from: "check", to: "wait", on: "true" }],
+    };
+    const pos = layout(d, { check: { height: 140 } });
+    expect(pos.wait!.y).toBeGreaterThanOrEqual(pos.check!.y + 140 + 82);
+  });
+});

@@ -1475,3 +1475,11 @@ What it does: `openExits(draft, nodeId)` in `apps/web/src/lib/editor.ts` reports
 Why this way: rendering open exits explicitly lets owners append steps after leaf nodes or fill empty branches with one click instead of dragging handle dots or right-clicking cards, while keeping `.a7-panel` dedicated to step inspection, Setup guide, and Ask AI.
 
 Tests: `apps/web/src/lib/editor.test.ts` (`openExits` across empty trigger, connected/leaf steps, `condition`, `approval`, `booking` variants, and `payment_expire`), `apps/web/src/lib/locale-coverage.test.ts` (`locale-editor.ts` Tagalog strings), and `e2e/editor.spec.ts` (pinned header actions and non-overlapping leaf/branch add stubs).
+
+## Branch-aware layered DAG layout and 1280 px inspector fit (phase E2)
+
+What it does: `layout(draft, measured)` in `apps/web/src/lib/graph.ts` places nodes top-to-bottom using deepest-parent assignment, orders children by `BRANCHES` order (`true` left of `false`, `approved`/`rejected`/`timeout` in order), allocates horizontal subtree slots so sibling branches never cross under another parent's branch, enforces a `260 px` row spacing minimum across joins, and computes each row's `y` from `measured[id].height` (`88 px` default plus `82 px` gap). `apps/web/src/Editor.tsx` feeds measured dimensions back into `toFlow(...)` (skipping sub-pixel noise), and `apps/web/src/editor.css` uses a `312 px` inspector panel between `1000 px` and `1359.98 px` so 3-branch flows fit cleanly on 1280 px screens.
+
+Why this way: centering each depth row by array order previously pushed deep branches across sibling leaves whenever one side branched wider or tall cards wrapped. Using subtree width slots and live measured heights keeps branch layouts predictable and prevents crowding.
+
+Tests: `apps/web/src/lib/graph.test.ts` (left-to-right branch ordering regardless of step array order, non-overlapping asymmetric subtrees, parent centering over children, and tall measured-card row spacing) and `e2e/editor.spec.ts`.

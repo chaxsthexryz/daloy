@@ -297,6 +297,10 @@ test("visible leaf and empty-branch add controls append steps and never overlap 
   const node = (id: string) => page.locator(`.react-flow__node[data-id="${id}"]`);
   await expect(node("ok_mail")).toBeVisible();
 
+  // E2 branch-aware DAG places the false leaf (no_mail) strictly right of ask's widest branch (late_mail).
+  const [noBox, lateBox] = [(await node("no_mail").boundingBox())!, (await node("late_mail").boundingBox())!];
+  expect(noBox.x).toBeGreaterThan(lateBox.x);
+
   const boxes = await page.evaluate(() =>
     [...document.querySelectorAll<HTMLElement>(".a7-insert, .a7-leaf-add, .a7-branch-add, .a7-editor .react-flow .a7-branch")].map((el) => ({
       name: el.getAttribute("aria-label") ?? el.textContent,
