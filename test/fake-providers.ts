@@ -154,12 +154,14 @@ export async function startFakeProviders(port = 0) {
     sent: [] as { to: string; subject: string; text: string }[],
   };
   // Google Calendar: events by calendar id then event id. Like Google, a deleted event stays as "cancelled" and its id cannot be inserted again.
-  type CalendarEvent = { id: string; status: "confirmed" | "cancelled"; summary?: string; description?: string; start?: { dateTime: string; timeZone?: string }; end?: { dateTime: string; timeZone?: string } };
+  type CalendarEvent = { id: string; status: "confirmed" | "cancelled"; summary?: string; description?: string; start?: { dateTime?: string; date?: string; timeZone?: string }; end?: { dateTime?: string; date?: string; timeZone?: string }; created?: string; updated?: string };
   // createdBy is the Google sign-in that made the calendar through calendars.insert: with calendar.app.created (decision 0064) that is the only kind a sign-in may use.
   const calendars = new Map<string, { title: string; editors: Set<string>; events: Map<string, CalendarEvent>; createdBy?: string }>();
   // Google Drive: folders by id, and the files saved into them (bytes are kept as a hash, not stored).
   const driveFolders = new Map<string, { name: string; editors: Set<string>; sharedDriveId: string | null }>();
   const driveFiles: { id: string; name: string; parent: string; mimeType: string; size: number; sha256: string }[] = [];
+  // G2 (decision 0127): when each file was created and its bytes, for files.list by folder and alt=media downloads.
+  const driveMeta = new Map<string, { createdTime: string; data: Buffer }>();
   // keys: Idempotency-Key -> stored response. busy: session ids whose expire answers 400 (a payment in progress).
   const paymongo = { sessions: [] as { id: string; amount: number; status?: "active" | "expired" }[], keys: new Map<string, unknown>(), busy: new Set<string>() };
   // Discord incoming webhooks (phase I1): id -> token for the webhooks that exist, and what was posted. A deleted webhook answers 404.
@@ -242,7 +244,8 @@ export async function startFakeProviders(port = 0) {
     // For the e2e suite, whose tests run in other processes: read counts, and take the Slack app out of the channel.
     if (path === "/__control") {
       if (req.method === "POST") {
-        const c = JSON.parse(raw) as { slackMember?: boolean; slackConsent?: "grant" | "declined"; microsoftConsent?: typeof microsoft.consent; unismsRevoked?: boolean };
+        const c = JSON.parse(raw) as { sheetAppend?: { id: string; tab: string; row: string[] }; slackMember?: boolean; slackConsent?: "grant" | "declined"; microsoftConsent?: typeof microsoft.consent; unismsRevoked?: boolean };
+        if (c.sheetAppend) sheets.get(c.sheetAppend.id)?.tabs.get(c.sheetAppend.tab)?.push(c.sheetAppend.row);
         if (c.slackMember !== undefined) slack.channels[0]!.is_member = c.slackMember;
         if (c.slackConsent) oauth.v2!.consent = c.slackConsent;
         if (c.microsoftConsent) microsoft.consent = c.microsoftConsent;
@@ -441,6 +444,14 @@ export async function startFakeProviders(port = 0) {
     if (docsCopy || docsBatch || (path === "/drive/v3/files" && req.method === "GET")) {
       const caller = googleCaller(req);
       if (!caller) return googleError(res, 401, "UNAUTHENTICATED", "Invalid Credentials");
+      const inFolder = /^'([\w-]+)' in parents/.exec(url.searchParams.get("q") ?? "")?.[1];
+      if (path === "/drive/v3/files" && inFolder) {
+        const folder = driveFolders.get(inFolder);
+        if (!folder || !folder.editors.has(caller.email)) return googleError(res, 404, "NOT_FOUND", `File not found: ${inFolder}.`);
+        const since = /createdTime >= '([^']+)'/.exec(url.searchParams.get("q") ?? "")?.[1] ?? "";
+        const files = driveFiles.filter((f) => f.parent === inFolder && (driveMeta.get(f.id)?.createdTime ?? "") >= since);
+        return answer(200, { files: files.map((f) => ({ id: f.id, name: f.name, mimeType: f.mimeType, size: String(f.size), createdTime: driveMeta.get(f.id)?.createdTime, webViewLink: `https://drive.google.com/file/d/${f.id}/view` })) });
+      }
       if (path === "/drive/v3/files") {
         const key = /value='([^']+)'/.exec(url.searchParams.get("q") ?? "")?.[1];
         return answer(200, { files: [...docFiles].filter(([, f]) => f.editors.has(caller.email) && f.appProperties.daloyKey === key).map(([id, f]) => ({ id, name: f.name })) });
@@ -502,6 +513,13 @@ export async function startFakeProviders(port = 0) {
         return answer(200, { id, name: meta.name });
       }
       const driveError = (code: number, reason: string, message: string) => json(res, code, { error: { code, message, errors: [{ reason, message }] } });
+      const stored = driveGet ? driveMeta.get(driveGet) : undefined;
+      if (stored && url.searchParams.get("alt") === "media") {
+        const f = driveFiles.find((x) => x.id === driveGet)!;
+        if (!driveFolders.get(f.parent)?.editors.has(email)) return googleError(res, 404, "NOT_FOUND", `File not found: ${driveGet}.`);
+        res.writeHead(200, { "content-type": f.mimeType, "content-length": String(stored.data.length) }).end(stored.data);
+        return;
+      }
       if (driveGet && docFiles.has(driveGet)) {
         const d = docFiles.get(driveGet)!;
         if (!d.editors.has(email)) return googleError(res, 404, "NOT_FOUND", `File not found: ${driveGet}.`);
@@ -529,6 +547,7 @@ export async function startFakeProviders(port = 0) {
       if (!folder.sharedDriveId && !caller.oauth) return driveError(403, "storageQuotaExceeded", "Service Accounts do not have storage quota. Leverage shared drives instead.");
       const id = `drivefile${String(++seq).padStart(8, "0")}`;
       driveFiles.push({ id, name: meta.name ?? "", parent: meta.parents![0]!, mimeType: meta.mimeType ?? "", size: data.length, sha256: createHash("sha256").update(data).digest("hex") });
+      driveMeta.set(id, { createdTime: new Date().toISOString(), data: Buffer.from(data) });
       return answer(200, { id, name: meta.name });
     }
 
@@ -551,18 +570,22 @@ export async function startFakeProviders(port = 0) {
       if (!cal || !cal.editors.has(email) || (caller.oauth && cal.createdBy !== email)) return googleError(res, 404, "NOT_FOUND", "Not Found");
       const eventId = calPath[2];
       const sent = raw ? (JSON.parse(raw) as Partial<CalendarEvent>) : {};
-      if (!eventId && req.method === "GET") return answer(200, { summary: cal.title, items: [...cal.events.values()].filter((e) => e.status === "confirmed") });
+      if (!eventId && req.method === "GET") {
+        const updatedMin = url.searchParams.get("updatedMin") ?? "";
+        return answer(200, { summary: cal.title, items: [...cal.events.values()].filter((e) => e.status === "confirmed" && (!updatedMin || (e.updated ?? e.created ?? "") >= updatedMin)) });
+      }
       if (!eventId && req.method === "POST") {
         if (!sent.id || !/^[a-v0-9]{5,1024}$/.test(sent.id)) return googleError(res, 400, "INVALID_ARGUMENT", "Invalid resource id value.");
         if (cal.events.has(sent.id)) return googleError(res, 409, "ALREADY_EXISTS", "The requested identifier already exists.");
-        const event: CalendarEvent = { ...sent, id: sent.id, status: "confirmed" };
+        const at = new Date().toISOString();
+        const event: CalendarEvent = { ...sent, id: sent.id, status: "confirmed", created: at, updated: at };
         cal.events.set(sent.id, event);
         return answer(200, event);
       }
       const event = cal.events.get(eventId ?? "");
       if (req.method === "PATCH") {
         if (!event) return googleError(res, 404, "NOT_FOUND", "Not Found");
-        Object.assign(event, sent, { id: event.id });
+        Object.assign(event, sent, { id: event.id, updated: new Date().toISOString() });
         return answer(200, event);
       }
       if (req.method === "DELETE") {
@@ -951,6 +974,13 @@ export async function startFakeProviders(port = 0) {
       driveFolders.set(id, { name, editors: new Set(editors), sharedDriveId });
     },
     driveFiles,
+    /** A file someone else put in the folder, created now. Returns its id. */
+    addDriveFile: (folderId: string, f: { name: string; mimeType: string; data: Buffer }) => {
+      const id = `drivefile${String(++seq).padStart(8, "0")}`;
+      driveFiles.push({ id, name: f.name, parent: folderId, mimeType: f.mimeType, size: f.data.length, sha256: createHash("sha256").update(f.data).digest("hex") });
+      driveMeta.set(id, { createdTime: new Date().toISOString(), data: f.data });
+      return id;
+    },
     once: (path: string, behaviour: Behaviour, skip = 0) => pending.push({ path, behaviour, skip }),
     async close() {
       for (const res of hanging) res.destroy();

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { hostname } from "node:os";
-import { clearSheetWriteKeys, createRun, deleteOldFlows, keepOAuthAlive, OAUTH_PROVIDERS, planOf, PLANS, publishedVersion, purgeConversations, purgeReceiptImages, purgeRetiredSecrets, purgeUploads, runDueDeliveries, RUN_QUEUE, RUN_QUEUE_OPTIONS, runs, SCHEDULE_QUEUE, WorkflowPausedError, workflows, workflowVersions, type Db, type MailDeps, type ProviderUrls } from "@daloy/db";
+import { clearSheetWriteKeys, createRun, pollGoogleTriggers, deleteOldFlows, keepOAuthAlive, OAUTH_PROVIDERS, planOf, PLANS, publishedVersion, purgeConversations, purgeReceiptImages, purgeRetiredSecrets, purgeUploads, runDueDeliveries, RUN_QUEUE, RUN_QUEUE_OPTIONS, runs, SCHEDULE_QUEUE, WorkflowPausedError, workflows, workflowVersions, type Db, type MailDeps, type ProviderUrls } from "@daloy/db";
 import type { RetryPolicy } from "@daloy/engine";
 import { and, eq, gt, inArray, isNull, lt, lte, or, sql } from "drizzle-orm";
 import { PgBoss } from "pg-boss";
@@ -31,6 +31,8 @@ export type WorkerOptions = {
   watchdog?: { secretsKey: Buffer; mail: MailDeps; publicUrl?: string; intervalMs?: number };
   emailIn?: { secretsKey: Buffer; adapter?: ImapAdapter; intervalMs?: number };
   onError?: (err: unknown, tags?: Record<string, string>) => void;
+  /** G2 (decision 0127): polls Google Sheets, Calendar and Drive triggers. tickMs: how often due ones are looked for. Left out, nothing is polled. */
+  googleTriggers?: { secretsKey: Buffer; urls: ProviderUrls; tickMs?: number; intervalMs?: number };
 };
 export type Worker = Awaited<ReturnType<typeof startWorker>>;
 
@@ -181,6 +183,15 @@ export async function startWorker(opts: WorkerOptions) {
       .finally(() => { readingMail = undefined; });
   }, Math.min(2_000, opts.emailIn.intervalMs ?? 2_000)) : undefined;
 
+  // One pass at a time per worker; several workers share the due automations through the claim (SKIP LOCKED).
+  let pollingGoogle: Promise<unknown> | undefined;
+  const googleTimer = opts.googleTriggers ? setInterval(() => {
+    if (pollingGoogle) return;
+    pollingGoogle = pollGoogleTriggers({ db, ...opts.googleTriggers!, enqueue: deps.enqueue })
+      .catch(() => console.error("google trigger poll failed"))
+      .finally(() => { pollingGoogle = undefined; });
+  }, opts.googleTriggers.tickMs ?? 15_000) : undefined;
+
   return {
     enqueue: deps.enqueue,
     /** Stops taking jobs and waits for the ones in progress, so their leases are released cleanly. */
@@ -190,10 +201,12 @@ export async function startWorker(opts: WorkerOptions) {
       clearInterval(deliveryTimer);
       clearInterval(emailTimer);
       clearInterval(watchdogTimer);
+      clearInterval(googleTimer);
       emailStop.abort();
       await boss.stop({ graceful: true, timeout: 30_000 });
       await delivering;
       await readingMail;
+      await pollingGoogle;
       await checking;
       await purging;
     },

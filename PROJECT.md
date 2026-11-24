@@ -398,7 +398,7 @@ C3 and C4 cover T7 (answer from my price list). Decisions from 0115 (0111 to 011
 ## Triggers and app expansion (docs/plans/editor-and-triggers-roadmap.md, 24 November 2026)
 
 - [x] G1. Daloy internal triggers (`booking_event`, `payment_event`) and reusable `sub_workflow` triggers/steps. Decision 0123.
-- [ ] G2. Google Workspace Tier 1 triggers reusing existing Google OAuth (`sheets_row`, `calendar_event`, `drive_file`).
+- [x] G2. Google Workspace Tier 1 triggers reusing existing Google OAuth (`sheets_row`, `calendar_event`, `drive_file`). Decision 0127, migration 0056 (`trigger_polls`). Polling only (5 minutes or the plan minimum), first poll never replays, one run per row, event or file through run keys, paused with a plain reason when the connection or scope is missing, backoff on rate limits, Drive files within the upload limits. Not done: push channels for Calendar and Drive on hosted installs.
 - [ ] G3. Connected mailbox triggers (`gmail_message` and `outlook_message` with filter rules).
 - [ ] G4. Web page / RSS monitor trigger (`page_changed`) and team chat triggers (`slack_message`, `teams_message`, `discord_message`).
 - [ ] G5. Record-tool triggers (`airtable_record`, `notion_page`, `trello_card`).

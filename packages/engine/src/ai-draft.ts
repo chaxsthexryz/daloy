@@ -76,6 +76,9 @@ const FULL_TRIGGERS =
   '{"type":"booking_event","config":{"events":["created"]}} when a Daloy booking is created, rescheduled or cancelled (fields {{trigger.event}}, {{trigger.bookingId}}, {{trigger.reference}}, {{trigger.resourceName}}, {{trigger.start}}, {{trigger.end}}, {{trigger.status}}, {{trigger.mode}}); ' +
   '{"type":"payment_event","config":{"events":["confirmed"]}} when a Daloy payment due settles as confirmed or expired (fields {{trigger.event}}, {{trigger.dueId}}, {{trigger.reference}}, {{trigger.amountPesos}}, {{trigger.kind}}, {{trigger.status}}); ' +
   '{"type":"sub_workflow","config":{}} for a reusable child workflow called by a call_workflow step; ' +
+  '{"type":"sheets_row","config":{"tab":"Sheet1"}} for a new row in a tab of the connected Google Sheet (fields {{trigger.rowNumber}}, {{trigger.values}}, and {{trigger.cells.<header>}} with the header in lower case and _ for spaces); ' +
+  '{"type":"calendar_event","config":{"on":"created","minutesBefore":60}} for a new event in the connected Google Calendar, or on "starting" that many minutes before an event (fields {{trigger.title}}, {{trigger.start}}, {{trigger.end}}, {{trigger.location}}, {{trigger.description}}, {{trigger.link}}); ' +
+  '{"type":"drive_file","config":{"requireFile":false}} for a new file in the connected Google Drive folder (fields {{trigger.name}}, {{trigger.mimeType}}, {{trigger.size}}, {{trigger.link}}; a photo or PDF up to 5 MB is the file field "file" for an ai step); ' +
   '{"type":"email","config":{}} for an email to the workspace inbox.';
 const FULL_RULES = [
   "When the person names an app or channel Daloy has no step for (such as TikTok, Viber or Lazada), say so plainly in the summary and name what the draft uses instead. Never say a step sends through an app it does not use.",
