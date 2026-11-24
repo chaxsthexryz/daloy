@@ -35,10 +35,10 @@ export class PrivacyController {
 
   private async exportBody(user: SessionUser, q: { email: string } | { phone: string }, res: Response) {
     res.set({ "Content-Disposition": 'attachment; filename="customer-data.json"', "Cache-Control": "no-store" });
-    const data = await exportCustomer(this.db, user.workspaceId, user.id, q);
-    // The file is handed to the customer, so it hides current and retired workspace secrets like every history reader (review of 22 November, M3).
-    // Through JSON first, so dates are text and the hider walks plain values.
+    // The file is handed to the customer, so it hides current and retired workspace secrets before collecting and returning (review of 22 November M3, S5).
     const hide = await historyHider(this.db, this.config.secretsKey, user.workspaceId);
+    const data = await exportCustomer(this.db, user.workspaceId, user.id, q, { hide });
+    // Through JSON first, so dates are text and the hider walks plain values.
     return hide(JSON.parse(JSON.stringify(data)));
   }
 

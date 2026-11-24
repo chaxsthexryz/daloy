@@ -413,9 +413,9 @@ C3 and C4 cover T7 (answer from my price list). Decisions from 0115 (0111 to 011
 
 - [x] S1. Stop the internal event run loop (`payment_event` to `payment_due` to `payment_expire`) and add Origin checks to sign-in routes and the approval decision (decision 0128).
 - [ ] S2. Stop public sign-up from claiming an unregistered `PLATFORM_ADMINS` email. Needs the owner's choice: block those emails at sign-up, or add email verification.
-- [ ] S3. Payment and booking lifecycle: cancelling a booking cancels its pending dues, a guest message no longer cancels a staff deposit request, and a refund also applies to dues confirmed from a needs_review claim. (claimed: s3-s5-security, branch neon/s3-s5-security-fixes, decision 0136)
-- [ ] S4. Resource limits: JSON template output, PDF text extraction, and fair IMAP polling across workspaces. (claimed: s3-s5-security, branch neon/s3-s5-security-fixes, decision 0136)
-- [ ] S5. Low findings: fence in-flight steps after a customer erase, hide retired secrets in exports before collecting, a send claim for mutating browser steps, the legacy webhook timestamp, and untrusted values reaching Shopify product steps. (claimed: s3-s5-security, branch neon/s3-s5-security-fixes, decision 0136)
+- [x] S3. Payment and booking lifecycle: cancelling a booking cancels its pending dues, a guest message no longer cancels a staff deposit request, and a refund also applies to dues confirmed from a needs_review claim. Decision 0136.
+- [x] S4. Resource limits: JSON template output, PDF text extraction, and fair IMAP polling across workspaces. Decision 0136.
+- [x] S5. Low findings: fence in-flight steps after a customer erase, hide retired secrets in exports before collecting, a send claim for mutating browser steps, the legacy webhook timestamp, and untrusted values reaching Shopify product steps. Decision 0136.
 
 ## Rebrand to kymavo (23 November 2026, orchestrator: Neon)
 

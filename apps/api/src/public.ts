@@ -191,7 +191,7 @@ export class PaymongoHooksController {
         } else {
           // A refund that came before this paid event was kept: apply it before starting paid listeners (decision 0056).
           const refund =
-            r.payment.providerPaymentId && (r.payment.status === "paid" || r.payment.status === "refunded")
+            r.payment.providerPaymentId && (r.payment.status === "paid" || r.payment.status === "refunded" || r.payment.status === "needs_review")
               ? await keptEvent(this.db, owner.userId, "payment.refunded", "paymentId", r.payment.providerPaymentId, livemode)
               : undefined;
           if (refund && (refund.payload as { livemode?: boolean } | null)?.livemode === livemode) {
@@ -603,8 +603,11 @@ export type SignatureCheck = { ok: true; legacy: boolean; replayKey: string | un
  */
 export function checkSignature(c: { body: Buffer; signature: string | undefined; timestamp: string | undefined; key: string; requireTimestamp: boolean; nowSeconds: number }): SignatureCheck {
   if (c.timestamp === undefined) {
+    // S5: a caller that cannot sign the old format is told "bad signature", never that a timestamp would have been needed.
+    const legacyOk = validSignature(c.body, c.signature, c.key);
+    if (!legacyOk) return { ok: false, reason: "bad signature" };
     if (c.requireTimestamp) return { ok: false, reason: NO_TIMESTAMP };
-    return validSignature(c.body, c.signature, c.key) ? { ok: true, legacy: true, replayKey: undefined } : { ok: false, reason: "bad signature" };
+    return { ok: true, legacy: true, replayKey: undefined };
   }
   const expected = createHmac("sha256", c.key).update(`${c.timestamp}.`).update(c.body).digest("hex");
   if (!c.signature || !sameText(c.signature, `sha256=${expected}`)) return { ok: false, reason: "bad signature" };

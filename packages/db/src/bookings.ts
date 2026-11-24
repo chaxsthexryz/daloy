@@ -1,10 +1,10 @@
 import { randomInt } from "node:crypto";
 import { formatZoned, rescheduleStayRange } from "@daloy/engine";
-import { and, asc, desc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import { queueCalendarSync } from "./calendar";
 import type { Db } from "./index";
 import { cancelRun } from "./runs";
-import { bookingChanges, bookingResults, bookings, conversations, resources, runs } from "./schema";
+import { bookingChanges, bookingResults, bookings, conversations, paymentDues, paymentHistory, payments, resources, runs } from "./schema";
 
 /**
  * Bookings (decision 0032, stays in decision 0120). The exclusion constraint bookings_no_overlap (migration 0019) is
@@ -139,6 +139,44 @@ export type StepAction =
 export type StepBookingResult = { branch: "done" | "taken" | "not_found"; output: Record<string, unknown> };
 
 /**
+ * S3: Cancels open pending payment_dues belonging to a cancelled booking, expires their pending checkouts, and clears
+ * any conversation open_due_id pointing to them. Confirmed and refunded dues stay untouched.
+ */
+async function cancelDuesForBooking(
+  tx: Tx,
+  o: { workspaceId: string; bookingId: string; reference: string; test: boolean; marker: string; source: "staff" | "workflow"; actorId?: string | null },
+) {
+  const now = sql`clock_timestamp()`;
+  const cancelled = await tx
+    .update(paymentDues)
+    .set({ status: "cancelled", cancelledBy: o.marker, updatedAt: now as unknown as Date })
+    .where(
+      and(
+        eq(paymentDues.userId, o.workspaceId),
+        eq(paymentDues.test, o.test),
+        eq(paymentDues.status, "pending"),
+        or(eq(paymentDues.bookingId, o.bookingId), and(isNull(paymentDues.bookingId), eq(paymentDues.reference, o.reference))),
+      ),
+    )
+    .returning({ id: paymentDues.id, userId: paymentDues.userId });
+  if (cancelled.length === 0) return;
+  const ids = cancelled.map((d) => d.id);
+  await tx.update(conversations).set({ openDueId: null }).where(and(eq(conversations.userId, o.workspaceId), inArray(conversations.openDueId, ids)));
+  await tx.update(payments).set({ status: "expired", updatedAt: now as unknown as Date }).where(and(inArray(payments.dueId, ids), eq(payments.status, "pending")));
+  for (const d of cancelled) {
+    await tx.insert(paymentHistory).values({
+      userId: d.userId,
+      dueId: d.id,
+      event: "cancelled",
+      source: o.source,
+      actorId: o.actorId ?? null,
+      detail: { reason: "booking_cancelled" },
+      at: now as unknown as Date,
+    });
+  }
+}
+
+/**
  * One booking step attempt, in one transaction: a stored result for this run and step is returned as it was (a retry
  * or takeover never books twice); otherwise the booking changes, the run is linked to the new version, and the result
  * is stored. A test run only sees and makes test bookings. Attempts of the same run and step take turns on an
@@ -235,6 +273,16 @@ export async function bookFromStep(db: Db, at: { workspaceId: string; test: bool
         const free = await unlessTaken(tx, async (sp) => {
           await sp.update(bookings).set({ during: range(start, end) as unknown as string, status, version, updatedAt: new Date() }).where(and(eq(bookings.id, b.row.id), eq(bookings.version, b.row.version)));
           await sp.insert(bookingChanges).values({ bookingId: b.row.id, fromVersion: b.row.version, action: a.action, start: a.action === "reschedule" ? start : null, runId: at.runId, actor: `run:${at.runId}`, result: { version, booking: nextLogged } });
+          if (a.action === "cancel") {
+            await cancelDuesForBooking(sp, {
+              workspaceId: at.workspaceId,
+              bookingId: b.row.id,
+              reference: b.row.reference,
+              test: at.test,
+              marker: `${at.runId}:${at.stepId}`,
+              source: "workflow",
+            });
+          }
           await link(sp, b.row.id, version);
           await queueCalendarSync(sp, b.row.id, version, at.runId);
         });
@@ -412,6 +460,18 @@ export async function staffChange(db: Db, req: StaffRequest, actor: string): Pro
       }
       if (req.action === "no_show") runId = await req.newRun(sp, nextPublic);
       await sp.insert(bookingChanges).values({ bookingId: b.row.id, fromVersion: b.row.version, action: req.action, start: req.action === "reschedule" ? start : null, runId, actor, result: { version, ...(runId ? { runId } : {}), booking: nextLogged } });
+      if (req.action === "cancel") {
+        const actorId = /^user:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(actor) ? actor.slice(5) : null;
+        await cancelDuesForBooking(sp, {
+          workspaceId: req.workspaceId,
+          bookingId: b.row.id,
+          reference: b.row.reference,
+          test: false,
+          marker: actor,
+          source: "staff",
+          actorId,
+        });
+      }
       // The calendar event stays for a no-show: the booking was made and not kept, not cancelled.
       if (req.action === "cancel" || req.action === "reschedule") await queueCalendarSync(sp, b.row.id, version, runId ?? b.row.runId);
     });

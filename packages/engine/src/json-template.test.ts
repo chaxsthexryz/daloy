@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { definitionSchema } from "./definition";
-import { parseJsonTemplate, resolveJsonTemplate, saveProblems } from "./json-template";
+import { ExpressionError } from "./expressions";
+import { JSON_TEMPLATE_MAX_OUTPUT_LENGTH, parseJsonTemplate, resolveJsonTemplate, saveProblems } from "./json-template";
 
 const ctx = (trigger: unknown) => ({ trigger, steps: {} });
 const resolve = (body: string, trigger: unknown) => {
@@ -32,6 +33,15 @@ describe("JSON body templates", () => {
     for (const bad of ['{"a": 1', '{{{trigger.x}}}', '{"a": {{trigger.x}} "b": 2}', "n={{trigger.x}}", '{"a": tru}']) {
       expect(parseJsonTemplate(bad).ok, bad).toBe(false);
     }
+  });
+
+  it("caps resolved JSON template output size (S4)", () => {
+    const parsed = parseJsonTemplate('{"a":"{{trigger.a}}","b":"{{trigger.b}}"}');
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    const chunk = "x".repeat(Math.floor(JSON_TEMPLATE_MAX_OUTPUT_LENGTH * 0.6));
+    expect(() => resolveJsonTemplate(parsed, ctx({ a: chunk, b: chunk }))).toThrow(ExpressionError);
+    expect(() => resolveJsonTemplate(parsed, ctx({ a: "ok", b: "ok" }))).not.toThrow();
   });
 });
 

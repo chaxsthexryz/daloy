@@ -123,10 +123,10 @@ export async function markPaymentPaid(db: Db, o: { userId: string; sessionId: st
   return { payment: (await db.select().from(payments).where(bySession(o.userId, o.sessionId, o.livemode)))[0], changed: false, mismatch: false };
 }
 
-/** paid -> refunded, only. */
+/** paid or needs_review -> refunded, only. */
 export async function markPaymentRefunded(db: Db, o: { userId: string; providerPaymentId: string; livemode: boolean }): Promise<{ payment: Payment | undefined; changed: boolean }> {
   const own = and(eq(payments.userId, o.userId), eq(payments.providerPaymentId, o.providerPaymentId), eq(payments.livemode, o.livemode));
-  const [row] = await db.update(payments).set({ status: "refunded", updatedAt: sql`now()` }).where(and(own, eq(payments.status, "paid"))).returning();
+  const [row] = await db.update(payments).set({ status: "refunded", updatedAt: sql`now()` }).where(and(own, inArray(payments.status, ["paid", "needs_review"]))).returning();
   if (row) return { payment: row, changed: true };
   return { payment: (await db.select().from(payments).where(own))[0], changed: false };
 }

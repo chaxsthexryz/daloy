@@ -487,6 +487,13 @@ describe("C7 conversations inbox, alerts, digest, and privacy", () => {
 
     const depRes = await s.agent.post(`/conversations/${staffConvo.id}/deposit-request`).send({ room: "Garden room", checkIn: "2027-02-10", nights: 2, guests: 2 }).expect(202);
     expect(depRes.body.runId).toBeTruthy();
+    const [depRun] = await db.select().from(runs).where(eq(runs.id, depRes.body.runId));
+    expect(depRun!.conversationId).toBe(staffConvo.id);
+    expect(depRun!.conversationVersion).toBeNull();
+
+    // S3: A guest message arriving after staff starts a deposit request must NOT cancel the deposit request run.
+    await post(s.path, [inbound("psid-staff", "m_c7_after_dep", "Sige po, paying now!")]);
+    expect(await drive(depRes.body.runId as string)).toBe("succeeded");
 
     // Operator can manage conversations & deposit requests, but gets 403 on settings and R6 export/delete; approver/requester get 403 everywhere.
     const op = await memberAgent(s.userId, "operator");

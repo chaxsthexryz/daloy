@@ -1,5 +1,7 @@
 import type { WorkflowDefinition } from "./definition";
-import { resolveTemplate, type ExpressionContext } from "./expressions";
+import { EXPRESSION_LIMITS, ExpressionError, resolveTemplate, type ExpressionContext } from "./expressions";
+
+export const JSON_TEMPLATE_MAX_OUTPUT_LENGTH = EXPRESSION_LIMITS.maxOutputLength;
 
 /*
  * HTTP bodies that are JSON (decision 0025). The template is parsed once, before any value is filled in, and the
@@ -52,17 +54,69 @@ export function parseJsonTemplate(template: string): JsonTemplate {
 }
 
 /** Fills a parsed template: slots keep their type, placeholders inside strings resolve as text (a whole-string one keeps its type). */
-export function resolveJsonTemplate(parsed: Extract<JsonTemplate, { ok: true }>, ctx: ExpressionContext): string {
+export function resolveJsonTemplate(
+  parsed: Extract<JsonTemplate, { ok: true }>,
+  ctx: ExpressionContext,
+  maxOutputLength = JSON_TEMPLATE_MAX_OUTPUT_LENGTH,
+): string {
+  let budget = 0;
+  const charge = (n: number) => {
+    budget += n;
+    if (budget > maxOutputLength) throw new ExpressionError(`JSON body is larger than ${maxOutputLength} characters`);
+  };
+  const estimate = (v: unknown): number => {
+    if (v === null || v === undefined) return 4;
+    if (typeof v === "string") return v.length + 2;
+    if (typeof v === "number" || typeof v === "boolean") return String(v).length;
+    if (Array.isArray(v)) {
+      let total = 2;
+      for (const item of v) {
+        total += estimate(item) + 1;
+        if (budget + total > maxOutputLength) throw new ExpressionError(`JSON body is larger than ${maxOutputLength} characters`);
+      }
+      return total;
+    }
+    if (typeof v === "object") {
+      let total = 2;
+      for (const [k, val] of Object.entries(v)) {
+        total += k.length + 4 + estimate(val);
+        if (budget + total > maxOutputLength) throw new ExpressionError(`JSON body is larger than ${maxOutputLength} characters`);
+      }
+      return total;
+    }
+    return 4;
+  };
   const walk = (v: unknown): unknown => {
     if (typeof v === "string") {
-      if (v.startsWith(parsed.marker)) return resolveTemplate(parsed.slots[Number(v.slice(parsed.marker.length))]!, ctx) ?? null;
-      return resolveTemplate(v, ctx) ?? "";
+      if (v.startsWith(parsed.marker)) {
+        const resolved = resolveTemplate(parsed.slots[Number(v.slice(parsed.marker.length))]!, ctx) ?? null;
+        charge(estimate(resolved));
+        return resolved;
+      }
+      const resolved = resolveTemplate(v, ctx) ?? "";
+      charge(estimate(resolved));
+      return resolved;
     }
-    if (Array.isArray(v)) return v.map(walk);
-    if (v !== null && typeof v === "object") return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, walk(x)]));
+    if (Array.isArray(v)) {
+      charge(2 + v.length);
+      return v.map(walk);
+    }
+    if (v !== null && typeof v === "object") {
+      const entries = Object.entries(v);
+      charge(2 + entries.length);
+      return Object.fromEntries(
+        entries.map(([k, x]) => {
+          charge(k.length + 3);
+          return [k, walk(x)];
+        }),
+      );
+    }
+    charge(String(v).length);
     return v;
   };
-  return JSON.stringify(walk(parsed.value));
+  const out = JSON.stringify(walk(parsed.value));
+  if (out.length > maxOutputLength) throw new ExpressionError(`JSON body is larger than ${maxOutputLength} characters`);
+  return out;
 }
 
 export const declaresJson = (headers: Record<string, string>) => Object.entries(headers).some(([k, v]) => k.toLowerCase() === "content-type" && /json/i.test(v));

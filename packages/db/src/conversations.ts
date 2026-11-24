@@ -164,7 +164,9 @@ export async function runSuperseded(db: Reader, run: Linked, lock = false): Prom
   if (!run.conversationId) return false;
   const q = db.select({ version: conversations.version }).from(conversations).where(eq(conversations.id, run.conversationId));
   const [c] = lock ? await q.for("share") : await q;
-  return c && c.version === run.conversationVersion ? false : "conversation";
+  if (!c) return "conversation";
+  if (run.conversationVersion == null) return false;
+  return c.version === run.conversationVersion ? false : "conversation";
 }
 
 /** Merges the given fields into the conversation; an empty value leaves the saved one as it is. Returns all saved fields. */

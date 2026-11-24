@@ -132,6 +132,34 @@ describe("export", () => {
     expect(res.body.uploads[0].dataBase64).toBe(PNG.toString("base64"));
   });
 
+  it("hides current and retired secrets before collecting R6 exports so secret values cannot leak or match queries (S5)", async () => {
+    const o = await owner();
+    const retiredVal = `retired-${randomBytes(6).toString("hex")}@secret.test`;
+    const currentVal = `current-${randomBytes(6).toString("hex")}@secret.test`;
+    await o.agent.put("/secrets/hook_tok").send({ value: retiredVal }).expect(204);
+    await o.agent.put("/secrets/hook_tok").send({ value: currentVal }).expect(204);
+
+    const a = who("Eva Cruz", "eva@export.test", "0917 444 5555", "+639174445555");
+    const sa = await seed(o.userId, a);
+    await db.update(runs).set({ triggerPayload: { name: a.name, contact: { email: a.email, phone: a.phone }, leak: retiredVal, active: currentVal } }).where(eq(runs.id, sa.runId));
+
+    const b = who("Dan Lim", "dan@export.test", "0918 444 5555", "+639184445555");
+    const sb = await seed(o.userId, b);
+    await db.update(runs).set({ triggerPayload: { name: b.name, contact: { email: b.email, phone: b.phone }, secretHit: retiredVal } }).where(eq(runs.id, sb.runId));
+
+    // Export for Eva hides both retired and current secret values.
+    const evaRes = await exportOf(o.agent, "email=eva@export.test").expect(200);
+    const evaText = JSON.stringify(evaRes.body);
+    expect(evaText).not.toContain(retiredVal);
+    expect(evaText).not.toContain(currentVal);
+    expect(evaText).toContain("[secret]");
+
+    // Searching by the retired secret email must NOT match or collect Dan's run.
+    const bySecret = await exportOf(o.agent, `email=${encodeURIComponent(retiredVal)}`).expect(200);
+    expect(bySecret.body.counts.runs).toBe(0);
+    expect(bySecret.body.runs).toEqual([]);
+  });
+
   it("writes an audit row with counts and no customer value", async () => {
     const o = await owner();
     const a = who("Cara Dizon", "cara@audit.test", "0919 000 1111", "+639190001111");

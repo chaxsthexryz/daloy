@@ -86,8 +86,11 @@ async function moveStep(w: Writer, id: string, from: StepState, to: StepState, e
 const superseded = (stepId: string, why: "booking" | "conversation" | false) =>
   why === "conversation" ? `The customer sent a newer message, so this run stopped before step ${stepId} and the newer run answers.` : `The booking was rescheduled or cancelled, so this run stopped before step ${stepId}.`;
 
-/** A send that must not be repeated without a person deciding: an email, or an HTTP call that is not idempotent. */
-const unsafeToRepeat = (step: Step) => step.type === "email" || (step.type === "http" && !isIdempotent(step.config));
+/** A send that must not be repeated without a person deciding: an email, an HTTP call that is not idempotent, or a browser step that clicks or types. */
+const unsafeToRepeat = (step: Step) =>
+  step.type === "email" ||
+  (step.type === "http" && !isIdempotent(step.config)) ||
+  (step.type === "browser" && step.config.actions.some((a) => a.action === "click" || a.action === "fill"));
 
 /**
  * Does the next piece of work for one run (one step attempt, or finishing the run), then enqueues the run again.

@@ -172,7 +172,6 @@ export class ConversationsController {
 
     const runId = await createRun(this.db, wf.versionId, payload, {
       conversationId: detail.id,
-      conversationVersion: detail.version,
     });
     await enqueueRun(this.boss, runId);
     return { runId, workflowId: wf.workflowId };
@@ -185,8 +184,8 @@ export class ConversationsController {
     const detail = await conversationDetail(this.db, user.workspaceId, id);
     if (!detail) throw new NotFoundException("conversation not found");
     res.set({ "Content-Disposition": 'attachment; filename="guest-conversation-data.json"', "Cache-Control": "no-store" });
-    const data = await exportCustomer(this.db, user.workspaceId, user.id, { conversationId: id });
     const hide = await historyHider(this.db, this.config.secretsKey, user.workspaceId);
+    const data = await exportCustomer(this.db, user.workspaceId, user.id, { conversationId: id }, { hide });
     return hide(JSON.parse(JSON.stringify(data)));
   }
 
