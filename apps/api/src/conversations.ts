@@ -20,7 +20,7 @@ import type { Response } from "express";
 import type { PgBoss } from "pg-boss";
 import * as z from "zod";
 import { SessionGuard } from "./auth";
-import { Allow, BOSS, CONFIG, CurrentUser, DB, enqueueRun, MANAGE, OPERATE, ZodPipe, type ApiConfig, type SessionUser } from "./http";
+import { Allow, BOSS, CONFIG, CurrentUser, DB, enqueueRun, MANAGE, OPERATE, RateLimit, ZodPipe, type ApiConfig, type SessionUser } from "./http";
 import { historyHider } from "./mask";
 
 const fieldsInput = z.object({
@@ -123,6 +123,7 @@ export class ConversationsController {
   }
 
   @Post(":id/alert")
+  @UseGuards(RateLimit(20))
   @HttpCode(200)
   async sendAlert(
     @CurrentUser() user: SessionUser,
@@ -178,7 +179,7 @@ export class ConversationsController {
   }
 
   @Post(":id/export")
-  @UseGuards(Allow(MANAGE))
+  @UseGuards(Allow(MANAGE), RateLimit(20))
   @HttpCode(200)
   async exportGuest(@CurrentUser() user: SessionUser, @Param("id", new ZodPipe(z.uuid())) id: string, @Res({ passthrough: true }) res: Response) {
     const detail = await conversationDetail(this.db, user.workspaceId, id);
@@ -190,7 +191,7 @@ export class ConversationsController {
   }
 
   @Post(":id/delete")
-  @UseGuards(Allow(MANAGE))
+  @UseGuards(Allow(MANAGE), RateLimit(20))
   @HttpCode(200)
   async deleteGuest(
     @CurrentUser() user: SessionUser,

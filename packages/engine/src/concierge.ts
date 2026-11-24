@@ -57,17 +57,21 @@ const MESSAGES = {
 const AVAILABILITY = [
   /\b(?:un)?availab(?:le|ility)\b/i,
   /\bvacan(?:t|cy|cies)\b/i,
-  /\b(?:fully|already)\s+booked\b/i,
+  /\b(?:fully|already)\s+(?:booked|reserved)\b/i,
   /\bbooked\s+(?:up|out|solid)\b/i,
   /\bsold\s+out\b/i,
   /\bno\s+(?:more\s+)?(?:rooms?|vacanc\w*|slots?|space)\b/i,
   /\b(?:rooms?|cottages?|villas?|units?|slots?|dates?|it)\s+(?:is|are)\s+(?:still\s+)?(?:free|open|taken|booked|reserved)\b/i,
+  /\b(?:booking|reservation|stay|room|slot)\s+(?:is\s+)?confirmed\b/i,
+  /\bwe(?:'ve|\s+have)?\s+confirmed\s+your\b/i,
+  /\bconfirmed\s+na\b/i,
   /\b(?:reserved|on\s+hold)\s+for\s+you\b/i,
   /\bfree\s+(?:rooms?|slots?|dates?)\b/i,
-  /\bwe\s+(?:still\s+)?have\s+(?:rooms?|space|slots?|openings?)\b/i,
+  /\bwe\s+(?:still\s+)?have\s+(?:\d+\s+|an?\s+)?(?:rooms?|cottages?|villas?|units?|space|slots?|openings?)\b/i,
   /\bbakante\b/i,
-  /\bmay\s+(?:slot|room|kwarto|kuwarto|space|bakante)\b/i,
-  /\bmeron\s+(?:pa\s+)?(?:po\s+)?(?:kaming\s+)?(?:slot|room|kwarto|kuwarto|bakante)\b/i,
+  /\bopen\s+pa\b/i,
+  /\bmay\s+(?:\d+\s+)?(?:slot|room|kwarto|kuwarto|space|bakante|libre|open)\b/i,
+  /\bmeron\s+(?:pa\s+|pang\s+)?(?:po\s+)?(?:kaming\s+)?(?:\d+\s+)?(?:slot|room|kwarto|kuwarto|bakante|open)\b/i,
   /\bpuno\s+na\b/i,
   /\bwala\s+(?:na|nang|ng)\s+(?:bakante|kwarto|kuwarto|room|slot)/i,
   /\bokupado\b/i,
@@ -76,10 +80,10 @@ const AVAILABILITY = [
 ];
 
 const AMOUNT = String.raw`(\d[\d,]*(?:\.\d{1,2})?)`;
-// A peso figure (₱3,500, PHP 3500, P600, 500 pesos), or a bare number in a rate phrase (2800 per night, 2,800/night).
+// A currency figure (₱3,500, PHP 3500, P600, $85, USD 120, 500 pesos), or a bare number in a rate phrase (2800 per night, 2,800/night).
 const PRICES = [
-  new RegExp(String.raw`(?:₱|\bPHP|\bPhp|\bP(?=\s?\d))\s?${AMOUNT}`, "g"),
-  new RegExp(String.raw`${AMOUNT}\s?(?:pesos?|piso|php)\b`, "gi"),
+  new RegExp(String.raw`(?:₱|\$|\b(?:[Pp][Hh][Pp]|[Uu][Ss][Dd])|\bP(?=\s?\d))\s?${AMOUNT}`, "g"),
+  new RegExp(String.raw`${AMOUNT}\s?(?:pesos?|piso|php|usd|dollars?)\b`, "gi"),
   new RegExp(String.raw`${AMOUNT}\s*(?:\/\s*|\s(?:per|a|an|each|kada|bawat)\s+)(?:nights?|gabi|pax|persons?|people|heads?|tao|rooms?|guests?|days?|araw)\b`, "gi"),
 ];
 const figures = (text: string) => PRICES.flatMap((re) => [...text.matchAll(re)].map((m) => Number(m[1]!.replace(/,/g, ""))));

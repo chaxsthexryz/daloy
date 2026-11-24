@@ -30,7 +30,7 @@ export class ErrorReportFilter implements ExceptionFilter {
     const res = host.switchToHttp().getResponse<Response>();
     const req = host.switchToHttp().getRequest<Request>();
     if (err instanceof WorkflowPausedError) {
-      res.status(409).json({ statusCode: 409, error: "Conflict", message: err.message });
+      res.status(409).type("application/json").json({ statusCode: 409, error: "Conflict", message: err.message });
       return;
     }
     if (err instanceof HttpException) {
@@ -39,10 +39,10 @@ export class ErrorReportFilter implements ExceptionFilter {
       if (status >= 500) {
         void this.reporter.capture(err, { tags: { method: req.method, path: req.path }, extra: { status } });
       }
-      res.status(status).json(typeof body === "string" ? { statusCode: status, message: body } : body);
+      res.status(status).type("application/json").json(typeof body === "string" ? { statusCode: status, message: body } : body);
       return;
     }
     void this.reporter.capture(err, { tags: { method: req.method, path: req.path }, extra: { status: 500 } });
-    res.status(500).json({ statusCode: 500, message: "Internal server error" });
+    res.status(500).type("application/json").json({ statusCode: 500, message: "Internal server error" });
   }
 }
