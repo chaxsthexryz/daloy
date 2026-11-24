@@ -74,8 +74,6 @@ services:
       SMTP_FROM: ${SMTP_FROM:-Daloy <daloy@localhost>}
       # Who may use that server: empty picks open for Mailpit and approved for anything else (decision 0024).
       SHARED_MAIL: ${SHARED_MAIL:-}
-      # Who may open #/admin (decision 0120). Empty turns the admin page off.
-      PLATFORM_ADMINS: ${PLATFORM_ADMINS:-}
       # Ollama on the host by default. The AI step works without it only in test runs without live calls.
       LLM_BASE_URL: ${LLM_BASE_URL:-http://host.docker.internal:11434}
       LLM_MODEL: ${LLM_MODEL:-llama3.2}
@@ -160,6 +158,8 @@ services:
       SMTP_FROM: ${SMTP_FROM:-Daloy <daloy@localhost>}
       # Who may use that server: empty picks open for Mailpit and approved for anything else (decision 0024).
       SHARED_MAIL: ${SHARED_MAIL:-}
+      # Who may open #/admin (decision 0122). Empty turns the admin page off.
+      PLATFORM_ADMINS: ${PLATFORM_ADMINS:-}
       PUBLIC_URL: ${PUBLIC_URL:-http://localhost:3000}
       # Optional: the installation's Microsoft Entra app, for Connect Outlook (decision 0023). Empty means Outlook is not offered.
       MICROSOFT_CLIENT_ID: ${MICROSOFT_CLIENT_ID:-}
