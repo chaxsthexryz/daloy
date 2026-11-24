@@ -25,8 +25,59 @@ export type MailDeps = {
   urls?: ProviderUrls;
 };
 
+export type EmailThread = { inReplyTo?: string | null; references?: string[] | string | null };
+
 const MAX_RECIPIENTS = 10;
+const MAX_MESSAGE_ID_LENGTH = 255;
+export const MAX_THREAD_REFERENCES = 20;
 const address = z.email();
+const MSG_ID_RE = /^<[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]{1,200}@[A-Za-z0-9.-]{1,200}>$/;
+
+/**
+ * Validates one RFC 5322 Message-ID (<local@domain>), rejecting CR/LF, NUL, whitespace, and non-Message-ID text so
+ * untrusted inbound mail headers can never inject SMTP or MIME headers (C6, decision 0121).
+ */
+export function sanitizeMessageId(raw: string | null | undefined): string | null {
+  if (typeof raw !== "string" || /[\r\n\0]/.test(raw)) return null;
+  const trimmed = raw.trim();
+  if (trimmed.length === 0 || trimmed.length > MAX_MESSAGE_ID_LENGTH) return null;
+  return MSG_ID_RE.test(trimmed) ? trimmed : null;
+}
+
+/**
+ * Parses and validates a References list (string or array), rejecting any CR/LF-polluted value, deduplicating in order,
+ * and capping to at most max entries while preserving the thread root and most recent entries (RFC 5322 section 3.6.4).
+ */
+export function sanitizeReferences(raw: string | string[] | null | undefined, max = MAX_THREAD_REFERENCES): string[] {
+  if (!raw || max <= 0) return [];
+  const items = Array.isArray(raw) ? raw : [raw];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const item of items) {
+    if (typeof item !== "string" || /[\r\n\0]/.test(item)) continue;
+    for (const token of item.trim().split(/[ \t]+/)) {
+      const id = sanitizeMessageId(token);
+      if (id && !seen.has(id)) {
+        seen.add(id);
+        out.push(id);
+      }
+    }
+  }
+  if (out.length <= max) return out;
+  return [out[0]!, ...out.slice(-(max - 1))];
+}
+
+/** Builds safe, header-injection-free In-Reply-To and References values for an email reply. */
+export function buildThreadHeaders(thread?: EmailThread | null): { inReplyTo?: string; references?: string[] } {
+  if (!thread) return {};
+  const inReplyTo = sanitizeMessageId(thread.inReplyTo);
+  const prior = sanitizeReferences(thread.references);
+  const combined = inReplyTo && !prior.includes(inReplyTo) ? sanitizeReferences([...prior, inReplyTo]) : prior;
+  return {
+    ...(inReplyTo ? { inReplyTo } : {}),
+    ...(combined.length > 0 ? { references: combined } : {}),
+  };
+}
 
 /** SMTP settings from env vars. Locally this is Mailpit on port 1025. */
 export function smtpMailer(env: NodeJS.ProcessEnv = process.env): Mailer {
@@ -132,7 +183,7 @@ const loginRefused = (err: unknown) => {
  * claim, for a send that is not safe to repeat, is called once the sender is known and nothing but the network is left,
  * so its database lock never waits on another query; it is released when the message body starts (decision 0030).
  */
-export async function sendAs(db: Db, key: Buffer, deps: MailDeps, userId: string, cfg: EmailConfig, idempotencyKey: string, opts: { allowUnconfirmed?: boolean; claim?: () => Promise<() => void>; capKey?: string } = {}) {
+export async function sendAs(db: Db, key: Buffer, deps: MailDeps, userId: string, cfg: EmailConfig, idempotencyKey: string, opts: { allowUnconfirmed?: boolean; claim?: () => Promise<() => void>; capKey?: string; thread?: EmailThread | null } = {}) {
   const sender = await resolveSender(db, key, userId, opts);
   const mailer = mailerFor(sender, deps);
   // Before the claim below: the send lock must never wait on a query (decision 0030).
@@ -143,11 +194,11 @@ export async function sendAs(db: Db, key: Buffer, deps: MailDeps, userId: string
   // capKey is the step key, the same on every attempt, so a retry is not counted twice. The watchdog and the test email pass none: they are not counted.
   // A Google sign-in sends from the same mailbox, so it counts the same.
   if ((sender.kind === "gmail" || sender.kind === "gmail_api") && opts.capKey) await claimUsage(db, userId, "mailbox", { n: checkRecipients(cfg.to).length, key: opts.capKey });
-  if (sender.kind === "gmail_api") return { ...(await sendWithGmailApi(db, key, deps, userId, sender, mailer, cfg, idempotencyKey, brand, opts.claim)), from: addressOf(mailer.from), gmail: true };
+  if (sender.kind === "gmail_api") return { ...(await sendWithGmailApi(db, key, deps, userId, sender, mailer, cfg, idempotencyKey, brand, opts.claim, opts.thread)), from: addressOf(mailer.from), gmail: true };
   try {
     const release = await opts.claim?.();
     try {
-      return { ...(await sendEmail(mailer, cfg, idempotencyKey, release, brand)), from: addressOf(mailer.from), gmail: sender.kind === "gmail" };
+      return { ...(await sendEmail(mailer, cfg, idempotencyKey, release, brand, opts.thread)), from: addressOf(mailer.from), gmail: sender.kind === "gmail" };
     } finally {
       // Before the catch below writes to the database (Astra, 6170f4f: ten held locks waiting on lookups emptied the pool).
       release?.();
@@ -165,8 +216,8 @@ export async function sendAs(db: Db, key: Buffer, deps: MailDeps, userId: string
  * once and sends again (Gmail did not take the first). A refused grant marks the sender failed: nothing falls back to
  * another sender (decision 0020). A 5xx or a timeout after the request left is unknown and never resent on its own.
  */
-async function sendWithGmailApi(db: Db, key: Buffer, deps: MailDeps, userId: string, sender: Extract<ResolvedSender, { kind: "gmail_api" }>, mailer: Mailer, cfg: EmailConfig, messageKey: string, brand: Brand | null, claim?: () => Promise<() => void>) {
-  const { to, messageId, raw } = await rawMessage(mailer, cfg, messageKey, brand);
+async function sendWithGmailApi(db: Db, key: Buffer, deps: MailDeps, userId: string, sender: Extract<ResolvedSender, { kind: "gmail_api" }>, mailer: Mailer, cfg: EmailConfig, messageKey: string, brand: Brand | null, claim?: () => Promise<() => void>, thread?: EmailThread | null) {
+  const { to, messageId, raw } = await rawMessage(mailer, cfg, messageKey, brand, thread);
   const urls = deps.urls;
   if (!urls || !gmail.client(urls) || !urls.gmail) throw new StepError("Gmail sign-in is not set up on this installation any more. Connect Gmail again in Apps.", false, { outcome: "not_sent" });
   try {
@@ -261,27 +312,41 @@ function brandedParts(cfg: EmailConfig, brand: Brand) {
  * What nodemailer is given for one email, plain text unless a brand is given. Recipients come from a resolved template,
  * so they are checked here, after resolution. SMTP and the Gmail API both send this, so their headers are the same.
  */
-function message(mailer: Mailer, cfg: EmailConfig, messageKey: string, brand?: Brand | null) {
+function message(mailer: Mailer, cfg: EmailConfig, messageKey: string, brand?: Brand | null, thread?: EmailThread | null) {
   const to = checkRecipients(cfg.to);
   // messageKey is per attempt (run:step:attempt), so each attempt has its own Message-ID, and a re-delivered
   // attempt keeps it, so receivers can drop the duplicate.
   const messageId = `<${messageKey.replaceAll(":", ".")}@daloy>`;
-  return { to, messageId, mail: { from: mailer.from, replyTo: mailer.replyTo, to, subject: cfg.subject, ...(brand ? brandedParts(cfg, brand) : { text: cfg.text }), messageId } };
+  const headers = buildThreadHeaders(thread);
+  return {
+    to,
+    messageId,
+    mail: {
+      from: mailer.from,
+      replyTo: mailer.replyTo,
+      to,
+      subject: cfg.subject,
+      ...(brand ? brandedParts(cfg, brand) : { text: cfg.text }),
+      messageId,
+      ...(headers.inReplyTo ? { inReplyTo: headers.inReplyTo } : {}),
+      ...(headers.references?.length ? { references: headers.references.join(" ") } : {}),
+    },
+  };
 }
 
 /** Builds a message without sending it. */
 const rawBuilder = nodemailer.createTransport({ streamTransport: true, buffer: true });
 
 /** The RFC 822 bytes of an email, as SMTP would send them, for the Gmail API (decision 0063). */
-export async function rawMessage(mailer: Mailer, cfg: EmailConfig, messageKey: string, brand?: Brand | null) {
-  const { to, messageId, mail } = message(mailer, cfg, messageKey, brand);
+export async function rawMessage(mailer: Mailer, cfg: EmailConfig, messageKey: string, brand?: Brand | null, thread?: EmailThread | null) {
+  const { to, messageId, mail } = message(mailer, cfg, messageKey, brand, thread);
   const info = await rawBuilder.sendMail(mail);
   return { to, messageId, raw: info.message as Buffer };
 }
 
 /** Sends one email, plain text unless a brand is given. */
-export async function sendEmail(mailer: Mailer, cfg: EmailConfig, messageKey: string, onBodyStart?: () => void, brand?: Brand | null) {
-  const { to, messageId, mail } = message(mailer, cfg, messageKey, brand);
+export async function sendEmail(mailer: Mailer, cfg: EmailConfig, messageKey: string, onBodyStart?: () => void, brand?: Brand | null, thread?: EmailThread | null) {
+  const { to, messageId, mail } = message(mailer, cfg, messageKey, brand, thread);
   const daloySend: SendState = { bodyStarted: false, onBodyStart };
   watchBody(mailer.transport);
   try {

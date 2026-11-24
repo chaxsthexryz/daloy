@@ -3,9 +3,10 @@ import { fileType } from "@daloy/engine";
 import { and, asc, eq, inArray, ne, or, sql, type SQL } from "drizzle-orm";
 import type { Db } from "./index";
 import { queueDelivery, retryDelivery } from "./deliveries";
-import { normalizeReceiptRef } from "./meta";
+import { normalizeReceiptRef, type MetaChannel } from "./meta";
+import { pesosToCentavos } from "./paymongo";
 import { claimUsageInTx } from "./usage";
-import { bookingResults, bookings, deliveries, paymentClaims, paymentDues, paymentHistory, payments, paymentSettings, receiptReferences, users, workspaceMembers, type ClaimFlag, type Role } from "./schema";
+import { bookingResults, bookings, conversations, deliveries, paymentClaims, paymentDues, paymentHistory, payments, paymentSettings, receiptReferences, users, workspaceMembers, type ClaimFlag, type Role } from "./schema";
 
 /**
  * The two payment paths of R3 (decisions 0088 and 0089). A due is what a customer owes on one order or booking. It is
@@ -62,10 +63,13 @@ export type NewDue = {
   replyChannel?: "sms" | "messenger" | null;
   replyTo?: string | null;
   replyText?: string | null;
+  /** C6 (decision 0121): conversation whose open_due_id points to this due until confirmed or expired. */
+  conversationId?: string | null;
 };
 
 /** One due per run and step: the step running again gets the first one back. A second open due of the same kind for the same order is refused. */
 export async function createDue(db: Db, v: NewDue): Promise<Due> {
+  const { conversationId, ...dueValues } = v;
   const own = and(eq(paymentDues.runId, v.runId), eq(paymentDues.stepId, v.stepId));
   const [existing] = await db.select().from(paymentDues).where(own);
   if (existing) return existing;
@@ -73,10 +77,23 @@ export async function createDue(db: Db, v: NewDue): Promise<Due> {
     return await db.transaction(async (tx) => {
       const [row] = await tx
         .insert(paymentDues)
-        .values({ ...v, token: randomBytes(32).toString("base64url") })
+        .values({ ...dueValues, token: randomBytes(32).toString("base64url") })
         .onConflictDoNothing({ target: [paymentDues.runId, paymentDues.stepId] })
         .returning();
       if (!row) return (await tx.select().from(paymentDues).where(own))[0]!;
+      if (!row.test) {
+        if (conversationId) {
+          await tx
+            .update(conversations)
+            .set({ openDueId: row.id })
+            .where(and(eq(conversations.id, conversationId), eq(conversations.userId, row.userId)));
+        } else if (row.replyChannel === "messenger" && row.replyTo) {
+          await tx
+            .update(conversations)
+            .set({ openDueId: row.id })
+            .where(and(eq(conversations.userId, row.userId), eq(conversations.channel, "messenger"), eq(conversations.externalId, row.replyTo)));
+        }
+      }
       await log(tx, row, "requested", "workflow", { detail: { kind: row.kind, amount: row.amountCentavos } });
       return row;
     });
@@ -98,6 +115,101 @@ export class TooManyClaimsError extends Error {
   constructor() {
     super(`This order already has ${OPEN_CLAIMS_PER_DUE} references waiting for the seller.`);
   }
+}
+
+/** Shared review-flag pipeline for both pay-page submissions and DM receipt photos (C6, decision 0121). */
+async function evaluateTransferClaim(
+  tx: Tx,
+  d: Due,
+  c: { normalizedRef: string | null; submittedCentavos?: number | null; image?: { bytes: Buffer } },
+) {
+  const flags: ClaimFlag[] = [];
+  if (c.normalizedRef) {
+    const [used] = await tx.select({ id: paymentClaims.id }).from(paymentClaims).where(and(eq(paymentClaims.userId, d.userId), eq(paymentClaims.normalizedRef, c.normalizedRef))).limit(1);
+    const [seen] = used ? [used] : await tx.select({ id: receiptReferences.firstRunId }).from(receiptReferences).where(and(eq(receiptReferences.userId, d.userId), eq(receiptReferences.normalizedRef, c.normalizedRef)));
+    if (used || seen) flags.push("duplicate_reference");
+  }
+  if (c.submittedCentavos != null && c.submittedCentavos !== d.amountCentavos) flags.push("amount_mismatch");
+  const kind = c.image ? fileType(c.image.bytes) : null;
+  const readable = kind !== null && READABLE.has(kind);
+  if (c.image && !readable) flags.push("unreadable_upload");
+  if (d.status === "confirmed" || d.status === "refunded") flags.push("already_confirmed");
+  if (d.status === "cancelled") flags.push("late_payment");
+  return { flags, kind, readable };
+}
+
+const isPhPhoneDigits = (digits: string) => /^(?:09|639)\d{9}$/.test(digits);
+const LABELLED_REF_RE = /(?:\bref(?:erence)?(?:\s*(?:no\.?|num(?:ber)?|#))?|\btxn(?:\s*id)?|\btrace(?:\s*no\.?)?)\s*[:#.-]?\s*((?:\d+(?:[\s-]\d+)+)|[A-Za-z0-9][A-Za-z0-9-]{4,62}[A-Za-z0-9])/i;
+const STANDALONE_TOKEN_RE = /^[A-Za-z0-9][A-Za-z0-9-]{4,62}[A-Za-z0-9]$/;
+const GROUPED_DIGITS_RE = /^\d+(?:[\s-]\d+)+$/;
+const EMBEDDED_DIGITS_RE = /(?<![A-Za-z0-9+])\d+(?:[\s-]\d+)*(?![A-Za-z0-9])/g;
+
+/** Extracts a GCash or bank transfer reference number from a DM caption, avoiding phone numbers and plain prose. */
+export function extractDmReceiptRef(text: string): string | null {
+  const s = text.trim();
+  if (!s) return null;
+  const check = (raw: string, allowPhoneLike = false) => {
+    const candidate = raw.trim().slice(0, 64);
+    if (!/\d/.test(candidate)) return null;
+    const norm = normalizeReceiptRef(candidate);
+    if (!norm) return null;
+    if (!allowPhoneLike && /^\d+$/.test(norm) && isPhPhoneDigits(norm)) return null;
+    return candidate;
+  };
+  const labelled = LABELLED_REF_RE.exec(s);
+  if (labelled?.[1]) {
+    const found = check(labelled[1], true);
+    if (found) return found;
+  }
+  if (STANDALONE_TOKEN_RE.test(s) || GROUPED_DIGITS_RE.test(s)) {
+    const found = check(s);
+    if (found) return found;
+  }
+  for (const m of s.matchAll(EMBEDDED_DIGITS_RE)) {
+    const digits = m[0].replace(/\D/g, "");
+    if (digits.length >= 8 && digits.length <= 24 && !isPhPhoneDigits(digits)) {
+      const found = check(m[0]);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
+const PREFIX_AMOUNT_RE = /(?:\bPHP|₱|\bP(?=\s*\d))\s*(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d{1,2}))?\b/i;
+const SUFFIX_AMOUNT_RE = /\b(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d{1,2}))?\s*(?:pesos?|php)\b/i;
+
+/** Extracts an explicit peso amount (PHP, ₱, P or pesos) from a DM caption as integer centavos, or null. */
+export function extractDmReceiptAmount(text: string): number | null {
+  const m = PREFIX_AMOUNT_RE.exec(text) ?? SUFFIX_AMOUNT_RE.exec(text);
+  if (!m?.[1]) return null;
+  const whole = m[1].replaceAll(",", "");
+  const formatted = m[2] ? `${whole}.${m[2]}` : whole;
+  try {
+    return pesosToCentavos(formatted);
+  } catch {
+    return null;
+  }
+}
+
+/** The guest's open (pending, live) payment due id for this conversation, or null. */
+export async function openDueForGuest(db: Db, userId: string, channel: MetaChannel, externalId: string): Promise<string | null> {
+  const [row] = await db
+    .select({ dueId: paymentDues.id })
+    .from(conversations)
+    .innerJoin(paymentDues, eq(paymentDues.id, conversations.openDueId))
+    .where(and(eq(conversations.userId, userId), eq(conversations.channel, channel), eq(conversations.externalId, externalId), eq(paymentDues.userId, userId), eq(paymentDues.status, "pending"), eq(paymentDues.test, false)))
+    .limit(1);
+  return row?.dueId ?? null;
+}
+
+/** An existing DM receipt claim recorded for this Meta message id in the workspace, if any. */
+export async function dmClaimByMid(db: Db, userId: string, sourceMid: string): Promise<Claim | undefined> {
+  const [row] = await db
+    .select()
+    .from(paymentClaims)
+    .where(and(eq(paymentClaims.userId, userId), eq(paymentClaims.sourceMid, sourceMid)))
+    .limit(1);
+  return row;
 }
 
 /**
@@ -124,19 +236,7 @@ export async function submitTransferClaim(db: Db, token: string, c: { transferRe
       .where(and(eq(paymentClaims.dueId, d.id), eq(paymentClaims.channel, "transfer"), inArray(paymentClaims.status, ["open", "clarify"])));
     if (waiting!.n >= OPEN_CLAIMS_PER_DUE) throw new TooManyClaimsError();
 
-    const flags: ClaimFlag[] = [];
-    const key = normalizeReceiptRef(transferRef);
-    if (key) {
-      const [used] = await tx.select({ id: paymentClaims.id }).from(paymentClaims).where(and(eq(paymentClaims.userId, d.userId), eq(paymentClaims.normalizedRef, key))).limit(1);
-      const [seen] = used ? [used] : await tx.select({ id: receiptReferences.firstRunId }).from(receiptReferences).where(and(eq(receiptReferences.userId, d.userId), eq(receiptReferences.normalizedRef, key)));
-      if (used || seen) flags.push("duplicate_reference");
-    }
-    if (c.submittedCentavos != null && c.submittedCentavos !== d.amountCentavos) flags.push("amount_mismatch");
-    const kind = c.image ? fileType(c.image.bytes) : null;
-    const readable = kind !== null && READABLE.has(kind);
-    if (c.image && !readable) flags.push("unreadable_upload");
-    if (d.status === "confirmed" || d.status === "refunded") flags.push("already_confirmed");
-    if (d.status === "cancelled") flags.push("late_payment");
+    const { flags, kind, readable } = await evaluateTransferClaim(tx, d, { normalizedRef: normalizeReceiptRef(transferRef), submittedCentavos: c.submittedCentavos, image: c.image });
     if (readable) await claimUsageInTx(tx, d.userId, "upload");
 
     const [claim] = await tx
@@ -157,6 +257,64 @@ export async function submitTransferClaim(db: Db, token: string, c: { transferRe
   });
 }
 
+/**
+ * C6 (decision 0121): turns a Messenger or Instagram DM receipt photo into a transfer claim on the conversation's open
+ * pending due, using the same flagging pipeline as the pay page. Never marks the due paid; creates nothing when the due
+ * is closed or test; deduplicates webhook replays by (userId, sourceMid).
+ */
+export async function submitDmReceiptClaim(
+  db: Db,
+  o: { userId: string; dueId: string; sourceMid: string; channel: MetaChannel; caption?: string; image: { bytes: Buffer } },
+): Promise<Claim | undefined> {
+  return db.transaction(async (tx) => {
+    const d = await lockDue(tx, and(eq(paymentDues.id, o.dueId), eq(paymentDues.userId, o.userId)));
+    if (!d || d.test || d.status !== "pending") return undefined;
+
+    const [replayed] = await tx
+      .select()
+      .from(paymentClaims)
+      .where(and(eq(paymentClaims.userId, d.userId), eq(paymentClaims.sourceMid, o.sourceMid)))
+      .limit(1);
+    if (replayed) return replayed;
+
+    const [waiting] = await tx
+      .select({ n: sql<number>`count(*)::int` })
+      .from(paymentClaims)
+      .where(and(eq(paymentClaims.dueId, d.id), eq(paymentClaims.channel, "transfer"), inArray(paymentClaims.status, ["open", "clarify"])));
+    if (waiting!.n >= OPEN_CLAIMS_PER_DUE) throw new TooManyClaimsError();
+
+    const transferRef = extractDmReceiptRef(o.caption ?? "");
+    const normalizedRef = transferRef ? normalizeReceiptRef(transferRef) : null;
+    const submittedCentavos = extractDmReceiptAmount(o.caption ?? "");
+    const { flags, kind, readable } = await evaluateTransferClaim(tx, d, { normalizedRef, submittedCentavos, image: o.image });
+    if (readable) await claimUsageInTx(tx, d.userId, "upload", { key: `dm-claim:${o.sourceMid}` });
+
+    const [claim] = await tx
+      .insert(paymentClaims)
+      .values({
+        userId: d.userId,
+        dueId: d.id,
+        channel: "transfer",
+        transferRef,
+        normalizedRef,
+        submittedCentavos,
+        sourceMid: o.sourceMid,
+        flags,
+        ...(readable ? { image: o.image.bytes, imageType: kind as "jpeg", imageSize: o.image.bytes.length } : {}),
+      })
+      .onConflictDoNothing()
+      .returning();
+    if (!claim) {
+      return (await tx.select().from(paymentClaims).where(and(eq(paymentClaims.userId, d.userId), eq(paymentClaims.sourceMid, o.sourceMid))).limit(1))[0];
+    }
+    await log(tx, d, "receipt_submitted", "transfer", {
+      claimId: claim.id,
+      detail: { source: "dm", channel: o.channel, mid: o.sourceMid, ...(transferRef ? { reference: transferRef } : {}), flags: flags.join(",") },
+    });
+    return claim;
+  });
+}
+
 /** pending -> confirmed, once, with its source. Open claims of the same due are flagged, and one reply is queued. */
 async function confirm(tx: Tx, d: Due, by: { source: "transfer" | "checkout"; actorId: string | null; claimId: string | null; paymentId: string | null }): Promise<boolean> {
   const [row] = await tx
@@ -165,6 +323,7 @@ async function confirm(tx: Tx, d: Due, by: { source: "transfer" | "checkout"; ac
     .where(and(eq(paymentDues.id, d.id), eq(paymentDues.status, "pending")))
     .returning();
   if (!row) return false;
+  await tx.update(conversations).set({ openDueId: null }).where(and(eq(conversations.userId, row.userId), eq(conversations.openDueId, row.id)));
   await tx
     .update(paymentClaims)
     .set({ flags: sql`array_append(${paymentClaims.flags}, 'already_confirmed')`, version: sql`${paymentClaims.version} + 1` })
@@ -228,7 +387,10 @@ export async function settleCheckout(db: Db, userId: string, paymentId: string):
     if (p.status === "refunded") {
       if (d.confirmedPaymentId !== p.id || d.status !== "confirmed") return;
       const [row] = await tx.update(paymentDues).set({ status: "refunded", updatedAt: now as unknown as Date }).where(and(eq(paymentDues.id, d.id), eq(paymentDues.status, "confirmed"))).returning();
-      if (row) await log(tx, row, "refunded", "checkout", { detail: { payment: p.providerPaymentId } });
+      if (row) {
+        await tx.update(conversations).set({ openDueId: null }).where(and(eq(conversations.userId, row.userId), eq(conversations.openDueId, row.id)));
+        await log(tx, row, "refunded", "checkout", { detail: { payment: p.providerPaymentId } });
+      }
       return;
     }
     if (p.status !== "paid" && p.status !== "needs_review") return;
@@ -263,6 +425,7 @@ export async function expireDue(db: Db, at: { userId: string; runId: string; ste
     if (d.status === "cancelled" && d.cancelledBy === marker) return { result: "expired", due: d };
     if (d.status !== "pending") return { result: "kept", due: d };
     const [row] = await tx.update(paymentDues).set({ status: "cancelled", cancelledBy: marker, updatedAt: now as unknown as Date }).where(eq(paymentDues.id, d.id)).returning();
+    await tx.update(conversations).set({ openDueId: null }).where(and(eq(conversations.userId, row!.userId), eq(conversations.openDueId, row!.id)));
     await tx.update(payments).set({ status: "expired", updatedAt: now as unknown as Date }).where(and(eq(payments.dueId, d.id), eq(payments.status, "pending")));
     await log(tx, row!, "expired", "workflow");
     return { result: "expired", due: row };

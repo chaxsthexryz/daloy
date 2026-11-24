@@ -3,6 +3,8 @@ import {
   conversationPayload,
   createKeyedRun,
   recordInbound,
+  sanitizeMessageId,
+  sanitizeReferences,
   EMAIL_UID_CHANGED,
   emailSourcePassword,
   emailSources,
@@ -23,6 +25,8 @@ export type EmailPayload = {
   subject: string;
   text: string;
   messageId: string | null;
+  inReplyTo?: string | null;
+  references?: string[];
   receivedAt: string;
 };
 export type ImapMessage = { uid: number; payload: EmailPayload | null; warning?: string };
@@ -190,12 +194,33 @@ export async function pollEmailSources({ db, secretsKey, adapter, enqueue, inter
           // The sender's conversation, keyed by the address replies go to (decision 0115). A message without a
           // Message-ID is deduplicated by its mailbox position instead.
           const p = message.payload;
+          const safeMid = sanitizeMessageId(p.messageId);
+          const safeInReplyTo = sanitizeMessageId(p.inReplyTo);
+          const safeReferences = sanitizeReferences([
+            ...(Array.isArray(p.references) ? p.references : typeof p.references === "string" ? [p.references] : []),
+            ...(safeInReplyTo ? [safeInReplyTo] : []),
+          ]);
           const convo = p.replyTo.trim()
-            ? await recordInbound(tx, { userId: workflow.userId, channel: "email", externalId: p.replyTo.trim().toLowerCase(), mid: p.messageId ?? key, text: `${p.subject}\n\n${p.text}`, at: new Date(p.receivedAt) })
+            ? await recordInbound(tx, {
+                userId: workflow.userId,
+                channel: "email",
+                externalId: p.replyTo.trim().toLowerCase(),
+                mid: safeMid ?? key,
+                emailReferences: safeReferences,
+                text: `${p.subject}\n\n${p.text}`,
+                at: new Date(p.receivedAt),
+              })
             : undefined;
           // A reply of just a number picks that line of the workflow's email menu (decision 0118).
           const choice = numberedChoice(p.text, emailMenu(version.definition));
-          const payload = { ...p, ...(choice ? { choice } : {}), ...(convo ? { conversation: await conversationPayload(tx, convo) } : {}) };
+          const payload = {
+            ...p,
+            messageId: safeMid,
+            ...(safeInReplyTo ? { inReplyTo: safeInReplyTo } : {}),
+            ...(safeReferences.length > 0 ? { references: safeReferences } : {}),
+            ...(choice ? { choice } : {}),
+            ...(convo ? { conversation: await conversationPayload(tx, convo) } : {}),
+          };
           // Paused (N11b): the message is skipped, and the checkpoint below still moves past it, so a resume does not replay a burst.
           const result = await createKeyedRun(tx, current.workflowId, version.id, payload, key, convo ? { conversationId: convo.id, conversationVersion: convo.version } : {}).catch((err: unknown) => {
             if (err instanceof WorkflowPausedError) return null;

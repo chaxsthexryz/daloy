@@ -1,4 +1,5 @@
 import { lookup } from "node:dns/promises";
+import { sanitizeMessageId, sanitizeReferences } from "@daloy/db";
 import { ImapFlow, type ImapFlowOptions } from "imapflow";
 import { simpleParser } from "mailparser";
 import type { EmailPayload, ImapAdapter, ImapMessage } from "./email-in";
@@ -85,13 +86,21 @@ export async function parseIncomingEmail(raw: Buffer, receivedAt: Date): Promise
     .map((a) => a.address ?? "")
     .filter(Boolean)
     .slice(0, 30);
+  const messageId = sanitizeMessageId(mail.messageId);
+  const inReplyTo = sanitizeMessageId(mail.inReplyTo);
+  const references = sanitizeReferences([
+    ...(Array.isArray(mail.references) ? mail.references : typeof mail.references === "string" ? [mail.references] : []),
+    ...(inReplyTo ? [inReplyTo] : []),
+  ]);
   return {
     from: from.slice(0, 320),
     replyTo: replyTo.slice(0, 320),
     to,
     subject: (mail.subject ?? "").slice(0, 1000),
     text: (mail.text ?? "").slice(0, MAX_TEXT_LENGTH),
-    messageId: mail.messageId?.slice(0, 1000) ?? null,
+    messageId,
+    inReplyTo,
+    references,
     receivedAt: receivedAt.toISOString(),
   };
 }

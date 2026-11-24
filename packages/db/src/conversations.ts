@@ -1,6 +1,7 @@
 import { and, desc, eq, gt, isNull, sql } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import { bookingSuperseded } from "./bookings";
+import { buildThreadHeaders, sanitizeMessageId, sanitizeReferences } from "./mail";
 import { businessProfiles, conversationMessages, conversations, users } from "./schema";
 
 type AnyDb = NodePgDatabase<Record<string, unknown>>;
@@ -35,12 +36,17 @@ const cap = (text: string) => text.slice(0, MESSAGE_MAX);
  */
 export async function recordInbound(
   tx: AnyDb,
-  m: { userId: string; channel: ConversationChannel; externalId: string; mid: string; text: string; at: Date; uploadIds?: string[] },
+  m: { userId: string; channel: ConversationChannel; externalId: string; mid: string; text: string; at: Date; uploadIds?: string[]; emailReferences?: string[] },
 ): Promise<Conversation & { replayed: boolean }> {
   const key = and(eq(conversations.userId, m.userId), eq(conversations.channel, m.channel), eq(conversations.externalId, m.externalId));
   await tx.insert(conversations).values({ userId: m.userId, channel: m.channel, externalId: m.externalId }).onConflictDoNothing();
   const [c] = await tx.select().from(conversations).where(key).for("update");
-  const added = await tx.insert(conversationMessages).values({ conversationId: c!.id, direction: "in", text: cap(m.text), mid: m.mid, uploadIds: m.uploadIds ?? [] }).onConflictDoNothing().returning({ id: conversationMessages.id });
+  const emailReferences = m.channel === "email" ? sanitizeReferences(m.emailReferences) : [];
+  const added = await tx
+    .insert(conversationMessages)
+    .values({ conversationId: c!.id, direction: "in", text: cap(m.text), mid: m.mid, emailReferences, uploadIds: m.uploadIds ?? [] })
+    .onConflictDoNothing()
+    .returning({ id: conversationMessages.id });
   if (added.length === 0) return { ...c!, replayed: true };
   // A timestamp from the sender is never trusted past now, so a future one cannot hold the window open.
   const at = new Date(Math.min(m.at.getTime(), Date.now()));
@@ -87,8 +93,8 @@ export async function recordEcho(db: AnyDb, e: { userId: string; channel: Conver
   });
 }
 
-/** What a run sees of its conversation: id, status, saved fields and the last 10 messages, oldest first, within 4,000 characters. */
-export async function conversationPayload(db: Reader, c: Pick<Conversation, "id" | "status" | "fields">) {
+/** What a run sees of its conversation: id, status, saved fields, open due id and the last 10 messages, oldest first, within 4,000 characters. */
+export async function conversationPayload(db: Reader, c: Pick<Conversation, "id" | "status" | "fields"> & { openDueId?: string | null }) {
   const rows = await db
     .select({ direction: conversationMessages.direction, text: conversationMessages.text, at: conversationMessages.createdAt })
     .from(conversationMessages)
@@ -103,7 +109,36 @@ export async function conversationPayload(db: Reader, c: Pick<Conversation, "id"
     budget -= text.length;
     history.unshift({ direction: r.direction, text, at: r.at.toISOString() });
   }
-  return { id: c.id, status: c.status, fields: c.fields, history };
+  return { id: c.id, status: c.status, fields: c.fields, openDueId: c.openDueId ?? null, history };
+}
+
+/**
+ * Latest sanitized In-Reply-To and References headers for replying to an email conversation (C6, decision 0121).
+ * Reads the most recent inbound message and validates every Message-ID before returning it.
+ */
+export async function emailThreadFor(db: Reader, conversationId: string): Promise<{ inReplyTo?: string; references?: string[] }> {
+  const [latest] = await db
+    .select({ mid: conversationMessages.mid, emailReferences: conversationMessages.emailReferences })
+    .from(conversationMessages)
+    .where(and(eq(conversationMessages.conversationId, conversationId), eq(conversationMessages.direction, "in")))
+    .orderBy(desc(conversationMessages.createdAt), desc(conversationMessages.id))
+    .limit(1);
+  if (!latest) return {};
+  return buildThreadHeaders({ inReplyTo: latest.mid, references: latest.emailReferences });
+}
+
+/** Records an outbound email reply sent to the guest of an email conversation (C6, decision 0121). */
+export async function recordOutboundEmail(
+  db: AnyDb,
+  o: { conversationId: string; runId: string; text: string; messageId: string; references?: string[] },
+): Promise<void> {
+  const mid = sanitizeMessageId(o.messageId);
+  const emailReferences = sanitizeReferences(o.references);
+  await db
+    .insert(conversationMessages)
+    .values({ conversationId: o.conversationId, direction: "out", text: cap(o.text).trim(), mid, emailReferences, runId: o.runId })
+    .onConflictDoNothing();
+  await db.update(conversations).set({ lastOutboundAt: sql`now()` }).where(eq(conversations.id, o.conversationId));
 }
 
 /** The run's conversation, or undefined for a run that no message started. */
