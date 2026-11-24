@@ -386,22 +386,22 @@ C3 and C4 cover T7 (answer from my price list). Decisions from 0115 (0111 to 011
 
 ## Assistant on Telegram (23 November 2026)
 
-- [ ] J1. "Ask my assistant": a read step for today's Google Calendar events and kymavo bookings, Telegram text as a C1 conversation channel so follow-up questions have memory, and a template (Telegram message, AI picks the intent, read calendar, bookings, unpaid payments or today's runs, AI writes the answer, reply). Read only; acting on your behalf comes later with approvals. After C2, since both touch the conversation code.
+- [ ] J1. "Ask my assistant": a read step for today's Google Calendar events and kymavo bookings, Telegram text as a C1 conversation channel so follow-up questions have memory, and a template (Telegram message, AI picks the intent, read calendar, bookings, unpaid payments or today's runs, AI writes the answer, reply). Read only; acting on your behalf comes later with approvals. After C2, since both touch the conversation code. (claimed: j1-assistant, branch neon/j1-telegram-assistant, decision 0135, migration 0057)
 
 ## Editor layout and engine usability (docs/plans/editor-and-triggers-roadmap.md, 24 November 2026)
 
 - [x] E1. Visible leaf and empty-branch `+` add buttons in `FlowCanvas.tsx` and `Editor.tsx`, plus global actions (`Test run`, `Explain`, `Save`, `Publish`) pinned to `a7-head`. (claimed: neon, branch neon/e1-editor-adds-and-header)
 - [x] E2. Branch-aware layered DAG auto-layout in `lib/graph.ts` using `BRANCHES` order and measured card heights, plus 1280 px inspector fit improvements. (claimed: neon, branch neon/e2-editor-dag-layout)
 - [x] E3. Clickable variable picker (`{{trigger.*}}`, upstream `{{steps.<id>.output.*}}`) and inline upstream sample output preview in the step inspector. (branch claude/e3-variable-picker-0789be, decision 0130)
-- [ ] E4. Multi-way `switch` branching, per-step error policy (`T3`), deterministic `transform` step, and `for_each` / `N30` batched Sheets row appends.
+- [ ] E4. Multi-way `switch` branching, per-step error policy (`T3`), deterministic `transform` step, and `for_each` / `N30` batched Sheets row appends. (claimed: e4-engine, branch neon/e4-switch-errors-transform, decision 0131)
 
 ## Triggers and app expansion (docs/plans/editor-and-triggers-roadmap.md, 24 November 2026)
 
 - [x] G1. kymavo internal triggers (`booking_event`, `payment_event`) and reusable `sub_workflow` triggers/steps. Decision 0123.
 - [x] G2. Google Workspace Tier 1 triggers reusing existing Google OAuth (`sheets_row`, `calendar_event`, `drive_file`). Decision 0129, migration 0056 (`trigger_polls`). Polling only (5 minutes or the plan minimum), first poll never replays, one run per row, event or file through run keys, paused with a plain reason when the connection or scope is missing, backoff on rate limits, Drive files within the upload limits. Not done: push channels for Calendar and Drive on hosted installs.
-- [ ] G3. Connected mailbox triggers (`gmail_message` and `outlook_message` with filter rules).
-- [ ] G4. Web page / RSS monitor trigger (`page_changed`) and team chat triggers (`slack_message`, `teams_message`, `discord_message`).
-- [ ] G5. Record-tool triggers (`airtable_record`, `notion_page`, `trello_card`).
+- [ ] G3. Connected mailbox triggers (`gmail_message` and `outlook_message` with filter rules). (claimed: g3-mailbox, branch neon/g3-mailbox-triggers, decision 0132)
+- [ ] G4. Web page / RSS monitor trigger (`page_changed`) and team chat triggers (`slack_message`, `teams_message`, `discord_message`). (claimed: g4-monitor-chat, branch neon/g4-monitor-chat-triggers, decision 0133)
+- [ ] G5. Record-tool triggers (`airtable_record`, `notion_page`, `trello_card`). (claimed: g5-records, branch neon/g5-record-triggers, decision 0134)
 - [ ] G6. Demand-gated external triggers (Meta comments/Lead Ads, WooCommerce/Shopee/Lazada/TikTok Shop, iCal/Calendly, Xendit/Maya/Stripe, Tally/Typeform/Google Forms).
 
 ## Platform admin and ops (24 November 2026)
@@ -413,9 +413,9 @@ C3 and C4 cover T7 (answer from my price list). Decisions from 0115 (0111 to 011
 
 - [x] S1. Stop the internal event run loop (`payment_event` to `payment_due` to `payment_expire`) and add Origin checks to sign-in routes and the approval decision (decision 0128).
 - [ ] S2. Stop public sign-up from claiming an unregistered `PLATFORM_ADMINS` email. Needs the owner's choice: block those emails at sign-up, or add email verification.
-- [ ] S3. Payment and booking lifecycle: cancelling a booking cancels its pending dues, a guest message no longer cancels a staff deposit request, and a refund also applies to dues confirmed from a needs_review claim.
-- [ ] S4. Resource limits: JSON template output, PDF text extraction, and fair IMAP polling across workspaces.
-- [ ] S5. Low findings: fence in-flight steps after a customer erase, hide retired secrets in exports before collecting, a send claim for mutating browser steps, the legacy webhook timestamp, and untrusted values reaching Shopify product steps.
+- [ ] S3. Payment and booking lifecycle: cancelling a booking cancels its pending dues, a guest message no longer cancels a staff deposit request, and a refund also applies to dues confirmed from a needs_review claim. (claimed: s3-s5-security, branch neon/s3-s5-security-fixes, decision 0136)
+- [ ] S4. Resource limits: JSON template output, PDF text extraction, and fair IMAP polling across workspaces. (claimed: s3-s5-security, branch neon/s3-s5-security-fixes, decision 0136)
+- [ ] S5. Low findings: fence in-flight steps after a customer erase, hide retired secrets in exports before collecting, a send claim for mutating browser steps, the legacy webhook timestamp, and untrusted values reaching Shopify product steps. (claimed: s3-s5-security, branch neon/s3-s5-security-fixes, decision 0136)
 
 ## Rebrand to kymavo (23 November 2026, orchestrator: Neon)
 
