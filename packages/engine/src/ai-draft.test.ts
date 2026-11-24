@@ -114,7 +114,7 @@ describe("full prompt for hosted models", () => {
       expect(short).not.toContain(`"${type}":{`);
       expect(full).toContain(`"${type}":{`);
     }
-    for (const trigger of ["meta_dm", "payment", "shopify_order"]) expect(full).toContain(`{"type":"${trigger}"`);
+    for (const trigger of ["meta_dm", "payment", "shopify_order", "gmail_message", "outlook_message"]) expect(full).toContain(`{"type":"${trigger}"`);
     expect(full).toMatch(/Use telegram only when the person says Telegram/);
   });
 });

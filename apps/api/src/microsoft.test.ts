@@ -69,7 +69,7 @@ describe("Outlook", () => {
     expect(before.body.outlook.adminConsentUrl).toContain("/v2.0/adminconsent?client_id=fake-client-id");
     const start = await agent.post("/settings/connections/outlook/start").expect(200);
     const url = new URL(start.body.url as string);
-    expect(url.searchParams.get("scope")).toBe("offline_access https://graph.microsoft.com/Mail.Send https://graph.microsoft.com/User.Read");
+    expect(url.searchParams.get("scope")).toBe("offline_access https://graph.microsoft.com/Mail.Send https://graph.microsoft.com/Mail.Read https://graph.microsoft.com/User.Read");
     expect(url.searchParams.get("code_challenge_method")).toBe("S256");
 
     expect(await consent(agent)).toBe("/#/settings/business/outlook-connected");

@@ -26,6 +26,7 @@ export type CatalogEntry = {
 };
 
 const GMAIL = tx("Gmail", "Gmail");
+const OUTLOOK = tx("Outlook", "Outlook");
 const SHEETS = tx("Google Sheets", "Google Sheets");
 const DRIVE = tx("Google Drive", "Google Drive");
 const CALENDAR = tx("Google Calendar", "Google Calendar");
@@ -104,6 +105,9 @@ export const TRIGGER_CATALOG: Record<Trigger["type"], CatalogEntry> = {
   sheets_row: { app: SHEETS, mark: "google-sheets", provider: "google_sheets", action: tx("A row is added", "May nadagdag na row"), description: tx("Start for each new row in a tab of the sheet chosen in Apps. kymavo checks every few minutes.", "Magsimula sa bawat bagong row sa isang tab ng sheet na pinili sa Apps. Tumitingin ang kymavo kada ilang minuto."), required: ["tab"], input: tx("The tab to watch.", "Ang tab na babantayan."), output: tx("The row's values, named after the header row.", "Ang mga value ng row, ayon sa header row."), outcomes: [tx("Started", "Nagsimula")] },
   calendar_event: { app: CALENDAR, mark: "google-calendar", provider: "google_calendar", action: tx("An event is added or starts soon", "May bagong event o malapit nang magsimula"), description: tx("Start for each new event in the calendar chosen in Apps, or a set time before an event starts.", "Magsimula sa bawat bagong event sa calendar na pinili sa Apps, o ilang minuto bago magsimula ang event."), required: [], input: tx("New events, or how long before the start.", "Bagong event, o gaano katagal bago magsimula."), output: tx("The event's title, time, place and link.", "Ang pamagat, oras, lugar at link ng event."), outcomes: [tx("Started", "Nagsimula")] },
   drive_file: { app: DRIVE, mark: "google-drive", provider: "google_drive", action: tx("A file is added", "May nadagdag na file"), description: tx("Start for each new file in the Drive folder chosen in Apps. Photos and PDFs up to 5 MB come along for later steps.", "Magsimula sa bawat bagong file sa Drive folder na pinili sa Apps. Kasama ang mga photo at PDF hanggang 5 MB para sa susunod na mga step."), required: [], input: tx("The folder chosen in Apps.", "Ang folder na pinili sa Apps."), output: tx("The file's name, type, size and link, and the file itself when it fits.", "Ang pangalan, uri, laki at link ng file, at ang file mismo kung kasya."), outcomes: [tx("Started", "Nagsimula")] },
+  // G3 (decision 0132): connected mailbox triggers on existing Gmail and Outlook OAuth grants.
+  gmail_message: { app: GMAIL, mark: "gmail", provider: "gmail", action: tx("A Gmail message arrives", "May dumating na mensahe sa Gmail"), description: tx("Start when an email arrives in your connected Gmail mailbox. Optional filters match sender, subject or label.", "Magsimula kapag may dumating na email sa naka-connect mong Gmail mailbox. Puwedeng mag-filter ayon sa nagpadala, subject o label."), required: [], input: tx("Optional sender, subject or label filters.", "Opsyonal na filter sa nagpadala, subject o label."), output: tx("The email: sender, recipients, subject, text, message id and date.", "Ang email: nagpadala, mga tatanggap, subject, text, message id at petsa."), outcomes: [tx("Started", "Nagsimula")] },
+  outlook_message: { app: OUTLOOK, mark: "outlook", provider: "outlook", action: tx("An Outlook message arrives", "May dumating na mensahe sa Outlook"), description: tx("Start when an email arrives in your connected Outlook mailbox. Optional filters match sender, subject or folder.", "Magsimula kapag may dumating na email sa naka-connect mong Outlook mailbox. Puwedeng mag-filter ayon sa nagpadala, subject o folder."), required: [], input: tx("Optional sender, subject or folder filters.", "Opsyonal na filter sa nagpadala, subject o folder."), output: tx("The email: sender, recipients, subject, text, message id and date.", "Ang email: nagpadala, mga tatanggap, subject, text, message id at petsa."), outcomes: [tx("Started", "Nagsimula")] },
 };
 
 const pick = (t: Text, language: Language) => t[language];
@@ -138,6 +142,8 @@ const TRIGGER_NOUN: Record<Trigger["type"], Text> = {
   sheets_row: tx("the new row", "bagong row"),
   calendar_event: tx("the calendar event", "calendar event"),
   drive_file: tx("the Drive file", "Drive file"),
+  gmail_message: tx("the Gmail message", "mensahe sa Gmail"),
+  outlook_message: tx("the Outlook message", "mensahe sa Outlook"),
   schedule: tx("the schedule", "iskedyul"),
   manual: tx("the sample data", "sample data"),
 };

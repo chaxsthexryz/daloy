@@ -801,7 +801,7 @@ How it works: every provider goes through the same start route, the same callbac
 
 | App | Grant kept in | Scopes | PKCE | Refresh | Revoke at disconnect |
 |---|---|---|---|---|---|
-| Outlook | `connections` | `offline_access Mail.Send User.Read` | yes | rotating, previous token kept | none (the page tells the owner) |
+| Outlook | `connections` | `offline_access Mail.Send Mail.Read User.Read` | yes | rotating, previous token kept | none (the page tells the owner) |
 | Sheets, Drive | `connections` | `openid email drive.file` | yes | Google refresh token | Google revoke |
 | Gmail | `mail_senders` (decision 0063) | `openid email gmail.send` | yes | Google refresh token | Google revoke |
 | Calendar | `connections` | `openid email calendar.app.created` | yes | Google refresh token | Google revoke |
@@ -1604,3 +1604,16 @@ What it does: adds four workflow engine and editor capabilities with zero databa
 Why this way: keeping transforms deterministic, `switch` acyclic, error policies explicit per step, and multi-row Sheets writes bounded and atomic avoids unbounded loops, untrusted code execution, and partial sheet writes while keeping existing workflows and single-row Sheets deliveries unchanged.
 
 Tests: `packages/engine/src/transform.test.ts`, `packages/engine/src/e4.test.ts` (`switch`, `onError`, `transform`, `sheets` caps, `lintDefinition`), `apps/web/src/lib/e4-editor.test.ts` (dynamic `switch` layout/exits/handles, `failed_edge` routing/runFlow, `transform` insertables, `SwitchCases`, `SchemaForm`), `apps/web/src/lib/locale-coverage.test.ts`, and `apps/worker/src/e4-worker.test.ts` (real worker runs for `switch`, `transform`, `onError` `skip` and `failed_edge`, and batched Sheets with once-per-tab header and marker reconciliation on simulated timeout).
+
+## Connected mailbox triggers (phase G3, decision 0132)
+
+What it does: `gmail_message` and `outlook_message` triggers start a workflow when matching emails arrive in the workspace's connected Gmail (`mail_senders`) or Outlook (`connections`) OAuth mailbox, with optional `from`, `subjectContains`, and `label` / `folder` filters.
+
+How it works (`packages/db/src/mailbox-triggers.ts`, `packages/db/src/oauth/gmail.ts`, `packages/db/src/providers.ts`, `apps/worker/src/worker.ts`, `apps/api/src/mailbox-triggers.ts`, `apps/web/src/MailboxTriggerSettings.tsx`):
+
+- Polling and cursors: `pollMailboxTriggers` reuses `trigger_polls` (migration `0056`, filtered by `triggers.type` so `pollGoogleTriggers` and `pollMailboxTriggers` never touch each other's rows) with the same 5-minute or plan-minimum interval, exponential backoff on 429/5xx, and first-poll baseline rule (no historical replay).
+- Deduplication and safety: every matched message starts a run through `createKeyedRun` keyed by the provider's server-assigned message ID (`gmail:<id>`, `outlook:<id>`), never untrusted `Message-ID` headers. Inbound `Message-ID`, `In-Reply-To`, and `References` are sanitized with `sanitizeMessageId` and `sanitizeReferences`, body text is capped at 50,000 characters, and `priceTrusted` remains false.
+- Self-loop guard: `mailboxSelfLoopProblem` pauses automations whose `email` or `outlook` step writes back to the watched mailbox address, and `isSelfAuthoredMessage` skips messages authored by the connected mailbox itself (unless watching Sent).
+- OAuth scopes: Outlook requests `Mail.Read` in `OUTLOOK_SCOPES` (`requiredScopes` keeps `Mail.Send User.Read` for backward compatibility, while `mailboxConnectionProblem` checks `Mail.Read` before polling or publishing). Gmail keeps `gmail.send` only (`gmail.readonly` remains in `FORBIDDEN_SCOPES` until Google restricted-scope / CASA verification); `mailboxConnectionProblem` allows `gmail_message` only when `mail_senders.scopes` includes `gmail.readonly` or `mail.google.com`.
+
+Tests: `packages/engine/src/definition.test.ts`, `packages/engine/src/catalog.test.ts`, `packages/engine/src/ai-draft.test.ts`, `packages/db/src/mailbox-triggers.test.ts`, `packages/db/src/mailbox-triggers-poll.test.ts`, `packages/db/src/oauth/scopes.test.ts`, `apps/api/src/mailbox-triggers.test.ts`, `apps/api/src/microsoft.test.ts`, `apps/api/src/members.test.ts`, `apps/web/src/lib/editor.test.ts`, and `apps/web/src/lib/locale-coverage.test.ts`.

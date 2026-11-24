@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { createKeyedRun, googleTriggerStatus, isGoogleTrigger, deliveries, emailSources, findApprover, listDeliveries, PLANS, PROVIDER_NAMES, type Provider, publishedVersion, readConnections, requests, runs, SCHEDULE_QUEUE, secrets, setPaused, SMS_NOT_SET_UP, supersededSql, syncEmailSourceOnPublish, triggers, unismsConfig, users, workflows, workflowVersions, type Db } from "@daloy/db";
+import { createKeyedRun, googleTriggerStatus, isGoogleTrigger, isMailboxTrigger, mailboxTriggerStatus, deliveries, emailSources, findApprover, listDeliveries, PLANS, PROVIDER_NAMES, type Provider, publishedVersion, readConnections, requests, runs, SCHEDULE_QUEUE, secrets, setPaused, SMS_NOT_SET_UP, supersededSql, syncEmailSourceOnPublish, triggers, unismsConfig, users, workflows, workflowVersions, type Db } from "@daloy/db";
 import { BRANCHES, choiceProblems, definitionSchema, testChoicesSchema, testModeSchema, guidedSetupInput, OFFICE_REQUEST, saveProblems, stepJsonSchemas, templatesForLanguage, triggerFields, type Trigger, type WorkflowDefinition } from "@daloy/engine";
 import {
   BadRequestException,
@@ -367,6 +367,11 @@ export class WorkflowsController {
     // G2 (decision 0127): a Google trigger needs its app connected with the scope it reads with and a destination.
     if (isGoogleTrigger(definition.trigger.type)) {
       const { problem } = await googleTriggerStatus(this.db, userId, definition.trigger.type);
+      if (problem) throw new BadRequestException(problem);
+    }
+    // G3 (decision 0132): a mailbox trigger needs Gmail or Outlook connected via OAuth with read access.
+    if (isMailboxTrigger(definition.trigger.type)) {
+      const { problem } = await mailboxTriggerStatus(this.db, userId, definition.trigger.type);
       if (problem) throw new BadRequestException(problem);
     }
     if (definition.steps.some((s) => s.type === "sms") && !unismsConfig()) throw new BadRequestException(SMS_NOT_SET_UP);

@@ -865,6 +865,88 @@ export async function outlookSend(urls: ProviderUrls, accessToken: string, m: Ou
   return { to: m.to, sent: true };
 }
 
+export type OutlookFolder = { id: string; displayName: string };
+export type OutlookInboxMessage = {
+  id: string;
+  internetMessageId: string | null;
+  from: string;
+  replyTo: string;
+  to: string[];
+  subject: string;
+  text: string;
+  receivedAt: string;
+  parentFolderId: string;
+  isDraft: boolean;
+};
+
+const MAX_OUTLOOK_TEXT = 50_000;
+const formatGraphRecipient = (r: { emailAddress?: { name?: string; address?: string } } | undefined) => {
+  const addr = r?.emailAddress?.address?.trim() ?? "";
+  const name = r?.emailAddress?.name?.trim() ?? "";
+  if (!addr) return "";
+  return name && name.toLowerCase() !== addr.toLowerCase() ? `${name} <${addr}>` : addr;
+};
+const stripGraphHtml = (html: string) => html.replace(/<style[\s\S]*?<\/style>/gi, " ").replace(/<script[\s\S]*?<\/script>/gi, " ").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+
+/** Lists the mailbox's mail folders (id and displayName), for resolving a configured folder name. */
+export async function outlookFolders(urls: ProviderUrls, accessToken: string): Promise<OutlookFolder[]> {
+  const res = await call(`${urls.graph}/v1.0/me/mailFolders?$top=100&$select=id,displayName`, { headers: { authorization: `Bearer ${accessToken}` } }, urls.timeoutMs ?? 10_000, false, "Outlook");
+  if (res.status !== 200) throw graphFailure(res, false);
+  return ((res.body.value as { id?: unknown; displayName?: unknown }[] | undefined) ?? [])
+    .filter((f) => typeof f.id === "string" && typeof f.displayName === "string")
+    .map((f) => ({ id: f.id as string, displayName: f.displayName as string }));
+}
+
+/** Reads Outlook messages received at or after sinceIso, oldest first, optionally scoped to one folder id. */
+export async function outlookMessagesSince(urls: ProviderUrls, accessToken: string, opts: { sinceIso: string; folderId?: string; top?: number }) {
+  const q = new URLSearchParams({
+    $filter: `receivedDateTime ge ${opts.sinceIso}`,
+    $orderby: "receivedDateTime asc",
+    $top: String(opts.top ?? 20),
+    $select: "id,internetMessageId,subject,from,replyTo,toRecipients,receivedDateTime,bodyPreview,body,parentFolderId,isDraft",
+  });
+  const base = opts.folderId ? `/v1.0/me/mailFolders/${encodeURIComponent(opts.folderId)}/messages` : "/v1.0/me/messages";
+  const res = await call(`${urls.graph}${base}?${q}`, { headers: { authorization: `Bearer ${accessToken}`, Prefer: 'outlook.body-content-type="text"' } }, urls.timeoutMs ?? 10_000, false, "Outlook");
+  if (res.status === 404 && opts.folderId) throw new ProviderError(`The Outlook folder "${opts.folderId}" was not found. Check the folder name in the trigger.`, "invalid");
+  if (res.status !== 200) throw graphFailure(res, false);
+  type RawMsg = {
+    id?: string;
+    internetMessageId?: string;
+    subject?: string;
+    from?: { emailAddress?: { name?: string; address?: string } };
+    replyTo?: { emailAddress?: { name?: string; address?: string } }[];
+    toRecipients?: { emailAddress?: { name?: string; address?: string } }[];
+    receivedDateTime?: string;
+    bodyPreview?: string;
+    body?: { contentType?: string; content?: string };
+    parentFolderId?: string;
+    isDraft?: boolean;
+  };
+  const raw = (res.body.value as RawMsg[] | undefined) ?? [];
+  const items: OutlookInboxMessage[] = raw
+    .filter((m) => typeof m.id === "string" && typeof m.receivedDateTime === "string")
+    .map((m) => {
+      const from = formatGraphRecipient(m.from);
+      const replyTo = formatGraphRecipient(m.replyTo?.[0]) || from;
+      const to = (m.toRecipients ?? []).map(formatGraphRecipient).filter(Boolean);
+      const bodyContent = typeof m.body?.content === "string" ? m.body.content : "";
+      const text = (m.body?.contentType?.toLowerCase() === "html" ? stripGraphHtml(bodyContent) : bodyContent) || m.bodyPreview || "";
+      return {
+        id: m.id!,
+        internetMessageId: typeof m.internetMessageId === "string" ? m.internetMessageId : null,
+        from,
+        replyTo,
+        to,
+        subject: typeof m.subject === "string" ? m.subject : "",
+        text: text.slice(0, MAX_OUTLOOK_TEXT),
+        receivedAt: m.receivedDateTime!,
+        parentFolderId: typeof m.parentFolderId === "string" ? m.parentFolderId : "",
+        isDraft: m.isDraft === true,
+      };
+    });
+  return { items, more: typeof res.body["@odata.nextLink"] === "string" };
+}
+
 /**
  * A Teams Workflows webhook URL, checked before it is stored or called: https on a Microsoft host (127.0.0.1 is allowed
  * over http only when a test lists it). The URL itself is the credential, so it is stored encrypted and never shown.

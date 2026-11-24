@@ -58,6 +58,8 @@ describe("insertables", () => {
   });
   it("uses the email fields for an email trigger and nothing for a manual one", () => {
     expect(insertables({ ...receipt, trigger: { type: "email", config: {} } } as Draft, "save_receipt")).toEqual(["{{trigger.from}}", "{{trigger.subject}}", "{{trigger.text}}"]);
+    expect(insertables({ ...receipt, trigger: { type: "gmail_message", config: {} } } as Draft, "save_receipt")).toContain("{{trigger.gmailMessageId}}");
+    expect(insertables({ ...receipt, trigger: { type: "outlook_message", config: {} } } as Draft, "save_receipt")).toContain("{{trigger.outlookMessageId}}");
     expect(insertables({ ...receipt, trigger: { type: "manual", config: {} } } as Draft, "save_receipt")).toEqual([]);
   });
   it("lists stay_quote output fields for steps after it", () => {

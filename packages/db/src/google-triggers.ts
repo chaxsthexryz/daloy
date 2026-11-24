@@ -158,8 +158,11 @@ export async function pollGoogleTriggers(o: GooglePollOptions): Promise<number> 
   const claimed = await db.execute<{ workflow_id: string }>(sql`
     update trigger_polls set claim_until = now() + interval '2 minutes'
     where workflow_id in (
-      select tp.workflow_id from trigger_polls tp join workflows w on w.id = tp.workflow_id
+      select tp.workflow_id from trigger_polls tp
+      join workflows w on w.id = tp.workflow_id
+      join triggers t on t.workflow_id = tp.workflow_id
       where tp.next_poll_at <= now() and (tp.claim_until is null or tp.claim_until < now()) and w.paused_at is null
+        and t.type in ('sheets_row', 'calendar_event', 'drive_file')
       order by tp.next_poll_at limit ${o.limit ?? 10} for update of tp skip locked)
     returning workflow_id`);
   for (const { workflow_id } of claimed.rows) {

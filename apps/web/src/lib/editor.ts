@@ -21,11 +21,13 @@ const EMAIL_FIELDS = ["from", "subject", "text"];
 const META_DM_FIELDS = ["channel", "senderId", "messageId", "text", "timestamp"];
 const TELEGRAM_FIELDS = ["text", "chatId", "fromName", "username", "date", "fileRefused", "conversation.history"];
 const SHOPIFY_ORDER_FIELDS = ["order_number", "order_id", "customer_name", "customer_email", "customer_phone", "total", "currency", "item_count", "items", "financial_status", "created_at", "shop"];
-// G2 (decision 0127). A sheet row's header cells are {{trigger.cells.<header>}}, which depend on the sheet.
-const GOOGLE_TRIGGER_FIELDS: Record<string, string[]> = {
+// G2 (decision 0127) and G3 (decision 0132). A sheet row's header cells are {{trigger.cells.<header>}}, which depend on the sheet.
+const POLL_TRIGGER_FIELDS: Record<string, string[]> = {
   sheets_row: ["rowNumber", "values", "cells", "tab", "spreadsheetId"],
   calendar_event: ["title", "start", "end", "location", "description", "link", "eventId", "event"],
   drive_file: ["name", "mimeType", "size", "link", "createdTime", "fileId", "fileSkipped"],
+  gmail_message: ["from", "replyTo", "to", "subject", "text", "messageId", "receivedAt", "gmailMessageId", "threadId", "labelIds"],
+  outlook_message: ["from", "replyTo", "to", "subject", "text", "messageId", "receivedAt", "outlookMessageId", "folder"],
 };
 const BOOKING_EVENT_FIELDS = ["event", "bookingId", "reference", "resourceId", "resourceName", "start", "end", "minutes", "timezone", "status", "version", "mode", "nights", "checkIn", "checkOut", "conversationId"];
 const PAYMENT_EVENT_FIELDS = ["event", "dueId", "reference", "kind", "status", "amountCentavos", "amountPesos", "bookingId", "conversationId"];
@@ -62,8 +64,8 @@ export function insertables(draft: Draft, id: string): string[] {
               ? BOOKING_EVENT_FIELDS
               : trigger.type === "payment_event"
                 ? PAYMENT_EVENT_FIELDS
-                : GOOGLE_TRIGGER_FIELDS[trigger.type]
-                  ? GOOGLE_TRIGGER_FIELDS[trigger.type]!
+                : POLL_TRIGGER_FIELDS[trigger.type]
+                  ? POLL_TRIGGER_FIELDS[trigger.type]!
                 : trigger.type === "form" || trigger.type === "webhook" || trigger.type === "sub_workflow"
                   ? (trigger.config.fields ?? []).map((f) => f.name)
                   : [];
