@@ -25,6 +25,7 @@ import { receiptsTranslations } from "./locale-receipts";
 import { integrationTranslations } from "./locale-integrations";
 import { readPageTranslations } from "./locale-read-page";
 import { knowledgeTranslations } from "./locale-knowledge";
+import { monitorChatTranslations } from "./locale-monitor-chat";
 import { adminTranslations } from "./locale-admin";
 export type Language = "en" | "tl";
 
@@ -57,6 +58,7 @@ const tagalog: Record<string, string> = {
   ...receiptsTranslations,
   ...integrationTranslations,
   ...readPageTranslations,
+  ...monitorChatTranslations,
   ...adminTranslations,
   "Plan: {plan}": "Plan: {plan}",
   "{used}, no limit": "{used}, walang limit",

@@ -89,12 +89,18 @@ async function robotsTxt(url: URL, headers: Record<string, string>, key: string,
   }
 }
 
+/** Checks robots.txt for DaloyBot on the target URL's origin and throws a StepError if disallowed or unreadable. */
+export async function checkPageRobots(url: URL, publicUrl: string, guard: SsrfGuard, idempotencyKey: string, claimSend?: HttpOptions["claim"]) {
+  const headers = { "User-Agent": botAgent(publicUrl), Accept: "text/plain" };
+  const rules = await robotsTxt(url, headers, idempotencyKey, { guard, publicUrl, idempotencyKey, claimSend });
+  if (!robotsAllow(rules, url.href)) throw new StepError("the site asks bots not to read this page", false);
+}
+
 /** Reads the page. Throws a StepError with a plain message when it must not, cannot or should not be read. */
 export async function readPage(cfg: ReadPageInput, opts: ReadOptions): Promise<PageContent> {
   const url = checkUrl(cfg.url, opts.guard);
   const headers = { "User-Agent": botAgent(opts.publicUrl) };
-  const rules = await robotsTxt(url, { ...headers, Accept: "text/plain" }, opts.idempotencyKey, opts);
-  if (!robotsAllow(rules, url.href)) throw new StepError("the site asks bots not to read this page", false);
+  await checkPageRobots(url, opts.publicUrl, opts.guard, opts.idempotencyKey, opts.claimSend);
 
   await opts.claim?.();
   const page = await httpRequest({ method: "GET", url: url.href, headers: { ...headers, Accept: "text/html,text/plain;q=0.9" } }, opts.idempotencyKey, {

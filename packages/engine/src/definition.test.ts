@@ -595,3 +595,52 @@ describe("Google triggers", () => {
     expect(definitionSchema.safeParse({ trigger: { type: "drive_file", config: { folderId: "x" } }, steps: [s], edges: [] }).success).toBe(false);
   });
 });
+
+// G4 (decision 0133): web page / RSS monitor and verified team chat triggers.
+describe("G4 monitor and team chat triggers", () => {
+  const s = step("a");
+
+  it("validates page_changed page and feed configs and rejects CSS selector in feed mode", () => {
+    expect(definitionSchema.parse({ trigger: { type: "page_changed", config: { url: "https://example.com/prices" } }, steps: [s], edges: [] }).trigger).toEqual({
+      type: "page_changed",
+      config: { mode: "page", url: "https://example.com/prices", maxChars: 4000 },
+    });
+    expect(definitionSchema.parse({ trigger: { type: "page_changed", config: { mode: "feed", url: "https://example.com/feed.xml" } }, steps: [s], edges: [] }).trigger).toEqual({
+      type: "page_changed",
+      config: { mode: "feed", url: "https://example.com/feed.xml", maxChars: 4000 },
+    });
+    expect(definitionSchema.safeParse({ trigger: { type: "page_changed", config: { mode: "feed", url: "https://example.com/feed.xml", selector: ".price" } }, steps: [s], edges: [] }).success).toBe(false);
+    expect(definitionSchema.safeParse({ trigger: { type: "page_changed", config: { url: "ftp://example.com" } }, steps: [s], edges: [] }).success).toBe(false);
+  });
+
+  it("validates slack_message, teams_message, and discord_message configs strictly", () => {
+    expect(definitionSchema.parse({ trigger: { type: "slack_message", config: { signingSecret: "slack_sig" } }, steps: [s], edges: [] }).trigger).toEqual({
+      type: "slack_message",
+      config: { signingSecret: "slack_sig", ignoreBots: true },
+    });
+    expect(definitionSchema.safeParse({ trigger: { type: "slack_message", config: {} }, steps: [s], edges: [] }).success).toBe(false);
+
+    expect(definitionSchema.parse({ trigger: { type: "teams_message", config: { signingSecret: "teams_sig", textContains: "urgent" } }, steps: [s], edges: [] }).trigger).toEqual({
+      type: "teams_message",
+      config: { signingSecret: "teams_sig", textContains: "urgent" },
+    });
+
+    expect(definitionSchema.safeParse({ trigger: { type: "discord_message", config: {} }, steps: [s], edges: [] }).success).toBe(false);
+    expect(definitionSchema.safeParse({ trigger: { type: "discord_message", config: { publicKey: "not-hex" } }, steps: [s], edges: [] }).success).toBe(false);
+    expect(definitionSchema.parse({ trigger: { type: "discord_message", config: { publicKey: "a".repeat(64) } }, steps: [s], edges: [] }).trigger).toEqual({
+      type: "discord_message",
+      config: { publicKey: "a".repeat(64) },
+    });
+    expect(definitionSchema.parse({ trigger: { type: "discord_message", config: { signingSecret: "discord_relay" } }, steps: [s], edges: [] }).trigger).toEqual({
+      type: "discord_message",
+      config: { signingSecret: "discord_relay" },
+    });
+  });
+
+  it("blocks payment_due and shopify amount/field injection from G4 public monitor and chat triggers", () => {
+    const pageTrigger = { type: "page_changed", config: { url: "https://example.com" } };
+    const slackTrigger = { type: "slack_message", config: { signingSecret: "s" } };
+    expect(issues({ trigger: pageTrigger, steps: [{ id: "ask", type: "payment_due", config: { reference: "R1", amount: "{{trigger.text}}" } }], edges: [] }).join()).toMatch(/payment_due step "ask"/);
+    expect(issues({ trigger: slackTrigger, steps: [{ id: "make", type: "shopify_create_product", config: { title: "{{trigger.text}}", price: "10" } }], edges: [] }).join()).toMatch(/shopify_create_product step "make"/);
+  });
+});
