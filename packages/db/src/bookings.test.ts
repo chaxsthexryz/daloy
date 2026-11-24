@@ -3,9 +3,9 @@ import { eq } from "drizzle-orm";
 import type { Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { freshDatabase } from "../../../test/db";
-import { bookFromStep, bookingSuperseded, listBookings, staffChange, type StepAction } from "./bookings";
+import { bookFromStep, bookingSuperseded, confirmStay, listBookings, staffChange, type StepAction } from "./bookings";
 import type { Db } from "./index";
-import { bookingChanges, bookings, resources, runs, users, workflows, workflowVersions } from "./schema";
+import { bookingChanges, bookings, conversations, resources, runs, users, workflows, workflowVersions } from "./schema";
 
 // Decision 0032: the exclusion constraint decides every conflict, a step's result is stored with its change, and a
 // staff change is logged per version so a repeat finds it.
@@ -187,5 +187,138 @@ describe("staff changes", () => {
     const list = await listBookings(db, w.id);
     expect(list.map((b) => [b.reference, b.status, b.version])).toEqual([[row.reference, "cancelled", 2]]);
     expect(await listBookings(db, other.id)).toEqual([]);
+  });
+});
+
+describe("stays (C5)", () => {
+  const manila = (date: string, time: string) => new Date(`${date}T${time}:00+08:00`);
+  const stayCreate = (resourceId: string, checkIn: string, checkOut: string, nights: number, conversationId?: string): StepAction => ({
+    action: "create",
+    resourceId,
+    start: manila(checkIn, "14:00"),
+    end: manila(checkOut, "12:00"),
+    nights,
+    timezone: "Asia/Manila",
+    ...(conversationId ? { conversationId } : {}),
+  });
+
+  it("refuses overlap across nights, allows same-day checkout-to-checkin turnaround, and keeps nights on reschedule", async () => {
+    const w = await workspace();
+    const room1 = (await db.insert(resources).values({ userId: w.id, name: "Villa 1", label: "Beach Villa" }).returning())[0]!.id;
+    const room2 = (await db.insert(resources).values({ userId: w.id, name: "Villa 2", label: "Beach Villa" }).returning())[0]!.id;
+
+    // 3-night stay: May 1 14:00 to May 4 12:00
+    const first = await w.step(stayCreate(room1, "2031-05-01", "2031-05-04", 3));
+    expect(first.branch).toBe("done");
+    expect(first.output).toMatchObject({
+      resource: { id: room1, name: "Villa 1", label: "Beach Villa" },
+      start: "2031-05-01T14:00:00+08:00",
+      end: "2031-05-04T12:00:00+08:00",
+      nights: 3,
+      checkIn: "2031-05-01",
+      checkOut: "2031-05-04",
+      timezone: "Asia/Manila",
+    });
+
+    // Overlapping nights on same room are refused:
+    expect((await w.step(stayCreate(room1, "2031-05-03", "2031-05-05", 2))).branch).toBe("taken");
+    expect((await w.step(stayCreate(room1, "2031-05-02", "2031-05-03", 1))).branch).toBe("taken");
+    expect((await w.step(stayCreate(room1, "2031-04-30", "2031-05-02", 2))).branch).toBe("taken");
+
+    // Same-day turnaround (checkout May 4 12:00 < checkin May 4 14:00) and other room unit both succeed:
+    expect((await w.step(stayCreate(room1, "2031-05-04", "2031-05-06", 2))).branch).toBe("done");
+    expect((await w.step(stayCreate(room2, "2031-05-01", "2031-05-04", 3))).branch).toBe("done");
+
+    // Block May 12-14 on room1; rescheduling the 3-night stay to May 10 (May 10-13) collides on night 3 -> taken!
+    expect((await w.step(stayCreate(room1, "2031-05-12", "2031-05-14", 2))).branch).toBe("done");
+    const ref = String(first.output.reference);
+    expect((await w.step({ action: "reschedule", reference: ref, checkIn: "2031-05-10" })).branch).toBe("taken");
+    expect((await rowOf(ref)).version).toBe(1);
+
+    // Moving the 3-night stay to May 15 succeeds and keeps all 3 nights (May 15 14:00 -> May 18 12:00).
+    const moved = await w.step({ action: "reschedule", reference: ref, checkIn: "2031-05-15" });
+    expect(moved).toMatchObject({
+      branch: "done",
+      output: {
+        start: "2031-05-15T14:00:00+08:00",
+        end: "2031-05-18T12:00:00+08:00",
+        nights: 3,
+        checkIn: "2031-05-15",
+        checkOut: "2031-05-18",
+        version: 2,
+      },
+    });
+  });
+
+  it("confirmStay links a conversation for guest contact, rejects foreign conversations, and deduplicates by idempotencyKey", async () => {
+    const w = await workspace();
+    const other = await workspace();
+    const room = (await db.insert(resources).values({ userId: w.id, name: "Garden 1", label: "Garden Room" }).returning())[0]!.id;
+    const [convo] = await db
+      .insert(conversations)
+      .values({ userId: w.id, channel: "messenger", externalId: "psid-guest-1", fields: { name: "Lia Santos", phone: "+639171112222", email: "lia@example.com" } })
+      .returning();
+    const [foreignConvo] = await db.insert(conversations).values({ userId: other.id, channel: "email", externalId: "other@example.com" }).returning();
+
+    // Foreign conversation refused
+    expect(
+      await confirmStay(
+        db,
+        { workspaceId: w.id, resourceId: room, start: manila("2031-06-01", "14:00"), end: manila("2031-06-03", "12:00"), nights: 2, timezone: "Asia/Manila", conversationId: foreignConvo!.id },
+        "user:staff",
+      ),
+    ).toEqual({ result: "conversation_not_found" });
+
+    // Confirm stay with idempotency key (concurrent double-click gives one done + duplicates)
+    const req = {
+      workspaceId: w.id,
+      resourceId: room,
+      start: manila("2031-06-01", "14:00"),
+      end: manila("2031-06-03", "12:00"),
+      nights: 2,
+      timezone: "Asia/Manila",
+      conversationId: convo!.id,
+      idempotencyKey: "stay-confirm-1",
+    };
+    const [a, b] = await Promise.all([confirmStay(db, req, "user:staff"), confirmStay(db, req, "user:staff")]);
+    expect([a.result, b.result].sort()).toEqual(["done", "duplicate"]);
+    expect(a.booking!.id).toBe(b.booking!.id);
+    expect(a.booking).toMatchObject({
+      nights: 2,
+      checkIn: "2031-06-01",
+      checkOut: "2031-06-03",
+      conversationId: convo!.id,
+      guest: { channel: "messenger", externalId: "psid-guest-1", name: "Lia Santos", phone: "+639171112222", email: "lia@example.com" },
+      resource: { id: room, name: "Garden 1", label: "Garden Room" },
+    });
+
+    // Overlapping confirmStay refused as taken
+    const clash = await confirmStay(
+      db,
+      { workspaceId: w.id, resourceId: room, start: manila("2031-06-02", "14:00"), end: manila("2031-06-04", "12:00"), nights: 2, timezone: "Asia/Manila" },
+      "user:staff",
+    );
+    expect(clash.result).toBe("taken");
+
+    // Listed bookings expose guest contact & stay metadata
+    const listed = await listBookings(db, w.id);
+    expect(listed).toHaveLength(1);
+    expect(listed[0]).toMatchObject({
+      id: a.booking!.id,
+      nights: 2,
+      conversationId: convo!.id,
+      guest: { name: "Lia Santos", phone: "+639171112222", email: "lia@example.com" },
+    });
+
+    // Staff reschedule without workflow keeps 2 nights
+    const moved = await staffChange(
+      db,
+      { workspaceId: w.id, bookingId: a.booking!.id, version: 1, action: "reschedule", start: manila("2031-06-10", "14:00"), end: manila("2031-06-12", "12:00") },
+      "user:staff",
+    );
+    expect(moved).toMatchObject({
+      result: "done",
+      booking: { version: 2, start: "2031-06-10T14:00:00+08:00", end: "2031-06-12T12:00:00+08:00", nights: 2, checkIn: "2031-06-10", checkOut: "2031-06-12" },
+    });
   });
 });

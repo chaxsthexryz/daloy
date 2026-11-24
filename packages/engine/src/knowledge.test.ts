@@ -41,4 +41,14 @@ describe("knowledge entry", () => {
   it("accepts a link entry with no text", () => {
     expect(ok({ kind: "review_link", title: "Google reviews", fields: { url: "https://g.page/r/example/review" } })).toBe(true);
   });
+
+  it("accepts check-in and check-out times on arrival, policy and room entries, and refuses them elsewhere or malformed", () => {
+    expect(ok({ kind: "arrival", title: "Check-in hours", fields: { checkInTime: "14:00", checkOutTime: "12:00" } })).toBe(true);
+    expect(ok({ kind: "policy", title: "Stay hours", body: "Standard hours", fields: { checkInTime: "15:00", checkOutTime: "11:00" } })).toBe(true);
+    expect(ok({ kind: "room", title: "Villa", fields: { price: 5000, unit: "night", checkInTime: "14:00", checkOutTime: "12:00" } })).toBe(true);
+    expect(ok({ kind: "faq", title: "Hours", body: "Check-in is 2pm.", fields: { checkInTime: "14:00" } })).toBe(false);
+    expect(ok({ kind: "review_link", title: "Google", fields: { url: "https://g.page/r/example", checkOutTime: "12:00" } })).toBe(false);
+    expect(ok({ kind: "arrival", title: "Bad", fields: { checkInTime: "24:00" } })).toBe(false);
+    expect(ok({ kind: "arrival", title: "Bad", fields: { checkOutTime: "2pm" } })).toBe(false);
+  });
 });

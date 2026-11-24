@@ -2,10 +2,11 @@ import { eq } from "drizzle-orm";
 import type { Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { freshDatabase } from "../../../test/db";
+import { confirmStay } from "./bookings";
 import type { Db } from "./index";
 import { createDue } from "./payment-review";
-import { matcher, normalizePhone, purgeReceiptImages } from "./privacy";
-import { paymentClaims, paymentDues, paymentSettings, runs, users, workflows, workflowVersions } from "./schema";
+import { deleteCustomer, exportCustomer, matcher, normalizePhone, purgeConversations, purgeReceiptImages } from "./privacy";
+import { bookingChanges, bookings, conversationMessages, conversations, paymentClaims, paymentDues, paymentSettings, resources, runs, users, workflows, workflowVersions } from "./schema";
 
 const PNG = Buffer.from("89504e470d0a1a0a0000000d49484452", "hex");
 const DAY = 86_400_000;
@@ -103,5 +104,58 @@ describe("matching", () => {
     expect(m("09171234567 / 09181112222")).toBe(true);
     expect(matcher({ phone: "09181112222" })("09171234567 / 09181112222")).toBe(true);
     expect(m(9171234567)).toBe(true);
+  });
+});
+
+describe("stays linked to conversations (C5 R6)", () => {
+  it("exports and deletes a staff-confirmed stay found via bookings.conversation_id, nulling conversation_id while keeping the stay", async () => {
+    const w = await workspace();
+    const [room] = await db.insert(resources).values({ userId: w.id, name: `Suite ${++n}` }).returning();
+    const [convo] = await db
+      .insert(conversations)
+      .values({ userId: w.id, channel: "messenger", externalId: `psid-${n}`, fields: { name: "Nora Cruz", email: "nora.stay@privacy.test", phone: "+639178889999" } })
+      .returning();
+    await db.insert(conversationMessages).values({ conversationId: convo!.id, direction: "in", text: "Hi, May 1 to May 4 please." });
+
+    const stay = await confirmStay(
+      db,
+      { workspaceId: w.id, resourceId: room!.id, start: new Date("2031-05-01T06:00:00Z"), end: new Date("2031-05-04T04:00:00Z"), nights: 3, timezone: "Asia/Manila", conversationId: convo!.id },
+      `user:${w.id}`,
+    );
+    expect(stay.result).toBe("done");
+
+    // Export finds the stay via bookings.conversation_id even though runId is null.
+    const exported = await exportCustomer(db, w.id, w.id, { email: "nora.stay@privacy.test" });
+    expect(exported.counts).toMatchObject({ conversations: 1, conversationMessages: 1, bookings: 1, bookingChanges: 1 });
+    expect(exported.bookings[0]!.id).toBe(stay.booking!.id);
+
+    // Delete removes conversation + messages, nulls bookings.conversation_id, clears bookingChanges.result, and keeps the booking row.
+    const deleted = await deleteCustomer(db, w.id, w.id, { phone: "0917 888 9999" });
+    expect(deleted.counts).toMatchObject({ conversations: 1, bookings: 1 });
+    expect(deleted.kept.map((k) => k.item)).toContain("bookings");
+    expect(await db.select().from(conversations).where(eq(conversations.id, convo!.id))).toHaveLength(0);
+    const [keptBooking] = await db.select().from(bookings).where(eq(bookings.id, stay.booking!.id));
+    expect(keptBooking).toMatchObject({ id: stay.booking!.id, conversationId: null, nights: 3, status: "active" });
+    const changes = await db.select().from(bookingChanges).where(eq(bookingChanges.bookingId, stay.booking!.id));
+    expect(changes[0]!.result).toEqual({});
+  });
+
+  it("clears bookings.conversation_id cleanly when the retention sweep purges an old conversation", async () => {
+    const w = await workspace();
+    const [room] = await db.insert(resources).values({ userId: w.id, name: `Cabin ${++n}` }).returning();
+    const oldAt = new Date(NOW.getTime() - 100 * DAY);
+    const [convo] = await db
+      .insert(conversations)
+      .values({ userId: w.id, channel: "email", externalId: `old-${n}@privacy.test`, lastInboundAt: oldAt, createdAt: oldAt })
+      .returning();
+    const stay = await confirmStay(
+      db,
+      { workspaceId: w.id, resourceId: room!.id, start: new Date("2031-07-01T06:00:00Z"), end: new Date("2031-07-03T04:00:00Z"), nights: 2, timezone: "Asia/Manila", conversationId: convo!.id },
+      `user:${w.id}`,
+    );
+    expect(stay.result).toBe("done");
+    expect(await purgeConversations(db, NOW)).toBeGreaterThanOrEqual(1);
+    const [keptBooking] = await db.select().from(bookings).where(eq(bookings.id, stay.booking!.id));
+    expect(keptBooking).toMatchObject({ id: stay.booking!.id, conversationId: null, nights: 2 });
   });
 });

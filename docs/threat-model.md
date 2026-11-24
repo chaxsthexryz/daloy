@@ -362,6 +362,15 @@ The list of apps sharing a Google sign-in joins OAuth grants by Google account I
 - Tampered payment amounts (L7): `untrustedSource` in `definitionSchema` walks step references transitively across `payment_due.amount` and `total` and rejects any chain reaching an `ai` step or a `{{trigger.*}}` field from an untrusted trigger (`meta_dm`, `form`, `email`, `telegram_message`, or unsigned `webhook`), so guest text or model output cannot set a payment amount through `stay_quote` or an intermediate step.
 - Remaining risks: live model answer quality in English and Taglish is unverified until C9's 50-conversation measurement; `guardReply` rate and availability regexes can false-positive on harmless phrasing, erring on the side of handing off to staff.
 
+## Stays (C5, decision 0120)
+
+- Assets: room inventory ranges in `bookings`, guest contact details exposed via `bookings.conversation_id`, and pre-arrival reminder schedules.
+- Entry points: `POST /bookings/stays`, `GET /bookings`, `GET /bookings/:id`, `POST /bookings/:id/reschedule`, MCP booking tools, and the `booking` workflow step in `mode: "stay"`.
+- Unauthorized stay creation from guest text: `definitionSchema` restricts stay-mode `create` steps to `manual`, `payment`, or HMAC-signed `webhook` triggers, and `untrustedSource` transitively rejects any input derived from an `ai` step or a guest-facing trigger (`meta_dm`, `email`, `form`, `telegram_message`, unsigned `webhook`). Staff Confirm stay (`POST /bookings/stays`) requires an authenticated `owner` or `operator` session (403 for approvers and requesters, 401 signed out).
+- Cross-workspace resource or conversation linkage: both `confirmStay` and `bookFromStep` verify `resources.user_id = workspaceId` (and `active = true`) and `conversations.user_id = workspaceId` inside the transaction, returning 404 or `not_found` for any foreign or missing id without leaking existence.
+- Double-booking and race conditions: Postgres `bookings_no_overlap` rejects overlapping ranges across all nights atomically, and `confirmStay` serialises matching `(user_id, idempotency_key)` calls on a per-key advisory lock and partial unique index.
+- Guest PII retention after deletion or purge: `booking_changes.result` omits `guest` contact fields and reads them live from the joined `conversations` row; `bookings.conversation_id` uses `ON DELETE SET NULL` and R6 `collect()` includes bookings linked via `bookings.conversation_id`, so customer deletion or conversation retention purge clears the link and change-log results while preserving only the non-personal held range.
+
 ## Daily tools (R5, decision 0093)
 
 Assets: the owner's inbox, confirmed payment records, customers' receipt photos.

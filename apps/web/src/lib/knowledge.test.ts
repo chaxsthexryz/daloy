@@ -24,7 +24,14 @@ describe("knowledge form", () => {
 
   it("summarises price, rules or text", () => {
     expect(summaryOf({ id: "x", kind: "room", title: "R", body: "", fields: { price: 3500, unit: "night", rules: [{ name: "a", price: 1 }] } }, words)).toBe("PHP 3,500 per night, 1 rules");
+    expect(summaryOf({ id: "x", kind: "arrival", title: "Hours", body: "", fields: { checkInTime: "15:00", checkOutTime: "11:00" } }, words)).toBe("15:00 / 11:00");
     expect(summaryOf({ id: "x", kind: "faq", title: "Pets", body: "No pets.", fields: {} }, words)).toBe("No pets.");
     expect(summaryOf({ id: "x", kind: "faq", title: "Long", body: "a".repeat(200), fields: {} }, words)).toHaveLength(110);
+  });
+
+  it("round-trips check-in and check-out times on arrival entries and drops them on FAQs", () => {
+    const entry: KnowledgeEntry = { id: "a", kind: "arrival", title: "Check-in hours", body: "", fields: { checkInTime: "15:00", checkOutTime: "11:00" } };
+    expect(toInput(toForm(entry))).toEqual({ kind: "arrival", title: "Check-in hours", body: "", fields: { checkInTime: "15:00", checkOutTime: "11:00" } });
+    expect(toInput({ ...emptyForm("faq"), title: "Hours", body: "2 PM", checkInTime: "14:00" }).fields).toEqual({});
   });
 });

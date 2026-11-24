@@ -7,9 +7,17 @@ import { SessionGuard } from "./auth";
 import { Allow, ANY_MEMBER, CurrentUser, DB, isUniqueViolation, MANAGE, ZodPipe, type SessionUser } from "./http";
 
 const name = z.string().trim().min(1, "is required").max(100, "must be at most 100 characters");
-const createInput = z.object({ name });
-const updateInput = z.object({ name: name.optional(), active: z.boolean().optional() }).refine((b) => b.name !== undefined || b.active !== undefined, "send name or active");
-const columns = { id: resources.id, name: resources.name, active: resources.active, createdAt: resources.createdAt };
+const label = z
+  .string()
+  .trim()
+  .max(80, "must be at most 80 characters")
+  .transform((s) => (s === "" ? null : s))
+  .nullable();
+const createInput = z.object({ name, label: label.optional() });
+const updateInput = z
+  .object({ name: name.optional(), label: label.optional(), active: z.boolean().optional() })
+  .refine((b) => b.name !== undefined || b.label !== undefined || b.active !== undefined, "send name, label or active");
+const columns = { id: resources.id, name: resources.name, label: resources.label, active: resources.active, createdAt: resources.createdAt };
 
 /** The workspace's active resources, the only ids a resource field accepts. No query when no field needs them. */
 export async function resourcesFor(db: Db, workspaceId: string, fields: FormField[] | undefined): Promise<Resource[]> {
@@ -36,7 +44,12 @@ export class ResourcesController {
   @Post()
   @UseGuards(Allow(MANAGE))
   async create(@CurrentUser() user: SessionUser, @Body(new ZodPipe(createInput)) body: z.output<typeof createInput>) {
-    const [row] = await this.unique(body.name, () => this.db.insert(resources).values({ userId: user.workspaceId, name: body.name }).returning(columns));
+    const [row] = await this.unique(body.name, () =>
+      this.db
+        .insert(resources)
+        .values({ userId: user.workspaceId, name: body.name, ...(body.label !== undefined ? { label: body.label } : {}) })
+        .returning(columns),
+    );
     return row;
   }
 

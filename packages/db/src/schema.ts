@@ -453,10 +453,15 @@ export const resources = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
+    // Optional group or room type label (C5, decision 0120): each room unit is a resource; room types are its label.
+    label: text("label"),
     active: boolean("active").notNull().default(true),
     createdAt: createdAt(),
   },
-  (t) => [unique().on(t.userId, t.name)],
+  (t) => [
+    unique().on(t.userId, t.name),
+    check("resources_label", sql`${t.label} is null or length(${t.label}) between 1 and 80`),
+  ],
 );
 
 /** A Postgres tstzrange in its text form. Read it with lower() and upper(). */
@@ -512,10 +517,21 @@ export const bookings = pgTable(
     workflowId: uuid("workflow_id").references(() => workflows.id, { onDelete: "set null" }),
     // The run linked to the current version: the one that made the booking or its last change.
     runId: uuid("run_id").references((): AnyPgColumn => runs.id, { onDelete: "set null" }),
+    // C5 (decision 0120): optional conversation link for guest contact, night count for multi-night stays (1..30),
+    // and optional staff Confirm stay idempotency key.
+    conversationId: uuid("conversation_id").references(() => conversations.id, { onDelete: "set null" }),
+    nights: integer("nights"),
+    idempotencyKey: text("idempotency_key"),
     createdAt: createdAt(),
     updatedAt: ts("updated_at").notNull().defaultNow(),
   },
-  (t) => [unique().on(t.userId, t.reference), check("bookings_status", sql`${t.status} in ('active', 'cancelled', 'no_show')`)],
+  (t) => [
+    unique().on(t.userId, t.reference),
+    check("bookings_status", sql`${t.status} in ('active', 'cancelled', 'no_show')`),
+    check("bookings_nights", sql`${t.nights} is null or ${t.nights} between 1 and 30`),
+    index("bookings_conversation").on(t.conversationId).where(sql`${t.conversationId} is not null`),
+    uniqueIndex("bookings_user_idempotency").on(t.userId, t.idempotencyKey).where(sql`${t.idempotencyKey} is not null`),
+  ],
 );
 
 /** What a booking step did, written with the change itself, so a retried or taken-over attempt never books twice. */

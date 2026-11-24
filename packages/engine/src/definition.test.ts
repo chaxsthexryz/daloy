@@ -329,6 +329,53 @@ describe("booking step", () => {
     expect(errs(def({ type: "webhook", config: { fields: [ref] } }, cancel))).toEqual([who]);
     expect(errs(def({ type: "schedule", config: { cron: "0 9 * * 1" } }, cancel))).toEqual([who]);
   });
+
+  describe("stay mode (C5)", () => {
+    const stayCreate = { action: "create", mode: "stay", resource: "{{trigger.room_id}}", checkIn: "{{trigger.check_in}}", nights: "{{trigger.nights}}", timezone: "Asia/Manila" };
+    const stayMove = { action: "reschedule", mode: "stay", booking: "{{trigger.ref}}", checkIn: "{{trigger.check_in}}" };
+    const manual = { type: "manual", config: {} };
+    const payment = { type: "payment", config: { events: ["paid"] } };
+
+    it("accepts stay create from manual, confirmed payment or signed webhook triggers", () => {
+      expect(errs(def(manual, stayCreate))).toEqual([]);
+      expect(errs(def(payment, stayCreate))).toEqual([]);
+      expect(errs(def(signed([ref]), { ...stayCreate, nights: 3 }))).toEqual([]);
+    });
+
+    it("refuses stay create from guest-facing or unsigned triggers, and from AI step output", () => {
+      for (const t of [
+        { type: "meta_dm", config: {} },
+        { type: "email", config: {} },
+        form,
+        { type: "webhook", config: { fields: [ref] } },
+        { type: "telegram_message", config: {} },
+      ]) {
+        expect(errs(def(t, stayCreate)).join(), t.type).toMatch(/stay mode can only run from a manual trigger/);
+      }
+      const fromAi = {
+        trigger: manual,
+        steps: [
+          { id: "extract", type: "ai", config: { task: "extract", input: "{{trigger.note}}", fields: { check_in: "date" } } },
+          book({ ...stayCreate, checkIn: "{{steps.extract.output.check_in}}" }),
+          step("ok", "email"),
+        ],
+        edges: [{ from: "extract", to: "book" }, { from: "book", to: "ok", on: "done" }],
+      };
+      expect(errs(fromAi).join()).toMatch(/AI step "extract"/);
+    });
+
+    it("validates stay mode fields and refuses mixing slot and stay fields", () => {
+      expect(errs(def(manual, { action: "create", mode: "stay", resource: "r", checkIn: "2031-05-01" })).join()).toMatch(/checkIn and nights/);
+      expect(errs(def(manual, { ...stayCreate, start: "{{trigger.at}}" })).join()).toMatch(/stay mode uses checkIn/);
+      expect(errs(def(manual, { ...stayCreate, minutes: 60 })).join()).toMatch(/stay mode uses checkIn/);
+      expect(errs(def(manual, { ...stayCreate, nights: 31 }))).not.toEqual([]);
+      expect(errs(def(manual, { ...stayCreate, nights: "0" }))).not.toEqual([]);
+      expect(errs(def(manual, { ...stayCreate, timezone: "+08:00" })).join()).toMatch(/IANA timezone/);
+      expect(errs(def(manual, stayMove))).toEqual([]);
+      expect(errs(def(manual, { ...stayMove, nights: 2 })).join()).toMatch(/keeps its nights/);
+      expect(errs(def(form, { ...create, checkIn: "2031-05-01" })).join()).toMatch(/stay mode/);
+    });
+  });
 });
 
 describe("ai step files", () => {

@@ -116,6 +116,15 @@ describe("resources API", () => {
     await add(b, "Ana");
     await request(server).get("/resources").expect(401);
   });
+
+  it("supports optional resource labels (room types) on create and update, and lets them be cleared", async () => {
+    const agent = await owner();
+    const room = (await agent.post("/resources").send({ name: "Villa 1", label: "Beach Villa" }).expect(201)).body as { id: string; name: string; label: string | null };
+    expect(room).toMatchObject({ name: "Villa 1", label: "Beach Villa" });
+    await agent.patch(`/resources/${room.id}`).send({ label: "Ocean Villa" }).expect(200).then((r) => expect(r.body.label).toBe("Ocean Villa"));
+    await agent.patch(`/resources/${room.id}`).send({ label: null }).expect(200).then((r) => expect(r.body.label).toBeNull());
+    await agent.post("/resources").send({ name: "Villa 2", label: "x".repeat(81) }).expect(400);
+  });
 });
 
 describe("resource and datetime fields at every entry point", () => {

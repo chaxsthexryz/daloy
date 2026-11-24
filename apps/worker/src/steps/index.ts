@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { workspaceLanguage, readKnowledge, aiConnection, bookFromStep, bookingOfStep, bookingReference, centavosToPesos, createDue, dueForStep, DueTakenError, expireDue, findReviewer, pendingCheckout, pesosToCentavos, checkReceiptReference, checkRecipients, claimTimeout, claimUsage, createApproval, findPaymentForStep, findApprover, queueCalendarEvent, queueDelivery, readSecrets, redactSecrets, secretForms, sendAs, type Db, type MailDeps, type Provider } from "@daloy/db";
 import { deliveries, isPaused, PAST_WINDOW, prepareReply, providerUrls, runConversation, runs, saveConversationFields, windowOpen, type ProviderUrls } from "@daloy/db";
 import { and, eq } from "drizzle-orm";
-import { approvalEmailBody, checkDiscordContent, numberedMenu, type Menu, wouldDo, type FileRef, bookingStartField, conditionBranch, normalizePhMobile, parseZoned, SMS_MAX_CHARS, type TestChoice, type Trigger, declaresJson, parseInstant, isRetryable, mockAiOutput, parseJsonTemplate, resolveJsonTemplate, resolveTemplate, StepError, usesSecrets, type ExpressionContext, type HistoryItem, type Language, quoteStay, QuoteError, type Step } from "@daloy/engine";
+import { approvalEmailBody, checkDiscordContent, DEFAULT_STAY_TIMEZONE, numberedMenu, type Menu, wouldDo, type FileRef, bookingStartField, conditionBranch, normalizePhMobile, parseZoned, SMS_MAX_CHARS, stayRange, stayTimesFromKnowledge, type TestChoice, type Trigger, declaresJson, parseInstant, isRetryable, mockAiOutput, parseJsonTemplate, resolveJsonTemplate, resolveTemplate, StepError, usesSecrets, type ExpressionContext, type HistoryItem, type Language, quoteStay, QuoteError, type Step } from "@daloy/engine";
 import type { StepExecutor, StepResult } from "../advance";
 import { runAi, runAnswer } from "./ai";
 import { browserService, browserStep, type BrowserInput, type BrowserService } from "./browser";
@@ -187,16 +187,43 @@ ${numberedMenu(menu)}` : text(body, ctx) } satisfies EmailInput;
       } satisfies RecordInput;
     }
     case "booking": {
-      const { action, resource, booking, start, minutes } = step.config;
+      const { action, mode, resource, booking, start, minutes, checkIn, nights, timezone, checkInTime, checkOutTime, conversation } = step.config;
       // A resource field stores { id, name }; the step books by id.
       const r = resource === undefined ? undefined : resolveTemplate(resource, ctx);
       const resourceId = r !== null && typeof r === "object" && typeof (r as { id?: unknown }).id === "string" ? (r as { id: string }).id : r === undefined ? undefined : text(resource!, ctx);
-      return { action, ...(resourceId !== undefined && { resource: resourceId }), ...(booking !== undefined && { booking: text(booking, ctx) }), ...(start !== undefined && { start: text(start, ctx) }), ...(minutes !== undefined && { minutes }) } satisfies BookingInput;
+      const nightsText = nights === undefined ? undefined : typeof nights === "number" ? String(nights) : text(nights, ctx).trim();
+      return {
+        action,
+        ...(mode !== undefined && { mode }),
+        ...(resourceId !== undefined && { resource: resourceId }),
+        ...(booking !== undefined && { booking: text(booking, ctx) }),
+        ...(start !== undefined && { start: text(start, ctx) }),
+        ...(minutes !== undefined && { minutes }),
+        ...(checkIn !== undefined && { checkIn: text(checkIn, ctx).trim() }),
+        ...(nightsText !== undefined && { nights: nightsText }),
+        ...(timezone !== undefined && { timezone }),
+        ...(checkInTime !== undefined && { checkInTime }),
+        ...(checkOutTime !== undefined && { checkOutTime }),
+        ...(conversation !== undefined && { conversation: text(conversation, ctx).trim() }),
+      } satisfies BookingInput;
     }
   }
 }
 
-type BookingInput = { action: "create" | "reschedule" | "cancel"; resource?: string; booking?: string; start?: string; minutes?: number };
+type BookingInput = {
+  action: "create" | "reschedule" | "cancel";
+  mode?: "slot" | "stay";
+  resource?: string;
+  booking?: string;
+  start?: string;
+  minutes?: number;
+  checkIn?: string;
+  nights?: string;
+  timezone?: string;
+  checkInTime?: string;
+  checkOutTime?: string;
+  conversation?: string;
+};
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 type Attempt = { runId: string; idempotencyKey: string; attempt: number; stepRunId: string; userId: string; workflowId?: string; mock: boolean; test?: boolean; aiLive?: boolean; choice?: TestChoice; claimSend?: () => Promise<() => void>; booking?: { test: boolean; workflowId: string; trigger: Trigger }; fileFields?: string[] };
@@ -218,6 +245,49 @@ async function runStep(deps: FullDeps, step: Step, input: unknown, ctx: Expressi
       // A faked test run can take another branch without touching any booking (decision 0032).
       if (choice && "booking" in choice) return { branch: choice.booking, output: { mocked: true, reason: `Test run: this step was set to ${choice.booking}.` } };
       if (!booking) throw new StepError("A booking step needs its run's details.", false);
+      const at = { workspaceId: userId, test: booking.test, runId, stepId: step.id, workflowId: booking.workflowId };
+      const found = (reason: string) => ({ branch: "not_found", output: { reason } });
+
+      if (cfg.mode === "stay") {
+        if (cfg.action === "create") {
+          if (!UUID.test(cfg.resource ?? "")) return found("There is no active resource with that id in this workspace.");
+          const nights = /^\d{1,2}$/.test(cfg.nights ?? "") ? Number(cfg.nights) : NaN;
+          const published = await readKnowledge(deps.db, userId);
+          const times = stayTimesFromKnowledge(published?.entries ?? []);
+          const range = stayRange({
+            checkIn: cfg.checkIn ?? "",
+            nights,
+            timezone: cfg.timezone ?? DEFAULT_STAY_TIMEZONE,
+            checkInTime: cfg.checkInTime ?? times.checkInTime,
+            checkOutTime: cfg.checkOutTime ?? times.checkOutTime,
+          });
+          if (!range.ok) throw new StepError(range.error, false);
+          let conversationId: string | undefined;
+          if (cfg.conversation) {
+            if (!UUID.test(cfg.conversation)) return found("There is no conversation with that id in this workspace.");
+            conversationId = cfg.conversation;
+          } else {
+            const [linked] = await deps.db.select({ conversationId: runs.conversationId }).from(runs).where(eq(runs.id, runId));
+            conversationId = linked?.conversationId ?? undefined;
+          }
+          const r = await bookFromStep(deps.db, at, {
+            action: "create",
+            resourceId: cfg.resource!,
+            start: range.start,
+            end: range.end,
+            nights: range.nights,
+            timezone: range.timezone,
+            ...(conversationId ? { conversationId } : {}),
+          });
+          return { branch: r.branch, output: r.output };
+        }
+        if (cfg.action === "reschedule") {
+          if (!cfg.booking?.trim()) return found("No booking reference was given.");
+          const r = await bookFromStep(deps.db, at, { action: "reschedule", reference: cfg.booking.trim(), checkIn: cfg.checkIn ?? "" });
+          return { branch: r.branch, output: r.output };
+        }
+      }
+
       let start: Date | undefined;
       if (cfg.start !== undefined) {
         // The datetime field's own zone, slot and future rules, again at the moment of booking, whatever the data path.
@@ -226,8 +296,6 @@ async function runStep(deps: FullDeps, step: Step, input: unknown, ctx: Expressi
         if (!r.ok) throw new StepError(`"start" ${r.error}, but got ${JSON.stringify(cfg.start)}`, false);
         start = r.at;
       }
-      const at = { workspaceId: userId, test: booking.test, runId, stepId: step.id, workflowId: booking.workflowId };
-      const found = (reason: string) => ({ branch: "not_found", output: { reason } });
       let r;
       if (cfg.action === "create") {
         if (!UUID.test(cfg.resource ?? "")) return found("There is no active resource with that id in this workspace.");

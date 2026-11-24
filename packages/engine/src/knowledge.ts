@@ -5,6 +5,10 @@ export const KNOWLEDGE_KINDS = ["room", "rate", "fee", "faq", "policy", "locatio
 export type KnowledgeKind = (typeof KNOWLEDGE_KINDS)[number];
 /** Only these kinds may carry a price. The reply guard (C4) trusts a peso figure only when it comes from one of them. */
 export const PRICED_KINDS: readonly KnowledgeKind[] = ["room", "rate", "fee"];
+/** Kinds that may carry resort check-in and check-out times for stay bookings (C5, decision 0120). */
+export const STAY_TIME_KINDS: readonly KnowledgeKind[] = ["arrival", "policy", "room"];
+/** 24-hour local wall time as HH:MM (00:00 to 23:59). */
+export const CLOCK_TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
 /** What a price is for. "stay" is one price for the whole booking, "day" is a day-tour or entrance fee. */
 export const PRICE_UNITS = ["night", "person", "person_night", "stay", "day"] as const;
 export type PriceUnit = (typeof PRICE_UNITS)[number];
@@ -45,12 +49,16 @@ export const knowledgeFields = z.strictObject({
   capacity: z.number().int().min(1).max(500).optional(),
   deposit: deposit.optional(),
   rules: z.array(rule).max(12).optional(),
+  // Resort check-in and check-out local times as 24-hour HH:MM, used by stay bookings (C5).
+  checkInTime: z.string().regex(CLOCK_TIME_RE, "must be a 24-hour time as HH:MM").optional(),
+  checkOutTime: z.string().regex(CLOCK_TIME_RE, "must be a 24-hour time as HH:MM").optional(),
   // A link the bot may send. https only, so a stored link cannot be a script or a plain-http page.
   url: z.url({ protocol: /^https$/ }).max(500).optional(),
 });
 export type KnowledgeFields = z.output<typeof knowledgeFields>;
 
 const PRICE_KEYS = ["price", "unit", "capacity", "deposit", "rules"] as const;
+const TIME_KEYS = ["checkInTime", "checkOutTime"] as const;
 
 export const knowledgeEntryInput = z
   .strictObject({
@@ -64,7 +72,13 @@ export const knowledgeEntryInput = z
       const stray = PRICE_KEYS.filter((k) => e.fields[k] !== undefined);
       if (stray.length) ctx.addIssue({ code: "custom", path: ["fields"], message: `${stray.join(", ")} only belong on a room, rate or fee` });
     }
-    if (!e.body && e.fields.price === undefined && !e.fields.url) ctx.addIssue({ code: "custom", path: ["body"], message: "write some text, a price or a link" });
+    if (!STAY_TIME_KINDS.includes(e.kind)) {
+      const stray = TIME_KEYS.filter((k) => e.fields[k] !== undefined);
+      if (stray.length) ctx.addIssue({ code: "custom", path: ["fields"], message: `${stray.join(", ")} only belong on an arrival, policy or room entry` });
+    }
+    if (!e.body && e.fields.price === undefined && !e.fields.url && !e.fields.checkInTime && !e.fields.checkOutTime) {
+      ctx.addIssue({ code: "custom", path: ["body"], message: "write some text, a price, check-in/out times or a link" });
+    }
   });
 export type KnowledgeEntryInput = z.output<typeof knowledgeEntryInput>;
 

@@ -11,7 +11,7 @@ import * as z from "zod";
 import { BOSS, CONFIG, DB, enqueueRun, RateLimit, sha256, type ApiConfig } from "./http";
 import { historyHider } from "./mask";
 import { isTracked, recordRequest } from "./public";
-import { bookingIdOf, cancelBooking, cancelInput, rescheduleBooking, rescheduleInput } from "./bookings";
+import { bookingIdOf, cancelBooking, cancelInput, rescheduleBooking, rescheduleStartField } from "./bookings";
 import { resourcesFor } from "./resources";
 
 // tracked: a guided office or purchase request workflow, whose runs also record a request with a reference.
@@ -176,8 +176,21 @@ export class McpController {
     if (scopes.includes("read")) {
       server.registerTool(
         "list_bookings",
-        { title: "List bookings", description: "Lists the workspace's bookings with reference, resource, start and end in the booking's timezone, status and version. Pass the version to cancel_booking or reschedule_booking.", inputSchema: z.object({}) },
-        async () => asTool(async () => ({ bookings: (await listBookings(this.db, userId)).map(({ reference, resource, start, end, timezone, status, version, attention }) => ({ reference, resource, start, end, timezone, status, version, attention })) })),
+        { title: "List bookings", description: "Lists the workspace's bookings with reference, resource, start and end in the booking's timezone, status and version (plus nights and check-in/out dates for stays). Pass the version to cancel_booking or reschedule_booking.", inputSchema: z.object({}) },
+        async () =>
+          asTool(async () => ({
+            bookings: (await listBookings(this.db, userId)).map(({ reference, resource, start, end, timezone, status, version, attention, nights, checkIn, checkOut }) => ({
+              reference,
+              resource,
+              start,
+              end,
+              timezone,
+              status,
+              version,
+              attention,
+              ...(nights !== undefined ? { nights, checkIn, checkOut } : {}),
+            })),
+          })),
       );
     }
     if (scopes.includes("manage")) {
@@ -190,8 +203,8 @@ export class McpController {
         "reschedule_booking",
         {
           title: "Reschedule a booking",
-          description: "Moves a booking to a new start time, checked like the booking form's time field (written like 2027-01-20T14:00 in the booking's timezone, or with an offset). Starts one new run for the new time; the old reminders stop. version is the version you last saw.",
-          inputSchema: z.object({ reference: z.string().min(1).max(30), version: rescheduleInput.shape.version, start: rescheduleInput.shape.start }),
+          description: "Moves a booking to a new start time (written like 2027-01-20T14:00 in the booking's timezone, or YYYY-MM-DD for a multi-night stay, keeping its nights). Starts one new run when backed by a workflow; the old reminders stop. version is the version you last saw.",
+          inputSchema: z.object({ reference: z.string().min(1).max(30), version: cancelInput.shape.version, start: rescheduleStartField }),
         },
         async ({ reference, version, start }) => asTool(async () => rescheduleBooking(this.db, this.boss, userId, await bookingIdOf(this.db, userId, reference), version, start, "mcp")),
       );

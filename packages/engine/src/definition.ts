@@ -3,6 +3,7 @@ import { aiConfigSchema } from "./ai";
 import { browserConfigSchema } from "./browser";
 import { DISCORD_MAX_CHARS, DOCS_MAX_VALUES, isPlaceholderKey } from "./discord-docs";
 import { FILES_PER_FIELD, type FileRef } from "./file-type";
+import { CLOCK_TIME_RE } from "./knowledge";
 import { menuSchema } from "./menu";
 import { SENDER_ID_RE } from "./phone";
 import { isTimeZone, parseZoned } from "./zoned";
@@ -209,19 +210,71 @@ export const shopifyUpdateProductConfigSchema = z
 export type SheetsConfig = z.infer<typeof sheetsConfigSchema>;
 export type SlackConfig = z.infer<typeof slackConfigSchema>;
 
-// A booking for a workspace resource (decision 0032). create needs resource, start and minutes; reschedule needs the
-// booking reference and start (minutes optional, else kept); cancel needs the reference. start must be
-// {{trigger.<datetime field>}} so the field's zone and slot rules apply to every booking.
+// A booking for a workspace resource (decision 0032, stays in decision 0120).
+// Slot mode (default): create needs resource, start ({{trigger.<datetime field>}}) and minutes (1..1440); reschedule needs booking and start.
+// Stay mode: create needs resource, checkIn (YYYY-MM-DD) and nights (1..30), using check-in/out times from the published knowledge sheet;
+// reschedule keeps nights and takes booking and checkIn. cancel needs only booking.
 export const bookingConfigSchema = z
   .object({
     action: z.enum(["create", "reschedule", "cancel"]),
+    mode: z.enum(["slot", "stay"]).optional().describe("slot books a time of up to 24 hours; stay books 1 to 30 nights using the resort's check-in and check-out times from the knowledge sheet."),
     resource: template(500).min(1).optional().describe("The resource to book: a resource field such as {{trigger.therapist}}, or a resource id."),
     booking: template(500).min(1).optional().describe("The booking reference to change, such as {{trigger.reference}}."),
     start: template(500).min(1).optional().describe("A datetime field of the trigger, such as {{trigger.appointment_at}}."),
     minutes: z.int().min(1).max(1440).optional(),
+    checkIn: template(200).min(1).optional().describe("Check-in date as YYYY-MM-DD for stay mode, such as {{trigger.check_in}}."),
+    nights: z.union([z.int().min(1).max(30), template(50).min(1)]).optional().describe("Number of nights (1 to 30) for stay mode, such as 3 or {{trigger.nights}}."),
+    timezone: z.string().max(64).optional().describe("IANA timezone for stay mode (defaults to Asia/Manila)."),
+    checkInTime: z.string().regex(CLOCK_TIME_RE, "must be a 24-hour time as HH:MM").optional().describe("Optional 24-hour HH:MM check-in override; leave empty to read from the published knowledge sheet."),
+    checkOutTime: z.string().regex(CLOCK_TIME_RE, "must be a 24-hour time as HH:MM").optional().describe("Optional 24-hour HH:MM check-out override; leave empty to read from the published knowledge sheet."),
+    conversation: template(200).min(1).optional().describe("Optional conversation id to link this stay to for guest contact, such as {{trigger.conversation_id}}."),
   })
   .superRefine((c, ctx) => {
     const issue = (path: string, message: string) => ctx.addIssue({ code: "custom", path: [path], message });
+    const stay = c.mode === "stay";
+    const stayOnlyFields = [
+      ["checkIn", c.checkIn],
+      ["nights", c.nights],
+      ["timezone", c.timezone],
+      ["checkInTime", c.checkInTime],
+      ["checkOutTime", c.checkOutTime],
+      ["conversation", c.conversation],
+    ] as const;
+
+    if (c.timezone !== undefined && !isTimeZone(c.timezone)) issue("timezone", "use an IANA timezone name such as Asia/Manila");
+    if (typeof c.nights === "string" && !c.nights.includes("{{")) {
+      const n = /^\d{1,2}$/.test(c.nights.trim()) ? Number(c.nights.trim()) : NaN;
+      if (!Number.isInteger(n) || n < 1 || n > 30) issue("nights", "nights must be a whole number from 1 to 30");
+    }
+
+    if (stay) {
+      if (c.action === "create") {
+        if (c.resource === undefined || c.checkIn === undefined || c.nights === undefined) {
+          issue(c.resource === undefined ? "resource" : c.checkIn === undefined ? "checkIn" : "nights", "a stay create needs resource, checkIn and nights");
+        }
+        if (c.booking !== undefined) issue("booking", "a create makes a new booking, so it takes no booking reference");
+        if (c.start !== undefined) issue("start", "stay mode uses checkIn and nights, not start");
+        if (c.minutes !== undefined) issue("minutes", "stay mode uses checkIn and nights, not minutes");
+      } else if (c.action === "reschedule") {
+        if (c.resource !== undefined) issue("resource", "only a create picks the resource; a booking keeps its resource");
+        if (c.booking === undefined || c.checkIn === undefined) issue(c.booking === undefined ? "booking" : "checkIn", "a stay reschedule needs booking and checkIn");
+        if (c.start !== undefined) issue("start", "stay mode reschedule uses checkIn, not start");
+        if (c.minutes !== undefined) issue("minutes", "stay mode reschedule keeps its nights and takes no minutes");
+        if (c.nights !== undefined) issue("nights", "a stay reschedule keeps its nights");
+      } else {
+        if (c.resource !== undefined) issue("resource", "only a create picks the resource; a booking keeps its resource");
+        if (c.booking === undefined) issue("booking", "a cancel needs the booking reference");
+        for (const [k, v] of [["start", c.start], ["minutes", c.minutes], ...stayOnlyFields] as const) {
+          if (v !== undefined) issue(k, "a cancel takes only the booking reference");
+        }
+      }
+      return;
+    }
+
+    // Slot mode (default)
+    for (const [k, v] of stayOnlyFields) {
+      if (v !== undefined) issue(k, `${k} is only for stay mode (set mode to "stay")`);
+    }
     if (c.action === "create") {
       if (c.resource === undefined || c.start === undefined || c.minutes === undefined) issue(c.resource === undefined ? "resource" : c.start === undefined ? "start" : "minutes", "a create needs resource, start and minutes");
       if (c.booking !== undefined) issue("booking", "a create makes a new booking, so it takes no booking reference");
@@ -519,6 +572,11 @@ export const definitionSchema = z
       // Changing a booking is for staff (the Run button), MCP (its own tools) and signed webhooks, never a public form.
       const signed = def.trigger.type === "manual" || (def.trigger.type === "webhook" && def.trigger.config.hmacSecret !== undefined);
       if (s.config.action !== "create" && !signed) fail(`booking step "${s.id}" can reschedule or cancel only from a manual trigger or a webhook with a signing secret`);
+      // C5 (decision 0120): a stay is created by staff, after a confirmed payment or via a signed webhook, never from guest text alone.
+      const stayTrusted = signed || def.trigger.type === "payment";
+      if (s.config.mode === "stay" && s.config.action === "create" && !stayTrusted) {
+        fail(`booking step "${s.id}" in stay mode can only run from a manual trigger, a confirmed payment trigger, or a webhook with a signing secret`);
+      }
     }
 
     // A reply of "2" means the second choice, so every email menu of one workflow must number its choices the same way.
@@ -526,9 +584,14 @@ export const definitionSchema = z
     if (new Set(emailMenus).size > 1) fail("every email menu in a workflow must list the same choices in the same order, so a reply's number means one thing");
 
     for (const s of def.steps) {
-      if (s.type !== "payment_due") continue;
-      const source = untrustedSource([s.config.amount, s.config.total ?? ""].join(" "), byId, def.trigger);
-      if (source) fail(`payment_due step "${s.id}" cannot take its amount or total from ${source}. Take prices from a stay_quote step, a fixed amount or a manual run.`);
+      if (s.type === "payment_due") {
+        const source = untrustedSource([s.config.amount, s.config.total ?? ""].join(" "), byId, def.trigger);
+        if (source) fail(`payment_due step "${s.id}" cannot take its amount or total from ${source}. Take prices from a stay_quote step, a fixed amount or a manual run.`);
+      }
+      if (s.type === "booking" && s.config.mode === "stay" && s.config.action === "create") {
+        const source = untrustedSource([s.config.resource ?? "", s.config.checkIn ?? "", String(s.config.nights ?? ""), s.config.conversation ?? ""].join(" "), byId, def.trigger);
+        if (source) fail(`booking step "${s.id}" in stay mode cannot take its details from ${source}. Confirm stays from staff, a confirmed payment or a signed webhook.`);
+      }
     }
 
     for (const s of def.steps) if (s.disabled && BRANCHES[s.type]) fail(`${s.type} step "${s.id}" branches, so it cannot be turned off`);
