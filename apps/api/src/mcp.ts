@@ -197,7 +197,7 @@ export class McpController {
       server.registerTool(
         "cancel_booking",
         { title: "Cancel a booking", description: "Cancels a booking. version is the version you last saw; a repeat of the same call gets the same answer.", inputSchema: z.object({ reference: z.string().min(1).max(30), version: cancelInput.shape.version }) },
-        async ({ reference, version }) => asTool(async () => cancelBooking(this.db, userId, await bookingIdOf(this.db, userId, reference), version, "mcp")),
+        async ({ reference, version }) => asTool(async () => cancelBooking(this.db, userId, await bookingIdOf(this.db, userId, reference), version, "mcp", this.boss)),
       );
       server.registerTool(
         "reschedule_booking",

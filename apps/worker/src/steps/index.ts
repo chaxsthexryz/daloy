@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { workspaceLanguage, readKnowledge, aiConnection, bookFromStep, bookingOfStep, bookingReference, centavosToPesos, createDue, dueForStep, DueTakenError, expireDue, findReviewer, pendingCheckout, pesosToCentavos, checkReceiptReference, checkRecipients, claimTimeout, claimUsage, createApproval, findPaymentForStep, findApprover, queueCalendarEvent, queueDelivery, readSecrets, redactSecrets, secretForms, sendAs, type Db, type MailDeps, type Provider } from "@daloy/db";
+import { workspaceLanguage, readKnowledge, aiConnection, bookFromStep, bookingEventPayload, bookingOfStep, bookingReference, centavosToPesos, createDue, dispatchInternalTrigger, dueConversationId, dueForStep, DueTakenError, expireDue, findReviewer, paymentEventPayload, pendingCheckout, pesosToCentavos, checkReceiptReference, checkRecipients, claimTimeout, claimUsage, createApproval, findPaymentForStep, findApprover, queueCalendarEvent, queueDelivery, readSecrets, redactSecrets, secretForms, sendAs, startSubWorkflow, type BookingTriggerEvent, type Db, type MailDeps, type Provider, type StepBookingResult } from "@daloy/db";
 import { deliveries, emailThreadFor, isPaused, PAST_WINDOW, prepareReply, providerUrls, recordOutboundEmail, runConversation, runs, saveConversationFields, windowOpen, type ProviderUrls } from "@daloy/db";
 import { and, eq } from "drizzle-orm";
 import { approvalEmailBody, checkDiscordContent, DEFAULT_STAY_TIMEZONE, numberedMenu, type Menu, wouldDo, type FileRef, bookingStartField, conditionBranch, normalizePhMobile, parseZoned, SMS_MAX_CHARS, stayRange, stayTimesFromKnowledge, type TestChoice, type Trigger, declaresJson, parseInstant, isRetryable, mockAiOutput, parseJsonTemplate, resolveJsonTemplate, resolveTemplate, StepError, usesSecrets, type ExpressionContext, type HistoryItem, type Language, quoteStay, QuoteError, type Step } from "@daloy/engine";
@@ -28,6 +28,8 @@ export type ExecutorDeps = {
   urls?: ProviderUrls;
   /** The browser service for the browser step (B2). Defaults to BROWSER_URL and BROWSER_TOKEN; null when there is none. */
   browser?: BrowserService | null;
+  /** Enqueues child or event-triggered runs onto RUN_QUEUE immediately after creation. */
+  enqueue?: (runId: string) => Promise<void>;
 };
 type FullDeps = ExecutorDeps & { guard: SsrfGuard; publicUrl: string; urls: ProviderUrls; browser: BrowserService | null };
 
@@ -67,6 +69,25 @@ type CalendarInput = { title: string; description: string };
 type MetaReplyInput = { recipientId: string; channel?: string; text: string; quickReplies?: Menu };
 type RecordInput = { fields?: Record<string, string>; title?: string; name?: string; desc?: string };
 type DueInput = { reference: string; kind: "deposit" | "full" | "balance"; amount: string; total?: string; booking?: string; checkout: boolean; reviewer?: string; channel?: "sms" | "messenger"; to?: string; confirmedMessage?: string };
+type CallWorkflowInput = { workflowSlug: string; payload: Record<string, string> };
+
+async function enqueueAll(enqueue: ExecutorDeps["enqueue"], runIds: string[]) {
+  if (!enqueue || runIds.length === 0) return;
+  for (const id of runIds) await enqueue(id);
+}
+
+async function notifyBookingStepEvent(deps: FullDeps, userId: string, event: BookingTriggerEvent, output: Record<string, unknown>) {
+  const out = output as { id?: string; version?: number } & Record<string, unknown>;
+  if (!out.id || out.version === undefined) return;
+  const { runIds } = await dispatchInternalTrigger(deps.db, {
+    workspaceId: userId,
+    type: "booking_event",
+    event,
+    eventKey: `booking:${out.id}:v${out.version}:${event}`,
+    payload: bookingEventPayload(event, out),
+  });
+  await enqueueAll(deps.enqueue, runIds);
+}
 
 /**
  * The config a step runs with, its templates resolved. The executor stores it (redacted) on the step run,
@@ -207,6 +228,13 @@ ${numberedMenu(menu)}` : text(body, ctx) } satisfies EmailInput;
         ...(conversation !== undefined && { conversation: text(conversation, ctx).trim() }),
       } satisfies BookingInput;
     }
+    case "call_workflow": {
+      const { workflowSlug, payload = {} } = step.config;
+      return {
+        workflowSlug: workflowSlug.trim(),
+        payload: Object.fromEntries(Object.entries(payload).map(([k, v]) => [k, text(v, ctx)])),
+      } satisfies CallWorkflowInput;
+    }
   }
 }
 
@@ -248,6 +276,7 @@ async function runStep(deps: FullDeps, step: Step, input: unknown, ctx: Expressi
       const at = { workspaceId: userId, test: booking.test, runId, stepId: step.id, workflowId: booking.workflowId };
       const found = (reason: string) => ({ branch: "not_found", output: { reason } });
 
+      let r: StepBookingResult | undefined;
       if (cfg.mode === "stay") {
         if (cfg.action === "create") {
           if (!UUID.test(cfg.resource ?? "")) return found("There is no active resource with that id in this workspace.");
@@ -270,7 +299,7 @@ async function runStep(deps: FullDeps, step: Step, input: unknown, ctx: Expressi
             const [linked] = await deps.db.select({ conversationId: runs.conversationId }).from(runs).where(eq(runs.id, runId));
             conversationId = linked?.conversationId ?? undefined;
           }
-          const r = await bookFromStep(deps.db, at, {
+          r = await bookFromStep(deps.db, at, {
             action: "create",
             resourceId: cfg.resource!,
             start: range.start,
@@ -279,30 +308,32 @@ async function runStep(deps: FullDeps, step: Step, input: unknown, ctx: Expressi
             timezone: range.timezone,
             ...(conversationId ? { conversationId } : {}),
           });
-          return { branch: r.branch, output: r.output };
-        }
-        if (cfg.action === "reschedule") {
+        } else if (cfg.action === "reschedule") {
           if (!cfg.booking?.trim()) return found("No booking reference was given.");
-          const r = await bookFromStep(deps.db, at, { action: "reschedule", reference: cfg.booking.trim(), checkIn: cfg.checkIn ?? "" });
-          return { branch: r.branch, output: r.output };
+          r = await bookFromStep(deps.db, at, { action: "reschedule", reference: cfg.booking.trim(), checkIn: cfg.checkIn ?? "" });
         }
       }
 
-      let start: Date | undefined;
-      if (cfg.start !== undefined) {
-        // The datetime field's own zone, slot and future rules, again at the moment of booking, whatever the data path.
-        const field = bookingStartField(booking.trigger, step.config);
-        const r = field ? parseZoned(cfg.start.trim(), { timezone: field.timezone!, slotMinutes: field.slotMinutes }) : { ok: false as const, error: "needs a datetime field of the trigger" };
-        if (!r.ok) throw new StepError(`"start" ${r.error}, but got ${JSON.stringify(cfg.start)}`, false);
-        start = r.at;
+      if (!r) {
+        let start: Date | undefined;
+        if (cfg.start !== undefined) {
+          // The datetime field's own zone, slot and future rules, again at the moment of booking, whatever the data path.
+          const field = bookingStartField(booking.trigger, step.config);
+          const parsed = field ? parseZoned(cfg.start.trim(), { timezone: field.timezone!, slotMinutes: field.slotMinutes }) : { ok: false as const, error: "needs a datetime field of the trigger" };
+          if (!parsed.ok) throw new StepError(`"start" ${parsed.error}, but got ${JSON.stringify(cfg.start)}`, false);
+          start = parsed.at;
+        }
+        if (cfg.action === "create") {
+          if (!UUID.test(cfg.resource ?? "")) return found("There is no active resource with that id in this workspace.");
+          const field = bookingStartField(booking.trigger, step.config)!;
+          r = await bookFromStep(deps.db, at, { action: "create", resourceId: cfg.resource!, start: start!, minutes: cfg.minutes!, timezone: field.timezone! });
+        } else if (!cfg.booking?.trim()) return found("No booking reference was given.");
+        else r = await bookFromStep(deps.db, at, cfg.action === "cancel" ? { action: "cancel", reference: cfg.booking.trim() } : { action: "reschedule", reference: cfg.booking.trim(), start: start!, minutes: cfg.minutes });
       }
-      let r;
-      if (cfg.action === "create") {
-        if (!UUID.test(cfg.resource ?? "")) return found("There is no active resource with that id in this workspace.");
-        const field = bookingStartField(booking.trigger, step.config)!;
-        r = await bookFromStep(deps.db, at, { action: "create", resourceId: cfg.resource!, start: start!, minutes: cfg.minutes!, timezone: field.timezone! });
-      } else if (!cfg.booking?.trim()) return found("No booking reference was given.");
-      else r = await bookFromStep(deps.db, at, cfg.action === "cancel" ? { action: "cancel", reference: cfg.booking.trim() } : { action: "reschedule", reference: cfg.booking.trim(), start: start!, minutes: cfg.minutes });
+      if (!booking.test && r.branch === "done") {
+        const event: BookingTriggerEvent = cfg.action === "create" ? "created" : cfg.action === "reschedule" ? "rescheduled" : "cancelled";
+        await notifyBookingStepEvent(deps, userId, event, r.output);
+      }
       return { branch: r.branch, output: r.output };
     }
     case "calendar": {
@@ -674,12 +705,54 @@ async function runStep(deps: FullDeps, step: Step, input: unknown, ctx: Expressi
       const r = await expireDue(deps.db, { userId, runId, stepId: step.id, dueStepId: cfg.due });
       if (r.result === "not_found") throw new StepError(`Step ${cfg.due} asked for no payment in this run.`, false);
       let released = false;
+      let cancelledBooking: StepBookingResult | undefined;
       if (r.result === "expired" && due.bookingId) {
         const reference = await bookingReference(deps.db, due.bookingId);
-        const b = reference ? await bookFromStep(deps.db, { workspaceId: userId, test: due.test, runId, stepId: step.id, workflowId: workflowId! }, { action: "cancel", reference }) : undefined;
-        released = b?.branch === "done";
+        cancelledBooking = reference ? await bookFromStep(deps.db, { workspaceId: userId, test: due.test, runId, stepId: step.id, workflowId: workflowId! }, { action: "cancel", reference }) : undefined;
+        released = cancelledBooking?.branch === "done";
+      }
+      if (!due.test && r.result === "expired" && r.due) {
+        const convoId = await dueConversationId(deps.db, r.due.bookingId);
+        const { runIds } = await dispatchInternalTrigger(deps.db, {
+          workspaceId: userId,
+          type: "payment_event",
+          event: "expired",
+          eventKey: `payment_due:${r.due.id}:expired`,
+          payload: paymentEventPayload("expired", r.due, convoId),
+        });
+        await enqueueAll(deps.enqueue, runIds);
+        if (cancelledBooking?.branch === "done") {
+          await notifyBookingStepEvent(deps, userId, "cancelled", cancelledBooking.output);
+        }
       }
       return { branch: r.result, output: { status: r.due!.status, reference: due.reference, bookingReleased: released } };
+    }
+    case "call_workflow": {
+      const cfg = input as CallWorkflowInput;
+      if (mock) return { output: { mocked: true, simulated: true, workflowSlug: cfg.workflowSlug, payload: cfg.payload } };
+      let callChain: string[] = workflowId ? [workflowId] : [];
+      if (UUID.test(runId)) {
+        const [parentRun] = await deps.db.select({ triggerPayload: runs.triggerPayload }).from(runs).where(eq(runs.id, runId));
+        const raw = (parentRun?.triggerPayload as { _callChain?: unknown } | undefined)?._callChain;
+        if (Array.isArray(raw)) {
+          const parsed = raw.filter((x): x is string => typeof x === "string");
+          callChain = workflowId && !parsed.includes(workflowId) ? [...parsed, workflowId] : parsed;
+        }
+      }
+      let res;
+      try {
+        res = await startSubWorkflow(deps.db, {
+          workspaceId: userId,
+          workflowSlug: cfg.workflowSlug,
+          eventKey: `sub:${runId}:${step.id}`,
+          payload: cfg.payload,
+          callChain,
+        });
+      } catch (err) {
+        throw new StepError(err instanceof Error ? err.message : String(err), false);
+      }
+      if (!res.duplicate) await enqueueAll(deps.enqueue, [res.runId]);
+      return { output: { runId: res.runId, workflowId: res.workflowId, workflowSlug: res.workflowSlug, duplicate: res.duplicate } };
     }
   }
 }

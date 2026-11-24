@@ -1,13 +1,14 @@
 import { centavosToPesos, claimImage, decideClaim, dueByToken, duesForBooking, latestClaim, manilaDay, paymentsExport, pendingCheckout, pesosToCentavos, QuotaError, readPaymentSettings, readProfile, retryReply, reviewList, savePaymentSettings, submitTransferClaim, TooManyClaimsError, workspaceLanguage, type Db, type Due } from "@daloy/db";
 import { FILE_MAX_BYTES, FILE_MIME, fileType } from "@daloy/engine";
-import { BadRequestException, Body, ConflictException, Controller, ForbiddenException, Get, Header, HttpCode, HttpStatus, Inject, NotFoundException, Param, Post, Put, Query, Res, StreamableFile, UploadedFile, UseGuards, UseInterceptors } from "@nestjs/common";
+import { BadRequestException, Body, ConflictException, Controller, ForbiddenException, Get, Header, HttpCode, HttpStatus, Inject, NotFoundException, Optional, Param, Post, Put, Query, Res, StreamableFile, UploadedFile, UseGuards, UseInterceptors } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
 import type { Request, Response } from "express";
+import type { PgBoss } from "pg-boss";
 import * as z from "zod";
 import { SessionGuard } from "./auth";
 import { COMPRESS_TAG } from "./compress";
 import { toCsv } from "./csv";
-import { Allow, CurrentUser, DB, MANAGE, OPERATE, RateLimit, ZodPipe, type SessionUser } from "./http";
+import { Allow, BOSS, CurrentUser, DB, MANAGE, notifyDueConfirmed, OPERATE, RateLimit, ZodPipe, type SessionUser } from "./http";
 import { escapeHtml, page, pageBrand, privacyNotice, UploadBudget } from "./public";
 
 /**
@@ -44,7 +45,10 @@ const REVIEW_ERRORS = {
 @Controller("payments")
 @UseGuards(SessionGuard, Allow(OPERATE))
 export class PaymentsController {
-  constructor(@Inject(DB) private readonly db: Db) {}
+  constructor(
+    @Inject(DB) private readonly db: Db,
+    @Optional() @Inject(BOSS) private readonly boss?: PgBoss,
+  ) {}
 
   @Get("review")
   review(@CurrentUser() user: SessionUser) {
@@ -82,6 +86,7 @@ export class PaymentsController {
   async decide(@CurrentUser() user: SessionUser, @Param("id", new ZodPipe(z.uuid())) id: string, @Body(new ZodPipe(decideInput)) body: z.output<typeof decideInput>) {
     const r = await decideClaim(this.db, { workspaceId: user.workspaceId, actor: { id: user.id, role: user.role }, claimId: id, version: body.version, decision: body.decision, reason: body.reason });
     if (r.result !== "done") throw REVIEW_ERRORS[r.result]();
+    if (body.decision === "confirm" && r.due) await notifyDueConfirmed(this.db, this.boss, user.workspaceId, r.due);
     const open = r.due && body.decision === "confirm" ? await pendingCheckout(this.db, r.due.id) : undefined;
     return { status: r.claim!.status, dueStatus: r.due!.status, checkoutOpen: Boolean(open) };
   }

@@ -327,7 +327,22 @@ const stepSchema = z.discriminatedUnion("type", [
   z.object({ id: stepId, disabled, note, type: z.literal("shopify_update_product"), config: shopifyUpdateProductConfigSchema }),
   // Phase B2 (decision 0108): a page opened in the browser service, with a list of actions.
   z.object({ id: stepId, disabled, note, type: z.literal("browser"), config: browserConfigSchema }),
+  // G1 (decision 0123): start another published sub_workflow in the same workspace.
+  z.object({
+    id: stepId,
+    disabled,
+    note,
+    type: z.literal("call_workflow"),
+    config: z.object({
+      workflowSlug: z.string().regex(/^[a-z0-9][a-z0-9-]{0,79}$/, "use a-z, 0-9 and -").describe("The slug of the target automation (started by Run from another automation)."),
+      payload: z.record(z.string().min(1).max(64), template(2000)).refine((p) => Object.keys(p).length <= 30, "at most 30 fields").default({}).describe("Fields sent to the child automation."),
+    }),
+  }),
 ]);
+export const callWorkflowConfigSchema = z.object({
+  workflowSlug: z.string().regex(/^[a-z0-9][a-z0-9-]{0,79}$/, "use a-z, 0-9 and -").describe("The slug of the target automation (started by Run from another automation)."),
+  payload: z.record(z.string().min(1).max(64), template(2000)).refine((p) => Object.keys(p).length <= 30, "at most 30 fields").default({}).describe("Fields sent to the child automation."),
+});
 export type Step = z.infer<typeof stepSchema>;
 
 /** Outgoing edge labels for steps that branch. Every other step has at most one unlabelled edge. */
@@ -405,6 +420,19 @@ const triggerSchema = z.discriminatedUnion("type", [
       .strictObject({ from: z.enum(["my_chat", "anyone"]).default("my_chat"), requireFile: z.boolean().default(true) })
       .default({ from: "my_chat", requireFile: true }),
   }),
+  // G1 (decision 0123): Daloy internal booking/payment lifecycle events and reusable sub-workflows.
+  z.object({
+    type: z.literal("booking_event"),
+    config: z.object({ events: z.array(z.enum(["created", "rescheduled", "cancelled"])).min(1).default(["created"]) }).default({ events: ["created"] }),
+  }),
+  z.object({
+    type: z.literal("payment_event"),
+    config: z.object({ events: z.array(z.enum(["confirmed", "expired"])).min(1).default(["confirmed"]) }).default({ events: ["confirmed"] }),
+  }),
+  z.object({
+    type: z.literal("sub_workflow"),
+    config: z.object({ fields: fieldList.optional() }).default({}),
+  }),
 ]);
 export type Trigger = z.infer<typeof triggerSchema>;
 
@@ -423,8 +451,9 @@ export function bookingStartField(trigger: Trigger, config: Pick<BookingConfig, 
   return triggerFields(trigger)?.find((f) => f.name === name && f.type === "datetime");
 }
 
-/** The fields a trigger's payload is checked against: a form's, or a webhook's when it lists any. */
-export const triggerFields = (t: Trigger): FormField[] | undefined => (t.type === "form" || t.type === "webhook" ? t.config.fields : undefined);
+/** The fields a trigger's payload is checked against: a form's, or a webhook's or sub_workflow's when it lists any. */
+export const triggerFields = (t: Trigger): FormField[] | undefined =>
+  t.type === "form" || t.type === "webhook" || t.type === "sub_workflow" ? t.config.fields : undefined;
 
 // Plain decimal text only, so "45,000", "0x10" and "Infinity" are refused instead of read as some other number.
 const NUMBER_TEXT = /^[+-]?(\d+\.?\d*|\.\d+)(e[+-]?\d+)?$/i;
@@ -533,7 +562,9 @@ export const definitionSchema = z
     const fail = (message: string) => ctx.addIssue({ code: "custom", message });
 
     const fields = triggerFields(def.trigger);
-    if (def.trigger.type === "webhook" && def.trigger.config.fields?.some((f) => f.type === "file")) fail("file fields are for forms; a webhook cannot take files");
+    if ((def.trigger.type === "webhook" || def.trigger.type === "sub_workflow") && def.trigger.config.fields?.some((f) => f.type === "file")) {
+      fail(`file fields are for forms; a ${def.trigger.type} cannot take files`);
+    }
     if (fields) {
       const names = new Set<string>();
       for (const f of fields) {

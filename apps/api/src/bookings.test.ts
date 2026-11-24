@@ -656,4 +656,26 @@ describe("stays and Confirm stay API (C5)", () => {
     expect(newRun.nextAttemptAt!.toISOString()).toBe(`${year}-05-18T06:00:00.000Z`);
     expect((await wake(firstRun.id)).state).toBe("cancelled");
   });
+
+  it("dispatches booking_event automations when staff confirm, reschedule, or cancel a booking", async () => {
+    const o = await owner();
+    const room = (await o.agent.post("/resources").send({ name: "Suite B" }).expect(201)).body as { id: string };
+    const listener = (await o.agent.post("/workflows").send({ name: "Booking Watcher", slug: `bwatch-${++seq}` }).expect(201)).body as { id: string };
+    const def = {
+      trigger: { type: "booking_event", config: { events: ["created", "rescheduled", "cancelled"] } },
+      steps: [{ id: "wait", type: "delay", config: { seconds: 1 } }],
+      edges: [],
+    };
+    const pub = (await o.agent.post(`/workflows/${listener.id}/versions`).send({ definition: def, publish: true }).expect(201)).body as { id: string };
+
+    const stay = (await o.agent.post("/bookings/stays").send({ resourceId: room.id, checkIn: `${year}-07-01`, nights: 2, idempotencyKey: `stay-${seq}` }).expect(201)).body.booking as { id: string; reference: string; version: number };
+    await o.agent.post("/bookings/stays").send({ resourceId: room.id, checkIn: `${year}-07-01`, nights: 2, idempotencyKey: `stay-${seq}` }).expect(201);
+    await o.agent.post(`/bookings/${stay.id}/reschedule`).send({ version: 1, checkIn: `${year}-07-04` }).expect(200);
+    await o.agent.post(`/bookings/${stay.id}/cancel`).send({ version: 2 }).expect(200);
+
+    const emitted = await db.select().from(runs).where(eq(runs.workflowVersionId, pub.id)).orderBy(asc(runs.createdAt));
+    expect(emitted).toHaveLength(3);
+    expect(emitted.map((r) => (r.triggerPayload as { event?: string }).event)).toEqual(["created", "rescheduled", "cancelled"]);
+    expect(emitted[0]!.triggerPayload).toMatchObject({ bookingId: stay.id, reference: stay.reference, resourceName: "Suite B", mode: "stay", nights: 2 });
+  });
 });

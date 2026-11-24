@@ -67,12 +67,15 @@ const spec = (full: boolean) => [
 
 // Left out of a small local model's prompt to keep it inside that model's context; a hosted model gets all of them.
 // The stress test (apps/api/scripts/ai-stress.ts) showed a hosted model without them builds http or telegram steps instead.
-const HOSTED_ONLY = ["airtable", "notion", "trello", "payment_status", "payment_due", "payment_expire", "sms", "meta_reply", "conversation_update", "stay_quote", "discord", "google_docs", "read_page", "shopify_create_product", "shopify_update_product", "browser"];
+const HOSTED_ONLY = ["airtable", "notion", "trello", "payment_status", "payment_due", "payment_expire", "sms", "meta_reply", "conversation_update", "stay_quote", "discord", "google_docs", "read_page", "shopify_create_product", "shopify_update_product", "browser", "call_workflow"];
 const FULL_TRIGGERS =
   'More triggers: {"type":"meta_dm","config":{"channel":"both"}} for a Facebook Messenger or Instagram DM to the connected Page (channel messenger, instagram or both; fields {{trigger.text}}, {{trigger.senderId}}, {{trigger.channel}}); ' +
   '{"type":"payment","config":{"events":["paid"]}} for a PayMongo payment (fields {{trigger.reference}}, {{trigger.amountPesos}}, {{trigger.status}}); ' +
   '{"type":"shopify_order","config":{}} for a new order in the connected Shopify store (fields {{trigger.order_number}}, {{trigger.customer_name}}, {{trigger.customer_email}}, {{trigger.customer_phone}}, {{trigger.total}}, {{trigger.items}}); ' +
   '{"type":"telegram_message","config":{"from":"my_chat","requireFile":true}} for a photo, PDF or message sent to the Telegram bot of the owner (from my_chat or anyone; fields {{trigger.text}}, {{trigger.chatId}}, {{trigger.fromName}}, {{trigger.date}}; the photo or PDF is the file field "file" for an ai step; reply with a telegram step whose chatId is {{trigger.chatId}}); ' +
+  '{"type":"booking_event","config":{"events":["created"]}} when a Daloy booking is created, rescheduled or cancelled (fields {{trigger.event}}, {{trigger.bookingId}}, {{trigger.reference}}, {{trigger.resourceName}}, {{trigger.start}}, {{trigger.end}}, {{trigger.status}}, {{trigger.mode}}); ' +
+  '{"type":"payment_event","config":{"events":["confirmed"]}} when a Daloy payment due settles as confirmed or expired (fields {{trigger.event}}, {{trigger.dueId}}, {{trigger.reference}}, {{trigger.amountPesos}}, {{trigger.kind}}, {{trigger.status}}); ' +
+  '{"type":"sub_workflow","config":{}} for a reusable child workflow called by a call_workflow step; ' +
   '{"type":"email","config":{}} for an email to the workspace inbox.';
 const FULL_RULES = [
   "When the person names an app or channel Daloy has no step for (such as TikTok, Viber or Lazada), say so plainly in the summary and name what the draft uses instead. Never say a step sends through an app it does not use.",

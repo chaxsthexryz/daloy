@@ -539,3 +539,44 @@ describe("Shopify steps and trigger", () => {
     expect(issues(def(order, { id: "up", type: "shopify_update_product", config: { product: "TOTE-1", price: "12", status: "active" } }))).toEqual([]);
   });
 });
+
+// G1 (decision 0123): Daloy internal triggers (booking_event, payment_event) and reusable sub-workflows.
+describe("G1 internal triggers and call_workflow step", () => {
+  const step = { id: "wait", type: "delay", config: { seconds: 5 } };
+
+  it("accepts booking_event, payment_event, and sub_workflow triggers with sensible defaults", () => {
+    const b = definitionSchema.parse({ trigger: { type: "booking_event" }, steps: [step], edges: [] });
+    expect(b.trigger).toEqual({ type: "booking_event", config: { events: ["created"] } });
+
+    const p = definitionSchema.parse({ trigger: { type: "payment_event", config: { events: ["confirmed", "expired"] } }, steps: [step], edges: [] });
+    expect(p.trigger).toEqual({ type: "payment_event", config: { events: ["confirmed", "expired"] } });
+
+    const s = definitionSchema.parse({ trigger: { type: "sub_workflow", config: { fields: [{ name: "ref", label: "Reference", type: "text", required: true }] } }, steps: [step], edges: [] });
+    expect(s.trigger.type).toBe("sub_workflow");
+  });
+
+  it("refuses payment_due amounts taken from a sub_workflow trigger (preserves L7 boundary)", () => {
+    const def = {
+      trigger: { type: "sub_workflow", config: { fields: [{ name: "amount", label: "Amount", type: "text", required: true }] } },
+      steps: [{ id: "ask", type: "payment_due", config: { reference: "R-1", amount: "{{trigger.amount}}" } }],
+      edges: [],
+    };
+    expect(issues(def).join()).toMatch(/payment_due step "ask" cannot take its amount or total from a sub_workflow trigger/);
+  });
+
+  it("validates call_workflow step slugs and template payload fields", () => {
+    const validCall = {
+      trigger: { type: "manual", config: {} },
+      steps: [{ id: "run_child", type: "call_workflow", config: { workflowSlug: "notify-team", payload: { ref: "{{trigger.ref}}" } } }],
+      edges: [],
+    };
+    expect(issues(validCall)).toEqual([]);
+
+    const badSlug = {
+      trigger: { type: "manual", config: {} },
+      steps: [{ id: "run_child", type: "call_workflow", config: { workflowSlug: "Bad Slug!", payload: {} } }],
+      edges: [],
+    };
+    expect(issues(badSlug).join()).toMatch(/a-z, 0-9 and -/);
+  });
+});

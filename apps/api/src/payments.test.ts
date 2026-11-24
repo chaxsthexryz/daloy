@@ -216,6 +216,30 @@ describe("PayMongo webhook for a due", () => {
     expect((await o.agent.get("/payments/review").expect(200)).body).toEqual([]);
   });
 
+  it("dispatches payment_event (confirmed) automations from both PayMongo webhook settlement and manual claim confirmation", async () => {
+    const { o, d, sessionId, post } = await setup();
+    const listener = (await o.agent.post("/workflows").send({ name: "Payment Watcher", slug: `pwatch-${++seq}` }).expect(201)).body as { id: string };
+    const def = {
+      trigger: { type: "payment_event", config: { events: ["confirmed"] } },
+      steps: [{ id: "wait", type: "delay", config: { seconds: 1 } }],
+      edges: [],
+    };
+    const pub = (await o.agent.post(`/workflows/${listener.id}/versions`).send({ definition: def, publish: true }).expect(201)).body as { id: string };
+
+    // 1. Confirmed via PayMongo webhook
+    await post(paidEvent(`evt_watch_${seq}`, sessionId, 35000)).expect(200);
+    // 2. Confirmed via manual receipt review
+    const d2 = await due(o.userId);
+    await send(d2.token, { transfer_ref: `501234${++seq}`, amount: "350" }, PNG).expect(200);
+    const [claimRow] = (await o.agent.get("/payments/review").expect(200)).body as { claimId: string; version: number }[];
+    await o.agent.post(`/payments/claims/${claimRow!.claimId}/decide`).send({ version: claimRow!.version, decision: "confirm" }).expect(200);
+
+    const emitted = await db.select().from(runs).where(eq(runs.workflowVersionId, pub.id));
+    expect(emitted).toHaveLength(2);
+    expect(emitted.map((r) => (r.triggerPayload as { dueId?: string; amountPesos?: string }).dueId).sort()).toEqual([d.id, d2.id].sort());
+    expect(emitted[0]!.triggerPayload).toMatchObject({ event: "confirmed", status: "confirmed", amountCentavos: 35000, amountPesos: "350.00" });
+  });
+
   it("an unsigned event confirms nothing, and a wrong amount goes to review", async () => {
     const { o, d, sessionId, post } = await setup();
     const body = paidEvent(`evt_bad_${seq}`, sessionId, 35000);

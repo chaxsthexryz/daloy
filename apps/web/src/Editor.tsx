@@ -72,10 +72,13 @@ function samplePayload(trigger: Trigger, resourceId = "a resource id from the Re
   if (trigger.type === "meta_dm") return JSON.stringify({ channel: trigger.config.channel === "instagram" ? "instagram" : "messenger", senderId: "1234567890", messageId: "m_sample_1", text: "Here is my GCash receipt.", timestamp: new Date().toISOString(), image: [] }, null, 2);
   if (trigger.type === "telegram_message") return JSON.stringify({ chatId: "123456789", chatType: "private", fromId: "123456789", fromName: "Ana Reyes", username: "anareyes", messageId: 42, updateId: 1001, date: "2026-11-23T09:15:00.000Z", text: "GCash for order 12", fileRefused: false }, null, 2);
   if (trigger.type === "shopify_order") return JSON.stringify({ order_id: "820982911946154508", order_number: "#1001", customer_name: "Ana Reyes", customer_email: "ana@example.com", customer_phone: "+639171234567", total: "1250.50", currency: "PHP", financial_status: "pending", created_at: new Date().toISOString(), shop: "your-shop.myshopify.com", item_count: 2, items: "2 x Tote bag [TOTE-BLU]", line_items: [{ title: "Tote bag", variant_title: "", quantity: 2, price: "625.25", sku: "TOTE-BLU" }] }, null, 2);
-  if (trigger.type !== "form") return "{}";
+  if (trigger.type === "booking_event") return JSON.stringify({ event: trigger.config.events[0] ?? "created", bookingId: "sample-booking-id", reference: "BK-1001", resourceId, resourceName: "Sample room", start: `${tomorrowAtTen()}:00+08:00`, end: `${tomorrowAtTen().slice(0, 10)}T11:00:00+08:00`, minutes: 60, timezone: "Asia/Manila", status: "active", version: 1, mode: "slot" }, null, 2);
+  if (trigger.type === "payment_event") return JSON.stringify({ event: trigger.config.events[0] ?? "confirmed", dueId: "sample-due-id", reference: "ORD-1001", kind: "deposit", status: trigger.config.events[0] ?? "confirmed", amountCentavos: 35000, amountPesos: "350.00" }, null, 2);
+  const fields = trigger.type === "form" ? trigger.config.fields : trigger.type === "sub_workflow" ? (trigger.config.fields ?? []) : null;
+  if (!fields || fields.length === 0) return "{}";
   // File fields are left out: a test run takes no files, and the server drops a value sent for one.
   const sample = Object.fromEntries(
-    trigger.config.fields.filter((f) => f.type !== "file").map((f) => [f.name, f.type === "number" ? 1 : f.type === "email" ? "ana@example.com" : f.type === "datetime" ? tomorrowAtTen() : f.type === "resource" ? resourceId : `Sample ${f.label.toLowerCase()}`]),
+    fields.filter((f) => f.type !== "file").map((f) => [f.name, f.type === "number" ? 1 : f.type === "email" ? "ana@example.com" : f.type === "datetime" ? tomorrowAtTen() : f.type === "resource" ? resourceId : `Sample ${f.label.toLowerCase()}`]),
   );
   return JSON.stringify(sample, null, 2);
 }
@@ -1171,7 +1174,7 @@ function NextUp({ draft, id }: { draft: Draft; id: string }) {
   );
 }
 
-const TRIGGER_ORDER: Trigger["type"][] = ["manual", "webhook", "schedule", "form", "email", "payment", "meta_dm", "telegram_message", "shopify_order"];
+const TRIGGER_ORDER: Trigger["type"][] = ["manual", "webhook", "schedule", "form", "email", "payment", "booking_event", "payment_event", "sub_workflow", "meta_dm", "telegram_message", "shopify_order"];
 const TRIGGER_DEFAULTS: Record<Trigger["type"], Trigger> = {
   manual: { type: "manual", config: {} },
   email: { type: "email", config: {} },
@@ -1179,6 +1182,9 @@ const TRIGGER_DEFAULTS: Record<Trigger["type"], Trigger> = {
   schedule: { type: "schedule", config: { cron: "0 9 * * 1" } },
   form: { type: "form", config: { fields: [{ name: "email", label: "Email", type: "email", required: true }] } },
   payment: { type: "payment", config: { events: ["paid"] } },
+  booking_event: { type: "booking_event", config: { events: ["created"] } },
+  payment_event: { type: "payment_event", config: { events: ["confirmed"] } },
+  sub_workflow: { type: "sub_workflow", config: {} },
   meta_dm: { type: "meta_dm", config: { channel: "both", requireImage: false } },
   shopify_order: { type: "shopify_order", config: {} },
   telegram_message: { type: "telegram_message", config: { from: "my_chat", requireFile: true } },
@@ -1189,8 +1195,15 @@ function TriggerPanel({ trigger, wf, onChange }: { trigger: Trigger; wf: Loaded;
   const id = useId();
   const published = wf.trigger && wf.live && wf.trigger.type === trigger.type ? wf.trigger : null;
   const [newPath, setNewPath] = useState<string | null>(null);
-  const fields = trigger.type === "form" ? trigger.config.fields : [];
-  const setFields = (next: FormField[]) => onChange({ type: "form", config: { fields: next } });
+  const fields = trigger.type === "form" ? trigger.config.fields : trigger.type === "sub_workflow" ? (trigger.config.fields ?? []) : [];
+  const setFields = (next: FormField[]) =>
+    onChange(
+      trigger.type === "sub_workflow"
+        ? { type: "sub_workflow", config: next.length ? { fields: next } : {} }
+        : { type: "form", config: { fields: next } },
+    );
+  const bookingLabels = { created: t("Booking created"), rescheduled: t("Booking rescheduled"), cancelled: t("Booking cancelled") } as const;
+  const paymentEventLabels = { confirmed: t("Payment confirmed"), expired: t("Payment expired") } as const;
   return (
     <section aria-labelledby={`${id}-h`}>
       <h2 id={`${id}-h`}>{t("Trigger")}</h2>
@@ -1278,6 +1291,47 @@ function TriggerPanel({ trigger, wf, onChange }: { trigger: Trigger; wf: Loaded;
           ))}
         </fieldset>
       )}
+      {trigger.type === "booking_event" && (
+        <fieldset>
+          <legend>{t("Run when a booking is")}</legend>
+          {(["created", "rescheduled", "cancelled"] as const).map((e) => (
+            <label key={e}>
+              <input
+                type="checkbox"
+                checked={trigger.config.events.includes(e)}
+                onChange={(ev) => {
+                  const events = ev.target.checked ? [...trigger.config.events, e] : trigger.config.events.filter((x) => x !== e);
+                  if (events.length) onChange({ type: "booking_event", config: { events } });
+                }}
+              />{" "}
+              {bookingLabels[e]}
+            </label>
+          ))}
+        </fieldset>
+      )}
+      {trigger.type === "payment_event" && (
+        <fieldset>
+          <legend>{t("Run when a Daloy payment is")}</legend>
+          {(["confirmed", "expired"] as const).map((e) => (
+            <label key={e}>
+              <input
+                type="checkbox"
+                checked={trigger.config.events.includes(e)}
+                onChange={(ev) => {
+                  const events = ev.target.checked ? [...trigger.config.events, e] : trigger.config.events.filter((x) => x !== e);
+                  if (events.length) onChange({ type: "payment_event", config: { events } });
+                }}
+              />{" "}
+              {paymentEventLabels[e]}
+            </label>
+          ))}
+        </fieldset>
+      )}
+      {trigger.type === "sub_workflow" && (
+        <p className="muted hint">
+          {t("Starts when another automation calls this slug ({slug}) with a Call another automation step.", { slug: wf.slug })}
+        </p>
+      )}
       {trigger.type === "email" && <EmailSource workflowId={wf.id} published={wf.trigger?.type === "email" && !!wf.live} />}
       {trigger.type === "schedule" && (
         <div className="field">
@@ -1318,9 +1372,9 @@ function TriggerPanel({ trigger, wf, onChange }: { trigger: Trigger; wf: Loaded;
           </div>
         </>
       )}
-      {trigger.type === "form" && (
+      {(trigger.type === "form" || trigger.type === "sub_workflow") && (
         <fieldset>
-          <legend>{t("Form fields")}</legend>
+          <legend>{t(trigger.type === "sub_workflow" ? "Expected inputs" : "Form fields")}</legend>
           {fields.map((f, i) => {
             const set = (patch: Partial<FormField>) => setFields(fields.map((g, j) => (j === i ? { ...g, ...patch } : g)));
             return (
@@ -1336,7 +1390,7 @@ function TriggerPanel({ trigger, wf, onChange }: { trigger: Trigger; wf: Loaded;
                     set({ type, min: undefined, max: undefined, integer: undefined, slotMinutes: undefined, timezone: type === "datetime" ? Intl.DateTimeFormat().resolvedOptions().timeZone : undefined });
                   }}
                 >
-                  {["text", "email", "textarea", "number", "datetime", "resource", "file"].map((kind) => (
+                  {(trigger.type === "sub_workflow" ? ["text", "email", "textarea", "number", "datetime", "resource"] : ["text", "email", "textarea", "number", "datetime", "resource", "file"]).map((kind) => (
                     <option key={kind} value={kind}>{t(kind)}</option>
                   ))}
                 </select>
@@ -1360,7 +1414,7 @@ function TriggerPanel({ trigger, wf, onChange }: { trigger: Trigger; wf: Loaded;
                 )}
                 {f.type === "resource" && <span className="muted">{t("a resource from the Resources page")}</span>}
                 {f.type === "file" && <span className="muted">{t("photos or PDFs, up to 5 MB each, 3 per field")}</span>}
-                <button type="button" className="quiet" onClick={() => setFields(fields.filter((_, j) => j !== i))} disabled={fields.length === 1}>
+                <button type="button" className="quiet" onClick={() => setFields(fields.filter((_, j) => j !== i))} disabled={trigger.type === "form" && fields.length === 1}>
                   {t("Remove")}
                 </button>
               </div>

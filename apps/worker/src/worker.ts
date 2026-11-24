@@ -14,7 +14,7 @@ import { checkSchedules } from "./watchdog";
 export type WorkerOptions = {
   connectionString: string;
   db: Db;
-  executor: StepExecutor;
+  executor: StepExecutor | ((enqueue: (runId: string) => Promise<void>) => StepExecutor);
   leaseMs?: number;
   sweepMs?: number;
   pollingIntervalSeconds?: number;
@@ -56,15 +56,16 @@ export async function startWorker(opts: WorkerOptions) {
   await boss.createQueue(RUN_QUEUE, RUN_QUEUE_OPTIONS);
   await boss.createQueue(SCHEDULE_QUEUE);
 
+  const enqueue: AdvanceDeps["enqueue"] = async (runId, startAfter) => {
+    await boss.send(RUN_QUEUE, { runId }, { singletonKey: runId, startAfter });
+  };
   const deps: AdvanceDeps = {
     db,
-    executor: opts.executor,
+    executor: typeof opts.executor === "function" ? opts.executor((runId) => enqueue(runId)) : opts.executor,
     owner: `${hostname()}:${process.pid}:${randomUUID().slice(0, 8)}`,
     leaseMs,
     retryPolicy: opts.retryPolicy,
-    enqueue: async (runId, startAfter) => {
-      await boss.send(RUN_QUEUE, { runId }, { singletonKey: runId, startAfter });
-    },
+    enqueue,
   };
 
   // NOTIFY (RUN_QUEUE_OPTIONS) wakes the worker when a job is sent. A job sent with a later startAfter (retry, delay)

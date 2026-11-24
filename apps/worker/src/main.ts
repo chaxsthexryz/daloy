@@ -26,7 +26,7 @@ const worker = await startWorker({
   migrate: ownsSchema,
   secretsKey,
   retiredSecretMaxAgeDays: maxRetiredAgeDays,
-  executor: createExecutor({ db, secretsKey, mail: mailDeps(), publicUrl: process.env.PUBLIC_URL }),
+  executor: (enqueue) => createExecutor({ db, secretsKey, mail: mailDeps(), publicUrl: process.env.PUBLIC_URL, enqueue }),
   deliveries: { secretsKey, urls: providerUrls() },
   watchdog: { secretsKey, mail: mailDeps(), publicUrl: process.env.PUBLIC_URL },
   emailIn: { secretsKey, ...(process.env.NODE_ENV === "test" && process.env.DALOY_TEST_IMAP_ENDPOINT ? { intervalMs: 500 } : {}) },
