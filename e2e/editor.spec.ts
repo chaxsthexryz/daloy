@@ -149,12 +149,13 @@ test("the plus on each branch of a condition and an approval adds the step on th
   }
 });
 
-test("the panel: actions and AI box with nothing selected, close, Escape, and folding kept per viewer", async ({ page }) => {
+test("the panel: actions stay pinned in the header, AI box with nothing selected, close, Escape, and folding kept per viewer", async ({ page }) => {
   await branchedFlow(page);
   const panel = page.locator(".a7-panel");
+  const headActions = page.locator(".a7-head").getByRole("group", { name: "Workflow actions" });
   const node = (id: string) => page.locator(`.react-flow__node[data-id="${id}"]`);
-  const actions = panel.getByRole("group", { name: "Workflow actions" });
-  await expect(actions.getByRole("button")).toHaveText(["Test run", "Explain", "Save", "Publish"]);
+  await expect(headActions.getByRole("button")).toHaveText(["Test run", "Explain", "Save", "Publish"]);
+  await expect(panel.getByRole("group", { name: "Workflow actions" })).toHaveCount(0);
   await expect(panel.getByRole("region", { name: "Ask the AI" })).toBeVisible();
   await expect(panel.locator("summary", { hasText: "Test settings" })).toBeVisible();
   await expect(page.locator("#add-step-type")).toHaveCount(0);
@@ -165,7 +166,7 @@ test("the panel: actions and AI box with nothing selected, close, Escape, and fo
   await expect(panel.getByRole("heading", { name: "ok_mail" })).toBeVisible();
   await expect(node("ok_mail").locator(".react-flow__handle").first()).toBeVisible();
   await expect(node("bad_mail").locator(".react-flow__handle").first()).toBeHidden();
-  await expect(actions).toBeVisible();
+  await expect(headActions).toBeVisible();
   await panel.getByRole("button", { name: "Close", exact: true }).click();
   await expect(panel.getByRole("region", { name: "Ask the AI" })).toBeVisible();
   await node("ok_mail").click();
@@ -177,16 +178,16 @@ test("the panel: actions and AI box with nothing selected, close, Escape, and fo
   await expect(panel.locator(".a7-inspector :is(input, select, textarea)").first()).toBeFocused();
   await panel.getByRole("button", { name: "Close", exact: true }).click();
 
-  // Folded, the panel is a strip and the four actions move to the header. The choice survives a reload; selecting a step opens it.
+  // Folded, the panel is a strip and the four actions stay pinned in the header. The choice survives a reload; selecting a step opens it.
   await page.getByRole("button", { name: "Hide the side panel" }).click();
   await expect(panel).toHaveCount(0);
-  await expect(page.locator(".a7-head").getByRole("button", { name: "Publish" })).toBeVisible();
+  await expect(headActions.getByRole("button", { name: "Publish" })).toBeVisible();
   expect(Math.round((await page.locator(".a7-side").boundingBox())!.width)).toBe(44);
   await page.reload();
   await expect(page.getByRole("button", { name: "Show the side panel" })).toHaveAttribute("aria-expanded", "false");
   await node("check").click();
   await expect(panel.getByRole("heading", { name: "check" })).toBeVisible();
-  await expect(page.locator(".a7-head").getByRole("button", { name: "Publish" })).toHaveCount(0);
+  await expect(headActions.getByRole("button", { name: "Publish" })).toBeVisible();
   await page.getByRole("button", { name: "Hide the side panel" }).click();
   await page.getByRole("button", { name: "Show the side panel" }).click();
   await expect(panel).toBeVisible();
@@ -288,4 +289,38 @@ test("right-click menus: duplicate, copy and paste, connect to and test this ste
   await expect(own.locator(".a7-last-test .run")).toContainText("check", { timeout: 30_000 });
   await node("ok_mail").click();
   await expect(page.getByRole("region", { name: "Test this step" }).getByRole("button", { name: "Try this step for real" })).toBeVisible();
+});
+
+// E1: visible add stubs below leaves and open branch exits append steps directly without dragging handles.
+test("visible leaf and empty-branch add controls append steps and never overlap branch pills", async ({ page }) => {
+  await branchedFlow(page);
+  const node = (id: string) => page.locator(`.react-flow__node[data-id="${id}"]`);
+  await expect(node("ok_mail")).toBeVisible();
+
+  const boxes = await page.evaluate(() =>
+    [...document.querySelectorAll<HTMLElement>(".a7-insert, .a7-leaf-add, .a7-branch-add, .a7-editor .react-flow .a7-branch")].map((el) => ({
+      name: el.getAttribute("aria-label") ?? el.textContent,
+      ...el.getBoundingClientRect().toJSON(),
+    })),
+  );
+  const overlaps = boxes.flatMap((a, i) =>
+    boxes.slice(i + 1).filter((b) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom).map((b) => `${a.name} / ${b.name}`),
+  );
+  expect(overlaps).toEqual([]);
+
+  await page.getByRole("button", { name: "Add a step after ok_mail" }).click();
+  const addAfterOk = page.getByRole("dialog", { name: "Add a step after ok_mail" });
+  await addAfterOk.getByRole("searchbox", { name: "Search steps" }).fill("condition");
+  await page.keyboard.press("Enter");
+  await expect(node("ok_mail")).toHaveAttribute("aria-label", /goes to condition_1$/);
+  await expect(page.getByRole("button", { name: "Add a step on true after condition_1" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Add a step on false after condition_1" })).toBeVisible();
+
+  await page.getByRole("button", { name: "Add a step on false after condition_1" }).click();
+  const addFalse = page.getByRole("dialog", { name: "Add a step after condition_1" });
+  await addFalse.getByRole("searchbox", { name: "Search steps" }).fill("delay");
+  await page.keyboard.press("Enter");
+  await expect(node("condition_1")).toHaveAttribute("aria-label", /on false goes to delay_1$/);
+  await expect(page.getByRole("button", { name: "Add a step on true after condition_1" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Add a step on false after condition_1" })).toHaveCount(0);
 });
