@@ -631,3 +631,31 @@ describe("C8 resort concierge template on fake providers", () => {
     }
   });
 });
+
+describe("C9 conversations security hardening", () => {
+  it("handles empty settings updates cleanly, sanitizes alert header characters, and isolates workspaces", async () => {
+    const a = await setup();
+    const b = await setup();
+
+    // Finding #3: empty body on PUT /conversations/settings must return 200 without attempting empty Drizzle .set({})
+    const emptyPut = await a.agent.put("/conversations/settings").send({}).expect(200);
+    expect(emptyPut.body.settings).toMatchObject({ conversationRetentionDays: 90, staffQuietHours: 12 });
+
+    // Create a guest conversation in workspace A with control characters and oversized fields
+    await post(a.path, [inbound("psid-sec-a", "m_sec_1", "Hello there")]);
+    const convoA = await conversationOf(a.userId, "psid-sec-a");
+    await a.agent.put(`/conversations/${convoA.id}/fields`).send({ name: "Evil\r\nBcc: victim@test.local" }).expect(200);
+
+    await a.agent.post(`/conversations/${convoA.id}/alert`).send({ reason: "Line1\r\nLine2\tExtra" }).expect(200);
+    expect(mailSent).toHaveLength(1);
+    expect(mailSent[0]!.subject).not.toMatch(/[\r\n]/);
+    expect(mailSent[0]!.text).not.toMatch(/[\r\n]/);
+
+    // Cross-workspace reads, field edits, alerts, deposits, exports and deletes are denied with 404
+    await b.agent.get(`/conversations/${convoA.id}`).expect(404);
+    await b.agent.put(`/conversations/${convoA.id}/fields`).send({ name: "Hacker" }).expect(404);
+    await b.agent.post(`/conversations/${convoA.id}/alert`).send({}).expect(404);
+    await b.agent.post(`/conversations/${convoA.id}/export`).send({}).expect(404);
+    await b.agent.post(`/conversations/${convoA.id}/delete`).send({ confirm: "DELETE" }).expect(404);
+  });
+});

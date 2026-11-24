@@ -1549,3 +1549,11 @@ What it does: adds the `"Resorts and hotels"` category in the Library with three
 Why this way: keeping pricing inside `stay_quote`, stay creation inside `manual`-triggered `booking` (`mode: "stay"`), and fallbacks on `outside_window`/`paused` satisfies L7 price/stay trust checks while covering guests arriving by Messenger, Instagram, or email.
 
 Tests: `packages/engine/src/templates.test.ts`, `packages/engine/src/taglish.test.ts`, `packages/db/src/migrations.test.ts`, `packages/db/src/usage.test.ts`, `apps/web/src/lib/locale-coverage.test.ts`, and `apps/api/src/conversations.test.ts` (end-to-end `resort-concierge-dm` run on fake Meta and LLM servers covering menu tap, priced answer, guarded price-swap handoff, and superseded follow-up).
+
+## Concierge security review and 50-conversation measurement (phase C9, decision 0127)
+
+What it does: hardens `guardReply` (`packages/engine/src/concierge.ts`) against `$`/`USD` currency hallucinations, booking-confirmation claims (`confirmed`, `confirmed na`, `already reserved`), and numeric EN/Taglish room inventory leaks (`we still have 2 cottages`, `may 2 kwarto`, `meron pang kwarto`, `open pa`), prevents empty `PUT /conversations/settings` updates from throwing (`packages/db/src/conversations.ts`), strips CR/LF/tab characters and clamps lengths in `sendStaffAlert`, and adds `RateLimit(20)` to `POST /conversations/:id/alert`, `export`, and `delete` (`apps/api/src/conversations.ts`).
+
+Why this way: keeping the deterministic regex guard, server-side `stay_quote`, and sanitized staff alerts independent of model compliance guarantees that neither guest prompt injections nor model paraphrasing can send unverified prices, fake confirmations, phishing links, or header-injected alerts.
+
+Tests: `packages/engine/src/concierge-eval.test.ts` (50 scripted EN, Tagalog, and Taglish conversations recorded in `docs/concierge-50-eval.md`) and `apps/api/src/conversations.test.ts` (C9 empty settings, alert header sanitization, and cross-workspace 404 isolation), plus updated threat model sections in `docs/threat-model.md`.

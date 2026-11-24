@@ -449,6 +449,7 @@ export async function saveConversationSettings(
   if (patch.conversationRetentionDays !== undefined) set.conversationRetentionDays = patch.conversationRetentionDays;
   if (patch.staffQuietHours !== undefined) set.staffQuietHours = patch.staffQuietHours;
   if (patch.staffAlertPsid !== undefined) set.staffAlertPsid = patch.staffAlertPsid?.trim() || null;
+  if (Object.keys(set).length === 0) return conversationSettings(db, workspaceId);
   const [u] = await db
     .update(users)
     .set(set)
@@ -529,13 +530,20 @@ export async function sendStaffAlert(
     .where(eq(users.id, opts.workspaceId));
   if (!owner) return { delivered: false, channel: "email", fallbackReason: "workspace not found" };
 
-  const firstName = c.fields.name?.trim().split(/\s+/)[0] || (owner.language === "tl" ? "Guest" : "Guest");
+  const cleanAlertText = (raw: string, max: number) =>
+    raw
+      .replace(/[\r\n\t]+/g, " ")
+      .replace(/\s{2,}/g, " ")
+      .trim()
+      .slice(0, max);
+
+  const firstName = cleanAlertText(c.fields.name?.trim().split(/\s+/)[0] || "", 40) || "Guest";
   const stayBits = [
-    c.fields.check_in ? (c.fields.check_out ? `${c.fields.check_in} to ${c.fields.check_out}` : c.fields.check_in) : "",
-    c.fields.guests ? `${c.fields.guests} guests` : "",
+    c.fields.check_in ? cleanAlertText(c.fields.check_out ? `${c.fields.check_in} to ${c.fields.check_out}` : c.fields.check_in, 45) : "",
+    c.fields.guests ? cleanAlertText(`${c.fields.guests} guests`, 30) : "",
   ].filter(Boolean);
   const channelLabel = c.channel === "messenger" ? "Messenger" : c.channel === "instagram" ? "Instagram" : "Email";
-  const reason = opts.reason?.trim() || (owner.language === "tl" ? "Kailangan ng sagot ng staff" : "Needs staff reply");
+  const reason = cleanAlertText(opts.reason ?? "", 120) || (owner.language === "tl" ? "Kailangan ng sagot ng staff" : "Needs staff reply");
   const base = deps.publicUrl?.replace(/\/+$/, "");
   const consoleLink = base ? `${base}/#/conversations` : "";
   const summary = stayBits.length > 0 ? `${firstName} (${channelLabel}, ${stayBits.join(", ")})` : `${firstName} (${channelLabel})`;

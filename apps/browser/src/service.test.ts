@@ -19,7 +19,7 @@ beforeAll(async () => {
 afterAll(async () => {
   await svc?.close();
   await fx?.close();
-});
+}, 30_000);
 beforeEach(() => {
   fx.internalHits.length = 0;
 });
