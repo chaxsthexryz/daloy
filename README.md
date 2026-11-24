@@ -106,7 +106,7 @@ The `SMTP_*` settings in `.env` are the installation's own server, used by accou
    ```bash
    docker compose exec postgres psql -U daloy -d daloy -c "update users set shared_mail_daily_limit = 50 where email = 'owner@example.com'"
    ```
-   Set it back to `null` to withdraw approval. Sign-up addresses are not verified, so check who owns an account before approving it.
+   Set it back to `null` to withdraw approval. An account listed in `PLATFORM_ADMINS` can do the same from `#/admin` (decision 0122). Sign-up addresses are not verified, so check who owns an account before approving it.
 3. Everyone else sends nothing through your server. Their email steps, approval emails and test emails fail with "Connect Gmail", and Business and email says so.
 
 ## Connect a website form

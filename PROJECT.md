@@ -406,5 +406,5 @@ C3 and C4 cover T7 (answer from my price list). Decisions from 0115 (0111 to 011
 
 ## Platform admin and ops (24 November 2026)
 
-- [ ] A1. Internal Super-Admin page (`#/admin`, gated by `PLATFORM_ADMINS` env allowlist, never a workspace role): total and new users/workspaces, cross-tenant AI/SMS/run usage, failed and `needs_review` counts, plan overrides, `SHARED_MAIL` approval, and read-only run metadata without decrypting customer secrets.
+- [x] A1. Internal Super-Admin page (`#/admin`, gated by `PLATFORM_ADMINS` env allowlist, never a workspace role): total and new users/workspaces, cross-tenant AI/SMS/run usage, failed and `needs_review` counts, plan overrides, `SHARED_MAIL` approval, and read-only run metadata without decrypting customer secrets. Decision 0122, migration 0053.
 - [ ] A2. Error reporting hook (Sentry or GlitchTip DSN optional in `api`, `worker`, and `web`) and uptime monitor setup alongside `docs/deployment.md`.

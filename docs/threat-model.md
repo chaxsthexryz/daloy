@@ -22,6 +22,7 @@ Kept current with each phase. A mitigation marked "planned" does not exist in co
 ## Entry points
 
 - Console API (session cookie)
+- Platform admin API (`/admin/*`, session cookie of an account in `PLATFORM_ADMINS`; 404 for everyone else)
 - Shopify order webhook (`POST /hooks/shopify/:path`, public, signed by Shopify)
 - Telegram message webhook (`POST /hooks/telegram/:path`, public, checked by Telegram's secret token header)
 - Webhook URLs and hosted forms, including anonymous embedded forms (public), and file uploads on those forms
@@ -351,6 +352,18 @@ The list of apps sharing a Google sign-in joins OAuth grants by Google account I
 - A payload chosen by someone other than the Page: anyone can send the Page an event with any payload. Only the fixed choice ids are kept, and only for a workflow whose published menu offers that choice. Anything else is dropped (a postback whole, a quick reply down to its text), so `{{trigger.choice}}` is always a known word and a payload can never carry a template, a step id or a link.
 - A replayed tap: the tap's `mid` keys the run in `run_keys` and the conversation message, so a replay starts nothing. A postback without a `mid` is dropped.
 - Email numbers: a reply's number only picks from the workflow's own email menu; a number outside it, or a line with more than a number, sets nothing.
+
+## Platform admin page (A1, decision 0122)
+
+- Assets: every workspace's counts, owner emails, plans and shared mail approvals, and run metadata across tenants.
+- Entry points: `GET /admin/overview`, `GET /admin/runs`, `PUT /admin/workspaces/:id/plan`, `PUT /admin/workspaces/:id/shared-mail`, and the `#/admin` page.
+- A normal user reaching cross-tenant data: `AdminGuard` sits on the whole controller and looks up the session itself. A missing or expired session, or an email not in `PLATFORM_ADMINS`, gets 404, so the routes look absent. Workspace roles play no part: a workspace owner is refused like anyone else. An empty allowlist turns the page off. `admin.test.ts` sends every registered `/admin` route as an owner, an operator and a signed-out client and expects 404 each time.
+- Cross-site changes by an admin's browser: PUT routes need this installation's own Origin, as with `SessionGuard`.
+- Leaking customer data or secrets to the admin: the queries live in `packages/db/src/admin.ts` and select named columns only. They never return trigger payloads, step input or output, error text or delivery payloads, and the module imports no secrets code (`packages/db/src/admin.test.ts` checks its imports and source). Reads run in a `SET TRANSACTION READ ONLY` transaction, so Postgres refuses a write on that path.
+- The database role: the API keeps connecting as `daloy_app`. No grant changes, because that role could already read every table; tenant isolation is the `workspaceId` filter in app code, and only `AdminController` calls the unfiltered queries.
+- Untraced changes: each plan or shared mail change and its audit row are written in one transaction with the old and new values and the admin's email. No route edits or deletes `admin_actions`.
+- Abuse of an admin session: reads are limited to 30 a minute and changes to 10 a minute per admin, on top of the global limit.
+- Remaining risks: a stolen admin session can read every workspace's counts and change plans; there is no second factor. Rate limit counters live in process memory. Owner emails are visible to admins by design.
 
 ## Guarded answers and stay quote (C4, decision 0119)
 

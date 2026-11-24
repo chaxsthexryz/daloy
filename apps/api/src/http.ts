@@ -23,8 +23,9 @@ export const CONFIG = Symbol("config");
  * mail and publicUrl are for the test email and its confirmation link; createApp fills them from the env vars when left out.
  * oauthProviders defaults to OAUTH_PROVIDERS; tests add a definition for the fake OAuth app.
  * trustProxy is the number of proxies in front of the API (Express "trust proxy"), so req.ip is the real client.
+ * platformAdmins is PLATFORM_ADMINS, the comma-separated emails that may open #/admin (decision 0120).
  */
-export type ApiConfig = { secretsKey: Buffer; secureCookies: boolean; trustProxy?: number; mail?: MailDeps; publicUrl?: string; providers?: ProviderUrls; ask?: boolean; oauthProviders?: readonly OAuthProvider[]; uploadBudgetBytes?: number };
+export type ApiConfig = { secretsKey: Buffer; secureCookies: boolean; trustProxy?: number; mail?: MailDeps; publicUrl?: string; providers?: ProviderUrls; ask?: boolean; oauthProviders?: readonly OAuthProvider[]; uploadBudgetBytes?: number; platformAdmins?: string };
 
 /**
  * TRUST_PROXY and SECURE_COOKIES from the env (docs/deployment.md). A value that cannot be read stops the boot, so a

@@ -174,6 +174,8 @@ export default async function setup() {
     // Specs publish several automations on one account.
     SIGNUP_PLAN: "none",
     AI_ASK: "on",
+    // admin.spec.ts signs up as this account to open #/admin.
+    PLATFORM_ADMINS: "platform-admin@e2e.test",
   };
   const api = start("api", env);
   await waitFor(`http://localhost:${E2E_PORT}/auth/me`, 60_000);

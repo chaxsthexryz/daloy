@@ -372,6 +372,13 @@
       "when": 1795460000000,
       "tag": "0052_dm_receipts_email_threading",
       "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "7",
+      "when": 1795485108225,
+      "tag": "0053_admin_actions",
+      "breakpoints": true
     }
   ]
 }
