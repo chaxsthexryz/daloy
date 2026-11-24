@@ -29,6 +29,11 @@ const POLL_TRIGGER_FIELDS: Record<string, string[]> = {
   gmail_message: ["from", "replyTo", "to", "subject", "text", "messageId", "receivedAt", "gmailMessageId", "threadId", "labelIds"],
   outlook_message: ["from", "replyTo", "to", "subject", "text", "messageId", "receivedAt", "outlookMessageId", "folder"],
 };
+const RECORD_TRIGGER_FIELDS: Record<string, string[]> = {
+  airtable_record: ["recordId", "fields", "cells", "createdTime", "event", "status", "previousStatus", "baseId", "tableId"],
+  notion_page: ["pageId", "title", "fields", "cells", "url", "createdTime", "lastEditedTime", "event", "status", "previousStatus", "databaseId"],
+  trello_card: ["cardId", "name", "desc", "url", "shortUrl", "listId", "listName", "boardId", "event", "previousListId", "previousListName"],
+};
 const BOOKING_EVENT_FIELDS = ["event", "bookingId", "reference", "resourceId", "resourceName", "start", "end", "minutes", "timezone", "status", "version", "mode", "nights", "checkIn", "checkOut", "conversationId"];
 const PAYMENT_EVENT_FIELDS = ["event", "dueId", "reference", "kind", "status", "amountCentavos", "amountPesos", "bookingId", "conversationId"];
 const PAGE_MONITOR_FIELDS = ["url", "title", "text", "value", "previous", "hash", "previousHash", "checkedAt"];
@@ -71,6 +76,8 @@ export function insertables(draft: Draft, id: string): string[] {
                 ? PAYMENT_EVENT_FIELDS
                 : POLL_TRIGGER_FIELDS[trigger.type]
                   ? POLL_TRIGGER_FIELDS[trigger.type]!
+                : RECORD_TRIGGER_FIELDS[trigger.type]
+                  ? RECORD_TRIGGER_FIELDS[trigger.type]!
                 : trigger.type === "page_changed"
                   ? trigger.config.mode === "feed"
                     ? FEED_MONITOR_FIELDS

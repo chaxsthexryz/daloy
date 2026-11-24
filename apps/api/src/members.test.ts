@@ -236,6 +236,7 @@ describe("role permissions", () => {
       ["get", "/triggers/google/sheets_row", operate],
       ["get", "/triggers/mailbox/gmail_message", operate],
       ["get", "/triggers/monitor", operate],
+      ["get", "/triggers/records/airtable_record", operate],
       ["post", "/settings/connections/google-drive/create", only],
       ["post", "/settings/connections/google-drive/pick", only, {}],
       ["post", "/settings/connections/google-calendar/create", only, {}],

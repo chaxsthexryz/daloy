@@ -85,6 +85,9 @@ const FULL_TRIGGERS =
   '{"type":"slack_message","config":{"signingSecret":"slack_signing_secret","ignoreBots":true}} for a signed Slack Events API message (fields {{trigger.text}}, {{trigger.channelId}}, {{trigger.userId}}, {{trigger.ts}}); ' +
   '{"type":"teams_message","config":{"signingSecret":"teams_webhook_secret"}} for a signed Microsoft Teams outgoing webhook message (fields {{trigger.text}}, {{trigger.senderName}}, {{trigger.channelId}}); ' +
   '{"type":"discord_message","config":{"signingSecret":"discord_webhook_secret"}} for a verified Discord slash command or signed message (fields {{trigger.text}}, {{trigger.commandName}}, {{trigger.channelId}}, {{trigger.username}}); ' +
+  '{"type":"airtable_record","config":{"on":"created"}} for a new Airtable record or {"on":"status_changed","statusField":"Status"} in the connected Airtable table (fields {{trigger.recordId}}, {{trigger.cells.<field>}}, {{trigger.status}}, {{trigger.previousStatus}}); ' +
+  '{"type":"notion_page","config":{"on":"created"}} for a new Notion page or {"on":"status_changed","statusProperty":"Status"} in the connected Notion database (fields {{trigger.title}}, {{trigger.url}}, {{trigger.cells.<property>}}, {{trigger.status}}, {{trigger.previousStatus}}); ' +
+  '{"type":"trello_card","config":{"on":"created"}} for a new Trello card or {"on":"moved_to_list"} in the connected Trello list (fields {{trigger.cardId}}, {{trigger.name}}, {{trigger.desc}}, {{trigger.url}}, {{trigger.listName}}, {{trigger.previousListName}}); ' +
   '{"type":"email","config":{}} for an email to the workspace inbox.';
 const FULL_RULES = [
   "When the person names an app or channel kymavo has no step for (such as TikTok, Viber or Lazada), say so plainly in the summary and name what the draft uses instead. Never say a step sends through an app it does not use.",

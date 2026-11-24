@@ -33,6 +33,9 @@ const CALENDAR = tx("Google Calendar", "Google Calendar");
 const DOCS = tx("Google Docs", "Google Docs");
 const PAYMONGO = tx("PayMongo", "PayMongo");
 const SHOPIFY = tx("Shopify", "Shopify");
+const AIRTABLE = tx("Airtable", "Airtable");
+const NOTION = tx("Notion", "Notion");
+const TRELLO = tx("Trello", "Trello");
 const META = tx("Messenger and Instagram", "Messenger at Instagram");
 const TELEGRAM = tx("Telegram", "Telegram");
 const queued = [tx("Queued for delivery", "Nakapila para ipadala"), tx("Failed, with the reason", "Nabigo, may dahilan")];
@@ -113,6 +116,10 @@ export const TRIGGER_CATALOG: Record<Trigger["type"], CatalogEntry> = {
   slack_message: { app: tx("Slack", "Slack"), mark: "slack", action: tx("A Slack message arrives", "May dumating na mensahe sa Slack"), description: tx("Start when Slack sends a signed message event to kymavo's Slack webhook address.", "Magsimula kapag nagpadala ang Slack ng naka-sign na message event sa Slack webhook address ng kymavo."), required: ["signingSecret"], input: tx("A Slack signing secret name and optional channel or keyword filter.", "Pangalan ng Slack signing secret at opsyonal na filter sa channel o salita."), output: tx("The message text, channel, sender and timestamp as trigger fields.", "Ang text ng mensahe, channel, nagpadala at timestamp bilang trigger fields."), outcomes: [tx("Started", "Nagsimula"), tx("Refused, if the signature is wrong", "Tinanggihan, kung mali ang signature")] },
   teams_message: { app: tx("Microsoft Teams", "Microsoft Teams"), mark: "teams", action: tx("A Teams message arrives", "May dumating na mensahe sa Teams"), description: tx("Start when Microsoft Teams sends a signed outgoing webhook or workflow event to kymavo.", "Magsimula kapag nagpadala ang Microsoft Teams ng naka-sign na outgoing webhook o workflow event sa kymavo."), required: ["signingSecret"], input: tx("A signing secret name and optional channel or keyword filter.", "Pangalan ng signing secret at opsyonal na filter sa channel o salita."), output: tx("The message text, sender, channel and timestamp as trigger fields.", "Ang text ng mensahe, nagpadala, channel at timestamp bilang trigger fields."), outcomes: [tx("Started", "Nagsimula"), tx("Refused, if the signature is wrong", "Tinanggihan, kung mali ang signature")] },
   discord_message: { app: tx("Discord", "Discord"), mark: "discord", action: tx("A Discord command or message arrives", "May dumating na command o mensahe sa Discord"), description: tx("Start when Discord sends a verified slash command interaction or signed message event to kymavo.", "Magsimula kapag nagpadala ang Discord ng beripikadong slash command interaction o naka-sign na message event sa kymavo."), required: [], input: tx("A Discord public key or signing secret name, and optional filters.", "Discord public key o pangalan ng signing secret, at mga opsyonal na filter."), output: tx("The command, text, channel, sender and options as trigger fields.", "Ang command, text, channel, nagpadala at mga option bilang trigger fields."), outcomes: [tx("Started", "Nagsimula"), tx("Refused, if the signature is wrong", "Tinanggihan, kung mali ang signature")] },
+  // G5 (decision 0134): read by a poll, so a run starts within a few minutes of the change.
+  airtable_record: { app: AIRTABLE, mark: "airtable", provider: "airtable", action: tx("A record is added or changes status", "May bagong record o nagbago ang status"), description: tx("Start for each new record or status change in the Airtable table chosen in Apps. kymavo checks every few minutes.", "Magsimula sa bawat bagong record o pagbabago ng status sa Airtable table na pinili sa Apps. Tumitingin ang kymavo kada ilang minuto."), required: [], input: tx("New records, or the status field to watch.", "Mga bagong record, o ang status field na babantayan."), output: tx("The record id and its field values.", "Ang record id at ang mga value ng field nito."), outcomes: [tx("Started", "Nagsimula")] },
+  notion_page: { app: NOTION, mark: "notion", provider: "notion", action: tx("A page is added or changes status", "May bagong page o nagbago ang status"), description: tx("Start for each new page or status change in the Notion database chosen in Apps. kymavo checks every few minutes.", "Magsimula sa bawat bagong page o pagbabago ng status sa Notion database na pinili sa Apps. Tumitingin ang kymavo kada ilang minuto."), required: [], input: tx("New pages, or the status property to watch.", "Mga bagong page, o ang status property na babantayan."), output: tx("The page title, link and properties.", "Ang pamagat, link at mga property ng page."), outcomes: [tx("Started", "Nagsimula")] },
+  trello_card: { app: TRELLO, mark: "trello", provider: "trello", action: tx("A card is added or moved to the list", "May bagong card o inilipat sa list"), description: tx("Start for each card added to or moved into the Trello list chosen in Apps. kymavo checks every few minutes.", "Magsimula sa bawat card na idinagdag o inilipat sa Trello list na pinili sa Apps. Tumitingin ang kymavo kada ilang minuto."), required: [], input: tx("Cards added or moved into the list chosen in Apps.", "Mga card na idinagdag o inilipat sa list na pinili sa Apps."), output: tx("The card name, description, link and list details.", "Ang pangalan, paglalarawan, link at detalye ng list ng card."), outcomes: [tx("Started", "Nagsimula")] },
 };
 
 const pick = (t: Text, language: Language) => t[language];
@@ -147,12 +154,10 @@ const TRIGGER_NOUN: Record<Trigger["type"], Text> = {
   sheets_row: tx("the new row", "bagong row"),
   calendar_event: tx("the calendar event", "calendar event"),
   drive_file: tx("the Drive file", "Drive file"),
-  gmail_message: tx("the Gmail message", "mensahe sa Gmail"),
-  outlook_message: tx("the Outlook message", "mensahe sa Outlook"),
-  page_changed: tx("the monitored page", "binabantayang page"),
-  slack_message: tx("the Slack message", "Slack message"),
-  teams_message: tx("the Teams message", "Teams message"),
   discord_message: tx("the Discord message", "Discord message"),
+  airtable_record: tx("the Airtable record", "Airtable record"),
+  notion_page: tx("the Notion page", "Notion page"),
+  trello_card: tx("the Trello card", "Trello card"),
   schedule: tx("the schedule", "iskedyul"),
   manual: tx("the sample data", "sample data"),
 };

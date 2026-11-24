@@ -738,7 +738,7 @@ function recordFailure(res: Reply, what: string, write: boolean, defaultWaitMs: 
   if (res.status === 429) throw new ProviderError(`${what} is limiting requests right now. kymavo will try again.`, "quota", retryAfter(res.headers) ?? defaultWaitMs);
   if (res.status >= 500) throw new ProviderError(`${what} answered ${res.status}.`, write ? "ambiguous" : "unavailable");
   if (res.status === 401) throw new ProviderError(`${what} no longer accepts the saved token. Connect ${what} again.`, "auth");
-  if (res.status === 403 || res.status === 404) throw new ProviderError(`${what} cannot reach that target with this token. Check that it is shared with the token and has write access.`, "permission");
+  if (res.status === 403 || res.status === 404) throw new ProviderError(`${what} cannot reach that target with this token. Check that it is shared with the token and has ${write ? "write " : ""}access.`, "permission");
   throw new ProviderError(`${what} refused the request. Check that the field and property names match.`, "invalid");
 }
 
@@ -818,6 +818,77 @@ export async function trelloList(urls: ProviderUrls, cred: TrelloAuth, listId: s
 export async function trelloAddCard(urls: ProviderUrls, cred: TrelloAuth, listId: string, name: string, desc: string) {
   const card = await trelloCall(urls, cred, "POST", "cards", { idList: listId, name, desc });
   return { cardId: String(card.id) };
+}
+
+// ---------------------------------------------------------------- Record trigger reads (G5, decision 0134)
+
+export type AirtableRecord = { id: string; createdTime: string; fields: Record<string, unknown> };
+
+/** Reads up to maxPages (100 records each) from an Airtable table. Reads only. */
+export async function airtableListRecords(urls: ProviderUrls, token: string, baseId: string, tableId: string, maxPages = 5): Promise<{ records: AirtableRecord[]; truncated: boolean }> {
+  const out: AirtableRecord[] = [];
+  let offset = "";
+  let truncated = false;
+  for (let page = 0; page < maxPages; page++) {
+    const q = new URLSearchParams({ pageSize: "100", ...(offset ? { offset } : {}) });
+    const body = await airtableCall(urls, token, "GET", `${enc(baseId)}/${enc(tableId)}?${q}`);
+    const list = Array.isArray(body.records) ? (body.records as AirtableRecord[]) : [];
+    for (const r of list) {
+      if (typeof r?.id === "string" && r.fields && typeof r.fields === "object") {
+        out.push({ id: r.id, createdTime: typeof r.createdTime === "string" ? r.createdTime : "", fields: r.fields });
+      }
+    }
+    if (typeof body.offset !== "string" || !body.offset) {
+      truncated = false;
+      break;
+    }
+    offset = body.offset;
+    truncated = true;
+  }
+  return { records: out, truncated };
+}
+
+export type NotionPage = { id: string; created_time: string; last_edited_time: string; url?: string; properties?: Record<string, unknown> };
+
+/** Queries one page (up to 100 items, newest first) of a Notion database. write=false: read-only POST. */
+export async function notionQueryDatabase(urls: ProviderUrls, token: string, databaseId: string, sortBy: "created_time" | "last_edited_time"): Promise<{ pages: NotionPage[]; more: boolean }> {
+  const body = await notionCall(
+    urls,
+    token,
+    "POST",
+    `databases/${enc(databaseId)}/query`,
+    { page_size: 100, sorts: [{ timestamp: sortBy, direction: "descending" }] },
+    false,
+  );
+  const raw = Array.isArray(body.results) ? (body.results as NotionPage[]) : [];
+  const pages = raw.filter((p) => p && typeof p.id === "string");
+  return { pages, more: body.has_more === true };
+}
+
+export type TrelloCard = { id: string; name: string; desc?: string; idList?: string; dateLastActivity?: string; url?: string; shortUrl?: string };
+export type TrelloAction = {
+  id: string;
+  type: string;
+  date: string;
+  data?: {
+    card?: { id?: string; name?: string };
+    list?: { id?: string; name?: string };
+    listBefore?: { id?: string; name?: string };
+    listAfter?: { id?: string; name?: string };
+    board?: { id?: string; name?: string };
+  };
+};
+
+/** Open cards currently in a Trello list. Reads only. */
+export async function trelloListCards(urls: ProviderUrls, cred: TrelloAuth, listId: string): Promise<TrelloCard[]> {
+  const body = await trelloCall(urls, cred, "GET", `lists/${enc(listId)}/cards?fields=id,name,desc,idList,dateLastActivity,url,shortUrl`);
+  return Array.isArray(body) ? (body as TrelloCard[]).filter((c) => c && typeof c.id === "string") : [];
+}
+
+/** Recent actions on a Trello list (e.g. createCard or updateCard:idList), newest first. Reads only. */
+export async function trelloListActions(urls: ProviderUrls, cred: TrelloAuth, listId: string, filter: "createCard" | "updateCard:idList"): Promise<TrelloAction[]> {
+  const body = await trelloCall(urls, cred, "GET", `lists/${enc(listId)}/actions?filter=${enc(filter)}&limit=50`);
+  return Array.isArray(body) ? (body as TrelloAction[]).filter((a) => a && typeof a.id === "string" && typeof a.date === "string") : [];
 }
 
 // ---------------------------------------------------------------- Microsoft: Outlook through Graph, and Teams Workflows

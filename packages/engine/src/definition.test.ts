@@ -731,3 +731,34 @@ describe("G4 monitor and team chat triggers", () => {
     expect(issues({ trigger: slackTrigger, steps: [{ id: "make", type: "shopify_create_product", config: { title: "{{trigger.text}}", price: "10" } }], edges: [] }).join()).toMatch(/shopify_create_product step "make"/);
   });
 });
+
+// G5 (decision 0134): Record-tool triggers.
+describe("Record-tool triggers", () => {
+  const s = step("a");
+  it("defaults airtable_record, notion_page, and trello_card and validates status fields", () => {
+    expect(definitionSchema.parse({ trigger: { type: "airtable_record" }, steps: [s], edges: [] }).trigger).toEqual({ type: "airtable_record", config: { on: "created" } });
+    expect(definitionSchema.parse({ trigger: { type: "notion_page" }, steps: [s], edges: [] }).trigger).toEqual({ type: "notion_page", config: { on: "created" } });
+    expect(definitionSchema.parse({ trigger: { type: "trello_card" }, steps: [s], edges: [] }).trigger).toEqual({ type: "trello_card", config: { on: "created" } });
+
+    expect(definitionSchema.parse({ trigger: { type: "airtable_record", config: { on: "status_changed", statusField: " Status " } }, steps: [s], edges: [] }).trigger).toEqual({
+      type: "airtable_record",
+      config: { on: "status_changed", statusField: "Status" },
+    });
+    expect(definitionSchema.parse({ trigger: { type: "notion_page", config: { on: "status_changed", statusProperty: " Stage " } }, steps: [s], edges: [] }).trigger).toEqual({
+      type: "notion_page",
+      config: { on: "status_changed", statusProperty: "Stage" },
+    });
+    expect(definitionSchema.parse({ trigger: { type: "trello_card", config: { on: "moved_to_list" } }, steps: [s], edges: [] }).trigger).toEqual({
+      type: "trello_card",
+      config: { on: "moved_to_list" },
+    });
+  });
+
+  it("refuses missing statusField/statusProperty or unknown keys", () => {
+    expect(definitionSchema.safeParse({ trigger: { type: "airtable_record", config: { on: "status_changed" } }, steps: [s], edges: [] }).success).toBe(false);
+    expect(definitionSchema.safeParse({ trigger: { type: "airtable_record", config: { on: "created", statusField: "Status" } }, steps: [s], edges: [] }).success).toBe(false);
+    expect(definitionSchema.safeParse({ trigger: { type: "notion_page", config: { on: "status_changed" } }, steps: [s], edges: [] }).success).toBe(false);
+    expect(definitionSchema.safeParse({ trigger: { type: "notion_page", config: { on: "created", statusProperty: "Status" } }, steps: [s], edges: [] }).success).toBe(false);
+    expect(definitionSchema.safeParse({ trigger: { type: "trello_card", config: { listId: "x" } }, steps: [s], edges: [] }).success).toBe(false);
+  });
+});

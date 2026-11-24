@@ -1,6 +1,8 @@
-import { BadRequestException, ConflictException, NotFoundException } from "@nestjs/common";
-import { connectionCredential, markConnectionFailed, PROVIDER_NAMES, ProviderError, setDestination, withRecordAuth, type Db, type Provider } from "@daloy/db";
-import type { ApiConfig, SessionUser } from "./http";
+import { BadRequestException, ConflictException, Controller, Get, Header, Inject, NotFoundException, Param, Query, UseGuards } from "@nestjs/common";
+import { connectionCredential, markConnectionFailed, PROVIDER_NAMES, ProviderError, recordTriggerStatus, setDestination, withRecordAuth, type Db, type Provider, type RecordTriggerType } from "@daloy/db";
+import * as z from "zod";
+import { SessionGuard } from "./auth";
+import { Allow, CurrentUser, DB, OPERATE, RateLimit, ZodPipe, type ApiConfig, type SessionUser } from "./http";
 import { historyHider } from "./mask";
 
 /**
@@ -36,4 +38,27 @@ export const notInList = (what: string) => new BadRequestException(`That ${what}
 /** Save only against the credential that verified the list. Reconnecting during a picker read requires another pick. */
 export async function saveRecordTarget(db: Db, user: SessionUser, provider: Provider, conn: Awaited<ReturnType<typeof oauthConnection>>, destination: Record<string, string>) {
   if (!(await setDestination(db, user.workspaceId, provider, destination, conn.revision))) throw new ConflictException("The connection changed while the list was loading. Refresh the list and pick again.");
+}
+
+const statusSchema = z.strictObject({ workflowId: z.uuid().optional() });
+
+/**
+ * G5 (decision 0134): what the editor shows under an Airtable, Notion or Trello trigger. Whether the app is connected
+ * with read access and a destination (no network), and the watcher's last check for a saved automation.
+ */
+@Controller("triggers/records")
+@UseGuards(SessionGuard, Allow(OPERATE))
+export class RecordTriggersController {
+  constructor(@Inject(DB) private readonly db: Db) {}
+
+  @Get(":type")
+  @Header("Cache-Control", "no-store")
+  @UseGuards(RateLimit(30))
+  async status(
+    @CurrentUser() user: SessionUser,
+    @Param("type", new ZodPipe(z.enum(["airtable_record", "notion_page", "trello_card"]))) type: RecordTriggerType,
+    @Query(new ZodPipe(statusSchema)) q: z.output<typeof statusSchema>,
+  ) {
+    return recordTriggerStatus(this.db, user.workspaceId, type, q.workflowId);
+  }
 }

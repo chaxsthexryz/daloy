@@ -109,7 +109,7 @@ export async function startFakeProviders(port = 0) {
     token: "",
     base: "appFAKEBASE000001",
     table: "tblFAKETABLE00001",
-    records: [] as { id: string; fields: Record<string, unknown> }[],
+    records: [] as { id: string; baseId?: string; tableId?: string; createdTime?: string; fields: Record<string, unknown> }[],
     revoked: false,
     bases: [
       { id: "appFAKEBASE000001", name: "Office", permissionLevel: "create", tables: [{ id: "tblFAKETABLE00001", name: "Requests" }, { id: "tblFAKETABLE00002", name: "Archive" }] },
@@ -122,7 +122,7 @@ export async function startFakeProviders(port = 0) {
     database: "0123456789abcdef0123456789abcdef",
     title: "Office requests",
     titleProperty: "Name",
-    pages: [] as { id: string; properties: Record<string, unknown> }[],
+    pages: [] as { id: string; databaseId?: string; createdTime?: string; lastEditedTime?: string; url?: string; properties: Record<string, unknown> }[],
     revoked: false,
     more: [{ id: "fedcba9876543210fedcba9876543210", title: "Leads", titleProperty: "Lead name" }],
     workspace: "Lim Dental Workspace",
@@ -133,7 +133,8 @@ export async function startFakeProviders(port = 0) {
     username: "daloy_tester",
     list: "5f0000000000000000000001",
     listName: "To do",
-    cards: [] as { id: string; name: string; desc: string }[],
+    cards: [] as { id: string; idList?: string; name: string; desc: string; dateLastActivity?: string; url?: string; shortUrl?: string }[],
+    actions: [] as { id: string; type: string; date: string; data: { card: { id: string; name: string }; list?: { id: string; name: string }; listBefore?: { id: string; name: string }; listAfter?: { id: string; name: string }; board?: { id: string; name: string } } }[],
     revoked: false,
     boards: [
       { id: "5f0000000000000000000010", name: "Office", lists: [{ id: "5f0000000000000000000001", name: "To do", closed: false }, { id: "5f0000000000000000000002", name: "Doing", closed: false }, { id: "5f0000000000000000000004", name: "Old list", closed: true }] },
@@ -929,11 +930,23 @@ export async function startFakeProviders(port = 0) {
       const at = /^\/v0\/([^/]+)\/([^/]+)$/.exec(path);
       if (at) {
         if (!airtable.bases.some((b) => b.id === at[1] && b.tables.some((t) => t.id === at[2]))) return json(res, 404, { error: { type: "TABLE_NOT_FOUND" } });
-        if (req.method === "GET") return json(res, 200, { records: airtable.records.slice(0, 1) });
+        if (req.method === "GET") {
+          const matching = airtable.records
+            .filter((r) => (r.baseId === undefined || r.baseId === at[1]) && (r.tableId === undefined || r.tableId === at[2]))
+            .map((r) => ({ id: r.id, createdTime: r.createdTime ?? "2026-11-24T00:00:00.000Z", fields: r.fields }));
+          const maxRecords = Number(url.searchParams.get("maxRecords") ?? 0);
+          const pageSize = Number(url.searchParams.get("pageSize") ?? 100);
+          const offset = Number(url.searchParams.get("offset") ?? 0);
+          const capped = maxRecords > 0 ? matching.slice(0, maxRecords) : matching;
+          const slice = capped.slice(offset, offset + pageSize);
+          const next = offset + pageSize < capped.length ? String(offset + pageSize) : undefined;
+          return json(res, 200, { records: slice, ...(next ? { offset: next } : {}) });
+        }
         const fields = (JSON.parse(raw) as { fields?: Record<string, unknown> }).fields ?? {};
         const id = `rec${String(++seq).padStart(14, "0")}`;
-        airtable.records.push({ id, fields });
-        return answer(200, { id, fields, createdTime: new Date().toISOString() });
+        const createdTime = new Date().toISOString();
+        airtable.records.push({ id, baseId: at[1], tableId: at[2], createdTime, fields });
+        return answer(200, { id, fields, createdTime });
       }
     }
     // Notion: a bearer token (internal secret or OAuth access token) and a Notion-Version header. A page needs the database's title property.
@@ -942,7 +955,7 @@ export async function startFakeProviders(port = 0) {
       if (notion.revoked || !(notionUser || (notion.token && req.headers.authorization === `Bearer ${notion.token}`))) return json(res, 401, { object: "error", code: "unauthorized" });
       if (!req.headers["notion-version"]) return json(res, 400, { object: "error", code: "missing_version" });
       const databases = [{ id: notion.database, title: notion.title, titleProperty: notion.titleProperty }, ...notion.more];
-      const known = (id: string | undefined) => databases.find((d) => d.id === (id ?? "").replace(/-/g, ""));
+      const known = (id: string | undefined) => databases.find((d) => d.id === (id ?? "").replace(/-/g, "").toLowerCase());
       const properties = (d: (typeof databases)[number]) => ({ [d.titleProperty]: { type: "title" }, Notes: { type: "rich_text" } });
       if (req.method === "GET" && path === "/v1/users/me") return json(res, 200, { object: "user", id: notionUser?.id ?? "notion-static-bot", type: "bot", name: "kymavo", bot: { workspace_name: notion.workspace } });
       if (req.method === "POST" && path === "/v1/search") {
@@ -953,6 +966,32 @@ export async function startFakeProviders(port = 0) {
         const from = Number(q.start_cursor ?? 0);
         const next = from + size;
         return json(res, 200, { object: "list", results: all.slice(from, next), has_more: next < all.length, next_cursor: next < all.length ? String(next) : null });
+      }
+      const queryDb = /^\/v1\/databases\/([^/]+)\/query$/.exec(path);
+      if (req.method === "POST" && queryDb) {
+        const d = known(queryDb[1]);
+        if (!d) return json(res, 404, { object: "error", code: "object_not_found" });
+        const q = JSON.parse(raw || "{}") as { page_size?: number; start_cursor?: string; sorts?: { timestamp?: string; direction?: string }[] };
+        const matching = notion.pages
+          .filter((p) => !p.databaseId || p.databaseId.replace(/-/g, "").toLowerCase() === d.id)
+          .map((p) => ({
+            object: "page",
+            id: p.id,
+            created_time: p.createdTime ?? "2026-11-24T00:00:00.000Z",
+            last_edited_time: p.lastEditedTime ?? p.createdTime ?? "2026-11-24T00:00:00.000Z",
+            url: p.url ?? `https://www.notion.so/${p.id}`,
+            properties: p.properties,
+          }));
+        const sort = q.sorts?.[0];
+        if (sort?.timestamp === "created_time" || sort?.timestamp === "last_edited_time") {
+          const field = sort.timestamp;
+          const dir = sort.direction === "ascending" ? 1 : -1;
+          matching.sort((a, b) => (Date.parse(a[field]) - Date.parse(b[field])) * dir);
+        }
+        const size = q.page_size ?? 100;
+        const from = Number(q.start_cursor ?? 0);
+        const next = from + size;
+        return json(res, 200, { object: "list", results: matching.slice(from, next), has_more: next < matching.length, next_cursor: next < matching.length ? String(next) : null });
       }
       const one = /^\/v1\/databases\/([^/]+)$/.exec(path);
       if (req.method === "GET" && one) {
@@ -965,7 +1004,8 @@ export async function startFakeProviders(port = 0) {
         if (!d) return json(res, 404, { object: "error", code: "object_not_found" });
         if (!page.properties?.[d.titleProperty]?.title) return json(res, 400, { object: "error", code: "validation_error" });
         const id = `page-${++seq}`;
-        notion.pages.push({ id, properties: page.properties });
+        const nowIso = new Date().toISOString();
+        notion.pages.push({ id, databaseId: d.id, createdTime: nowIso, lastEditedTime: nowIso, url: `https://www.notion.so/${id}`, properties: page.properties });
         return answer(200, { object: "page", id });
       }
       return json(res, 404, { object: "error", code: "object_not_found" });
@@ -976,7 +1016,7 @@ export async function startFakeProviders(port = 0) {
       const trelloUser = oauthWho("trello", req);
       const pasted = trello.token && q.get("key") === trello.key && q.get("token") === trello.token;
       if (trello.revoked || !(trelloUser || pasted)) return res.writeHead(401, { "content-type": "text/plain" }).end("invalid token");
-      const lists = trello.boards.flatMap((b) => b.lists);
+      const lists = trello.boards.flatMap((b) => b.lists.map((l) => ({ ...l, board: b })));
       const open = (l: { closed: boolean }) => q.get("filter") !== "open" || !l.closed;
       if (path === "/1/members/me") return json(res, 200, { id: trelloUser?.id ?? "static-member", username: trello.username });
       if (path === "/1/members/me/boards") return json(res, 200, trello.boards.map((b) => ({ id: b.id, name: b.name })));
@@ -985,6 +1025,28 @@ export async function startFakeProviders(port = 0) {
         const b = trello.boards.find((x) => x.id === boardLists[1]);
         return b ? json(res, 200, b.lists.filter(open).map((l) => ({ id: l.id, name: l.name }))) : res.writeHead(404, { "content-type": "text/plain" }).end("The requested resource was not found.");
       }
+      const listCards = /^\/1\/lists\/([^/]+)\/cards$/.exec(path);
+      if (listCards) {
+        const l = lists.find((x) => x.id === listCards[1]);
+        if (!l) return res.writeHead(404, { "content-type": "text/plain" }).end("not found");
+        return json(res, 200, trello.cards.filter((c) => (c.idList ?? trello.list) === l.id).map((c) => ({ ...c, idList: c.idList ?? l.id })));
+      }
+      const listActions = /^\/1\/lists\/([^/]+)\/actions$/.exec(path);
+      if (listActions) {
+        const l = lists.find((x) => x.id === listActions[1]);
+        if (!l) return res.writeHead(404, { "content-type": "text/plain" }).end("not found");
+        const filter = q.get("filter") ?? "";
+        const limit = Number(q.get("limit") ?? 50);
+        const filtered = trello.actions
+          .filter((a) => {
+            if (filter === "createCard") return a.type === "createCard" && a.data.list?.id === l.id;
+            if (filter === "updateCard:idList") return a.type === "updateCard" && a.data.listAfter?.id === l.id;
+            return a.data.list?.id === l.id || a.data.listAfter?.id === l.id;
+          })
+          .sort((a, b) => Date.parse(b.date) - Date.parse(a.date))
+          .slice(0, limit);
+        return json(res, 200, filtered);
+      }
       const list = /^\/1\/lists\/([^/]+)$/.exec(path);
       if (list) {
         const l = lists.find((x) => x.id === list[1]);
@@ -992,9 +1054,17 @@ export async function startFakeProviders(port = 0) {
       }
       if (path === "/1/cards" && req.method === "POST") {
         const c = JSON.parse(raw) as { idList?: string; name?: string; desc?: string };
-        if (!lists.some((l) => l.id === c.idList)) return res.writeHead(400, { "content-type": "text/plain" }).end("invalid value for idList");
+        const foundList = lists.find((l) => l.id === c.idList);
+        if (!foundList) return res.writeHead(400, { "content-type": "text/plain" }).end("invalid value for idList");
         const id = `card${++seq}`;
-        trello.cards.push({ id, name: c.name ?? "", desc: c.desc ?? "" });
+        const nowIso = new Date().toISOString();
+        trello.cards.push({ id, idList: foundList.id, name: c.name ?? "", desc: c.desc ?? "", dateLastActivity: nowIso, url: `https://trello.com/c/${id}`, shortUrl: `https://trello.com/c/${id}` });
+        trello.actions.push({
+          id: `act${++seq}`,
+          type: "createCard",
+          date: nowIso,
+          data: { card: { id, name: c.name ?? "" }, list: { id: foundList.id, name: foundList.name }, board: { id: foundList.board.id, name: foundList.board.name } },
+        });
         return answer(200, { id, name: c.name });
       }
       return res.writeHead(404, { "content-type": "text/plain" }).end("not found");

@@ -40,6 +40,7 @@ const worker = await startWorker({
   googleTriggers: { secretsKey, urls: providerUrls(), ...(process.env.NODE_ENV === "test" && process.env.DALOY_TEST_IMAP_ENDPOINT ? { tickMs: 500, intervalMs: 1000 } : {}) },
   mailboxTriggers: { secretsKey, urls: providerUrls(), ...(process.env.NODE_ENV === "test" && process.env.DALOY_TEST_IMAP_ENDPOINT ? { tickMs: 500, intervalMs: 1000 } : {}) },
   monitorTriggers: { publicUrl: process.env.PUBLIC_URL, ...(process.env.NODE_ENV === "test" && process.env.DALOY_TEST_IMAP_ENDPOINT ? { tickMs: 500, intervalMs: 1000 } : {}) },
+  recordTriggers: { secretsKey, urls: providerUrls(), ...(process.env.NODE_ENV === "test" && process.env.DALOY_TEST_IMAP_ENDPOINT ? { tickMs: 500, intervalMs: 1000 } : {}) },
 });
 console.log("worker started");
 
