@@ -27,6 +27,7 @@ import { alias } from "drizzle-orm/pg-core";
 import type { Request, Response } from "express";
 import * as z from "zod";
 import { CONFIG, CurrentUser, DB, isUniqueViolation, RateLimit, sha256, ZodPipe, type ApiConfig, type SessionUser } from "./http";
+import { isPlatformAdmin } from "./admin";
 
 const COOKIE = "daloy_session";
 const SESSION_MS = 7 * 24 * 60 * 60 * 1000;
@@ -136,6 +137,8 @@ export class AuthController {
   @UseGuards(RateLimit(REGISTER_LIMIT, 60 * 60_000))
   async register(@Body(new ZodPipe(registerInput)) body: z.output<typeof registerInput>, @Res({ passthrough: true }) res: Response) {
     const passwordHash = await hash(body.password);
+    // S2 (decision 0137): never let public sign-up claim an unregistered PLATFORM_ADMINS email, keeping the 409 indistinguishable.
+    if (isPlatformAdmin(this.config.platformAdmins, body.email)) throw new ConflictException("email already registered");
     try {
       // A new account owns a new workspace, identified by its own id (decision 0022).
       const user = await this.db.transaction(async (tx) => {
@@ -184,6 +187,8 @@ export class AuthController {
         if (!(await verify(existing.passwordHash, body.password))) throw new UnauthorizedException("this email already has an account: enter its password");
         if (await membershipOf(tx, existing.id)) throw new ConflictException("this account already belongs to a workspace");
       } else {
+        // S2 (decision 0137): block creating a new account for an unregistered PLATFORM_ADMINS email via an invite link.
+        if (isPlatformAdmin(this.config.platformAdmins, invite.email)) throw new UnauthorizedException("this email already has an account: enter its password");
         const [u] = await tx.insert(users).values({ email: invite.email, passwordHash: newHash }).returning();
         userId = u!.id;
       }

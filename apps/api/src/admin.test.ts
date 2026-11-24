@@ -47,6 +47,16 @@ async function signUp(email = `owner${++seq}@test.local`) {
   return { agent, id: res.body.id as string, email };
 }
 
+/** Seeds an operator account directly in DB (as required before adding an email to PLATFORM_ADMINS, S2) and signs in. */
+async function seedAdmin(email: string) {
+  const normalized = email.trim().toLowerCase();
+  const [u] = await db.insert(users).values({ email: normalized, passwordHash: await hash(PASSWORD) }).returning();
+  await joinWorkspace(db, u!.id, u!.id, "owner");
+  const agent = request.agent(server);
+  await agent.post("/auth/login").send({ email: normalized, password: PASSWORD }).expect(200);
+  return { agent, id: u!.id, email: normalized };
+}
+
 /** A member added straight in the database with a live session. */
 async function member(workspaceId: string, role: "operator" | "approver" | "requester") {
   const [u] = await db.insert(users).values({ email: `member${++seq}@test.local`, passwordHash: await hash(PASSWORD) }).returning();
@@ -88,7 +98,7 @@ describe("the admin gate", () => {
   let normalId: string;
 
   beforeAll(async () => {
-    admin = (await signUp(ADMIN)).agent;
+    admin = (await seedAdmin(ADMIN)).agent;
     const n = await signUp();
     normal = n.agent;
     normalId = n.id;
@@ -127,6 +137,27 @@ describe("the admin gate", () => {
   it("refuses a change sent from another site, even for an admin", async () => {
     await admin.put(`/admin/workspaces/${normalId}/plan`).set("Origin", "https://evil.example").send({ plan: "pilot" }).expect(403);
   });
+
+  it("blocks public sign-up and invite acceptance from claiming an unregistered PLATFORM_ADMINS email (S2)", async () => {
+    for (const candidate of ["ops@daloy.test", "OPS@DALOY.TEST"]) {
+      const attacker = request.agent(server);
+      const res = await attacker.post("/auth/register").send({ email: candidate, password: PASSWORD }).expect(409);
+      expect(res.body.message).toBe("email already registered");
+      expect(res.headers["set-cookie"]).toBeUndefined();
+      await attacker.get("/admin/overview").expect(404);
+    }
+    const [claimed] = await db.select({ id: users.id }).from(users).where(eq(users.email, "ops@daloy.test"));
+    expect(claimed).toBeUndefined();
+
+    // Creating an invite for an unregistered PLATFORM_ADMINS email and accepting it also fails without creating the user.
+    const inviteRes = await normal.post("/workspace/invites").send({ email: "ops@daloy.test", role: "operator" }).expect(201);
+    const token = new URL(inviteRes.body.link as string).hash.split("/").pop()!;
+    const invitedAgent = request.agent(server);
+    await invitedAgent.post(`/auth/invites/${token}/accept`).send({ password: PASSWORD }).expect(401);
+    await invitedAgent.get("/admin/overview").expect(404);
+    const [afterInvite] = await db.select({ id: users.id }).from(users).where(eq(users.email, "ops@daloy.test"));
+    expect(afterInvite).toBeUndefined();
+  });
 });
 
 describe("cross-tenant overview", () => {
@@ -135,7 +166,7 @@ describe("cross-tenant overview", () => {
   let b: { id: string; email: string };
 
   beforeAll(async () => {
-    admin = (await signUp("ops@daloy.test")).agent;
+    admin = (await seedAdmin("ops@daloy.test")).agent;
     a = await signUp();
     b = await signUp();
     await member(a.id, "operator");

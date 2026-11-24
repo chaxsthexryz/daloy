@@ -412,7 +412,7 @@ C3 and C4 cover T7 (answer from my price list). Decisions from 0115 (0111 to 011
 ## Security audit fixes (24 November 2026, audit daloy-run-1 against 47f34a3)
 
 - [x] S1. Stop the internal event run loop (`payment_event` to `payment_due` to `payment_expire`) and add Origin checks to sign-in routes and the approval decision (decision 0128).
-- [ ] S2. Stop public sign-up from claiming an unregistered `PLATFORM_ADMINS` email. Needs the owner's choice: block those emails at sign-up, or add email verification.
+- [x] S2. Stop public sign-up from claiming an unregistered `PLATFORM_ADMINS` email. (decision 0137: `AuthController.register` and `AuthController.acceptInvite` refuse unregistered emails matching `PLATFORM_ADMINS` with indistinguishable responses and zero user/cookie creation; verified in `apps/api/src/admin.test.ts`.)
 - [x] S3. Payment and booking lifecycle: cancelling a booking cancels its pending dues, a guest message no longer cancels a staff deposit request, and a refund also applies to dues confirmed from a needs_review claim. Decision 0136.
 - [x] S4. Resource limits: JSON template output, PDF text extraction, and fair IMAP polling across workspaces. Decision 0136.
 - [x] S5. Low findings: fence in-flight steps after a customer erase, hide retired secrets in exports before collecting, a send claim for mutating browser steps, the legacy webhook timestamp, and untrusted values reaching Shopify product steps. Decision 0136.
