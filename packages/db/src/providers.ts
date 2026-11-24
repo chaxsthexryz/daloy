@@ -276,28 +276,62 @@ async function markerAt(urls: ProviderUrls, auth: GoogleAuth, spreadsheetId: str
 }
 
 /**
- * Adds the row unless its marker is already there. One spreadsheets.batchUpdate creates the marker (project-private
- * developer metadata with our chosen id) and appends the row. Google applies a batch entirely or not at all and refuses
- * a second marker with the same id, so while the marker exists a retry, a parallel attempt or a late copy of an earlier
- * request cannot add the row twice. Once the marker is deleted that no longer holds (decision 0021). A refused batch is
- * checked against the marker: ours means the row is already in. Cells are string values, never formulas.
+ * Adds up to 100 rows (and an optional header row when the tab is empty) unless its marker is already there.
+ * One spreadsheets.batchUpdate creates the marker (project-private developer metadata with our chosen id) and appends
+ * the rows. Google applies a batch entirely or not at all and refuses a second marker with the same id, so while the
+ * marker exists a retry, a parallel attempt or a late copy of an earlier request cannot add the rows twice. Once the
+ * marker is deleted that no longer holds (decision 0021). A refused batch is checked against the marker: ours means
+ * the rows are already in. Cells are string values, never formulas.
  */
-export async function appendRowOnce(urls: ProviderUrls, auth: GoogleAuth, dest: SheetDestination, row: string[], key: SheetWriteKey): Promise<{ sheet: string; reconciled?: true }> {
+export async function appendRowsOnce(
+  urls: ProviderUrls,
+  auth: GoogleAuth,
+  dest: SheetDestination,
+  rows: string[][],
+  key: SheetWriteKey,
+  header?: string[],
+): Promise<{ sheet: string; rows: number; headerWritten?: boolean; reconciled?: true }> {
+  if (rows.length === 0 || rows.length > 100) {
+    throw new ProviderError(`Google Sheets batch append supports 1 to 100 rows, got ${rows.length}.`, "invalid");
+  }
+  for (const r of rows) {
+    if (r.length === 0 || r.length > 20) {
+      throw new ProviderError(`Google Sheets rows support 1 to 20 columns, got ${r.length}.`, "invalid");
+    }
+  }
+  if (header && (header.length === 0 || header.length > 20)) {
+    throw new ProviderError(`Google Sheets header supports 1 to 20 columns, got ${header.length}.`, "invalid");
+  }
   const sheetId = await sheetIdOf(urls, auth, dest);
+  let headerWritten = false;
+  let allRows = rows;
+  if (header && header.length > 0) {
+    const existing = await sheets(urls, auth, `/v4/spreadsheets/${encodeURIComponent(dest.spreadsheetId)}/values/${range(dest.tab, "1:1")}?majorDimension=ROWS`, {}, false);
+    const hasRows = Array.isArray(existing.values) && existing.values.length > 0;
+    if (!hasRows) {
+      allRows = [header, ...rows];
+      headerWritten = true;
+    }
+  }
   const requests = [
     { createDeveloperMetadata: { developerMetadata: { metadataId: key.id, metadataKey: MARKER_KEY, metadataValue: key.value, location: { sheetId }, visibility: "PROJECT" } } },
-    { appendCells: { sheetId, rows: [{ values: row.map((v) => ({ userEnteredValue: { stringValue: v } })) }], fields: "userEnteredValue" } },
+    { appendCells: { sheetId, rows: allRows.map((row) => ({ values: row.map((v) => ({ userEnteredValue: { stringValue: v } })) })), fields: "userEnteredValue" } },
   ];
   try {
     await sheets(urls, auth, `/v4/spreadsheets/${encodeURIComponent(dest.spreadsheetId)}:batchUpdate`, { method: "POST", headers: json, body: JSON.stringify({ requests }) }, true);
-    return { sheet: dest.tab };
+    return { sheet: dest.tab, rows: rows.length, ...(headerWritten ? { headerWritten: true } : {}) };
   } catch (err) {
     if (!(err instanceof ProviderError) || err.kind !== "invalid") throw err;
     const found = await markerAt(urls, auth, dest.spreadsheetId, key.id);
-    if (found === key.value) return { sheet: dest.tab, reconciled: true };
+    if (found === key.value) return { sheet: dest.tab, rows: rows.length, reconciled: true };
     if (found !== null) throw new ProviderError(`Something else in this spreadsheet already uses kymavo's marker ${key.id}, so kymavo cannot tell whether this row was added. Check the sheet, then choose Mark as posted or Post again.`, "review");
     throw err;
   }
+}
+
+export async function appendRowOnce(urls: ProviderUrls, auth: GoogleAuth, dest: SheetDestination, row: string[], key: SheetWriteKey): Promise<{ sheet: string; reconciled?: true }> {
+  const out = await appendRowsOnce(urls, auth, dest, [row], key);
+  return out.reconciled ? { sheet: out.sheet, reconciled: true } : { sheet: out.sheet };
 }
 
 /**

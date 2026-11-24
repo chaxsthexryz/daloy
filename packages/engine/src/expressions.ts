@@ -1,7 +1,7 @@
 import type { Condition } from "./definition";
 
 /** secrets holds decrypted values by name. Only the worker fills it, right before a step runs. */
-export type ExpressionContext = { trigger: unknown; steps: Record<string, { output: unknown }>; secrets?: Record<string, string> };
+export type ExpressionContext = { trigger: unknown; steps: Record<string, { output: unknown }>; secrets?: Record<string, string>; item?: unknown; index?: number };
 
 export const EXPRESSION_LIMITS = { maxTemplateLength: 10_000, maxPlaceholders: 50, maxPathDepth: 32, maxOutputLength: 100_000 };
 export type ExpressionLimits = typeof EXPRESSION_LIMITS;
@@ -21,7 +21,11 @@ function parsePath(raw: string, limits: ExpressionLimits): string[] {
   if (segs.length > limits.maxPathDepth) throw new ExpressionError(`Expression path is too deep: ${expr.slice(0, 80)}`);
   const valid =
     segs.every((s) => SEGMENT.test(s) && !FORBIDDEN.has(s)) &&
-    (segs[0] === "trigger" || (segs[0] === "steps" && segs.length >= 3 && segs[2] === "output") || (segs[0] === "secrets" && segs.length === 2));
+    (segs[0] === "trigger" ||
+      (segs[0] === "steps" && segs.length >= 3 && segs[2] === "output") ||
+      (segs[0] === "secrets" && segs.length === 2) ||
+      segs[0] === "item" ||
+      (segs[0] === "index" && segs.length === 1));
   if (!valid) throw new ExpressionError(`Invalid expression: ${expr.slice(0, 80)}`);
   return segs;
 }
@@ -76,11 +80,23 @@ export function resolveTemplate(template: string, ctx: ExpressionContext, limits
 export const toNumber = (v: unknown): number =>
   typeof v === "number" ? v : typeof v === "string" && v.trim() !== "" ? Number(v) : NaN;
 
-function looseEqual(a: unknown, b: unknown): boolean {
+export function looseEqual(a: unknown, b: unknown): boolean {
   if (a === b) return true;
   if (typeof a !== "number" && typeof b !== "number") return false;
   const [x, y] = [toNumber(a), toNumber(b)];
   return !Number.isNaN(x) && x === y;
+}
+
+/**
+ * Resolves a switch step's value against its literal cases in order, returning the first matching case's label,
+ * or "default" when none matches (phase E4, decision 0131).
+ */
+export function switchBranch(config: { value: string; cases: readonly { label: string; equals: string | number | boolean }[] }, ctx: ExpressionContext): string {
+  const resolved = resolveTemplate(config.value, ctx);
+  for (const c of config.cases) {
+    if (looseEqual(resolved, c.equals)) return c.label;
+  }
+  return "default";
 }
 
 /** True or false; a comparison on a missing or non-number value counts as false here. */

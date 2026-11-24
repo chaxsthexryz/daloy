@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { workspaceLanguage, readKnowledge, aiConnection, bookFromStep, bookingEventPayload, bookingOfStep, bookingReference, centavosToPesos, createDue, dispatchInternalTrigger, dueConversationId, dueForStep, DueTakenError, expireDue, findReviewer, paymentEventPayload, pendingCheckout, pesosToCentavos, checkReceiptReference, checkRecipients, claimTimeout, claimUsage, createApproval, findPaymentForStep, findApprover, queueCalendarEvent, queueDelivery, readSecrets, redactSecrets, secretForms, sendAs, startSubWorkflow, type BookingTriggerEvent, type Db, type MailDeps, type Provider, type StepBookingResult } from "@daloy/db";
 import { conversationMessages, deliveries, emailThreadFor, isPaused, PAST_WINDOW, prepareReply, providerUrls, recordOutboundEmail, runConversation, runs, saveConversationFields, sendStaffAlert, takeOverConversation, windowOpen, type ProviderUrls } from "@daloy/db";
 import { and, eq, gt, ne } from "drizzle-orm";
-import { approvalEmailBody, checkDiscordContent, DEFAULT_STAY_TIMEZONE, numberedMenu, type Menu, wouldDo, type FileRef, bookingStartField, conditionBranch, normalizePhMobile, parseZoned, SMS_MAX_CHARS, stayRange, stayTimesFromKnowledge, type TestChoice, type Trigger, declaresJson, parseInstant, isRetryable, mockAiOutput, parseJsonTemplate, resolveJsonTemplate, resolveTemplate, StepError, usesSecrets, type ExpressionContext, type HistoryItem, type Language, quoteStay, QuoteError, type Step } from "@daloy/engine";
+import { approvalEmailBody, checkDiscordContent, DEFAULT_STAY_TIMEZONE, ExpressionError, numberedMenu, type Menu, wouldDo, type FileRef, bookingStartField, conditionBranch, normalizePhMobile, parseZoned, runTransform, SHEETS_MAX_COLS, SHEETS_MAX_ROWS, SMS_MAX_CHARS, stayRange, stayTimesFromKnowledge, switchBranch, TransformError, type TestChoice, type Trigger, declaresJson, parseInstant, isRetryable, mockAiOutput, parseJsonTemplate, resolveJsonTemplate, resolveTemplate, StepError, usesSecrets, type ExpressionContext, type HistoryItem, type Language, quoteStay, QuoteError, type Step } from "@daloy/engine";
 import type { StepExecutor, StepResult } from "../advance";
 import { runAi, runAnswer } from "./ai";
 import { browserService, browserStep, type BrowserInput, type BrowserService } from "./browser";
@@ -62,7 +62,7 @@ type HttpInput = { method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE"; url: str
 type EmailInput = { to: string; subject: string; text: string };
 type AiInput = { input: string };
 type ApprovalInput = { to?: string; approver?: string; subject: string; message: string; timeoutSeconds: number };
-type SheetsInput = { columns: string[] };
+type SheetsInput = { columns?: string[]; rows?: string[][]; header?: string[] };
 type SlackInput = { text: string; chatId?: string };
 type SmsInput = { to: string; message: string; senderId?: string };
 type CalendarInput = { title: string; description: string };
@@ -117,6 +117,22 @@ function resolveInput(step: Step, ctx: ExpressionContext): Record<string, unknow
       const { left, op, right } = step.config.condition;
       return { left: resolveTemplate(left, ctx), op, right: typeof right === "string" ? resolveTemplate(right, ctx) : right };
     }
+    case "switch": {
+      return { value: resolveTemplate(step.config.value, ctx), cases: step.config.cases };
+    }
+    case "transform": {
+      const c = step.config;
+      if (c.op === "pick") {
+        return { op: c.op, fields: Object.fromEntries(Object.entries(c.fields ?? {}).map(([k, v]) => [k, resolveTemplate(v, ctx) ?? null])) };
+      }
+      return {
+        op: c.op,
+        value: text(c.value ?? "", ctx),
+        ...(c.timezone !== undefined ? { timezone: c.timezone } : {}),
+        ...(c.format !== undefined ? { format: c.format } : {}),
+        ...(c.separator !== undefined ? { separator: c.separator } : {}),
+      };
+    }
     case "delay": {
       const { seconds, until, offsetSeconds } = step.config;
       return until === undefined ? { seconds } : { until: text(until, ctx), ...(offsetSeconds === undefined ? {} : { offsetSeconds }) };
@@ -145,8 +161,39 @@ ${numberedMenu(menu)}` : text(body, ctx) } satisfies EmailInput;
       const who = approver ? { approver } : { to: text(to!, ctx) };
       return { ...who, subject: text(subject, ctx), message: text(message, ctx), timeoutSeconds } satisfies ApprovalInput;
     }
-    case "sheets":
-      return { columns: step.config.columns.map((c) => text(c, ctx)) } satisfies SheetsInput;
+    case "sheets": {
+      const { columns, rows, header } = step.config;
+      const resolvedHeader = header ? header.map((h) => text(h, ctx)) : undefined;
+      if (rows === undefined) {
+        return { columns: columns!.map((c) => text(c, ctx)), ...(resolvedHeader ? { header: resolvedHeader } : {}) } satisfies SheetsInput;
+      }
+      if (Array.isArray(rows)) {
+        return { rows: rows.map((r) => r.map((c) => text(c, ctx))), ...(resolvedHeader ? { header: resolvedHeader } : {}) } satisfies SheetsInput;
+      }
+      const list = resolveTemplate(rows, ctx);
+      if (list === undefined || list === null) {
+        throw new StepError("The rows list is missing or empty.", false);
+      }
+      if (!Array.isArray(list)) {
+        throw new StepError("The rows setting must resolve to a list of items.", false);
+      }
+      if (list.length > SHEETS_MAX_ROWS) {
+        throw new StepError(`Sheets batch append supports at most ${SHEETS_MAX_ROWS} rows, but got ${list.length}.`, false);
+      }
+      const resolvedRows = list.map((item, index) => {
+        if (columns && columns.length > 0) {
+          return columns.map((c) => text(c, { ...ctx, item, index }));
+        }
+        if (!Array.isArray(item)) {
+          throw new StepError(`Row ${index + 1} must be a list of column values, or set columns to map each item.`, false);
+        }
+        if (item.length === 0 || item.length > SHEETS_MAX_COLS) {
+          throw new StepError(`Row ${index + 1} has ${item.length} columns; Sheets steps support 1 to ${SHEETS_MAX_COLS} columns.`, false);
+        }
+        return item.map((v) => (v === undefined || v === null ? "" : typeof v === "string" ? v : typeof v === "object" ? JSON.stringify(v) : String(v)));
+      });
+      return { rows: resolvedRows, ...(resolvedHeader ? { header: resolvedHeader } : {}) } satisfies SheetsInput;
+    }
     case "drive":
       return {};
     case "telegram":
@@ -286,6 +333,19 @@ async function runStep(deps: FullDeps, step: Step, input: unknown, ctx: Expressi
   switch (step.type) {
     case "condition":
       return { branch: conditionBranch(step.config.condition, ctx) };
+    case "switch": {
+      const resolved = resolveTemplate(step.config.value, ctx);
+      const branch = switchBranch(step.config, ctx);
+      return { branch, output: { value: resolved ?? null, branch, matched: branch !== "default" } };
+    }
+    case "transform": {
+      try {
+        return { output: runTransform(step.config, ctx) };
+      } catch (err) {
+        if (err instanceof TransformError || err instanceof ExpressionError) throw new StepError(err.message, false);
+        throw err;
+      }
+    }
     case "booking": {
       const cfg = input as BookingInput;
       // A faked test run can take another branch without touching any booking (decision 0032).
@@ -566,9 +626,15 @@ async function runStep(deps: FullDeps, step: Step, input: unknown, ctx: Expressi
       if (chatId !== undefined && (!/^-?\d{1,20}$/.test(chatId) || chatId !== (ctx.trigger as { chatId?: unknown } | null)?.chatId)) {
         throw new StepError("A Telegram reply can only go to the chat the message came from. Use {{trigger.chatId}}.", false);
       }
+      if (step.type === "sheets") {
+        const s = input as SheetsInput;
+        if (s.rows && s.rows.length === 0) return { output: { rows: 0, skipped: "No rows to add." } };
+      }
       const payload =
         step.type === "sheets"
-          ? { row: [reference, new Date().toISOString(), ...(input as SheetsInput).columns] }
+          ? (input as SheetsInput).rows
+            ? { rows: (input as SheetsInput).rows!, ...((input as SheetsInput).header ? { header: (input as SheetsInput).header } : {}) }
+            : { row: [reference, new Date().toISOString(), ...((input as SheetsInput).columns ?? [])], ...((input as SheetsInput).header ? { header: (input as SheetsInput).header } : {}) }
           : step.type === "outlook"
             ? { ...(input as EmailInput), to: checkRecipients((input as EmailInput).to).join(",") }
             : step.type === "airtable" || step.type === "notion" || step.type === "trello"
@@ -584,7 +650,7 @@ async function runStep(deps: FullDeps, step: Step, input: unknown, ctx: Expressi
       // (decision 0021). A re-run of this step gets the first delivery back, with its original payload.
       const provider: Provider = step.type === "sheets" ? "google_sheets" : step.type;
       const d = await queueDelivery(deps.db, { userId, runId, stepId: step.id, provider, reference, payload });
-      return { output: { deliveryId: d.id, reference, state: d.state } };
+      return { output: { deliveryId: d.id, reference, state: d.state, ...(step.type === "sheets" && (input as SheetsInput).rows ? { rows: (input as SheetsInput).rows!.length } : {}) } };
     }
     case "meta_reply": {
       const cfg = input as MetaReplyInput;

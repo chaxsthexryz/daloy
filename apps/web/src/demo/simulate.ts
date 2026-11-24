@@ -1,4 +1,4 @@
-import { conditionBranch, entryStep, nextStep, resolveTemplate, type WorkflowDefinition } from "@daloy/engine";
+import { conditionBranch, entryStep, nextStep, resolveTemplate, runTransform, switchBranch, type WorkflowDefinition } from "@daloy/engine";
 
 export type Message = { kind: "email" | "approval" | "sheets" | "slack"; to: string; subject: string; text: string };
 export type SimStep = { stepId: string; state: "succeeded" | "waiting"; branch: string | null; message?: Message; note?: string };
@@ -23,9 +23,11 @@ export function simulate(def: WorkflowDefinition, trigger: Record<string, unknow
       case "outlook":
         row.message = { kind: "email", to: text(step.config.to), subject: text(step.config.subject), text: text(step.config.text) };
         break;
-      case "sheets":
-        row.message = { kind: "sheets", to: "Google Sheet", subject: "New row", text: [DEMO_REFERENCE, "(time of the run)", ...step.config.columns.map(text)].join(" | ") };
+      case "sheets": {
+        const cols = step.config.columns ?? [];
+        row.message = { kind: "sheets", to: "Google Sheet", subject: "New row", text: [DEMO_REFERENCE, "(time of the run)", ...cols.map(text)].join(" | ") };
         break;
+      }
       case "slack":
       case "teams":
         row.message = { kind: "slack", to: step.type === "slack" ? "Slack channel" : "Teams channel", subject: "New message", text: text(step.config.text) };
@@ -35,6 +37,12 @@ export function simulate(def: WorkflowDefinition, trigger: Record<string, unknow
         break;
       case "condition":
         row.branch = conditionBranch(step.config.condition, ctx);
+        break;
+      case "switch":
+        row.branch = switchBranch(step.config, ctx);
+        break;
+      case "transform":
+        (ctx.steps as Record<string, { output: unknown }>)[step.id] = { output: runTransform(step.config, ctx) };
         break;
       case "approval": {
         const message: Message = { kind: "approval", to: step.config.to ? text(step.config.to) : (step.config.approver ?? ""), subject: text(step.config.subject), text: text(step.config.message) };

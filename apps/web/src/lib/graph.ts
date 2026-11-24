@@ -1,5 +1,5 @@
 import { translate, type Language } from "./locale";
-import { BRANCHES, definitionSchema, stepLabel, stepNoteSchema, triggerLabel, type Step, type WorkflowDefinition } from "@daloy/engine";
+import { definitionSchema, stepBranches, stepLabel, stepNoteSchema, triggerLabel, type Step, type WorkflowDefinition } from "@daloy/engine";
 import type { Edge as FlowEdge, Node as FlowNode } from "@xyflow/react";
 import { STATUS, type EdgeState, type NodeState } from "./run-flow";
 
@@ -11,7 +11,7 @@ export type Draft = WorkflowDefinition;
 export type Edge = Draft["edges"][number];
 
 /** Step types the builder can add. */
-export const ADDABLE = ["condition", "http", "email", "delay", "ai", "approval", "sheets", "drive", "slack", "outlook", "teams", "telegram", "sms", "calendar", "airtable", "notion", "trello", "booking", "meta_reply", "shopify_create_product", "shopify_update_product", "discord", "google_docs", "browser", "read_page", "call_workflow"] as const;
+export const ADDABLE = ["condition", "switch", "transform", "http", "email", "delay", "ai", "approval", "sheets", "drive", "slack", "outlook", "teams", "telegram", "sms", "calendar", "airtable", "notion", "trello", "booking", "meta_reply", "shopify_create_product", "shopify_update_product", "discord", "google_docs", "browser", "read_page", "call_workflow"] as const;
 export type AddableType = (typeof ADDABLE)[number];
 
 export const blankDraft = (): Draft => ({ trigger: { type: "manual", config: {} }, steps: [], edges: [] });
@@ -21,6 +21,10 @@ export function defaultConfig(type: AddableType, language: Language = "en"): Ste
   switch (type) {
     case "condition":
       return { condition: { left: "{{trigger.amount}}", op: "gt", right: 100 } };
+    case "switch":
+      return { value: "{{trigger.type}}", cases: [{ label: "case_1", equals: "value" }] };
+    case "transform":
+      return { op: "trim", value: "{{trigger.text}}" };
     case "http":
       return { method: "POST", url: "https://example.com/hook", headers: {}, body: "{{trigger}}" };
     case "email":
@@ -74,7 +78,7 @@ export function defaultConfig(type: AddableType, language: Language = "en"): Ste
   }
 }
 
-const branchesOf = (step: Step | undefined) => (step ? BRANCHES[step.type] : undefined);
+const branchesOf = (step: Step | undefined) => (step ? stepBranches(step) : undefined);
 
 function newStepId(draft: Draft, type: string) {
   const used = new Set(draft.steps.map((s) => s.id));
@@ -99,7 +103,7 @@ export function addStep(draft: Draft, type: AddableType, after?: { id: string; o
 
 function insert(draft: Draft, step: Step, after?: { id: string; on?: string }): Draft {
   const { id } = step;
-  const ownLabel = BRANCHES[step.type]?.[0];
+  const ownLabel = stepBranches(step)?.[0];
   const edges = [...draft.edges];
 
   if (!after) {
@@ -130,7 +134,7 @@ export type DuplicateError = { id: "branching" | "missing"; step: string };
 export function duplicateStep(draft: Draft, id: string): { draft: Draft; id: string } | { error: DuplicateError } {
   const step = draft.steps.find((s) => s.id === id);
   if (!step) return { error: { id: "missing", step: id } };
-  if (BRANCHES[step.type]) return { error: { id: "branching", step: id } };
+  if (stepBranches(step)) return { error: { id: "branching", step: id } };
   const used = new Set(draft.steps.map((s) => s.id));
   const base = `${id.slice(0, 50)}_copy`; // step ids are at most 64 characters
   let copy = base;
@@ -141,7 +145,7 @@ export function duplicateStep(draft: Draft, id: string): { draft: Draft; id: str
 /** Turns a step off or on again. A branching step stays on: a skipped step has no branch to follow (decision 0097). */
 export function setDisabled(draft: Draft, id: string, off: boolean): Draft {
   const steps = draft.steps.map((s) => {
-    if (s.id !== id || (off && BRANCHES[s.type])) return s;
+    if (s.id !== id || (off && stepBranches(s))) return s;
     const on = { ...s };
     delete on.disabled;
     return off ? { ...on, disabled: true as const } : on;
@@ -184,7 +188,7 @@ export function removeStep(draft: Draft, id: string): Draft {
 const quiet = (d: Draft, id: string) => {
   const step = d.steps.find((s) => s.id === id);
   const out = d.edges.filter((e) => e.from === id);
-  return !!step && !BRANCHES[step.type] && out.length <= 1 && out.every((e) => e.on === undefined);
+  return !!step && !stepBranches(step) && !("onError" in step && step.onError === "failed_edge") && out.length <= 1 && out.every((e) => e.on === undefined);
 };
 /** The step that `id` would swap places with when moved down: both have one plain way out and the other has one way in. */
 function below(d: Draft, id: string): string | undefined {
@@ -225,8 +229,10 @@ export function connectSteps(draft: Draft, from: string, on: string | undefined,
   const source = draft.steps.find((s) => s.id === from);
   if (!source || !draft.steps.some((s) => s.id === to)) return { error: { id: "branch", from } };
   if (from === to) return { error: { id: "self" } };
-  const labels = BRANCHES[source.type];
-  if (labels ? on === undefined || !labels.includes(on) : on !== undefined) return { error: { id: "branch", from } };
+  const labels = stepBranches(source);
+  if (labels ? on === undefined || !labels.includes(on) : !(on === undefined || (on === "failed" && "onError" in source && source.onError === "failed_edge"))) {
+    return { error: { id: "branch", from } };
+  }
   const edges = [...draft.edges.filter((e) => !(e.from === from && e.on === on)), { from, to, ...(on && { on }) }];
   const leadsTo = (a: string, b: string, seen = new Set<string>()): boolean => a === b || (!seen.has(a) && edges.some((e) => e.from === a && leadsTo(e.to, b, seen.add(a))));
   if (leadsTo(to, from)) return { error: { id: "loop", from, to } };
@@ -253,8 +259,9 @@ export function layout(draft: Draft, measured?: MeasuredSizes): Record<string, {
   const stepOrder = new Map(draft.steps.map((s, i) => [s.id, i]));
   const branchRank = (from: string, on?: string) => {
     const step = stepById.get(from);
-    const list = step && BRANCHES[step.type];
-    if (!list || !on) return 0;
+    const list = step && stepBranches(step);
+    if (!list) return on === "failed" ? 1 : 0;
+    if (!on) return 0;
     const i = list.indexOf(on);
     return i >= 0 ? i : list.length;
   };
@@ -366,7 +373,7 @@ export function layout(draft: Draft, measured?: MeasuredSizes): Record<string, {
 }
 
 /** context: the draft's trigger, for a step's destination line. chosen: the destination picked in Apps (a channel, a sheet, a list). */
-export type StepNodeData = { step?: Step; trigger?: Draft["trigger"]; context?: Draft["trigger"]; chosen?: string; branches?: readonly string[]; status?: NodeState };
+export type StepNodeData = { step?: Step; trigger?: Draft["trigger"]; context?: Draft["trigger"]; chosen?: string; branches?: readonly string[]; hasFailedEdge?: boolean; status?: NodeState };
 export type RunEdgeData = { state: EdgeState };
 /** What a run says about the diagram (see runFlow). Without it the diagram is drawn plain, as in the editor with no run. */
 export type FlowState = { nodes: Record<string, NodeState>; edges: Record<string, EdgeState> };
@@ -380,18 +387,22 @@ export function toFlow(draft: Draft, selected: string | null, state?: FlowState,
   const at = (id: string) => ({ x: pos[id]!.x - NODE_W / 2, y: pos[id]!.y });
   const nodes: FlowNode<StepNodeData>[] = [
     { id: "trigger", type: "trigger", ariaLabel: t("Trigger: {type}", { type: triggerLabel(draft.trigger.type, language) }) + said("trigger"), position: at("trigger"), data: { trigger: draft.trigger, status: state?.nodes.trigger }, selected: selected === "trigger", deletable: false },
-    ...draft.steps.map((step) => ({
-      id: step.id,
-      type: "step",
-      // Screen readers announce the node by this name; branches say where each one leads.
-      ariaLabel: `${t("{type} step {id}", { type: stepLabel(step.type, language), id: step.id })}${draft.edges
-        .filter((e) => e.from === step.id)
-        .map((e) => t(", {branch}goes to {id}", { branch: e.on ? `${t("on {branch}", { branch: t(e.on) })} ` : "", id: e.to }))
-        .join("")}${step.disabled ? t(", turned off") : ""}${said(step.id)}`,
-      position: at(step.id),
-      data: { step, context: draft.trigger, branches: BRANCHES[step.type], status: state?.nodes[step.id] },
-      selected: selected === step.id,
-    })),
+    ...draft.steps.map((step) => {
+      const branches = stepBranches(step);
+      const hasFailedEdge = !branches && "onError" in step && step.onError === "failed_edge";
+      return {
+        id: step.id,
+        type: "step",
+        // Screen readers announce the node by this name; branches say where each one leads.
+        ariaLabel: `${t("{type} step {id}", { type: stepLabel(step.type, language), id: step.id })}${draft.edges
+          .filter((e) => e.from === step.id)
+          .map((e) => t(", {branch}goes to {id}", { branch: e.on ? `${t("on {branch}", { branch: t(e.on) })} ` : "", id: e.to }))
+          .join("")}${step.disabled ? t(", turned off") : ""}${said(step.id)}`,
+        position: at(step.id),
+        data: { step, context: draft.trigger, branches, hasFailedEdge, status: state?.nodes[step.id] },
+        selected: selected === step.id,
+      };
+    }),
   ];
   const entry = entryOf(draft);
   const edges: FlowEdge[] = [

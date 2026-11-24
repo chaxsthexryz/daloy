@@ -10,7 +10,7 @@
   },
   "step": {
     "pending": ["running", "skipped"],
-    "running": ["waiting", "succeeded", "failed"],
+    "running": ["waiting", "succeeded", "failed", "skipped"],
     "waiting": ["succeeded", "failed"],
     "succeeded": [],
     "failed": [],

@@ -102,9 +102,9 @@
 .react-flow__edge-path.a7-edge { stroke: var(--a7-line); stroke-width: 2; }
 .a7-branch { position: absolute; padding: 2px 8px; border-radius: 10px; background: var(--a7-grey-bg); color: var(--a7-label); font-size: 12px; font-weight: 600; line-height: 16px; white-space: nowrap; pointer-events: none; }
 .a7-branch:is([data-branch="approved"], [data-branch="true"], [data-branch="done"]) { background: var(--a7-ok-bg); color: var(--a7-ok); }
-.a7-branch:is([data-branch="rejected"], [data-branch="false"], [data-branch="invalid"], [data-branch="taken"], [data-branch="not_found"]) { background: var(--a7-bad-bg); color: var(--a7-bad); }
+.a7-branch:is([data-branch="rejected"], [data-branch="false"], [data-branch="invalid"], [data-branch="taken"], [data-branch="not_found"], [data-branch="failed"]) { background: var(--a7-bad-bg); color: var(--a7-bad); }
 .a7-branch-text:is([data-branch="approved"], [data-branch="true"], [data-branch="done"]) { color: var(--a7-ok); }
-.a7-branch-text:is([data-branch="rejected"], [data-branch="false"], [data-branch="invalid"], [data-branch="taken"], [data-branch="not_found"]) { color: var(--a7-bad); }
+.a7-branch-text:is([data-branch="rejected"], [data-branch="false"], [data-branch="invalid"], [data-branch="taken"], [data-branch="not_found"], [data-branch="failed"]) { color: var(--a7-bad); }
 
 /* Accessible list */
 .a7-list { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; list-style: none; }
@@ -212,14 +212,14 @@
 .a7-editor .a7-insert { display: grid; place-items: center; position: absolute; width: 24px; height: 24px; min-height: 0; padding: 0; border: 1px solid var(--border); border-radius: 50%; background: var(--surface); color: var(--accent); font-size: 16px; line-height: 1; cursor: pointer; pointer-events: all; }
 .a7-insert:hover { background: var(--accent-tint); }
 /* Visible add stubs below leaf nodes and open branch exits without inflating node layout height. */
-.a7-exit-adds { position: absolute; top: calc(100% + 6px); left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 6px; width: max-content; pointer-events: all; }
+.a7-exit-adds { position: absolute; top: calc(100% + 6px); left: 50%; transform: translateX(-50%); display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; width: max-content; max-width: 260px; pointer-events: all; }
 .a7-exit-adds::before { content: ""; position: absolute; bottom: 100%; left: 50%; width: 1.5px; height: 6px; background: var(--a7-line); transform: translateX(-50%); pointer-events: none; }
 .a7-editor .a7-leaf-add { display: grid; place-items: center; width: 22px; height: 22px; min-height: 0; padding: 0; border: 1px dashed var(--a7-line); border-radius: 50%; background: var(--surface); color: var(--accent); font-size: 15px; line-height: 1; cursor: pointer; }
 .a7-editor .a7-leaf-add:hover { border-style: solid; border-color: var(--accent); background: var(--accent-tint); }
 .a7-editor .a7-branch-add { display: inline-flex; align-items: center; min-height: 22px; padding: 0 8px; border: 1px dashed var(--a7-line); border-radius: 11px; background: var(--surface); color: var(--a7-label); font-size: 11px; font-weight: 600; line-height: 1; white-space: nowrap; cursor: pointer; }
 .a7-editor .a7-branch-add:hover { border-style: solid; border-color: var(--accent); background: var(--accent-tint); color: var(--accent); }
 .a7-editor .a7-branch-add:is([data-branch="approved"], [data-branch="true"], [data-branch="done"]) { border-color: var(--a7-ok); background: var(--a7-ok-bg); color: var(--a7-ok); }
-.a7-editor .a7-branch-add:is([data-branch="rejected"], [data-branch="false"], [data-branch="taken"], [data-branch="not_found"]) { border-color: var(--a7-bad); background: var(--a7-bad-bg); color: var(--a7-bad); }
+.a7-editor .a7-branch-add:is([data-branch="rejected"], [data-branch="false"], [data-branch="taken"], [data-branch="not_found"], [data-branch="failed"]) { border-color: var(--a7-bad); background: var(--a7-bad-bg); color: var(--a7-bad); }
 @media (max-width: 599.98px) {
   .a7-undo { flex: 1 1 100%; }
   .a7-editor :is(.a7-undo button, .a7-add) { min-height: var(--target); }
