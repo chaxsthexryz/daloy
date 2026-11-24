@@ -4,12 +4,15 @@ import { useLanguage } from "./Language";
 import { api, getUsage, type RunSummary, type Usage, type Workflow } from "./api";
 import { draftPlan } from "./lib/ai-build";
 import { arrange, counts, displayStatus, statusOf, triggerLabel, withTrigger, type Filter } from "./lib/automations";
-import { useCountUp, useSlidingPill } from "./lib/motion";
-import { RUN_LIMIT, successRate, totals, type OverviewEntry } from "./lib/ops-stats";
+import { LIVE_RUN_EVENT } from "./lib/live-runs";
+import { useSlidingPill } from "./lib/motion";
+import { RUN_LIMIT, totals, type OverviewEntry } from "./lib/ops-stats";
 import { ago, plainState } from "./lib/states";
+import { AnimatedCounter } from "./AnimatedCounter";
 import { FormEmbed } from "./FormEmbed";
 import { OnboardingPrompt } from "./Onboarding";
 import type { User } from "./Team";
+import { pushToast } from "./Toast";
 import "./automations-ops.css";
 
 const STATUS_FILTERS: [Filter, string][] = [
@@ -25,10 +28,9 @@ const STATUS_FILTERS: [Filter, string][] = [
 
 const SEG_FILTERS: [Filter, string][] = [
   ["all", "All"],
+  ["on", "Live"],
   ["needs_you", "Needs you"],
   ["problem", "Problem"],
-  ["on", "On"],
-  ["paused", "Paused"],
   ["draft", "Draft"],
 ];
 
@@ -39,10 +41,7 @@ type Detail = {
   latest: { version: number; definition: WorkflowDefinition } | null;
 };
 
-type UndoToast = { id: string; name: string; paused: boolean };
-
 const PANEL_STEPS = 6;
-const TOAST_MS = 6000;
 
 /** Home: the ops table. One row per automation, animated KPI counts above it and the selected one's inspector beside it. */
 export function Automations({ user }: { user: User }) {
@@ -63,7 +62,6 @@ export function Automations({ user }: { user: User }) {
   const [trigger, setTrigger] = useState("any");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [sheet, setSheet] = useState(false);
-  const [toast, setToast] = useState<UndoToast | null>(null);
   const opener = useRef<HTMLElement | null>(null);
   const closeButton = useRef<HTMLButtonElement>(null);
   const segPill = useSlidingPill<HTMLDivElement>();
@@ -87,12 +85,11 @@ export function Automations({ user }: { user: User }) {
     getUsage().then(setUsage, () => setUsage(null));
   };
   useEffect(load, []);
-
   useEffect(() => {
-    if (!toast) return;
-    const timer = setTimeout(() => setToast(null), TOAST_MS);
-    return () => clearTimeout(timer);
-  }, [toast]);
+    const onLiveRun = () => load();
+    window.addEventListener(LIVE_RUN_EVENT, onLiveRun);
+    return () => window.removeEventListener(LIVE_RUN_EVENT, onLiveRun);
+  }, []);
 
   const all = list ?? [];
   const now = Date.now();
@@ -105,11 +102,18 @@ export function Automations({ user }: { user: User }) {
   const stats = overview ? totals(Object.values(overview).map((o) => o.runs)) : null;
   const reviewOf = (id: string) => (review ?? []).filter((r) => r.workflowId === id);
 
-  const todayCount = useCountUp(stats ? stats.today : 0);
   const needsYouNum = review ? review.length : total.needs_you;
-  const needsYouCount = useCountUp(needsYouNum);
-  const problemsCount = useCountUp(total.problem);
-  const liveCount = useCountUp(usage ? usage.automations.live : 0);
+  const liveRaw = usage ? usage.automations.live : total.on;
+  const weekRuns = stats ? stats.week : 0;
+  const liveDots = useMemo(() => {
+    const N = 25;
+    const len = all.length;
+    const onN = len === 0 ? 0 : len <= N ? liveRaw : Math.round((liveRaw / len) * N);
+    const probN = len === 0 ? 0 : len <= N ? total.problem : Math.round((total.problem / len) * N);
+    const clampedOn = Math.max(0, Math.min(N, onN));
+    const clampedProb = Math.max(0, Math.min(N - clampedOn, probN));
+    return Array.from({ length: N }, (_, i) => (i < clampedOn ? "on" : i < clampedOn + clampedProb ? "problem" : "off"));
+  }, [all.length, liveRaw, total.problem]);
 
   // The steps and versions of the selected automation, and its newest runs, load when it is selected and again after a change.
   const selectedKey = selected?.id;
@@ -134,7 +138,11 @@ export function Automations({ user }: { user: User }) {
   const copy = (id: string, formId: string) => {
     const link = `${location.origin}/forms/${formId}`;
     navigator.clipboard.writeText(link).then(
-      () => setCopied(t("Form link copied for {name}.", { name: list?.find((w) => w.id === id)?.name ?? t("this automation") })),
+      () => {
+        const msg = t("Form link copied for {name}.", { name: list?.find((w) => w.id === id)?.name ?? t("this automation") });
+        setCopied(msg);
+        pushToast({ message: msg, tone: "success" });
+      },
       () => setCopied(t("Copy this link: {link}", { link })),
     );
   };
@@ -144,7 +152,13 @@ export function Automations({ user }: { user: User }) {
     try {
       await api("POST", `/workflows/${w.id}/${paused ? "pause" : "resume"}`);
       load();
-      if (showToast) setToast({ id: w.id, name: w.name, paused });
+      if (showToast) {
+        pushToast({
+          message: t(paused ? "Paused {name}." : "Resumed {name}.", { name: w.name }),
+          tone: paused ? "warn" : "success",
+          onUndo: () => { void setPaused(w, !paused, false); },
+        });
+      }
     } catch (e) {
       setError((e as Error).message);
     }
@@ -156,6 +170,7 @@ export function Automations({ user }: { user: User }) {
     try {
       await api("DELETE", `/workflows/${w.id}`);
       load();
+      pushToast({ message: t("Deleted draft {name}.", { name: w.name }), tone: "info" });
     } catch (e) {
       setError((e as Error).message);
     }
@@ -197,18 +212,25 @@ export function Automations({ user }: { user: User }) {
   };
   const percent = (n: number) => `${(n * 100).toFixed(1)}%`;
 
-  const needsYou = review && review.length >= RUN_LIMIT ? `${RUN_LIMIT}+` : String(needsYouCount);
+  const needsYou = review && review.length >= RUN_LIMIT ? `${RUN_LIMIT}+` : String(needsYouNum);
 
   const head = (
     <header className="ops-head">
       <div className="ops-title">
         <h1>{t("Automations")}</h1>
-        {list && !listError && <span className="tnum">{t("{count} total", { count: list.length })}</span>}
+        {list && !listError && (
+          <p className="ops-lede">{t("{count} automations. Live ones run on their own and log every step.", { count: list.length })}</p>
+        )}
       </div>
       {owner && (
         <div className="ops-actions">
-          <a className="ops-button" href="#/ai">{t("Build with AI")}</a>
-          <a className="ops-button dark" href="#/new">{t("New automation")}</a>
+          <a className="ops-button secondary" href="#/new">{t("New automation")}</a>
+          <a className="ops-button primary" href="#/ai">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+              <path d="M8 1l1.7 4.3L14 7l-4.3 1.7L8 13l-1.7-4.3L2 7l4.3-1.7z" />
+            </svg>
+            {t("Build with AI")}
+          </a>
         </div>
       )}
     </header>
@@ -232,29 +254,52 @@ export function Automations({ user }: { user: User }) {
         <div className="ops-layout" data-panel={selected ? "open" : "closed"}>
           <div className="ops-main" inert={sheet}>
             {head}
-            <section className="ops-kpis" aria-label={t("Overview")}>
-              <div>
-                <span>{t("Runs today")}</span>
-                <b className="tnum">{stats ? todayCount : t("n/a")}</b>
-              </div>
-              <div>
-                <span>{t("Success, 7 days")}</span>
-                <b className="tnum">{stats ? (stats.rate === null ? t("n/a") : percent(stats.rate)) : t("n/a")}</b>
-              </div>
-              <button type="button" className="needs" aria-pressed={filter === "needs_you"} onClick={() => setFilter(filter === "needs_you" ? "all" : "needs_you")}>
-                <span>{t("Needs you")}</span>
-                <b className="tnum">{needsYou}</b>
-              </button>
-              <button type="button" className="problems" aria-pressed={filter === "problem"} onClick={() => setFilter(filter === "problem" ? "all" : "problem")}>
-                <span>{t("Problems")}</span>
-                <b className="tnum">{problemsCount}</b>
-              </button>
-              {usage && (
-                <div>
-                  <span>{t("Live automations")}</span>
-                  <b className="tnum">{liveCount} {usage.automations.limit !== null && <i>{t("of {limit}", { limit: usage.automations.limit })}</i>}</b>
+            <section className="ops-kpi-band" aria-label={t("Overview")}>
+              <div className="ops-kpi-live">
+                <div className="ops-kpi-label"><i className="ops-pulse" aria-hidden="true" /> {t("Live automations")}</div>
+                <div className="ops-big">
+                  <strong className="tnum"><AnimatedCounter value={liveRaw} /></strong>
+                  <span>{t("of {total} running now", { total: all.length })}</span>
                 </div>
-              )}
+                <div className="ops-live-dots" aria-hidden="true">
+                  {liveDots.map((tone, i) => <i key={i} className={`ops-ldot ${tone}`} />)}
+                </div>
+                <div className="ops-legend">
+                  <span><i className="l-on" aria-hidden="true" /> {t("Live")}</span>
+                  <span><i className="l-prob" aria-hidden="true" /> {t("Problem")}</span>
+                  <span><i className="l-off" aria-hidden="true" /> {t("Off or draft")}</span>
+                </div>
+              </div>
+              <div className="ops-kpi-grid">
+                <div className="ops-kpi-cell">
+                  <span className="ops-klabel">{t("Runs today")}</span>
+                  <div className="ops-kval lg tnum">
+                    <strong>{stats ? <AnimatedCounter value={stats.today} /> : t("n/a")}</strong>
+                    <small>{stats ? t("{count} runs in 7d", { count: weekRuns.toLocaleString() }) : ""}</small>
+                  </div>
+                </div>
+                <div className="ops-kpi-cell">
+                  <span className="ops-klabel">{t("Success, 7 days")}</span>
+                  <div className="ops-kval tnum">
+                    <strong>{stats ? (stats.rate === null ? t("n/a") : <AnimatedCounter value={percent(stats.rate)} />) : t("n/a")}</strong>
+                    <small>{stats ? t("{count} runs", { count: weekRuns.toLocaleString() }) : ""}</small>
+                  </div>
+                </div>
+                <button type="button" className="ops-kpi-cell is-btn needs" aria-pressed={filter === "needs_you"} onClick={() => setFilter(filter === "needs_you" ? "all" : "needs_you")}>
+                  <span className="ops-klabel">{t("Needs you")}</span>
+                  <div className="ops-kval tnum">
+                    <strong className="amber"><AnimatedCounter value={needsYou} /></strong>
+                    <small>{needsYouNum === 0 ? t("all clear") : t("approvals waiting")}</small>
+                  </div>
+                </button>
+                <button type="button" className="ops-kpi-cell is-btn problems" aria-pressed={filter === "problem"} onClick={() => setFilter(filter === "problem" ? "all" : "problem")}>
+                  <span className="ops-klabel">{t("Problems")}</span>
+                  <div className="ops-kval tnum">
+                    <strong className="red"><AnimatedCounter value={total.problem} /></strong>
+                    <small>{total.problem === 0 ? t("all healthy") : t("needs attention")}</small>
+                  </div>
+                </button>
+              </div>
             </section>
 
             {review && review.length > 0 && (
@@ -266,97 +311,97 @@ export function Automations({ user }: { user: User }) {
             <p role="status" className="ops-muted" hidden={!copied}>{copied}</p>
             <p role="alert" className="ops-alert error" hidden={!error}>{error}</p>
 
-            <div className="ops-seg-row">
-              <div
-                ref={segPill.containerRef}
-                className="ops-seg"
-                role="group"
-                aria-label={t("Filter by status")}
-                onPointerLeave={segPill.onContainerLeave}
-              >
-                <span
-                  className="ops-seg-pill motion-pill"
-                  aria-hidden="true"
-                  style={{
-                    transform: `translate3d(${segPill.pillStyle.left}px, ${segPill.pillStyle.top}px, 0)`,
-                    width: `${segPill.pillStyle.width}px`,
-                    height: `${segPill.pillStyle.height}px`,
-                    opacity: segPill.pillStyle.opacity,
-                  }}
-                />
-                {SEG_FILTERS.map(([key, label]) => (
-                  <button
-                    key={key}
-                    type="button"
-                    className="ops-seg-btn"
-                    aria-pressed={filter === key}
-                    onPointerEnter={(e) => segPill.onItemEnter(e.currentTarget)}
-                    onFocus={(e) => segPill.onItemEnter(e.currentTarget)}
-                    onClick={() => setFilter(key)}
-                  >
-                    {t(label)}
-                  </button>
-                ))}
+            <div className="ops-toolbar">
+              <div className="ops-toolbar-main">
+                <div
+                  ref={segPill.containerRef}
+                  className="ops-seg"
+                  role="group"
+                  aria-label={t("Filter by status")}
+                  onPointerLeave={segPill.onContainerLeave}
+                >
+                  <span
+                    className="ops-seg-pill motion-pill"
+                    aria-hidden="true"
+                    style={{
+                      transform: `translate3d(${segPill.pillStyle.left}px, ${segPill.pillStyle.top}px, 0)`,
+                      width: `${segPill.pillStyle.width}px`,
+                      height: `${segPill.pillStyle.height}px`,
+                      opacity: segPill.pillStyle.opacity,
+                    }}
+                  />
+                  {SEG_FILTERS.map(([key, label]) => (
+                    <button
+                      key={key}
+                      type="button"
+                      className="ops-seg-btn"
+                      aria-pressed={filter === key}
+                      onPointerEnter={(e) => segPill.onItemEnter(e.currentTarget)}
+                      onFocus={(e) => segPill.onItemEnter(e.currentTarget)}
+                      onClick={() => setFilter(key)}
+                    >
+                      {t(label)}
+                    </button>
+                  ))}
+                </div>
+                <label className="ops-search" data-active={query.trim() ? "true" : undefined}>
+                  <span className="ops-sr">{t("Find an automation")}</span>
+                  <svg width="13" height="13" viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="5" fill="none" stroke="currentColor" strokeWidth="1.6" /><path d="m11 11 3.5 3.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" /></svg>
+                  <input type="search" value={query} placeholder={t("Find an automation")} onChange={(e) => setQuery(e.target.value)} />
+                </label>
+              </div>
+              <div className="ops-filters">
+                <label className="ops-select">
+                  <span>{t("Status:")}</span>
+                  <select value={filter} onChange={(e) => setFilter(e.target.value as Filter)}>
+                    {STATUS_FILTERS.map(([key, label]) => <option key={key} value={key}>{t(label)}</option>)}
+                  </select>
+                </label>
+                <label className="ops-select">
+                  <span>{t("Trigger:")}</span>
+                  <select value={trigger} onChange={(e) => setTrigger(e.target.value)}>
+                    <option value="any">{t("Any")}</option>
+                    {triggerTypes.map((type) => <option key={type} value={type}>{t(triggerLabel(type))}</option>)}
+                    {trigger !== "any" && !triggerTypes.includes(trigger) && <option value={trigger}>{t(triggerLabel(trigger))}</option>}
+                  </select>
+                </label>
+                {filtered && <button type="button" className="ops-link" onClick={clear}>{t("Clear filters")}</button>}
               </div>
             </div>
 
-            <div className="ops-filters">
-              <label className="ops-search" data-active={query.trim() ? "true" : undefined}>
-                <span className="ops-sr">{t("Find an automation")}</span>
-                <svg width="13" height="13" viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="5" fill="none" stroke="currentColor" strokeWidth="1.6" /><path d="m11 11 3.5 3.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" /></svg>
-                <input type="search" value={query} placeholder={t("Search")} onChange={(e) => setQuery(e.target.value)} />
-              </label>
-              <label className="ops-select">
-                <span>{t("Status:")}</span>
-                <select value={filter} onChange={(e) => setFilter(e.target.value as Filter)}>
-                  {STATUS_FILTERS.map(([key, label]) => <option key={key} value={key}>{t(label)}</option>)}
-                </select>
-              </label>
-              <label className="ops-select">
-                <span>{t("Trigger:")}</span>
-                <select value={trigger} onChange={(e) => setTrigger(e.target.value)}>
-                  <option value="any">{t("Any")}</option>
-                  {triggerTypes.map((type) => <option key={type} value={type}>{t(triggerLabel(type))}</option>)}
-                  {trigger !== "any" && !triggerTypes.includes(trigger) && <option value={trigger}>{t(triggerLabel(trigger))}</option>}
-                </select>
-              </label>
-              {filtered && <button type="button" className="ops-link" onClick={clear}>{t("Clear filters")}</button>}
+            <div className="ops-table-wrap">
+              <table className="ops-table">
+                <thead>
+                  <tr>
+                    <th scope="col">{t("Name")}</th>
+                    <th scope="col" className="c-status">{t("Status")}</th>
+                    <th scope="col" className="c-trigger">{t("Trigger")}</th>
+                    <th scope="col" className="c-bars">{t("7 days")}</th>
+                    <th scope="col" className="c-last">{t("Last run")}</th>
+                    <th scope="col" className="c-action"><span className="ops-sr">{t("Open")}</span></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {shown.length === 0 ? (
+                    <tr><td colSpan={6} className="ops-empty">{t("None match.")}</td></tr>
+                  ) : (
+                    shown.map((w, index) => (
+                      <Row
+                        key={w.id}
+                        w={w}
+                        index={index}
+                        selected={selected?.id === w.id}
+                        reviewCount={reviewOf(w.id).length}
+                        entry={overview?.[w.id]}
+                        loading={overview === undefined}
+                        now={now}
+                        onPick={pick}
+                      />
+                    ))
+                  )}
+                </tbody>
+              </table>
             </div>
-
-            <table className="ops-table">
-              <thead>
-                <tr>
-                  <th scope="col" className="c-dot"><span className="ops-sr">{t("Status")}</span></th>
-                  <th scope="col">{t("Name")}</th>
-                  <th scope="col" className="c-trigger">{t("Trigger")}</th>
-                  <th scope="col" className="c-bars">{t("7 days")}</th>
-                  <th scope="col" className="c-rate">{t("Success")}</th>
-                  <th scope="col" className="c-last">{t("Last run")}</th>
-                  <th scope="col" className="c-toggle"><span className="ops-sr">{t("Active")}</span></th>
-                </tr>
-              </thead>
-              <tbody>
-                {shown.length === 0 ? (
-                  <tr><td colSpan={7} className="ops-empty">{t("None match.")}</td></tr>
-                ) : (
-                  shown.map((w, index) => (
-                    <Row
-                      key={w.id}
-                      w={w}
-                      index={index}
-                      owner={owner}
-                      selected={selected?.id === w.id}
-                      reviewCount={reviewOf(w.id).length}
-                      entry={overview?.[w.id]}
-                      loading={overview === undefined}
-                      now={now}
-                      onPick={pick}
-                      onTogglePause={(target, paused) => void setPaused(target, paused, true)}
-                    />
-                  ))
-                )}
-              </tbody>
-            </table>
           </div>
 
           {selected && (
@@ -375,49 +420,26 @@ export function Automations({ user }: { user: User }) {
                 closeRef={closeButton}
                 onClose={closeSheet}
                 onCopy={copy}
-                onPause={(target, paused) => void setPaused(target, paused, false)}
+                onPause={(target, paused) => void setPaused(target, paused, true)}
                 onDelete={remove}
               />
             </>
           )}
         </div>
       )}
-
-      {toast && (
-        <div role="status" className="ops-toast motion-toast">
-          <span>{t(toast.paused ? "Paused {name}." : "Resumed {name}.", { name: toast.name })}</span>
-          <button
-            type="button"
-            className="ops-toast-undo"
-            onClick={() => {
-              const target = list?.find((item) => item.id === toast.id);
-              const resumeTo = !toast.paused;
-              setToast(null);
-              if (target) void setPaused(target, resumeTo, false);
-              else void api("POST", `/workflows/${toast.id}/${resumeTo ? "pause" : "resume"}`).then(load, (e) => setError((e as Error).message));
-            }}
-          >
-            {t("Undo")}
-          </button>
-          <button type="button" className="ops-toast-close" aria-label={t("Dismiss")} onClick={() => setToast(null)}>×</button>
-          <i className="ops-toast-bar" aria-hidden="true" />
-        </div>
-      )}
     </main>
   );
 }
 
-function Row({ w, index, owner, selected, reviewCount, entry, loading, now, onPick, onTogglePause }: {
+function Row({ w, index, selected, reviewCount, entry, loading, now, onPick }: {
   w: Workflow;
   index: number;
-  owner: boolean;
   selected: boolean;
   reviewCount: number;
   entry: OverviewEntry | undefined;
   loading: boolean;
   now: number;
   onPick: (w: Workflow, from: HTMLElement | null) => void;
-  onTogglePause: (w: Workflow, paused: boolean) => void;
 }) {
   const { t, language } = useLanguage();
   const status = statusOf(w);
@@ -425,7 +447,6 @@ function Row({ w, index, owner, selected, reviewCount, entry, loading, now, onPi
   const state = w.last ? plainState(w.last, now) : null;
   const bars = entry?.runs.days ?? null;
   const weekTotal = entry?.runs.week ?? 0;
-  const rate = entry ? successRate(entry.runs) : null;
   const peak = Math.max(1, ...(bars ?? []).map((b) => b.total));
 
   const note =
@@ -453,7 +474,6 @@ function Row({ w, index, owner, selected, reviewCount, entry, loading, now, onPi
         if (!(e.target as HTMLElement).closest("button, a")) onPick(w, e.currentTarget.querySelector(".c-name button"));
       }}
     >
-      <td className="c-dot"><i className={`dot ${badge.tone}`} aria-hidden="true" /></td>
       <th scope="row" className="c-name">
         <div className="ops-name-cell">
           <button
@@ -471,6 +491,9 @@ function Row({ w, index, owner, selected, reviewCount, entry, loading, now, onPi
           {note && <span className={`sub ${note.kind}`}>{note.text}</span>}
         </div>
       </th>
+      <td className="c-status">
+        <span className={`ops-badge b-${badge.tone}`}><i className={`dot ${badge.tone}`} aria-hidden="true" />{badge.tone === "on" ? t("Live") : t(badge.label)}</span>
+      </td>
       <td className="c-trigger">{loading ? "…" : entry?.trigger ? t(triggerLabel(entry.trigger)) : <span className="dash">-</span>}</td>
       <td className="c-bars">
         {bars === null ? t("n/a") : weekTotal === 0 ? <span className="ops-muted">{t(w.last ? "No runs this week" : "No runs")}</span> : (
@@ -485,24 +508,15 @@ function Row({ w, index, owner, selected, reviewCount, entry, loading, now, onPi
           </span>
         )}
       </td>
-      <td className="c-rate tnum">{rate === null ? <span className="ops-muted">{t("n/a")}</span> : `${Math.round(rate * 100)}%`}</td>
       <td className="c-last">{w.last ? <time dateTime={w.last.createdAt}>{ago(w.last.createdAt, now, language)}</time> : <span className="ops-muted">{t("Never")}</span>}</td>
-      <td className="c-toggle">
-        {owner && w.live && (
-          <button
-            type="button"
-            role="switch"
-            aria-checked={!w.pausedAt}
-            aria-label={t(w.pausedAt ? "Resume {name}" : "Pause {name}", { name: w.name })}
-            className="ops-switch motion-switch"
-            onClick={(e) => {
-              e.stopPropagation();
-              onTogglePause(w, !w.pausedAt);
-            }}
-          >
-            <i className="ops-switch-thumb" aria-hidden="true" />
-          </button>
-        )}
+      <td className="c-action">
+        <a
+          className="ops-button secondary ops-open-btn"
+          href={status === "draft" || !!w.setup ? `#/a/${w.id}` : `#/w/${w.id}`}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {t("Open")}
+        </a>
       </td>
     </tr>
   );

@@ -63,6 +63,7 @@ export class RunsController {
     @Query("review", new ZodPipe(z.literal("true").optional())) review?: "true",
     @Query("state", new ZodPipe(z.enum(["problem", "waiting", "done"]).optional())) state?: keyof typeof STATES,
     @Query("q", new ZodPipe(z.string().trim().max(100).optional())) q?: string,
+    @Query("limit", new ZodPipe(z.coerce.number().int().min(1).max(50).optional())) limit?: number,
   ) {
     // Load the hider before the rows, so a concurrent retired-secret purge cannot remove a secret between the two queries.
     const hide = await historyHider(this.db, this.config.secretsKey, user.workspaceId);
@@ -78,7 +79,7 @@ export class RunsController {
         ),
       )
       .orderBy(desc(runs.createdAt))
-      .limit(50);
+      .limit(limit ?? 50);
     return rows.map((r) => ({ ...r, triggerPayload: hide(r.triggerPayload), error: hide(r.error) as string | null }));
   }
 
@@ -283,6 +284,7 @@ export class RunsController {
         createdAt,
         finishedAt,
         needsReview: sql<boolean>`(${runs.state} = 'needs_review' or ${deliveryInReview})`,
+        deliveryFailed: deliveryIn("failed"),
         // Not finished, but its booking was changed since: it stops at its next step and sends nothing more (decision 0032).
         superseded: sql<boolean>`(${runs.state} in ('pending', 'running', 'waiting', 'needs_review') and ${supersededSql})`,
         workflowId: workflows.id,

@@ -61,8 +61,9 @@ export type RunSummary = {
   testChoices?: Record<string, object> | null;
   error: string | null;
   triggerPayload: unknown;
-  // The run, or one of its Sheets or Slack deliveries, waits for a person.
+  // The run, or one of its Sheets or Slack deliveries, waits for a person or failed.
   needsReview: boolean;
+  deliveryFailed?: boolean;
   /** Its booking was changed since; it stops at its next step (decision 0032). */
   superseded?: boolean;
   createdAt: string;

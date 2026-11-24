@@ -7,15 +7,17 @@ import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { AskAi } from "./AiDraft";
 import { FormEmbed } from "./FormEmbed";
 import { shareable, ShareSheet } from "./SharePanel";
-import { api, FINISHED, type Run, type Version, type Workflow } from "./api";
+import { api, FINISHED, type Run, type RunSummary, type Version, type Workflow } from "./api";
 import { DropLine, editorEdgeTypes, editorNodeTypes, flowAriaLabels, ZoomBar } from "./FlowCanvas";
-import { RunResult, StepAttempt, useRun } from "./Runs";
+import { RunResult, StatePill, StepAttempt, useRun } from "./Runs";
 import { ADDABLE, addStep, blankDraft, canMove, connectSteps, duplicateStep, moveStep, readCopiedStep, removeStep, setDisabled, toFlow, type AddableType, type ConnectError, type Draft } from "./lib/graph";
 import { record, redo, startHistory, undo } from "./lib/history";
 import { Popover, Sheet, useMedia, usePhone } from "./Sheet";
 import { chosenFor, insertables, nextPaths, upstreamIds, openExits, setupLeft, unconnectedNodes, type ConnInfo } from "./lib/editor";
 import { warningForLanguage } from "./lib/ai-build";
+import { isLiveRunFinished, LIVE_RUN_EVENT, type LiveRunChange } from "./lib/live-runs";
 import { runFlow } from "./lib/run-flow";
+import { ago } from "./lib/states";
 import { AutomationTabs } from "./Nav";
 import { DocTemplatePicker } from "./DocTemplatePicker";
 import { BrowserActions } from "./BrowserActions";
@@ -164,6 +166,7 @@ export function Editor({ id, from }: { id: string; from?: string }) {
   const [choices, setChoices] = useState<Record<string, string>>({});
   const [runId, setRunId] = useState<string | null>(null);
   const { run } = useRun(runId);
+  const [liveRuns, setLiveRuns] = useState<RunSummary[]>([]);
   // null until GET /settings/connections answers; a refused or failed read leaves it null and hides the setup banner.
   const [connected, setConnected] = useState<ReadonlySet<string> | null>(null);
   const [conns, setConns] = useState<ConnInfo[]>([]);
@@ -218,6 +221,35 @@ export function Editor({ id, from }: { id: string; from?: string }) {
       () => setMailReady(true),
     );
   }, [id]);
+  const hasPublishedVersion = !!wf?.live;
+  const isWorkflowPaused = !!wf?.pausedAt;
+  useEffect(() => {
+    if (!hasPublishedVersion) {
+      setLiveRuns([]);
+      return;
+    }
+    let cancelled = false;
+    api<RunSummary[]>("GET", `/runs?workflowId=${id}&test=false&limit=5`).then(
+      (rows) => {
+        if (cancelled) return;
+        setLiveRuns(rows);
+        const newest = rows[0];
+        if (newest && !isWorkflowPaused && !isLiveRunFinished(newest)) setRunId(newest.id);
+      },
+      () => undefined,
+    );
+    const onLiveRun = (e: Event) => {
+      const detail = (e as CustomEvent<LiveRunChange>).detail;
+      if (!detail?.run || detail.run.workflowId !== id) return;
+      setLiveRuns((prev) => [detail.run, ...prev.filter((r) => r.id !== detail.run.id)].slice(0, 5));
+      if (!isWorkflowPaused) setRunId(detail.run.id);
+    };
+    window.addEventListener(LIVE_RUN_EVENT, onLiveRun);
+    return () => {
+      cancelled = true;
+      window.removeEventListener(LIVE_RUN_EVENT, onLiveRun);
+    };
+  }, [id, hasPublishedVersion, isWorkflowPaused]);
 
   const update = (next: Draft, key?: string) => {
     setHistory((h) => record(h, next, key));
@@ -381,6 +413,18 @@ export function Editor({ id, from }: { id: string; from?: string }) {
   };
   const status = dirty ? t("Unsaved changes") : wf.latest ? t("Version {version}{state}", { version: wf.latest.version, state: t(wf.latest.published ? " (live)" : ", draft") }) : t("Not saved yet");
   const isLive = !dirty && !!wf.latest?.published;
+  const activeLiveRun = run && !run.test ? run : null;
+  const liveRunSummary = activeLiveRun ? liveRuns.find((r) => r.id === activeLiveRun.id) : undefined;
+  const liveRunFailedDelivery = Boolean(liveRunSummary?.deliveryFailed);
+  const liveState: "idle" | "working" | "done" | "problem" | "waiting" = !activeLiveRun
+    ? "idle"
+    : activeLiveRun.needsReview || activeLiveRun.state === "needs_review" || activeLiveRun.state === "waiting"
+      ? "waiting"
+      : activeLiveRun.state === "failed" || liveRunFailedDelivery
+        ? "problem"
+        : activeLiveRun.state === "succeeded"
+          ? "done"
+          : "working";
   const missing = apps.filter((a) => !a.connected);
   const select = (next: string | null) => {
     setSelected(next);
@@ -723,7 +767,7 @@ export function Editor({ id, from }: { id: string; from?: string }) {
           </p>
           <div className="a7-title">
             <h1>{wf.name}</h1>
-            <span className="a7-chip" data-live={isLive || undefined}>
+            <span className="a7-chip" data-live={isLive || undefined} data-live-state={isLive && liveState !== "idle" ? liveState : undefined}>
               {t(isLive ? "Live" : "Draft")}
             </span>
             <span className="a7-meta status" aria-live="polite">
@@ -754,6 +798,40 @@ export function Editor({ id, from }: { id: string; from?: string }) {
               <a className="a7-setup-action" href="#/apps">
                 {t("Connect {app}", { app: t(missing[0]!.label) })}
               </a>
+            </div>
+          )}
+          {wf.live && !wf.pausedAt && (
+            <div className="a7-live-bar" data-state={liveState}>
+              <span className="a7-live-dot" aria-hidden="true" />
+              <span className="a7-live-text">
+                {liveState === "working"
+                  ? t("Running live now…")
+                  : liveState === "done"
+                    ? t("Live run succeeded")
+                    : liveState === "problem"
+                      ? t("Live run failed")
+                      : liveState === "waiting"
+                        ? t(activeLiveRun?.needsReview || activeLiveRun?.state === "needs_review" ? "Live run needs your review" : "Live run is waiting")
+                        : t("Listening for live events")}
+              </span>
+              {activeLiveRun && (
+                <span className="a7-live-actions">
+                  <button
+                    type="button"
+                    className="quiet"
+                    onClick={() => {
+                      select(null);
+                      fold(false);
+                      setTimeout(showRun, 0);
+                    }}
+                  >
+                    {t("View logs")}
+                  </button>
+                  <button type="button" className="quiet" onClick={() => setRunId(null)}>
+                    {t("Clear")}
+                  </button>
+                </span>
+              )}
             </div>
           )}
           <div className="a7-tools">
@@ -928,11 +1006,33 @@ export function Editor({ id, from }: { id: string; from?: string }) {
                   </details>
                   {run && (
                     <section className="a7-test" aria-labelledby="run-heading">
-                      <h2 id="run-heading">{t("Run")}</h2>
+                      <h2 id="run-heading">{t(run.test ? "Run" : "Live run log")}</h2>
                       <RunResult run={run} />
                       <p>
                         <a href={`#/runs/${run.id}`}>{t("Open this run in the run history")}</a>
                       </p>
+                    </section>
+                  )}
+                  {wf.live && (
+                    <section className="a7-live-logs" aria-labelledby="live-logs-heading">
+                      <h2 id="live-logs-heading">{t("Live logs")}</h2>
+                      {liveRuns.length === 0 ? (
+                        <p className="muted hint">{t("No live runs yet. Send a real event to see it run here.")}</p>
+                      ) : (
+                        <ul className="a7-live-list">
+                          {liveRuns.map((r) => (
+                            <li key={r.id} className={r.id === runId ? "is-active" : undefined}>
+                              <button type="button" className="quiet a7-live-pick" onClick={() => setRunId(r.id)}>
+                                <StatePill run={r} />
+                                <span className="a7-live-when">{ago(r.createdAt, Date.now(), language)}</span>
+                              </button>
+                              <a className="a7-live-open" href={`#/runs/${r.id}`}>
+                                {t("Full log")}
+                              </a>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
                     </section>
                   )}
                 </>

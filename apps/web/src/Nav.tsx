@@ -1,12 +1,14 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import "./console-shell.css";
 import "./motion.css";
-import { getUsage, type Usage } from "./api";
+import { api, getUsage, type RunSummary, type Usage } from "./api";
 import { CommandPalette, isQuickJumpShortcut } from "./CommandPalette";
 import { useLanguage } from "./Language";
+import { diffLiveRuns, LIVE_RUN_EVENT, liveRunToast, type LiveRunSnapshot } from "./lib/live-runs";
 import { useSlidingPill } from "./lib/motion";
 import { aiMeter } from "./lib/usage";
 import type { User } from "./Team";
+import { pushToast, ToastHost } from "./Toast";
 
 /** GET /usage once on load, and again when something that spends or frees usage fires a `daloy:usage` window event. */
 export function useUsage(enabled = true) {
@@ -56,7 +58,7 @@ function section(hash: string) {
 }
 
 /**
- * The console frame: a fixed 228 px sidebar on desktop (a bar with a Menu button under 800 px),
+ * The console frame: a collapsible 228 px / 62 px sidebar on desktop (a bar with a Menu button under 800 px),
  * so the links, Quick jump, the account and Sign out stay in one steady place across pages.
  */
 export function Shell({ user, hash, onSignOut, children }: { user: User; hash: string; onSignOut: () => void; children: ReactNode }) {
@@ -64,12 +66,71 @@ export function Shell({ user, hash, onSignOut, children }: { user: User; hash: s
   const [open, setOpen] = useState(false);
   const [closing, setClosing] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(() => {
+    try {
+      return typeof localStorage !== "undefined" && localStorage.getItem("kymavo.sidebar.collapsed") === "true";
+    } catch {
+      return false;
+    }
+  });
   const menuButton = useRef<HTMLButtonElement>(null);
   const pill = useSlidingPill<HTMLElement>();
   const menu = pill.containerRef;
   const owner = user.role === "owner";
+  const canWatchRuns = owner || user.role === "operator";
   const usage = useUsage(owner);
   const here = section(hash);
+  const tRef = useRef(t);
+  tRef.current = t;
+
+  useEffect(() => {
+    if (!canWatchRuns || typeof window === "undefined") return;
+    let cancelled = false;
+    let inFlight = false;
+    let prev: Map<string, LiveRunSnapshot> | null = null;
+
+    const poll = async () => {
+      if (cancelled || inFlight || document.hidden) return;
+      inFlight = true;
+      try {
+        const rows = await api<RunSummary[]>("GET", "/runs?test=false&limit=15").catch(() => null);
+        if (cancelled || !Array.isArray(rows)) return;
+        const { next, changes } = diffLiveRuns(prev, rows);
+        prev = next;
+        for (const change of changes) {
+          pushToast(liveRunToast(change, tRef.current));
+          window.dispatchEvent(new CustomEvent(LIVE_RUN_EVENT, { detail: change }));
+          if (change.kind === "finished") window.dispatchEvent(new Event("daloy:usage"));
+        }
+      } finally {
+        inFlight = false;
+      }
+    };
+
+    void poll();
+    const timer = window.setInterval(() => void poll(), 2000);
+    const onVisible = () => {
+      if (!document.hidden) void poll();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [canWatchRuns]);
+
+  const toggleCollapsed = () => {
+    setCollapsed((was) => {
+      const next = !was;
+      try {
+        localStorage.setItem("kymavo.sidebar.collapsed", String(next));
+      } catch {
+        // Ignore storage errors in restricted browsing contexts.
+      }
+      return next;
+    });
+  };
 
   // The phone menu and Quick jump close on any page change, the browser's Back button included.
   useEffect(() => { setOpen(false); setClosing(false); setPaletteOpen(false); }, [hash]);
@@ -95,9 +156,17 @@ export function Shell({ user, hash, onSignOut, children }: { user: User; hash: s
   }, []);
   useEffect(() => {
     const onKeyDown = (event: globalThis.KeyboardEvent) => {
-      if (!isQuickJumpShortcut(event)) return;
-      event.preventDefault();
-      setPaletteOpen((was) => !was);
+      if (isQuickJumpShortcut(event)) {
+        event.preventDefault();
+        setPaletteOpen((was) => !was);
+        return;
+      }
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "b") {
+        const target = event.target as HTMLElement | null;
+        if (target?.closest("input, textarea, select, [contenteditable='true']")) return;
+        event.preventDefault();
+        toggleCollapsed();
+      }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
@@ -112,6 +181,8 @@ export function Shell({ user, hash, onSignOut, children }: { user: User; hash: s
     return (
       <a
         href={href}
+        data-tip={icon ? t(text) : undefined}
+        aria-label={icon ? t(text) : undefined}
         aria-current={here === name ? "page" : undefined}
         onPointerEnter={icon ? (event) => pill.onItemEnter(event.currentTarget) : undefined}
         onFocus={icon ? (event) => pill.onItemEnter(event.currentTarget) : undefined}
@@ -129,6 +200,7 @@ export function Shell({ user, hash, onSignOut, children }: { user: User; hash: s
       if (open) closePhone();
     }}>
       <aside className="sidebar console-header"
+        data-collapsed={collapsed || undefined}
         data-closing={closing || undefined} inert={closing}
         onAnimationEnd={event => {
           if (event.animationName === "rail-sheet-out") { setOpen(false); setClosing(false); }
@@ -138,13 +210,16 @@ export function Shell({ user, hash, onSignOut, children }: { user: User; hash: s
           <span className="sidebar-name rail-label">kymavo</span>
           <button
             type="button"
-            className="quiet rail-quick-jump"
-            aria-label={t("Quick jump")}
-            aria-keyshortcuts="Control+K Meta+K"
-            title={t("Quick jump")}
-            onClick={() => setPaletteOpen(true)}
+            className="quiet rail-collapse-btn"
+            aria-expanded={!collapsed}
+            aria-keyshortcuts="Control+B Meta+B"
+            aria-label={t(collapsed ? "Expand sidebar" : "Collapse sidebar")}
+            title={t(collapsed ? "Expand sidebar (Ctrl+B)" : "Collapse sidebar (Ctrl+B)")}
+            onClick={toggleCollapsed}
           >
-            <kbd>Ctrl K</kbd>
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true">
+              <path d="M10 3L5 8l5 5" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
           </button>
           {open
             ? <button type="button" className="quiet phone-close" onClick={closePhone}>{t("Close")}</button>
@@ -187,6 +262,8 @@ export function Shell({ user, hash, onSignOut, children }: { user: User; hash: s
             <a
               className="account-link"
               href="#/account"
+              data-tip={t("Account")}
+              aria-label={t("Account")}
               aria-current={here === "Account" ? "page" : undefined}
               onPointerEnter={(event) => pill.onItemEnter(event.currentTarget)}
               onFocus={(event) => pill.onItemEnter(event.currentTarget)}
@@ -210,6 +287,7 @@ export function Shell({ user, hash, onSignOut, children }: { user: User; hash: s
       </nav>
       <div className="shell-main" inert={open}>{children}</div>
       <CommandPalette open={paletteOpen} role={user.role} currentHash={hash} onClose={() => setPaletteOpen(false)} />
+      <ToastHost />
     </div>
   );
 }

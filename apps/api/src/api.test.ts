@@ -541,3 +541,18 @@ describe("workflow webhook URL visibility (M2)", () => {
     await request(server).post(`/hooks/${webhookPath}`).send({}).expect(202);
   });
 });
+
+describe("runs list limit and deliveryFailed flag", () => {
+  it("caps returned rows with limit and exposes deliveryFailed", async () => {
+    const { agent } = await signedIn();
+    const wf = await publishedWorkflow(agent, { type: "webhook", config: {} });
+    await request(server).post(`/hooks/${wf.trigger.webhookPath}`).send({ n: 1 }).expect(202);
+    await request(server).post(`/hooks/${wf.trigger.webhookPath}`).send({ n: 2 }).expect(202);
+
+    const limited = await agent.get("/runs?test=false&limit=1").expect(200);
+    expect(limited.body).toHaveLength(1);
+    expect(limited.body[0]).toMatchObject({ workflowId: wf.id, deliveryFailed: false });
+
+    await agent.get("/runs?limit=0").expect(400);
+  });
+});

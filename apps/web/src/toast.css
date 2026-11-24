@@ -1,0 +1,118 @@
+.rare-toast-stack {
+  position: fixed;
+  top: 20px;
+  right: 24px;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: min(390px, calc(100vw - 32px));
+  pointer-events: none;
+}
+
+.rare-toast {
+  position: relative;
+  pointer-events: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 14px 14px;
+  border: 1px solid var(--border-hairline, #e4e7ee);
+  border-radius: 12px;
+  background: var(--daylight-bg, #ffffff);
+  color: var(--fg, #0a0b0e);
+  font-family: var(--font-sans, "Geist", "Inter", sans-serif);
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 500;
+  box-shadow: 0 8px 24px rgb(10 11 14 / 0.10);
+  overflow: hidden;
+  animation: rareToastIn 240ms var(--ease-spring, cubic-bezier(0.22, 1, 0.36, 1)) both;
+}
+
+.rare-toast-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--blue, #0044ff);
+}
+.rare-toast[data-tone="success"] { border-color: color-mix(in srgb, var(--green, #15803d) 35%, var(--border-hairline, #e4e7ee)); }
+.rare-toast[data-tone="success"] .rare-toast-dot { background: var(--green, #15803d); }
+.rare-toast[data-tone="warn"] .rare-toast-dot { background: var(--yellow-dot, #f5c400); }
+.rare-toast[data-tone="error"] .rare-toast-dot { background: var(--red, #c92a2a); }
+
+.rare-toast-msg { flex: 1 1 auto; min-width: 0; }
+
+.rare-toast .ops-toast-undo {
+  min-height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--border-strong, #c8cedc);
+  border-radius: 8px;
+  background: var(--daylight-bg, #ffffff);
+  color: var(--fg, #0a0b0e);
+  font: 600 12px/1 inherit;
+  box-shadow: none;
+  cursor: pointer;
+}
+.rare-toast .ops-toast-link { display: inline-flex; align-items: center; text-decoration: none; }
+.rare-toast .ops-toast-undo:hover:not(:disabled) { background: var(--subtle, #f2f4f8); }
+
+.rare-toast .ops-toast-close {
+  min-height: 24px;
+  min-width: 24px;
+  padding: 0 4px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--fg-muted, #575c6a);
+  font-size: 16px;
+  line-height: 1;
+  box-shadow: none;
+  cursor: pointer;
+}
+.rare-toast .ops-toast-close:hover:not(:disabled) { background: var(--subtle, #f2f4f8); color: var(--fg, #0a0b0e); }
+
+.rare-toast-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 3px;
+  background: var(--blue, #0044ff);
+  transform-origin: left center;
+  animation: rareToastBar 5s linear forwards;
+}
+.rare-toast[data-tone="success"] .rare-toast-bar { background: var(--green, #15803d); }
+.rare-toast[data-tone="warn"] .rare-toast-bar { background: var(--yellow-dot, #f5c400); }
+.rare-toast[data-tone="error"] .rare-toast-bar { background: var(--red, #c92a2a); }
+
+@keyframes rareToastIn {
+  from { opacity: 0; transform: translateY(-10px) scale(0.97); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes rareToastBar {
+  from { transform: scaleX(1); }
+  to { transform: scaleX(0); }
+}
+
+:root[data-theme="dark"] .rare-toast {
+  background: var(--daylight-bg, #131a30);
+  color: var(--fg, #eef2ff);
+  border-color: var(--border-hairline, #243052);
+  box-shadow: 0 10px 28px rgb(0 0 0 / 0.45);
+}
+
+@media (max-width: 799.98px) {
+  .rare-toast-stack {
+    top: calc(var(--target, 44px) + 12px + env(safe-area-inset-top));
+    left: 16px;
+    right: 16px;
+    max-width: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rare-toast { animation: none; }
+  .rare-toast-bar { animation: none; }
+}

@@ -40,8 +40,11 @@
 .a7-crumb a:hover { color: var(--text); text-decoration: underline; text-underline-offset: 3px; }
 .a7-title { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
 .a7-title h1 { margin: 0; font-size: 26px; font-weight: 700; letter-spacing: -.02em; line-height: 32px; }
-.a7-chip { padding: 3px 8px; border: 1px dashed var(--a7-line); border-radius: 6px; background: var(--sunken); color: var(--a7-label); font-size: 12px; font-weight: 600; transition: color var(--dur-fast) var(--ease), background-color var(--dur-fast) var(--ease); }
-.a7-chip[data-live] { border-style: solid; border-color: transparent; background: var(--a7-ok-bg); color: var(--a7-ok); }
+.a7-chip { padding: 3px 8px; border: 1px dashed var(--a7-line); border-radius: 6px; background: var(--sunken); color: var(--a7-label); font-size: 12px; font-weight: 600; transition: color var(--dur-fast) var(--ease), background-color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease); }
+.a7-chip[data-live] { border-style: solid; border-color: var(--border); background: var(--surface); color: var(--text); }
+.a7-chip[data-live-state="working"], .a7-chip[data-live-state="done"] { border-color: var(--a7-ok); background: var(--a7-ok-bg); color: var(--a7-ok); }
+.a7-chip[data-live-state="problem"] { border-color: var(--a7-bad); background: var(--a7-bad-bg); color: var(--a7-bad); }
+.a7-chip[data-live-state="waiting"] { border-color: var(--a7-warn-line); background: var(--waiting, #fffbe6); color: var(--a7-warn); }
 .a7-meta { color: var(--muted); font-size: 13px; }
 .a7-tabs { display: flex; flex-wrap: wrap; gap: 22px; padding-top: 10px; }
 .a7-tabs .tabs { display: contents; }
@@ -78,6 +81,13 @@
 
 /* Nodes and edges */
 .a7-node { position: relative; gap: 3px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--text); font-size: 12px; line-height: 16px; }
+.a7-node.run-idle { border-style: dashed; border-color: var(--run-idle); }
+.a7-node.run-skipped { border-style: dashed; border-color: var(--run-idle); background: var(--sunken); }
+.a7-node.run-done { border-color: var(--a7-ok); background: var(--a7-ok-bg); }
+.a7-node.run-working { border-color: var(--a7-ok); background: var(--a7-ok-bg); }
+.a7-node.run-working .node-status { color: var(--a7-ok); }
+.a7-node.run-needs_you, .a7-node.run-waiting { border-color: var(--a7-warn-line); background: var(--waiting, #fffbe6); }
+.a7-node.run-problem { border-color: var(--a7-bad); background: var(--a7-bad-bg); }
 .a7-node .node-title { font-size: 14px; font-weight: 600; line-height: 18px; }
 .a7-node .node-summary { color: var(--muted); }
 .a7-node-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
@@ -281,11 +291,38 @@
 .a7-editor .app-mark[data-kind="letter"][data-mark="gcash"] { background: #e6f4ff; color: #0052d9; border-color: #c2e0ff; }
 .a7-editor .app-mark[data-kind="letter"][data-mark="messenger"] { background: #eef0ff; color: #3b5bdb; border-color: #d1d8ff; }
 .a7-editor .app-mark[data-kind="letter"][data-mark="instagram"] { background: #fff0f5; color: #b8255f; border-color: #f7cadb; }
+.a7-editor .app-mark[data-kind="letter"][data-mark="whatsapp"] { background: #ecfdf3; color: #15803d; border-color: #bfe8cf; }
 :root[data-theme="dark"] .a7-editor .app-mark[data-kind="letter"][data-mark="unisms"] { background: #1c2a55; color: #8fb0ff; border-color: #2f4582; }
 :root[data-theme="dark"] .a7-editor .app-mark[data-kind="letter"][data-mark="paymongo"] { background: #173323; color: #7fcfa3; border-color: #26543a; }
 :root[data-theme="dark"] .a7-editor .app-mark[data-kind="letter"][data-mark="gcash"] { background: #162d4f; color: #8fb0ff; border-color: #26487c; }
 :root[data-theme="dark"] .a7-editor .app-mark[data-kind="letter"][data-mark="messenger"] { background: #202754; color: #9fb4ff; border-color: #343f85; }
 :root[data-theme="dark"] .a7-editor .app-mark[data-kind="letter"][data-mark="instagram"] { background: #3d192b; color: #f59ec1; border-color: #632846; }
+:root[data-theme="dark"] .a7-editor .app-mark[data-kind="letter"][data-mark="whatsapp"] { background: #173323; color: #7fcfa3; border-color: #26543a; }
+
+/* Live execution bar and live run logs in the workflow editor. */
+.a7-live-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); font-size: 13px; }
+.a7-live-bar[data-state="working"], .a7-live-bar[data-state="done"] { border-color: var(--a7-ok); background: var(--a7-ok-bg); color: var(--a7-ok); }
+.a7-live-bar[data-state="problem"] { border-color: var(--a7-bad); background: var(--a7-bad-bg); color: var(--a7-bad); }
+.a7-live-bar[data-state="waiting"] { border-color: var(--a7-warn-line); background: var(--waiting, #fffbe6); color: var(--a7-warn); }
+.a7-live-dot { width: 8px; height: 8px; flex: none; border-radius: 999px; background: var(--muted); }
+.a7-live-bar[data-state="working"] .a7-live-dot, .a7-live-bar[data-state="done"] .a7-live-dot { background: var(--a7-ok); }
+.a7-live-bar[data-state="problem"] .a7-live-dot { background: var(--a7-bad); }
+.a7-live-bar[data-state="waiting"] .a7-live-dot { background: var(--a7-warn); }
+.a7-live-text { flex: 1 1 auto; font-weight: 600; }
+.a7-live-actions { display: flex; align-items: center; gap: 6px; }
+.a7-editor .a7-live-actions button { min-height: 28px; padding: 0 10px; border: 1px solid currentColor; background: var(--surface); font-size: 12px; }
+@keyframes a7-live-pulse { 0%, 100% { box-shadow: 0 0 0 0 transparent; } 50% { box-shadow: 0 0 0 5px color-mix(in srgb, var(--a7-ok) 32%, transparent); } }
+@media (prefers-reduced-motion: no-preference) {
+  .a7-live-bar[data-state="working"] .a7-live-dot { animation: a7-live-pulse var(--dur-pulse, 1600ms) ease-in-out infinite; }
+}
+.a7-panel > * + .a7-live-logs { padding-top: 20px; border-top: 1px solid var(--border-soft); }
+.a7-live-logs h2 { font-size: 16px; margin-bottom: 10px; }
+.a7-live-list { display: flex; flex-direction: column; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.a7-live-list li { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border: 1px solid var(--border-soft); border-radius: 8px; background: var(--sunken); }
+.a7-live-list li.is-active { border-color: var(--a7-ok); background: var(--a7-ok-bg); }
+.a7-editor .a7-live-pick { display: flex; align-items: center; gap: 8px; flex: 1 1 auto; min-width: 0; min-height: 30px; padding: 0; border: 0; background: transparent; text-align: left; }
+.a7-live-when { color: var(--muted); font-size: 12px; font-weight: 400; }
+.a7-live-open { flex: none; font-size: 12px; font-weight: 600; }
 
 /* T5 Share sheet: a read-only value with its Copy button beside it, wrapping under it on a phone. */
 .share-copy { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; }
