@@ -5,6 +5,7 @@ import { builderTranslations } from "./locale-builder";
 import { guidedTranslations } from "./locale-guided";
 import { viewTranslations } from "./locale-views";
 import { googleTranslations } from "./locale-google";
+import { recordTriggerTranslations } from "./locale-records";
 import { gmailTranslations } from "./locale-gmail";
 import { calendarTranslations } from "./locale-calendar";
 import { opsTranslations } from "./locale-ops";
@@ -42,6 +43,7 @@ const tagalog: Record<string, string> = {
   ...brandTranslations,
   ...controlsTranslations,
   ...googleTranslations,
+  ...recordTriggerTranslations,
   ...gmailTranslations,
   ...calendarTranslations,
   ...opsTranslations,

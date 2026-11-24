@@ -32,6 +32,9 @@ const CALENDAR = tx("Google Calendar", "Google Calendar");
 const DOCS = tx("Google Docs", "Google Docs");
 const PAYMONGO = tx("PayMongo", "PayMongo");
 const SHOPIFY = tx("Shopify", "Shopify");
+const AIRTABLE = tx("Airtable", "Airtable");
+const NOTION = tx("Notion", "Notion");
+const TRELLO = tx("Trello", "Trello");
 const META = tx("Messenger and Instagram", "Messenger at Instagram");
 const TELEGRAM = tx("Telegram", "Telegram");
 const queued = [tx("Queued for delivery", "Nakapila para ipadala"), tx("Failed, with the reason", "Nabigo, may dahilan")];
@@ -101,6 +104,10 @@ export const TRIGGER_CATALOG: Record<Trigger["type"], CatalogEntry> = {
   sheets_row: { app: SHEETS, mark: "google-sheets", provider: "google_sheets", action: tx("A row is added", "May nadagdag na row"), description: tx("Start for each new row in a tab of the sheet chosen in Apps. kymavo checks every few minutes.", "Magsimula sa bawat bagong row sa isang tab ng sheet na pinili sa Apps. Tumitingin ang kymavo kada ilang minuto."), required: ["tab"], input: tx("The tab to watch.", "Ang tab na babantayan."), output: tx("The row's values, named after the header row.", "Ang mga value ng row, ayon sa header row."), outcomes: [tx("Started", "Nagsimula")] },
   calendar_event: { app: CALENDAR, mark: "google-calendar", provider: "google_calendar", action: tx("An event is added or starts soon", "May bagong event o malapit nang magsimula"), description: tx("Start for each new event in the calendar chosen in Apps, or a set time before an event starts.", "Magsimula sa bawat bagong event sa calendar na pinili sa Apps, o ilang minuto bago magsimula ang event."), required: [], input: tx("New events, or how long before the start.", "Bagong event, o gaano katagal bago magsimula."), output: tx("The event's title, time, place and link.", "Ang pamagat, oras, lugar at link ng event."), outcomes: [tx("Started", "Nagsimula")] },
   drive_file: { app: DRIVE, mark: "google-drive", provider: "google_drive", action: tx("A file is added", "May nadagdag na file"), description: tx("Start for each new file in the Drive folder chosen in Apps. Photos and PDFs up to 5 MB come along for later steps.", "Magsimula sa bawat bagong file sa Drive folder na pinili sa Apps. Kasama ang mga photo at PDF hanggang 5 MB para sa susunod na mga step."), required: [], input: tx("The folder chosen in Apps.", "Ang folder na pinili sa Apps."), output: tx("The file's name, type, size and link, and the file itself when it fits.", "Ang pangalan, uri, laki at link ng file, at ang file mismo kung kasya."), outcomes: [tx("Started", "Nagsimula")] },
+  // G5 (decision 0134): read by a poll, so a run starts within a few minutes of the change.
+  airtable_record: { app: AIRTABLE, mark: "airtable", provider: "airtable", action: tx("A record is added or changes status", "May bagong record o nagbago ang status"), description: tx("Start for each new record or status change in the Airtable table chosen in Apps. kymavo checks every few minutes.", "Magsimula sa bawat bagong record o pagbabago ng status sa Airtable table na pinili sa Apps. Tumitingin ang kymavo kada ilang minuto."), required: [], input: tx("New records, or the status field to watch.", "Mga bagong record, o ang status field na babantayan."), output: tx("The record id and its field values.", "Ang record id at ang mga value ng field nito."), outcomes: [tx("Started", "Nagsimula")] },
+  notion_page: { app: NOTION, mark: "notion", provider: "notion", action: tx("A page is added or changes status", "May bagong page o nagbago ang status"), description: tx("Start for each new page or status change in the Notion database chosen in Apps. kymavo checks every few minutes.", "Magsimula sa bawat bagong page o pagbabago ng status sa Notion database na pinili sa Apps. Tumitingin ang kymavo kada ilang minuto."), required: [], input: tx("New pages, or the status property to watch.", "Mga bagong page, o ang status property na babantayan."), output: tx("The page title, link and properties.", "Ang pamagat, link at mga property ng page."), outcomes: [tx("Started", "Nagsimula")] },
+  trello_card: { app: TRELLO, mark: "trello", provider: "trello", action: tx("A card is added or moved to the list", "May bagong card o inilipat sa list"), description: tx("Start for each card added to or moved into the Trello list chosen in Apps. kymavo checks every few minutes.", "Magsimula sa bawat card na idinagdag o inilipat sa Trello list na pinili sa Apps. Tumitingin ang kymavo kada ilang minuto."), required: [], input: tx("Cards added or moved into the list chosen in Apps.", "Mga card na idinagdag o inilipat sa list na pinili sa Apps."), output: tx("The card name, description, link and list details.", "Ang pangalan, paglalarawan, link at detalye ng list ng card."), outcomes: [tx("Started", "Nagsimula")] },
 };
 
 const pick = (t: Text, language: Language) => t[language];
@@ -135,6 +142,9 @@ const TRIGGER_NOUN: Record<Trigger["type"], Text> = {
   sheets_row: tx("the new row", "bagong row"),
   calendar_event: tx("the calendar event", "calendar event"),
   drive_file: tx("the Drive file", "Drive file"),
+  airtable_record: tx("the Airtable record", "Airtable record"),
+  notion_page: tx("the Notion page", "Notion page"),
+  trello_card: tx("the Trello card", "Trello card"),
   schedule: tx("the schedule", "iskedyul"),
   manual: tx("the sample data", "sample data"),
 };

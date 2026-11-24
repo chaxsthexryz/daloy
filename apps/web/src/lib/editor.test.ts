@@ -59,6 +59,9 @@ describe("insertables", () => {
   it("uses the email fields for an email trigger and nothing for a manual one", () => {
     expect(insertables({ ...receipt, trigger: { type: "email", config: {} } } as Draft, "save_receipt")).toEqual(["{{trigger.from}}", "{{trigger.subject}}", "{{trigger.text}}"]);
     expect(insertables({ ...receipt, trigger: { type: "manual", config: {} } } as Draft, "save_receipt")).toEqual([]);
+    expect(insertables({ ...receipt, trigger: { type: "airtable_record", config: { on: "created" } } } as Draft, "save_receipt")).toContain("{{trigger.recordId}}");
+    expect(insertables({ ...receipt, trigger: { type: "notion_page", config: { on: "created" } } } as Draft, "save_receipt")).toContain("{{trigger.title}}");
+    expect(insertables({ ...receipt, trigger: { type: "trello_card", config: { on: "moved_to_list" } } } as Draft, "save_receipt")).toContain("{{trigger.previousListName}}");
   });
   it("lists stay_quote output fields for steps after it", () => {
     const quoted: Draft = {

@@ -22,6 +22,7 @@ import { BrowserActions } from "./BrowserActions";
 import { SchemaForm, type JsonSchema } from "./SchemaForm";
 import { EmailSource } from "./EmailSource";
 import { GoogleTriggerSettings } from "./GoogleTriggerSettings";
+import { RecordTriggerSettings } from "./RecordTriggerSettings";
 import { ExplainSheet, SampleTest, SetupGuide, TurnOnSheet } from "./Guide";
 import { testState, type SampleResult } from "./lib/guide";
 import { parseSample, variableGroups } from "./lib/variables";
@@ -79,6 +80,9 @@ function samplePayload(trigger: Trigger, resourceId = "a resource id from the Re
   if (trigger.type === "sheets_row") return JSON.stringify({ spreadsheetId: "sample-sheet", tab: trigger.config.tab, rowNumber: 2, values: ["Ana Reyes", "Ube jam"], cells: { name: "Ana Reyes", item: "Ube jam" } }, null, 2);
   if (trigger.type === "calendar_event") return JSON.stringify({ calendarId: "sample-calendar", event: trigger.config.on, eventId: "sample-event", title: "Ana Reyes, haircut", description: "", location: "Main branch", start: `${tomorrowAtTen()}:00+08:00`, end: `${tomorrowAtTen().slice(0, 10)}T11:00:00+08:00`, link: "" }, null, 2);
   if (trigger.type === "drive_file") return JSON.stringify({ folderId: "sample-folder", fileId: "sample-file", name: "receipt.pdf", mimeType: "application/pdf", size: 120000, createdTime: new Date().toISOString(), link: "", file: [] }, null, 2);
+  if (trigger.type === "airtable_record") return JSON.stringify({ baseId: "appSampleBase", tableId: "tblSampleTable", event: trigger.config.on, recordId: "recSampleRecord01", createdTime: new Date().toISOString(), fields: { Name: "Ana Reyes", Status: "Pending" }, cells: { name: "Ana Reyes", status: "Pending" }, ...(trigger.config.on === "status_changed" ? { statusField: trigger.config.statusField ?? "Status", status: "Approved", previousStatus: "Pending" } : {}) }, null, 2);
+  if (trigger.type === "notion_page") return JSON.stringify({ databaseId: "sample-database", event: trigger.config.on, pageId: "sample-page", title: "Ana Reyes order", url: "https://www.notion.so/sample-page", createdTime: new Date().toISOString(), lastEditedTime: new Date().toISOString(), fields: { Name: "Ana Reyes order", Status: "Pending" }, cells: { name: "Ana Reyes order", status: "Pending" }, ...(trigger.config.on === "status_changed" ? { statusProperty: trigger.config.statusProperty ?? "Status", status: "Done", previousStatus: "Pending" } : {}) }, null, 2);
+  if (trigger.type === "trello_card") return JSON.stringify({ listId: "sample-list", listName: "To do", boardId: "sample-board", event: trigger.config.on, cardId: "sample-card", name: "Prepare order 1001", desc: "2 x Ube jam", url: "https://trello.com/c/sample", shortUrl: "https://trello.com/c/sample", ...(trigger.config.on === "moved_to_list" ? { previousListId: "sample-prev-list", previousListName: "Inbox" } : {}) }, null, 2);
   if (trigger.type === "payment_event") return JSON.stringify({ event: trigger.config.events[0] ?? "confirmed", dueId: "sample-due-id", reference: "ORD-1001", kind: "deposit", status: trigger.config.events[0] ?? "confirmed", amountCentavos: 35000, amountPesos: "350.00" }, null, 2);
   const fields = trigger.type === "form" ? trigger.config.fields : trigger.type === "sub_workflow" ? (trigger.config.fields ?? []) : null;
   if (!fields || fields.length === 0) return "{}";
@@ -1157,7 +1161,7 @@ function NextUp({ draft, id }: { draft: Draft; id: string }) {
   );
 }
 
-const TRIGGER_ORDER: Trigger["type"][] = ["manual", "webhook", "schedule", "form", "email", "payment", "booking_event", "payment_event", "sub_workflow", "meta_dm", "telegram_message", "shopify_order", "sheets_row", "calendar_event", "drive_file"];
+const TRIGGER_ORDER: Trigger["type"][] = ["manual", "webhook", "schedule", "form", "email", "payment", "booking_event", "payment_event", "sub_workflow", "meta_dm", "telegram_message", "shopify_order", "sheets_row", "calendar_event", "drive_file", "airtable_record", "notion_page", "trello_card"];
 const TRIGGER_DEFAULTS: Record<Trigger["type"], Trigger> = {
   manual: { type: "manual", config: {} },
   email: { type: "email", config: {} },
@@ -1174,6 +1178,9 @@ const TRIGGER_DEFAULTS: Record<Trigger["type"], Trigger> = {
   sheets_row: { type: "sheets_row", config: { tab: "Sheet1" } },
   calendar_event: { type: "calendar_event", config: { on: "created", minutesBefore: 60 } },
   drive_file: { type: "drive_file", config: { requireFile: false } },
+  airtable_record: { type: "airtable_record", config: { on: "created" } },
+  notion_page: { type: "notion_page", config: { on: "created" } },
+  trello_card: { type: "trello_card", config: { on: "created" } },
 };
 
 function TriggerPanel({ trigger, wf, onChange }: { trigger: Trigger; wf: Loaded; onChange: (t: Trigger) => void }) {
@@ -1204,6 +1211,7 @@ function TriggerPanel({ trigger, wf, onChange }: { trigger: Trigger; wf: Loaded;
         </select>
       </div>
       {(trigger.type === "sheets_row" || trigger.type === "calendar_event" || trigger.type === "drive_file") && <GoogleTriggerSettings trigger={trigger} workflowId={wf.id} onChange={onChange} />}
+      {(trigger.type === "airtable_record" || trigger.type === "notion_page" || trigger.type === "trello_card") && <RecordTriggerSettings trigger={trigger} workflowId={wf.id} onChange={onChange} />}
       {trigger.type === "shopify_order" && (
         <p className="muted hint">
           {t("Runs for each new order in your Shopify store. The order number, customer, total and items are available as trigger fields.")}{" "}

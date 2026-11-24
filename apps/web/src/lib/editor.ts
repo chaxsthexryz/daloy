@@ -27,6 +27,11 @@ const GOOGLE_TRIGGER_FIELDS: Record<string, string[]> = {
   calendar_event: ["title", "start", "end", "location", "description", "link", "eventId", "event"],
   drive_file: ["name", "mimeType", "size", "link", "createdTime", "fileId", "fileSkipped"],
 };
+const RECORD_TRIGGER_FIELDS: Record<string, string[]> = {
+  airtable_record: ["recordId", "fields", "cells", "createdTime", "event", "status", "previousStatus", "baseId", "tableId"],
+  notion_page: ["pageId", "title", "fields", "cells", "url", "createdTime", "lastEditedTime", "event", "status", "previousStatus", "databaseId"],
+  trello_card: ["cardId", "name", "desc", "url", "shortUrl", "listId", "listName", "boardId", "event", "previousListId", "previousListName"],
+};
 const BOOKING_EVENT_FIELDS = ["event", "bookingId", "reference", "resourceId", "resourceName", "start", "end", "minutes", "timezone", "status", "version", "mode", "nights", "checkIn", "checkOut", "conversationId"];
 const PAYMENT_EVENT_FIELDS = ["event", "dueId", "reference", "kind", "status", "amountCentavos", "amountPesos", "bookingId", "conversationId"];
 
@@ -64,6 +69,8 @@ export function insertables(draft: Draft, id: string): string[] {
                 ? PAYMENT_EVENT_FIELDS
                 : GOOGLE_TRIGGER_FIELDS[trigger.type]
                   ? GOOGLE_TRIGGER_FIELDS[trigger.type]!
+                : RECORD_TRIGGER_FIELDS[trigger.type]
+                  ? RECORD_TRIGGER_FIELDS[trigger.type]!
                 : trigger.type === "form" || trigger.type === "webhook" || trigger.type === "sub_workflow"
                   ? (trigger.config.fields ?? []).map((f) => f.name)
                   : [];

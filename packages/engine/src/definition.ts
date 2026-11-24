@@ -445,6 +445,37 @@ const triggerSchema = z.discriminatedUnion("type", [
   }),
   // drive_file: a new file in the folder chosen for Google Drive. requireFile: only files Daloy can attach (type and size limits).
   z.object({ type: z.literal("drive_file"), config: z.strictObject({ requireFile: z.boolean().default(false) }).default({ requireFile: false }) }),
+  // G5 (decision 0134): Record-tool triggers on the connections chosen in Apps, read by the worker's poll.
+  z.object({
+    type: z.literal("airtable_record"),
+    config: z
+      .strictObject({
+        on: z.enum(["created", "status_changed"]).default("created"),
+        statusField: z.string().trim().min(1).max(100).optional(),
+      })
+      .default({ on: "created" })
+      .superRefine((c, ctx) => {
+        if (c.on === "status_changed" && !c.statusField) ctx.addIssue({ code: "custom", path: ["statusField"], message: "set statusField when watching for status changes" });
+        if (c.on === "created" && c.statusField !== undefined) ctx.addIssue({ code: "custom", path: ["statusField"], message: "statusField is only for status_changed" });
+      }),
+  }),
+  z.object({
+    type: z.literal("notion_page"),
+    config: z
+      .strictObject({
+        on: z.enum(["created", "status_changed"]).default("created"),
+        statusProperty: z.string().trim().min(1).max(100).optional(),
+      })
+      .default({ on: "created" })
+      .superRefine((c, ctx) => {
+        if (c.on === "status_changed" && !c.statusProperty) ctx.addIssue({ code: "custom", path: ["statusProperty"], message: "set statusProperty when watching for status changes" });
+        if (c.on === "created" && c.statusProperty !== undefined) ctx.addIssue({ code: "custom", path: ["statusProperty"], message: "statusProperty is only for status_changed" });
+      }),
+  }),
+  z.object({
+    type: z.literal("trello_card"),
+    config: z.strictObject({ on: z.enum(["created", "moved_to_list"]).default("created") }).default({ on: "created" }),
+  }),
 ]);
 export type Trigger = z.infer<typeof triggerSchema>;
 

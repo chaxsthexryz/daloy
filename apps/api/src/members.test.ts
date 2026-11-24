@@ -234,6 +234,7 @@ describe("role permissions", () => {
       ["post", "/settings/connections/google-sheets/pick", only, {}],
       ["get", "/settings/connections/google-sheets/tabs", only],
       ["get", "/triggers/google/sheets_row", operate],
+      ["get", "/triggers/records/airtable_record", operate],
       ["post", "/settings/connections/google-drive/create", only],
       ["post", "/settings/connections/google-drive/pick", only, {}],
       ["post", "/settings/connections/google-calendar/create", only, {}],
