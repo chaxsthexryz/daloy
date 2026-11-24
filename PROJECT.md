@@ -408,3 +408,12 @@ C3 and C4 cover T7 (answer from my price list). Decisions from 0115 (0111 to 011
 
 - [x] A1. Internal Super-Admin page (`#/admin`, gated by `PLATFORM_ADMINS` env allowlist, never a workspace role): total and new users/workspaces, cross-tenant AI/SMS/run usage, failed and `needs_review` counts, plan overrides, `SHARED_MAIL` approval, and read-only run metadata without decrypting customer secrets. Decision 0122, migration 0053.
 - [x] A2. Error reporting hook (Sentry or GlitchTip DSN optional in `api`, `worker`, and `web`) and uptime monitor setup alongside `docs/deployment.md`. Decision 0124.
+
+## Rebrand to kymavo (23 November 2026, orchestrator: Neon)
+
+The product name is now `kymavo`, always lowercase. Logo marks stay as they are. Onboarding files (`Onboarding.tsx`, `onboarding.css`, `lib/onboarding*.ts`, `lib/locale-onboarding.ts`, `e2e/onboarding.spec.ts`) are left alone until the owner finishes that design. Internal identifiers (`@daloy/*`, `daloy_session`, `Daloy-Signature` headers, `DALOY_*` env vars, database role and volume names) stay for now and keep working.
+
+- [ ] K1. Visible brand text in the web app, API and worker messages, emails, templates, tests, `site/`, README and docs (not `docs/decisions`). (claimed: neon, branch neon/k1-kymavo-brand)
+- [ ] K2. Package names, `DALOY_*` env vars, localStorage keys and events, with the old names still read for a while. Not started.
+- [ ] K3. Infra names (database role, volumes, Docker project, CI names) with a backup and migration. Needs the owner's explicit OK. Not started.
+- [ ] K4. Full lint, typecheck, unit and e2e run after K1 to K3. Not started.
