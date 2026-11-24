@@ -55,7 +55,7 @@ const asBadRequest = (err: unknown): never => {
 
 /**
  * Easy connect for Sheets and Drive after a Google sign-in (plan 6.1): create a sheet or folder, or pick one in the
- * Google Picker. The page sends only the picked id; Daloy reads it with its own drive.file grant, which Google refuses
+ * Google Picker. The page sends only the picked id; kymavo reads it with its own drive.file grant, which Google refuses
  * for any file the owner did not pick, so a forged id gains nothing. Owners only, like every connection route.
  */
 @Controller("settings/connections")
@@ -76,23 +76,23 @@ export class GoogleController {
   @UseGuards(RateLimit(10))
   async pickerToken(@CurrentUser() user: SessionUser, @Param("app", app) provider: "google_sheets" | "google_drive") {
     const g = this.config.providers.googleOAuth;
-    if (!g?.pickerApiKey || !g.projectNumber) throw new BadRequestException("The Google Picker is not set up on this installation. Use Create instead, or ask the person who runs Daloy to set GOOGLE_PICKER_API_KEY and GOOGLE_PROJECT_NUMBER.");
+    if (!g?.pickerApiKey || !g.projectNumber) throw new BadRequestException("The Google Picker is not set up on this installation. Use Create instead, or ask the person who runs kymavo to set GOOGLE_PICKER_API_KEY and GOOGLE_PROJECT_NUMBER.");
     const conn = await this.google(user.workspaceId, provider);
     const t = await pickerToken(this.db, this.config.secretsKey, this.config.providers, user.workspaceId, provider, conn).catch(asBadRequest);
     return { accessToken: t.accessToken, expiresAt: t.expiresAt, apiKey: g.pickerApiKey, appId: g.projectNumber };
   }
 
-  /** Create a sheet for me: a spreadsheet named "Daloy requests" in the owner's Drive, its first tab chosen. */
+  /** Create a sheet for me: a spreadsheet named "kymavo requests" in the owner's Drive, its first tab chosen. */
   @Post("google-sheets/create")
   @HttpCode(200)
   @UseGuards(RateLimit(5))
   async createSheet(@CurrentUser() user: SessionUser) {
     const conn = await this.google(user.workspaceId, "google_sheets");
-    const made = await this.call(user.workspaceId, "google_sheets", conn, (auth) => createSpreadsheet(this.config.providers, auth, "Daloy requests"));
+    const made = await this.call(user.workspaceId, "google_sheets", conn, (auth) => createSpreadsheet(this.config.providers, auth, "kymavo requests"));
     return this.saveSheet(user.workspaceId, made.spreadsheetId, made.title, made.tabs, undefined);
   }
 
-  /** A picked sheet, or another tab of the chosen one. Read with Daloy's own grant first. */
+  /** A picked sheet, or another tab of the chosen one. Read with kymavo's own grant first. */
   @Post("google-sheets/pick")
   @HttpCode(200)
   @UseGuards(RateLimit(10))
@@ -112,18 +112,18 @@ export class GoogleController {
     return this.call(user.workspaceId, "google_sheets", conn, (auth) => sheetInfo(this.config.providers, auth, id));
   }
 
-  /** Daloy creates a "Daloy uploads" folder in the owner's My Drive. */
+  /** kymavo creates a "kymavo uploads" folder in the owner's My Drive. */
   @Post("google-drive/create")
   @HttpCode(200)
   @UseGuards(RateLimit(5))
   async createFolder(@CurrentUser() user: SessionUser) {
     const conn = await this.google(user.workspaceId, "google_drive");
-    const folder = await this.call(user.workspaceId, "google_drive", conn, (auth) => createDriveFolder(this.config.providers, auth, "Daloy uploads"));
+    const folder = await this.call(user.workspaceId, "google_drive", conn, (auth) => createDriveFolder(this.config.providers, auth, "kymavo uploads"));
     await setDestination(this.db, user.workspaceId, "google_drive", folder);
     return folder;
   }
 
-  /** A picked folder, in My Drive or a shared drive. Read with Daloy's own grant first. */
+  /** A picked folder, in My Drive or a shared drive. Read with kymavo's own grant first. */
   @Post("google-drive/pick")
   @HttpCode(200)
   @UseGuards(RateLimit(10))
@@ -135,7 +135,7 @@ export class GoogleController {
   }
 
   /**
-   * A template picked for a "Make a document" step. Read with Daloy's own grant first, like every pick. Nothing is saved
+   * A template picked for a "Make a document" step. Read with kymavo's own grant first, like every pick. Nothing is saved
    * here: the editor keeps the id in the step, so each workflow can use its own template.
    */
   @Post("google-drive/template")

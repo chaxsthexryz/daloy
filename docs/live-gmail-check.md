@@ -7,7 +7,7 @@ Status: run on 15 November 2026 at commit 9df014d (N2a). Results are at the end 
 ## Before you start
 
 - A Gmail account with 2-Step Verification turned on, and an app password created for it ([Google's instructions](https://support.google.com/accounts/answer/185833)).
-- Daloy running with `docker compose up` and seeded. `PUBLIC_URL` must be the address you open the console on, or the confirmation link points somewhere else.
+- kymavo running with `docker compose up` and seeded. `PUBLIC_URL` must be the address you open the console on, or the confirmation link points somewhere else.
 - A second account to receive mail, so you can see a customer's copy.
 
 ## Steps
@@ -20,7 +20,7 @@ Status: run on 15 November 2026 at commit 9df014d (N2a). Results are at the end 
 6. Revoke the app password in your Google account. Send another inquiry. Expect the run to fail with "Gmail rejected the app password", the status to read "Google rejected the app password", and no email from any other address.
 7. Create a new app password, select Replace password, then Send a test email to me. The status returns to "Sending from this address".
 8. Select Disconnect. Send an inquiry: expect a failed run saying Gmail is disconnected, and no email.
-9. With two Daloy accounts each connected to a different Gmail account, send one inquiry to each form and check that each reply comes from its own owner's address.
+9. With two kymavo accounts each connected to a different Gmail account, send one inquiry to each form and check that each reply comes from its own owner's address.
 
 ## Booking reminder check (N2a)
 
@@ -30,7 +30,7 @@ Run this after step 5, while Gmail works. Publish a workflow whose form has an e
 
 ### 15 November 2026, commit 9df014d (N2a)
 
-Setup: a disposable Compose project (`daloy-n2a`, host ports 53000, 55432, 51025 and 58025, a throwaway `SECRETS_KEY`, its own volume), built from 9df014d and removed afterwards. The development stack was not touched. Two throwaway Daloy owners. Two real Gmail accounts with app passwords and one other inbox as the customer and guest, all owned by the person running the check. They typed every address and app password themselves; none is recorded here.
+Setup: a disposable Compose project (`daloy-n2a`, host ports 53000, 55432, 51025 and 58025, a throwaway `SECRETS_KEY`, its own volume), built from 9df014d and removed afterwards. The development stack was not touched. Two throwaway kymavo owners. Two real Gmail accounts with app passwords and one other inbox as the customer and guest, all owned by the person running the check. They typed every address and app password themselves; none is recorded here.
 
 1. Pass. Business name, inquiry inbox and reply address saved.
 2. Pass. Status read "Waiting for you to confirm the test email".

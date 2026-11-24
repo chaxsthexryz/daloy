@@ -13,7 +13,7 @@ test("a live run waits for approval, and the emailed link approves it once", asy
   await page.getByLabel("Password").fill("e2e test password 1");
   await page.getByRole("button", { name: "Create account" }).click();
   await expect(page.getByRole("heading", { name: "Automations", exact: true })).toBeVisible();
-  // E10: the approval page carries this workspace's brand, never the Daloy mark.
+  // E10: the approval page carries this workspace's brand, never the kymavo mark.
   expect((await page.request.put("/settings/email/profile", { data: { businessName: "Sampaguita Bakery", website: null, inquiryEmail: null, replyTo: null } })).status()).toBe(204);
   expect((await page.request.put("/settings/brand", { data: { accent: "#1f6b45" } })).status()).toBe(200);
   await page.goto("/#/new");
@@ -40,7 +40,7 @@ test("a live run waits for approval, and the emailed link approves it once", asy
   await expect(approverPage.getByRole("heading", { name: "Approval requested" })).toBeVisible();
   await expect(approverPage.getByText("Refund 40 EUR to Ana?")).toBeVisible();
   await expect(approverPage.getByText("Sampaguita Bakery")).toBeVisible();
-  await expect(approverPage.getByText("Daloy", { exact: true })).toHaveCount(0);
+  await expect(approverPage.getByText("kymavo", { exact: true })).toHaveCount(0);
   await expect(approverPage.getByText("Nothing is decided until you choose one of the two buttons.")).toBeVisible();
   await expect(approverPage.getByRole("button", { name: "Approve" })).toHaveCSS("background-color", "rgb(31, 107, 69)");
   await approverPage.setViewportSize({ width: 390, height: 844 });

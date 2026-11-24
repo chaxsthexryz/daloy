@@ -145,7 +145,7 @@ describe("POST /runs/:id/explanation/reword", () => {
     expect(body).toEqual({ text: reply });
     expect(asked).toHaveLength(1);
     const sent = asked[0]!.messages;
-    expect(sent[0]!.content.startsWith("You explain why a Daloy automation stopped")).toBe(true);
+    expect(sent[0]!.content.startsWith("You explain why a kymavo automation stopped")).toBe(true);
     const wire = JSON.stringify(asked[0]);
     for (const s of ["Maria", "maria@example.com", "3pm", "api.example.com", "token", "s3cret", "send_to_maria", "maria-vip-clients"]) expect(wire).not.toContain(s);
     const user = JSON.parse(sent.find((m) => m.role === "user")!.content) as { facts: object };

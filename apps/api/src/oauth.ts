@@ -33,7 +33,7 @@ export class OAuthStartController {
 
 /**
  * Where providers send the browser back. Outside SessionGuard, because Microsoft's administrator consent comes back
- * without a Daloy session; that answer is the only one handled without a session, and it stores nothing. Every other
+ * without a kymavo session; that answer is the only one handled without a session, and it stores nothing. Every other
  * answer needs the signed-in member who started the flow, in the same workspace, still an owner. The browser is sent
  * to a fixed page with an outcome from a closed list; no parameter picks the target and provider text never reaches it.
  */
@@ -71,7 +71,7 @@ export class OAuthCallbackController {
     if (str("error")) return done(def.slug, def.outcome(str("error"), str("error_description")));
     try {
       const outcome = await finishFlow(this.db, this.config.secretsKey, this.config.providers, this.config.publicUrl, def, user.workspaceId, str("code"), flow.verifier);
-      // Easy connect for Calendar (decision 0064): Daloy makes its own calendar. If Google refuses now, the connection
+      // Easy connect for Calendar (decision 0064): kymavo makes its own calendar. If Google refuses now, the connection
       // stays and the card offers "Create the calendar".
       if (outcome === "connected" && def.provider === "google_calendar") await ensureCalendar(this.db, this.config.secretsKey, this.config.providers, user.workspaceId).catch((err: unknown) => (err instanceof ProviderError ? undefined : Promise.reject(err)));
       return done(def.slug, outcome);

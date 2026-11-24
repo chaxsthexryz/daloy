@@ -34,7 +34,7 @@ const nextIp = () => `10.2.${(ip >> 8) & 255}.${++ip & 255}`;
 const sent: { to: string; subject: string; text: string }[] = [];
 const mail: MailDeps = {
   installation: {
-    from: "Daloy <daloy@localhost>",
+    from: "kymavo <daloy@localhost>",
     transport: { sendMail: async (m: { to: string; subject: string; text: string }) => (sent.push({ to: String(m.to), subject: m.subject, text: m.text }), {}) } as unknown as MailDeps["installation"]["transport"],
   },
   gmail: () => {

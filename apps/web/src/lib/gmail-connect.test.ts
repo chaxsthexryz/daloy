@@ -21,9 +21,9 @@ describe("Gmail card", () => {
   it("offers Connect Gmail with Google first, says reading mail still uses an app password, and keeps the form under Advanced", () => {
     const html = render(createElement(GmailCard, { data: base, google: true, outcome: "missing_scope", onChange }));
     expect(html).toContain(">Connect Gmail with Google</button>");
-    expect(html).toContain("Daloy cannot read your mail");
+    expect(html).toContain("kymavo cannot read your mail");
     expect(html).toContain("still connect their inbox with an app password");
-    expect(html).toContain("Some of the permissions Daloy asked for were not allowed");
+    expect(html).toContain("Some of the permissions kymavo asked for were not allowed");
     expect(html).toMatch(/<details><summary>Advanced: use a key or token instead<\/summary>.*Use an app password instead.*App password.*<\/details>/s);
     expect(render(createElement(GmailCard, { data: base, google: true, onChange }), "tl")).toContain("Ikonekta ang Gmail gamit ang Google");
   });
@@ -34,8 +34,8 @@ describe("Gmail card", () => {
     expect(html).toContain("Send a test email to me");
     expect(html).toContain("Reconnect Gmail");
     expect(html).toContain(">Disconnect</button>");
-    const failed = render(createElement(GmailCard, { data: { ...base, sender: { ...google, status: "failed", lastError: "Gmail no longer accepts Daloy's access. Reconnect Gmail in Apps." } }, google: true, onChange }));
-    expect(failed).toContain("Google no longer accepts Daloy&#x27;s access");
+    const failed = render(createElement(GmailCard, { data: { ...base, sender: { ...google, status: "failed", lastError: "Gmail no longer accepts kymavo's access. Reconnect Gmail in Apps." } }, google: true, onChange }));
+    expect(failed).toContain("Google no longer accepts kymavo&#x27;s access");
     expect(failed).toContain("Reconnect Gmail to send again. Nothing is sent from another address");
   });
 });

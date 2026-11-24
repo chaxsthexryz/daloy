@@ -12,7 +12,7 @@ import { claimVerifyToken, connectGmail, issueVerifyToken, readSender, saveProfi
 import { sharedMailUsage, users } from "./schema";
 
 // jsonTransport builds the full message without sending it, so the test can read what would go out.
-const mailer: Mailer = { transport: nodemailer.createTransport({ jsonTransport: true }), from: "Daloy <daloy@example.com>" };
+const mailer: Mailer = { transport: nodemailer.createTransport({ jsonTransport: true }), from: "kymavo <daloy@example.com>" };
 const email = (to: string) => ({ to, subject: "New inquiry", text: "Hello" });
 
 describe("sendEmail", () => {
@@ -100,7 +100,7 @@ describe("sendAs", () => {
   let seq = 0;
   const deps = (sharedMail: MailDeps["sharedMail"] = "open"): MailDeps => ({
     installation: {
-      from: "Daloy <daloy@localhost>",
+      from: "kymavo <daloy@localhost>",
       transport: {
         sendMail: async (msg: SendMailOptions) => {
           const info = await nodemailer.createTransport({ jsonTransport: true }).sendMail(msg);

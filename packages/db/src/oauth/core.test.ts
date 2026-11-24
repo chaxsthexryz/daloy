@@ -131,7 +131,7 @@ describe("saving a grant", () => {
     expect(blob).toMatchObject({ v: 1, accessToken: expect.stringMatching(/^test-access-/), refreshToken: expect.stringMatching(/^test-refresh-/) });
   });
 
-  it("saves nothing when the person granted less than Daloy needs", async () => {
+  it("saves nothing when the person granted less than kymavo needs", async () => {
     const ws = await newUser();
     Object.assign(app(), { consent: "narrow", grantScopes: ["read"] });
     expect(await consent(ws)).toBe("missing_scope");

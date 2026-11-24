@@ -98,7 +98,7 @@ const ignoreProviderError = (err: unknown) => {
 const telegramInput = z.strictObject({
   token: z.string().trim().regex(/^\d{6,12}:[A-Za-z0-9_-]{30,50}$/, "Paste the bot token from BotFather, like 123456789:AA..."),
   chatId: z.string().trim().regex(/^(-?\d{1,20}|@[A-Za-z][A-Za-z0-9_]{4,31})$/, "Enter the chat id (a number) or the public @name"),
-  // T9: Telegram sends the bot's new messages to Daloy, for the Telegram message trigger.
+  // T9: Telegram sends the bot's new messages to kymavo, for the Telegram message trigger.
   receive: z.boolean().optional(),
 });
 const telegramChatsInput = z.strictObject({ token: telegramInput.shape.token });
@@ -256,7 +256,7 @@ export class ConnectionsController {
     await setDestination(this.db, user.workspaceId, "google_sheets", await this.destination(user.workspaceId, JSON.parse(conn.credential) as ServiceAccount, body));
   }
 
-  /** Adds a visible test row, which proves Daloy can write (a shared-as-viewer sheet passes the read check but fails here). */
+  /** Adds a visible test row, which proves kymavo can write (a shared-as-viewer sheet passes the read check but fails here). */
   @Post("google-sheets/test")
   @HttpCode(200)
   @UseGuards(RateLimit(5))
@@ -265,7 +265,7 @@ export class ConnectionsController {
     const stamp = new Date().toISOString();
     // force: with a Google sign-in, a test proves the grant itself still works (decision 0058).
     return this.test(user.workspaceId, "google_sheets", conn, () =>
-      withGoogle(this.db, this.config.secretsKey, this.urls, user.workspaceId, "google_sheets", conn, (auth) => appendRow(this.urls, auth, conn.destination as SheetDestination, [`TEST-${stamp}`, stamp, "Test row from Daloy. You can delete this row."]), { force: true }),
+      withGoogle(this.db, this.config.secretsKey, this.urls, user.workspaceId, "google_sheets", conn, (auth) => appendRow(this.urls, auth, conn.destination as SheetDestination, [`TEST-${stamp}`, stamp, "Test row from kymavo. You can delete this row."]), { force: true }),
     );
   }
 
@@ -286,7 +286,7 @@ export class ConnectionsController {
     return this.get(user);
   }
 
-  /** Makes and removes a test event, which proves Daloy can write. */
+  /** Makes and removes a test event, which proves kymavo can write. */
   @Post("google-calendar/test")
   @HttpCode(200)
   @UseGuards(RateLimit(5))
@@ -367,7 +367,7 @@ export class ConnectionsController {
   @UseGuards(RateLimit(5))
   async testTelegram(@CurrentUser() user: SessionUser) {
     const conn = await this.connection(user.workspaceId, "telegram");
-    return this.test(user.workspaceId, "telegram", conn, () => telegramSend(this.urls, conn.credential, conn.destination!.chatId!, "Test message from Daloy."));
+    return this.test(user.workspaceId, "telegram", conn, () => telegramSend(this.urls, conn.credential, conn.destination!.chatId!, "Test message from kymavo."));
   }
 
   /** Connect or Reconnect PayMongo. The webhook path is made once and kept, so the URL given to PayMongo keeps working. */
@@ -405,7 +405,7 @@ export class ConnectionsController {
     return this.get(user);
   }
 
-  /** A record needs field names Daloy does not know, so this repeats the read check instead of adding a row. */
+  /** A record needs field names kymavo does not know, so this repeats the read check instead of adding a row. */
   @Post("airtable/test")
   @HttpCode(200)
   @UseGuards(RateLimit(5))
@@ -430,7 +430,7 @@ export class ConnectionsController {
   @UseGuards(RateLimit(5))
   async testNotion(@CurrentUser() user: SessionUser) {
     const conn = await this.connection(user.workspaceId, "notion");
-    return this.test(user.workspaceId, "notion", conn, () => this.auth(user, "notion", conn, (t) => notionAddPage(this.urls, t, conn.destination as { databaseId: string; titleProperty: string }, "Test page from Daloy. You can delete this page.", {})));
+    return this.test(user.workspaceId, "notion", conn, () => this.auth(user, "notion", conn, (t) => notionAddPage(this.urls, t, conn.destination as { databaseId: string; titleProperty: string }, "Test page from kymavo. You can delete this page.", {})));
   }
 
   /** Connect or Reconnect Trello: the key and token are saved together as one secret, never returned. */
@@ -449,7 +449,7 @@ export class ConnectionsController {
   @UseGuards(RateLimit(5))
   async testTrello(@CurrentUser() user: SessionUser) {
     const conn = await this.connection(user.workspaceId, "trello");
-    return this.test(user.workspaceId, "trello", conn, () => this.auth(user, "trello", conn, (t) => trelloAddCard(this.urls, trelloAuthOf(conn.authMethod, t), conn.destination!.listId!, "Test card from Daloy. You can archive this card.", "")));
+    return this.test(user.workspaceId, "trello", conn, () => this.auth(user, "trello", conn, (t) => trelloAddCard(this.urls, trelloAuthOf(conn.authMethod, t), conn.destination!.listId!, "Test card from kymavo. You can archive this card.", "")));
   }
 
   @Get("slack/channels")
@@ -473,7 +473,7 @@ export class ConnectionsController {
   @UseGuards(RateLimit(5))
   async testSlack(@CurrentUser() user: SessionUser) {
     const conn = await this.connection(user.workspaceId, "slack");
-    return this.test(user.workspaceId, "slack", conn, () => slackPost(this.urls, slackToken(conn), conn.destination!.channelId!, "Test message from Daloy. Office requests will be posted here."));
+    return this.test(user.workspaceId, "slack", conn, () => slackPost(this.urls, slackToken(conn), conn.destination!.channelId!, "Test message from kymavo. Office requests will be posted here."));
   }
 
   /** Connect or Reconnect Outlook, from before the shared start route (decision 0058): the same flow as outlook/oauth/start. */
@@ -512,7 +512,7 @@ export class ConnectionsController {
   @UseGuards(RateLimit(5))
   async testTeams(@CurrentUser() user: SessionUser) {
     const conn = await this.connection(user.workspaceId, "teams");
-    return this.test(user.workspaceId, "teams", conn, () => teamsPost(this.urls, conn.credential, "Test message from Daloy. Approved purchase requests will be noted in this channel."));
+    return this.test(user.workspaceId, "teams", conn, () => teamsPost(this.urls, conn.credential, "Test message from kymavo. Approved purchase requests will be noted in this channel."));
   }
 
   /** Connect, Reconnect or Replace link for Discord: a webhook URL from the channel's Integrations settings. The URL is a credential, so it is stored encrypted and never returned. */
@@ -530,7 +530,7 @@ export class ConnectionsController {
   @UseGuards(RateLimit(5))
   async testDiscord(@CurrentUser() user: SessionUser) {
     const conn = await this.connection(user.workspaceId, "discord");
-    return this.test(user.workspaceId, "discord", conn, () => discordPost(this.urls, conn.credential, "Test message from Daloy. Your automations can post to this channel."));
+    return this.test(user.workspaceId, "discord", conn, () => discordPost(this.urls, conn.credential, "Test message from kymavo. Your automations can post to this channel."));
   }
 
   /** Connect or Reconnect Facebook Messenger and Instagram DM. Preserves existing webhookPath across updates. */
@@ -585,7 +585,7 @@ export class ConnectionsController {
 
   /**
    * Connect or Reconnect Shopify (decision 0105). The shop and token are checked with one read call, which also lists the
-   * scopes the app lacks. orders/create is then registered at Daloy's address for this workspace. If Shopify refuses the
+   * scopes the app lacks. orders/create is then registered at kymavo's address for this workspace. If Shopify refuses the
    * webhook (it only delivers to a public https address) the connection is still saved and the answer says why.
    * The path of the address and the app secret are kept when the token is replaced.
    */
@@ -599,7 +599,7 @@ export class ConnectionsController {
     // A saved secret is only kept for the same app: the same client ID, or another token of an older app.
     const sameApp = oldCred && (body.clientId !== undefined ? oldCred.clientId === body.clientId : oldCred.accessToken !== undefined);
     const appSecret = body.appSecret ?? (sameApp ? oldCred.appSecret : undefined);
-    if (!appSecret) throw new BadRequestException("Paste the app's client secret. Daloy uses it to check that orders really come from Shopify.");
+    if (!appSecret) throw new BadRequestException("Paste the app's client secret. kymavo uses it to check that orders really come from Shopify.");
     const cred: ShopifyCredential = body.clientId !== undefined ? { appSecret, clientId: body.clientId } : { appSecret, accessToken: body.accessToken! };
     const conn = await shopifyConn(this.urls, shop, cred).catch(this.asBadRequest(user.workspaceId));
     const info = await checkShopifyConnection(this.urls, conn).catch(this.asBadRequest(user.workspaceId));
@@ -648,7 +648,7 @@ export class ConnectionsController {
     return withRecordAuth(this.db, this.config.secretsKey, this.urls, user.workspaceId, this.config.oauthProviders.find((d) => d.provider === provider), conn, fn, { force: true });
   }
 
-  /** Best effort: takes Daloy's orders/create subscription out of the store before the token goes. Shopify drops a dead one after 8 failed deliveries anyway. */
+  /** Best effort: takes kymavo's orders/create subscription out of the store before the token goes. Shopify drops a dead one after 8 failed deliveries anyway. */
   private async dropShopifyWebhook(workspaceId: string) {
     const conn = await connectionCredential(this.db, this.config.secretsKey, workspaceId, "shopify");
     if (!conn || conn.status !== "active") return;
@@ -660,7 +660,7 @@ export class ConnectionsController {
     }
   }
 
-  /** Best effort: the bot stops sending to Daloy and can list its chats again. The hook refuses calls once the row is gone anyway. */
+  /** Best effort: the bot stops sending to kymavo and can list its chats again. The hook refuses calls once the row is gone anyway. */
   private async dropTelegramWebhook(workspaceId: string) {
     const conn = await connectionCredential(this.db, this.config.secretsKey, workspaceId, "telegram");
     if (conn?.destination?.webhookPath) await telegramDeleteWebhook(this.urls, conn.credential).catch(ignoreProviderError);

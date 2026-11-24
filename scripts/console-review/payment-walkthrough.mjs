@@ -16,7 +16,7 @@ for (const name of keys) {
   assert.deepEqual(captures.filter(c => c.name === name).map(c => c.width).sort((a, b) => a - b), [390, 1440], name);
 }
 const template = (await readFile(new URL("./walkthrough.html", import.meta.url), "utf8"))
-  .replaceAll("1180", "1440").replaceAll("Daloy console review", "Daloy onboarding and payments");
+  .replaceAll("1180", "1440").replaceAll("kymavo console review", "kymavo onboarding and payments");
 const data = JSON.stringify({ captures, commit: env.GITHUB_SHA ?? "" }).replaceAll("<", "\\u003c");
 const output = resolve("test-results/daloy-onboarding-payments.html");
 await writeFile(output, template.replace("<!-- WALKTHROUGH_DATA -->", () => data));

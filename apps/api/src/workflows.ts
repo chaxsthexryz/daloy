@@ -316,7 +316,7 @@ export class WorkflowsController {
     const plan = owner?.plan ? PLANS[owner.plan as keyof typeof PLANS] : undefined;
     if (!plan) return;
     if (trigger.type === "schedule" && fastestGapMinutes(trigger.config.cron) < plan.minScheduleMinutes) {
-      throw new BadRequestException(`Your ${plan.label} plan runs a schedule at most once every ${plan.minScheduleMinutes} minutes. Pick a less frequent schedule, or ask Daloy to move you to a larger plan.`);
+      throw new BadRequestException(`Your ${plan.label} plan runs a schedule at most once every ${plan.minScheduleMinutes} minutes. Pick a less frequent schedule, or ask kymavo to move you to a larger plan.`);
     }
     const liveNow = await tx
       .selectDistinct({ id: workflows.id })
@@ -325,7 +325,7 @@ export class WorkflowsController {
       .where(eq(workflows.userId, workspaceId));
     // An already live workflow can always be published again, even if a plan change left the workspace over its limit.
     if (liveNow.length >= plan.automations && !liveNow.some((w) => w.id === id)) {
-      throw new ForbiddenException(`Your ${plan.label} plan allows ${plan.automations} live automation${plan.automations === 1 ? "" : "s"}. Delete one, or ask Daloy to move you to a larger plan.`);
+      throw new ForbiddenException(`Your ${plan.label} plan allows ${plan.automations} live automation${plan.automations === 1 ? "" : "s"}. Delete one, or ask kymavo to move you to a larger plan.`);
     }
   }
 

@@ -36,7 +36,7 @@ const mailSent: { to: string; subject: string; text: string }[] = [];
 const mail: MailDeps = {
   ...mailDeps(),
   installation: {
-    from: "Daloy <daloy@localhost>",
+    from: "kymavo <daloy@localhost>",
     transport: {
       sendMail: async (msg: { to?: unknown; subject?: unknown; text?: unknown }) => {
         mailSent.push({ to: String(msg.to ?? ""), subject: String(msg.subject ?? ""), text: String(msg.text ?? "") });
@@ -204,7 +204,7 @@ describe("Meta webhook conversations", () => {
     await drive(one!.id);
     await runDueDeliveries(db, secretsKey, fake.urls);
     const sent = fake.meta.messages[0]!.text;
-    // Daloy's own reply comes back marked, and once more without the mark (Instagram may drop it): neither pauses.
+    // kymavo's own reply comes back marked, and once more without the mark (Instagram may drop it): neither pauses.
     await post(s.path, [echo("psid-echo", "m_own_1", sent, "daloy"), echo("psid-echo", "m_own_2", sent)]);
     let c = await conversationOf(s.userId, "psid-echo");
     expect(c.status).toBe("bot");

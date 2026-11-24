@@ -51,6 +51,6 @@ it("seeds the published examples and a disconnected email-in draft, and is safe 
   expect(await db.select().from(requests)).toEqual([]);
   expect(wfs.find((w) => w.slug === "office-requests")?.setup).toMatchObject({ template: "office-request" });
   // The demo owner connects no Gmail account, so its mail goes through the installation server (Mailpit locally).
-  expect(await readProfile(db, user!.id)).toMatchObject({ businessName: "Daloy Demo Office", inquiryEmail: DEMO_EMAIL });
-  expect(await resolveSender(db, key, user!.id)).toMatchObject({ kind: "installation", fromName: "Daloy Demo Office" });
+  expect(await readProfile(db, user!.id)).toMatchObject({ businessName: "kymavo Demo Office", inquiryEmail: DEMO_EMAIL });
+  expect(await resolveSender(db, key, user!.id)).toMatchObject({ kind: "installation", fromName: "kymavo Demo Office" });
 }, 60_000);

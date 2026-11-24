@@ -29,7 +29,7 @@ export function BrowserActions({ actions, onChange }: { actions: BrowserAction[]
   return (
     <fieldset>
       <legend>{t("Actions on the page")}</legend>
-      <p className="muted hint">{t("In order, after the page opens. A selector is CSS, such as .price or #order-button. Daloy never types into password or card fields.")}</p>
+      <p className="muted hint">{t("In order, after the page opens. A selector is CSS, such as .price or #order-button. kymavo never types into password or card fields.")}</p>
       {actions.map((a, i) => {
         const n = i + 1;
         const input = (label: string, value: string, change: (v: string) => void) => <input aria-label={t("Action {number} {field}", { number: n, field: t(label) })} placeholder={t(label)} value={value} onChange={(e) => change(e.target.value)} />;

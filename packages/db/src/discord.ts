@@ -48,7 +48,7 @@ export async function discordPost(urls: ProviderUrls, webhookUrl: string, text: 
   if (!url) throw new ProviderError("The Discord webhook link is not a Discord address. Paste the link again.", "auth");
   const res = await call(`${url}?wait=true`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ content: content.value, allowed_mentions: { parse: [] } }) }, urls.timeoutMs ?? 10_000, true, "Discord");
   if (res.status === 200 || res.status === 204) return { posted: true, ...(typeof res.body.id === "string" ? { messageId: res.body.id } : {}) };
-  if (res.status === 429) throw new ProviderError("Discord is limiting requests right now. Daloy will try again.", "quota", waitMs(res.headers, res.body));
+  if (res.status === 429) throw new ProviderError("Discord is limiting requests right now. kymavo will try again.", "quota", waitMs(res.headers, res.body));
   if (res.status === 404) throw new ProviderError("The Discord webhook was deleted. Create a new webhook in the channel's settings and paste its link in Apps.", "auth");
   if (res.status === 401 || res.status === 403) throw new ProviderError("Discord does not accept this webhook any more. Create a new webhook in the channel's settings and paste its link in Apps.", "auth");
   if (res.status >= 500) throw new ProviderError(`Discord answered ${res.status}.`, "ambiguous");

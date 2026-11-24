@@ -35,7 +35,7 @@ describe("failureFacts", () => {
     ["mail_sender", "Could not reach the mail server"],
     ["ai_model", "The AI model could not answer"],
     ["ai_model", "Invalid API key"],
-    ["quota", "This office used its 100 AI actions for this month. They come back on 1 March 2026, Manila time. To get more now, ask Daloy to move you to a larger plan."],
+    ["quota", "This office used its 100 AI actions for this month. They come back on 1 March 2026, Manila time. To get more now, ask kymavo to move you to a larger plan."],
     ["quota", "This office reached today's limit of 200 email recipients. Sending starts again tomorrow, Manila time. Press Retry on this run then."],
     ["quota", "This office reached today's limit of 200 web requests. They start again tomorrow, Manila time. Press Retry on this run then."],
     ["booking_changed", "The booking was rescheduled or cancelled, so this run stopped before step send."],
@@ -88,7 +88,7 @@ describe("explainFailure", () => {
   });
   it("permission wording follows the provider", () => {
     expect(explainFailure(delivery("google_sheets", "permission")).lines[0]).toMatch(/Share the sheet/);
-    expect(explainFailure(delivery("slack", "permission")).lines[0]).toMatch(/Invite the Daloy app/);
+    expect(explainFailure(delivery("slack", "permission")).lines[0]).toMatch(/Invite the kymavo app/);
     expect(explainFailure(delivery("outlook", "permission")).lines[0]).toMatch(/may send email/);
     expect(explainFailure(delivery("teams", "permission")).lines[0]).toMatch(/team and channel/);
   });
@@ -96,7 +96,7 @@ describe("explainFailure", () => {
     expect(explainFailure(delivery("google_sheets", "no_destination")).fix?.label).toBe("Pick a sheet");
     expect(explainFailure(delivery("slack", "no_destination")).fix?.label).toBe("Pick a channel");
   });
-  it("quota and unavailable say Daloy will try again", () => {
+  it("quota and unavailable say kymavo will try again", () => {
     for (const k of ["quota", "unavailable"]) {
       const e = explainFailure(delivery("slack", k, { state: "queued" }));
       expect(e.lines[0]).toMatch(/try again on its own/);
@@ -133,10 +133,10 @@ describe("explainFailure", () => {
     expect(explainFailure(stepFacts({ reason: "worker_stopped" })).lines[0]).toMatch(/It went through, Send again or Stop/);
   });
   it.each([
-    [401, "refused Daloy's access"],
-    [403, "refused Daloy's access"],
+    [401, "refused kymavo's access"],
+    [403, "refused kymavo's access"],
     [404, "address was not found"],
-    [429, "asked Daloy to slow down"],
+    [429, "asked kymavo to slow down"],
     [500, "had a problem"],
     [503, "had a problem"],
   ])("status %i", (statusCode, words) => {
@@ -159,7 +159,7 @@ describe("explainFailure", () => {
   });
   it("falls back when nothing matches", () => {
     const e = explainFailure(stepFacts());
-    expect(e.headline).toBe("Daloy could not tell why this stopped.");
+    expect(e.headline).toBe("kymavo could not tell why this stopped.");
     expect(e.lines[0]).toBe("The details for a technician below have the full record.");
   });
   it("uses plain words everywhere", () => {

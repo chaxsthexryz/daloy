@@ -52,7 +52,7 @@ export async function seed(baseUrl: string) {
   }
 
   // "Reply to a website inquiry": a business profile and its live form. No Gmail is connected, so replies go to Mailpit.
-  const profile = { businessName: "Daloy Demo Office", website: "https://demo.daloy.local", inquiryEmail: DEMO_EMAIL, replyTo: DEMO_EMAIL };
+  const profile = { businessName: "kymavo Demo Office", website: "https://demo.daloy.local", inquiryEmail: DEMO_EMAIL, replyTo: DEMO_EMAIL };
   await call("PUT", "/settings/email/profile", profile);
   if (!existing.has(WEBSITE_INQUIRY_SLUG)) {
     const wf = (await call("POST", "/workflows", { name: "Website inquiries", slug: WEBSITE_INQUIRY_SLUG }))!;

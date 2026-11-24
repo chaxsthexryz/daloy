@@ -90,7 +90,7 @@ export type InternalTriggerDispatch =
 
 /**
  * Starts one keyed run for each live, unpaused workflow in `workspaceId` subscribed to this internal
- * Daloy event (`booking_event` or `payment_event`). Duplicate `eventKey` values return no new run id.
+ * kymavo event (`booking_event` or `payment_event`). Duplicate `eventKey` values return no new run id.
  */
 export async function dispatchInternalTrigger(db: Db, input: InternalTriggerDispatch): Promise<{ runIds: string[] }> {
   const rows = await db

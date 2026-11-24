@@ -46,7 +46,7 @@ function StepNode({ data }: NodeProps<Node<StepNodeData, "step">>) {
   return (
     <div className={nodeClass("node", data.status)}>
       <Handle type="target" position={Position.Top} isConnectable={false} />
-      <span className="node-type node-app"><AppMark decorative mark={entry.mark} name={markText(entry, language)} size={24} />{entry.app ? entry.app[language] : t("Daloy")}</span>
+      <span className="node-type node-app"><AppMark decorative mark={entry.mark} name={markText(entry, language)} size={24} />{entry.app ? entry.app[language] : t("kymavo")}</span>
       <span className="node-title">{entry.action[language]}</span>
       {step.note && <span className="node-note">{step.note}</span>}
       <span className="node-summary">{whereLine(step, data, language)}</span>
@@ -142,7 +142,7 @@ function EditorStepNode({ data }: NodeProps<Node<EditorNodeData, "step">>) {
       <span className="a7-node-row">
         <span className="a7-node-kicker node-app">
           <AppMark decorative mark={entry.mark} name={markText(entry, language)} size={24} />
-          {data.index} · {entry.app ? entry.app[language] : t("Daloy")}
+          {data.index} · {entry.app ? entry.app[language] : t("kymavo")}
         </span>
         <span className="a7-node-note node-id">{step.id}</span>
       </span>

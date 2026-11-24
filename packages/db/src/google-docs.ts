@@ -4,8 +4,8 @@ import { call, ProviderError, retryAfter, type GoogleAuth, type ProviderUrls, ty
 
 /**
  * "Make a document from a template" (phase I1, decision 0104): copy a Google Docs template into a Drive folder, then
- * replace its {{placeholders}}. Both calls use the drive.file grant of the Google Drive connection, so Daloy can reach
- * only the template the owner picked in the Google Picker and the copy Daloy made itself. Google Sign-in only: a service
+ * replace its {{placeholders}}. Both calls use the drive.file grant of the Google Drive connection, so kymavo can reach
+ * only the template the owner picked in the Google Picker and the copy kymavo made itself. Google Sign-in only: a service
  * account has no Drive storage of its own.
  *
  * Retrying is safe. Every copy carries an appProperties key made from the run and step, so a retry looks for its own
@@ -20,26 +20,26 @@ export const docsKeyFor = (runAndStep: string): string => createHash("sha256").u
 export type DocsResult = { documentId: string; url: string; name: string; reused: boolean; /** Placeholders that matched nothing in a fresh copy. Empty for a reused copy, whose first attempt already told. */ unmatched: string[] };
 export type DocsRequest = { templateId: string; folderId: string; name: string; values: Record<string, string>; key: string };
 
-const PICK_AGAIN = "Daloy cannot copy this template into the folder. Pick the template again in the step, and the folder again in Apps (Google lets Daloy reach only files and folders you picked or that Daloy created).";
+const PICK_AGAIN = "kymavo cannot copy this template into the folder. Pick the template again in the step, and the folder again in Apps (Google lets kymavo reach only files and folders you picked or that kymavo created).";
 
 function failure(res: Reply, phase: "list" | "copy" | "fill"): ProviderError {
   const error = (res.body.error ?? {}) as { message?: unknown; errors?: { reason?: unknown }[]; details?: { reason?: unknown }[] };
   const reason = String(error.errors?.[0]?.reason ?? error.details?.[0]?.reason ?? "");
   const message = String(error.message ?? "");
   const api = phase === "fill" ? "Google Docs" : "Google Drive";
-  if (res.status === 401) return new ProviderError("Google did not accept Daloy's access. Connect Google Drive again.", "auth");
+  if (res.status === 401) return new ProviderError("Google did not accept kymavo's access. Connect Google Drive again.", "auth");
   if (res.status === 429 || (res.status === 403 && /rateLimitExceeded|userRateLimitExceeded/i.test(reason))) {
-    return new ProviderError(`${api} is limiting requests right now. Daloy will try again.`, "quota", retryAfter(res.headers));
+    return new ProviderError(`${api} is limiting requests right now. kymavo will try again.`, "quota", retryAfter(res.headers));
   }
   if (res.status === 403 && (reason === "SERVICE_DISABLED" || /has not been used|is disabled/i.test(message))) {
-    return new ProviderError(`The ${api} API is not turned on for this installation's Google project. The person who runs Daloy turns it on in the Google Cloud console, then you retry.`, "permission");
+    return new ProviderError(`The ${api} API is not turned on for this installation's Google project. The person who runs kymavo turns it on in the Google Cloud console, then you retry.`, "permission");
   }
   if (res.status === 403 && reason === "storageQuotaExceeded") return new ProviderError("The Google account's Drive storage is full. Free up space in Drive, then retry.", "permission");
   if (res.status === 403 || res.status === 404) {
     return new ProviderError(phase === "fill" ? "Google Docs would not open the new copy. Connect Google Drive again in Apps, then retry." : PICK_AGAIN, "permission");
   }
   // Safe to try again: the copy is found by its key, and a replace is all or nothing.
-  if (res.status >= 500) return new ProviderError(`${api} answered ${res.status}. Daloy will try again.`, "unavailable");
+  if (res.status >= 500) return new ProviderError(`${api} answered ${res.status}. kymavo will try again.`, "unavailable");
   return new ProviderError(`${api} rejected the request (${res.status}).`, "invalid");
 }
 
@@ -69,7 +69,7 @@ export async function docsFromTemplate(urls: ProviderUrls, auth: GoogleAuth, r: 
   if (!reused) {
     const copy = await api(urls, token, drive, `/drive/v3/files/${encodeURIComponent(r.templateId)}/copy?${new URLSearchParams({ supportsAllDrives: "true", fields: "id,name" })}`, { method: "POST", body: JSON.stringify({ name, parents: [r.folderId], appProperties: { daloyKey: r.key } }) }, "copy");
     documentId = typeof copy.body.id === "string" ? copy.body.id : "";
-    if (!isGoogleFileId(documentId)) throw new ProviderError("Google Drive answered without a document id. Daloy will try again.", "unavailable");
+    if (!isGoogleFileId(documentId)) throw new ProviderError("Google Drive answered without a document id. kymavo will try again.", "unavailable");
   }
 
   const keys = Object.keys(r.values);
@@ -84,7 +84,7 @@ export async function docsFromTemplate(urls: ProviderUrls, auth: GoogleAuth, r: 
 }
 
 /**
- * Reads the file the owner picked in the Google Picker, with Daloy's own drive.file grant, before the editor keeps its id.
+ * Reads the file the owner picked in the Google Picker, with kymavo's own drive.file grant, before the editor keeps its id.
  * Google answers 404 for a file the owner did not pick, so a forged id gains nothing. Only a Google Docs file passes.
  */
 export async function docsTemplateInfo(urls: ProviderUrls, auth: GoogleAuth, templateId: string): Promise<{ templateId: string; title: string }> {

@@ -15,7 +15,7 @@ test("an owner connects Gmail with Google, sends a test email through the Gmail 
   await page.getByRole("link", { name: "Apps" }).first().click();
   await page.getByRole("button", { name: "Connect Gmail", exact: true }).click();
   await expect(page.getByText("Advanced: use a key or token instead")).toBeVisible();
-  await expect(page.getByText("Daloy cannot read your mail.")).toBeVisible();
+  await expect(page.getByText("kymavo cannot read your mail.")).toBeVisible();
   // The fake consent page answers at once and sends the browser back through the shared callback.
   await page.getByRole("button", { name: "Connect Gmail with Google" }).click();
   await expect(page).toHaveURL(/#\/apps\/gmail-connected$/);

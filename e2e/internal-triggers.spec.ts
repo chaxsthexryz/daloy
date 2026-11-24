@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-// G1 (decision 0123): Daloy internal triggers (booking_event) and reusable sub-workflows (sub_workflow + call_workflow).
+// G1 (decision 0123): kymavo internal triggers (booking_event) and reusable sub-workflows (sub_workflow + call_workflow).
 test("booking cancellation triggers a booking_event automation and call_workflow runs a sub_workflow", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Create an account", exact: true }).click();

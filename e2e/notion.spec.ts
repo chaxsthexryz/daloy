@@ -38,5 +38,5 @@ test("an owner connects a Notion database and adds a test page", async ({ page }
   await page.getByRole("button", { name: "Add a test page" }).click();
   await expect(page.getByText(/Notion accepted a test page/)).toBeVisible();
   const res = await fetch(`${process.env.E2E_PROVIDERS_URL}/__control`);
-  expect(JSON.stringify(((await res.json()) as { notionPages: unknown[] }).notionPages)).toContain("Test page from Daloy");
+  expect(JSON.stringify(((await res.json()) as { notionPages: unknown[] }).notionPages)).toContain("Test page from kymavo");
 });

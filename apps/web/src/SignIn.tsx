@@ -36,7 +36,7 @@ export function SignIn({ onDone, approval }: { onDone: (u: User) => void; approv
   const flip = () => (setMode(register ? "login" : "register"), setProblem(null));
   const forgot = <a className="au-link" href="#/forgot-password">Forgot your password?</a>;
   const notice = approval && (
-    <AuthNote kind="info">An approval is waiting for you. Sign in with the email it was sent to, and Daloy takes you straight to it.</AuthNote>
+    <AuthNote kind="info">An approval is waiting for you. Sign in with the email it was sent to, and kymavo takes you straight to it.</AuthNote>
   );
   return (
     <AuthLayout title={register ? "Create an account" : "Sign in"} points notice={notice}>
@@ -57,7 +57,7 @@ export function SignIn({ onDone, approval }: { onDone: (u: User) => void; approv
       </form>
       {!register && <p className="au-forgot-below">{forgot}</p>}
       <p className="au-aside">
-        {register ? "Already use Daloy?" : "New to Daloy?"}
+        {register ? "Already use kymavo?" : "New to kymavo?"}
         <button type="button" className="au-link" onClick={flip}>{register ? "I have an account" : "Create an account"}</button>
       </p>
     </AuthLayout>

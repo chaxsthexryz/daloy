@@ -9,7 +9,7 @@ const grantRows = sql`with grants as (
     )`;
 
 /**
- * Plan R14: the workspace's OAuth grants whose provider account is also connected somewhere else in Daloy, in another
+ * Plan R14: the workspace's OAuth grants whose provider account is also connected somewhere else in kymavo, in another
  * workspace or (for Google) in another Google app here. A provider may keep one grant per account and client
  * (unverified), so disconnecting one can end the other. Returns app keys: connections providers, and "gmail" for the
  * Gmail sign-in. Every Google app and Gmail share one Google account id, so they are compared as one family.

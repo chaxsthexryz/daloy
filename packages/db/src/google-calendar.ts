@@ -5,11 +5,11 @@ import type { Db } from "./index";
 import { createCalendar, ProviderError, type ProviderUrls } from "./providers";
 import { connections } from "./schema";
 
-/** The calendar Daloy creates for a Google sign-in (decision 0064). */
-export const DALOY_CALENDAR_TITLE = "Daloy bookings";
+/** The calendar kymavo creates for a Google sign-in (decision 0064). */
+export const DALOY_CALENDAR_TITLE = "kymavo bookings";
 
 /**
- * Easy connect for Calendar: after "Connect with Google" Daloy creates its own calendar and stores its id as the
+ * Easy connect for Calendar: after "Connect with Google" kymavo creates its own calendar and stores its id as the
  * destination, so the owner picks and types nothing. A destination already there is kept (a reconnect with the same
  * Google account keeps it, see oauth/core.ts), so the calendar is made once. `again` makes a new one, for a calendar
  * deleted in Google Calendar: deliveries still pinned to the old id then wait for review (M11).

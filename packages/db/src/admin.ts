@@ -4,7 +4,7 @@ import { adminActions, deliveries, runs, stepRuns, usageCounts, users, workflows
 import { manilaDay, periodOf, type Plan } from "./usage";
 
 /*
- * Platform admin queries (A1, decision 0122). These are the only queries in Daloy that read across workspaces, and only
+ * Platform admin queries (A1, decision 0122). These are the only queries in kymavo that read across workspaces, and only
  * AdminController calls them. They select named columns only: never a run's trigger payload, step input or output,
  * error text, delivery payloads, or anything from secrets and connections. Nothing here imports the secrets code.
  */

@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { ConnectPanel, SharedGrants } from "./ConnectPanel";
 import { LanguageContext } from "./Language";
 
-// Plan R14: a card whose provider account is also connected elsewhere in Daloy says so.
+// Plan R14: a card whose provider account is also connected elsewhere in kymavo says so.
 const conn = { account: "Acme Dental", lastError: null, status: "active" };
 const render = (shared: string[], connected = true) =>
   renderToStaticMarkup(
@@ -13,7 +13,7 @@ const render = (shared: string[], connected = true) =>
       </SharedGrants.Provider>
     </LanguageContext.Provider>,
   );
-const WARNING = "also connected somewhere else in Daloy";
+const WARNING = "also connected somewhere else in kymavo";
 
 describe("shared grant warning", () => {
   it("shows on a connected card whose account is shared, matching the slug to the app key", () => {

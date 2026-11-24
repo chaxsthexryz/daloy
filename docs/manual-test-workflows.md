@@ -4,7 +4,7 @@ This is a hands-on test of the console on your own PC, with Qwen running locally
 
 ## 1. Start Qwen with llama.cpp
 
-llama.cpp's `llama-server` has no account and no key of its own. The API key is any secret you choose and pass with `--api-key`; Daloy must send the same value.
+llama.cpp's `llama-server` has no account and no key of its own. The API key is any secret you choose and pass with `--api-key`; kymavo must send the same value.
 
 1. Pick a key. In PowerShell:
 
@@ -28,9 +28,9 @@ llama.cpp's `llama-server` has no account and no key of its own. The API key is 
 
    You should see your model's name. Use that exact name for `LLM_MODEL`.
 
-If Daloy later says it cannot reach the model, Docker cannot see `127.0.0.1` on your PC. Restart the server with `--host 0.0.0.0` (keep the `--api-key`, and only do this on a trusted network).
+If kymavo later says it cannot reach the model, Docker cannot see `127.0.0.1` on your PC. Restart the server with `--host 0.0.0.0` (keep the `--api-key`, and only do this on a trusted network).
 
-## 2. Point Daloy at it
+## 2. Point kymavo at it
 
 Open `.env` in the daloy folder in a text editor and set these lines. Do not paste the key into chat or commit `.env`.
 
@@ -54,14 +54,14 @@ docker compose up -d --build
 
 Open http://localhost:3000, sign in, go to Settings, then AI model, and press Test. It should answer from Qwen. A 4B model is slow on a CPU; a first answer of 20 to 60 seconds is normal.
 
-## 3. Optional: drive Daloy from Hermes Agent
+## 3. Optional: drive kymavo from Hermes Agent
 
-Daloy exposes its automations as MCP tools at `http://localhost:3000/mcp`.
+kymavo exposes its automations as MCP tools at `http://localhost:3000/mcp`.
 
 1. In the console: Advanced, then API tokens, then create a token. It starts with `dly_`. Copy it once; it is not shown again.
 2. In Hermes Agent's settings, add an MCP server with URL `http://localhost:3000/mcp` and the header `Authorization: Bearer dly_...`. Where that goes depends on your Hermes version; look for "MCP servers" in its docs.
 3. Point Hermes's own model at the same llama.cpp server: base URL `http://127.0.0.1:18434/v1`, the same key, the same model name.
-4. Ask Hermes: "List my Daloy automations" and then "Run the website inquiry automation with a test inquiry from Ana about a broken printer." Check the run appears under Activity.
+4. Ask Hermes: "List my kymavo automations" and then "Run the website inquiry automation with a test inquiry from Ana about a broken printer." Check the run appears under Activity.
 
 ## 4. Five workflows to test
 

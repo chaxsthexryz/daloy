@@ -1,8 +1,8 @@
 // Tagalog for the browser step (phase B2, decision 0108). English is the key.
 export const browserTranslations: Record<string, string> = {
   "Actions on the page": "Mga action sa page",
-  "In order, after the page opens. A selector is CSS, such as .price or #order-button. Daloy never types into password or card fields.":
-    "Sunud-sunod, pagkabukas ng page. Ang selector ay CSS, gaya ng .price o #order-button. Hindi kailanman nagta-type ang Daloy sa password o card field.",
+  "In order, after the page opens. A selector is CSS, such as .price or #order-button. kymavo never types into password or card fields.":
+    "Sunud-sunod, pagkabukas ng page. Ang selector ay CSS, gaya ng .price o #order-button. Hindi kailanman nagta-type ang kymavo sa password o card field.",
   "Action {number}": "Action {number}",
   "Action {number} {field}": "Action {number} {field}",
   "Action {number} finds by": "Hinahanap ng action {number} gamit ang",
@@ -19,7 +19,7 @@ export const browserTranslations: Record<string, string> = {
   "Remove action {number}": "Alisin ang action {number}",
   "Add action": "Magdagdag ng action",
   "A browser step has at most {max} actions.": "Hanggang {max} action lang ang browser step.",
-  "Open {host} in Daloy's browser": "Buksan ang {host} sa browser ng Daloy",
+  "Open {host} in kymavo's browser": "Buksan ang {host} sa browser ng kymavo",
   "a web page": "isang web page",
   "Values read from the page": "Mga value na nabasa sa page",
   "The page to open first, such as https://supplier.example.com/price/{{trigger.sku}}.": "Ang unang page na bubuksan, gaya ng https://supplier.example.com/price/{{trigger.sku}}.",

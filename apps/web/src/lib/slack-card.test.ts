@@ -13,7 +13,7 @@ describe("Slack card", () => {
   it("offers Connect Slack first and keeps the pasted token under Advanced when the installation has a Slack app", () => {
     const html = render(createElement(SlackConnection, { conn: null, configured: true, outcome: "missing_scope", onChange }));
     expect(html).toContain("Connect Slack");
-    expect(html).toContain("Some of the permissions Daloy asked for were not allowed");
+    expect(html).toContain("Some of the permissions kymavo asked for were not allowed");
     expect(html).toContain("(chat:write)");
     expect(html).toMatch(/<details><summary>Advanced: use your own Slack app token<\/summary><form>/);
     expect(html).toContain("Bot token");

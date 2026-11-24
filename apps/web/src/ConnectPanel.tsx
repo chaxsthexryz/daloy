@@ -8,10 +8,10 @@ export type OutcomeText = Record<string, { ok: boolean; text: string }>;
 /** What the consent callback reported, by the code in #/apps/<slug>-<code> (decision 0058). {app} is the app's name. */
 export const OAUTH_OUTCOMES: OutcomeText = {
   connected: { ok: true, text: "{app} is connected." },
-  admin_approved: { ok: true, text: "An administrator approved Daloy for your organization. Connect {app} now." },
-  admin_required: { ok: false, text: "{app} says an administrator has to approve Daloy first. Ask them, then connect again." },
+  admin_approved: { ok: true, text: "An administrator approved kymavo for your organization. Connect {app} now." },
+  admin_required: { ok: false, text: "{app} says an administrator has to approve kymavo first. Ask them, then connect again." },
   declined: { ok: false, text: "The permission request was declined, so nothing was connected. Connect again when you are ready." },
-  missing_scope: { ok: false, text: "Some of the permissions Daloy asked for were not allowed, so nothing was connected. Connect again and allow all of them." },
+  missing_scope: { ok: false, text: "Some of the permissions kymavo asked for were not allowed, so nothing was connected. Connect again and allow all of them." },
   expired: { ok: false, text: "That sign-in took too long or was started by someone else. Start again with Connect {app}." },
   failed: { ok: false, text: "{app} did not finish connecting. Start again with Connect {app}." },
 };
@@ -39,7 +39,7 @@ export function useAction(onChange: () => Promise<unknown>) {
 type Shown = Pick<Connection, "account" | "lastError"> & { status: string };
 
 /**
- * Plan R14: the app keys (google_sheets, gmail, ...) whose provider account is also connected elsewhere in Daloy, from
+ * Plan R14: the app keys (google_sheets, gmail, ...) whose provider account is also connected elsewhere in kymavo, from
  * GET /settings/connections. Provided once by the Apps page so every card can warn without a prop of its own.
  */
 export const SharedGrants = createContext<readonly string[]>([]);
@@ -89,7 +89,7 @@ export function ConnectPanel(p: {
   unavailable?: ReactNode;
   /** The disclosure's title for the paste form. Default: Advanced: use a key or token instead. */
   advancedLabel?: string;
-  /** After Disconnect, when the provider did not confirm it removed Daloy's access. */
+  /** After Disconnect, when the provider did not confirm it removed kymavo's access. */
   removeHint?: string;
   onChange: () => Promise<unknown>;
   sectionLabel?: string;
@@ -101,7 +101,7 @@ export function ConnectPanel(p: {
   const shown = p.outcome && p.configured ? (p.outcomes ?? OAUTH_OUTCOMES)[p.outcome] : undefined;
   const sharedApps = useContext(SharedGrants);
   const shared = !!p.conn && sharedApps.includes(p.slug.replaceAll("-", "_"));
-  const sharedText = t("This {app} account is also connected somewhere else in Daloy, in another app or another workspace. {app} may keep one permission for both, so disconnecting here can also stop Daloy's access there.", { app: p.name });
+  const sharedText = t("This {app} account is also connected somewhere else in kymavo, in another app or another workspace. {app} may keep one permission for both, so disconnecting here can also stop kymavo's access there.", { app: p.name });
   // A full page visit to the provider. The callback brings the browser back to Apps with the outcome in the address.
   const connect = () => act(async () => location.assign((await api<{ url: string }>("POST", `/settings/connections/${p.slug}/oauth/start`)).url));
   const disconnect = () =>
@@ -145,7 +145,7 @@ ${sharedText}` : "")) &&
             {p.conn && p.actions && <div className="actions">{p.actions}</div>}
             {p.after}
           </section>}
-          {removed && !p.conn && <p role="status">{t(p.removeHint ?? "Daloy deleted its access to {app}. {app} did not confirm that it removed Daloy, so remove Daloy in your {app} account settings too.", { app: p.name })}</p>}
+          {removed && !p.conn && <p role="status">{t(p.removeHint ?? "kymavo deleted its access to {app}. {app} did not confirm that it removed kymavo, so remove kymavo in your {app} account settings too.", { app: p.name })}</p>}
           {p.form && (
             <details>
               <summary>{t(p.advancedLabel ?? "Advanced: use a key or token instead")}</summary>

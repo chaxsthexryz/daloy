@@ -48,7 +48,7 @@ export async function browserStep(db: Db, service: BrowserService | null, at: { 
   if (!res.ok) throw new StepError(error, false);
 
   const parsed = answer.safeParse(body);
-  if (!parsed.success) throw new StepError("The browser service sent an answer Daloy cannot read.", false);
+  if (!parsed.success) throw new StepError("The browser service sent an answer kymavo cannot read.", false);
   const files = parsed.data.screenshots.map((b64, i) => {
     const data = Buffer.from(b64, "base64");
     // The service is a separate process that runs untrusted pages: check what it hands back before storing it.

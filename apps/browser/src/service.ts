@@ -124,7 +124,7 @@ export async function createService(opts: ServiceOptions): Promise<Service> {
       /* about:blank */
     }
     const last = job.proxy.refused.at(-1);
-    if (last && (job.proxy.refused.includes(here) || err)) throw new HttpError(422, `Daloy refused to open ${last}: it is a private or blocked address, or not on port 80 or 443.`, { refused: job.proxy.refused });
+    if (last && (job.proxy.refused.includes(here) || err)) throw new HttpError(422, `kymavo refused to open ${last}: it is a private or blocked address, or not on port 80 or 443.`, { refused: job.proxy.refused });
     if (err) throw err;
   }
 

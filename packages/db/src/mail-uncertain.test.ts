@@ -65,7 +65,7 @@ afterAll(async () => {
 
 const mailer = (): Mailer => ({
   transport: nodemailer.createTransport({ host: "127.0.0.1", port, secure: false, ignoreTLS: true, socketTimeout: 300 }),
-  from: "Daloy <daloy@example.com>",
+  from: "kymavo <daloy@example.com>",
 });
 const email = { to: "a@example.com", subject: "Order A-1", text: "Hello" };
 

@@ -81,7 +81,7 @@ export function RecordTargetPicker({ app, disabled, hasDestination, onChange, on
             {parents.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
           </select>
         </div>
-        {parents.length === 0 && <p role="status">{t(app === "notion" ? "No databases were shared with Daloy. Reconnect Notion and select the pages that contain your database." : "No available destinations. Check your account permissions, then try again.")}</p>}
+        {parents.length === 0 && <p role="status">{t(app === "notion" ? "No databases were shared with kymavo. Reconnect Notion and select the pages that contain your database." : "No available destinations. Check your account permissions, then try again.")}</p>}
         {app !== "notion" && children && <div className="field">
           <label htmlFor={`${app}-child`}>{t(childLabel)}</label>
           <select id={`${app}-child`} value={childId} onChange={(e) => setChildId(e.target.value)} required>

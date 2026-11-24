@@ -5,7 +5,7 @@ import { discordPost, discordWebhookUrl, DISCORD_HOSTS } from "./discord";
 import { ProviderError, type ProviderUrls } from "./providers";
 
 // Phase I1, decision 0104. The webhook URL is a credential: it is checked before it is stored or called, and no error
-// Daloy builds may carry it. Everything runs against a local stub, never against Discord.
+// kymavo builds may carry it. Everything runs against a local stub, never against Discord.
 const ID = "123456789012345678";
 const TOKEN = "tok_AbCdEfGhIjKlMnOpQrStUvWxYz0123456789-_AbCdEfGhIjKlMnOpQrSt"; // gitleaks:allow (synthetic)
 const good = `https://discord.com/api/webhooks/${ID}/${TOKEN}`;

@@ -19,7 +19,7 @@ let loseNextAck = false;
 
 const mail: MailDeps = {
   installation: {
-    from: "Daloy <daloy@localhost>",
+    from: "kymavo <daloy@localhost>",
     transport: {
       sendMail: async (msg: SendMailOptions) => {
         const info = await nodemailer.createTransport({ jsonTransport: true }).sendMail(msg);

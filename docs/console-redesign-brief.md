@@ -81,7 +81,7 @@ Vocabulary, used everywhere including emails:
 | --- | --- |
 | Workflow | Automation |
 | Run, run history | Activity |
-| Trigger: form, webhook, schedule, manual | Starts when someone submits the form; when another system calls Daloy; on a schedule; when you press Run |
+| Trigger: form, webhook, schedule, manual | Starts when someone submits the form; when another system calls kymavo; on a schedule; when you press Run |
 | succeeded | Done |
 | failed | Problem |
 | waiting | Waiting (until a time, or for an approval) |

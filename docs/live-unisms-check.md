@@ -2,7 +2,7 @@
 
 Automated tests never call UniSMS. They use the local fake in `test/fake-providers.ts`. This checklist covers the separate manual check against a real UniSMS account and real Philippine mobile numbers. Never paste a real Secret Key into a ticket, chat, or this file.
 
-Status: not run yet. Record the date, Daloy commit, and observed results at the end of this file when you run it.
+Status: not run yet. Record the date, kymavo commit, and observed results at the end of this file when you run it.
 
 ## Before you start
 

@@ -67,7 +67,7 @@ const getFixtures = new Map([
   ["/runs/ask", {
     runId, reference, workflowName: work.name, answers: {
       happened: { headline: "The request was saved and the office email failed.", lines: [], fix: null },
-      why: { headline: runError, lines: ["The sample request is still in Daloy."], fix: null },
+      why: { headline: runError, lines: ["The sample request is still in kymavo."], fix: null },
       next: { headline: "Check the office email settings.", lines: [], fix: { href: "#/apps", label: "Open Apps" } },
     },
   }],

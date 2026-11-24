@@ -7,7 +7,7 @@ import { notInList, oauthConnection, pickerCall, saveRecordTarget, type Config }
 
 const targetInput = z.strictObject({ databaseId: z.string().regex(/^[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}$/i).transform(notionId) });
 
-/** The database picker: databases the owner shared with Daloy on Notion's consent screen. Owners only. */
+/** The database picker: databases the owner shared with kymavo on Notion's consent screen. Owners only. */
 @Controller("settings/connections/notion")
 @UseGuards(SessionGuard, Allow(MANAGE))
 export class NotionOAuthController {

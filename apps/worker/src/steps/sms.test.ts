@@ -15,7 +15,7 @@ let owner: string;
 let seq = 0;
 
 const mail: MailDeps = {
-  installation: { transport: nodemailer.createTransport({ jsonTransport: true }), from: "Daloy <daloy@localhost>" },
+  installation: { transport: nodemailer.createTransport({ jsonTransport: true }), from: "kymavo <daloy@localhost>" },
   gmail: () => nodemailer.createTransport({ jsonTransport: true }),
   sharedMail: "open",
 };

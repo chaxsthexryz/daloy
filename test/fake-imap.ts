@@ -10,7 +10,7 @@ export async function startFakeImap(spool: string) {
     socket.on("close", () => sockets.delete(socket));
     socket.on("error", () => socket.destroy());
     const line = (value: string) => socket.write(value + "\r\n");
-    line("* OK Daloy test inbox ready");
+    line("* OK kymavo test inbox ready");
     let authenticated = false;
     createInterface({ input: socket, crlfDelay: Infinity }).on("line", (input) => {
       const parsed = /^(\S+) (UID \w+|\w+)(?: (.*))?$/i.exec(input);

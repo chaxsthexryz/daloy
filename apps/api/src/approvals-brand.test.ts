@@ -58,21 +58,21 @@ afterAll(async () => {
 });
 
 describe("approval page brand", () => {
-  it("shows the workspace's business name and accent, and not the Daloy mark", async () => {
+  it("shows the workspace's business name and accent, and not the kymavo mark", async () => {
     const w = await workspace({ name: "Sampaguita <Bakery>", accent: "#1f6b45" });
     const page = await request(server).get(`/approvals/${await approval(w.versionId)}`).expect(200);
     expect(page.text).toContain("Sampaguita &lt;Bakery&gt;");
     expect(page.text).toContain("--accent:#1f6b45");
-    expect(page.text).not.toContain(">Daloy<");
+    expect(page.text).not.toContain(">kymavo<");
     expect(page.text).toContain("Order 20 kg of flour?");
     expect(page.text).toContain("Nothing is decided until you choose one of the two buttons.");
   });
 
-  it("shows the Daloy mark when no brand is set, and never another workspace's brand", async () => {
+  it("shows the kymavo mark when no brand is set, and never another workspace's brand", async () => {
     await workspace({ name: "Other Bakery", accent: "#aa0000" });
     const w = await workspace();
     const page = await request(server).get(`/approvals/${await approval(w.versionId)}`).expect(200);
-    expect(page.text).toContain(">Daloy<");
+    expect(page.text).toContain(">kymavo<");
     expect(page.text).toContain("--accent:#1b45c9");
     expect(page.text).not.toContain("Other Bakery");
     expect(page.text).not.toContain("#aa0000");

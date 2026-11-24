@@ -378,7 +378,7 @@ describe("Shopify Admin API against the fake", () => {
       expect(await ensureOrderWebhook(urls, conn(), uri)).toEqual({ state: "registered" });
       expect(fake.state.webhooks).toHaveLength(1);
     });
-    it("removes only an older Daloy subscription at another path and leaves the owner's own alone", async () => {
+    it("removes only an older kymavo subscription at another path and leaves the owner's own alone", async () => {
       fake.state.webhooks.push({ id: "gid://shopify/WebhookSubscription/1", topic: "ORDERS_CREATE", uri: "https://daloy.example.test/hooks/shopify/old" });
       fake.state.webhooks.push({ id: "gid://shopify/WebhookSubscription/2", topic: "ORDERS_CREATE", uri: "https://other.example.test/hook" });
       await ensureOrderWebhook(urls, conn(), uri, "https://daloy.example.test/hooks/shopify/");

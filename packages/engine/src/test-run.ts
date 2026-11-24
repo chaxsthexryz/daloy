@@ -2,7 +2,7 @@ import * as z from "zod";
 import type { WorkflowDefinition } from "./definition";
 
 /**
- * Builder test runs: "mock" fakes every step that reaches outside Daloy, "ai" calls the model but fakes the rest,
+ * Builder test runs: "mock" fakes every step that reaches outside kymavo, "ai" calls the model but fakes the rest,
  * "live" makes every call. In mock and ai runs a tester can choose a step's outcome (decision 0028).
  */
 export const testModeSchema = z.enum(["mock", "ai", "live"]);
@@ -46,7 +46,7 @@ export function choiceProblems(def: WorkflowDefinition, choices: Record<string, 
     }
     if ("decision" in c) return step.type === "approval" ? [] : [`${at}: only an approval step takes a decision`];
     if ("booking" in c) return step.type === "booking" ? [] : [`${at}: only a booking step takes a booking outcome`];
-    return OUTSIDE.has(step.type) ? [] : [`${at}: only a step that reaches outside Daloy can be set to fail`];
+    return OUTSIDE.has(step.type) ? [] : [`${at}: only a step that reaches outside kymavo can be set to fail`];
   });
   if (Object.values(choices).filter((c) => "live" in c).length > 1) problems.push("choices: only one step can be sent for real at a time");
   return problems;

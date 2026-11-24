@@ -6,7 +6,7 @@ import { useLanguage } from "./Language";
 
 /**
  * The Google Calendar card for "Connect with Google" (decision 0064): the main action is a Google sign-in with
- * calendar.app.created, after which Daloy makes its own "Daloy bookings" calendar, so nothing is picked or typed. The
+ * calendar.app.created, after which kymavo makes its own "kymavo bookings" calendar, so nothing is picked or typed. The
  * service account form and calendar id stay under Advanced, and are the whole card on an installation without a Google client.
  */
 export function GoogleCalendarCard({ conn, configured, outcome, onChange }: { conn: Connection | null; configured: boolean; outcome?: string; onChange: () => Promise<unknown> }) {
@@ -27,7 +27,7 @@ export function GoogleCalendarCard({ conn, configured, outcome, onChange }: { co
       label={oauth ? "Account" : "Service account"}
       outcome={outcome}
       onChange={onChange}
-      intro={!conn && <p>{t("Google will ask you to let Daloy see your email address and use only the calendar Daloy creates for your bookings. Daloy cannot see your other calendars.")}</p>}
+      intro={!conn && <p>{t("Google will ask you to let kymavo see your email address and use only the calendar kymavo creates for your bookings. kymavo cannot see your other calendars.")}</p>}
       actions={
         conn?.destination && (
           <button type="button" disabled={busy} onClick={() => void act(async () => setTest(await api<TestResult>("POST", "/settings/connections/google-calendar/test")))}>
@@ -56,12 +56,12 @@ export function GoogleCalendarCard({ conn, configured, outcome, onChange }: { co
         <div className="actions">
           {!conn.destination && (
             <button type="button" className="primary" disabled={busy} onClick={() => void create(false)}>
-              {t("Create the Daloy bookings calendar")}
+              {t("Create the kymavo bookings calendar")}
             </button>
           )}
           {conn.destination && (
-            <button type="button" className="quiet" disabled={busy} onClick={() => window.confirm(t("Create a new Daloy bookings calendar? Events already in the old one stay there, and changes to those bookings wait for your review.")) && void create(true)}>
-              {t("Create a new Daloy calendar")}
+            <button type="button" className="quiet" disabled={busy} onClick={() => window.confirm(t("Create a new kymavo bookings calendar? Events already in the old one stay there, and changes to those bookings wait for your review.")) && void create(true)}>
+              {t("Create a new kymavo calendar")}
             </button>
           )}
         </div>

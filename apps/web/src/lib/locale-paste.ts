@@ -8,8 +8,8 @@ export const pasteTranslations: Record<string, string> = {
   "In Telegram, open": "Sa Telegram, buksan ang",
   ", send /newbot and answer its questions. BotFather then shows a token.": ", ipadala ang /newbot at sagutin ang mga tanong nito. Ipapakita ng BotFather ang token.",
   "Check token": "Suriin ang token",
-  "Add the bot to the chat, then send any message there. Daloy lists the chats the bot has seen. It reads only the chat name, never the messages, and keeps nothing.":
-    "Idagdag ang bot sa chat, saka magpadala ng kahit anong mensahe doon. Ililista ng Daloy ang mga chat na nakita ng bot. Pangalan lang ng chat ang binabasa nito, hindi ang mga mensahe, at wala itong itinatabi.",
+  "Add the bot to the chat, then send any message there. kymavo lists the chats the bot has seen. It reads only the chat name, never the messages, and keeps nothing.":
+    "Idagdag ang bot sa chat, saka magpadala ng kahit anong mensahe doon. Ililista ng kymavo ang mga chat na nakita ng bot. Pangalan lang ng chat ang binabasa nito, hindi ang mga mensahe, at wala itong itinatabi.",
   "Find my chats": "Hanapin ang mga chat ko",
   "Tapping a chat above fills this in. You can also type the chat id.": "Pag pinindot mo ang chat sa itaas, mapupunan ito. Puwede mo ring i-type ang chat id.",
   "Token works. The bot is {bot}.": "Gumagana ang token. Ang bot ay {bot}.",
@@ -22,8 +22,8 @@ export const pasteTranslations: Record<string, string> = {
   "Paste the link and send a test message": "I-paste ang link at magpadala ng test message",
   "In Teams, open the Workflows app and start a new workflow that posts to a channel when a webhook request is received. Menu names may differ. Your organization may have to allow the Workflows app first; if you cannot find it, ask your Teams administrator.":
     "Sa Teams, buksan ang Workflows app at gumawa ng bagong workflow na nagpo-post sa channel kapag may natanggap na webhook request. Maaaring iba ang pangalan ng mga menu. Maaaring kailangang payagan muna ng organisasyon mo ang Workflows app; kung hindi mo ito makita, magtanong sa Teams administrator mo.",
-  "Pick the team and channel that should get the notes. If the workflow asks who can trigger it, choose anyone, or Daloy's messages will be refused.":
-    "Piliin ang team at channel na tatanggap ng mga mensahe. Kung tinatanong ng workflow kung sino ang puwedeng mag-trigger, piliin ang sinuman, kung hindi ay tatanggihan ang mga mensahe ng Daloy.",
+  "Pick the team and channel that should get the notes. If the workflow asks who can trigger it, choose anyone, or kymavo's messages will be refused.":
+    "Piliin ang team at channel na tatanggap ng mga mensahe. Kung tinatanong ng workflow kung sino ang puwedeng mag-trigger, piliin ang sinuman, kung hindi ay tatanggihan ang mga mensahe ng kymavo.",
   "Use test mode first": "Gamitin muna ang test mode",
   "Copy the secret key and save it": "Kopyahin ang secret key at i-save ito",
   "Add the webhook in PayMongo": "Idagdag ang webhook sa PayMongo",
@@ -38,7 +38,7 @@ export const pasteTranslations: Record<string, string> = {
   "PayMongo accepted the key. The webhook address is below.": "Tinanggap ng PayMongo ang key. Nasa ibaba ang webhook address.",
   "In PayMongo, add a webhook with this address and the events checkout_session.payment.paid and payment.refunded. Menu names may differ.":
     "Sa PayMongo, magdagdag ng webhook gamit ang address na ito at ang mga event na checkout_session.payment.paid at payment.refunded. Maaaring iba ang pangalan ng mga menu.",
-  "Save the secret key first. Daloy then shows the webhook address.": "I-save muna ang secret key. Ipapakita ng Daloy ang webhook address pagkatapos.",
+  "Save the secret key first. kymavo then shows the webhook address.": "I-save muna ang secret key. Ipapakita ng kymavo ang webhook address pagkatapos.",
   "The webhook secret is not saved yet, so payment events are ignored. Use Replace key or secret to finish.": "Hindi pa naka-save ang webhook secret, kaya hindi pinapansin ang mga payment event. Gamitin ang Replace key or secret para matapos.",
   "Send SMS confirmations and reminders to Philippine mobile numbers.": "Magpadala ng SMS na kumpirmasyon at paalala sa mga mobile number sa Pilipinas.",
   "Send SMS": "Magpadala ng SMS",

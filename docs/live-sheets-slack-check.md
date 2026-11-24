@@ -4,14 +4,14 @@ The automated tests never contact Google or Slack. They use `test/fake-providers
 
 For Connect Slack (the OAuth install), see [live Slack install check](live-slack-oauth-check.md). This page covers the pasted bot token.
 
-Status: not run yet. Record the date, the Daloy commit and what you saw at the end of this file when you do.
+Status: not run yet. Record the date, the kymavo commit and what you saw at the end of this file when you do.
 
 ## Before you start
 
 - A Google Cloud project (no billing needed) with the Google Sheets API turned on, a service account, and a JSON key for it.
 - A Google Sheet with a tab called `Requests`, shared with the service account's email as an Editor.
 - A Slack workspace where you can install apps. Create an app, add the bot scopes `chat:write` and `channels:read`, install it, and copy the Bot User OAuth Token. Add the app to a public channel with `/invite`.
-- Daloy running with `docker compose up` and seeded.
+- kymavo running with `docker compose up` and seeded.
 
 ## Steps
 

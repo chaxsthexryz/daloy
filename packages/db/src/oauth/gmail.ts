@@ -85,7 +85,7 @@ export const gmail: OAuthProvider = {
   ...googleProvider("gmail", "gmail", "gmail", "Gmail"),
   identity: async (urls, accessToken) => {
     const who = await googleIdentity(urls, accessToken);
-    if (!who.emailVerified || !who.account.includes("@")) throw new ProviderError("Google did not confirm this account's email address, so Daloy cannot send from it.", "invalid");
+    if (!who.emailVerified || !who.account.includes("@")) throw new ProviderError("Google did not confirm this account's email address, so kymavo cannot send from it.", "invalid");
     return { externalId: who.externalId, account: who.account };
   },
   store: gmailStore,
@@ -95,7 +95,7 @@ const QUOTA_REASONS = new Set(["rateLimitExceeded", "userRateLimitExceeded", "da
 
 /**
  * users.messages.send with the RFC 822 message nodemailer built (rawMessage in mail.ts), base64url encoded. Errors carry
- * Daloy's own text only: auth (refresh once, then the sender is failed), quota with Retry-After, ambiguous for a 5xx or
+ * kymavo's own text only: auth (refresh once, then the sender is failed), quota with Retry-After, ambiguous for a 5xx or
  * a timeout once the request may have reached Google (never resent on its own), and permission or invalid otherwise.
  */
 export async function gmailSend(urls: ProviderUrls, accessToken: string, raw: Buffer): Promise<{ id: string }> {
@@ -103,13 +103,13 @@ export async function gmailSend(urls: ProviderUrls, accessToken: string, raw: Bu
   const init = { method: "POST", headers: { authorization: `Bearer ${accessToken}`, "content-type": "application/json" }, body: JSON.stringify({ raw: raw.toString("base64url") }) };
   const res = await call(`${urls.gmail}/gmail/v1/users/me/messages/send`, init, urls.timeoutMs ?? 30_000, true, "Gmail");
   if (res.status === 200) return { id: typeof res.body.id === "string" ? res.body.id : "" };
-  if (res.status === 401) throw new ProviderError("Gmail did not accept Daloy's access.", "auth");
+  if (res.status === 401) throw new ProviderError("Gmail did not accept kymavo's access.", "auth");
   const error = (res.body.error ?? {}) as { errors?: { reason?: string }[] };
   const reason = error.errors?.[0]?.reason ?? "";
   if (res.status === 429 || (res.status === 403 && QUOTA_REASONS.has(reason))) {
-    throw new ProviderError("Gmail is limiting how much this account can send right now. Daloy will try again later.", "quota", retryAfter(res.headers));
+    throw new ProviderError("Gmail is limiting how much this account can send right now. kymavo will try again later.", "quota", retryAfter(res.headers));
   }
-  if (res.status >= 500) throw new ProviderError(`Gmail answered ${res.status}, so Daloy cannot tell whether the email went out.`, "ambiguous");
-  if (res.status === 403) throw new ProviderError("Gmail refused to send from this account. Reconnect Gmail in Apps and allow Daloy to send email.", "permission");
+  if (res.status >= 500) throw new ProviderError(`Gmail answered ${res.status}, so kymavo cannot tell whether the email went out.`, "ambiguous");
+  if (res.status === 403) throw new ProviderError("Gmail refused to send from this account. Reconnect Gmail in Apps and allow kymavo to send email.", "permission");
   throw new ProviderError(`Gmail refused this email (${res.status}).`, "invalid");
 }

@@ -58,7 +58,7 @@ async function connectCalendar(ws: string, who = ANA) {
   const flow = await consumeFlow(db, key, back.searchParams.get("state")!, { workspaceId: ws, memberId: ws });
   return finishFlow(db, key, urls, PUBLIC, googleCalendar, ws, back.searchParams.get("code")!, flow!.verifier);
 }
-/** Connect, then make Daloy's calendar, as the callback does. */
+/** Connect, then make kymavo's calendar, as the callback does. */
 async function connectedWithCalendar(who = ANA) {
   const ws = await workspace();
   expect(await connectCalendar(ws.id, who)).toBe("connected");
@@ -99,11 +99,11 @@ describe("the Calendar definition", () => {
   });
 });
 
-describe("Daloy's own calendar", () => {
-  it("is created once, named Daloy bookings, and reused on a reconnect with the same account", async () => {
+describe("kymavo's own calendar", () => {
+  it("is created once, named kymavo bookings, and reused on a reconnect with the same account", async () => {
     const { ws, made } = await connectedWithCalendar();
     expect(made.title).toBe(DALOY_CALENDAR_TITLE);
-    expect(fake.calendar(made.calendarId)).toMatchObject({ title: "Daloy bookings", createdBy: ANA.email });
+    expect(fake.calendar(made.calendarId)).toMatchObject({ title: "kymavo bookings", createdBy: ANA.email });
     expect(await ensureCalendar(db, key, urls, ws.id)).toEqual(made);
     expect(await connectCalendar(ws.id, ANA)).toBe("connected");
     expect(await ensureCalendar(db, key, urls, ws.id)).toEqual(made);
@@ -135,11 +135,11 @@ describe("Daloy's own calendar", () => {
     await expect(ensureCalendar(db, key, urls, (await workspace()).id)).rejects.toMatchObject({ kind: "invalid" });
   });
 
-  it("is reachable only for calendars Daloy created: another calendar of the same account answers as not found (calendar.app.created)", async () => {
+  it("is reachable only for calendars kymavo created: another calendar of the same account answers as not found (calendar.app.created)", async () => {
     const { ws } = await connectedWithCalendar();
     fake.addCalendar("theirs@group.calendar.google.com", "Personal", [ANA.email]);
     const c = await conn(ws.id);
-    await expect(withGoogle(db, key, urls, ws.id, "google_calendar", c, (auth) => calendarInfo(urls, auth, "theirs@group.calendar.google.com"))).rejects.toMatchObject({ kind: "permission", message: expect.stringMatching(/Create a new Daloy calendar/) });
+    await expect(withGoogle(db, key, urls, ws.id, "google_calendar", c, (auth) => calendarInfo(urls, auth, "theirs@group.calendar.google.com"))).rejects.toMatchObject({ kind: "permission", message: expect.stringMatching(/Create a new kymavo calendar/) });
   });
 });
 
@@ -199,14 +199,14 @@ describe("events through the OAuth token", () => {
     expect(await delivery(b.reference, "calendar")).toMatchObject({ state: "delivered", result: { event: "updated" } });
   });
 
-  it("fails as a permission problem that says to create a new calendar when Daloy's calendar was deleted by hand, and keeps the connection", async () => {
+  it("fails as a permission problem that says to create a new calendar when kymavo's calendar was deleted by hand, and keeps the connection", async () => {
     const { ws, made } = await connectedWithCalendar();
     const b = await bookedWithEvent(ws, 23);
     fake.calendar(made.calendarId)!.editors.clear();
     await deliver();
     const d = await delivery(b.reference, "calendar");
     expect(d).toMatchObject({ state: "failed", errorKind: "permission" });
-    expect(d.lastError).toMatch(/Create a new Daloy calendar/);
+    expect(d.lastError).toMatch(/Create a new kymavo calendar/);
     expect((await conn(ws.id)).status).toBe("active");
   });
 

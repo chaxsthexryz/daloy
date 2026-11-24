@@ -220,7 +220,7 @@ export function AcceptInvitePage({ token, onDone }: { token: string; onDone: (u:
   };
   return (
     <AuthLayout title="Join your team">
-      <p className="au-lead">Choose a password for your account. If this email already has a Daloy account, enter its password.</p>
+      <p className="au-lead">Choose a password for your account. If this email already has a kymavo account, enter its password.</p>
       <form onSubmit={submit} className="au-fields">
         <div className="au-field">
           <div className="au-label-row"><label htmlFor="invite-password">Password <span>(at least 12 characters)</span></label></div>

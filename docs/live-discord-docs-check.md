@@ -2,13 +2,13 @@
 
 The automated tests never contact Discord or Google. They use the fake Discord, Drive and Docs servers in `test/fake-providers.ts`. This page is the separate check against real accounts. Run it by hand with accounts you control.
 
-Status: not run yet. Record the date, the Daloy commit and what you saw under Results when you do.
+Status: not run yet. Record the date, the kymavo commit and what you saw under Results when you do.
 
 ## Before you start
 
 - A Discord server where you can manage a test channel, and the Manage Webhooks permission on that channel.
 - For Google Docs: Google Drive connected with Google (see [live Google OAuth check](live-google-oauth-check.md)), a Drive folder picked in Apps, the Google Docs API turned on in the Google Cloud project, and a Google Docs template containing `{{name}}` and `{{amount}}`.
-- Daloy running and seeded.
+- kymavo running and seeded.
 
 ## Discord
 
@@ -19,7 +19,7 @@ Status: not run yet. Record the date, the Daloy commit and what you saw under Re
 5. Send a text of more than 2000 characters. Expect the step to fail with the length message and nothing in the channel.
 6. Delete the webhook in Discord and run again. Expect "The Discord webhook was deleted" and the connection marked as needing a new link. Paste a new link and select Retry. Expect one message.
 7. Look in the run history, the Requests list and the answer of `GET /settings/connections`. Expect no webhook link anywhere.
-8. To see a rate limit, start many runs at once. Expect Daloy to wait and then post each message once.
+8. To see a rate limit, start many runs at once. Expect kymavo to wait and then post each message once.
 
 ## Google Docs
 
@@ -28,7 +28,7 @@ Status: not run yet. Record the date, the Daloy commit and what you saw under Re
 3. Make one value contain `{{amount}}`. Expect it typed in the document as is, not replaced.
 4. Add a value for a placeholder the template does not contain. Expect it listed as unmatched in the step output and no failure.
 5. Send a template id that you did not pick in the Picker to `POST /settings/connections/google-drive/template`. Expect a refusal asking to pick the template again.
-6. Turn off the Google Docs API in the project and run. Expect a message that names the API and the person who runs Daloy. Turn it on and select Retry.
+6. Turn off the Google Docs API in the project and run. Expect a message that names the API and the person who runs kymavo. Turn it on and select Retry.
 7. Retry a step that failed after the copy. Expect no second copy in the folder.
 8. Connect Google Drive with a service account key instead. Expect Make a document to be refused when turning the workflow on.
 

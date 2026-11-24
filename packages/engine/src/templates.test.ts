@@ -126,7 +126,7 @@ describe("starter templates", () => {
     expect(parse("order-paid").trigger).toEqual({ type: "payment", config: { events: ["paid"] } });
   });
 
-  it("order rows carry the Daloy payment id and pesos with a label, never the raw centavo amount", () => {
+  it("order rows carry the kymavo payment id and pesos with a label, never the raw centavo amount", () => {
     const pending = JSON.stringify(parse("order-to-sheets").steps.find((s) => s.id === "log_order")!.config);
     const paid = JSON.stringify(parse("order-paid").steps.find((s) => s.id === "log_paid")!.config);
     expect(pending).toContain("{{steps.pay_link.output.paymentId}}");

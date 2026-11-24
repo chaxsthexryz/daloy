@@ -66,7 +66,7 @@ async function member(workspaceId: string, role: "operator" | "approver" | "requ
   await db.insert(sessions).values({ idHash: sha256(token), userId: u!.id, expiresAt: new Date(Date.now() + 3_600_000) });
   return request.agent(server).set("Cookie", `daloy_session=${token}`);
 }
-/** Connect with Google: Daloy's start, the fake consent page, then the shared callback. Returns where the browser lands. */
+/** Connect with Google: kymavo's start, the fake consent page, then the shared callback. Returns where the browser lands. */
 async function connect(agent: Agent, slug = "google-sheets", who = ANA) {
   fake.oauth.google!.user = who;
   const { body } = await agent.post(`/settings/connections/${slug}/oauth/start`).expect(200);
@@ -102,7 +102,7 @@ describe("Connect with Google", () => {
     await connect(agent);
     await agent.post("/settings/connections/google-sheets/create").expect(200);
     await connect(agent);
-    expect((await row(id))!.destination).toMatchObject({ title: "Daloy requests" });
+    expect((await row(id))!.destination).toMatchObject({ title: "kymavo requests" });
     expect(await connect(agent, "google-sheets", BEN)).toBe("/#/apps/google-sheets-connected");
     expect(await row(id)).toMatchObject({ account: BEN.email, externalId: BEN.id, destination: null });
   });
@@ -116,18 +116,18 @@ describe("Connect with Google", () => {
 });
 
 describe("choosing the sheet", () => {
-  it("creates Daloy requests, offers its real tabs, and adds a test row through the grant", async () => {
+  it("creates kymavo requests, offers its real tabs, and adds a test row through the grant", async () => {
     const { agent, id } = await owner();
     await connect(agent);
     const made = (await agent.post("/settings/connections/google-sheets/create").expect(200)).body;
-    expect(made).toMatchObject({ title: "Daloy requests", tabs: ["Sheet1"], tab: "Sheet1" });
-    expect((await row(id))!.destination).toEqual({ spreadsheetId: made.spreadsheetId, tab: "Sheet1", title: "Daloy requests" });
-    expect((await agent.get("/settings/connections/google-sheets/tabs").expect(200)).body).toEqual({ title: "Daloy requests", tabs: ["Sheet1"] });
+    expect(made).toMatchObject({ title: "kymavo requests", tabs: ["Sheet1"], tab: "Sheet1" });
+    expect((await row(id))!.destination).toEqual({ spreadsheetId: made.spreadsheetId, tab: "Sheet1", title: "kymavo requests" });
+    expect((await agent.get("/settings/connections/google-sheets/tabs").expect(200)).body).toEqual({ title: "kymavo requests", tabs: ["Sheet1"] });
     expect((await agent.post("/settings/connections/google-sheets/test").expect(200)).body).toMatchObject({ ok: true });
     expect(fake.sheet(made.spreadsheetId)!.tabs.get("Sheet1")).toHaveLength(1);
   });
 
-  it("re-reads a picked id with Daloy's own grant and refuses one the grant cannot reach (R12)", async () => {
+  it("re-reads a picked id with kymavo's own grant and refuses one the grant cannot reach (R12)", async () => {
     const { agent, id } = await owner();
     await connect(agent);
     const theirs = sheetId();
@@ -191,11 +191,11 @@ describe("the Picker token", () => {
 });
 
 describe("Drive", () => {
-  it("creates a Daloy uploads folder in My Drive, takes a picked My Drive folder, and refuses one never picked", async () => {
+  it("creates a kymavo uploads folder in My Drive, takes a picked My Drive folder, and refuses one never picked", async () => {
     const { agent, id } = await owner();
     expect(await connect(agent, "google-drive")).toBe("/#/apps/google-drive-connected");
     const made = (await agent.post("/settings/connections/google-drive/create").expect(200)).body;
-    expect(made).toMatchObject({ title: "Daloy uploads" });
+    expect(made).toMatchObject({ title: "kymavo uploads" });
     expect(fake.driveFolder(made.folderId)).toMatchObject({ sharedDriveId: null });
     fake.addDriveFolder("my-drive-folder-02", "Patient files", [ANA.email], null);
     expect((await agent.post("/settings/connections/google-drive/pick").send({ folderId: "my-drive-folder-02" }).expect(200)).body).toEqual({ folderId: "my-drive-folder-02", title: "Patient files" });

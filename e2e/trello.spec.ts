@@ -12,9 +12,9 @@ test("an owner signs in to Trello, picks an open list and delivers a card", asyn
   await expect(panel).toContainText("Doing");
   await page.reload();
   await expect(recordPanel(page, "Trello")).toContainText("Doing");
-  const before = (await recorded()).trelloCards.filter((c) => c.startsWith("Test card from Daloy")).length;
+  const before = (await recorded()).trelloCards.filter((c) => c.startsWith("Test card from kymavo")).length;
   await recordPanel(page, "Trello").getByRole("button", { name: "Add a test card" }).click();
   await expect(recordPanel(page, "Trello")).toContainText("Trello accepted a test card");
-  expect((await recorded()).trelloCards.filter((c) => c.startsWith("Test card from Daloy"))).toHaveLength(before + 1);
+  expect((await recorded()).trelloCards.filter((c) => c.startsWith("Test card from kymavo"))).toHaveLength(before + 1);
   await sendRecord(page, "trello", `Trello request ${Date.now()}`);
 });

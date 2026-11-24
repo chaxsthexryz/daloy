@@ -5,7 +5,7 @@ import { consentDeclined, noIdentity } from "./records";
 const api = (urls: ProviderUrls) => `${urls.notion}/v1/oauth`;
 
 /**
- * Notion public integration on the shared core (decision 0062). Notion has no scopes: what Daloy may reach is the
+ * Notion public integration on the shared core (decision 0062). Notion has no scopes: what kymavo may reach is the
  * pages and databases the owner ticks on Notion's consent screen, and the capabilities set on the integration (read
  * content, insert content). Token and revoke calls use HTTP Basic client credentials and a JSON body.
  */

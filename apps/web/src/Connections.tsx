@@ -18,7 +18,7 @@ const MICROSOFT_CONSENT_HELP = "https://learn.microsoft.com/en-us/entra/identity
 /** What the Outlook consent callback reported, by the code in #/settings/business/outlook-<code> or #/apps/outlook-<code>. */
 const OUTLOOK_OUTCOMES: Record<string, { ok: boolean; text: string }> = {
   connected: { ok: true, text: "Outlook is connected. Send a test email to check it." },
-  admin_approved: { ok: true, text: "An administrator approved Daloy for your organization. Connect Outlook now." },
+  admin_approved: { ok: true, text: "An administrator approved kymavo for your organization. Connect Outlook now." },
   admin_required: { ok: false, text: "Your organization only lets an administrator approve new apps. Send your administrator the approval link below, then connect again." },
   declined: { ok: false, text: "Microsoft says the permission request was declined, so nothing was connected. Connect again when you are ready." },
   expired: { ok: false, text: "That sign-in took too long or was started by someone else. Start again with Connect Outlook." },
@@ -82,7 +82,7 @@ export function SheetsConnection({ conn, onChange, embedded }: { conn: Connectio
       <Outcome test={test} what={t("Google Sheets accepted a test row")} />
       {showForm && (
         <form onSubmit={save}>
-          <p>{t("Daloy writes as a Google Cloud service account, so no personal Google sign-in is stored. Create a service account in a Google Cloud project with the Google Sheets API turned on, add a JSON key, then share your sheet with the account's email as an Editor.")}{" "}
+          <p>{t("kymavo writes as a Google Cloud service account, so no personal Google sign-in is stored. Create a service account in a Google Cloud project with the Google Sheets API turned on, add a JSON key, then share your sheet with the account's email as an Editor.")}{" "}
             <a href={SERVICE_ACCOUNT_HELP} target="_blank" rel="noreferrer">{t("How to create a service account")}</a>
           </p>
           <div className="field">
@@ -146,7 +146,7 @@ export function DriveConnection({ conn, onChange, embedded }: { conn: Connection
       {conn && !embedded && <Status conn={conn} label="Service account" />}
       {conn?.destination && !embedded && (
         <p>
-          {t("Files go to ")}<strong>{conn.destination.title}</strong>{t(". Files in a request are kept in Daloy for 7 days, so save them to Drive before then.")}
+          {t("Files go to ")}<strong>{conn.destination.title}</strong>{t(". Files in a request are kept in kymavo for 7 days, so save them to Drive before then.")}
         </p>
       )}
       {conn && !embedded && (
@@ -254,7 +254,7 @@ export function CalendarConnection({ conn, onChange, embedded }: { conn: Connect
       {showForm && (
         <form onSubmit={save}>
           <p>
-            {t("Daloy writes as a Google Cloud service account, so no personal Google sign-in is stored. Create a service account in a Google Cloud project with the Google Calendar API turned on, add a JSON key, then share your calendar with the account's email and choose Make changes to events.")}{" "}
+            {t("kymavo writes as a Google Cloud service account, so no personal Google sign-in is stored. Create a service account in a Google Cloud project with the Google Calendar API turned on, add a JSON key, then share your calendar with the account's email and choose Make changes to events.")}{" "}
             <a href={SERVICE_ACCOUNT_HELP} target="_blank" rel="noreferrer">
               {t("How to create a service account")}
             </a>
@@ -313,7 +313,7 @@ export function SlackConnection({ conn, configured, outcome, onChange }: { conn:
   // The same pieces serve both layouts: with a Slack app on this installation (Connect Slack, the token under Advanced)
   // and without one (the token form is the card, as before decision 0061).
   const note = conn?.destination && (
-    <p>{t("Notes go to ")}<strong>#{conn.destination.channelName}</strong>{t(". They carry the reference and subject only: names and emails stay in Daloy.")}</p>
+    <p>{t("Notes go to ")}<strong>#{conn.destination.channelName}</strong>{t(". They carry the reference and subject only: names and emails stay in kymavo.")}</p>
   );
   const channelButtons = (
     <>
@@ -384,8 +384,8 @@ export function SlackConnection({ conn, configured, outcome, onChange }: { conn:
         outcome={outcome}
         onChange={onChange}
         advancedLabel="Advanced: use your own Slack app token"
-        removeHint="Daloy deleted its access to Slack. Slack did not confirm that it removed the Daloy app, so also remove it in Slack under Manage apps."
-        intro={<p>{t("Slack will ask you to let Daloy post messages (chat:write) and list the public channels (channels:read) in your workspace. Daloy asks for nothing else. Your workspace may need an admin to approve the app.")}</p>}
+        removeHint="kymavo deleted its access to Slack. Slack did not confirm that it removed the kymavo app, so also remove it in Slack under Manage apps."
+        intro={<p>{t("Slack will ask you to let kymavo post messages (chat:write) and list the public channels (channels:read) in your workspace. kymavo asks for nothing else. Your workspace may need an admin to approve the app.")}</p>}
         actions={channelButtons}
         after={
           <>
@@ -497,7 +497,7 @@ export function TelegramConnection({ conn, onChange }: { conn: Connection | null
         </p>
       )}
       {conn?.destination?.webhook === "registered" && <p>{t("Receiving messages: automations with a Telegram message trigger start when someone messages this bot.")}</p>}
-      {conn?.destination?.webhook === "failed" && <p className="message error">{t("Telegram did not accept Daloy's address, so messages to the bot do not arrive. Telegram only sends to a public https address. Save again once Daloy runs on one.")}</p>}
+      {conn?.destination?.webhook === "failed" && <p className="message error">{t("Telegram did not accept kymavo's address, so messages to the bot do not arrive. Telegram only sends to a public https address. Save again once kymavo runs on one.")}</p>}
       {conn && (
         <div className="actions">
           <button type="button" disabled={busy} onClick={() => void act(async () => setTest(await api<TestResult>("POST", "/settings/connections/telegram/test")))}>
@@ -538,10 +538,10 @@ export function OutlookConnection({ conn, setup, outcome, onChange }: { conn: Co
       outcome={outcome}
       outcomes={OUTLOOK_OUTCOMES}
       onChange={onChange}
-      removeHint="Daloy deleted its access to the mailbox. Microsoft has no way for Daloy to withdraw the permission itself, so also remove Daloy from the apps your Microsoft account allows."
-      unavailable={<p className="muted">{t("Outlook is not set up on this installation. The person who runs Daloy registers a free Microsoft Entra app and sets MICROSOFT_CLIENT_ID and MICROSOFT_CLIENT_SECRET (see the README). Email keeps going through the mail server in this installation's settings.")}</p>}
+      removeHint="kymavo deleted its access to the mailbox. Microsoft has no way for kymavo to withdraw the permission itself, so also remove kymavo from the apps your Microsoft account allows."
+      unavailable={<p className="muted">{t("Outlook is not set up on this installation. The person who runs kymavo registers a free Microsoft Entra app and sets MICROSOFT_CLIENT_ID and MICROSOFT_CLIENT_SECRET (see the README). Email keeps going through the mail server in this installation's settings.")}</p>}
       intro={
-        <p>{t("Microsoft will ask you to let Daloy send email as you (Mail.Send), keep that access without asking each time, and read your name and address. Many organizations only let an administrator approve a new app. If Microsoft says you need admin approval, send your administrator")}{" "}
+        <p>{t("Microsoft will ask you to let kymavo send email as you (Mail.Send), keep that access without asking each time, and read your name and address. Many organizations only let an administrator approve a new app. If Microsoft says you need admin approval, send your administrator")}{" "}
           {setup.adminConsentUrl && (
             <a href={setup.adminConsentUrl} target="_blank" rel="noreferrer">{t("this approval link")}</a>
           )}{t(", then connect again.")}{" "}
@@ -578,7 +578,7 @@ export function TeamsConnection({ conn, onChange }: { conn: Connection | null; o
     <div className="connection" aria-busy={busy} aria-labelledby="teams-h">
       <h3 id="teams-h">Microsoft Teams</h3>
       {conn && <Status conn={conn} label={t("Channel")} />}
-      {conn && <p>{t("Notes carry the reference and the item only. They tell the channel what happened; approvals are answered in Daloy by the named approver.")}</p>}
+      {conn && <p>{t("Notes carry the reference and the item only. They tell the channel what happened; approvals are answered in kymavo by the named approver.")}</p>}
       {conn && (
         <div className="actions">
           <button type="button" disabled={busy} onClick={() => void act(async () => setTest(await api<TestResult>("POST", "/settings/connections/teams/test")))}>{t("Send a test message")}</button>
@@ -611,7 +611,7 @@ export function DiscordConnection({ conn, onChange }: { conn: Connection | null;
     <div className="connection" aria-busy={busy} aria-labelledby="discord-h">
       <h3 id="discord-h">Discord</h3>
       {conn && <Status conn={conn} label={t("Channel")} />}
-      {conn && <p>{t("Messages go to this one channel, and everyone in it can read them. Keep names, emails and other private details out of the text. Daloy blocks @everyone and role pings.")}</p>}
+      {conn && <p>{t("Messages go to this one channel, and everyone in it can read them. Keep names, emails and other private details out of the text. kymavo blocks @everyone and role pings.")}</p>}
       {conn && (
         <div className="actions">
           <button type="button" disabled={busy} onClick={() => void act(async () => setTest(await api<TestResult>("POST", "/settings/connections/discord/test")))}>{t("Send a test message")}</button>
@@ -804,7 +804,7 @@ export function ShopifyConnection({ conn, webhookBase, onChange }: { conn: Conne
         <p role={webhookFailed ? "alert" : "status"} className={webhookFailed ? "message error" : undefined}>
           {webhookFailed
             ? t("Shopify refused the new-order webhook: {error} Orders will not arrive until it is registered. Fix that, then save again.", { error: conn.destination?.webhookError ?? "" })
-            : t("Daloy registered the new-order webhook in your store.")}
+            : t("kymavo registered the new-order webhook in your store.")}
         </p>
       )}
       {webhookUrl && (
@@ -1113,7 +1113,7 @@ export function RecordConnection({ app, conn, configured = false, outcome, onCha
   </>;
   return <ConnectPanel slug={app} name={cfg.name} sectionLabel="Destination" configured={configured} conn={conn} label="Account" outcome={outcome} onChange={onChange} disabled={busy || pickerBusy}
     form={pasteForm}
-    intro={<p>{t(app === "airtable" ? "Allow Daloy to add records to the bases you select. After connecting, pick a base and table." : app === "notion" ? "On Notion's consent screen, select the pages that contain your database. After connecting, pick a shared database." : "Allow Daloy to read your boards and add cards. After connecting, pick a board and list.")}</p>}
+    intro={<p>{t(app === "airtable" ? "Allow kymavo to add records to the bases you select. After connecting, pick a base and table." : app === "notion" ? "On Notion's consent screen, select the pages that contain your database. After connecting, pick a shared database." : "Allow kymavo to read your boards and add cards. After connecting, pick a board and list.")}</p>}
     actions={conn?.destination && <button type="button" disabled={busy || pickerBusy} onClick={() => void act(async () => setTest(await api<TestResult>("POST", `/settings/connections/${app}/test`)))}>{t(cfg.testButton)}</button>}
     after={<><Outcome test={test} what={t(cfg.testOk)} /><p role="alert" className="message error" hidden={!error}>{error}</p></>}
   >

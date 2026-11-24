@@ -1,5 +1,5 @@
 // Adapted from n8n nod, src/providers/agent-browser/network.ts (createBrowserProxy), Copyright 2026 n8n GmbH,
-// Apache-2.0. Changed for Daloy: the address check uses @daloy/engine's BLOCKED_RANGES, ports are limited to 80 and
+// Apache-2.0. Changed for kymavo: the address check uses @daloy/engine's BLOCKED_RANGES, ports are limited to 80 and
 // 443, refusals are recorded per job, plain-http upgrades are dropped, and a deny-all mode backs up the launch.
 // See NOTICE in this folder.
 import { lookup } from "node:dns/promises";
@@ -75,7 +75,7 @@ export async function startProxy(opts: ProxyOptions = {}): Promise<Proxy> {
       });
       incoming.pipe(upstream);
     } catch {
-      outgoing.writeHead(403, { "content-type": "text/plain" }).end("Daloy refused this address: it is private, blocked or not on port 80 or 443.");
+      outgoing.writeHead(403, { "content-type": "text/plain" }).end("kymavo refused this address: it is private, blocked or not on port 80 or 443.");
     }
   });
 

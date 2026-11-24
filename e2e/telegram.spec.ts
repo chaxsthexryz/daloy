@@ -19,5 +19,5 @@ test("an owner connects a Telegram bot and sends a test message", async ({ page 
   await page.getByRole("button", { name: "Send a test message" }).click();
   await expect(page.getByText(/Telegram accepted a test message/)).toBeVisible();
   const res = await fetch(`${process.env.E2E_PROVIDERS_URL}/__control`);
-  expect(((await res.json()) as { telegramMessages: string[] }).telegramMessages).toContain("Test message from Daloy.");
+  expect(((await res.json()) as { telegramMessages: string[] }).telegramMessages).toContain("Test message from kymavo.");
 });

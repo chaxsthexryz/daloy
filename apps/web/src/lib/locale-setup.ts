@@ -58,7 +58,7 @@ export const setupTranslations: Record<string, string> = {
   "Receipt with the request reference": "Resibo na may reference ng request",
   "Optional apps": "Mga opsyonal na app",
   "New submissions will create a request and send a receipt.": "Gagawa ng request at magpapadala ng resibo ang bawat bagong submission.",
-  "New submissions will ask {approver} to approve or reject, signed in to Daloy.": "Hihilingin ng bawat bagong submission kay {approver} na aprubahan o tanggihan ito, naka-sign in sa Daloy.",
+  "New submissions will ask {approver} to approve or reject, signed in to kymavo.": "Hihilingin ng bawat bagong submission kay {approver} na aprubahan o tanggihan ito, naka-sign in sa kymavo.",
   "Choose the reviewer who must decide before the request goes to purchasing.": "Piliin ang reviewer na dapat magpasya bago mapunta sa purchasing ang request.",
   "What {approver} receives": "Ang matatanggap ni {approver}",
   "The request reference, item, cost and requester's notes, with a link to approve or reject.": "Ang reference ng request, item, gastos at tala ng nag-request, may link para aprubahan o tanggihan.",

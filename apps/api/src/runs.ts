@@ -30,10 +30,10 @@ const reference = sql<string | null>`(select ${requests.reference} from ${reques
 const like = (q: string) => `%${q.replace(/[\\%_]/g, (c) => "\\" + c)}%`;
 
 const REWORD_SYSTEM =
-  "You explain why a Daloy automation stopped, for a small office owner. You get JSON with facts and a fixed explanation. Write 2 to 4 short, plain sentences. Write in plain Tagalog (Taglish is fine) when language is tl, otherwise in English. Keep the fix from the fixed explanation. Use the words automation, Apps and Activity. Never give links or addresses. Never guess causes that are not in the facts. Reply with the text only.";
+  "You explain why a kymavo automation stopped, for a small office owner. You get JSON with facts and a fixed explanation. Write 2 to 4 short, plain sentences. Write in plain Tagalog (Taglish is fine) when language is tl, otherwise in English. Keep the fix from the fixed explanation. Use the words automation, Apps and Activity. Never give links or addresses. Never guess causes that are not in the facts. Reply with the text only.";
 
 const ASK_SYSTEM =
-  "You answer one question about a Daloy request, for a small office owner. You get JSON with the question (happened, why or next), the language, facts and a fixed answer. Answer only that question in 2 to 4 short, plain sentences. Write in plain Tagalog (Taglish is fine) when language is tl, otherwise in English. Keep the fix from the fixed answer. Use the words automation, Apps and Activity. Never give links or addresses. Never guess causes that are not in the facts. Reply with the text only.";
+  "You answer one question about a kymavo request, for a small office owner. You get JSON with the question (happened, why or next), the language, facts and a fixed answer. Answer only that question in 2 to 4 short, plain sentences. Write in plain Tagalog (Taglish is fine) when language is tl, otherwise in English. Keep the fix from the fixed answer. Use the words automation, Apps and Activity. Never give links or addresses. Never guess causes that are not in the facts. Reply with the text only.";
 const askReference = z.string().trim().min(1).max(60);
 const askReword = z.object({ reference: askReference, question: z.enum(["happened", "why", "next"]), language: z.enum(["en", "tl"]).optional() });
 

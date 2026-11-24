@@ -100,7 +100,7 @@ export function ReceiptsPage({ user }: { user: User }) {
 
   return (
     <main className="page act">
-      <PageHead crumbs={[{ label: "Daloy", href: "#/" }, { label: t("Receipts to review") }]} title={t("Receipts to review")} sub={rows ? t("{n} waiting", { n: rows.length }) : undefined} />
+      <PageHead crumbs={[{ label: "kymavo", href: "#/" }, { label: t("Receipts to review") }]} title={t("Receipts to review")} sub={rows ? t("{n} waiting", { n: rows.length }) : undefined} />
       <div className="act-body rc-body motion-page">
         <p role="status" className="act-alert ok" hidden={!note}>{note}</p>
         <p role="alert" className="act-alert error" hidden={!error}>{error}</p>

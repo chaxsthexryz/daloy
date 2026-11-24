@@ -179,7 +179,7 @@ export const TEMPLATES = [
   {
     slug: "lead-to-booking",
     name: "Lead to booking",
-    description: "A lead picks a time on a form. Staff approve before anything is booked. Then Daloy books it, adds it to Google Calendar and confirms by email, or offers another time if the slot is taken.",
+    description: "A lead picks a time on a form. Staff approve before anything is booked. Then kymavo books it, adds it to Google Calendar and confirms by email, or offers another time if the slot is taken.",
     category: "Bookings",
     definition: {
       trigger: {
@@ -405,11 +405,11 @@ export const TEMPLATES = [
       ],
     },
   },
-  // N20: two more starters, existing steps only. The Sheet is a register Daloy appends to; no step reads a sheet, so the 30-day wait runs per item from its expiry date.
+  // N20: two more starters, existing steps only. The Sheet is a register kymavo appends to; no step reads a sheet, so the 30-day wait runs per item from its expiry date.
   {
     slug: "renewal-reminders",
     name: "Renewal reminders",
-    description: "Add each domain, hosting plan, SSL certificate, permit or insurance policy on a form. Daloy lists it in your Google Sheet and emails you 30 days before it expires.",
+    description: "Add each domain, hosting plan, SSL certificate, permit or insurance policy on a form. kymavo lists it in your Google Sheet and emails you 30 days before it expires.",
     category: "Office",
     definition: {
       trigger: {
@@ -473,7 +473,7 @@ export const TEMPLATES = [
   {
     slug: "shopify-orders",
     name: "Shopify orders",
-    description: "Connect your Shopify store in Apps. Each new order is added to your Google Sheet, the customer gets a receipt when the order has an email, and the owner gets a Slack note. Daloy checks Shopify's signature before anything runs.",
+    description: "Connect your Shopify store in Apps. Each new order is added to your Google Sheet, the customer gets a receipt when the order has an email, and the owner gets a Slack note. kymavo checks Shopify's signature before anything runs.",
     category: "Orders",
     definition: {
       trigger: { type: "shopify_order", config: {} },
@@ -499,7 +499,7 @@ export const TEMPLATES = [
   {
     slug: "receipt-expense",
     name: "Receipt to expense row",
-    description: "Someone sends a receipt photo on a form. The model reads the shop, total and date, you approve, and Daloy adds a row to your Google Sheet. Needs Google Drive (a shared drive folder), Google Sheets, and an AI model that reads images (Gemini, OpenAI or OpenRouter).",
+    description: "Someone sends a receipt photo on a form. The model reads the shop, total and date, you approve, and kymavo adds a row to your Google Sheet. Needs Google Drive (a shared drive folder), Google Sheets, and an AI model that reads images (Gemini, OpenAI or OpenRouter).",
     category: "Payments and receipts",
     definition: {
       trigger: {
@@ -535,7 +535,7 @@ export const TEMPLATES = [
           config: {
             to: "owner@example.com",
             subject: "Expense from {{trigger.name}}",
-            message: "{{trigger.name}} sent a receipt.\nShop: {{steps.read_receipt.output.shop}}\nAmount: {{steps.read_receipt.output.amount}}\nThe photo is on the run page in Daloy.",
+            message: "{{trigger.name}} sent a receipt.\nShop: {{steps.read_receipt.output.shop}}\nAmount: {{steps.read_receipt.output.amount}}\nThe photo is on the run page in kymavo.",
             timeoutSeconds: 172_800,
           },
         },
@@ -575,7 +575,7 @@ export const TEMPLATES = [
   {
     slug: "meta-receipt-intake",
     name: "FB and IG receipt check",
-    description: "When a customer sends a GCash or bank receipt photo on Facebook Messenger or Instagram, Daloy reads the details, saves the photo, logs a pending row to Google Sheets and asks you to verify before replying. Needs Facebook Messenger & Instagram, Google Drive, Google Sheets and an AI model that reads images.",
+    description: "When a customer sends a GCash or bank receipt photo on Facebook Messenger or Instagram, kymavo reads the details, saves the photo, logs a pending row to Google Sheets and asks you to verify before replying. Needs Facebook Messenger & Instagram, Google Drive, Google Sheets and an AI model that reads images.",
     category: "Payments and receipts",
     definition: {
       trigger: {
@@ -675,7 +675,7 @@ export const TEMPLATES = [
   {
     slug: "telegram-gcash-receipts",
     name: "Log GCash receipts from Telegram",
-    description: "Forward a GCash or bank receipt screenshot or PDF to your own Telegram bot. The AI step reads the reference, amount, sender and date, Daloy adds a row to your Google Sheet marked To check, and the bot replies with what it read. Needs Telegram (your bot from @BotFather, with receiving turned on), Google Sheets and an AI model that reads images.",
+    description: "Forward a GCash or bank receipt screenshot or PDF to your own Telegram bot. The AI step reads the reference, amount, sender and date, kymavo adds a row to your Google Sheet marked To check, and the bot replies with what it read. Needs Telegram (your bot from @BotFather, with receiving turned on), Google Sheets and an AI model that reads images.",
     category: "Payments and receipts",
     definition: {
       trigger: { type: "telegram_message", config: { from: "my_chat", requireFile: true } },
@@ -718,7 +718,7 @@ export const TEMPLATES = [
   {
     slug: "booking-deposit-review",
     name: "Booking with a GCash or QR Ph deposit",
-    description: "A customer asks for a time. You approve it, Daloy books it and asks for a deposit to your QR Ph code or GCash number, and the customer sends the transfer reference. You check your own GCash or bank history and confirm in Receipts to review. Unpaid after 6 hours: an SMS reminder. Unpaid after 24 hours: the slot is released and the customer is told. Needs UniSMS.",
+    description: "A customer asks for a time. You approve it, kymavo books it and asks for a deposit to your QR Ph code or GCash number, and the customer sends the transfer reference. You check your own GCash or bank history and confirm in Receipts to review. Unpaid after 6 hours: an SMS reminder. Unpaid after 24 hours: the slot is released and the customer is told. Needs UniSMS.",
     category: "Bookings",
     definition: {
       trigger: {
@@ -737,7 +737,7 @@ export const TEMPLATES = [
         {
           id: "decide",
           type: "approval",
-          config: { to: "owner@example.com", subject: "Booking request from {{trigger.name}}", message: "{{trigger.name}} ({{trigger.phone}}) asks for {{trigger.service}} at {{trigger.appointment_at}}. If you approve, Daloy books it and asks for the deposit.", timeoutSeconds: 172_800 },
+          config: { to: "owner@example.com", subject: "Booking request from {{trigger.name}}", message: "{{trigger.name}} ({{trigger.phone}}) asks for {{trigger.service}} at {{trigger.appointment_at}}. If you approve, kymavo books it and asks for the deposit.", timeoutSeconds: 172_800 },
         },
         { id: "book", type: "booking", config: { action: "create", resource: "{{trigger.resource}}", start: "{{trigger.appointment_at}}", minutes: 60 } },
         {
@@ -781,7 +781,7 @@ export const TEMPLATES = [
   {
     slug: "order-gcash-checkout",
     name: "Order with GCash checkout",
-    description: "Your shop sends a signed order webhook. The customer gets a PayMongo checkout link (GCash when enabled for your account) and the QR Ph option. Daloy confirms the order only when a verified PayMongo payment matches it, then texts the customer once. Unpaid after a day: a reminder. Unpaid after three days: the order is cancelled and the customer is told. Needs PayMongo and UniSMS.",
+    description: "Your shop sends a signed order webhook. The customer gets a PayMongo checkout link (GCash when enabled for your account) and the QR Ph option. kymavo confirms the order only when a verified PayMongo payment matches it, then texts the customer once. Unpaid after a day: a reminder. Unpaid after three days: the order is cancelled and the customer is told. Needs PayMongo and UniSMS.",
     category: "Orders",
     definition: {
       trigger: {

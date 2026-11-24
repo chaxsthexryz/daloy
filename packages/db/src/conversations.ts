@@ -23,7 +23,7 @@ const HISTORY_MESSAGES = 10;
 /** What conversation_update may save, and how long each value may be. */
 export const CONVERSATION_FIELDS = ["check_in", "check_out", "guests", "name", "phone", "email"] as const;
 export const FIELD_MAX = 200;
-/** An echo with this text as its own copy of a reply, sent within this time, is Daloy's reply, not a staff reply. */
+/** An echo with this text as its own copy of a reply, sent within this time, is kymavo's reply, not a staff reply. */
 const OWN_ECHO_MS = 10 * 60_000;
 
 /** True while Meta still accepts a standard reply: at most 24 hours since the guest's last message. */
@@ -69,7 +69,7 @@ export async function recordInbound(
 }
 
 /**
- * A message the Page or Instagram account sent to the guest. Daloy's own reply (marked by the send, or the same text as a
+ * A message the Page or Instagram account sent to the guest. kymavo's own reply (marked by the send, or the same text as a
  * reply queued in the last ten minutes) changes nothing. Any other is a person replying from the inbox: it is stored and
  * the bot stays quiet for the workspace's quiet period. An echo for a guest with no conversation is ignored.
  */
@@ -185,7 +185,7 @@ export async function saveConversationFields(db: AnyDb, conversationId: string, 
 /**
  * Records a reply the run is about to queue and returns the text to send. The first reply of a conversation carries the
  * privacy notice (RA 10173), once: notice_sent_at is claimed in this transaction. When reply and notice together pass
- * max, the reply goes alone and the next one carries the notice. The out row is how a later echo is known as Daloy's own.
+ * max, the reply goes alone and the next one carries the notice. The out row is how a later echo is known as kymavo's own.
  */
 export async function prepareReply(tx: AnyDb, c: { id: string; userId: string; runId: string; text: string; max: number }): Promise<string> {
   const [ws] = await tx
@@ -583,7 +583,7 @@ export async function sendStaffAlert(
     }
   }
 
-  const subject = owner.language === "tl" ? `Daloy: Kailangan ng staff para kay ${firstName}` : `Daloy: Staff needed for ${firstName}`;
+  const subject = owner.language === "tl" ? `kymavo: Kailangan ng staff para kay ${firstName}` : `kymavo: Staff needed for ${firstName}`;
   await mail.installation.transport.sendMail({ from: mail.installation.from, to: owner.email, subject, text });
   return { delivered: true, channel: "email", ...(fallbackReason ? { fallbackReason } : {}) };
 }

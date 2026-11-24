@@ -79,7 +79,7 @@ export function EmailSource({ workflowId, published }: { workflowId: string; pub
   return (
     <section aria-labelledby={`${id}-title`}>
       <h3 id={`${id}-title`}>{t("Email inbox")}</h3>
-      <p>{t("Connect a dedicated mailbox or folder that receives your website form emails. Daloy checks it over IMAP with TLS. It reads messages without marking them read or deleting them. Attachments are ignored.")}</p>
+      <p>{t("Connect a dedicated mailbox or folder that receives your website form emails. kymavo checks it over IMAP with TLS. It reads messages without marking them read or deleting them. Attachments are ignored.")}</p>
       <p>{t("Existing mail is skipped on the first connection and when an email trigger is first published. After publishing, wait for the worker's first mailbox check before sending a new test email. Treat incoming email as untrusted text.")}</p>
       <p role="status">{t("Mailbox status: ")}{loaded ? (source?.status ? t(source.status) : t("Not connected")) : t("Loading")}</p>
       {source?.status === "active" && (

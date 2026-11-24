@@ -4,8 +4,8 @@ import { defaultPick, pickWith } from "./GoogleConnect";
 import { useLanguage } from "./Language";
 
 /**
- * The template of a "Make a document" step (phase I1, decision 0103). Google lets Daloy open only a file the owner picks in
- * the Google Picker, so there is no field to paste a link into. The server reads the picked file with Daloy's own grant
+ * The template of a "Make a document" step (phase I1, decision 0103). Google lets kymavo open only a file the owner picks in
+ * the Google Picker, so there is no field to paste a link into. The server reads the picked file with kymavo's own grant
  * and answers with its name; only the id and the name are kept in the step.
  */
 export function DocTemplatePicker({ templateId, templateName, onPick }: { templateId: string; templateName?: string; onPick: (templateId: string, templateName: string) => void }) {
@@ -35,7 +35,7 @@ export function DocTemplatePicker({ templateId, templateName, onPick }: { templa
           {templateId ? t("Pick another template") : t("Pick a template")}
         </button>
       </div>
-      <p className="muted hint">{t("Google lets Daloy open only the template you pick here. Write placeholders such as {example} in the document, then list each one below with the value to put in.", { example: "{{name}}" })}</p>
+      <p className="muted hint">{t("Google lets kymavo open only the template you pick here. Write placeholders such as {example} in the document, then list each one below with the value to put in.", { example: "{{name}}" })}</p>
       <p role="alert" className="message error" hidden={!error}>
         {error}
       </p>

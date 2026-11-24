@@ -8,12 +8,12 @@ test("a visitor builds the shop order automation with the scripted helper and ru
     if (["xhr", "fetch", "ping"].includes(request.resourceType())) calls.push(request.url());
   });
   await page.goto("/demo/");
-  await expect(page).toHaveTitle("Daloy demo");
+  await expect(page).toHaveTitle("kymavo demo");
   await expect(page.getByText("The AI replies are scripted examples, not a live model.")).toBeVisible();
   await context.setOffline(true);
 
   await page.getByRole("button", { name: /online-shop order comes in/ }).click();
-  await expect(page.getByText("Daloy helper (scripted example)").first()).toBeVisible();
+  await expect(page.getByText("kymavo helper (scripted example)").first()).toBeVisible();
   await page.getByRole("button", { name: "My shop sends a web request" }).click();
   await page.getByRole("button", { name: "Google Sheet" }).click();
   await page.getByRole("button", { name: "Yes, orders over ₱5,000" }).click();

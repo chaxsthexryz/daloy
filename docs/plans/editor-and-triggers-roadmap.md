@@ -4,7 +4,7 @@ Written 24 November 2026 against `main` (`9f42911`). Decision and migration numb
 
 ## Current baseline
 
-Daloy already supports 9 triggers in `packages/engine/src/definition.ts`: `manual`, `schedule`, `form`, `webhook`, `email` (IMAP), `payment` (PayMongo), `meta_dm` (Messenger and Instagram DM), `shopify_order`, and `telegram_message`.
+kymavo already supports 9 triggers in `packages/engine/src/definition.ts`: `manual`, `schedule`, `form`, `webhook`, `email` (IMAP), `payment` (PayMongo), `meta_dm` (Messenger and Instagram DM), `shopify_order`, and `telegram_message`.
 
 Scope boundaries stay unchanged:
 - `Viber` remains out unless a customer signs and pays the monthly Viber Business Messages minimum directly (decision `0042` and `docs/plans/resort-concierge.md`).
@@ -26,7 +26,7 @@ Build Tier 1 (`G1` to `G3`) before any third-party partner-gated channels, and b
 
 | Phase | Scope | Approval and risk notes |
 |---|---|---|
-| `G1. Daloy internal triggers and sub-workflows` | Native `booking_event` (`created`, `rescheduled`, `cancelled`), `payment_event` (`confirmed`, `expired`), and reusable `sub_workflow` triggers/steps with recursion depth and cycle guards. | Zero third-party OAuth approvals; reuses internal state transitions and `run_keys` dedup. |
+| `G1. kymavo internal triggers and sub-workflows` | Native `booking_event` (`created`, `rescheduled`, `cancelled`), `payment_event` (`confirmed`, `expired`), and reusable `sub_workflow` triggers/steps with recursion depth and cycle guards. | Zero third-party OAuth approvals; reuses internal state transitions and `run_keys` dedup. |
 | `G2. Google Workspace Tier 1 triggers` | `sheets_row` (new or updated row, also covering Google Forms responses), `calendar_event` (new, changed, or starting soon), and `drive_file` (new file in picked folder). | Reuses existing Google OAuth and Picker (`drive.file` scope discipline in `docs/google-scope-submission.md`) with polling cursor state and `run_keys` dedup. |
 | `G3. Connected mailbox triggers` | `gmail_message` and `outlook_message` triggers filtered by sender, subject, or folder/label, removing IMAP password setup for OAuth users. | Note: `gmail.readonly` is a Gmail restricted scope requiring Google CASA / restricted-scope verification before public launch; Outlook uses Microsoft Graph mail read permission. |
 | `G4. Web monitor, RSS, and team chat triggers` | `page_changed` / RSS trigger (paired with `read_page` snapshots) plus `slack_message`, `teams_message`, and `discord_message` / slash-command triggers. | Reuses existing `read_page` SSRF guard and workspace chat connections. |

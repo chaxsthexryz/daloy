@@ -25,7 +25,7 @@ export const advancedTranslations: Record<string, string> = {
   "Create a token": "Gumawa ng token",
   "Token created for {name}": "Nagawa na ang token para sa {name}",
   "Copy the token now. You will not see it again.": "Kopyahin na ang token ngayon. Hindi mo na ito makikita ulit.",
-  "Daloy keeps only a hash, so a lost token cannot be recovered. Create a new one instead.": "Hash lang ang itinatago ng Daloy, kaya hindi na mababawi ang nawalang token. Gumawa na lang ng bago.",
+  "kymavo keeps only a hash, so a lost token cannot be recovered. Create a new one instead.": "Hash lang ang itinatago ng kymavo, kaya hindi na mababawi ang nawalang token. Gumawa na lang ng bago.",
   "Copy token": "Kopyahin ang token",
   "Select the token and copy it with Ctrl+C.": "Piliin ang token at kopyahin gamit ang Ctrl+C.",
   "The token value is never shown again after it is created.": "Hindi na ipapakita ulit ang token pagkatapos itong magawa.",

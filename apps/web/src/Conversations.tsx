@@ -210,7 +210,7 @@ export function ConversationsPage({ user }: { user: User }) {
 
   return (
     <main className="page cv-page">
-      <PageHead crumbs={[{ label: "Daloy", href: "#/" }, { label: t("Conversations") }]} title={t("Conversations")} />
+      <PageHead crumbs={[{ label: "kymavo", href: "#/" }, { label: t("Conversations") }]} title={t("Conversations")} />
       {error && <p className="message error" role="alert">{error}</p>}
       {notice && <p className="message" role="status">{notice}</p>}
 

@@ -31,9 +31,9 @@ Borrow:
 
 Leave out:
 
-- Credentials, projects, variables and the node palette as menu items. Daloy shows connections as Apps.
+- Credentials, projects, variables and the node palette as menu items. kymavo shows connections as Apps.
 - Expressions, pinned data, code steps and custom execution data.
-- Canvas-first editing. n8n's docs say nothing about phones; Daloy owners work on phones, so the phone shows a step list and the diagram stays a desktop view.
+- Canvas-first editing. n8n's docs say nothing about phones; kymavo owners work on phones, so the phone shows a step list and the diagram stays a desktop view.
 - Sending real data values to the model (n8n's builder needs that setting on).
 
 ## 3. Proposed menu and pages
@@ -60,7 +60,7 @@ Sign out
 Phone: a bottom bar with four places, and the create button in the top bar.
 
 ```
-| Daloy                 [+ New] |
+| kymavo                 [+ New] |
 |                                |
 |          page content          |
 |                                |
@@ -75,7 +75,7 @@ Pages:
 - New automation (`#/new`): one page with every template (the three guided ones and the three builder templates), "Describe it to the AI" (goes to Build with AI) and "Blank, for a technician".
 - Automation page: one page for guided and editor-built automations, with tabs Overview (state, form link, requests), Activity and Steps (diagram on desktop, list on phone). Versions and technician details sit under More. The breadcrumb is always Automations.
 - Activity (`#/activity`): every run across automations, filter by state, search by request reference or automation name. `GET /runs` already lists across the workspace; reference search needs one query parameter.
-- Apps (`#/apps`, replaces Business and email; added at the owner's request on 17 November 2026): All and Connected tabs with counts, a search box, a Connected section on top and a More section below, two cards per row on desktop and one on a phone. Each card has the app's logo, its name, one plain line on what Daloy does with it, and Connect (or, once connected, its state and Manage). The cards are only the apps Daloy supports today: Gmail, Outlook, Google Sheets, Slack and Microsoft Teams. Planned ones (SMS, email-in) appear only when they work. Connect opens the existing setup for that app (the Gmail app password steps, Outlook consent, the Sheets key, the Slack token, the Teams link) in a panel, so no setup logic changes. The Outlook consent callback (`#/settings/business/outlook-<outcome>`) keeps working through a redirect to Apps. As built in N4e, each card shows a letter tile and the app's name: Microsoft, Slack and Google allow their names in text but their logos only with written permission, and [app-logo-permissions.md](app-logo-permissions.md) lists how to ask each of them. The layout pattern is common to app directories; nothing is copied from any one product.
+- Apps (`#/apps`, replaces Business and email; added at the owner's request on 17 November 2026): All and Connected tabs with counts, a search box, a Connected section on top and a More section below, two cards per row on desktop and one on a phone. Each card has the app's logo, its name, one plain line on what kymavo does with it, and Connect (or, once connected, its state and Manage). The cards are only the apps kymavo supports today: Gmail, Outlook, Google Sheets, Slack and Microsoft Teams. Planned ones (SMS, email-in) appear only when they work. Connect opens the existing setup for that app (the Gmail app password steps, Outlook consent, the Sheets key, the Slack token, the Teams link) in a panel, so no setup logic changes. The Outlook consent callback (`#/settings/business/outlook-<outcome>`) keeps working through a redirect to Apps. As built in N4e, each card shows a letter tile and the app's name: Microsoft, Slack and Google allow their names in text but their logos only with written permission, and [app-logo-permissions.md](app-logo-permissions.md) lists how to ask each of them. The layout pattern is common to app directories; nothing is copied from any one product.
 - Business (`#/settings/business`): "Your business" (name, website, inquiry inbox) moves here from Business and email. As built in N4e, "Reply to website inquiries" stays on Business next to the details it needs, and New automation links to it.
 - Run page: the error in plain words with a button to the page that fixes it (for example "Connect Gmail" to Apps). Step ids, keys and templates stay under Details for a technician.
 - Words: automation everywhere in the console, Activity for runs, Automations in every breadcrumb. Sign-in line: "Automate the routine work of your office."
@@ -90,12 +90,12 @@ Flow:
 2. Up to four questions, one at a time, each answered by tapping a choice or "Other":
    - What starts it? Someone fills a form / A booking is made / Another system sends a web request / On a schedule.
    - Who should know or decide? Me / A team member (picked from Team) / The person who filled the form / No one.
-   - Where should it go? Email / Google Sheet / Slack / Outlook or Teams (only connected ones are offered) / Only Daloy's request list.
+   - Where should it go? Email / Google Sheet / Slack / Outlook or Teams (only connected ones are offered) / Only kymavo's request list.
    - Should anyone approve it first? No / Yes, the person named above.
 
    The questions are fixed and shown by the page, so asking them costs no model call and works without a model.
 3. The page joins the description and answers into the `request` text and calls the existing `POST /ai/draft` (prompt, one lint repair round and `warnings` already exist in `apps/api/src/ai-draft.ts`). "Change something" uses its existing `current` field.
-4. Review: the draft as plain sentences ("When someone fills the form, Daloy will: 1. email you ... 2. ..."), the lint warnings as "Check before turning on", and the connections it needs. Buttons: Save as draft, Change something, Start over.
+4. Review: the draft as plain sentences ("When someone fills the form, kymavo will: 1. email you ... 2. ..."), the lint warnings as "Check before turning on", and the connections it needs. Buttons: Save as draft, Change something, Start over.
 
 What the owner approves before anything saves: nothing is written until Save as draft. Today `AiDraft.tsx` creates the workflow as soon as the draft comes back; the tab keeps the draft in the page until Save. Save makes an unpublished version. Turning it on stays a separate step on the automation page, after a Mock test run that sends nothing (P3).
 
@@ -125,6 +125,6 @@ Context: N4 named Zapier and Activepieces as references. After N4 and V2 the own
 
 Options: keep Zapier and Activepieces; follow n8n's layout; design without a reference.
 
-Decision: follow n8n's navigation layout (a create button always visible, one list across all runs, a per-automation switch between steps and activity, an AI builder whose draft is reviewed before saving). n8n is under the Sustainable Use License, so its public docs and screens are studied only and no code, icons, text or assets are copied. Daloy keeps its own words, a phone-first layout and its own components.
+Decision: follow n8n's navigation layout (a create button always visible, one list across all runs, a per-automation switch between steps and activity, an AI builder whose draft is reviewed before saving). n8n is under the Sustainable Use License, so its public docs and screens are studied only and no code, icons, text or assets are copied. kymavo keeps its own words, a phone-first layout and its own components.
 
-Consequences: N4d to N4f replace the Zapier and Activepieces reference. Canvas-first editing, credentials and projects are not adopted. The AI tab follows Daloy's data rules, which are stricter than n8n's builder.
+Consequences: N4d to N4f replace the Zapier and Activepieces reference. Canvas-first editing, credentials and projects are not adopted. The AI tab follows kymavo's data rules, which are stricter than n8n's builder.

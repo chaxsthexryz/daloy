@@ -3,7 +3,7 @@ import type { AddressInfo } from "node:net";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { ProviderError, trelloAddCard, trelloIdentity, type ProviderUrls } from "./providers";
 
-// Review, route and data checks: Trello's key and token travel in the query string, so no error Daloy builds (and
+// Review, route and data checks: Trello's key and token travel in the query string, so no error kymavo builds (and
 // stores as a delivery's last error, or shows in the console) may carry the request URL or its query.
 const cred = { key: "KEY-0123456789abcdef0123456789ab", token: "ATTA-token-0123456789abcdefghijklmnopqrstu" }; // gitleaks:allow
 let stub: Server;

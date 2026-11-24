@@ -67,15 +67,15 @@ describe("email settings", () => {
     const { agent, userId } = await signedIn();
     await db.update(users).set({ language: "tl" }).where(eq(users.id, userId));
     await agent.post("/settings/email/test").expect(200);
-    expect(installation.messages.at(-1)!.raw).toContain("Subject: Test email ng Daloy");
-    expect(installation.messages.at(-1)!.raw).toContain("Test email ito ng Daloy");
+    expect(installation.messages.at(-1)!.raw).toContain("Subject: Test email ng kymavo");
+    expect(installation.messages.at(-1)!.raw).toContain("Test email ito ng kymavo");
     await agent.put("/settings/email/gmail").send({ address: "tagalog@gmail.com", appPassword: "abcdefghijklmnop" }).expect(200);
     await agent.post("/settings/email/test").expect(200);
     expect(lastText()).toContain("Para makapagpadala ng email");
     expect(lastLink()).toMatch(/^[A-Za-z0-9_-]{43}$/);
     await db.update(users).set({ language: "en" }).where(eq(users.id, userId));
     await agent.post("/settings/email/test").expect(200);
-    expect(gmail.messages.at(-1)!.raw).toContain("Subject: Daloy test email");
+    expect(gmail.messages.at(-1)!.raw).toContain("Subject: kymavo test email");
   });
 
   it("needs a session", async () => {

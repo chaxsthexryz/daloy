@@ -127,7 +127,7 @@ async function attempt(db: Db, key: Buffer, urls: ProviderUrls, d: Delivery): Pr
     if (!operator) return { state: "failed", error: SMS_NOT_SET_UP, kind: "not_connected" };
     const [u] = await db.select({ plan: users.plan }).from(users).where(eq(users.id, d.userId));
     if (u?.plan === "preview") {
-      return { state: "failed", error: "SMS sending is not included on the Preview plan. Ask Daloy to move you to a paid plan.", kind: "plan_quota" };
+      return { state: "failed", error: "SMS sending is not included on the Preview plan. Ask kymavo to move you to a paid plan.", kind: "plan_quota" };
     }
     usingShared = true;
     conn = {
@@ -144,7 +144,7 @@ async function attempt(db: Db, key: Buffer, urls: ProviderUrls, d: Delivery): Pr
   if (conn.status === "failed") return { state: "failed", error: `${name} needs to be connected again (${conn.account}). Reconnect it in Apps, then retry.`, kind: "reconnect" };
   if (!conn.destination) return { state: "failed", error: `No ${d.provider === "google_sheets" ? "sheet" : d.provider === "google_calendar" ? "calendar" : d.provider === "google_drive" ? "folder" : d.provider === "telegram" ? "chat" : d.provider === "airtable" ? "table" : d.provider === "notion" ? "database" : d.provider === "trello" ? "list" : d.provider === "unisms" ? "Sender ID" : d.provider === "meta_messenger" ? "page" : "channel"} is chosen for ${name}. Pick one in Apps, then retry.`, kind: "no_destination" };
   if (d.pinnedAccount === null) {
-    return { state: "needs_review", error: `This was queued before Daloy recorded where deliveries go, so it cannot confirm the ${name} destination. Choose Post again to send it to ${describe(d.provider, conn.destination)}, or Mark as posted.`, kind: "queued_before_pin" };
+    return { state: "needs_review", error: `This was queued before kymavo recorded where deliveries go, so it cannot confirm the ${name} destination. Choose Post again to send it to ${describe(d.provider, conn.destination)}, or Mark as posted.`, kind: "queued_before_pin" };
   }
   if (d.pinnedAccount === "") {
     // Nothing was connected when it was queued: this connection is the first, so pin it now.
@@ -308,7 +308,7 @@ async function attempt(db: Db, key: Buffer, urls: ProviderUrls, d: Delivery): Pr
     }
     if (d.provider === "unisms") {
       if (smsSent) {
-        return { state: "needs_review", error: `${name} sent this SMS, but Daloy could not record the outcome right away. ${reviewHint(d.provider, destination)}`, kind: "ambiguous" };
+        return { state: "needs_review", error: `${name} sent this SMS, but kymavo could not record the outcome right away. ${reviewHint(d.provider, destination)}`, kind: "ambiguous" };
       }
       if (smsClaimNow && err instanceof ProviderError && err.kind !== "ambiguous") {
         await refundUsage(db, d.userId, "sms", { n: 1, key: `delivery:${d.id}`, now: smsClaimNow });
@@ -358,7 +358,7 @@ function describe(provider: Provider, dest: Record<string, string>) {
  * Sheets, Drive and Calendar pin only where data lands: the same spreadsheet and tab, folder or calendar id, reached
  * through another Google account or a service account replaced by a Google sign-in, is the same place (plan R7,
  * decisions 0060 and 0064). For Calendar this holds only while the connection is a Google sign-in, which can reach
- * only calendars Daloy created; a service account still compares the account as before. A different calendar id still
+ * only calendars kymavo created; a service account still compares the account as before. A different calendar id still
  * goes to review, so M11 holds.
  */
 const destinationOnly = (p: Provider, method: string) => p === "google_sheets" || p === "google_drive" || (p === "google_calendar" && method === "oauth");

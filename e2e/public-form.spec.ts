@@ -29,10 +29,10 @@ test("a visitor sees the business brand, fixes a refused file and gets a receipt
 
   await page.goto(`/forms/${o.formId}`);
   await expect(page.getByRole("heading", { name: "Sampaguita Bakery" })).toBeVisible();
-  // The accent colours the button and the rule under the name; the Daloy brand does not appear.
+  // The accent colours the button and the rule under the name; the kymavo brand does not appear.
   await expect(page.getByRole("button", { name: "Send" })).toHaveCSS("background-color", "rgb(31, 107, 69)");
   await expect(page.locator("main")).toHaveClass("ruled");
-  await expect(page.getByText("Daloy")).toHaveCount(0);
+  await expect(page.getByText("kymavo")).toHaveCount(0);
   await expect(page.getByText("Up to 3 files, 5 MB each.")).toBeVisible();
 
   // Amount 5 passes the browser; the server refuses the .docx, and the answers stay in the form.

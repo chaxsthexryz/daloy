@@ -69,7 +69,7 @@ export function startLlmFake(port: number) {
         return res.end(JSON.stringify({ message: { content }, prompt_eval_count: 1, eval_count: 1 }));
       }
       // The run explainer (N10a) asks for plain text, not a workflow draft.
-      if (body.messages.some((m) => m.content.startsWith("You explain why a Daloy automation stopped")))
+      if (body.messages.some((m) => m.content.startsWith("You explain why a kymavo automation stopped")))
         return res.end(JSON.stringify({ message: { content: "The automation stopped because a step was set to fail in this preview. Nothing was sent." }, prompt_eval_count: 1, eval_count: 1 }));
       const change = body.messages.some((m) => m.content.startsWith("Change this workflow"));
       const payload = body.messages.some((m) => m.content.includes("boss approval")) ? warned : body.messages.some((m) => m.content.includes("semester schedule")) ? scheduled : change ? changed : built;

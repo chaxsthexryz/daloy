@@ -303,7 +303,7 @@ export class MetaHooksController {
     const rawBody = req.rawBody ?? Buffer.alloc(0);
     if (!verifyMetaSignature(rawBody, signature, found.cred.appSecret)) throw new UnauthorizedException("invalid signature");
 
-    // A reply from the Page inbox hands the conversation to staff; Daloy's own reply changes nothing (decision 0115).
+    // A reply from the Page inbox hands the conversation to staff; kymavo's own reply changes nothing (decision 0115).
     for (const e of parseMetaEchoes(req.body, found.conn.destination)) {
       await recordEcho(this.db, { userId: found.userId, channel: e.channel, externalId: e.guestId, mid: e.messageId, text: e.text, ours: e.ours });
     }

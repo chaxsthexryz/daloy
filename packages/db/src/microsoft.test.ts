@@ -33,7 +33,7 @@ const state = async (id: string) => (await db.select().from(deliveries).where(eq
 const deliverDue = () => runDueDeliveries(db, key, urls);
 const makeDue = (id: string) => db.update(deliveries).set({ nextAttemptAt: sql`now()` }).where(eq(deliveries.id, id));
 
-/** The real consent dance against the fake: authorize, then swap the code. Returns the refresh token Daloy would store. */
+/** The real consent dance against the fake: authorize, then swap the code. Returns the refresh token kymavo would store. */
 async function consent(): Promise<string> {
   const verifier = randomBytes(32).toString("base64url");
   const { createHash } = await import("node:crypto");

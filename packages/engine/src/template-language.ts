@@ -32,7 +32,7 @@ export function localizeGeneratedDefinition(definition: WorkflowDefinition, lang
     "office-request": {
       notify_office: { subject: "Bagong request {{trigger.reference}}: {{trigger.summary}}", text: `Nagpadala ng request si {{trigger.name}} ({{trigger.email}}).\n\n{{trigger.summary}}${more ? `\n${more}` : ""}\n\nReference: {{trigger.reference}}` },
       send_receipt: { subject: "Natanggap namin ang request mo {{trigger.reference}}", text: "Natanggap namin ang request mo.\nAng reference mo ay {{trigger.reference}}. Banggitin ito kapag nagtatanong tungkol sa request." },
-      post_to_slack: { text: "Bagong office request {{trigger.reference}}: {{trigger.summary}}\nNasa Requests sa Daloy ang mga detalye." },
+      post_to_slack: { text: "Bagong office request {{trigger.reference}}: {{trigger.summary}}\nNasa Requests sa kymavo ang mga detalye." },
     },
     "purchase-request": {
       send_receipt: { subject: "Natanggap namin ang purchase request mo {{trigger.reference}}", text: `Natanggap namin ang purchase request mo. Si ${a} ang magdedesisyon. Ipapadala sa email ang resulta.\n\nReference: {{trigger.reference}}` },
@@ -41,7 +41,7 @@ export function localizeGeneratedDefinition(definition: WorkflowDefinition, lang
       tell_approved: requester("Na-approve ang purchase request mo {{trigger.reference}}", `Inaprubahan ni ${a} ang request mo para sa {{trigger.summary}}. Nasa purchasing na ito.`),
       tell_rejected: requester("Hindi na-approve ang purchase request mo {{trigger.reference}}", `Hindi inaprubahan ni ${a} ang request mo para sa {{trigger.summary}}. Magtanong sa kanya kung gusto mong malaman ang dahilan.`),
       tell_no_decision: { subject: "Walang desisyon sa purchase request mo {{trigger.reference}}", text: "Walang nagdesisyon sa purchase request mo sa loob ng isang linggo. Ipadala ulit kung kailangan mo pa ito.\n\nReference: {{trigger.reference}}" },
-      post_to_teams: { text: "Na-approve ang purchase request {{trigger.reference}}: {{trigger.summary}}\nNasa purchasing ang mga detalye. Ang nakatalagang approver lang ang magdedesisyon sa Daloy." },
+      post_to_teams: { text: "Na-approve ang purchase request {{trigger.reference}}: {{trigger.summary}}\nNasa purchasing ang mga detalye. Ang nakatalagang approver lang ang magdedesisyon sa kymavo." },
     },
     "website-inquiry": {
       reply_to_customer: { subject: `Salamat sa pag-contact sa ${values.businessName}`, text: `Salamat sa pagsulat sa ${values.businessName}. Natanggap namin ang mensahe mo at sasagot kami sa loob ng isang araw ng trabaho.` },
@@ -85,7 +85,7 @@ export function localizeGeneratedDefinition(definition: WorkflowDefinition, lang
       tell_owner: { text: "Bagong order {{trigger.order_id}}: {{trigger.total}} piso. Nasa sheet mo ang mga detalye." },
     },
     "receipt-expense": {
-      approve: { subject: "Gastos mula kay {{trigger.name}}", message: "Nagpadala ng resibo si {{trigger.name}}.\nTindahan: {{steps.read_receipt.output.shop}}\nHalaga: {{steps.read_receipt.output.amount}}\nNasa run page sa Daloy ang litrato." },
+      approve: { subject: "Gastos mula kay {{trigger.name}}", message: "Nagpadala ng resibo si {{trigger.name}}.\nTindahan: {{steps.read_receipt.output.shop}}\nHalaga: {{steps.read_receipt.output.amount}}\nNasa run page sa kymavo ang litrato." },
       tell_approved: { subject: "Na-approve ang gastos mo", text: "Hi {{trigger.name}}, na-approve ang resibo mo mula sa {{steps.read_receipt.output.shop}} ({{steps.read_receipt.output.amount}}) at naidagdag na sa listahan ng gastos." },
       tell_rejected: { subject: "Hindi na-approve ang gastos mo", text: "Hi {{trigger.name}}, hindi na-approve ang resibo mo mula sa {{steps.read_receipt.output.shop}} ({{steps.read_receipt.output.amount}})." },
       tell_no_decision: { subject: "Wala pang desisyon sa gastos mo", text: "Wala pang nagdesisyon sa ipinadala mong gastos. Magtanong sa may-ari." },
@@ -97,7 +97,7 @@ export function localizeGeneratedDefinition(definition: WorkflowDefinition, lang
       tell_no_decision: { subject: "Naghihintay ang quote request ni {{trigger.name}}", text: "Walang sumagot sa quote request ni {{trigger.name}} ({{trigger.email}}) sa loob ng dalawang araw. Pakisagot siya." },
     },
     "booking-deposit-review": {
-      decide: { subject: "Booking request mula kay {{trigger.name}}", message: "Humihingi si {{trigger.name}} ({{trigger.phone}}) ng {{trigger.service}} sa {{trigger.appointment_at}}. Kapag inaprubahan mo, ibu-book ito ng Daloy at hihingi ng deposito." },
+      decide: { subject: "Booking request mula kay {{trigger.name}}", message: "Humihingi si {{trigger.name}} ({{trigger.phone}}) ng {{trigger.service}} sa {{trigger.appointment_at}}. Kapag inaprubahan mo, ibu-book ito ng kymavo at hihingi ng deposito." },
       ask_deposit: { confirmedMessage: "Hi {{trigger.name}}, natanggap namin ang 350 pisong deposito para sa {{steps.book.output.reference}}. Kita tayo sa {{trigger.appointment_at}}." },
       send_pay_link: { message: "Hi {{trigger.name}}, naka-hold ang slot mo {{steps.book.output.reference}}. Bayaran ang 350 pisong deposito at ipadala ang reference dito: {{steps.ask_deposit.output.payUrl}}" },
       remind: { message: "Paalala: hindi pa bayad ang deposito para sa {{steps.book.output.reference}}. Magbayad at ipadala ang reference dito: {{steps.ask_deposit.output.payUrl}}" },

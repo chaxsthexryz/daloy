@@ -469,7 +469,7 @@ describe("schedule watchdog in a running worker (N17)", () => {
     const transport = { sendMail: async (m: { to: string[] }) => { outbox.push(m.to); return {}; } };
     const watched = await startWorker({
       connectionString: dbUrl, db, executor, pollingIntervalSeconds: 0.5, sweepMs: 60_000,
-      watchdog: { secretsKey: Buffer.alloc(32), mail: { installation: { transport: transport as never, from: "Daloy <daloy@localhost>" }, gmail: () => { throw new Error("unused"); }, sharedMail: "open" }, intervalMs: 100 },
+      watchdog: { secretsKey: Buffer.alloc(32), mail: { installation: { transport: transport as never, from: "kymavo <daloy@localhost>" }, gmail: () => { throw new Error("unused"); }, sharedMail: "open" }, intervalMs: 100 },
     });
     const flagged = async () => (await db.select({ at: workflows.scheduleMissedAt }).from(workflows).where(eq(workflows.id, wf!.id)))[0]!.at;
     const until = async (done: () => Promise<boolean>) => { for (let i = 0; i < 100 && !(await done()); i++) await new Promise((r) => setTimeout(r, 100)); };

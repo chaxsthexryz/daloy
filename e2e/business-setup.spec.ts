@@ -49,7 +49,7 @@ test("an owner sets up inquiry replies and a customer's inquiry reaches both inb
 
   await page.getByRole("button", { name: "Send a test email to me" }).click();
   await expect(page.getByText(`accepted a test email to ${owner}`)).toBeVisible();
-  expect(mail().filter((m) => m.includes(`To: ${owner}`) && m.includes("Daloy test email"))).toHaveLength(1);
+  expect(mail().filter((m) => m.includes(`To: ${owner}`) && m.includes("kymavo test email"))).toHaveLength(1);
   await page.getByRole("link", { name: "Business", exact: true }).first().click();
 
   await expect(page.getByText(`New inquiries go to ${inbox}.`)).toBeVisible();

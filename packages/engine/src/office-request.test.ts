@@ -56,7 +56,7 @@ describe("office request template", () => {
   it("previews the sheet row and the Slack note, and reads setups saved before they existed", () => {
     const preview = previewOfficeRequest({ ...defaultAnswers("office@example.com"), sheets: true, slack: true }, SAMPLE_REQUEST);
     expect(preview.sheetRow).toEqual(["REQ-SAMPLE", "(time of the request)", "Rosa Diaz", "rosa.diaz@example.com", "The printer on floor 2 is jammed.", "Floor 2, near the pantry"]);
-    expect(preview.slackMessage).toBe("New office request REQ-SAMPLE: The printer on floor 2 is jammed.\nDetails are in Daloy under Requests.");
+    expect(preview.slackMessage).toBe("New office request REQ-SAMPLE: The printer on floor 2 is jammed.\nDetails are in kymavo under Requests.");
     expect(officeRequestAnswers.parse({ name: "Office", notifyEmail: "o@example.com", extraFields: [] })).toMatchObject({ sheets: false, slack: false });
   });
 });

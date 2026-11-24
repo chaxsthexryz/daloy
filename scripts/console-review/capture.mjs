@@ -91,7 +91,7 @@ try {
   await context.close();
 
   const source = await readFile(new URL("./walkthrough.html", import.meta.url), "utf8");
-  const template = apps ? source.replaceAll("1180", "1440").replaceAll("Daloy console review", "Daloy Apps and Business walkthrough") : source;
+  const template = apps ? source.replaceAll("1180", "1440").replaceAll("kymavo console review", "kymavo Apps and Business walkthrough") : source;
   const commit = process.env.GITHUB_SHA ?? "";
   const data = JSON.stringify({ captures, commit }).replaceAll("<", "\\u003c");
   await mkdir(dirname(output), { recursive: true });

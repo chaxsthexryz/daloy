@@ -436,7 +436,7 @@ function SetupWizard({ wf, setup, onLive }: { wf: Detail; setup: Setup; onLive: 
       )}
       {step === "destinations" && (
         <>
-          <p className="gp-hint">{t("Requests are saved to the request list of {name} in Daloy.", { name: answers.name })}</p>
+          <p className="gp-hint">{t("Requests are saved to the request list of {name} in kymavo.", { name: answers.name })}</p>
           <div className="gp-field">
             <label htmlFor="setup-notify"><Text>Send the office notification to</Text></label>
             <input id="setup-notify" type="email" value={answers.notifyEmail} onChange={(e) => setAnswers({ ...answers, notifyEmail: e.target.value })} required maxLength={254} />
@@ -504,7 +504,7 @@ function PurchaseWizard({ wf, setup, onLive }: { wf: Detail; setup: PurchaseSetu
   const [approvers, setApprovers] = useState<Member[] | null>(null);
   useEffect(() => void api<Member[]>("GET", "/workspace/members").then((m) => setApprovers(m.filter((x) => x.role === "owner" || x.role === "approver")), () => setApprovers([])), []);
   const preview = previewPurchaseRequest(answers, SAMPLE_PURCHASE, language);
-  const approval = preview.messages.find((m) => m.via === "Daloy approval link");
+  const approval = preview.messages.find((m) => m.via === "kymavo approval link");
 
   return frame(
     PURCHASE_TITLES[step],
@@ -539,7 +539,7 @@ function PurchaseWizard({ wf, setup, onLive }: { wf: Detail; setup: PurchaseSetu
             </details>
           )}
           <p className="gp-hint">
-            <Text>Only this person can approve or reject, signed in to Daloy. A forwarded link does not work for anyone else. To add someone, invite them as an approver on the</Text>{" "}
+            <Text>Only this person can approve or reject, signed in to kymavo. A forwarded link does not work for anyone else. To add someone, invite them as an approver on the</Text>{" "}
             <a href="#/team"><Text>Team</Text></a> <Text>page.</Text>
           </p>
         </>
@@ -567,7 +567,7 @@ function PurchaseWizard({ wf, setup, onLive }: { wf: Detail; setup: PurchaseSetu
       )}
       {step === "review" && (
         <>
-          <p className="gp-callout">{t("New submissions will ask {approver} to approve or reject, signed in to Daloy.", { approver: answers.approver })}</p>
+          <p className="gp-callout">{t("New submissions will ask {approver} to approve or reject, signed in to kymavo.", { approver: answers.approver })}</p>
           <ReviewTable
             rows={[
               { label: "Request list", value: answers.name, edit: edit("name", "Request list") },
@@ -670,7 +670,7 @@ function LivePage({ wf, formId }: { wf: Detail; formId: string }) {
             <p className="gp-hint">
               {t("Form link:")} <code>{link}</code>
             </p>
-            {local && <p className="gp-hint"><Text>This link works on this computer only. To share the form with staff, run Daloy on an address they can reach.</Text></p>}
+            {local && <p className="gp-hint"><Text>This link works on this computer only. To share the form with staff, run kymavo on an address they can reach.</Text></p>}
             <div className="gp-actions">
               <button type="button" className="ops-button blue" onClick={() => void copy()}>
                 {t("Copy form link")}

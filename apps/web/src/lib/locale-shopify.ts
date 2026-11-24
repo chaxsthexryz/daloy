@@ -3,7 +3,7 @@ export const shopifyTranslations: Record<string, string> = {
   "Start from new orders, and create or update products.": "Magsimula sa mga bagong order, at gumawa o mag-update ng mga product.",
   "Store": "Store",
   "Store:": "Store:",
-  "Daloy registered the new-order webhook in your store.": "Nai-register ng Daloy ang webhook ng bagong order sa store mo.",
+  "kymavo registered the new-order webhook in your store.": "Nai-register ng kymavo ang webhook ng bagong order sa store mo.",
   "Shopify refused the new-order webhook: {error} Orders will not arrive until it is registered. Fix that, then save again.":
     "Tinanggihan ng Shopify ang webhook ng bagong order: {error} Hindi darating ang mga order hangga't hindi ito nare-register. Ayusin muna iyon, saka i-save ulit.",
   "The app is missing these access scopes: {scopes}.": "Kulang ang app ng mga access scope na ito: {scopes}.",

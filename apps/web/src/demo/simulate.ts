@@ -31,7 +31,7 @@ export function simulate(def: WorkflowDefinition, trigger: Record<string, unknow
         row.message = { kind: "slack", to: step.type === "slack" ? "Slack channel" : "Teams channel", subject: "New message", text: text(step.config.text) };
         break;
       case "delay":
-        row.note = "The wait is skipped in the demo. Daloy would hold the run until then.";
+        row.note = "The wait is skipped in the demo. kymavo would hold the run until then.";
         break;
       case "condition":
         row.branch = conditionBranch(step.config.condition, ctx);

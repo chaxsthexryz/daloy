@@ -1311,7 +1311,7 @@ function TriggerPanel({ trigger, wf, onChange }: { trigger: Trigger; wf: Loaded;
       )}
       {trigger.type === "payment_event" && (
         <fieldset>
-          <legend>{t("Run when a Daloy payment is")}</legend>
+          <legend>{t("Run when a kymavo payment is")}</legend>
           {(["confirmed", "expired"] as const).map((e) => (
             <label key={e}>
               <input

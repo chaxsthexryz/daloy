@@ -64,7 +64,7 @@ export const screens = [
   { name: "Purchase request setup", path: `a/${purchaseId}`, title: ["Set up: Purchase request with a named approver"], note: "Choose the person who decides purchase requests.", verify: hasHeading("Who decides") },
   {
     name: "Hosted office form", url: formPath, title: ["Sample office", "Sample office"], role: "requester",
-    note: "See the fields an employee fills in. The hosted form uses Daloy's form renderer and the sample submission returns a simulated receipt.",
+    note: "See the fields an employee fills in. The hosted form uses kymavo's form renderer and the sample submission returns a simulated receipt.",
     verify: (page, language) => visible(page.getByRole("textbox", { name: language === "tl" ? "Ano ang kailangang asikasuhin?" : "What needs attention?" })),
   },
   {
