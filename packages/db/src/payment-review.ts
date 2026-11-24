@@ -374,30 +374,33 @@ export async function decideClaim(db: Db, o: { workspaceId: string; actor: { id:
 /**
  * What a PayMongo event means for the due its checkout belongs to, after markPaymentPaid or markPaymentRefunded has
  * moved the payment row. Safe to call again for the same payment: a replayed event changes nothing and sends nothing.
+ * Returns the confirmed due only when this call transitioned a pending due to confirmed.
  */
-export async function settleCheckout(db: Db, userId: string, paymentId: string): Promise<void> {
-  await db.transaction(async (tx) => {
+export async function settleCheckout(db: Db, userId: string, paymentId: string): Promise<Due | undefined> {
+  return db.transaction(async (tx) => {
     const [first] = await tx.select({ dueId: payments.dueId }).from(payments).where(and(eq(payments.id, paymentId), eq(payments.userId, userId)));
-    if (!first?.dueId) return;
+    if (!first?.dueId) return undefined;
     const d = await lockDue(tx, and(eq(paymentDues.id, first.dueId), eq(paymentDues.userId, userId)));
     const [p] = await tx.select().from(payments).where(eq(payments.id, paymentId)).for("update");
-    if (!d || !p) return;
+    if (!d || !p) return undefined;
     const matches = p.paidAmountCentavos === d.amountCentavos && p.paidCurrency === d.currency && p.reference === d.reference;
 
     if (p.status === "refunded") {
-      if (d.confirmedPaymentId !== p.id || d.status !== "confirmed") return;
+      if (d.confirmedPaymentId !== p.id || d.status !== "confirmed") return undefined;
       const [row] = await tx.update(paymentDues).set({ status: "refunded", updatedAt: now as unknown as Date }).where(and(eq(paymentDues.id, d.id), eq(paymentDues.status, "confirmed"))).returning();
       if (row) {
         await tx.update(conversations).set({ openDueId: null }).where(and(eq(conversations.userId, row.userId), eq(conversations.openDueId, row.id)));
         await log(tx, row, "refunded", "checkout", { detail: { payment: p.providerPaymentId } });
       }
-      return;
+      return undefined;
     }
-    if (p.status !== "paid" && p.status !== "needs_review") return;
-    if (d.confirmedPaymentId === p.id) return;
+    if (p.status !== "paid" && p.status !== "needs_review") return undefined;
+    if (d.confirmedPaymentId === p.id) return undefined;
     if (p.status === "paid" && d.status === "pending" && matches) {
-      await confirm(tx, d, { source: "checkout", actorId: null, claimId: null, paymentId: p.id });
-      return;
+      if (await confirm(tx, d, { source: "checkout", actorId: null, claimId: null, paymentId: p.id })) {
+        return (await tx.select().from(paymentDues).where(eq(paymentDues.id, d.id)))[0];
+      }
+      return undefined;
     }
     const flags: ClaimFlag[] = [];
     if (p.paidAmountCentavos !== d.amountCentavos || p.paidCurrency !== d.currency) flags.push("amount_mismatch");
@@ -410,6 +413,7 @@ export async function settleCheckout(db: Db, userId: string, paymentId: string):
       .onConflictDoNothing({ target: paymentClaims.paymentId })
       .returning();
     if (claim) await log(tx, d, "checkout_needs_review", "checkout", { claimId: claim.id, detail: { payment: p.providerPaymentId, paid: p.paidAmountCentavos, flags: flags.join(",") } });
+    return undefined;
   });
 }
 

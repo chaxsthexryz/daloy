@@ -81,6 +81,7 @@ export const STEP_CATALOG: Record<Step["type"], CatalogEntry> = {
   shopify_create_product: { app: SHOPIFY, mark: "shopify", provider: "shopify", action: tx("Create a product", "Gumawa ng product"), description: tx("Add a product to the connected Shopify store, with its price and SKU. It starts as a draft unless you choose active.", "Magdagdag ng product sa naka-connect na Shopify store, kasama ang presyo at SKU. Draft muna ito maliban kung pipiliin mong active."), required: ["title"], input: tx("The title, and if you want, the description, price, SKU, status and a picture link.", "Ang pamagat, at kung gusto mo, ang paglalarawan, presyo, SKU, status at link ng larawan."), output: tx("Whether the product was saved, with its id and link in Shopify.", "Kung na-save ang product, kasama ang id at link nito sa Shopify."), outcomes: [...queued, tx("Needs review, if the outcome is unknown", "Kailangang suriin, kung hindi alam ang resulta")] },
   shopify_update_product: { app: SHOPIFY, mark: "shopify", provider: "shopify", action: tx("Update a product", "I-update ang product"), description: tx("Find a product by its id or SKU and change only the things you choose, such as the price or the title.", "Hanapin ang product sa id o SKU nito at baguhin lang ang mga pipiliin mo, gaya ng presyo o pamagat."), required: ["product"], input: tx("The product id or SKU, and the things to change.", "Ang product id o SKU, at ang mga babaguhin."), output: tx("Whether the product was saved, with its id and link in Shopify.", "Kung na-save ang product, kasama ang id at link nito sa Shopify."), outcomes: queued },
   browser: { app: null, mark: "globe", action: tx("Use a web page", "Gumamit ng web page"), description: tx("Open a public page in Daloy's browser, click, type and read values from it, and take screenshots. It never types a password or card number.", "Buksan ang public na page sa browser ng Daloy, mag-click, mag-type at magbasa ng value mula rito, at kumuha ng screenshot. Hindi ito nagta-type ng password o card number."), required: ["url"], input: tx("A web address and up to 20 actions.", "Isang web address at hanggang 20 action."), output: tx("The values it read, the last address and the screenshots.", "Ang mga value na nabasa nito, ang huling address at ang mga screenshot."), outcomes: [tx("Done", "Tapos"), tx("Failed, with the reason", "Nabigo, may dahilan")] },
+  call_workflow: { app: null, mark: "play", action: tx("Call another automation", "Tumawag ng ibang automation"), description: tx("Start another published automation in your workspace whose trigger is Run from another automation.", "Magsimula ng isa pang naka-publish na automation sa workspace na may trigger na Patakbuhin mula sa ibang automation."), required: ["workflowSlug"], input: tx("Target automation slug and payload fields.", "Slug ng target automation at payload fields."), output: tx("The started child run id and workflow details.", "Ang id ng sinimulang child run at detalye ng workflow."), outcomes: [tx("Started", "Nagsimula"), tx("Failed, with the reason", "Nabigo, may dahilan")] },
 };
 
 export const TRIGGER_CATALOG: Record<Trigger["type"], CatalogEntry> = {
@@ -93,6 +94,9 @@ export const TRIGGER_CATALOG: Record<Trigger["type"], CatalogEntry> = {
   meta_dm: { app: META, mark: "messenger", provider: "meta_messenger", action: tx("A customer sends a message", "May customer na nagpadala ng mensahe"), description: tx("Start when a Messenger or Instagram DM arrives on the connected account.", "Magsimula kapag may DM sa Messenger o Instagram sa naka-connect na account."), required: [], input: tx("The message and any photos.", "Ang mensahe at mga larawan."), output: tx("The message as trigger fields.", "Ang mensahe bilang trigger fields."), outcomes: [tx("Started", "Nagsimula")] },
   telegram_message: { app: TELEGRAM, mark: "telegram", provider: "telegram", action: tx("Someone messages your bot", "May nag-message sa bot mo"), description: tx("Start when a photo, PDF or message reaches your own Telegram bot, from your chat only or from anyone.", "Magsimula kapag may photo, PDF o mensahe sa sarili mong Telegram bot, mula sa chat mo lang o mula sa kahit sino."), required: [], input: tx("The message and any photo or PDF.", "Ang mensahe at anumang photo o PDF."), output: tx("The message, the sender's chat and the file.", "Ang mensahe, ang chat ng nagpadala at ang file."), outcomes: [tx("Started", "Nagsimula")] },
   shopify_order: { app: SHOPIFY, mark: "shopify", provider: "shopify", action: tx("A Shopify order comes in", "May pumasok na order sa Shopify"), description: tx("Start for each new order in the connected Shopify store. Daloy checks Shopify's signature first.", "Magsimula sa bawat bagong order sa naka-connect na Shopify store. Sinusuri muna ng Daloy ang signature ng Shopify."), required: [], input: tx("The order: number, customer, total and items.", "Ang order: numero, customer, total at mga item."), output: tx("The order as trigger fields.", "Ang order bilang trigger fields."), outcomes: [tx("Started", "Nagsimula")] },
+  booking_event: { app: null, mark: "calendar", action: tx("A booking changes", "May nagbago sa booking"), description: tx("Start when a Daloy booking is created, rescheduled or cancelled.", "Magsimula kapag may ginawa, nilipat o kinanselang Daloy booking."), required: [], input: tx("Booking id, reference, resource and schedule.", "Booking id, reference, resource at iskedyul."), output: tx("The booking event details as trigger fields.", "Ang detalye ng booking event bilang trigger fields."), outcomes: [tx("Started", "Nagsimula")] },
+  payment_event: { app: null, mark: "form", action: tx("A payment due settles", "Nabayaran o napaso ang due"), description: tx("Start when a Daloy payment due is confirmed or expires unpaid.", "Magsimula kapag nakumpirma o napaso ang isang Daloy payment due."), required: [], input: tx("Payment due id, reference, amount and status.", "Payment due id, reference, halaga at status."), output: tx("The payment due details as trigger fields.", "Ang detalye ng payment due bilang trigger fields."), outcomes: [tx("Started", "Nagsimula")] },
+  sub_workflow: { app: null, mark: "play", action: tx("Called by another automation", "Tinawag ng ibang automation"), description: tx("Reusable automation started by a Call another automation step in the same workspace.", "Magagamit muling automation na sinisimulan ng Call another automation step sa parehong workspace."), required: [], input: tx("Fields passed by the parent automation.", "Mga field na ipinasa ng parent automation."), output: tx("The passed fields as trigger fields.", "Ang ipinasang fields bilang trigger fields."), outcomes: [tx("Started", "Nagsimula")] },
 };
 
 const pick = (t: Text, language: Language) => t[language];
@@ -121,6 +125,9 @@ const TRIGGER_NOUN: Record<Trigger["type"], Text> = {
   meta_dm: tx("the message", "mensahe"),
   shopify_order: tx("the order", "order"),
   telegram_message: tx("the Telegram message", "Telegram message"),
+  booking_event: tx("the booking event", "booking event"),
+  payment_event: tx("the payment event", "payment event"),
+  sub_workflow: tx("the parent automation", "parent automation"),
   schedule: tx("the schedule", "iskedyul"),
   manual: tx("the sample data", "sample data"),
 };
@@ -135,7 +142,7 @@ function human(value: string, { language, trigger }: DestinationContext): string
     const [root, ...path] = ref.split(".");
     if (root === "trigger" && path.length) {
       const name = path.join(".");
-      const fields = trigger && (trigger.type === "form" || trigger.type === "webhook") ? trigger.config.fields ?? [] : [];
+      const fields = trigger && (trigger.type === "form" || trigger.type === "webhook" || trigger.type === "sub_workflow") ? trigger.config.fields ?? [] : [];
       const label = fields.find((f) => f.name === name)?.label ?? name;
       return fill(FROM, language, { what: label, where: trigger ? pick(TRIGGER_NOUN[trigger.type], language) : pick(tx("the trigger", "trigger"), language) });
     }
@@ -223,6 +230,8 @@ export function destination(step: Step, ctx: DestinationContext): string {
       return line(label("Amount", "Halaga"), `${human(String(step.config.amount), ctx)} ${pick(tx("pesos", "piso"), language)}`);
     case "payment_status":
       return line(label("Payment", "Bayad"), pick(tx("from step {id}", "mula sa step {id}"), language).replace("{id}", step.config.link));
+    case "call_workflow":
+      return line(label("Runs", "Patatakbuhin"), short(step.config.workflowSlug));
   }
 }
 

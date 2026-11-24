@@ -1517,3 +1517,11 @@ What it does: `layout(draft, measured)` in `apps/web/src/lib/graph.ts` places no
 Why this way: centering each depth row by array order previously pushed deep branches across sibling leaves whenever one side branched wider or tall cards wrapped. Using subtree width slots and live measured heights keeps branch layouts predictable and prevents crowding.
 
 Tests: `apps/web/src/lib/graph.test.ts` (left-to-right branch ordering regardless of step array order, non-overlapping asymmetric subtrees, parent centering over children, and tall measured-card row spacing) and `e2e/editor.spec.ts`.
+
+## Daloy internal triggers and reusable sub-workflows (phase G1, decision 0123)
+
+What it does: workflows can now subscribe to internal Daloy events (`booking_event` for `created`, `rescheduled`, and `cancelled`; `payment_event` for `confirmed` and `expired`) or act as reusable child flows (`sub_workflow` invoked by slug via a `call_workflow` step). `dispatchInternalTrigger` and `startSubWorkflow` in `packages/db/src/internal-triggers.ts` create keyed runs (`createKeyedRun`) across live, unpaused workflows in the same workspace and push new run ids onto `RUN_QUEUE` immediately from both `apps/api` and `apps/worker`.
+
+Why this way: dispatching at the exact state transitions (`bookFromStep`, `confirmStayBooking`, `rescheduleBooking`, `cancelBooking`, `decideClaim`, `settleCheckout`, `expireDue`) avoids background polling and reuses `runs.event_key` with zero database migrations. Sub-workflows track `_callChain` in `triggerPayload`, cap nesting at `MAX_SUB_WORKFLOW_DEPTH = 3`, check cycles before enqueueing, and keep `sub_workflow` out of `priceTrusted` so trusted pricing boundaries stay intact.
+
+Tests: `packages/engine/src/definition.test.ts`, `packages/engine/src/catalog.test.ts`, `packages/engine/src/step-schemas.test.ts`, `packages/db/src/internal-triggers.test.ts` (dispatch, dedup, cycle detection, depth cap, pause handling, cross-workspace isolation), `apps/worker/src/steps/index.test.ts` (`call_workflow` mock/live/retry/loop/depth and live `booking_event` dispatch), `apps/api/src/bookings.test.ts` (`created`, `rescheduled`, `cancelled` stay events), `apps/api/src/payments.test.ts` (`confirmed` from webhook and claim approval), `apps/web/src/lib/editor.test.ts` (`insertables`) and `e2e/internal-triggers.spec.ts`.

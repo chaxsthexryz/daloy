@@ -1,7 +1,7 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { approvals, bookings, conversations, knowledgeVersions, deliveries, encryptSecret, hashToken, joinWorkspace, payments, recordDecision, resources, runs, saveAiSettings, saveConnection, secrets, stepRuns, usageClaims, usageCounts, manilaDay, users, workflows, workflowVersions, type Db } from "@daloy/db";
+import { approvals, bookings, conversations, knowledgeVersions, deliveries, encryptSecret, hashToken, joinWorkspace, payments, recordDecision, resources, runs, saveAiSettings, saveConnection, secrets, stepRuns, triggers, usageClaims, usageCounts, manilaDay, users, workflows, workflowVersions, type Db } from "@daloy/db";
 import type { Step } from "@daloy/engine";
 import { eq } from "drizzle-orm";
 import nodemailer, { type SendMailOptions, type Transporter } from "nodemailer";
@@ -731,5 +731,170 @@ describe("stay_quote step", () => {
     const out = await exec("garden ROOM");
     expect(out.output).toMatchObject({ entryId: garden.id, subtotal: 8300, total: 8300, deposit: 2490, knowledgeVersion: 1 });
     await expect(exec("Penthouse")).rejects.toThrow(/No entry "Penthouse"/);
+  });
+});
+
+describe("G1 call_workflow step & internal booking dispatch", () => {
+  async function publishWorkflow(uId: string, slug: string, definition: Record<string, unknown>, triggerType: string) {
+    const [wf] = await db.insert(workflows).values({ userId: uId, name: slug, slug }).returning();
+    const [v] = await db.insert(workflowVersions).values({ workflowId: wf!.id, version: 1, definition, published: true }).returning();
+    await db.insert(triggers).values({ workflowId: wf!.id, type: triggerType, config: {} });
+    return { wf: wf!, version: v! };
+  }
+
+  it("simulates call_workflow in mock mode and starts + enqueues one keyed child run in live mode", async () => {
+    const [u] = await db.insert(users).values({ email: `sub-${randomUUID()}@test.local`, passwordHash: "x" }).returning();
+    const childDef = {
+      trigger: { type: "sub_workflow", config: { fields: [{ name: "guest", label: "Guest", type: "text", required: true }] } },
+      steps: [{ id: "end", type: "delay", config: { seconds: 1 } }],
+      edges: [],
+    };
+    const child = await publishWorkflow(u!.id, `notify-${randomUUID().slice(0, 6)}`, childDef, "sub_workflow");
+    const [parentWf] = await db.insert(workflows).values({ userId: u!.id, name: "Parent", slug: `p-${randomUUID().slice(0, 6)}` }).returning();
+    const [parentV] = await db.insert(workflowVersions).values({ workflowId: parentWf!.id, version: 1, definition: {}, published: true }).returning();
+    const [parentRun] = await db.insert(runs).values({ workflowVersionId: parentV!.id }).returning();
+
+    const enqueued: string[] = [];
+    const ex = createExecutor({ db, secretsKey: key, mail: {} as never, enqueue: async (id) => { enqueued.push(id); } });
+    const step: Step = { id: "call", type: "call_workflow", config: { workflowSlug: child.wf.slug, payload: { guest: "{{trigger.who}}" } } };
+
+    const mocked = await ex.execute({
+      runId: parentRun!.id,
+      stepRunId: NO_STEP_RUN,
+      userId: u!.id,
+      workflowId: parentWf!.id,
+      step,
+      attempt: 1,
+      idempotencyKey: `${parentRun!.id}:call`,
+      ctx: { trigger: { who: "Ana" }, steps: {} },
+      mock: true,
+    });
+    expect(mocked.output).toEqual({ mocked: true, simulated: true, workflowSlug: child.wf.slug, payload: { guest: "Ana" } });
+    expect(enqueued).toHaveLength(0);
+
+    const live = await ex.execute({
+      runId: parentRun!.id,
+      stepRunId: NO_STEP_RUN,
+      userId: u!.id,
+      workflowId: parentWf!.id,
+      step,
+      attempt: 1,
+      idempotencyKey: `${parentRun!.id}:call`,
+      ctx: { trigger: { who: "Ana" }, steps: {} },
+    });
+    const out = live.output as { runId: string; workflowId: string; workflowSlug: string; duplicate: boolean };
+    expect(out).toMatchObject({ workflowId: child.wf.id, workflowSlug: child.wf.slug, duplicate: false });
+    expect(enqueued).toEqual([out.runId]);
+
+    const [childRun] = await db.select().from(runs).where(eq(runs.id, out.runId));
+    expect(childRun?.triggerPayload).toEqual({ guest: "Ana", _callChain: [parentWf!.id, child.wf.id] });
+
+    // Retry of the same step deduplicates without enqueuing twice.
+    const retry = await ex.execute({
+      runId: parentRun!.id,
+      stepRunId: NO_STEP_RUN,
+      userId: u!.id,
+      workflowId: parentWf!.id,
+      step,
+      attempt: 2,
+      idempotencyKey: `${parentRun!.id}:call`,
+      ctx: { trigger: { who: "Ana" }, steps: {} },
+    });
+    expect((retry.output as { duplicate: boolean; runId: string }).duplicate).toBe(true);
+    expect(enqueued).toHaveLength(1);
+  });
+
+  it("refuses loops and depth > 3 without retry in call_workflow", async () => {
+    const [u] = await db.insert(users).values({ email: `loop-${randomUUID()}@test.local`, passwordHash: "x" }).returning();
+    const childDef = {
+      trigger: { type: "sub_workflow", config: {} },
+      steps: [{ id: "end", type: "delay", config: { seconds: 1 } }],
+      edges: [],
+    };
+    const child = await publishWorkflow(u!.id, `child-${randomUUID().slice(0, 6)}`, childDef, "sub_workflow");
+    const [childV] = await db.select().from(workflowVersions).where(eq(workflowVersions.workflowId, child.wf.id));
+    const [loopRun] = await db.insert(runs).values({ workflowVersionId: childV!.id, triggerPayload: { _callChain: [child.wf.id] } }).returning();
+    const [deepRun] = await db.insert(runs).values({ workflowVersionId: childV!.id, triggerPayload: { _callChain: [randomUUID(), randomUUID(), randomUUID()] } }).returning();
+    const ex = createExecutor({ db, secretsKey: key, mail: {} as never });
+
+    await expect(
+      ex.execute({
+        runId: loopRun!.id,
+        stepRunId: NO_STEP_RUN,
+        userId: u!.id,
+        workflowId: child.wf.id,
+        step: { id: "call", type: "call_workflow", config: { workflowSlug: child.wf.slug, payload: {} } },
+        attempt: 1,
+        idempotencyKey: "k1",
+        ctx: { trigger: {}, steps: {} },
+      }),
+    ).rejects.toMatchObject({ retryable: false, message: expect.stringMatching(/loop/) });
+
+    await expect(
+      ex.execute({
+        runId: deepRun!.id,
+        stepRunId: NO_STEP_RUN,
+        userId: u!.id,
+        workflowId: randomUUID(),
+        step: { id: "call", type: "call_workflow", config: { workflowSlug: child.wf.slug, payload: {} } },
+        attempt: 1,
+        idempotencyKey: "k2",
+        ctx: { trigger: {}, steps: {} },
+      }),
+    ).rejects.toMatchObject({ retryable: false, message: expect.stringMatching(/depth limit/) });
+  });
+
+  it("dispatches booking_event when a live booking step succeeds, and skips test runs", async () => {
+    const [u] = await db.insert(users).values({ email: `bevt-${randomUUID()}@test.local`, passwordHash: "x" }).returning();
+    const [res] = await db.insert(resources).values({ userId: u!.id, name: "Cabana" }).returning();
+    const subDef = {
+      trigger: { type: "booking_event", config: { events: ["created"] } },
+      steps: [{ id: "end", type: "delay", config: { seconds: 1 } }],
+      edges: [],
+    };
+    const sub = await publishWorkflow(u!.id, `on-book-${randomUUID().slice(0, 6)}`, subDef, "booking_event");
+    const [booker] = await db.insert(workflows).values({ userId: u!.id, name: "Booker", slug: `b-${randomUUID().slice(0, 6)}` }).returning();
+    const [bv] = await db.insert(workflowVersions).values({ workflowId: booker!.id, version: 1, definition: {}, published: true }).returning();
+    const [testRun] = await db.insert(runs).values({ workflowVersionId: bv!.id, test: true }).returning();
+    const [liveRun] = await db.insert(runs).values({ workflowVersionId: bv!.id, test: false }).returning();
+
+    const enqueued: string[] = [];
+    const ex = createExecutor({ db, secretsKey: key, mail: {} as never, enqueue: async (id) => { enqueued.push(id); } });
+    const trigger = { type: "form" as const, config: { fields: [{ name: "when", label: "When", type: "datetime" as const, required: true, timezone: "Asia/Manila", slotMinutes: 60 }] } };
+    const step: Step = { id: "book", type: "booking", config: { action: "create", resource: res!.id, start: "{{trigger.when}}", minutes: 60 } };
+    const startAt = "2028-06-15T10:00";
+
+    // Test run must NOT trigger booking_event automations.
+    const tOut = await ex.execute({
+      runId: testRun!.id,
+      stepRunId: NO_STEP_RUN,
+      userId: u!.id,
+      workflowId: booker!.id,
+      step,
+      attempt: 1,
+      idempotencyKey: `${testRun!.id}:book`,
+      ctx: { trigger: { when: startAt }, steps: {} },
+      booking: { test: true, workflowId: booker!.id, trigger },
+    });
+    expect(tOut.branch).toBe("done");
+    expect(enqueued).toHaveLength(0);
+
+    // Live run triggers booking_event and enqueues the subscribed workflow.
+    const lOut = await ex.execute({
+      runId: liveRun!.id,
+      stepRunId: NO_STEP_RUN,
+      userId: u!.id,
+      workflowId: booker!.id,
+      step,
+      attempt: 1,
+      idempotencyKey: `${liveRun!.id}:book`,
+      ctx: { trigger: { when: startAt }, steps: {} },
+      booking: { test: false, workflowId: booker!.id, trigger },
+    });
+    expect(lOut.branch).toBe("done");
+    expect(enqueued).toHaveLength(1);
+    const subRuns = await db.select().from(runs).where(eq(runs.workflowVersionId, sub.version.id));
+    expect(subRuns).toHaveLength(1);
+    expect(subRuns[0]!.triggerPayload).toMatchObject({ event: "created", resourceId: res!.id, resourceName: "Cabana", mode: "slot", status: "active" });
   });
 });

@@ -216,4 +216,31 @@ describe("openExits", () => {
     };
     expect(openExits(expire, "p1")).toEqual([{ on: "expired" }, { on: "kept" }]);
   });
+
+  it("lists insertable references for internal triggers, sub_workflow fields, and call_workflow outputs", () => {
+    const baseStep: Draft["steps"][number] = { id: "notify", type: "delay", config: { seconds: 1 } };
+    const bookEvt: Draft = { trigger: { type: "booking_event", config: { events: ["created"] } }, steps: [baseStep], edges: [] };
+    expect(insertables(bookEvt, "notify")).toContain("{{trigger.bookingId}}");
+    expect(insertables(bookEvt, "notify")).toContain("{{trigger.reference}}");
+
+    const payEvt: Draft = { trigger: { type: "payment_event", config: { events: ["confirmed"] } }, steps: [baseStep], edges: [] };
+    expect(insertables(payEvt, "notify")).toContain("{{trigger.dueId}}");
+    expect(insertables(payEvt, "notify")).toContain("{{trigger.amountPesos}}");
+
+    const subDraft: Draft = {
+      trigger: { type: "sub_workflow", config: { fields: [{ name: "guest", label: "Guest", type: "text", required: true }] } },
+      steps: [
+        { id: "sub", type: "call_workflow", config: { workflowSlug: "notify-staff", payload: { guest: "{{trigger.guest}}" } } },
+        baseStep,
+      ],
+      edges: [{ from: "sub", to: "notify" }],
+    };
+    expect(insertables(subDraft, "notify")).toEqual([
+      "{{trigger.guest}}",
+      "{{steps.sub.output.runId}}",
+      "{{steps.sub.output.workflowId}}",
+      "{{steps.sub.output.workflowSlug}}",
+      "{{steps.sub.output.duplicate}}",
+    ]);
+  });
 });

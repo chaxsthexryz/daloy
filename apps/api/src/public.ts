@@ -35,7 +35,7 @@ import { and, eq, sql } from "drizzle-orm";
 import type { Request, Response } from "express";
 import type { PgBoss } from "pg-boss";
 import * as z from "zod";
-import { BOSS, CONFIG, DB, enqueueRun, eventKey, isUniqueViolation, RateLimit, replayedRun, validPayload, ZodPipe, type ApiConfig } from "./http";
+import { BOSS, CONFIG, DB, enqueueRun, eventKey, isUniqueViolation, notifyDueConfirmed, RateLimit, replayedRun, validPayload, ZodPipe, type ApiConfig } from "./http";
 import { sessionUser } from "./auth";
 import { COMPRESS_JS, COMPRESS_TAG } from "./compress";
 import { resourcesFor } from "./resources";
@@ -184,7 +184,8 @@ export class PaymongoHooksController {
       if (typeof paid?.id === "string" && typeof amount === "number" && typeof currency === "string") {
         const r = await markPaymentPaid(this.db, { userId: owner.userId, sessionId: resource.id, paymentId: paid.id, amount, currency, livemode });
         // R3: a checkout for a due confirms it only on a full match; anything else goes to Receipts to review (decision 0089).
-        if (r.payment) await settleCheckout(this.db, owner.userId, r.payment.id);
+        const settledDue = r.payment ? await settleCheckout(this.db, owner.userId, r.payment.id) : undefined;
+        if (settledDue) await notifyDueConfirmed(this.db, this.boss, owner.userId, settledDue);
         if (!r.payment) {
           kept = { sessionId: resource.id, paymentId: paid.id, amount, currency, livemode };
         } else {
@@ -195,7 +196,8 @@ export class PaymongoHooksController {
               : undefined;
           if (refund && (refund.payload as { livemode?: boolean } | null)?.livemode === livemode) {
             const ref = await markPaymentRefunded(this.db, { userId: owner.userId, providerPaymentId: r.payment.providerPaymentId!, livemode });
-            if (ref.payment) await settleCheckout(this.db, owner.userId, ref.payment.id);
+            const settledRefDue = ref.payment ? await settleCheckout(this.db, owner.userId, ref.payment.id) : undefined;
+            if (settledRefDue) await notifyDueConfirmed(this.db, this.boss, owner.userId, settledRefDue);
             if (ref.payment?.status === "refunded") started = { payment: ref.payment, status: "refunded" };
             finishedRefundId = refund.eventId;
           } else if (r.payment.status === "paid") {

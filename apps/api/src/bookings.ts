@@ -3,6 +3,7 @@ import {
   bookingById,
   bookingByReference,
   bookingChanges,
+  bookingEventPayload,
   bookingResults,
   confirmStay,
   createKeyedRun,
@@ -15,6 +16,7 @@ import {
   stayByIdempotencyKey,
   stepRuns,
   workflows,
+  type BookingTriggerEvent,
   type BookingView,
   type Db,
   type StaffResult,
@@ -38,7 +40,7 @@ import type { PgBoss } from "pg-boss";
 import * as z from "zod";
 import { SessionGuard } from "./auth";
 import { toCsv } from "./csv";
-import { Allow, BOSS, CurrentUser, DB, enqueueRun, OPERATE, ZodPipe, type SessionUser } from "./http";
+import { Allow, BOSS, CurrentUser, DB, dispatchAndEnqueue, enqueueRun, OPERATE, ZodPipe, type SessionUser } from "./http";
 
 const CHANGED = "This booking changed since you loaded it. Reload and try again.";
 const versionField = z.int().min(1);
@@ -196,6 +198,7 @@ export async function rescheduleBooking(db: Db, boss: PgBoss, workspaceId: strin
     );
     const result = answer(r);
     if (r.result === "done" && r.runId) await enqueueRun(boss, r.runId);
+    if (r.result === "done") await notifyBookingEvent(db, boss, workspaceId, "rescheduled", r.booking);
     return result;
   }
 
@@ -227,10 +230,22 @@ export async function rescheduleBooking(db: Db, boss: PgBoss, workspaceId: strin
   );
   const result = answer(r);
   if (r.result === "done" && r.runId) await enqueueRun(boss, r.runId);
+  if (r.result === "done") await notifyBookingEvent(db, boss, workspaceId, "rescheduled", r.booking);
   return result;
 }
 
-export async function confirmStayBooking(db: Db, workspaceId: string, body: z.output<typeof confirmStayInput>, actor: string): Promise<Change> {
+async function notifyBookingEvent(db: Db, boss: PgBoss | undefined, workspaceId: string, event: BookingTriggerEvent, booking?: BookingView) {
+  if (!booking) return;
+  await dispatchAndEnqueue(db, boss, {
+    workspaceId,
+    type: "booking_event",
+    event,
+    eventKey: `booking:${booking.id}:v${booking.version}:${event}`,
+    payload: bookingEventPayload(event, booking),
+  });
+}
+
+export async function confirmStayBooking(db: Db, workspaceId: string, body: z.output<typeof confirmStayInput>, actor: string, boss?: PgBoss): Promise<Change> {
   if (body.idempotencyKey) {
     const prior = await stayByIdempotencyKey(db, workspaceId, body.idempotencyKey);
     if (prior) return { booking: prior, duplicate: true };
@@ -263,11 +278,15 @@ export async function confirmStayBooking(db: Db, workspaceId: string, body: z.ou
   if (r.result === "resource_not_found") throw new NotFoundException("There is no active resource with that id in this workspace.");
   if (r.result === "conversation_not_found") throw new NotFoundException("conversation not found");
   if (r.result === "taken") throw new ConflictException("That time is taken.");
+  if (r.result === "done") await notifyBookingEvent(db, boss, workspaceId, "created", r.booking);
   return { booking: r.booking, ...(r.result === "duplicate" && { duplicate: true }) };
 }
 
-export async function cancelBooking(db: Db, workspaceId: string, bookingId: string, version: number, actor: string): Promise<Change> {
-  return answer(await staffChange(db, { workspaceId, bookingId, version, action: "cancel" }, actor));
+export async function cancelBooking(db: Db, workspaceId: string, bookingId: string, version: number, actor: string, boss?: PgBoss): Promise<Change> {
+  const r = await staffChange(db, { workspaceId, bookingId, version, action: "cancel" }, actor);
+  const out = answer(r);
+  if (r.result === "done") await notifyBookingEvent(db, boss, workspaceId, "cancelled", r.booking);
+  return out;
 }
 
 /**
@@ -349,7 +368,7 @@ export class BookingsController {
   /** Staff Confirm stay (C5, decision 0120): creates a multi-night stay optionally linked to a conversation. */
   @Post("stays")
   confirmStay(@CurrentUser() user: SessionUser, @Body(new ZodPipe(confirmStayInput)) body: z.output<typeof confirmStayInput>) {
-    return confirmStayBooking(this.db, user.workspaceId, body, `user:${user.id}`);
+    return confirmStayBooking(this.db, user.workspaceId, body, `user:${user.id}`, this.boss);
   }
 
   /** One live booking by id, with stay details and guest contact from any linked conversation. */
@@ -363,7 +382,7 @@ export class BookingsController {
   @Post(":id/cancel")
   @HttpCode(200)
   cancel(@CurrentUser() user: SessionUser, @Param("id", new ZodPipe(z.uuid())) id: string, @Body(new ZodPipe(cancelInput)) body: z.output<typeof cancelInput>) {
-    return cancelBooking(this.db, user.workspaceId, id, body.version, `user:${user.id}`);
+    return cancelBooking(this.db, user.workspaceId, id, body.version, `user:${user.id}`, this.boss);
   }
 
   @Post(":id/no-show")

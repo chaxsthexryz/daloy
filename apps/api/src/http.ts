@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { keyedRun, RUN_QUEUE, type Db, type MailDeps, type OAuthProvider, type ProviderUrls, type Role } from "@daloy/db";
+import { dispatchInternalTrigger, dueConversationId, keyedRun, paymentEventPayload, RUN_QUEUE, type Db, type Due, type InternalTriggerDispatch, type MailDeps, type OAuthProvider, type ProviderUrls, type Role } from "@daloy/db";
 import { parsePayload, resolveTemplate, type FormField, type Language, type Resource, type Trigger } from "@daloy/engine";
 import {
   BadRequestException,
@@ -157,4 +157,22 @@ export async function replayedRun(db: Db, workflowId: string, trigger: Trigger, 
 
 export async function enqueueRun(boss: PgBoss, runId: string) {
   await boss.send(RUN_QUEUE, { runId }, { singletonKey: runId });
+}
+
+export async function dispatchAndEnqueue(db: Db, boss: PgBoss | undefined, input: InternalTriggerDispatch) {
+  const { runIds } = await dispatchInternalTrigger(db, input);
+  if (boss) for (const runId of runIds) await enqueueRun(boss, runId);
+  return runIds;
+}
+
+export async function notifyDueConfirmed(db: Db, boss: PgBoss | undefined, workspaceId: string, due: Due) {
+  if (due.test) return [];
+  const conversationId = await dueConversationId(db, due.bookingId);
+  return dispatchAndEnqueue(db, boss, {
+    workspaceId,
+    type: "payment_event",
+    event: "confirmed",
+    eventKey: `payment_due:${due.id}:confirmed`,
+    payload: paymentEventPayload("confirmed", due, conversationId),
+  });
 }

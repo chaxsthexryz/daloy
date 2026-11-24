@@ -21,7 +21,7 @@ export type JsonSchema = {
 };
 type Obj = Record<string, unknown>;
 
-const LABELS: Record<string, string> = { amount: "Amount (pesos)", reference: "Order reference", op: "Operator", url: "URL", selector: "CSS selector", maxChars: "Most characters to keep", to: "To (comma-separated)", text: "Message", message: "Message", senderId: "Sender ID", left: "Value", right: "Compare with", timeoutSeconds: "Timeout (seconds)", seconds: "Wait (seconds)", offsetSeconds: "Offset (seconds)", sku: "SKU", imageUrl: "Image link", by: "Find the product by", product: "Product id or SKU" };
+const LABELS: Record<string, string> = { amount: "Amount (pesos)", reference: "Order reference", op: "Operator", url: "URL", selector: "CSS selector", maxChars: "Most characters to keep", to: "To (comma-separated)", text: "Message", message: "Message", senderId: "Sender ID", left: "Value", right: "Compare with", timeoutSeconds: "Timeout (seconds)", seconds: "Wait (seconds)", offsetSeconds: "Offset (seconds)", sku: "SKU", imageUrl: "Image link", by: "Find the product by", product: "Product id or SKU", workflowSlug: "Automation slug", payload: "Inputs" };
 const label = (key: string, schema?: JsonSchema) =>
   key === "to" && schema?.description?.includes("Philippine mobile") ? "Recipient phone" : (LABELS[key] ?? key.charAt(0).toUpperCase() + key.slice(1));
 
