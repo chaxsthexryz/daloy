@@ -172,3 +172,11 @@ Use the base without `/v1`: with `LLM_PROVIDER=ollama` Daloy calls Ollama's own 
 Plan on about 4 GB of free memory for llama3.2 (3B). The container runs the model on the CPU; the compose file gives it no GPU. Without the profile, `docker compose up` starts nothing new, and an Ollama running on the host keeps working with the default `LLM_BASE_URL=http://host.docker.internal:11434`. The `ollama` service publishes no port, so it does not clash with a host Ollama on 11434.
 
 On the Oracle Always Free A1 machine this works, but CPU-only answers are slow, and Build with AI with a 3B model often writes drafts that need fixing. A hosted model such as DeepSeek (`deepseek-flash`, see `.env.example`) stays the recommendation there.
+
+## 10. Error reporting and uptime monitoring (optional)
+
+Set `SENTRY_DSN` in `.env` (for example from Sentry.io or a self-hosted GlitchTip project) and `SENTRY_ENVIRONMENT=production` to capture unexpected 5xx exceptions in `api` and unhandled errors in `worker` (`process` handlers, `pg-boss`, sweeps, and delivery pollers). Leave `SENTRY_DSN` empty to disable reporting.
+
+To report uncaught browser errors as well, pass `VITE_SENTRY_DSN` when building `apps/web` and keep `VITE_SENTRY_DSN` in `.env` so the API includes its origin in the console Content Security Policy `connect-src`. The built-in reporter sends minimal scrubbed payloads (query strings and credential keys removed, capped at 20 events per minute) directly to the DSN's `/api/<project>/store/` endpoint without adding a runtime dependency.
+
+Point your external uptime monitor (such as Better Stack, UptimeRobot, or Cloudflare Health Checks) at `GET https://<your hostname>/health`. The route requires no login and checks Postgres with `SELECT 1`, returning `200 {"ok":true}` when healthy or `503` when Postgres is unreachable.

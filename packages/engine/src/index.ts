@@ -31,3 +31,4 @@ export * from "./digest";
 export * from "./knowledge";
 export * from "./concierge";
 export * from "./stays";
+export * from "./error-report";

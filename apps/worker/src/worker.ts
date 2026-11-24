@@ -30,6 +30,7 @@ export type WorkerOptions = {
   /** Flags scheduled automations that missed a run and emails their owner (N17). Left out, nothing is checked. */
   watchdog?: { secretsKey: Buffer; mail: MailDeps; publicUrl?: string; intervalMs?: number };
   emailIn?: { secretsKey: Buffer; adapter?: ImapAdapter; intervalMs?: number };
+  onError?: (err: unknown, tags?: Record<string, string>) => void;
 };
 export type Worker = Awaited<ReturnType<typeof startWorker>>;
 
@@ -50,8 +51,12 @@ async function tooSoon(db: Db, workflowId: string) {
 
 export async function startWorker(opts: WorkerOptions) {
   const { db, leaseMs = 30_000, sweepMs = 15_000 } = opts;
+  const report = (kind: string, err: unknown) => {
+    console.error(kind, err);
+    opts.onError?.(err, { kind });
+  };
   const boss = new PgBoss({ connectionString: opts.connectionString, migrate: opts.migrate ?? true, useListenNotify: true });
-  boss.on("error", (err) => console.error("pg-boss", err));
+  boss.on("error", (err) => report("pg-boss", err));
   await boss.start();
   await boss.createQueue(RUN_QUEUE, RUN_QUEUE_OPTIONS);
   await boss.createQueue(SCHEDULE_QUEUE);
@@ -114,11 +119,11 @@ export async function startWorker(opts: WorkerOptions) {
   // The same timer removes Sheets write markers once their retention has passed (decision 0021).
   const clearMarkers = () => (opts.deliveries ? clearSheetWriteKeys(db, opts.deliveries.secretsKey, opts.deliveries.urls) : Promise.resolve(0));
   const sweepTimer = setInterval(() => {
-    sweep().catch((err: unknown) => console.error("sweep failed", err));
-    clearMarkers().catch((err: unknown) => console.error("sheet marker sweep failed", err));
-    purgeUploads(db).catch((err: unknown) => console.error("upload purge failed", err));
-    purgeReceiptImages(db).catch((err: unknown) => console.error("receipt image purge failed", err));
-    purgeConversations(db).catch((err: unknown) => console.error("conversation purge failed", err));
+    sweep().catch((err: unknown) => report("sweep", err));
+    clearMarkers().catch((err: unknown) => report("sheet_marker_sweep", err));
+    purgeUploads(db).catch((err: unknown) => report("upload_purge", err));
+    purgeReceiptImages(db).catch((err: unknown) => report("receipt_image_purge", err));
+    purgeConversations(db).catch((err: unknown) => report("conversation_purge", err));
   }, sweepMs);
   await sweep();
 
@@ -147,7 +152,7 @@ export async function startWorker(opts: WorkerOptions) {
         if (busy) return;
         busy = true;
         delivering = runDueDeliveries(db, opts.deliveries!.secretsKey, opts.deliveries!.urls)
-          .catch((err: unknown) => console.error("deliveries failed", err))
+          .catch((err: unknown) => report("deliveries", err))
           .finally(() => (busy = false));
       }, (opts.pollingIntervalSeconds ?? 2) * 1000)
     : undefined;
