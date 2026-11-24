@@ -1,7 +1,12 @@
 import { createDb, oauthEnvProblem, migrate } from "@daloy/db";
+import { createErrorReporter } from "@daloy/engine";
 import { PgBoss } from "pg-boss";
 import { createApp } from "./app";
 import { deployEnv } from "./http";
+
+const reporter = createErrorReporter({ dsn: process.env.SENTRY_DSN, service: "api", environment: process.env.SENTRY_ENVIRONMENT });
+process.on("unhandledRejection", (err) => { void reporter.capture(err, { tags: { kind: "unhandledRejection" } }); });
+process.on("uncaughtException", (err) => { void reporter.capture(err, { tags: { kind: "uncaughtException" } }); });
 
 // A development OAuth client must not serve a public host, nor a production one a laptop (decision 0058).
 const oauthProblem = oauthEnvProblem(process.env);
@@ -20,7 +25,7 @@ const boss = new PgBoss({ connectionString: url, migrate: ownsSchema });
 boss.on("error", (err) => console.error("pg-boss", err));
 await boss.start();
 
-const app = await createApp({ db, boss, secretsKey: Buffer.from(key, "base64"), ...deploy, ask: process.env.AI_ASK === "on", platformAdmins: process.env.PLATFORM_ADMINS });
+const app = await createApp({ db, boss, secretsKey: Buffer.from(key, "base64"), ...deploy, ask: process.env.AI_ASK === "on", platformAdmins: process.env.PLATFORM_ADMINS, sentryDsn: process.env.SENTRY_DSN, sentryEnvironment: process.env.SENTRY_ENVIRONMENT, webSentryDsn: process.env.VITE_SENTRY_DSN });
 app.enableShutdownHooks();
 // The built console (apps/web/dist). Served from the API's origin so the session cookie needs no CORS. It uses hash routes, so index.html at / is enough.
 if (process.env.WEB_DIST) app.useStaticAssets(process.env.WEB_DIST);

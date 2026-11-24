@@ -1,6 +1,11 @@
 import { createDb, oauthEnvProblem, mailDeps, migrate, providerUrls, retireStoredUnismsKeys, retiredSecretMaxAgeDays } from "@daloy/db";
+import { createErrorReporter } from "@daloy/engine";
 import { createExecutor } from "./steps";
 import { startWorker } from "./worker";
+
+const reporter = createErrorReporter({ dsn: process.env.SENTRY_DSN, service: "worker", environment: process.env.SENTRY_ENVIRONMENT });
+process.on("unhandledRejection", (err) => { void reporter.capture(err, { tags: { kind: "unhandledRejection" } }); });
+process.on("uncaughtException", (err) => { void reporter.capture(err, { tags: { kind: "uncaughtException" } }); });
 
 // A development OAuth client must not serve a public host, nor a production one a laptop (decision 0058).
 const oauthProblem = oauthEnvProblem(process.env);
@@ -30,6 +35,7 @@ const worker = await startWorker({
   deliveries: { secretsKey, urls: providerUrls() },
   watchdog: { secretsKey, mail: mailDeps(), publicUrl: process.env.PUBLIC_URL },
   emailIn: { secretsKey, ...(process.env.NODE_ENV === "test" && process.env.DALOY_TEST_IMAP_ENDPOINT ? { intervalMs: 500 } : {}) },
+  onError: (err, tags) => { void reporter.capture(err, { tags }); },
 });
 console.log("worker started");
 

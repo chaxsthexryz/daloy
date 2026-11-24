@@ -27,9 +27,17 @@ import { historyHider } from "./mask";
 export const GOOGLE_PICKER_CSP = { scriptSrc: ["https://apis.google.com"], frameSrc: ["https://docs.google.com", "https://drive.google.com"] } as const;
 
 /** Helmet options for the console: the default policy, plus the Picker hosts only when this installation has a Picker key. */
-export function consoleHeaders(providers: ProviderUrls): HelmetOptions | undefined {
-  if (!providers.googleOAuth?.pickerApiKey) return undefined;
-  return { contentSecurityPolicy: { directives: { scriptSrc: ["'self'", ...GOOGLE_PICKER_CSP.scriptSrc], frameSrc: ["'self'", ...GOOGLE_PICKER_CSP.frameSrc] } } };
+export function consoleHeaders(providers: ProviderUrls, connectOrigins: string[] = []): HelmetOptions | undefined {
+  const picker = Boolean(providers.googleOAuth?.pickerApiKey);
+  if (!picker && connectOrigins.length === 0) return undefined;
+  return {
+    contentSecurityPolicy: {
+      directives: {
+        ...(picker ? { scriptSrc: ["'self'", ...GOOGLE_PICKER_CSP.scriptSrc], frameSrc: ["'self'", ...GOOGLE_PICKER_CSP.frameSrc] } : {}),
+        ...(connectOrigins.length > 0 ? { connectSrc: ["'self'", ...connectOrigins] } : {}),
+      },
+    },
+  };
 }
 
 // A Google file id, as the Picker returns it. The server re-reads it with its own grant before saving it (R12).
