@@ -1533,3 +1533,13 @@ What it does: `packages/engine/src/error-report.ts` provides `createErrorReporte
 Why this way: a tiny zero-dependency reporter using `fetch` avoids heavy SDK instrumentation and works identically in Node and the browser while redacting secrets and query strings before sending.
 
 Tests: `packages/engine/src/error-report.test.ts` (DSN parsing for Sentry and GlitchTip path prefixes, value scrubbing, rate limiting, HTTP capture, unreachable sink resilience) and `apps/api/src/health.test.ts` (`GET /health` 200 ok, 5xx capture vs 4xx skip).
+
+## Variable picker (E3)
+
+What it does: in a step's inspector, "Insert data from earlier steps" lists the data this step can use: the trigger's fields, then each earlier step's output. Clicking one puts `{{trigger.field}}` or `{{steps.<id>.output.<path>}}` at the cursor of the text field you last used, on the side panel and in the phone sheet. Each entry shows a short preview of the sample value from the last test run, so `amount` appears next to `250.00`. If no field was chosen yet, the click copies the reference instead.
+
+Why this way: "earlier" means steps reachable backwards along edges (`upstreamIds` in `apps/web/src/lib/editor.ts`), so a step on a sibling branch, a later step and the step itself are never offered, because their output would be empty when this step runs. Paths come from the real sample output (`outputPaths` in `apps/web/src/lib/variables.ts`), limited to the key shapes the template engine accepts. The picker remembers the last focused field, so it also works by keyboard (Tab to a chip, Enter) and when a phone keyboard closes. Details are in decision 0125.
+
+Edge cases: a step the last test did not reach shows its known fields with a "not in a test yet" note. A preview from before your last edit is marked stale. Keys that look like secrets (`token`, `api_key`, `authorization`) show `[secret]`, and `{{secrets.name}}` stays a reference whose value is never shown. A step whose sample output is a plain value keeps one whole-output entry.
+
+Tests: `apps/web/src/lib/variables.test.ts` (upstream sets including branches and loops, output paths, secret masking, caret insertion, grouping with previews), `apps/web/src/lib/editor.test.ts` (`insertables`), and `e2e/variable-picker.spec.ts` (insert at the cursor, upstream only, keyboard, preview after a test, phone sheet).

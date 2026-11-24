@@ -13,7 +13,7 @@ import { RunResult, StepAttempt, useRun } from "./Runs";
 import { ADDABLE, addStep, blankDraft, canMove, connectSteps, duplicateStep, moveStep, readCopiedStep, removeStep, setDisabled, toFlow, type AddableType, type ConnectError, type Draft } from "./lib/graph";
 import { record, redo, startHistory, undo } from "./lib/history";
 import { Popover, Sheet, useMedia, usePhone } from "./Sheet";
-import { chosenFor, insertables, nextPaths, openExits, setupLeft, unconnectedNodes, type ConnInfo } from "./lib/editor";
+import { chosenFor, insertables, nextPaths, upstreamIds, openExits, setupLeft, unconnectedNodes, type ConnInfo } from "./lib/editor";
 import { warningForLanguage } from "./lib/ai-build";
 import { runFlow } from "./lib/run-flow";
 import { AutomationTabs } from "./Nav";
@@ -23,6 +23,8 @@ import { SchemaForm, type JsonSchema } from "./SchemaForm";
 import { EmailSource } from "./EmailSource";
 import { ExplainSheet, SampleTest, SetupGuide, TurnOnSheet } from "./Guide";
 import { testState, type SampleResult } from "./lib/guide";
+import { parseSample, variableGroups } from "./lib/variables";
+import { VariablePicker } from "./VariablePicker";
 
 const explainedKey = (id: string) => `daloy.explained.${id}`;
 const wasExplained = (id: string) => {
@@ -136,7 +138,6 @@ export function Editor({ id, from }: { id: string; from?: string }) {
   const [mailReady, setMailReady] = useState(true);
   // A phone shows the list first: the whole diagram fitted to 360px is too small to read.
   const [view, setView] = useState<"diagram" | "list">(() => (matchMedia("(max-width: 599.98px)").matches ? "list" : "diagram"));
-  const [copied, setCopied] = useState<string | null>(null);
   // R2b: the last test run and the draft it ran on, the dialogs, and whether the owner has read "Explain this flow".
   const [sample, setSample] = useState<SampleResult | null>(null);
   const { run: sampleRun } = useRun(sample?.runId ?? null);
@@ -350,7 +351,6 @@ export function Editor({ id, from }: { id: string; from?: string }) {
   const missing = apps.filter((a) => !a.connected);
   const select = (next: string | null) => {
     setSelected(next);
-    setCopied(null);
     if (next) setFolded(false);
   };
   const editStep = (config: unknown) => update({ ...draft, steps: draft.steps.map((s) => (s.id === step!.id ? ({ ...s, config } as Step) : s)) }, `config:${step!.id}`);
@@ -397,11 +397,6 @@ export function Editor({ id, from }: { id: string; from?: string }) {
       {label}
     </button>
   );
-  const copy = (reference: string) =>
-    navigator.clipboard.writeText(reference).then(
-      () => setCopied(t("Copied {reference}", { reference })),
-      () => setCopied(t("Copy failed. Type {reference} into a text field.", { reference })),
-    );
   const showRun = () => document.getElementById("run-heading")?.scrollIntoView({ block: "start", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
 
   // U2 canvas actions. Each one is an edit through the history, so Ctrl+Z takes it back; refusals say why in the canvas note.
@@ -541,6 +536,7 @@ export function Editor({ id, from }: { id: string; from?: string }) {
     </div>
   );
 
+  const shownRun = sample && sampleRun?.id === sample.runId ? sampleRun : null;
   // The selected step or trigger: in the side panel on a wide screen, in a sheet over the list on a phone.
   const inspector = (
     <>
@@ -627,32 +623,13 @@ export function Editor({ id, from }: { id: string; from?: string }) {
           </div>
           <StepTest
             step={step}
-            run={sample && sampleRun?.id === sample.runId ? sampleRun : null}
+            run={shownRun}
             stale={!!sample && sample.key !== JSON.stringify(draft)}
             busy={busy}
             onTest={() => void testRun("mock")}
             onReal={canSendAlone(step.type) && !step.disabled ? () => sendForReal(step) : undefined}
           />
-          <section className="a7-group" aria-labelledby="insert-heading">
-            <h3 id="insert-heading">{t("Insert data from earlier steps")}</h3>
-            <p className="muted hint">
-              {t("Use {trigger}, {step} and {secret} in text fields.", { trigger: "{{trigger.field}}", step: "{{steps.step_id.output.field}}", secret: "{{secrets.name}}" })}
-            </p>
-            <ul className="a7-chips">
-              {insertables(draft, step.id).map((r) => (
-                <li key={r}>
-                  <button type="button" onClick={() => void copy(r)} aria-label={t("Copy {reference}", { reference: r })}>
-                    {r.slice(2, -2).replace(/^steps\.|\.output/g, "")}
-                  </button>
-                </li>
-              ))}
-            </ul>
-            {copied && (
-              <p role="status" className="a7-copied">
-                {copied}
-              </p>
-            )}
-          </section>
+          <VariablePicker key={`${step.id}-vars`} groups={variableGroups(insertables(draft, step.id), shownRun?.steps ?? [], parseSample(payload), upstreamIds(draft, step.id))} stale={!!sample && sample.key !== JSON.stringify(draft)} />
           {addAfter(step.id, t("Add a step after this one"))}
           <ConnectTo draft={draft} step={step} onConnect={update} />
           <NextUp draft={draft} id={step.id} />

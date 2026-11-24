@@ -24,6 +24,22 @@ const SHOPIFY_ORDER_FIELDS = ["order_number", "order_id", "customer_name", "cust
 const BOOKING_EVENT_FIELDS = ["event", "bookingId", "reference", "resourceId", "resourceName", "start", "end", "minutes", "timezone", "status", "version", "mode", "nights", "checkIn", "checkOut", "conversationId"];
 const PAYMENT_EVENT_FIELDS = ["event", "dueId", "reference", "kind", "status", "amountCentavos", "amountPesos", "bookingId", "conversationId"];
 
+/** Every step that can have run before this one: reachable backwards along edges. A sibling branch and anything after it are not; the step itself never is. */
+export function upstreamIds(draft: Draft, id: string): Set<string> {
+  const before = new Set<string>();
+  const queue = [id];
+  while (queue.length) {
+    const to = queue.pop()!;
+    for (const e of draft.edges) {
+      if (e.to !== to || before.has(e.from)) continue;
+      before.add(e.from);
+      queue.push(e.from);
+    }
+  }
+  before.delete(id);
+  return before;
+}
+
 /** The template references a step can use: the trigger's fields, then the output of each step that runs before it, in step order. */
 export function insertables(draft: Draft, id: string): string[] {
   const trigger = draft.trigger;
@@ -43,18 +59,9 @@ export function insertables(draft: Draft, id: string): string[] {
                 : trigger.type === "form" || trigger.type === "webhook" || trigger.type === "sub_workflow"
                   ? (trigger.config.fields ?? []).map((f) => f.name)
                   : [];
-  const before = new Set<string>();
-  const queue = [id];
-  while (queue.length) {
-    const to = queue.pop()!;
-    for (const e of draft.edges) {
-      if (e.to !== to || before.has(e.from)) continue;
-      before.add(e.from);
-      queue.push(e.from);
-    }
-  }
+  const before = upstreamIds(draft, id);
   const outputs = draft.steps
-    .filter((s) => before.has(s.id) && s.id !== id)
+    .filter((s) => before.has(s.id))
     .flatMap((s) => (s.type === "ai" ? Object.keys(mockAiOutput(s.config)).map((k) => `steps.${s.id}.output.${k}`) : s.type === "booking" ? ["reference", "start", "end", "nights", "checkIn", "checkOut", "timezone"].map((k) => `steps.${s.id}.output.${k}`) : s.type === "stay_quote" ? ["title", "checkIn", "guests", "subtotal", "extraGuests", "extraGuestFee", "total", "deposit", "knowledgeVersion"].map((k) => `steps.${s.id}.output.${k}`) : s.type === "read_page" ? ["title", "text", "value", "previous", "changed"].map((k) => `steps.${s.id}.output.${k}`) : s.type === "google_docs" ? ["url", "documentId", "name"].map((k) => `steps.${s.id}.output.${k}`) : s.type === "call_workflow" ? ["runId", "workflowId", "workflowSlug", "duplicate"].map((k) => `steps.${s.id}.output.${k}`) : s.type === "browser" ? [...s.config.actions.flatMap((a) => (a.action === "extract" ? [a.name] : [])), "url"].map((k) => `steps.${s.id}.output.${k}`) : [`steps.${s.id}.output`]));
   return [...fields.map((f) => `trigger.${f}`), ...outputs].map((r) => `{{${r}}}`);
 }
