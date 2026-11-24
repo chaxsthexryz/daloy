@@ -92,6 +92,9 @@ export default async function setup() {
   providers.addSheet("e2e-unpicked-sheet-01", "Someone else's sheet", "Data", ["someone@else.example"]);
   providers.addDriveFolder("e2e-picked-folder-001", "Clinic scans", [google.user.email], null);
   providers.slack.token = "xoxb-e2e-0000000000-abcdefabcdef";
+  providers.meta.token = "meta_e2e_page_token_0000000000001"; // gitleaks:allow
+  process.env.E2E_META_TOKEN = providers.meta.token;
+  process.env.E2E_META_PAGE_ID = providers.meta.pageId;
   providers.telegram.token = "100000001:E2E-telegram-token-aaaaaaaaaaaaaaaaaa";
   process.env.E2E_TELEGRAM_TOKEN = providers.telegram.token;
   process.env.E2E_PAYMONGO_KEY = "sk_test_e2e0000000000000000";

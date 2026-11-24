@@ -379,6 +379,13 @@
       "when": 1795485108225,
       "tag": "0053_admin_actions",
       "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "7",
+      "when": 1795492457157,
+      "tag": "0054_staff_alerts",
+      "breakpoints": true
     }
   ]
 }

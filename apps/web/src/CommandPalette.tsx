@@ -32,6 +32,7 @@ export function quickJumpItems(role: Role, t: (text: string) => string): QuickJu
 
   if (owner || role === "operator") {
     items.push(
+      { href: "#/conversations", label: t("Conversations"), group: work, icon: "conversations" },
       { href: "#/receipts", label: t("Receipts to review"), group: work, icon: "receipts" },
       { href: "#/knowledge", label: t("Knowledge"), group: work, icon: "knowledge" },
     );

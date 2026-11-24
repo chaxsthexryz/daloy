@@ -28,11 +28,14 @@ export const users = pgTable("users", {
   // C1 (decision 0115): days a conversation is kept after its last message, and hours the bot stays quiet after a staff reply.
   conversationRetentionDays: integer("conversation_retention_days").notNull().default(90),
   staffQuietHours: integer("staff_quiet_hours").notNull().default(12),
+  // C7 (decision 0125): optional Messenger PSID for direct staff alerts (within 24-hour window, else Telegram/email fallback).
+  staffAlertPsid: text("staff_alert_psid"),
 }, (t) => [
   check("users_plan", sql`${t.plan} in ('preview', 'pilot', 'business', 'business_plus')`),
   check("users_language", sql`${t.language} in ('en', 'tl')`),
   check("users_conversation_retention", sql`${t.conversationRetentionDays} between 1 and 3650`),
   check("users_staff_quiet", sql`${t.staffQuietHours} between 1 and 168`),
+  check("users_staff_alert_psid", sql`${t.staffAlertPsid} is null or length(${t.staffAlertPsid}) <= 64`),
 ]);
 
 /** Metered work per workspace, kind (ai, email, http) and period (a Manila day, or a monthly cycle start). */

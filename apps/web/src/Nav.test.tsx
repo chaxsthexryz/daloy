@@ -14,7 +14,7 @@ describe("staff navigation", () => {
     ["#/", "#/"], ["#/new", "#/new"], ["#/ai", "#/ai"],
     ["#/activity", "#/activity"], ["#/runs/run-id", "#/activity"], ["#/runs/run-id/ask", "#/activity"],
     ["#/w/workflow-id", "#/"], ["#/w/workflow-id/versions", "#/"], ["#/w/workflow-id/runs", "#/"],
-    ["#/a/workflow-id", "#/"], ["#/bookings", "#/bookings"],
+    ["#/a/workflow-id", "#/"], ["#/bookings", "#/bookings"], ["#/conversations", "#/conversations"],
     ["#/settings", "#/settings"], ["#/account", "#/account"],
     ["#/settings/ai", "#/advanced"], ["#/secrets", "#/advanced"], ["#/tokens", "#/advanced"], ["#/resources", "#/advanced"],
     ["#/settings/business", "#/settings/business"], ["#/settings/business/outlook-connected", "#/apps"],
@@ -39,7 +39,7 @@ describe("staff navigation", () => {
     for (const href of ["#/new", "#/ai", "#/team", "#/apps", "#/settings/business", "#/advanced"]) {
       expect(html).not.toContain(`href="${href}"`);
     }
-    for (const href of ["#/", "#/activity", "#/bookings", "#/settings", "#/account"]) {
+    for (const href of ["#/", "#/activity", "#/bookings", "#/conversations", "#/settings", "#/account"]) {
       expect(html).toContain(`href="${href}"`);
     }
   });

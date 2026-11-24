@@ -7,8 +7,8 @@ import {
 
 type AnyDb = NodePgDatabase<Record<string, unknown>>;
 
-/** Who the owner is asking about: exactly one identifier. */
-export type CustomerQuery = { email: string } | { phone: string };
+/** Who the owner is asking about: email, phone, or a specific conversation id (for guests with neither, C7). */
+export type CustomerQuery = { email: string } | { phone: string } | { conversationId: string };
 
 /** A Philippine mobile number as its 10 national digits starting with 9, or null when the text is not one. */
 export function normalizePhone(text: string): string | null {
@@ -25,7 +25,7 @@ const walk = (test: (leaf: string | number) => boolean) => {
 const PHONE_RUN = /(?<!\d)(?:\+?63|0)?[\s.-]*9(?:[\s.-]*\d){9}(?!\d)/g;
 
 /** Walks every leaf of a JSON value. A string matches when it holds the whole email or a run that reads as the phone. */
-export function matcher(q: CustomerQuery): (value: unknown) => boolean {
+export function matcher(q: { email: string } | { phone: string }): (value: unknown) => boolean {
   if ("email" in q) {
     const escaped = q.email.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     // Not part of a longer address: no address character before, and no more domain or local part after.
@@ -42,28 +42,39 @@ const b64 = (b: Buffer | null) => (b ? b.toString("base64") : null);
 
 /** Every row of the workspace that belongs to the customer. Nothing is read outside the workspace. */
 async function collect(db: AnyDb, workspaceId: string, q: CustomerQuery) {
-  const match = matcher(q);
-  // shortcut: scans every run in the workspace, add an index or customer table if workspaces reach many thousands of runs.
   const allRuns = await db
     .select({ id: runs.id, triggerPayload: runs.triggerPayload, conversationId: runs.conversationId })
     .from(runs)
     .innerJoin(workflowVersions, eq(workflowVersions.id, runs.workflowVersionId))
     .innerJoin(workflows, eq(workflows.id, workflowVersions.workflowId))
     .where(eq(workflows.userId, workspaceId));
-  const runIds = new Set(allRuns.filter((r) => match(r.triggerPayload)).map((r) => r.id));
-  for (const d of await db.select({ runId: paymentDues.runId, replyTo: paymentDues.replyTo }).from(paymentDues).where(and(eq(paymentDues.userId, workspaceId), isNotNull(paymentDues.replyTo)))) if (match(d.replyTo)) runIds.add(d.runId);
-  // Conversations (decision 0115): by saved fields, the email address one is keyed by, any message text, or a matched
-  // run's conversation. Every run of a matched conversation belongs to the customer too.
-  // shortcut: scans every message in the workspace, like the runs above; the retention sweep keeps the table bounded.
   const allConversations = await db.select().from(conversations).where(eq(conversations.userId, workspaceId));
-  const convIds = new Set(allConversations.filter((c) => match(c.fields) || (c.channel === "email" && match(c.externalId))).map((c) => c.id));
-  const texts = await db.select({ conversationId: conversationMessages.conversationId, text: conversationMessages.text }).from(conversationMessages).innerJoin(conversations, eq(conversations.id, conversationMessages.conversationId)).where(eq(conversations.userId, workspaceId));
-  for (const t of texts) if (match(t.text)) convIds.add(t.conversationId);
-  for (const r of allRuns) if (r.conversationId && runIds.has(r.id)) convIds.add(r.conversationId);
-  for (const r of allRuns) if (r.conversationId && convIds.has(r.conversationId)) runIds.add(r.id);
+
+  let runIds: Set<string>;
+  let convIds: Set<string>;
+  let events: (typeof paymongoEvents.$inferSelect)[];
+
+  if ("conversationId" in q) {
+    convIds = new Set(allConversations.filter((c) => c.id === q.conversationId).map((c) => c.id));
+    runIds = new Set(allRuns.filter((r) => r.conversationId === q.conversationId).map((r) => r.id));
+    events = [];
+  } else {
+    const match = matcher(q);
+    // shortcut: scans every run in the workspace, add an index or customer table if workspaces reach many thousands of runs.
+    runIds = new Set(allRuns.filter((r) => match(r.triggerPayload)).map((r) => r.id));
+    for (const d of await db.select({ runId: paymentDues.runId, replyTo: paymentDues.replyTo }).from(paymentDues).where(and(eq(paymentDues.userId, workspaceId), isNotNull(paymentDues.replyTo)))) if (match(d.replyTo)) runIds.add(d.runId);
+    // Conversations (decision 0115): by saved fields, the email address one is keyed by, any message text, or a matched
+    // run's conversation. Every run of a matched conversation belongs to the customer too.
+    // shortcut: scans every message in the workspace, like the runs above; the retention sweep keeps the table bounded.
+    convIds = new Set(allConversations.filter((c) => match(c.fields) || (c.channel === "email" && match(c.externalId))).map((c) => c.id));
+    const texts = await db.select({ conversationId: conversationMessages.conversationId, text: conversationMessages.text }).from(conversationMessages).innerJoin(conversations, eq(conversations.id, conversationMessages.conversationId)).where(eq(conversations.userId, workspaceId));
+    for (const t of texts) if (match(t.text)) convIds.add(t.conversationId);
+    for (const r of allRuns) if (r.conversationId && runIds.has(r.id)) convIds.add(r.conversationId);
+    for (const r of allRuns) if (r.conversationId && convIds.has(r.conversationId)) runIds.add(r.id);
+    events = (await db.select().from(paymongoEvents).where(and(eq(paymongoEvents.userId, workspaceId), isNotNull(paymongoEvents.payload)))).filter((e) => match(e.payload));
+  }
   const openDueIds = new Set(allConversations.filter((c) => convIds.has(c.id) && c.openDueId).map((c) => c.openDueId!));
   const cIds = [...convIds];
-  const events = (await db.select().from(paymongoEvents).where(and(eq(paymongoEvents.userId, workspaceId), isNotNull(paymongoEvents.payload)))).filter((e) => match(e.payload));
   const ids = [...runIds];
   const inRuns = (col: AnyPgColumn) => (ids.length ? inArray(col, ids) : sql`false`);
   const linkedDueIds = [...openDueIds];

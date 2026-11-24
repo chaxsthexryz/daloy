@@ -1,6 +1,6 @@
 import type { Language } from "./language";
 
-export type DigestCounts = { receipts: number; unpaid: number; failedReplies: number };
+export type DigestCounts = { receipts: number; unpaid: number; failedReplies: number; conversationsWaiting?: number };
 
 const COPY = {
   en: {
@@ -9,6 +9,7 @@ const COPY = {
     receipts: (n: number) => `${n} ${n === 1 ? "receipt" : "receipts"} to review`,
     unpaid: (n: number) => `${n} unpaid ${n === 1 ? "order" : "orders"}`,
     failed: (n: number) => `${n} failed ${n === 1 ? "reply" : "replies"}`,
+    conversations: (n: number) => `${n} ${n === 1 ? "conversation" : "conversations"} waiting for staff`,
     off: "You get this email only on mornings when something needs you. Turn it off in Daloy under Receipts.",
   },
   tl: {
@@ -17,6 +18,7 @@ const COPY = {
     receipts: (n: number) => `${n} resibong susuriin`,
     unpaid: (n: number) => `${n} hindi pa bayad na order`,
     failed: (n: number) => `${n} sagot na hindi naipadala`,
+    conversations: (n: number) => `${n} ${n === 1 ? "usapang naghihintay" : "usapang naghihintay"} ng staff`,
     off: "Natatanggap mo lang ito sa mga umagang may kailangan kang asikasuhin. I-off ito sa Daloy, sa Receipts.",
   },
 } as const;
@@ -28,13 +30,15 @@ const COPY = {
  */
 export function digestEmail(counts: DigestCounts, base: string | undefined, language: Language = "en") {
   const c = COPY[language];
-  const total = counts.receipts + counts.unpaid + counts.failedReplies;
+  const waiting = counts.conversationsWaiting ?? 0;
+  const total = counts.receipts + counts.unpaid + counts.failedReplies + waiting;
   if (total === 0) return null;
   const line = (text: string, path: string) => `- ${text}${base ? `: ${base}/#/${path}` : ""}`;
   const lines = [
     counts.receipts > 0 ? line(c.receipts(counts.receipts), "receipts") : "",
     counts.unpaid > 0 ? line(c.unpaid(counts.unpaid), "activity") : "",
     counts.failedReplies > 0 ? line(c.failed(counts.failedReplies), "activity") : "",
+    waiting > 0 ? line(c.conversations(waiting), "conversations") : "",
   ].filter(Boolean);
   return { subject: c.subject(total), text: `${c.intro}\n\n${lines.join("\n")}\n\n${c.off}` };
 }

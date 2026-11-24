@@ -13,6 +13,7 @@ import { NewAutomationPage } from "./NewAutomation";
 import { BuildWithAiPage } from "./BuildWithAi";
 import { OfficeRequestPage, TryOfficeRequest } from "./OfficeRequests";
 import { BookingsPage } from "./Bookings";
+import { ConversationsPage } from "./Conversations";
 import { ReceiptsPage } from "./Receipts";
 import { KnowledgePage } from "./Knowledge";
 import { ResourcesPage } from "./Resources";
@@ -127,6 +128,7 @@ function Route({ hash, user }: { hash: string; user: User }) {
   if (hash === "#/team" && user.role === "owner") return <TeamPage user={user} />;
   if (hash === "#/resources" && user.role === "owner") return <ResourcesPage />;
   if (hash === "#/bookings" && (user.role === "owner" || user.role === "operator")) return <BookingsPage />;
+  if (hash === "#/conversations" && (user.role === "owner" || user.role === "operator")) return <ConversationsPage user={user} />;
   if (hash === "#/knowledge" && (user.role === "owner" || user.role === "operator")) return <KnowledgePage />;
   if (hash === "#/receipts" && (user.role === "owner" || user.role === "operator")) return <ReceiptsPage user={user} />;
   const verify = /^#\/verify-sender\/([A-Za-z0-9_-]{43})$/.exec(hash);

@@ -45,6 +45,7 @@ function section(hash: string) {
   if (hash === "#/activity" || hash.startsWith("#/runs/")) return "Activity";
   if (hash === "#/ai") return "Build with AI";
   if (hash.startsWith("#/bookings")) return "Bookings";
+  if (hash.startsWith("#/conversations")) return "Conversations";
   if (hash === "#/receipts") return "Receipts to review";
   if (hash === "#/knowledge") return "Knowledge";
   if (hash.startsWith("#/team")) return "Team";
@@ -164,6 +165,7 @@ export function Shell({ user, hash, onSignOut, children }: { user: User; hash: s
           {link("#/", "Automations", "automations")}
           {link("#/activity", "Activity", "activity")}
           {link("#/bookings", "Bookings", "bookings")}
+          {(owner || user.role === "operator") && link("#/conversations", "Conversations", "conversations")}
           {(owner || user.role === "operator") && link("#/receipts", "Receipts to review", "receipts")}
           {(owner || user.role === "operator") && link("#/knowledge", "Knowledge", "knowledge")}
           {owner && <>

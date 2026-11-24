@@ -1,8 +1,13 @@
-import { and, desc, eq, gt, isNull, sql } from "drizzle-orm";
+import { definitionSchema } from "@daloy/engine";
+import { and, asc, desc, eq, gt, inArray, isNull, sql } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import { bookingSuperseded } from "./bookings";
-import { buildThreadHeaders, sanitizeMessageId, sanitizeReferences } from "./mail";
-import { businessProfiles, conversationMessages, conversations, users } from "./schema";
+import { connectionCredential } from "./connections";
+import { buildThreadHeaders, sanitizeMessageId, sanitizeReferences, type MailDeps } from "./mail";
+import { metaSend, parseMetaCredential } from "./meta";
+import { providerUrls, telegramSend, type ProviderUrls } from "./providers";
+import { publishedVersion } from "./runs";
+import { bookings, businessProfiles, connections, conversationMessages, conversations, paymentDues, users, workflows } from "./schema";
 
 type AnyDb = NodePgDatabase<Record<string, unknown>>;
 type Reader = Pick<AnyDb, "select">;
@@ -202,4 +207,398 @@ export function conversationNotice(language: "en" | "tl", business: string | nul
   return language === "tl"
     ? `Hi! Ito ang automated assistant ng ${name || "negosyong ito"}. Para matulungan ka sa booking, itinatago namin ang petsa, bilang ng guests, pangalan at contact na ibibigay mo rito nang ${days} araw, at pinoproseso ng aming AI provider ang iyong mga mensahe. Huwag po magpadala ng ID, card number o health details.`
     : `Hi! This is ${name ? `${name}'s` : "this business's"} automated assistant. To help with your booking we keep the dates, number of guests, name and contact details you send here for ${days} days, and your messages are processed by our AI provider. Please do not send ID photos, card numbers or health details.`;
+}
+
+const STATUS_ORDER: Record<Conversation["status"], number> = { staff: 0, bot: 1, closed: 2 };
+
+export type StaffAlertStatus = {
+  staffAlertPsid: string | null;
+  messengerConnected: boolean;
+  staffWindowOpen: boolean;
+  staffWindowExpiresAt: string | null;
+  telegramReady: boolean;
+  emailFallback: string | null;
+  activeChannel: "messenger" | "telegram" | "email";
+};
+
+export type ConversationSettings = {
+  conversationRetentionDays: number;
+  staffQuietHours: number;
+  staffAlertPsid: string | null;
+};
+
+/** Lists workspace conversations with Needs staff sorted first, then latest message activity (C7, decision 0125). */
+export async function listConversations(db: AnyDb, workspaceId: string) {
+  const rows = await db.select().from(conversations).where(eq(conversations.userId, workspaceId));
+  if (rows.length === 0) return [];
+  const ids = rows.map((r) => r.id);
+  const msgs = await db
+    .select({
+      conversationId: conversationMessages.conversationId,
+      direction: conversationMessages.direction,
+      text: conversationMessages.text,
+      createdAt: conversationMessages.createdAt,
+    })
+    .from(conversationMessages)
+    .where(inArray(conversationMessages.conversationId, ids))
+    .orderBy(desc(conversationMessages.createdAt), desc(conversationMessages.id));
+
+  const latestByConvo = new Map<string, { direction: string; text: string; createdAt: string }>();
+  for (const m of msgs) {
+    if (!latestByConvo.has(m.conversationId)) {
+      latestByConvo.set(m.conversationId, { direction: m.direction, text: m.text, createdAt: m.createdAt.toISOString() });
+    }
+  }
+
+  return rows
+    .map((c) => {
+      const activityAt = Math.max(c.lastInboundAt?.getTime() ?? 0, c.lastOutboundAt?.getTime() ?? 0, c.createdAt.getTime());
+      return {
+        id: c.id,
+        channel: c.channel,
+        externalId: c.externalId,
+        status: c.status,
+        paused: isPaused(c),
+        windowOpen: windowOpen(c.lastInboundAt),
+        version: c.version,
+        fields: c.fields,
+        lastInboundAt: c.lastInboundAt?.toISOString() ?? null,
+        lastOutboundAt: c.lastOutboundAt?.toISOString() ?? null,
+        staffUntil: c.staffUntil?.toISOString() ?? null,
+        openDueId: c.openDueId ?? null,
+        createdAt: c.createdAt.toISOString(),
+        latestMessage: latestByConvo.get(c.id) ?? null,
+        _activityAt: activityAt,
+      };
+    })
+    .sort((a, b) => {
+      const sa = a.paused ? 0 : STATUS_ORDER[a.status];
+      const sb = b.paused ? 0 : STATUS_ORDER[b.status];
+      if (sa !== sb) return sa - sb;
+      return b._activityAt - a._activityAt;
+    })
+    .map(({ _activityAt, ...item }) => {
+      void _activityAt;
+      return item;
+    });
+}
+
+/** Full conversation detail: chronological messages, linked stay bookings, and any open/linked payment due. */
+export async function conversationDetail(db: AnyDb, workspaceId: string, conversationId: string) {
+  const [c] = await db
+    .select()
+    .from(conversations)
+    .where(and(eq(conversations.id, conversationId), eq(conversations.userId, workspaceId)));
+  if (!c) return null;
+
+  const messages = await db
+    .select({
+      id: conversationMessages.id,
+      direction: conversationMessages.direction,
+      text: conversationMessages.text,
+      uploadIds: conversationMessages.uploadIds,
+      createdAt: conversationMessages.createdAt,
+    })
+    .from(conversationMessages)
+    .where(eq(conversationMessages.conversationId, c.id))
+    .orderBy(asc(conversationMessages.createdAt), asc(conversationMessages.id));
+
+  const linkedBookings = await db
+    .select({
+      id: bookings.id,
+      reference: bookings.reference,
+      status: bookings.status,
+      nights: bookings.nights,
+      timezone: bookings.timezone,
+      start: sql<Date>`lower(${bookings.during})`.mapWith((v: string | Date) => new Date(v)),
+      end: sql<Date>`upper(${bookings.during})`.mapWith((v: string | Date) => new Date(v)),
+    })
+    .from(bookings)
+    .where(and(eq(bookings.userId, workspaceId), eq(bookings.conversationId, c.id)))
+    .orderBy(desc(bookings.createdAt));
+
+  const [openDue] = c.openDueId
+    ? await db
+        .select({
+          id: paymentDues.id,
+          reference: paymentDues.reference,
+          kind: paymentDues.kind,
+          amountCentavos: paymentDues.amountCentavos,
+          status: paymentDues.status,
+          token: paymentDues.token,
+          createdAt: paymentDues.createdAt,
+        })
+        .from(paymentDues)
+        .where(and(eq(paymentDues.userId, workspaceId), eq(paymentDues.id, c.openDueId)))
+    : [];
+
+  return {
+    id: c.id,
+    channel: c.channel,
+    externalId: c.externalId,
+    status: c.status,
+    paused: isPaused(c),
+    windowOpen: windowOpen(c.lastInboundAt),
+    version: c.version,
+    fields: c.fields,
+    lastInboundAt: c.lastInboundAt?.toISOString() ?? null,
+    lastOutboundAt: c.lastOutboundAt?.toISOString() ?? null,
+    staffUntil: c.staffUntil?.toISOString() ?? null,
+    openDueId: c.openDueId ?? null,
+    createdAt: c.createdAt.toISOString(),
+    messages: messages.map((m) => ({
+      id: m.id,
+      direction: m.direction,
+      text: m.text,
+      uploadIds: m.uploadIds,
+      createdAt: m.createdAt.toISOString(),
+    })),
+    bookings: linkedBookings.map((b) => ({
+      id: b.id,
+      reference: b.reference,
+      status: b.status,
+      nights: b.nights,
+      timezone: b.timezone,
+      start: b.start.toISOString(),
+      end: b.end.toISOString(),
+    })),
+    openDue: openDue
+      ? {
+          id: openDue.id,
+          reference: openDue.reference,
+          kind: openDue.kind,
+          amountCentavos: openDue.amountCentavos,
+          status: openDue.status,
+          token: openDue.token,
+          createdAt: openDue.createdAt.toISOString(),
+        }
+      : null,
+  };
+}
+
+export async function takeOverConversation(db: AnyDb, workspaceId: string, conversationId: string) {
+  const [updated] = await db
+    .update(conversations)
+    .set({ status: "staff", staffUntil: null })
+    .where(and(eq(conversations.id, conversationId), eq(conversations.userId, workspaceId)))
+    .returning();
+  return updated ?? null;
+}
+
+export async function handBackConversation(db: AnyDb, workspaceId: string, conversationId: string) {
+  const [updated] = await db
+    .update(conversations)
+    .set({ status: "bot", staffUntil: null })
+    .where(and(eq(conversations.id, conversationId), eq(conversations.userId, workspaceId)))
+    .returning();
+  return updated ?? null;
+}
+
+export async function updateConversationFields(
+  db: AnyDb,
+  workspaceId: string,
+  conversationId: string,
+  patch: Partial<Record<(typeof CONVERSATION_FIELDS)[number], string>>,
+) {
+  return db.transaction(async (tx) => {
+    const [existing] = await tx
+      .select()
+      .from(conversations)
+      .where(and(eq(conversations.id, conversationId), eq(conversations.userId, workspaceId)))
+      .for("update");
+    if (!existing) return null;
+    const next: Record<string, string> = { ...(existing.fields ?? {}) };
+    for (const k of CONVERSATION_FIELDS) {
+      if (!(k in patch)) continue;
+      const v = patch[k]?.trim().slice(0, FIELD_MAX) ?? "";
+      if (v) next[k] = v;
+      else delete next[k];
+    }
+    const [updated] = await tx
+      .update(conversations)
+      .set({ fields: next })
+      .where(eq(conversations.id, existing.id))
+      .returning();
+    return updated ?? null;
+  });
+}
+
+export async function conversationSettings(db: AnyDb, workspaceId: string): Promise<ConversationSettings | null> {
+  const [u] = await db
+    .select({
+      conversationRetentionDays: users.conversationRetentionDays,
+      staffQuietHours: users.staffQuietHours,
+      staffAlertPsid: users.staffAlertPsid,
+    })
+    .from(users)
+    .where(eq(users.id, workspaceId));
+  if (!u) return null;
+  return {
+    conversationRetentionDays: u.conversationRetentionDays,
+    staffQuietHours: u.staffQuietHours,
+    staffAlertPsid: u.staffAlertPsid ?? null,
+  };
+}
+
+export async function saveConversationSettings(
+  db: AnyDb,
+  workspaceId: string,
+  patch: { conversationRetentionDays?: number; staffQuietHours?: number; staffAlertPsid?: string | null },
+): Promise<ConversationSettings | null> {
+  const set: Partial<typeof users.$inferInsert> = {};
+  if (patch.conversationRetentionDays !== undefined) set.conversationRetentionDays = patch.conversationRetentionDays;
+  if (patch.staffQuietHours !== undefined) set.staffQuietHours = patch.staffQuietHours;
+  if (patch.staffAlertPsid !== undefined) set.staffAlertPsid = patch.staffAlertPsid?.trim() || null;
+  const [u] = await db
+    .update(users)
+    .set(set)
+    .where(eq(users.id, workspaceId))
+    .returning({
+      conversationRetentionDays: users.conversationRetentionDays,
+      staffQuietHours: users.staffQuietHours,
+      staffAlertPsid: users.staffAlertPsid,
+    });
+  if (!u) return null;
+  return {
+    conversationRetentionDays: u.conversationRetentionDays,
+    staffQuietHours: u.staffQuietHours,
+    staffAlertPsid: u.staffAlertPsid ?? null,
+  };
+}
+
+/** Reports whether the staff Messenger PSID is within Meta's 24-hour window, or falling back to Telegram / email. */
+export async function staffAlertStatus(db: AnyDb, workspaceId: string, now = Date.now()): Promise<StaffAlertStatus> {
+  const [owner] = await db
+    .select({ email: users.email, staffAlertPsid: users.staffAlertPsid })
+    .from(users)
+    .where(eq(users.id, workspaceId));
+  const psid = owner?.staffAlertPsid?.trim() || null;
+
+  const conns = await db
+    .select({ provider: connections.provider, status: connections.status, destination: connections.destination })
+    .from(connections)
+    .where(and(eq(connections.userId, workspaceId), inArray(connections.provider, ["meta_messenger", "telegram"])));
+
+  const metaConn = conns.find((c) => c.provider === "meta_messenger" && c.status === "active");
+  const tgConn = conns.find((c) => c.provider === "telegram" && c.status === "active");
+  const telegramReady = Boolean((tgConn?.destination as { chatId?: string } | null)?.chatId);
+
+  let staffLastInbound: Date | null = null;
+  if (psid) {
+    const [staffConvo] = await db
+      .select({ lastInboundAt: conversations.lastInboundAt })
+      .from(conversations)
+      .where(and(eq(conversations.userId, workspaceId), eq(conversations.channel, "messenger"), eq(conversations.externalId, psid)));
+    staffLastInbound = staffConvo?.lastInboundAt ?? null;
+  }
+
+  const staffWindowOpen = Boolean(metaConn && psid && windowOpen(staffLastInbound, now));
+  const staffWindowExpiresAt = staffLastInbound ? new Date(staffLastInbound.getTime() + WINDOW_MS).toISOString() : null;
+  const activeChannel = staffWindowOpen ? "messenger" : telegramReady ? "telegram" : "email";
+
+  return {
+    staffAlertPsid: psid,
+    messengerConnected: Boolean(metaConn),
+    staffWindowOpen,
+    staffWindowExpiresAt,
+    telegramReady,
+    emailFallback: owner?.email ?? null,
+    activeChannel,
+  };
+}
+
+/**
+ * Alerts staff through Messenger (when configured and within the 24-hour window), else Telegram, else email.
+ * Privacy rule: sends only first name, dates/guests, reason, and console link, never the full guest conversation.
+ */
+export async function sendStaffAlert(
+  deps: { db: AnyDb; secretsKey: Buffer; mail: MailDeps; urls?: ProviderUrls; publicUrl?: string },
+  opts: { workspaceId: string; conversationId: string; reason?: string },
+): Promise<{ delivered: boolean; channel: "messenger" | "telegram" | "email"; fallbackReason?: string }> {
+  const { db, secretsKey, mail } = deps;
+  const urls = deps.urls ?? providerUrls();
+  const [c] = await db
+    .select()
+    .from(conversations)
+    .where(and(eq(conversations.id, opts.conversationId), eq(conversations.userId, opts.workspaceId)));
+  if (!c) return { delivered: false, channel: "email", fallbackReason: "conversation not found" };
+
+  const [owner] = await db
+    .select({ email: users.email, language: users.language, staffAlertPsid: users.staffAlertPsid })
+    .from(users)
+    .where(eq(users.id, opts.workspaceId));
+  if (!owner) return { delivered: false, channel: "email", fallbackReason: "workspace not found" };
+
+  const firstName = c.fields.name?.trim().split(/\s+/)[0] || (owner.language === "tl" ? "Guest" : "Guest");
+  const stayBits = [
+    c.fields.check_in ? (c.fields.check_out ? `${c.fields.check_in} to ${c.fields.check_out}` : c.fields.check_in) : "",
+    c.fields.guests ? `${c.fields.guests} guests` : "",
+  ].filter(Boolean);
+  const channelLabel = c.channel === "messenger" ? "Messenger" : c.channel === "instagram" ? "Instagram" : "Email";
+  const reason = opts.reason?.trim() || (owner.language === "tl" ? "Kailangan ng sagot ng staff" : "Needs staff reply");
+  const base = deps.publicUrl?.replace(/\/+$/, "");
+  const consoleLink = base ? `${base}/#/conversations` : "";
+  const summary = stayBits.length > 0 ? `${firstName} (${channelLabel}, ${stayBits.join(", ")})` : `${firstName} (${channelLabel})`;
+  const text =
+    owner.language === "tl"
+      ? `${summary}: ${reason}.${consoleLink ? ` Buksan ang Conversations: ${consoleLink}` : ""}`
+      : `${summary}: ${reason}.${consoleLink ? ` Open Conversations: ${consoleLink}` : ""}`;
+
+  const status = await staffAlertStatus(db, opts.workspaceId);
+  let fallbackReason: string | undefined;
+
+  if (status.activeChannel === "messenger" && status.staffAlertPsid) {
+    try {
+      const conn = await connectionCredential(db as never, secretsKey, opts.workspaceId, "meta_messenger");
+      if (conn && conn.status === "active") {
+        const { pageAccessToken } = parseMetaCredential(conn.credential);
+        await metaSend(urls, pageAccessToken, { recipientId: status.staffAlertPsid, channel: "messenger", text });
+        return { delivered: true, channel: "messenger" };
+      }
+    } catch (err) {
+      fallbackReason = err instanceof Error ? err.message : String(err);
+    }
+  } else if (status.staffAlertPsid && status.messengerConnected && !status.staffWindowOpen) {
+    fallbackReason = "Messenger staff 24-hour window is closed";
+  }
+
+  if (status.telegramReady) {
+    try {
+      const conn = await connectionCredential(db as never, secretsKey, opts.workspaceId, "telegram");
+      const chatId = (conn?.destination as { chatId?: string } | null)?.chatId;
+      if (conn && conn.status === "active" && chatId) {
+        await telegramSend(urls, conn.credential, chatId, text);
+        return { delivered: true, channel: "telegram", ...(fallbackReason ? { fallbackReason } : {}) };
+      }
+    } catch (err) {
+      fallbackReason = err instanceof Error ? err.message : String(err);
+    }
+  }
+
+  const subject = owner.language === "tl" ? `Daloy: Kailangan ng staff para kay ${firstName}` : `Daloy: Staff needed for ${firstName}`;
+  await mail.installation.transport.sendMail({ from: mail.installation.from, to: owner.email, subject, text });
+  return { delivered: true, channel: "email", ...(fallbackReason ? { fallbackReason } : {}) };
+}
+
+/** Finds a published manual deposit workflow in the workspace (with payment_due, preferring stay_quote + payment_due). */
+export async function findDepositWorkflow(db: AnyDb, workspaceId: string, workflowId?: string) {
+  const candidates = await db
+    .select({ id: workflows.id, name: workflows.name })
+    .from(workflows)
+    .where(workflowId ? and(eq(workflows.userId, workspaceId), eq(workflows.id, workflowId)) : eq(workflows.userId, workspaceId))
+    .orderBy(asc(workflows.createdAt));
+
+  let dueOnly: { workflowId: string; versionId: string } | null = null;
+  for (const w of candidates) {
+    const version = await publishedVersion(db as never, w.id);
+    if (!version) continue;
+    const parsed = definitionSchema.safeParse(version.definition);
+    if (!parsed.success || parsed.data.trigger.type !== "manual") continue;
+    const hasDue = parsed.data.steps.some((s) => s.type === "payment_due");
+    if (!hasDue) continue;
+    const hasQuote = parsed.data.steps.some((s) => s.type === "stay_quote");
+    if (hasQuote) return { workflowId: w.id, versionId: version.id };
+    dueOnly ??= { workflowId: w.id, versionId: version.id };
+  }
+  return dueOnly;
 }

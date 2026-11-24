@@ -1,5 +1,5 @@
 import { createHmac, randomBytes } from "node:crypto";
-import { connections, conversationMessages, conversations, createDue, decideClaim, deleteCustomer, expireDue, exportCustomer, paymentClaims, paymentDues, purgeConversations, receiptReferences, runDueDeliveries, runs, stepRuns, submitTransferClaim, users, windowOpen, workflowVersions, type Db } from "@daloy/db";
+import { connections, conversationMessages, conversations, createDue, decideClaim, deleteCustomer, digestCounts, expireDue, exportCustomer, joinWorkspace, mailDeps, paymentClaims, paymentDues, purgeConversations, receiptReferences, runDueDeliveries, runs, sessions, stepRuns, submitTransferClaim, users, windowOpen, workflowVersions, type Db, type MailDeps } from "@daloy/db";
 import type { INestApplication } from "@nestjs/common";
 import { and, asc, eq, inArray } from "drizzle-orm";
 import type { Pool } from "pg";
@@ -11,6 +11,7 @@ import { startFakeProviders, type FakeProviders } from "../../../test/fake-provi
 import { advance } from "../../worker/src/advance";
 import { createExecutor } from "../../worker/src/steps";
 import { createApp } from "./app";
+import { sha256 } from "./http";
 
 // C1 (decision 0115): conversation state for Messenger and Instagram guests.
 const PAGE_ID = "100200300401";
@@ -28,6 +29,19 @@ let server: Parameters<typeof request>[0];
 let fake: FakeProviders;
 let seq = 0;
 const secretsKey = randomBytes(32);
+const mailSent: { to: string; subject: string; text: string }[] = [];
+const mail: MailDeps = {
+  ...mailDeps(),
+  installation: {
+    from: "Daloy <daloy@localhost>",
+    transport: {
+      sendMail: async (msg: { to?: unknown; subject?: unknown; text?: unknown }) => {
+        mailSent.push({ to: String(msg.to ?? ""), subject: String(msg.subject ?? ""), text: String(msg.text ?? "") });
+        return { messageId: `m-${mailSent.length}` };
+      },
+    } as MailDeps["installation"]["transport"],
+  },
+};
 
 beforeAll(async () => {
   let url: string;
@@ -35,7 +49,7 @@ beforeAll(async () => {
   boss = new PgBoss(url);
   await boss.start();
   fake = await startFakeProviders();
-  app = await createApp({ db, boss, secretsKey, secureCookies: false, publicUrl: "https://daloy.test", providers: { ...fake.urls, timeoutMs: 2000 } });
+  app = await createApp({ db, boss, secretsKey, secureCookies: false, mail, publicUrl: "https://daloy.test", providers: { ...fake.urls, timeoutMs: 2000 } });
   await app.init();
   server = app.getHttpServer();
 }, 120_000);
@@ -53,6 +67,9 @@ beforeEach(() => {
   fake.meta.pageName = "Bahay Kubo Resort";
   fake.meta.revoked = false;
   fake.meta.messages.length = 0;
+  fake.telegram.messages.length = 0;
+  fake.telegram.token = "";
+  mailSent.length = 0;
   fake.meta.cdnFiles.clear();
   fake.meta.cdnFiles.set("receipt.png", { contentType: "image/png", data: Buffer.from("89504e470d0a1a0a0000000d49484452", "hex") });
   fake.meta.cdnFiles.set("receipt2.png", { contentType: "image/png", data: Buffer.from("89504e470d0a1a0a0000000d49484452", "hex") });
@@ -421,5 +438,110 @@ describe("DM receipt photo claims on open due (C6)", () => {
     const [claimAfter] = await db.select().from(paymentClaims).where(eq(paymentClaims.dueId, d.id));
     expect(claimAfter!.image).toBeNull();
     expect(claimAfter!.transferRef).toBeNull();
+  });
+});
+
+describe("C7 conversations inbox, alerts, digest, and privacy", () => {
+  async function memberAgent(workspaceId: string, role: "operator" | "approver" | "requester") {
+    const [u] = await db.insert(users).values({ email: `c7-${role}-${++seq}@test.local`, passwordHash: "x" }).returning();
+    await joinWorkspace(db, u!.id, workspaceId, role);
+    const token = randomBytes(32).toString("base64url");
+    await db.insert(sessions).values({ idHash: sha256(token), userId: u!.id, expiresAt: new Date(Date.now() + 3_600_000) });
+    return request.agent(server).set("Cookie", `daloy_session=${token}`);
+  }
+
+  it("orders Needs staff first, updates fields, starts deposit requests, and enforces role access", async () => {
+    const s = await setup();
+    await post(s.path, [inbound("psid-bot", "m_c7_1", "Bot active conversation")]);
+    await new Promise((r) => setTimeout(r, 10));
+    await post(s.path, [inbound("psid-staff", "m_c7_2", "Needs staff conversation")]);
+
+    const botConvo = await conversationOf(s.userId, "psid-bot");
+    const staffConvo = await conversationOf(s.userId, "psid-staff");
+
+    // Take over staffConvo and make botConvo newer -> Needs staff must still sort first.
+    await s.agent.post(`/conversations/${staffConvo.id}/take-over`).expect(200);
+    await post(s.path, [inbound("psid-bot", "m_c7_3", "Newer message")]);
+
+    const listRes = await s.agent.get("/conversations").expect(200);
+    expect(listRes.body.conversations.map((c: { id: string }) => c.id)).toEqual([staffConvo.id, botConvo.id]);
+    expect((await digestCounts(db, s.userId)).conversationsWaiting).toBe(1);
+
+    // Edit and clear fields
+    const patched = await s.agent.put(`/conversations/${staffConvo.id}/fields`).send({ name: "Marco Santos", check_in: "2027-02-10", nights: "2", guests: "2" }).expect(200);
+    expect(patched.body.fields).toEqual({ name: "Marco Santos", check_in: "2027-02-10", guests: "2" });
+
+    // Deposit request refuses with 409 until a manual payment_due workflow is published
+    await s.agent.post(`/conversations/${staffConvo.id}/deposit-request`).send({ checkIn: "2027-02-10", nights: 2 }).expect(409);
+
+    const depWf = await s.agent.post("/workflows").send({ name: "Deposit and stay", slug: `dep-${++seq}` }).expect(201);
+    const depDef = {
+      trigger: { type: "manual", config: {} },
+      steps: [{ id: "ask", type: "payment_due", config: { reference: "DEP-{{trigger.name}}", kind: "deposit", amount: "1500", checkout: false } }],
+      edges: [],
+    };
+    await s.agent.post(`/workflows/${depWf.body.id}/versions`).send({ definition: depDef, publish: true }).expect(201);
+
+    const depRes = await s.agent.post(`/conversations/${staffConvo.id}/deposit-request`).send({ room: "Garden room", checkIn: "2027-02-10", nights: 2, guests: 2 }).expect(202);
+    expect(depRes.body.runId).toBeTruthy();
+
+    // Operator can manage conversations & deposit requests, but gets 403 on settings and R6 export/delete; approver/requester get 403 everywhere.
+    const op = await memberAgent(s.userId, "operator");
+    await op.get("/conversations").expect(200);
+    await op.post(`/conversations/${staffConvo.id}/hand-back`).expect(200);
+    expect((await digestCounts(db, s.userId)).conversationsWaiting).toBe(0);
+    await op.put("/conversations/settings").send({ staffQuietHours: 6 }).expect(403);
+    await op.post(`/conversations/${staffConvo.id}/export`).send({}).expect(403);
+    await op.post(`/conversations/${staffConvo.id}/delete`).send({ confirm: "DELETE" }).expect(403);
+
+    for (const denied of [await memberAgent(s.userId, "approver"), await memberAgent(s.userId, "requester")]) {
+      await denied.get("/conversations").expect(403);
+      await denied.post(`/conversations/${staffConvo.id}/take-over`).expect(403);
+    }
+
+    // Guest without email or phone can still be exported and deleted by conversationId, and POST /privacy/customer/export works (L2).
+    const exp = await s.agent.post(`/conversations/${staffConvo.id}/export`).send({}).expect(200);
+    expect(exp.body.counts).toMatchObject({ conversations: 1 });
+    await s.agent.post(`/conversations/${staffConvo.id}/delete`).send({ confirm: "DELETE" }).expect(200);
+    await s.agent.get(`/conversations/${staffConvo.id}`).expect(404);
+    await s.agent.post("/privacy/customer/export").send({ email: "nobody@resort.test" }).expect(200);
+  });
+
+  it("alerts staff on Messenger while their 24h window is open, then falls back to Telegram and email without leaking guest text", async () => {
+    const s = await setup();
+    await post(s.path, [inbound("psid-guest", "m_alert_1", "SECRET_MESSAGE_DO_NOT_LEAK_TO_ALERT")]);
+    const guest = await conversationOf(s.userId, "psid-guest");
+    await s.agent.put(`/conversations/${guest.id}/fields`).send({ name: "Lia Cruz", check_in: "2027-03-01", check_out: "2027-03-03", guests: "3" }).expect(200);
+
+    // 1. No Messenger staff PSID, no Telegram -> falls back to installation email
+    const emailAlert = await s.agent.post(`/conversations/${guest.id}/alert`).send({ reason: "Price question" }).expect(200);
+    expect(emailAlert.body.channel).toBe("email");
+    expect(mailSent).toHaveLength(1);
+    expect(mailSent[0]!.text).toContain("Lia (Messenger, 2027-03-01 to 2027-03-03, 3 guests)");
+    expect(mailSent[0]!.text).toContain("https://daloy.test/#/conversations");
+    expect(mailSent[0]!.text).not.toContain("SECRET_MESSAGE_DO_NOT_LEAK_TO_ALERT");
+
+    // 2. Connect Telegram -> falls back to Telegram
+    const tgToken = "123456789:TestTelegramBotToken_1234567890abcdef"; // gitleaks:allow
+    fake.telegram.token = tgToken;
+    await s.agent.put("/settings/connections/telegram").send({ token: tgToken, chatId: "-1001234567890" }).expect(200);
+    const tgAlert = await s.agent.post(`/conversations/${guest.id}/alert`).send({}).expect(200);
+    expect(tgAlert.body.channel).toBe("telegram");
+    expect(fake.telegram.messages).toHaveLength(1);
+    expect(fake.telegram.messages[0]!.text).not.toContain("SECRET_MESSAGE_DO_NOT_LEAK_TO_ALERT");
+
+    // 3. Configure staff PSID whose 24h Messenger window is open -> uses Messenger directly
+    await post(s.path, [inbound("psid-staff-owner", "m_staff_in", "Hi bot")]);
+    await s.agent.put("/conversations/settings").send({ staffAlertPsid: "psid-staff-owner" }).expect(200);
+    const metaAlert = await s.agent.post(`/conversations/${guest.id}/alert`).send({}).expect(200);
+    expect(metaAlert.body.channel).toBe("messenger");
+    expect(fake.meta.messages.some((m) => m.recipientId === "psid-staff-owner")).toBe(true);
+
+    // 4. Close staff PSID window (> 24h ago) -> status reports fallback and alert uses Telegram
+    await db.update(conversations).set({ lastInboundAt: new Date(Date.now() - 25 * HOUR) }).where(and(eq(conversations.userId, s.userId), eq(conversations.externalId, "psid-staff-owner")));
+    const statusRes = await s.agent.get("/conversations").expect(200);
+    expect(statusRes.body.alertStatus).toMatchObject({ staffWindowOpen: false, activeChannel: "telegram" });
+    const fallbackAlert = await s.agent.post(`/conversations/${guest.id}/alert`).send({}).expect(200);
+    expect(fallbackAlert.body.channel).toBe("telegram");
   });
 });
