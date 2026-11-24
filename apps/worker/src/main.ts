@@ -39,6 +39,7 @@ const worker = await startWorker({
   // The e2e suite polls every second instead of every 5 minutes (decision 0127).
   googleTriggers: { secretsKey, urls: providerUrls(), ...(process.env.NODE_ENV === "test" && process.env.DALOY_TEST_IMAP_ENDPOINT ? { tickMs: 500, intervalMs: 1000 } : {}) },
   mailboxTriggers: { secretsKey, urls: providerUrls(), ...(process.env.NODE_ENV === "test" && process.env.DALOY_TEST_IMAP_ENDPOINT ? { tickMs: 500, intervalMs: 1000 } : {}) },
+  monitorTriggers: { publicUrl: process.env.PUBLIC_URL, ...(process.env.NODE_ENV === "test" && process.env.DALOY_TEST_IMAP_ENDPOINT ? { tickMs: 500, intervalMs: 1000 } : {}) },
 });
 console.log("worker started");
 

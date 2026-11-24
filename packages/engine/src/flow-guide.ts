@@ -65,6 +65,9 @@ export function configProblems(def: WorkflowDefinition, language: Language): Con
   const trigger = triggerEntry(def.trigger.type);
   const triggerConfig = def.trigger.config as Record<string, unknown>;
   for (const f of trigger.required) if (blank(triggerConfig[f])) say("trigger", entryLabel(trigger, language), f);
+  if (def.trigger.type === "discord_message" && blank(triggerConfig.publicKey) && blank(triggerConfig.signingSecret)) {
+    say("trigger", entryLabel(trigger, language), "publicKey or signingSecret");
+  }
   for (const step of def.steps) {
     const entry = stepEntry(step.type);
     const config = step.config as Record<string, unknown>;

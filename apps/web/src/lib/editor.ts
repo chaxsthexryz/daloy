@@ -31,6 +31,11 @@ const POLL_TRIGGER_FIELDS: Record<string, string[]> = {
 };
 const BOOKING_EVENT_FIELDS = ["event", "bookingId", "reference", "resourceId", "resourceName", "start", "end", "minutes", "timezone", "status", "version", "mode", "nights", "checkIn", "checkOut", "conversationId"];
 const PAYMENT_EVENT_FIELDS = ["event", "dueId", "reference", "kind", "status", "amountCentavos", "amountPesos", "bookingId", "conversationId"];
+const PAGE_MONITOR_FIELDS = ["url", "title", "text", "value", "previous", "hash", "previousHash", "checkedAt"];
+const FEED_MONITOR_FIELDS = ["url", "feedTitle", "itemId", "title", "link", "summary", "published", "author", "checkedAt"];
+const SLACK_TRIGGER_FIELDS = ["eventId", "teamId", "channelId", "userId", "text", "ts", "threadTs", "receivedAt"];
+const TEAMS_TRIGGER_FIELDS = ["messageId", "channelId", "channelName", "teamId", "senderId", "senderName", "text", "cleanText", "timestamp"];
+const DISCORD_TRIGGER_FIELDS = ["interactionId", "messageId", "channelId", "guildId", "userId", "username", "commandName", "text", "options", "receivedAt"];
 
 /** Every step that can have run before this one: reachable backwards along edges. A sibling branch and anything after it are not; the step itself never is. */
 export function upstreamIds(draft: Draft, id: string): Set<string> {
@@ -66,9 +71,19 @@ export function insertables(draft: Draft, id: string): string[] {
                 ? PAYMENT_EVENT_FIELDS
                 : POLL_TRIGGER_FIELDS[trigger.type]
                   ? POLL_TRIGGER_FIELDS[trigger.type]!
-                : trigger.type === "form" || trigger.type === "webhook" || trigger.type === "sub_workflow"
-                  ? (trigger.config.fields ?? []).map((f) => f.name)
-                  : [];
+                : trigger.type === "page_changed"
+                  ? trigger.config.mode === "feed"
+                    ? FEED_MONITOR_FIELDS
+                    : PAGE_MONITOR_FIELDS
+                  : trigger.type === "slack_message"
+                    ? SLACK_TRIGGER_FIELDS
+                    : trigger.type === "teams_message"
+                      ? TEAMS_TRIGGER_FIELDS
+                      : trigger.type === "discord_message"
+                        ? DISCORD_TRIGGER_FIELDS
+                        : trigger.type === "form" || trigger.type === "webhook" || trigger.type === "sub_workflow"
+                          ? (trigger.config.fields ?? []).map((f) => f.name)
+                          : [];
   const before = upstreamIds(draft, id);
   const outputs = draft.steps
     .filter((s) => before.has(s.id))

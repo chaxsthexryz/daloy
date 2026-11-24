@@ -258,4 +258,23 @@ describe("openExits", () => {
     expect(vars).toContain("{{steps.read_data.output.summaryText}}");
     expect(vars).toContain("{{steps.read_data.output.calendar.events}}");
   });
+
+  it("lists insertables for G4 page/feed monitors and team chat triggers", () => {
+    const baseStep: Draft["steps"][number] = { id: "notify", type: "delay", config: { seconds: 1 } };
+    expect(insertables({ trigger: { type: "page_changed", config: { mode: "page", url: "https://example.com", maxChars: 8000 } }, steps: [baseStep], edges: [] }, "notify")).toEqual([
+      "{{trigger.url}}",
+      "{{trigger.title}}",
+      "{{trigger.text}}",
+      "{{trigger.value}}",
+      "{{trigger.previous}}",
+      "{{trigger.hash}}",
+      "{{trigger.previousHash}}",
+      "{{trigger.checkedAt}}",
+    ]);
+    expect(insertables({ trigger: { type: "page_changed", config: { mode: "feed", url: "https://example.com/rss", maxChars: 8000 } }, steps: [baseStep], edges: [] }, "notify")).toContain("{{trigger.published}}");
+    expect(insertables({ trigger: { type: "slack_message", config: { signingSecret: "s", ignoreBots: true } }, steps: [baseStep], edges: [] }, "notify")).toContain("{{trigger.threadTs}}");
+    expect(insertables({ trigger: { type: "teams_message", config: { signingSecret: "t" } }, steps: [baseStep], edges: [] }, "notify")).toContain("{{trigger.cleanText}}");
+    expect(insertables({ trigger: { type: "discord_message", config: { publicKey: "a".repeat(64) } }, steps: [baseStep], edges: [] }, "notify")).toContain("{{trigger.commandName}}");
+    expect(unconnectedNodes({ trigger: { type: "slack_message", config: { signingSecret: "s", ignoreBots: true } }, steps: [baseStep], edges: [] }, new Set(), true).size).toBe(0);
+  });
 });

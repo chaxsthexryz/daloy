@@ -9,6 +9,8 @@ import { pollEmailSources, type ImapAdapter } from "./email-in";
 import { connectImap } from "./imap";
 import { alertBrokenGrants } from "./connection-alerts";
 import { sendDigests } from "./digest";
+import { pollWebMonitors } from "./monitor-triggers";
+import type { SsrfGuard } from "./steps/ssrf";
 import { checkSchedules } from "./watchdog";
 
 export type WorkerOptions = {
@@ -35,6 +37,8 @@ export type WorkerOptions = {
   googleTriggers?: { secretsKey: Buffer; urls: ProviderUrls; tickMs?: number; intervalMs?: number };
   /** G3 (decision 0132): polls Gmail and Outlook mailbox triggers. tickMs: how often due ones are looked for. Left out, nothing is polled. */
   mailboxTriggers?: { secretsKey: Buffer; urls: ProviderUrls; tickMs?: number; intervalMs?: number };
+  /** G4 (decision 0133): polls public web page and RSS/Atom feed monitors (`page_changed`). Left out, nothing is polled. */
+  monitorTriggers?: { publicUrl?: string; guard?: SsrfGuard; tickMs?: number; intervalMs?: number };
 };
 export type Worker = Awaited<ReturnType<typeof startWorker>>;
 
@@ -202,6 +206,14 @@ export async function startWorker(opts: WorkerOptions) {
       .finally(() => { pollingMailbox = undefined; });
   }, opts.mailboxTriggers.tickMs ?? 15_000) : undefined;
 
+  let pollingMonitors: Promise<unknown> | undefined;
+  const monitorTimer = opts.monitorTriggers ? setInterval(() => {
+    if (pollingMonitors) return;
+    pollingMonitors = pollWebMonitors({ db, ...opts.monitorTriggers!, enqueue: deps.enqueue })
+      .catch(() => console.error("monitor trigger poll failed"))
+      .finally(() => { pollingMonitors = undefined; });
+  }, opts.monitorTriggers.tickMs ?? 15_000) : undefined;
+
   return {
     enqueue: deps.enqueue,
     /** Stops taking jobs and waits for the ones in progress, so their leases are released cleanly. */
@@ -213,12 +225,14 @@ export async function startWorker(opts: WorkerOptions) {
       clearInterval(watchdogTimer);
       clearInterval(googleTimer);
       clearInterval(mailboxTimer);
+      clearInterval(monitorTimer);
       emailStop.abort();
       await boss.stop({ graceful: true, timeout: 30_000 });
       await delivering;
       await readingMail;
       await pollingGoogle;
       await pollingMailbox;
+      await pollingMonitors;
       await checking;
       await purging;
     },

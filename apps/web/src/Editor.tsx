@@ -25,6 +25,7 @@ import { EmailSource } from "./EmailSource";
 import { GoogleTriggerSettings } from "./GoogleTriggerSettings";
 import { MailboxTriggerSettings } from "./MailboxTriggerSettings";
 import { ExplainSheet, SampleTest, SetupGuide, TurnOnSheet } from "./Guide";
+import { MonitorTriggerSettings } from "./MonitorTriggerSettings";
 import { testState, type SampleResult } from "./lib/guide";
 import { parseSample, variableGroups } from "./lib/variables";
 import { VariablePicker } from "./VariablePicker";
@@ -84,6 +85,14 @@ function samplePayload(trigger: Trigger, resourceId = "a resource id from the Re
   if (trigger.type === "gmail_message") return JSON.stringify({ from: "ana@example.com", replyTo: "ana@example.com", to: ["inquiries@example.com"], subject: "Order inquiry", text: "Hello, I would like a quote.", messageId: "<sample-gmail@example.com>", receivedAt: new Date().toISOString(), gmailMessageId: "sample-gmail-id", threadId: "sample-thread-id", labelIds: [trigger.config.label ?? "INBOX"] }, null, 2);
   if (trigger.type === "outlook_message") return JSON.stringify({ from: "ana@example.com", replyTo: "ana@example.com", to: ["inquiries@example.com"], subject: "Order inquiry", text: "Hello, I would like a quote.", messageId: "<sample-outlook@example.com>", receivedAt: new Date().toISOString(), outlookMessageId: "sample-outlook-id", folder: trigger.config.folder ?? "Inbox" }, null, 2);
   if (trigger.type === "payment_event") return JSON.stringify({ event: trigger.config.events[0] ?? "confirmed", dueId: "sample-due-id", reference: "ORD-1001", kind: "deposit", status: trigger.config.events[0] ?? "confirmed", amountCentavos: 35000, amountPesos: "350.00" }, null, 2);
+  if (trigger.type === "page_changed") {
+    return trigger.config.mode === "feed"
+      ? JSON.stringify({ url: trigger.config.url, feedTitle: "Shop updates", itemId: "https://example.com/posts/1", title: "Sample update", link: "https://example.com/posts/1", summary: "Summary text", published: "2026-01-15T09:00:00Z", author: "Ana", checkedAt: "2026-01-15T09:05:00Z" }, null, 2)
+      : JSON.stringify({ url: trigger.config.url, title: "Sample page", text: "Current page text", value: "PHP 55.00", previous: "PHP 52.00", hash: "abc123", previousHash: "def456", checkedAt: "2026-01-15T09:05:00Z" }, null, 2);
+  }
+  if (trigger.type === "slack_message") return JSON.stringify({ eventId: "Ev012345", teamId: "T012345", channelId: trigger.config.channelId ?? "C012345", userId: "U012345", text: "Hello team", ts: "1730000000.000100", threadTs: null, receivedAt: "2026-01-15T09:00:00Z" }, null, 2);
+  if (trigger.type === "teams_message") return JSON.stringify({ messageId: "msg-1001", channelId: "19:general", channelName: "General", teamId: "team-1", senderId: "user-1", senderName: "Ana", text: "<at>kymavo</at> Hello team", cleanText: "Hello team", timestamp: "2026-01-15T09:00:00Z" }, null, 2);
+  if (trigger.type === "discord_message") return JSON.stringify({ interactionId: "1234567890", channelId: trigger.config.channelId ?? "987654321", guildId: "111222333", userId: "444555666", username: "ana", commandName: trigger.config.commandName ?? "status", text: "Hello from Discord", options: {}, receivedAt: "2026-01-15T09:00:00Z" }, null, 2);
   const fields = trigger.type === "form" ? trigger.config.fields : trigger.type === "sub_workflow" ? (trigger.config.fields ?? []) : null;
   if (!fields || fields.length === 0) return "{}";
   // File fields are left out: a test run takes no files, and the server drops a value sent for one.
@@ -1209,7 +1218,7 @@ function NextUp({ draft, id }: { draft: Draft; id: string }) {
   );
 }
 
-const TRIGGER_ORDER: Trigger["type"][] = ["manual", "webhook", "schedule", "form", "email", "gmail_message", "outlook_message", "payment", "booking_event", "payment_event", "sub_workflow", "meta_dm", "telegram_message", "shopify_order", "sheets_row", "calendar_event", "drive_file"];
+const TRIGGER_ORDER: Trigger["type"][] = ["manual", "webhook", "schedule", "page_changed", "form", "email", "gmail_message", "outlook_message", "payment", "booking_event", "payment_event", "sub_workflow", "meta_dm", "telegram_message", "slack_message", "teams_message", "discord_message", "shopify_order", "sheets_row", "calendar_event", "drive_file"];
 const TRIGGER_DEFAULTS: Record<Trigger["type"], Trigger> = {
   manual: { type: "manual", config: {} },
   email: { type: "email", config: {} },
@@ -1217,6 +1226,7 @@ const TRIGGER_DEFAULTS: Record<Trigger["type"], Trigger> = {
   outlook_message: { type: "outlook_message", config: {} },
   webhook: { type: "webhook", config: {} },
   schedule: { type: "schedule", config: { cron: "0 9 * * 1" } },
+  page_changed: { type: "page_changed", config: { mode: "page", url: "https://example.com", maxChars: 4000 } },
   form: { type: "form", config: { fields: [{ name: "email", label: "Email", type: "email", required: true }] } },
   payment: { type: "payment", config: { events: ["paid"] } },
   booking_event: { type: "booking_event", config: { events: ["created"] } },
@@ -1225,6 +1235,9 @@ const TRIGGER_DEFAULTS: Record<Trigger["type"], Trigger> = {
   meta_dm: { type: "meta_dm", config: { channel: "both", requireImage: false } },
   shopify_order: { type: "shopify_order", config: {} },
   telegram_message: { type: "telegram_message", config: { from: "my_chat", requireFile: true } },
+  slack_message: { type: "slack_message", config: { signingSecret: "", ignoreBots: true } },
+  teams_message: { type: "teams_message", config: { signingSecret: "" } },
+  discord_message: { type: "discord_message", config: {} },
   sheets_row: { type: "sheets_row", config: { tab: "Sheet1" } },
   calendar_event: { type: "calendar_event", config: { on: "created", minutesBefore: 60 } },
   drive_file: { type: "drive_file", config: { requireFile: false } },
@@ -1259,6 +1272,99 @@ function TriggerPanel({ trigger, wf, onChange }: { trigger: Trigger; wf: Loaded;
       </div>
       {(trigger.type === "sheets_row" || trigger.type === "calendar_event" || trigger.type === "drive_file") && <GoogleTriggerSettings trigger={trigger} workflowId={wf.id} onChange={onChange} />}
       {(trigger.type === "gmail_message" || trigger.type === "outlook_message") && <MailboxTriggerSettings trigger={trigger} workflowId={wf.id} onChange={onChange} />}
+      {trigger.type === "page_changed" && <MonitorTriggerSettings trigger={trigger} workflowId={wf.id} onChange={onChange} />}
+      {trigger.type === "slack_message" && (
+        <>
+          <div className="field">
+            <label htmlFor={`${id}-slack-secret`}>{t("Signing secret name")}</label>
+            <input id={`${id}-slack-secret`} value={trigger.config.signingSecret} onChange={(e) => onChange({ type: "slack_message", config: { ...trigger.config, signingSecret: e.target.value } })} />
+            <p className="muted hint">
+              {t("Slack verifies each request with X-Slack-Signature using this secret.")}{" "}
+              <a href="#/secrets">{t("Manage secrets")}</a>
+            </p>
+          </div>
+          <div className="field">
+            <label htmlFor={`${id}-slack-channel`}>
+              {t("Channel ID")} <span className="muted">{t("(optional)")}</span>
+            </label>
+            <input id={`${id}-slack-channel`} placeholder="C01234567" value={trigger.config.channelId ?? ""} onChange={(e) => onChange({ type: "slack_message", config: { ...trigger.config, channelId: e.target.value || undefined } })} />
+          </div>
+          <div className="field">
+            <label htmlFor={`${id}-slack-kw`}>
+              {t("Keyword filter")} <span className="muted">{t("(optional)")}</span>
+            </label>
+            <input id={`${id}-slack-kw`} value={trigger.config.textContains ?? ""} onChange={(e) => onChange({ type: "slack_message", config: { ...trigger.config, textContains: e.target.value || undefined } })} />
+          </div>
+          <div className="field">
+            <label className="check">
+              <input type="checkbox" checked={trigger.config.ignoreBots} onChange={(e) => onChange({ type: "slack_message", config: { ...trigger.config, ignoreBots: e.target.checked } })} />{" "}
+              {t("Ignore messages from bots")}
+            </label>
+          </div>
+        </>
+      )}
+      {trigger.type === "teams_message" && (
+        <>
+          <div className="field">
+            <label htmlFor={`${id}-teams-secret`}>{t("Signing secret name")}</label>
+            <input id={`${id}-teams-secret`} value={trigger.config.signingSecret} onChange={(e) => onChange({ type: "teams_message", config: { ...trigger.config, signingSecret: e.target.value } })} />
+            <p className="muted hint">
+              {t("Teams verifies Outgoing Webhooks with Authorization HMAC, or Teams Workflows with X-Daloy-Signature.")}{" "}
+              <a href="#/secrets">{t("Manage secrets")}</a>
+            </p>
+          </div>
+          <div className="field">
+            <label htmlFor={`${id}-teams-channel`}>
+              {t("Channel ID")} <span className="muted">{t("(optional)")}</span>
+            </label>
+            <input id={`${id}-teams-channel`} value={trigger.config.channelId ?? ""} onChange={(e) => onChange({ type: "teams_message", config: { ...trigger.config, channelId: e.target.value || undefined } })} />
+          </div>
+          <div className="field">
+            <label htmlFor={`${id}-teams-kw`}>
+              {t("Keyword filter")} <span className="muted">{t("(optional)")}</span>
+            </label>
+            <input id={`${id}-teams-kw`} value={trigger.config.textContains ?? ""} onChange={(e) => onChange({ type: "teams_message", config: { ...trigger.config, textContains: e.target.value || undefined } })} />
+          </div>
+        </>
+      )}
+      {trigger.type === "discord_message" && (
+        <>
+          <div className="field">
+            <label htmlFor={`${id}-discord-pubkey`}>
+              {t("Discord Application Public Key")} <span className="muted">{t("(64 hex characters, for slash commands)")}</span>
+            </label>
+            <input id={`${id}-discord-pubkey`} value={trigger.config.publicKey ?? ""} onChange={(e) => onChange({ type: "discord_message", config: { ...trigger.config, publicKey: e.target.value.trim() || undefined } })} />
+          </div>
+          <div className="field">
+            <label htmlFor={`${id}-discord-secret`}>
+              {t("Or signing secret name")} <span className="muted">{t("(for signed relay calls)")}</span>
+            </label>
+            <input id={`${id}-discord-secret`} value={trigger.config.signingSecret ?? ""} onChange={(e) => onChange({ type: "discord_message", config: { ...trigger.config, signingSecret: e.target.value || undefined } })} />
+            <p className="muted hint">
+              {t("Enter a Discord Application Public Key for slash command interactions, or a signing secret name for signed webhook calls.")}{" "}
+              <a href="#/secrets">{t("Manage secrets")}</a>
+            </p>
+          </div>
+          <div className="field">
+            <label htmlFor={`${id}-discord-cmd`}>
+              {t("Slash command filter")} <span className="muted">{t("(optional)")}</span>
+            </label>
+            <input id={`${id}-discord-cmd`} value={trigger.config.commandName ?? ""} onChange={(e) => onChange({ type: "discord_message", config: { ...trigger.config, commandName: e.target.value || undefined } })} />
+          </div>
+          <div className="field">
+            <label htmlFor={`${id}-discord-channel`}>
+              {t("Channel ID")} <span className="muted">{t("(optional)")}</span>
+            </label>
+            <input id={`${id}-discord-channel`} value={trigger.config.channelId ?? ""} onChange={(e) => onChange({ type: "discord_message", config: { ...trigger.config, channelId: e.target.value || undefined } })} />
+          </div>
+          <div className="field">
+            <label htmlFor={`${id}-discord-kw`}>
+              {t("Keyword filter")} <span className="muted">{t("(optional)")}</span>
+            </label>
+            <input id={`${id}-discord-kw`} value={trigger.config.textContains ?? ""} onChange={(e) => onChange({ type: "discord_message", config: { ...trigger.config, textContains: e.target.value || undefined } })} />
+          </div>
+        </>
+      )}
       {trigger.type === "shopify_order" && (
         <p className="muted hint">
           {t("Runs for each new order in your Shopify store. The order number, customer, total and items are available as trigger fields.")}{" "}
@@ -1469,7 +1575,8 @@ function TriggerPanel({ trigger, wf, onChange }: { trigger: Trigger; wf: Loaded;
       )}
       {published?.webhookPath && (
         <p className="muted hint">
-          {t("Webhook URL:")} <code>{`${location.origin}/hooks/${newPath ?? published.webhookPath}`}</code>{" "}
+          {t("Webhook URL:")}{" "}
+          <code>{`${location.origin}${trigger.type === "slack_message" ? "/hooks/slack/" : trigger.type === "teams_message" ? "/hooks/teams/" : trigger.type === "discord_message" ? "/hooks/discord/" : "/hooks/"}${newPath ?? published.webhookPath}`}</code>{" "}
           <button
             type="button"
             className="quiet"

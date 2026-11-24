@@ -1,6 +1,6 @@
-import { publicCopy } from "./public-copy";
+﻿import { publicCopy } from "./public-copy";
 import { createHmac, randomInt, randomUUID, timingSafeEqual } from "node:crypto";
-import { dmClaimByMid, downloadTelegramFile, openDueForGuest, parseTelegramUpdate, ProviderError, submitDmReceiptClaim, telegramWebhookSecret, TooManyClaimsError, conversationPayload, parseMetaEchoes, recordEcho, recordInbound, normalizeShopDomain, parseShopifyCredential, parseShopifyOrder, verifyShopifyHmac, assertNotPaused, busyBetween, claimUsage, constantTimeEqual, downloadMetaImage, keyedRun, MetaImageError, MetaTransientImageError, parseMetaCredential, parseMetaWebhook, QuotaError, readBrand, saveUploads, usageSummary, verifyMetaSignature, workspaceLanguage, businessProfiles, connectionCredential, connections, createKeyedRun, createRun, eventSeen, finishEvent, keptEvent, markPaymentPaid, markPaymentRefunded, centavosToPesos, paymongoMode, readSecret, recordEvent, requests, runs, settleCheckout, triggers, verifyPaymongoSignature, WorkflowPausedError, workflows, workflowVersions, type Db, type NewUpload, type Payment } from "@daloy/db";
+import { dmClaimByMid, downloadTelegramFile, openDueForGuest, parseDiscordWebhook, parseSlackWebhook, parseTeamsWebhook, parseTelegramUpdate, ProviderError, submitDmReceiptClaim, telegramWebhookSecret, TooManyClaimsError, conversationPayload, parseMetaEchoes, recordEcho, recordInbound, normalizeShopDomain, parseShopifyCredential, parseShopifyOrder, verifyDaloyHmac, verifyDiscordEd25519, verifyShopifyHmac, verifySlackSignature, verifyTeamsWebhook, assertNotPaused, busyBetween, claimUsage, constantTimeEqual, downloadMetaImage, keyedRun, MetaImageError, MetaTransientImageError, parseMetaCredential, parseMetaWebhook, QuotaError, readBrand, saveUploads, usageSummary, verifyMetaSignature, workspaceLanguage, businessProfiles, connectionCredential, connections, createKeyedRun, createRun, eventSeen, finishEvent, keptEvent, markPaymentPaid, markPaymentRefunded, centavosToPesos, paymongoMode, readSecret, recordEvent, requests, runs, settleCheckout, triggers, verifyPaymongoSignature, WorkflowPausedError, workflows, workflowVersions, type Db, type NewUpload, type Payment } from "@daloy/db";
 import { definitionSchema, workflowChoices, FILE_MAX_BYTES, FILES_PER_FIELD, FILES_PER_SUBMISSION, fileType, OFFICE_REQUEST, parsePayload, PURCHASE_REQUEST, safeFileName, type FileRef, type FormField, type Resource } from "@daloy/engine";
 import {
   BadRequestException,
@@ -599,6 +599,198 @@ export class TelegramHooksController {
     });
     for (const runId of started) await enqueueRun(this.boss, runId);
     return { ok: true, started: started.length };
+  }
+}
+
+const hookPathParam = new ZodPipe(z.string().regex(/^[A-Za-z0-9_-]{43}$/));
+
+async function findChatHook(db: Db, path: string, type: "slack_message" | "teams_message" | "discord_message") {
+  const [row] = await db
+    .select({ trigger: triggers, userId: workflows.userId, pausedAt: workflows.pausedAt, version: workflowVersions })
+    .from(triggers)
+    .innerJoin(workflows, eq(workflows.id, triggers.workflowId))
+    .innerJoin(workflowVersions, latestPublished)
+    .where(eq(triggers.webhookPath, path));
+  const config = row && savedTrigger(row.version.definition, type);
+  if (!row || !config) throw new NotFoundException();
+  return { row, config };
+}
+
+async function startChatRun(
+  db: Db,
+  boss: PgBoss,
+  row: { trigger: { workflowId: string }; pausedAt: Date | null; version: { id: string } },
+  payload: Record<string, unknown>,
+  key: string,
+): Promise<{ started: number; runId?: string; duplicate?: true }> {
+  if (row.pausedAt) return { started: 0 };
+  const res = await createKeyedRun(db, row.trigger.workflowId, row.version.id, payload, key).catch((err: unknown) => {
+    if (err instanceof WorkflowPausedError) return null;
+    throw err;
+  });
+  if (!res) return { started: 0 };
+  if (!res.duplicate) await enqueueRun(boss, res.runId);
+  return { started: res.duplicate ? 0 : 1, runId: res.runId, ...(res.duplicate ? { duplicate: true } : {}) };
+}
+
+/**
+ * Slack Events API trigger webhook (G4, decision 0133). Verifies X-Slack-Signature (v0 HMAC-SHA256) and
+ * X-Slack-Request-Timestamp in constant time before parsing url_verification challenges or message events.
+ */
+@Controller("hooks/slack")
+@UseGuards(RateLimit(120))
+export class SlackHooksController {
+  constructor(
+    @Inject(DB) private readonly db: Db,
+    @Inject(BOSS) private readonly boss: PgBoss,
+    @Inject(CONFIG) private readonly config: Required<ApiConfig>,
+  ) {}
+
+  @Post(":path")
+  @HttpCode(200)
+  async receive(
+    @Param("path", hookPathParam) path: string,
+    @Req() req: RawBodyRequest<Request>,
+    @Headers("x-slack-signature") signature: string | undefined,
+    @Headers("x-slack-request-timestamp") timestamp: string | undefined,
+  ) {
+    const { row, config } = await findChatHook(this.db, path, "slack_message");
+    const secretName = (config as { signingSecret?: unknown }).signingSecret;
+    const secret = typeof secretName === "string" ? await readSecret(this.db, this.config.secretsKey, row.userId, secretName) : null;
+    if (!secret) throw new UnauthorizedException("bad Slack signature");
+    const checked = verifySlackSignature({
+      rawBody: req.rawBody ?? Buffer.alloc(0),
+      signature,
+      timestamp,
+      signingSecret: secret,
+      nowSeconds: Math.floor(Date.now() / 1000),
+    });
+    if (!checked.ok) throw new UnauthorizedException(checked.reason);
+
+    const parsed = parseSlackWebhook(req.body);
+    if (!parsed) throw new BadRequestException("invalid Slack event payload");
+    if (parsed.kind === "challenge") return { challenge: parsed.challenge };
+    if (parsed.kind === "ignore") return { ok: true, started: 0 };
+
+    const cfg = config as { channelId?: string; textContains?: string; ignoreBots?: boolean };
+    if (cfg.ignoreBots !== false && parsed.isBot) return { ok: true, started: 0 };
+    if (cfg.channelId && parsed.channelId !== cfg.channelId) return { ok: true, started: 0 };
+    if (cfg.textContains && !parsed.text.toLowerCase().includes(cfg.textContains.toLowerCase())) return { ok: true, started: 0 };
+
+    const res = await startChatRun(this.db, this.boss, row, parsed.payload, parsed.key);
+    return { ok: true, ...res };
+  }
+}
+
+/**
+ * Microsoft Teams trigger webhook (G4, decision 0133). Verifies either Teams Outgoing Webhook
+ * Authorization: HMAC <base64> or X-Daloy-Signature + X-Daloy-Timestamp before parsing the payload.
+ */
+@Controller("hooks/teams")
+@UseGuards(RateLimit(120))
+export class TeamsHooksController {
+  constructor(
+    @Inject(DB) private readonly db: Db,
+    @Inject(BOSS) private readonly boss: PgBoss,
+    @Inject(CONFIG) private readonly config: Required<ApiConfig>,
+  ) {}
+
+  @Post(":path")
+  @HttpCode(200)
+  async receive(
+    @Param("path", hookPathParam) path: string,
+    @Req() req: RawBodyRequest<Request>,
+    @Headers("authorization") authorization: string | undefined,
+    @Headers("x-daloy-signature") signature: string | undefined,
+    @Headers("x-daloy-timestamp") timestamp: string | undefined,
+  ) {
+    const { row, config } = await findChatHook(this.db, path, "teams_message");
+    const secretName = (config as { signingSecret?: unknown }).signingSecret;
+    const secret = typeof secretName === "string" ? await readSecret(this.db, this.config.secretsKey, row.userId, secretName) : null;
+    if (!secret) throw new UnauthorizedException("bad Teams signature");
+    const checked = verifyTeamsWebhook({
+      rawBody: req.rawBody ?? Buffer.alloc(0),
+      authorization,
+      signature,
+      timestamp,
+      secret,
+      nowSeconds: Math.floor(Date.now() / 1000),
+    });
+    if (!checked.ok) throw new UnauthorizedException(checked.reason);
+
+    const parsed = parseTeamsWebhook(req.body);
+    if (!parsed) throw new BadRequestException("invalid Teams webhook payload");
+
+    const cfg = config as { channelId?: string; textContains?: string };
+    if (cfg.channelId && parsed.channelId !== cfg.channelId) return { ok: true, started: 0 };
+    if (cfg.textContains && !parsed.text.toLowerCase().includes(cfg.textContains.toLowerCase())) return { ok: true, started: 0 };
+
+    const res = await startChatRun(this.db, this.boss, row, parsed.payload, parsed.key);
+    return { ok: true, ...res };
+  }
+}
+
+/**
+ * Discord trigger webhook (G4, decision 0133). Supports official Discord Interactions (Ed25519 via
+ * X-Signature-Ed25519 + X-Signature-Timestamp, including PING) and HMAC-signed relay events (X-Daloy-Signature).
+ */
+@Controller("hooks/discord")
+@UseGuards(RateLimit(120))
+export class DiscordHooksController {
+  constructor(
+    @Inject(DB) private readonly db: Db,
+    @Inject(BOSS) private readonly boss: PgBoss,
+    @Inject(CONFIG) private readonly config: Required<ApiConfig>,
+  ) {}
+
+  @Post(":path")
+  @HttpCode(200)
+  async receive(
+    @Param("path", hookPathParam) path: string,
+    @Req() req: RawBodyRequest<Request>,
+    @Headers("x-signature-ed25519") edSignature: string | undefined,
+    @Headers("x-signature-timestamp") edTimestamp: string | undefined,
+    @Headers("x-daloy-signature") hmacSignature: string | undefined,
+    @Headers("x-daloy-timestamp") hmacTimestamp: string | undefined,
+  ) {
+    const { row, config } = await findChatHook(this.db, path, "discord_message");
+    const cfg = config as { publicKey?: string; signingSecret?: string; channelId?: string; commandName?: string; textContains?: string };
+    const rawBody = req.rawBody ?? Buffer.alloc(0);
+    const nowSeconds = Math.floor(Date.now() / 1000);
+
+    let verifiedByEd25519 = false;
+    if (edSignature !== undefined || edTimestamp !== undefined) {
+      if (!cfg.publicKey) throw new UnauthorizedException("bad Discord signature");
+      const checked = verifyDiscordEd25519({ rawBody, signature: edSignature, timestamp: edTimestamp, publicKeyHex: cfg.publicKey, nowSeconds });
+      if (!checked.ok) throw new UnauthorizedException(checked.reason);
+      verifiedByEd25519 = true;
+    } else if (cfg.signingSecret) {
+      const secret = await readSecret(this.db, this.config.secretsKey, row.userId, cfg.signingSecret);
+      if (!secret) throw new UnauthorizedException("bad signature");
+      const checked = verifyDaloyHmac({ rawBody, signature: hmacSignature, timestamp: hmacTimestamp, secret, nowSeconds });
+      if (!checked.ok) throw new UnauthorizedException(checked.reason);
+    } else {
+      throw new UnauthorizedException("missing Discord signature");
+    }
+
+    const parsed = parseDiscordWebhook(req.body);
+    if (!parsed) throw new BadRequestException("invalid Discord payload");
+    if (parsed.kind === "ping") return { type: 1 };
+    if (parsed.kind === "ignore") return verifiedByEd25519 ? { type: 4, data: { content: "Ignored.", flags: 64 } } : { ok: true, started: 0 };
+
+    const unmatched =
+      (cfg.channelId && parsed.channelId !== cfg.channelId) ||
+      (cfg.commandName && parsed.commandName !== cfg.commandName) ||
+      (cfg.textContains && !parsed.text.toLowerCase().includes(cfg.textContains.toLowerCase()));
+    if (unmatched) {
+      return verifiedByEd25519 ? { type: 4, data: { content: "Ignored by workflow filter.", flags: 64 } } : { ok: true, started: 0 };
+    }
+
+    const res = await startChatRun(this.db, this.boss, row, parsed.payload, parsed.key);
+    if (verifiedByEd25519 && parsed.interaction) {
+      return { type: 4, data: { content: res.duplicate ? "Already received." : "Received by kymavo.", flags: 64 } };
+    }
+    return { ok: true, ...res };
   }
 }
 

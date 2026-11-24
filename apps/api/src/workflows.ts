@@ -18,7 +18,7 @@ import {
   Query,
   UseGuards,
 } from "@nestjs/common";
-import { and, desc, eq, getTableColumns, max, sql } from "drizzle-orm";
+import { and, desc, eq, getTableColumns, inArray, max, sql } from "drizzle-orm";
 import { CronExpressionParser } from "cron-parser";
 import type { PgBoss } from "pg-boss";
 import * as z from "zod";
@@ -188,7 +188,11 @@ export class WorkflowsController {
   async rotateWebhookUrl(@CurrentUser() user: SessionUser, @Param("id", workflowId) id: string) {
     await this.owned(user.workspaceId, id);
     const webhookPath = randomBytes(32).toString("base64url");
-    const rows = await this.db.update(triggers).set({ webhookPath }).where(and(eq(triggers.workflowId, id), eq(triggers.type, "webhook"))).returning({ id: triggers.id });
+    const rows = await this.db
+      .update(triggers)
+      .set({ webhookPath })
+      .where(and(eq(triggers.workflowId, id), inArray(triggers.type, [...HAS_WEBHOOK_PATH])))
+      .returning({ id: triggers.id });
     if (rows.length === 0) throw new NotFoundException("this workflow has no webhook trigger");
     return { webhookPath };
   }
@@ -397,9 +401,15 @@ export class WorkflowsController {
   }
 
   /** A named approver must be a member who may approve when the workflow is turned on; the worker and the approval page check again later. */
-  /** A signed webhook needs its secret to exist, or every call would be refused (decision 0057). */
+  /** A signed webhook or team chat trigger needs its secret to exist, or every call would be refused (decision 0057, 0133). */
   private async checkSigningSecret(workspaceId: string, definition: WorkflowDefinition) {
-    const name = definition.trigger.type === "webhook" ? definition.trigger.config.hmacSecret : undefined;
+    const t = definition.trigger;
+    const name =
+      t.type === "webhook"
+        ? t.config.hmacSecret
+        : t.type === "slack_message" || t.type === "teams_message" || t.type === "discord_message"
+          ? t.config.signingSecret
+          : undefined;
     if (name === undefined) return;
     const [found] = await this.db.select({ id: secrets.id }).from(secrets).where(and(eq(secrets.userId, workspaceId), eq(secrets.name, name)));
     if (!found) throw new BadRequestException(`Add a secret named ${name} on the Secrets page first, so calls to this webhook can be checked against it.`);
@@ -518,10 +528,12 @@ export class CatalogController {
   }
 }
 
+const HAS_WEBHOOK_PATH = new Set(["webhook", "slack_message", "teams_message", "discord_message"]);
+
 /** One trigger row per workflow, matching the live version. A webhook keeps its path across publishes so its URL never changes. */
 async function syncTrigger(tx: Tx, id: string, trigger: Trigger) {
   const [existing] = await tx.select().from(triggers).where(eq(triggers.workflowId, id));
-  const webhookPath = trigger.type === "webhook" ? (existing?.webhookPath ?? randomBytes(32).toString("base64url")) : null;
+  const webhookPath = HAS_WEBHOOK_PATH.has(trigger.type) ? (existing?.webhookPath ?? randomBytes(32).toString("base64url")) : null;
   const values = { type: trigger.type, config: trigger.config, webhookPath };
   if (existing) await tx.update(triggers).set(values).where(eq(triggers.id, existing.id));
   else await tx.insert(triggers).values({ workflowId: id, ...values });

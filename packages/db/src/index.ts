@@ -23,6 +23,8 @@ export * from "./google-docs";
 export * from "./google-calendar";
 export * from "./google-triggers";
 export * from "./mailbox-triggers";
+export * from "./monitor-triggers";
+export * from "./chat-triggers";
 export * from "./email-sources";
 export * from "./knowledge";
 export * from "./internal-triggers";

@@ -128,4 +128,13 @@ describe("destination line", () => {
       expect(line.length, `no destination line for ${type}`).toBeGreaterThan(0);
     }
   });
+
+  it("keeps G4 triggers webhook-only without forcing OAuth posting providers", () => {
+    for (const type of ["page_changed", "slack_message", "teams_message", "discord_message"] as const) {
+      expect(triggerEntry(type).provider).toBeUndefined();
+    }
+    expect(triggerEntry("slack_message").mark).toBe("slack");
+    expect(triggerEntry("teams_message").mark).toBe("teams");
+    expect(triggerEntry("discord_message").mark).toBe("discord");
+  });
 });

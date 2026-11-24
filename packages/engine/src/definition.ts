@@ -514,6 +514,64 @@ export type FormField = z.infer<typeof formFieldSchema>;
 
 const fieldList = z.array(formFieldSchema).min(1).max(30);
 
+const secretRefName = z.string().regex(/^[a-z][a-z0-9_]{0,99}$/, "use a-z, 0-9 and _");
+
+export const pageChangedConfigSchema = z
+  .strictObject({
+    url: z
+      .string()
+      .trim()
+      .min(1)
+      .max(2000)
+      .refine((u) => {
+        try {
+          const parsed = new URL(u);
+          return parsed.protocol === "http:" || parsed.protocol === "https:";
+        } catch {
+          return false;
+        }
+      }, "enter a valid http or https web address"),
+    mode: z.enum(["page", "feed"]).default("page"),
+    selector: z.string().trim().min(1).max(500).optional(),
+    maxChars: z.int().min(100).max(READ_PAGE_MAX_CHARS).default(4000),
+  })
+  .superRefine((c, ctx) => {
+    if (c.mode === "feed" && c.selector !== undefined) {
+      ctx.addIssue({ code: "custom", path: ["selector"], message: "selector is only used in page mode, not feed mode" });
+    }
+  });
+export type PageChangedConfig = z.infer<typeof pageChangedConfigSchema>;
+
+export const slackMessageConfigSchema = z.strictObject({
+  signingSecret: secretRefName,
+  channelId: z.string().trim().regex(/^[CGD][A-Z0-9]{2,20}$/, "enter a Slack channel id such as C01234567").optional(),
+  textContains: z.string().trim().min(1).max(200).optional(),
+  ignoreBots: z.boolean().default(true),
+});
+export type SlackMessageConfig = z.infer<typeof slackMessageConfigSchema>;
+
+export const teamsMessageConfigSchema = z.strictObject({
+  signingSecret: secretRefName,
+  channelId: z.string().trim().min(1).max(200).optional(),
+  textContains: z.string().trim().min(1).max(200).optional(),
+});
+export type TeamsMessageConfig = z.infer<typeof teamsMessageConfigSchema>;
+
+export const discordMessageConfigSchema = z
+  .strictObject({
+    publicKey: z.string().trim().regex(/^[0-9a-f]{64}$/i, "enter a 64-character hex Discord public key").optional(),
+    signingSecret: secretRefName.optional(),
+    channelId: z.string().trim().regex(/^\d{17,20}$/, "enter a numeric Discord channel id").optional(),
+    commandName: z.string().trim().min(1).max(32).optional(),
+    textContains: z.string().trim().min(1).max(200).optional(),
+  })
+  .superRefine((c, ctx) => {
+    if (!c.publicKey && !c.signingSecret) {
+      ctx.addIssue({ code: "custom", path: ["publicKey"], message: "set either a Discord public key or a signing secret" });
+    }
+  });
+export type DiscordMessageConfig = z.infer<typeof discordMessageConfigSchema>;
+
 const triggerSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("manual"), config: z.object({}).default({}) }),
   // The mailbox credential belongs to the installation's encrypted source row, never to a saved version.
@@ -594,6 +652,11 @@ const triggerSchema = z.discriminatedUnion("type", [
       })
       .default({}),
   }),
+  // G4 (decision 0133): public web page / RSS monitor and verified team chat triggers.
+  z.object({ type: z.literal("page_changed"), config: pageChangedConfigSchema }),
+  z.object({ type: z.literal("slack_message"), config: slackMessageConfigSchema }),
+  z.object({ type: z.literal("teams_message"), config: teamsMessageConfigSchema }),
+  z.object({ type: z.literal("discord_message"), config: discordMessageConfigSchema }),
 ]);
 export type Trigger = z.infer<typeof triggerSchema>;
 
