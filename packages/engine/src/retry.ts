@@ -67,7 +67,7 @@ export function decideRetry(
 
 /**
  * One key per step, the same on every attempt, sent as Idempotency-Key. A hint for receivers that deduplicate:
- * Daloy never relies on it, which is why an unknown outcome on a step that is not idempotent waits for review.
+ * kymavo never relies on it, which is why an unknown outcome on a step that is not idempotent waits for review.
  */
 export const idempotencyKey = (runId: string, stepId: string) => `${runId}:${stepId}`;
 

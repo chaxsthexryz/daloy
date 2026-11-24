@@ -49,29 +49,29 @@ Google Cloud console, once:
 5. Clients: create an OAuth client of type Web application with the redirect URI from section 1. Copy the client id and secret into `.env` as `GOOGLE_OAUTH_CLIENT_ID` and `GOOGLE_OAUTH_CLIENT_SECRET`, and set `OAUTH_ENV=development`.
 6. `docker compose up -d api worker`.
 
-In Daloy (the full list with what to expect is [live Gmail OAuth check](live-gmail-oauth-check.md)):
+In kymavo (the full list with what to expect is [live Gmail OAuth check](live-gmail-oauth-check.md)):
 
 1. Apps, Gmail: select Connect Gmail with Google, pick the test account, read the consent screen (it should ask only to send email on your behalf), and allow.
 2. Back on Apps, the Gmail card shows the address. Select Send a test email to me and check it arrived from that address, with your business name.
 3. In Business, turn on Website inquiries and send an inquiry from another mailbox. The reply should come from the Gmail address.
 4. Reconnect with a second Google account: the card's address changes and the next test email comes from it.
-5. Untick the permission on Google's screen if it offers a checkbox: expect "Some of the permissions Daloy asked for were not allowed" and nothing connected.
-6. Change the test account's password at `https://myaccount.google.com/security`, then send an inquiry. Expect the email step to fail with Reconnect Gmail, nothing sent from any other address, and, within a minute, one email to the owner's login address in Mailpit titled "Reconnect Gmail in Daloy" (R8). It comes through the installation's server because Gmail cannot send it.
-7. Disconnect: the card returns to Connect Gmail with Google. At `https://myaccount.google.com/permissions` check that Daloy is gone, or remove it.
+5. Untick the permission on Google's screen if it offers a checkbox: expect "Some of the permissions kymavo asked for were not allowed" and nothing connected.
+6. Change the test account's password at `https://myaccount.google.com/security`, then send an inquiry. Expect the email step to fail with Reconnect Gmail, nothing sent from any other address, and, within a minute, one email to the owner's login address in Mailpit titled "Reconnect Gmail in kymavo" (R8). It comes through the installation's server because Gmail cannot send it.
+7. Disconnect: the card returns to Connect Gmail with Google. At `https://myaccount.google.com/permissions` check that kymavo is gone, or remove it.
 8. Check that an automation that starts when an email arrives still asks for an IMAP mailbox and app password.
 
 Refresh tokens of a project in Testing last seven days, so after a week expect Reconnect Gmail. That is Google's Testing limit, not a fault.
 
 ## 4. The other apps, in this order
 
-1. Google Sheets and Drive: [live Google OAuth check](live-google-oauth-check.md). Needs the Picker key and project number for Pick. Step 11 (two Daloy workspaces on one Google account) settles R14: the card should now warn that the account is connected elsewhere, and the check says whether disconnecting one really ends the other.
+1. Google Sheets and Drive: [live Google OAuth check](live-google-oauth-check.md). Needs the Picker key and project number for Pick. Step 11 (two kymavo workspaces on one Google account) settles R14: the card should now warn that the account is connected elsewhere, and the check says whether disconnecting one really ends the other.
 2. Google Calendar: [live Calendar OAuth check](live-calendar-oauth-check.md). First note the label Google shows for `calendar.app.created` on the Data access page; the [submission pack](google-scope-submission.md) needs it.
 3. Slack: [live Slack OAuth check](live-slack-oauth-check.md).
 4. Airtable, Notion and Trello: [live records OAuth check](live-records-oauth-check.md).
 5. Outlook and Teams: [live Microsoft check](live-microsoft-check.md).
 6. Telegram, Teams and PayMongo guided pastes: open each card in Apps and follow the guided steps with a test bot, a test channel and PayMongo test keys.
 
-For any app, a broken grant (revoked at the provider) should produce one "Reconnect <app> in Daloy" email a day in Mailpit (R8). An account connected in two places should show the shared-account note on its card and in the Disconnect confirmation (R14).
+For any app, a broken grant (revoked at the provider) should produce one "Reconnect <app> in kymavo" email a day in Mailpit (R8). An account connected in two places should show the shared-account note on its card and in the Disconnect confirmation (R14).
 
 ## 5. When you are happy
 

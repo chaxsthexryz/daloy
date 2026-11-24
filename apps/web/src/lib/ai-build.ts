@@ -28,7 +28,7 @@ export const withPeople = (def: WorkflowDefinition, real: { owner: string; membe
 export const withLabels = (def: WorkflowDefinition, real: { owner: string; member1?: string }): WorkflowDefinition =>
   swap(def, [[real.owner, PEOPLE.owner], ...(real.member1 ? ([[real.member1, PEOPLE.member1]] as [string, string][]) : [])]);
 
-const WHEN: Record<string, string> = { email: "When an email arrives", payment: "When a payment event arrives", form: "When someone fills the form", webhook: "When another system sends a web request", manual: "When you run it by hand", meta_dm: "When a Messenger or Instagram DM arrives", shopify_order: "When a new Shopify order comes in", telegram_message: "When someone messages your Telegram bot", booking_event: "When a Daloy booking changes", payment_event: "When a Daloy payment changes", sub_workflow: "When another automation calls this one", sheets_row: "When a row is added to Google Sheets", calendar_event: "When a Google Calendar event is added or starts soon", drive_file: "When a file is added to Google Drive" };
+const WHEN: Record<string, string> = { email: "When an email arrives", payment: "When a payment event arrives", form: "When someone fills the form", webhook: "When another system sends a web request", manual: "When you run it by hand", meta_dm: "When a Messenger or Instagram DM arrives", shopify_order: "When a new Shopify order comes in", telegram_message: "When someone messages your Telegram bot", booking_event: "When a kymavo booking changes", payment_event: "When a kymavo payment changes", sub_workflow: "When another automation calls this one", sheets_row: "When a row is added to Google Sheets", calendar_event: "When a Google Calendar event is added or starts soon", drive_file: "When a file is added to Google Drive" };
 const BRANCH: Record<string, string> = {
   approved: "If approved:",
   rejected: "If rejected:",
@@ -105,7 +105,7 @@ function sentence(step: WorkflowDefinition["steps"][number], language: Language)
     case "shopify_update_product":
       return t("Update a product in Shopify");
     case "browser":
-      return t("Open {host} in Daloy's browser", { host: /^(?:[a-z]+:\/\/)?([^/?#]+)/i.exec(text(c.url, ""))?.[1] ?? t("a web page") });
+      return t("Open {host} in kymavo's browser", { host: /^(?:[a-z]+:\/\/)?([^/?#]+)/i.exec(text(c.url, ""))?.[1] ?? t("a web page") });
     case "call_workflow":
       return t("Run automation {slug}", { slug: text(c.workflowSlug, t("another automation")) });
     default:

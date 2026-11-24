@@ -398,7 +398,7 @@ describe("exactly-once Sheets writes and pinned destinations (QA regression, fec
     const d = await sheet(ana, await newRun(ana), "REQ-2008");
     await db.update(deliveries).set({ pinnedAccount: null, pinnedDestination: null }).where(eq(deliveries.id, d.id));
     await deliverDue();
-    expect(await state(d.id)).toMatchObject({ state: "needs_review", lastError: expect.stringContaining("before Daloy recorded"), errorKind: "queued_before_pin" });
+    expect(await state(d.id)).toMatchObject({ state: "needs_review", lastError: expect.stringContaining("before kymavo recorded"), errorKind: "queued_before_pin" });
     expect(sheetRows).toHaveLength(0);
   });
 });

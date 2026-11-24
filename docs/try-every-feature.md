@@ -1,6 +1,6 @@
 # Try every feature
 
-A hands-on tour of everything Daloy does as of 18 November 2026 (main at `ccb9c8e`). Each mission builds one real automation and touches several features. At the end there is a checklist: tick each box as you see it work, and write down anything confusing, slow or wrong.
+A hands-on tour of everything kymavo does as of 18 November 2026 (main at `ccb9c8e`). Each mission builds one real automation and touches several features. At the end there is a checklist: tick each box as you see it work, and write down anything confusing, slow or wrong.
 
 Your data is safe: none of this resets the database. Mailpit at http://localhost:8025 catches every email the local stack sends, so nothing reaches a real inbox unless you connect a real Gmail or Outlook.
 
@@ -222,7 +222,7 @@ Features: email-in (IMAP) trigger, API tokens with scopes and expiry, MCP with H
    - one with an expiry date of tomorrow
 
    Copy each once; they are not shown again.
-3. **MCP:** tokens work on the MCP server only. In Hermes Agent, add the MCP server `http://localhost:3000/mcp` with the header `Authorization: Bearer dly_...` and the "run workflows" token. Ask: "List my Daloy automations", then "Run the website inquiry automation with a test inquiry from Ana about a broken printer." Check the run appears in Activity.
+3. **MCP:** tokens work on the MCP server only. In Hermes Agent, add the MCP server `http://localhost:3000/mcp` with the header `Authorization: Bearer dly_...` and the "run workflows" token. Ask: "List my kymavo automations", then "Run the website inquiry automation with a test inquiry from Ana about a broken printer." Check the run appears in Activity.
 4. **Scopes:** swap Hermes to the read-only token and ask it to run the same automation. It must be refused, while listing still works.
 5. **Usage:** Settings, Plan and usage. Every AI call from the missions above is counted.
 6. **Send cap (optional):** set `MAILBOX_DAILY_CAP=2` in `.env`, run `docker compose up -d`, and send three emails through your connected Gmail or Outlook. The third waits under Needs you with a plain reason and is not lost. Remove the line afterwards and run `docker compose up -d` again.

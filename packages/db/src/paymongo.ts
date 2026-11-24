@@ -43,7 +43,7 @@ const basic = (secretKey: string) => `Basic ${Buffer.from(`${secretKey}:`).toStr
 async function paymongoCall(urls: ProviderUrls, secretKey: string, path: string, init: RequestInit, write: boolean) {
   const headers = { ...(init.headers as Record<string, string>), authorization: basic(secretKey), accept: "application/json" };
   const res = await call(`${urls.paymongo ?? "https://api.paymongo.com"}${path}`, { ...init, headers }, urls.timeoutMs ?? 10_000, write, "PayMongo");
-  if (res.status === 429) throw new ProviderError("PayMongo is limiting requests right now. Daloy will try again.", "quota", retryAfter(res.headers));
+  if (res.status === 429) throw new ProviderError("PayMongo is limiting requests right now. kymavo will try again.", "quota", retryAfter(res.headers));
   if (res.status >= 500) throw new ProviderError(`PayMongo answered ${res.status}.`, write ? "ambiguous" : "unavailable");
   if (res.status === 401) throw new ProviderError("PayMongo no longer accepts the secret key. Connect PayMongo again.", "auth");
   if (res.status === 403) throw new ProviderError("PayMongo refused the key for this request. Check the key's permissions.", "permission");
@@ -90,7 +90,7 @@ export const findPaymentForStep = async (db: Db, runId: string, stepId: string):
 export async function insertPayment(db: Db, v: { userId: string; workflowId: string; runId: string; stepId: string; reference: string; amountCentavos: number; livemode: boolean; providerSessionId: string; url: string; dueId?: string }): Promise<Payment> {
   await db.insert(payments).values(v).onConflictDoNothing({ target: [payments.runId, payments.stepId] });
   // A paid event that arrived before this row was kept (decision 0056).
-  // shortcut: listener runs are not started on this path because Daloy only hands out the checkout URL after the row is stored, so a paid event cannot normally arrive first, upgrade if a link can reach a buyer earlier.
+  // shortcut: listener runs are not started on this path because kymavo only hands out the checkout URL after the row is stored, so a paid event cannot normally arrive first, upgrade if a link can reach a buyer earlier.
   const kept = await keptEvent(db, v.userId, "checkout_session.payment.paid", "sessionId", v.providerSessionId, v.livemode);
   const k = kept?.payload as { paymentId: string; amount: number; currency: string; livemode: boolean } | undefined;
   // Only an event verified in this payment's mode settles it.
@@ -110,7 +110,7 @@ const bySession = (userId: string, sessionId: string, livemode: boolean) => and(
 
 /**
  * pending -> paid, only once. A different amount or currency parks it in needs_review for a person, and so does a payment
- * for a checkout Daloy already expired (decision 0089). Paid, refunded and needs_review never move back.
+ * for a checkout kymavo already expired (decision 0089). Paid, refunded and needs_review never move back.
  */
 export async function markPaymentPaid(db: Db, o: { userId: string; sessionId: string; paymentId: string; amount: number; currency: string; livemode: boolean }): Promise<{ payment: Payment | undefined; changed: boolean; mismatch: boolean }> {
   const matches = sql`${o.amount}::int = ${payments.amountCentavos} and ${o.currency} = ${payments.currency}`;

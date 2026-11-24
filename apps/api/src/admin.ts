@@ -31,7 +31,7 @@ export class AdminGuard implements CanActivate {
     const req = ctx.switchToHttp().getRequest<Request & { user?: SessionUser }>();
     const user = await sessionUser(this.db, req);
     if (!user || !isPlatformAdmin(this.config.platformAdmins, user.email)) throw new NotFoundException();
-    if (!["GET", "HEAD", "OPTIONS"].includes(req.method) && !fromOwnOrigin(req, this.config.publicUrl)) throw new ForbiddenException("this change must be made from the Daloy page itself");
+    if (!["GET", "HEAD", "OPTIONS"].includes(req.method) && !fromOwnOrigin(req, this.config.publicUrl)) throw new ForbiddenException("this change must be made from the kymavo page itself");
     req.user = user;
     return true;
   }

@@ -540,7 +540,7 @@ describe("Shopify steps and trigger", () => {
   });
 });
 
-// G1 (decision 0123): Daloy internal triggers (booking_event, payment_event) and reusable sub-workflows.
+// G1 (decision 0123): kymavo internal triggers (booking_event, payment_event) and reusable sub-workflows.
 describe("G1 internal triggers and call_workflow step", () => {
   const step = { id: "wait", type: "delay", config: { seconds: 5 } };
 

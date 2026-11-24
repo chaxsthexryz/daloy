@@ -18,7 +18,7 @@ let smtp: Awaited<ReturnType<typeof startFakeSmtp>>;
 let seq = 0;
 
 const mail = (): MailDeps => ({
-  installation: { transport: nodemailer.createTransport({ host: "127.0.0.1", port: smtp.port, secure: false, ignoreTLS: true }), from: "Daloy <daloy@localhost>" },
+  installation: { transport: nodemailer.createTransport({ host: "127.0.0.1", port: smtp.port, secure: false, ignoreTLS: true }), from: "kymavo <daloy@localhost>" },
   gmail: () => { throw new Error("not used"); },
   sharedMail: "open",
 });
@@ -132,7 +132,7 @@ describe("schedule watchdog", () => {
 
   it("retries the email on the next tick when the send fails", async () => {
     const w = await scheduled();
-    const broken: MailDeps = { ...mail(), installation: { transport: nodemailer.createTransport({ host: "127.0.0.1", port: 1, secure: false, ignoreTLS: true }), from: "Daloy <daloy@localhost>" } };
+    const broken: MailDeps = { ...mail(), installation: { transport: nodemailer.createTransport({ host: "127.0.0.1", port: 1, secure: false, ignoreTLS: true }), from: "kymavo <daloy@localhost>" } };
     await tick(at("2026-11-18T09:20:00"), broken);
     expect(sent(w.email)).toHaveLength(0);
     await tick(at("2026-11-18T09:21:00"));

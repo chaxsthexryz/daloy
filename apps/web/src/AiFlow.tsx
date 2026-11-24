@@ -84,7 +84,7 @@ export function PlanList({
   const { t, language } = useLanguage();
   return (
     <>
-      <p>{t("{lead}, Daloy will:", { lead })}</p>
+      <p>{t("{lead}, kymavo will:", { lead })}</p>
       <ol className="numbered demo-plan">
         {steps.map((s, i) => (
           <li key={i}>

@@ -17,7 +17,7 @@ let smtp: Awaited<ReturnType<typeof startFakeSmtp>>;
 let seq = 0;
 
 const mail = (port = smtp.port): MailDeps => ({
-  installation: { transport: nodemailer.createTransport({ host: "127.0.0.1", port, secure: false, ignoreTLS: true }), from: "Daloy <daloy@localhost>" },
+  installation: { transport: nodemailer.createTransport({ host: "127.0.0.1", port, secure: false, ignoreTLS: true }), from: "kymavo <daloy@localhost>" },
   gmail: () => {
     throw new Error("not used");
   },

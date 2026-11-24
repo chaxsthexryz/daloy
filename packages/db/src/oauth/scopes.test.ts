@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { authorizeUrl, FORBIDDEN_SCOPES, gmail, GOOGLE_FEATURE_SCOPES, googleSheets, grantedEnough, OAUTH_PROVIDERS, outlook, redirectUri, slack } from "./index";
 
-// R5 (decision 0058): every scope Daloy asks for is listed here. Adding one fails this test until the snapshot, the
+// R5 (decision 0058): every scope kymavo asks for is listed here. Adding one fails this test until the snapshot, the
 // decision record and any provider review submission are updated together.
 describe("scope manifest", () => {
   it("asks each provider for exactly these scopes", () => {
@@ -11,7 +11,7 @@ describe("scope manifest", () => {
       "google-drive": { scopes: ["openid", "email", "https://www.googleapis.com/auth/drive.file"], required: ["https://www.googleapis.com/auth/drive.file"], pkce: true },
       // Decision 0063: send only, a sensitive scope. Never a Gmail read, modify, compose or full mail scope.
       gmail: { scopes: ["openid", "email", "https://www.googleapis.com/auth/gmail.send"], required: ["https://www.googleapis.com/auth/gmail.send"], pkce: true },
-      // Decision 0064: only calendars Daloy creates. calendar.events and calendar.calendarlist.readonly are not asked for.
+      // Decision 0064: only calendars kymavo creates. calendar.events and calendar.calendarlist.readonly are not asked for.
       "google-calendar": { scopes: ["openid", "email", "https://www.googleapis.com/auth/calendar.app.created"], required: ["https://www.googleapis.com/auth/calendar.app.created"], pkce: true },
       slack: { scopes: ["chat:write", "channels:read"], required: ["chat:write", "channels:read"], pkce: false },
       airtable: { scopes: ["data.records:write", "schema.bases:read"], required: ["data.records:write", "schema.bases:read"], pkce: true },

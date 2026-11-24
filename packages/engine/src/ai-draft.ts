@@ -61,7 +61,7 @@ const spec = (full: boolean) => [
   'An http POST or PATCH is sent once: when its outcome is unknown (a timeout or a 5xx), the run waits for a person instead of resending. Set "idempotent": true only when the request names an API that is safe to call twice with the same request.',
   'Give an approval step an edge for each of "approved", "rejected" and "timeout", so the requester is told either way, and make sure every label of a classify step reaches a step.',
   "Use real-looking placeholders such as you@example.com when the request gives no address. Keep steps to what was asked.",
-  "Mock test runs in Daloy fake every email, HTTP call, approval and connected app, and the tester can pick AI labels and approval outcomes, so never add dry-run flags, test fields or branches for testing.",
+  "Mock test runs in kymavo fake every email, HTTP call, approval and connected app, and the tester can pick AI labels and approval outcomes, so never add dry-run flags, test fields or branches for testing.",
   ...(full ? FULL_RULES : []),
 ];
 
@@ -73,18 +73,18 @@ const FULL_TRIGGERS =
   '{"type":"payment","config":{"events":["paid"]}} for a PayMongo payment (fields {{trigger.reference}}, {{trigger.amountPesos}}, {{trigger.status}}); ' +
   '{"type":"shopify_order","config":{}} for a new order in the connected Shopify store (fields {{trigger.order_number}}, {{trigger.customer_name}}, {{trigger.customer_email}}, {{trigger.customer_phone}}, {{trigger.total}}, {{trigger.items}}); ' +
   '{"type":"telegram_message","config":{"from":"my_chat","requireFile":true}} for a photo, PDF or message sent to the Telegram bot of the owner (from my_chat or anyone; fields {{trigger.text}}, {{trigger.chatId}}, {{trigger.fromName}}, {{trigger.date}}; the photo or PDF is the file field "file" for an ai step; reply with a telegram step whose chatId is {{trigger.chatId}}); ' +
-  '{"type":"booking_event","config":{"events":["created"]}} when a Daloy booking is created, rescheduled or cancelled (fields {{trigger.event}}, {{trigger.bookingId}}, {{trigger.reference}}, {{trigger.resourceName}}, {{trigger.start}}, {{trigger.end}}, {{trigger.status}}, {{trigger.mode}}); ' +
-  '{"type":"payment_event","config":{"events":["confirmed"]}} when a Daloy payment due settles as confirmed or expired (fields {{trigger.event}}, {{trigger.dueId}}, {{trigger.reference}}, {{trigger.amountPesos}}, {{trigger.kind}}, {{trigger.status}}); ' +
+  '{"type":"booking_event","config":{"events":["created"]}} when a kymavo booking is created, rescheduled or cancelled (fields {{trigger.event}}, {{trigger.bookingId}}, {{trigger.reference}}, {{trigger.resourceName}}, {{trigger.start}}, {{trigger.end}}, {{trigger.status}}, {{trigger.mode}}); ' +
+  '{"type":"payment_event","config":{"events":["confirmed"]}} when a kymavo payment due settles as confirmed or expired (fields {{trigger.event}}, {{trigger.dueId}}, {{trigger.reference}}, {{trigger.amountPesos}}, {{trigger.kind}}, {{trigger.status}}); ' +
   '{"type":"sub_workflow","config":{}} for a reusable child workflow called by a call_workflow step; ' +
   '{"type":"sheets_row","config":{"tab":"Sheet1"}} for a new row in a tab of the connected Google Sheet (fields {{trigger.rowNumber}}, {{trigger.values}}, and {{trigger.cells.<header>}} with the header in lower case and _ for spaces); ' +
   '{"type":"calendar_event","config":{"on":"created","minutesBefore":60}} for a new event in the connected Google Calendar, or on "starting" that many minutes before an event (fields {{trigger.title}}, {{trigger.start}}, {{trigger.end}}, {{trigger.location}}, {{trigger.description}}, {{trigger.link}}); ' +
   '{"type":"drive_file","config":{"requireFile":false}} for a new file in the connected Google Drive folder (fields {{trigger.name}}, {{trigger.mimeType}}, {{trigger.size}}, {{trigger.link}}; a photo or PDF up to 5 MB is the file field "file" for an ai step); ' +
   '{"type":"email","config":{}} for an email to the workspace inbox.';
 const FULL_RULES = [
-  "When the person names an app or channel Daloy has no step for (such as TikTok, Viber or Lazada), say so plainly in the summary and name what the draft uses instead. Never say a step sends through an app it does not use.",
+  "When the person names an app or channel kymavo has no step for (such as TikTok, Viber or Lazada), say so plainly in the summary and name what the draft uses instead. Never say a step sends through an app it does not use.",
   "Pick the step the person names: text, SMS or i-text means an sms step; Facebook, Messenger, Instagram or page messages mean the meta_dm trigger, answered with a meta_reply step (recipientId {{trigger.senderId}}, channel {{trigger.channel}}); Discord, Trello, Notion, Airtable, Google Docs and Shopify have their own steps. Use telegram only when the person says Telegram, and http only for an app with no step of its own.",
   "To text the owner, use an sms step to +639170000000 as a placeholder and say in the summary that they should put their number in.",
-  "An order, booking or inquiry with no source named comes in through a Daloy form, and a payment with no source named is a PayMongo payment. Use shopify_order only when the person says Shopify, and the email trigger only when they say emails come in.",
+  "An order, booking or inquiry with no source named comes in through a kymavo form, and a payment with no source named is a PayMongo payment. Use shopify_order only when the person says Shopify, and the email trigger only when they say emails come in.",
   "To watch a public page, such as a supplier's price, use a read_page step with a selector for the value. {{steps.<id>.output.changed}} is true when the value differs from the last run, so a condition with left {{steps.<id>.output.changed}}, op eq and right true can send the alert. read_page only reads public pages: it cannot log in or click.",
   "shopify_create_product and shopify_update_product never take values from a form trigger, because anyone can fill in a form. When the person asks for that, do not ask about it: draft a manual trigger with example values in the step that they change before each run, and say so in the summary.",
 ];
@@ -92,7 +92,7 @@ const FULL_RULES = [
 const EXAMPLE = JSON.stringify({ name: example.name, summary: example.description, definition: example.definition });
 
 const system = (full: boolean) => [
-  "You build workflow definitions for Daloy, a workflow automation tool. Reply with one JSON object and nothing else:",
+  "You build workflow definitions for kymavo, a workflow automation tool. Reply with one JSON object and nothing else:",
   '{"name": "<short workflow name>", "summary": "<one sentence on what the workflow does, or what you changed>", "definition": <definition>}',
   "",
   ...spec(full),

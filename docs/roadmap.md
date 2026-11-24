@@ -1,4 +1,4 @@
-# Daloy product roadmap
+# kymavo product roadmap
 
 Revised 21 November 2026 from the owner's draft of the same date. Changes from the draft are listed at the end.
 
@@ -18,15 +18,15 @@ Phases 1 to 3 form the first seller pilot. Start phase 2 with a receipt-review t
 
 ## 1. First-time onboarding
 
-One question per screen, visible progress, selectable cards and an easy way back. Use Daloy's blue, its own icons and Inter. Show the current step in words as well as visually. Save after each step. Save and close returns to the workspace. Resume setup restores the last answer. On phones, keep the primary action reachable with the keyboard open.
+One question per screen, visible progress, selectable cards and an easy way back. Use kymavo's blue, its own icons and Inter. Show the current step in words as well as visually. Save after each step. Save and close returns to the workspace. Resume setup restores the last answer. On phones, keep the primary action reachable with the keyboard open.
 
-The pilot asks three things. Everything else is asked later, at the moment it changes what Daloy does.
+The pilot asks three things. Everything else is asked later, at the moment it changes what kymavo does.
 
-| Screen | Ask the seller | How Daloy uses the answer |
+| Screen | Ask the seller | How kymavo uses the answer |
 |---|---|---|
 | Business identity | "What name should customers see?" Optional website and logo. | Prefill message previews and the public form. Use initials until a logo is added. |
 | Business type | One primary category and up to three related ones: online retail, food orders, beauty and wellness, professional services, Other. | Rank relevant templates. The owner can change the primary choice. |
-| First workflow and payment | "What would you like Daloy to handle first?" Receipt review, bookings or order follow-up. For payment workflows: manual QR Ph transfer, GCash checkout through PayMongo, or pay later. | Create one editable draft with a sample order. If checkout setup is incomplete, the seller can still test the draft. |
+| First workflow and payment | "What would you like kymavo to handle first?" Receipt review, bookings or order follow-up. For payment workflows: manual QR Ph transfer, GCash checkout through PayMongo, or pay later. | Create one editable draft with a sample order. If checkout setup is incomplete, the seller can still test the draft. |
 
 Asked later:
 
@@ -35,13 +35,13 @@ Asked later:
 | Team size | When the seller first adds an approval or review step. | That is when "who reviews?" matters. Solo sellers get themselves as reviewer. |
 | Service location | When a booking form is first published. | Online sellers never see it. A venue gets an address with an OpenStreetMap pin (Leaflet, BSD-2-Clause, no API key). A mobile seller enters a service area. Confirm what customers will see before publishing. |
 | Current tools | Shown as app suggestions in the step picker, ranked by business type. | Picking an app there leads straight to connecting it, which a preference card did not. |
-| Where did you find Daloy? | After the first successful sample test, skippable. | The seller has just seen it work, and the answer is not in the way of setup. |
+| Where did you find kymavo? | After the first successful sample test, skippable. | The seller has just seen it work, and the answer is not in the way of setup. |
 
 Use the workspace's existing profile and branding. Existing owners keep their settings. Completing or resuming onboarding twice opens the same draft. Connections, publishing, messages and invitations need their own explicit actions.
 
 ## 2. Put the app and the action on every node
 
-Every node answers which app, what action, and for whom or where. Use the connected app's logo for an integration, the seller's logo for customer-facing branding, and Daloy line icons for built-in actions. Every mark has a text fallback. The same label appears in the picker, canvas, phone list, plain-language summary and test results.
+Every node answers which app, what action, and for whom or where. Use the connected app's logo for an integration, the seller's logo for customer-facing branding, and kymavo line icons for built-in actions. Every mark has a text fallback. The same label appears in the picker, canvas, phone list, plain-language summary and test results.
 
 Example card: Gmail, Email customer. Under the title: To: Customer email from order. Expanding it shows the sender, subject, message, field picker and a preview with sample data. A disconnected account shows Connect Gmail.
 
@@ -67,7 +67,7 @@ Keep one catalog entry per trigger and action: plain-language description, requi
 
 1. Connect. Show only the setup this draft needs. A form gives a shareable link. A webhook gives a copy button, the field to paste it into, a sample payload and a listening status, then confirms the sample arrived and mapped. PayMongo uses its own endpoint.
 2. Write the message. Recipient, subject if any, and message together, with tappable fields such as customer name, order number and amount. Offer Taglish templates next to English and Tagalog ones. Preview the customer message and any internal notification.
-3. Explain this flow. One dismissible dialog after setup, generated in English or Tagalog from the saved draft: "When a receipt arrives, Daloy asks Ana to check it. After Ana confirms, Daloy emails the customer." It can be reopened from the editor.
+3. Explain this flow. One dismissible dialog after setup, generated in English or Tagalog from the saved draft: "When a receipt arrives, kymavo asks Ana to check it. After Ana confirms, kymavo emails the customer." It can be reopened from the editor.
 4. Try a sample. Fake providers only. Report configuration checks, simulated step outcomes and live connection status separately. AI can explain a failing check and suggest a repair, but the validator and test runner decide the result. Show one success and one failure, such as a missing recipient.
 5. Turn on. Show which apps, recipients and payment mode will be used. The owner chooses when to activate. Editing a tested draft marks the old result as out of date.
 
@@ -79,7 +79,7 @@ The manual path covers any QR Ph transfer. GCash, Maya and bank apps all pay to 
 |---|---|---|
 | Customer action | Pay the seller's displayed QR Ph code or GCash number. Submit the order reference, transfer reference and optional receipt. | Open the order's PayMongo checkout and choose GCash when enabled for the merchant. |
 | Evidence | Staff open their own wallet or bank history, match amount and reference, and record a decision. A screenshot or AI extraction leaves the order pending. | An authenticated PayMongo event must match workspace, checkout, order, currency and amount. A browser return or receipt upload leaves the order pending. |
-| Who confirms | The assigned reviewer. Record reviewer and time. | Daloy, after validation. Live use needs merchant activation and an owner-run live check. |
+| Who confirms | The assigned reviewer. Record reviewer and time. | kymavo, after validation. Live use needs merchant activation and an owner-run live check. |
 | Exceptions | Flag duplicate references, amount mismatches and unreadable uploads. Request clarification or reject with a reason. | Repeated events give one transition and one confirmation. Mismatches go to review. Handle failed or expired checkout and later refunds. |
 
 Staff get one Receipts to review list for manual cases and automatic exceptions: order or booking, amount due, submitted amount, reference, channel and age. Payment state and reply state stay separate. For Payment confirmed, Reply failed, retry the reply alone. If a manual transfer arrives while checkout is pending, reconcile both against the same order before sending another confirmation. Only authorized workspace staff see receipt images and decisions.
@@ -111,7 +111,7 @@ Canvas, after that: one searchable Add step menu from the plus button, right-cli
 
 ### Template ideas
 
-From common small-business automations (patterns seen across the MIT-licensed Zie619/n8n-workflows collection), adapted to Daloy's existing steps:
+From common small-business automations (patterns seen across the MIT-licensed Zie619/n8n-workflows collection), adapted to kymavo's existing steps:
 
 - DM or form lead to Sheets, then a team alert.
 - Booking confirmation, then reminders the day before and an hour before by SMS.
@@ -139,8 +139,8 @@ Pilot Read a public page for supplier price alerts. Preview the extracted value,
 
 - First version, no new service: fetch the page in the worker and extract with Mozilla Readability (Apache-2.0) or a CSS selector through cheerio (MIT). Reuse the HTTP step's private-address guard, respect robots.txt, and set a per-workspace daily cap.
 - Pages that need JavaScript: Playwright's Chromium (Apache-2.0), already used for e2e, in a separate worker container with memory and time limits.
-- Firecrawl: its core is AGPL-3.0, and the SDKs are MIT. Self-hosting needs Redis, PostgreSQL and a browser service. It can be an optional adapter that a deployment points at its own unmodified Firecrawl, through the MIT SDK. Daloy must keep working without it, and it is never bundled or modified.
-- vercel-labs/agent-browser (Apache-2.0): a Rust command-line browser for AI agents. Use it for Daloy's own QA and walkthroughs. It is not the seller-facing runtime.
+- Firecrawl: its core is AGPL-3.0, and the SDKs are MIT. Self-hosting needs Redis, PostgreSQL and a browser service. It can be an optional adapter that a deployment points at its own unmodified Firecrawl, through the MIT SDK. kymavo must keep working without it, and it is never bundled or modified.
+- vercel-labs/agent-browser (Apache-2.0): a Rust command-line browser for AI agents. Use it for kymavo's own QA and walkthroughs. It is not the seller-facing runtime.
 - An AI with its own browser, which logs into sites and clicks on the seller's behalf, is out of scope for the pilot. It would need per-action owner approval, a domain allowlist, no stored third-party passwords, and an answer for site terms and bot detection. Revisit when a merchant names a task that public-page reading cannot do.
 
 ## Release evidence for the owner
@@ -154,7 +154,7 @@ Pilot Read a public page for supplier price alerts. Preview the extracted value,
 
 1. Onboarding is three screens for the pilot. Team size, service location, current tools and referral moved to the moment each one matters.
 2. The venue map uses OpenStreetMap and Leaflet. Google Maps needs a billing account, which breaks the free-only rule.
-3. Business categories are Daloy's own five, not a salon-focused list.
+3. Business categories are kymavo's own five, not a salon-focused list.
 4. The manual path covers any QR Ph transfer, not only GCash.
 5. Added unpaid-order nudges, a morning digest, a payments CSV export, Taglish templates and on-phone receipt compression.
 6. Added a privacy section for RA 10173.
@@ -163,4 +163,4 @@ Pilot Read a public page for supplier price alerts. Preview the extracted value,
 
 ### Implementation references
 
-Reuse Daloy's booking lifecycle (decision 0032), PayMongo Checkout Sessions (0045), test-run modes (0028), draft checks (0033), UniSMS (0074) and Messenger and Instagram intake (0075).
+Reuse kymavo's booking lifecycle (decision 0032), PayMongo Checkout Sessions (0045), test-run modes (0028), draft checks (0033), UniSMS (0074) and Messenger and Instagram intake (0075).

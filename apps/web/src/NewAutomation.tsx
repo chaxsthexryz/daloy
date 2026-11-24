@@ -36,7 +36,7 @@ const slugify = (s: string) =>
 /** One ready-made workflow in the library. `go` starts it; `href` is for a start that lives on another page. */
 type Card = { key: string; category: TemplateCategory; name: string; description: string; definition: WorkflowDefinition; template?: string; go?: () => void; href?: string; label?: string; sample?: string };
 
-/** The apps a workflow needs, once each, from the step catalog. A step Daloy does itself needs no app. */
+/** The apps a workflow needs, once each, from the step catalog. A step kymavo does itself needs no app. */
 function appsOf(def: WorkflowDefinition, language: Language) {
   const entries = [triggerEntry(def.trigger.type), ...def.steps.map((s) => stepEntry(s.type))].filter((e) => e.app);
   return [...new Map(entries.map((e) => [e.mark, markText(e, language)])).entries()].map(([mark, name]) => ({ mark, name }));

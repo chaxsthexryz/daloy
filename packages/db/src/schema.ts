@@ -293,7 +293,7 @@ export const conversations = pgTable(
   ],
 );
 
-/** A message of a conversation: in (the guest), out (Daloy's reply) or staff (a Page inbox reply). mid dedups replays. */
+/** A message of a conversation: in (the guest), out (kymavo's reply) or staff (a Page inbox reply). mid dedups replays. */
 export const conversationMessages = pgTable(
   "conversation_messages",
   {
@@ -618,7 +618,7 @@ export const bookingChanges = pgTable(
   (t) => [primaryKey({ columns: [t.bookingId, t.fromVersion] })],
 );
 
-/** What the owner tells Daloy about their business. Used in templates, the hosted form and the From and Reply-To headers. */
+/** What the owner tells kymavo about their business. Used in templates, the hosted form and the From and Reply-To headers. */
 export const businessProfiles = pgTable("business_profiles", {
   userId: uuid("user_id").primaryKey().references(() => users.id, { onDelete: "cascade" }),
   businessName: text("business_name"),
@@ -738,7 +738,7 @@ export const connections = pgTable(
   },
   (t) => [
     primaryKey({ columns: [t.userId, t.provider] }),
-    // The same provider account connected elsewhere in Daloy (plan R14).
+    // The same provider account connected elsewhere in kymavo (plan R14).
     index("connections_external_id").on(t.externalId),
     check("connections_provider", sql`${t.provider} in ('google_sheets', 'slack', 'outlook', 'teams', 'telegram', 'google_calendar', 'paymongo', 'airtable', 'notion', 'trello', 'google_drive', 'unisms', 'meta_messenger', 'shopify', 'discord')`),
     check("connections_status", sql`${t.status} in ('active', 'failed')`),

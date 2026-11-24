@@ -5,7 +5,7 @@ import type { Db } from "../index";
 import { connections, mailSenders, users, type Provider } from "../schema";
 import { sharedGoogleApps, sharedGrants } from "./shared";
 
-// Plan R14: a provider may keep one grant per account and client, so a revoke in one place can end Daloy's access in another.
+// Plan R14: a provider may keep one grant per account and client, so a revoke in one place can end kymavo's access in another.
 let db: Db;
 let pool: Pool;
 let seq = 0;

@@ -1,6 +1,6 @@
 # Owner setup for managed OAuth (phase P0)
 
-This is the checklist you follow once to register each provider's OAuth app and put the values in the server environment. It belongs to `docs/plans/managed-oauth-plan.md` (section numbers below refer to it). No Daloy code reads these variables yet; P1 and later phases add that. Registering the apps first lets each provider phase be tested as soon as it lands.
+This is the checklist you follow once to register each provider's OAuth app and put the values in the server environment. It belongs to `docs/plans/managed-oauth-plan.md` (section numbers below refer to it). No kymavo code reads these variables yet; P1 and later phases add that. Registering the apps first lets each provider phase be tested as soon as it lands.
 
 Status: not run yet. Record the date and what you saw at the end of this file.
 
@@ -17,9 +17,9 @@ Status: not run yet. Record the date and what you saw at the end of this file.
   - The Microsoft Partner Center account is free but needs your business verified (paperwork, not money).
   - The Slack Marketplace is not used. Read Slack's commercial distribution terms before you charge customers for an unlisted app (plan question 8).
 
-## What you do and what Daloy does
+## What you do and what kymavo does
 
-| You (once, by hand) | Daloy (built in later phases) |
+| You (once, by hand) | kymavo (built in later phases) |
 |---|---|
 | Choose and buy the domain, host the homepage, privacy policy and terms pages | Serves the app at `PUBLIC_URL` and builds every redirect URI from it |
 | Create the dev and prod apps at each provider | Shows a "Connect with X" button only when that provider's client id and secret are set |
@@ -42,8 +42,8 @@ Google, Airtable and Slack require a privacy policy and terms (plan section 9, i
 
 You need these pages on the production domain, public, no login:
 
-- A homepage that says what Daloy is and which Google features it uses and why. Google asks for this (plan 8, step 1, unverified in detail).
-- A privacy policy that matches what Daloy really does. At minimum it should say: what account data Daloy reads from each connected provider, what it stores (encrypted tokens, the connected account name), what it does with it (runs the owner's automations), who it shares it with, how long it keeps it, how a customer disconnects and revokes access, and how to contact you. If Daloy uses Google user data, check Google's current user data policy wording in the console before publishing, this may have changed.
+- A homepage that says what kymavo is and which Google features it uses and why. Google asks for this (plan 8, step 1, unverified in detail).
+- A privacy policy that matches what kymavo really does. At minimum it should say: what account data kymavo reads from each connected provider, what it stores (encrypted tokens, the connected account name), what it does with it (runs the owner's automations), who it shares it with, how long it keeps it, how a customer disconnects and revokes access, and how to contact you. If kymavo uses Google user data, check Google's current user data policy wording in the console before publishing, this may have changed.
 - Terms of service that say who may use the service, what you provide and do not provide, and how to contact you.
 - Both pages linked from the homepage and from the consent screens.
 
@@ -92,7 +92,7 @@ Rules:
 
 ## 4. Redirect URIs
 
-Every provider uses one Daloy callback, built from `PUBLIC_URL`:
+Every provider uses one kymavo callback, built from `PUBLIC_URL`:
 
 | Environment | Redirect URI |
 |---|---|
@@ -154,11 +154,11 @@ Restricted scopes are not part of this checklist. They need a paid assessment ev
 
 ## 6. Slack
 
-Goal: one Slack app per environment with bot scopes `chat:write` and `channels:read` (confirmed) and your Daloy redirect URI. Documentation: [Installing with OAuth](https://docs.slack.dev/authentication/installing-with-oauth/), [Token rotation](https://docs.slack.dev/authentication/using-token-rotation/).
+Goal: one Slack app per environment with bot scopes `chat:write` and `channels:read` (confirmed) and your kymavo redirect URI. Documentation: [Installing with OAuth](https://docs.slack.dev/authentication/installing-with-oauth/), [Token rotation](https://docs.slack.dev/authentication/using-token-rotation/).
 
 1. Create a Slack app for dev and another for prod, in a workspace you control.
 2. Add the redirect URI from section 4.
-3. Add the bot scopes `chat:write` and `channels:read`. `chat:write.public` would let Daloy post without being invited, but that is unverified. Leave it out unless the P3 session decides otherwise.
+3. Add the bot scopes `chat:write` and `channels:read`. `chat:write.public` would let kymavo post without being invited, but that is unverified. Leave it out unless the P3 session decides otherwise.
 4. Leave token rotation off. Tokens do not expire without it, and with it they last 12 hours and each refresh token is single use (confirmed).
 5. Enable public distribution for the prod app so any workspace can install it (check the console, this may have changed). Do not submit to the Marketplace. Whether a non-Marketplace app can be installed by any workspace without review is unverified.
 6. Fill in the app's privacy policy and support details with the pages from section 2 if the console asks (check the console, this may have changed).
@@ -194,7 +194,7 @@ Goal: an OAuth integration with the scopes `data.records:write` and `schema.base
 3. Airtable requires a privacy policy URL, terms URL and support email before other users can authorize (confirmed). Use the pages from section 2 and the support address from section 1. A review step was not found (unverified).
 4. Copy the client id and secret into `AIRTABLE_CLIENT_ID` and `AIRTABLE_CLIENT_SECRET`.
 
-PKCE requirement and access token lifetime are unverified. Refresh tokens are invalidated after 60 days of inactivity and revoked if reused after rotation (confirmed), which is why Daloy runs a keepalive sweep.
+PKCE requirement and access token lifetime are unverified. Refresh tokens are invalidated after 60 days of inactivity and revoked if reused after rotation (confirmed), which is why kymavo runs a keepalive sweep.
 
 ## 9. Notion
 
@@ -223,7 +223,7 @@ Goal: a Trello OAuth 2.0 (three-legged) app with a confidential client. Document
 | Client secrets (Google, Slack, Airtable, Notion, Trello, Microsoft) | Server `.env`, per environment | Database, git, compose file, logs, chat, screenshots |
 | Client ids | Server `.env` (not secret, but keep them with the secret) | Database |
 | Google Picker API key and project number | Server `.env` (public values, the browser receives them) | Git |
-| Customers' access and refresh tokens | Encrypted `connections` row with `SECRETS_KEY` (written by Daloy, not by you) | `.env`, logs |
+| Customers' access and refresh tokens | Encrypted `connections` row with `SECRETS_KEY` (written by kymavo, not by you) | `.env`, logs |
 | Expiry dates of client secrets | Your calendar | Git |
 
 ## 12. Finish checklist

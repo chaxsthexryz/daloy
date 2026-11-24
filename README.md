@@ -1,12 +1,12 @@
-# Daloy
+# kymavo
 
-Daloy is a workflow automation engine with AI steps. You build an automation from one trigger and a series of steps, Daloy runs it, keeps a history of every run, and can expose published workflows as MCP tools.
+kymavo is a workflow automation engine with AI steps. You build an automation from one trigger and a series of steps, kymavo runs it, keeps a history of every run, and can expose published workflows as MCP tools.
 
 Status: all ten phases in [PROJECT.md](PROJECT.md) are done. CI (lint, typecheck, tests, end-to-end tests, Semgrep, gitleaks, dependency audit and the compose build) passes on GitHub Actions. `docker compose up` and the seed were checked by hand with Docker Desktop on Windows on 2026-11-13.
 
 ## Problem
 
-Small teams do the same multi-step admin work by hand every day: sorting inquiries, chasing unpaid invoices, messaging no-shows. Daloy lets them describe that work once as a workflow and have it run on a webhook, a schedule, a form or a button.
+Small teams do the same multi-step admin work by hand every day: sorting inquiries, chasing unpaid invoices, messaging no-shows. kymavo lets them describe that work once as a workflow and have it run on a webhook, a schedule, a form or a button.
 
 ## Screenshots
 
@@ -65,7 +65,7 @@ To work on the console with hot reload, run the API and worker (`pnpm --filter @
 
 For a visitor walkthrough, open the [public demo](http://localhost:3000/demo/) after starting Compose (or https://daloyapp.pages.dev/demo/). It needs no account and makes no requests: describe a task or pick one of three examples, answer the scripted helper's questions, approve the draft and send a sample through it. The AI replies are scripted examples, not a model. `pnpm demo:site` rebuilds the copy in `site/demo/`.
 
-After the seed: `demo@daloy.local`, password `daloy-demo-2026`. The account has the three starter templates (inquiry triage, invoice follow-up, booking no-show follow-up) as published workflows, and five mocked test runs in their run history. It also has **Office requests** ("Track an office request"), turned on and empty: open its form and send a request to see the receipt in Mailpit. Under **Business and email** it has a profile for "Daloy Demo Office" and **Website inquiries** turned on, sending through Mailpit: open the inquiry form, send a message, and find the customer's reply and the office's notification in Mailpit. A new account can try the same template from the home screen: **Try an example** shows a preview that sends nothing, and **Set up for my office** walks through four steps and turns the form on. These are demo credentials for a local install; change or delete the account anywhere else.
+After the seed: `demo@daloy.local`, password `daloy-demo-2026`. The account has the three starter templates (inquiry triage, invoice follow-up, booking no-show follow-up) as published workflows, and five mocked test runs in their run history. It also has **Office requests** ("Track an office request"), turned on and empty: open its form and send a request to see the receipt in Mailpit. Under **Business and email** it has a profile for "kymavo Demo Office" and **Website inquiries** turned on, sending through Mailpit: open the inquiry form, send a message, and find the customer's reply and the office's notification in Mailpit. A new account can try the same template from the home screen: **Try an example** shows a preview that sends nothing, and **Set up for my office** walks through four steps and turns the form on. These are demo credentials for a local install; change or delete the account anywhere else.
 
 The seed also creates **Website inbox**, a draft with a sample email from a website contact form. Open its Activity to inspect the mocked run. It needs no mailbox credentials.
 
@@ -95,7 +95,7 @@ By default every email lands in Mailpit (http://localhost:8025) and nobody recei
 2. In the console, open **Business and email**, select **Connect Gmail** and enter the Gmail address and the app password.
 3. Select **Send a test email to me** and open the link in that email while signed in. Until then nothing is sent from the address.
 
-When the installation has a Google OAuth client (see `.env.example`), **Connect Gmail with Google** on Apps replaces these steps: Google confirms the address and Daloy sends through the Gmail API with the `gmail.send` permission only. The app password form moves under Advanced, and email-in automations still use an app password (decision 0063).
+When the installation has a Google OAuth client (see `.env.example`), **Connect Gmail with Google** on Apps replaces these steps: Google confirms the address and kymavo sends through the Gmail API with the `gmail.send` permission only. The app password form moves under Advanced, and email-in automations still use an app password (decision 0063).
 
 From then on, that account's published workflows, approval emails and test runs set to "Live" send real mail from its address. Other accounts are not affected. **Disconnect** stops that account's mail until it reconnects; it never switches to another sender. Use your own addresses while testing. The steps for checking this against a real Gmail account are in [docs/live-gmail-check.md](docs/live-gmail-check.md).
 
@@ -111,12 +111,12 @@ The `SMTP_*` settings in `.env` are the installation's own server, used by accou
 
 ## Connect a website form
 
-To display a Daloy form on a website, publish the form automation and choose **Copy embed code** on its Automations card. In the seeded demo, use **Website inquiries**. Paste the code where the form should appear. It includes a link for visitors who prefer to open the form on its own. Customers need a public HTTPS address for Daloy.
+To display a kymavo form on a website, publish the form automation and choose **Copy embed code** on its Automations card. In the seeded demo, use **Website inquiries**. Paste the code where the form should appear. It includes a link for visitors who prefer to open the form on its own. Customers need a public HTTPS address for kymavo.
 
 - In Wix Editor, add an Embed HTML element and paste the snippet. [Wix embed instructions](https://support.wix.com/en/article/wix-editor-embedding-a-site-or-a-widget)
 - In WordPress, paste it in a Custom HTML block where your site permits iframes. If the editor removes the iframe, use the form link on a button. [WordPress embed instructions](https://wordpress.com/support/wordpress-editor/blocks/embed-block/)
 - In Shopify, use a Custom Liquid block or section on the page if the theme offers one. [Shopify theme editor instructions](https://help.shopify.com/en/manual/online-store/themes/customizing-themes/theme-editor/customizing-sections)
-- On a custom site, paste the snippet in the page body. If the site sets a `frame-src` policy, include the Daloy origin.
+- On a custom site, paste the snippet in the page body. If the site sets a `frame-src` policy, include the kymavo origin.
 
 To keep the form already on your site, direct its notification emails to a dedicated mailbox folder. In the workflow editor choose the email trigger, enter the IMAP host, mailbox username, app password and folder, and connect it. Publish the automation and wait for the worker to start listening before submitting a sample on the website. Check Activity for the subject and message. A notification's From address may belong to the website itself. Check its Reply-To and body before using a customer address in a step.
 
@@ -138,9 +138,9 @@ Then tick both in the office request's "Where requests and alerts go" step. The 
 
 ## Outlook, Teams and purchase requests
 
-**Set up purchase requests** on the home screen: staff ask to buy something, the member you name approves or rejects it in Daloy, and approved requests go to purchasing. It runs on the local mail server out of the box. A Microsoft office can also connect, under **Business and email**, **Connections**:
+**Set up purchase requests** on the home screen: staff ask to buy something, the member you name approves or rejects it in kymavo, and approved requests go to purchasing. It runs on the local mail server out of the box. A Microsoft office can also connect, under **Business and email**, **Connections**:
 
-- Outlook: whoever runs Daloy registers a free Microsoft Entra app (redirect URI `<PUBLIC_URL>/settings/connections/outlook/callback`, delegated Graph permissions `Mail.Send`, `User.Read`, `offline_access`) and sets `MICROSOFT_CLIENT_ID` and `MICROSOFT_CLIENT_SECRET` (see `.env.example`). The owner then selects **Connect Outlook** and consents. If their organization only lets administrators approve apps, the panel gives the link to send them.
+- Outlook: whoever runs kymavo registers a free Microsoft Entra app (redirect URI `<PUBLIC_URL>/settings/connections/outlook/callback`, delegated Graph permissions `Mail.Send`, `User.Read`, `offline_access`) and sets `MICROSOFT_CLIENT_ID` and `MICROSOFT_CLIENT_SECRET` (see `.env.example`). The owner then selects **Connect Outlook** and consents. If their organization only lets administrators approve apps, the panel gives the link to send them.
 - Teams: in Teams, create a workflow from "Post to a channel when a webhook request is received" for the channel, and paste its link with the channel's name. **Send a test message** posts once.
 
 Tick them in the template's "Where approved requests go" step. Each email and note is a delivery with its own state and **Retry** in the Requests list. The manual check against real accounts is in [docs/live-microsoft-check.md](docs/live-microsoft-check.md).
@@ -190,11 +190,11 @@ Claude Code wrote the earlier phases. Codex wrote the email-in trigger and form 
 - One sheet and one Slack channel per account. Only public channels are listed, and only the first 200.
 - Outlook and Teams are tested against a local fake only. The live check in [docs/live-microsoft-check.md](docs/live-microsoft-check.md) has not been run, because no Microsoft account was available.
 - Outlook needs an Entra app registered for the installation. One mailbox and one Teams channel per account. A Teams note shows "accepted by Teams": Workflows posts it afterwards, and a failure inside the flow only shows in Teams.
-- An ambiguous Outlook send waits for Mark as sent or Send again; Daloy has no permission to read Sent Items.
+- An ambiguous Outlook send waits for Mark as sent or Send again; kymavo has no permission to read Sent Items.
 - The purchase request's approval email goes through the Business and email sender, not Outlook.
-- An ambiguous Slack post (the call timed out) waits for someone to choose Mark as posted or Post again; Daloy cannot look in the channel.
+- An ambiguous Slack post (the call timed out) waits for someone to choose Mark as posted or Post again; kymavo cannot look in the channel.
 - A run with Sheets or Slack steps succeeds once the deliveries are queued. Their outcome shows in the Requests list and `GET /deliveries?runId=`, not in the run's own state.
-- Saving a website address alone does not connect a form. An existing form must send notification emails to the monitored folder, or the owner can put the Daloy form on the page. Email-in reads message text and headers. It does not import historical mail, extract attachments or map vendor-specific form fields.
+- Saving a website address alone does not connect a form. An existing form must send notification emails to the monitored folder, or the owner can put the kymavo form on the page. Email-in reads message text and headers. It does not import historical mail, extract attachments or map vendor-specific form fields.
 - AI prompts are tested against a fake model server only. Their accuracy with a real model has not been measured. Delimiting and schema checks limit prompt injection but do not stop a model from choosing a wrong label.
 - Anyone who has an unused approval link can approve or reject. The email is the only check on who clicks.
 - An approval timeout is picked up by the worker's 15-second sweep, so it can fire up to 15 seconds late.

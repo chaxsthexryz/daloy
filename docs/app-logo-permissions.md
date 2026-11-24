@@ -5,7 +5,7 @@ The Apps page (`apps/web/src/Apps.tsx`) shows a letter tile and the app's name f
 ## Before asking anyone
 
 - Have a company name, a public website and a contact address. Each request asks who you are and where the logo will appear.
-- Take a screenshot of the Apps page with the letter tiles, and write one sentence on the use: "Shown on an Apps card next to a Connect button, at 32 px, to show that Daloy can send through your product. We do not change the logo or suggest you endorse Daloy."
+- Take a screenshot of the Apps page with the letter tiles, and write one sentence on the use: "Shown on an Apps card next to a Connect button, at 32 px, to show that kymavo can send through your product. We do not change the logo or suggest you endorse kymavo."
 - Keep every reply in writing. Save it in `docs/decisions/` before any logo goes into the repo.
 
 ## Google (Gmail, Google Sheets)
@@ -22,7 +22,7 @@ Google asks partners to use product icons only when necessary and allows plain "
 2. Ask for a licence through Slack's help centre (https://slack.com/help/contact), describing the use above.
 3. Optional, and slower: build a Slack app and list it in the Slack Marketplace. That starts a Slack security review and lets you say "integrated with Slack", but the Marketplace agreement (https://slack.com/terms-of-service/slack-marketplace) gives no right to the logo by itself.
 
-Daloy connects to Slack with a bot token today, not a listed Slack app. Fee and whether an unlisted app can get a logo licence: unconfirmed; assume no until Slack says otherwise.
+kymavo connects to Slack with a bot token today, not a listed Slack app. Fee and whether an unlisted app can get a logo licence: unconfirmed; assume no until Slack says otherwise.
 
 ## Microsoft (Outlook, Teams)
 

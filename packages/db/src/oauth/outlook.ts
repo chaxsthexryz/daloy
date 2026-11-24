@@ -17,8 +17,8 @@ export const outlook: OAuthProvider = {
   client: (urls) => urls.microsoft,
   authorizeUrl: (urls) => `${microsoftBase(urls)}/oauth2/v2.0/authorize`,
   tokenUrl: (urls) => `${microsoftBase(urls)}/oauth2/v2.0/token`,
-  // No revokeUrl: Microsoft has no call that ends one refresh token for Daloy (unverified, plan section 15 item 11).
-  // The page tells the owner to remove Daloy at their Microsoft account page.
+  // No revokeUrl: Microsoft has no call that ends one refresh token for kymavo (unverified, plan section 15 item 11).
+  // The page tells the owner to remove kymavo at their Microsoft account page.
   scopes: OUTLOOK_SCOPES.split(" "),
   requiredScopes: ["Mail.Send", "User.Read"],
   extraParams: { response_mode: "query", prompt: "select_account" },
@@ -36,7 +36,7 @@ export const outlook: OAuthProvider = {
   outcome: consentOutcome,
 };
 
-/** The page an administrator opens to approve Daloy for the whole organization. */
+/** The page an administrator opens to approve kymavo for the whole organization. */
 export function outlookAdminConsentUrl(urls: ProviderUrls, redirectUri: string) {
   const q = new URLSearchParams({ client_id: urls.microsoft?.clientId ?? "", redirect_uri: redirectUri, scope: "https://graph.microsoft.com/Mail.Send https://graph.microsoft.com/User.Read" });
   return `${microsoftBase(urls)}/v2.0/adminconsent?${q}`;

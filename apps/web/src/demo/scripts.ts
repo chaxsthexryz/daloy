@@ -38,7 +38,7 @@ const booking: Script = {
   title: "Client booking",
   prompt: "When a client books a call, confirm it and remind them the day before.",
   keywords: ["client", "book", "call", "appointment", "session", "consult", "meeting"],
-  reply: "I can draft that. A client books, Daloy confirms by email, waits until the day before the call, then sends a reminder. Three quick questions first.",
+  reply: "I can draft that. A client books, kymavo confirms by email, waits until the day before the call, then sends a reminder. Three quick questions first.",
   questions: [
     {
       id: "start",
@@ -171,7 +171,7 @@ const bills: Script = {
   title: "Household bill reminder",
   prompt: "Remind my household to pay the electricity bill every month.",
   keywords: ["bill", "pay", "electric", "rent", "water", "month", "household", "family", "remind", "home"],
-  reply: "I can draft that. On the day you pick each month, Daloy emails a reminder to pay the bill. Two quick questions first.",
+  reply: "I can draft that. On the day you pick each month, kymavo emails a reminder to pay the bill. Two quick questions first.",
   questions: [
     {
       id: "when",

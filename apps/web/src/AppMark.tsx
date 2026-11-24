@@ -1,6 +1,6 @@
 import { useState } from "react";
 
-/** Marks that have a picture in public/logos. Everything else (UniSMS, PayMongo, GCash, Messenger, Instagram, Daloy actions) is an icon or a letter tile. Reasons: public/logos/README.md. */
+/** Marks that have a picture in public/logos. Everything else (UniSMS, PayMongo, GCash, Messenger, Instagram, kymavo actions) is an icon or a letter tile. Reasons: public/logos/README.md. */
 export const LOGOS = ["gmail", "outlook", "google-sheets", "google-drive", "google-docs", "google-calendar", "slack", "teams", "telegram", "airtable", "notion", "trello", "shopify", "discord"] as const;
 const hasLogo = (mark: string): boolean => (LOGOS as readonly string[]).includes(mark);
 
@@ -21,7 +21,7 @@ export const APP_LOGO: Record<string, string> = {
   shopify: "shopify",
 };
 
-// Daloy's own line icons for built-in actions: 24px grid, 1.8 stroke, currentColor.
+// kymavo's own line icons for built-in actions: 24px grid, 1.8 stroke, currentColor.
 const ICONS: Record<string, string> = {
   branch: "M6 3v8a4 4 0 0 0 4 4h4M18 21v-8M6 3 3 6m3-3 3 3M18 21l-3-3m3 3 3-3",
   globe: "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18Zm-9 9h18M12 3c2.5 2.4 3.8 5.4 3.8 9s-1.3 6.6-3.8 9c-2.5-2.4-3.8-5.4-3.8-9S9.5 5.4 12 3Z",
@@ -40,7 +40,7 @@ export const LETTER_TILES = ["unisms", "paymongo", "gcash", "messenger", "instag
 export const ICON_KEYS = Object.keys(ICONS);
 
 /**
- * One app or action mark. A logo shows as a picture; an action Daloy does itself shows a line icon; an app without a
+ * One app or action mark. A logo shows as a picture; an action kymavo does itself shows a line icon; an app without a
  * usable logo shows its first letter. The wrapper always carries the app's name, so a screen reader and a failed image
  * both fall back to text. Next to text that already names the app (a node, a list row), pass decorative so it is not read twice. The padding around the picture is the clear space (at least a fifth of the logo's width).
  */

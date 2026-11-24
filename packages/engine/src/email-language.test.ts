@@ -10,7 +10,7 @@ import { definitionSchema } from "./definition";
 describe("generated email language", () => {
   it("keeps English defaults and leaves the shared templates unchanged", () => {
     expect(templatesForLanguage()).toEqual(TEMPLATES);
-    expect(builtInEmailCopy().testSubject).toBe("Daloy test email");
+    expect(builtInEmailCopy().testSubject).toBe("kymavo test email");
     expect(approvalEmailBody("Original", "https://example.test/a", "2030-01-01", "ana@example.test")).toBe("Original\n\nApprove or reject here:\nhttps://example.test/a\n\nTo answer, sign in as ana@example.test. The link works once and expires at 2030-01-01.");
   });
   it("localizes new guided templates while preserving addresses, names, placeholders and graph structure", () => {
@@ -44,6 +44,6 @@ describe("generated email language", () => {
     expect(body).toContain("Keep my authored text\n\n");
     expect(body).toContain("Mag-sign in bilang ana@example.test");
     expect(body).toContain("https://example.test/a");
-    expect(builtInEmailCopy("tl").testSubject).toBe("Test email ng Daloy");
+    expect(builtInEmailCopy("tl").testSubject).toBe("Test email ng kymavo");
   });
 });

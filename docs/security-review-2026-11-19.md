@@ -1,4 +1,4 @@
-# Daloy security review, 19 November 2026
+# kymavo security review, 19 November 2026
 
 **Release decision.** Hold public sign-up and automatic fulfilment of paid orders. A buyer can set the expected price, a sandbox payment can start real work, and a public submission can cross a change to a protected workflow. Fix those three first. Before real accounts, also close the shared-resource limits and the gaps in webhook verification and history redaction below.
 
@@ -36,13 +36,13 @@ Require verified intake for invoice issuance. Bind freshness and event identity 
 
 ### M3. One workspace can suppress another's payment notification
 
-Event IDs are unique across the entire installation. If one merchant delivers the same event to two Daloy workspaces, the workspace with no matching order can record it first. The workspace owning the order then returns “duplicate” and leaves it pending. Each delivery can have a valid signature. `packages/db/src/schema.ts:638`, `packages/db/src/paymongo.ts:114`, `apps/api/src/public.ts:129`, `apps/api/src/public.ts:147`
+Event IDs are unique across the entire installation. If one merchant delivers the same event to two kymavo workspaces, the workspace with no matching order can record it first. The workspace owning the order then returns “duplicate” and leaves it pending. Each delivery can have a valid signature. `packages/db/src/schema.ts:638`, `packages/db/src/paymongo.ts:114`, `apps/api/src/public.ts:129`, `apps/api/src/public.ts:147`
 
 Key receipt and lookup by workspace, mode and provider event ID. Verify that the same event delivered to two workspaces can settle the correct order whatever the arrival order.
 
 ### M4. An early refund can disappear
 
-A refund delivered before its paid notification has no matching paid row. The handler still acknowledges and records the event, so a later paid notification can leave a refunded order marked paid. The same gap applies to a paid callback received before Daloy stores its checkout session. `packages/db/src/paymongo.ts:108`, `apps/api/src/public.ts:137`, `apps/api/src/public.ts:141`, `apps/api/src/public.ts:147`, `apps/worker/src/steps/paymongo.ts:32`
+A refund delivered before its paid notification has no matching paid row. The handler still acknowledges and records the event, so a later paid notification can leave a refunded order marked paid. The same gap applies to a paid callback received before kymavo stores its checkout session. `packages/db/src/paymongo.ts:108`, `apps/api/src/public.ts:137`, `apps/api/src/public.ts:141`, `apps/api/src/public.ts:147`, `apps/worker/src/steps/paymongo.ts:32`
 
 Durably retain an unmatched supported event for reconciliation before acknowledging it. Verify refund-first, checkout-row-late and duplicate delivery. Reserve immediate acknowledgement without reconciliation for intentionally ignored event types.
 
@@ -144,6 +144,6 @@ For public bookings, use a short-lived hold until the guest confirms or staff ap
 
 ## Integration priorities
 
-**Uptime Kuma first, for operations.** Run the monitor independently of the Daloy host. Have it watch a worker heartbeat and notify the operator through the existing Telegram channel. This complements the in-app schedule watchdog when the worker or the whole host is down. Send only the service name and last successful check. [Uptime Kuma](https://github.com/louislam/uptime-kuma)
+**Uptime Kuma first, for operations.** Run the monitor independently of the kymavo host. Have it watch a worker heartbeat and notify the operator through the existing Telegram channel. This complements the in-app schedule watchdog when the worker or the whole host is down. Send only the service name and last successful check. [Uptime Kuma](https://github.com/louislam/uptime-kuma)
 
 **WooCommerce next if a pilot sells online.** The store-order starter already exists at `packages/engine/src/templates.ts:387`. Improve its intake by verifying WooCommerce's native webhook signature, mapping the store's order ID and total, and deduplicating deliveries. This gives H1 an authoritative price source for shops. Keep a catalogue or staff-approved quote for offices that do not use WooCommerce. [WooCommerce webhook reference](https://developer.woocommerce.com/docs/apis/rest-api/v2/webhooks/)

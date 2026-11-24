@@ -71,7 +71,7 @@ services:
       SMTP_PORT: ${SMTP_PORT:-1025}
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASS: ${SMTP_PASS:-}
-      SMTP_FROM: ${SMTP_FROM:-Daloy <daloy@localhost>}
+      SMTP_FROM: ${SMTP_FROM:-kymavo <daloy@localhost>}
       # Who may use that server: empty picks open for Mailpit and approved for anything else (decision 0024).
       SHARED_MAIL: ${SHARED_MAIL:-}
       # Browser jobs at once, and Sentry/GlitchTip error reporting (decision 0124). Empty disables reporting.
@@ -158,7 +158,7 @@ services:
       SMTP_PORT: ${SMTP_PORT:-1025}
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASS: ${SMTP_PASS:-}
-      SMTP_FROM: ${SMTP_FROM:-Daloy <daloy@localhost>}
+      SMTP_FROM: ${SMTP_FROM:-kymavo <daloy@localhost>}
       # Who may use that server: empty picks open for Mailpit and approved for anything else (decision 0024).
       SHARED_MAIL: ${SHARED_MAIL:-}
       # Who may open #/admin (decision 0122). Empty turns the admin page off.

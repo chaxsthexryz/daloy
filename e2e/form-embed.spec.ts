@@ -20,7 +20,7 @@ test("an owner copies the snippet and a visitor submits it from a second website
   await page.getByRole("button", { name: "Copy embed code" }).click();
   await expect(page.getByRole("status").filter({ hasText: "Embed code copied" })).toBeVisible();
   const snippet = await page.evaluate(() => navigator.clipboard.readText());
-  // A different host with no connection to Daloy beyond the HTML an owner copied.
+  // A different host with no connection to kymavo beyond the HTML an owner copied.
   const site = createServer((_req, res) => {
     res.writeHead(200, { "Content-Type": "text/html" });
     res.end(snippet);

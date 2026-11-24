@@ -109,7 +109,7 @@ describe("Discord connection", () => {
     const before = fake.discord.posts.length;
     const res = await agent.post("/settings/connections/discord/test").expect(200);
     expect(res.body).toMatchObject({ ok: true, posted: true });
-    expect(fake.discord.posts.slice(before)[0]!.content).toMatch(/^Test message from Daloy/);
+    expect(fake.discord.posts.slice(before)[0]!.content).toMatch(/^Test message from kymavo/);
   });
 
   it("reports a deleted webhook, marks the connection failed and keeps the URL out of the answer", async () => {

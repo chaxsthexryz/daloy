@@ -34,7 +34,7 @@ test("a purchase request goes from the form to the named approver, then to purch
   await expect(joinPage.getByRole("heading", { name: "My requests" })).toBeVisible();
   await joining.close();
 
-  // Outlook: the administrator requirement is shown before leaving Daloy, and a blocked consent comes back explained.
+  // Outlook: the administrator requirement is shown before leaving kymavo, and a blocked consent comes back explained.
   await page.getByRole("link", { name: "Automations" }).click();
   await page.getByRole("link", { name: "Apps" }).first().click();
   await page.getByRole("button", { name: "Connect Outlook" }).click();
@@ -55,7 +55,7 @@ test("a purchase request goes from the form to the named approver, then to purch
   // Teams: the workflow link from Teams and the channel's name.
   await page.getByRole("button", { name: "Connect Microsoft Teams" }).click();
   await page.getByLabel("Workflow link").fill(process.env.E2E_TEAMS_URL!);
-  await page.getByLabel("Teams channel name, to show in Daloy").fill("Purchasing");
+  await page.getByLabel("Teams channel name, to show in kymavo").fill("Purchasing");
   await page.getByRole("button", { name: "Connect Teams" }).click();
   await panel("Microsoft Teams").getByRole("button", { name: "Send a test message" }).click();
   await expect(page.getByText(/Teams accepted the test message/)).toBeVisible();
@@ -120,6 +120,6 @@ test("a purchase request goes from the form to the named approver, then to purch
   }).toPass({ timeout: 30_000 });
   const sent = await control();
   expect(sent.outlookMessages.filter((m) => m.to === purchasing && m.subject === `Approved purchase ${reference}: Ergonomic chair for the front desk`)).toHaveLength(1);
-  expect(sent.teamsPosts.filter((t) => t.includes(reference))).toEqual([`Purchase request ${reference} was approved: Ergonomic chair for the front desk\nPurchasing has the details. Decisions are made in Daloy by the named approver.`]);
+  expect(sent.teamsPosts.filter((t) => t.includes(reference))).toEqual([`Purchase request ${reference} was approved: Ergonomic chair for the front desk\nPurchasing has the details. Decisions are made in kymavo by the named approver.`]);
   expect(page.url()).not.toContain("#/w/");
 });

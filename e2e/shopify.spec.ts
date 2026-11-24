@@ -21,7 +21,7 @@ test("an owner connects Shopify, a signed order starts a run that creates and up
   await page.getByLabel("Client ID").fill(process.env.E2E_SHOPIFY_CLIENT_ID!);
   await page.getByLabel("Client secret").fill(process.env.E2E_SHOPIFY_SECRET!);
   await page.getByRole("button", { name: "Connect Shopify" }).click();
-  await expect(page.getByText("Daloy registered the new-order webhook in your store.")).toBeVisible();
+  await expect(page.getByText("kymavo registered the new-order webhook in your store.")).toBeVisible();
   const hookUrl = (await page.locator("code", { hasText: "/hooks/shopify/" }).textContent())!;
   expect((await control()).shopifyWebhooks).toContainEqual(expect.objectContaining({ topic: "ORDERS_CREATE", uri: hookUrl }));
   // The secret is never shown again.

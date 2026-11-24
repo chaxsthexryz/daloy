@@ -21,7 +21,7 @@ let ben: string;
 let demo: string;
 
 const mail = (sharedMail: MailDeps["sharedMail"] = "open"): MailDeps => ({
-  installation: { transport: nodemailer.createTransport({ host: "127.0.0.1", port: installation.port, secure: false, ignoreTLS: true }), from: "Daloy <daloy@localhost>" },
+  installation: { transport: nodemailer.createTransport({ host: "127.0.0.1", port: installation.port, secure: false, ignoreTLS: true }), from: "kymavo <daloy@localhost>" },
   gmail: (auth) => nodemailer.createTransport({ host: "127.0.0.1", port: gmail.port, secure: false, ignoreTLS: true, auth }),
   sharedMail,
 });

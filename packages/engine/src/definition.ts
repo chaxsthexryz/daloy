@@ -83,7 +83,7 @@ export const sheetsConfigSchema = z.object({ columns: z.array(template(2000)).mi
 export const slackConfigSchema = z.object({ text: template(3000).min(1) });
 // Outlook mail is sent from the mailbox the owner consented with, and a Teams note goes to the channel their Teams
 // workflow posts to (decision 0023). Both are queued deliveries too. A Teams note is a notification only: approvals
-// are answered in Daloy by the named approver.
+// are answered in kymavo by the named approver.
 export const outlookConfigSchema = emailConfigSchema;
 export const teamsConfigSchema = slackConfigSchema;
 // A Telegram message goes to the one chat picked in Apps, as plain text (decision 0042). Queued like Slack.
@@ -113,7 +113,7 @@ export const trelloConfigSchema = z.object({ name: template(500).min(1), desc: t
 export const paymentStatusConfigSchema = z.object({ link: stepId.describe("Id of a paymongo_link or payment_due step of this workflow.") });
 // R3 (decision 0088): what a customer owes on one order or booking. The customer pays the QR Ph code or GCash number
 // shown on the pay page and sends the transfer reference, or pays PayMongo checkout when it is on. Nothing here confirms
-// a payment: a reviewer or a matching PayMongo event does, and then Daloy sends confirmedMessage once.
+// a payment: a reviewer or a matching PayMongo event does, and then kymavo sends confirmedMessage once.
 export const paymentDueConfigSchema = z
   .object({
     reference: template(200).min(1).describe("The order or booking reference the customer sees, such as {{trigger.order_id}}."),
@@ -135,7 +135,7 @@ export const paymentExpireConfigSchema = z.object({ due: stepId.describe("Id of 
 // credential: it lives in the Discord connection in Apps, never in a version. Queued like Slack.
 export const discordConfigSchema = z.object({ text: template(DISCORD_MAX_CHARS).min(1) });
 // A copy of a Google Docs template, saved in the Drive folder picked in Apps (decision 0104). The template is picked in the
-// editor with the Google Picker, which is the only way Daloy's drive.file access can open it; templateId is a file id, not a
+// editor with the Google Picker, which is the only way kymavo's drive.file access can open it; templateId is a file id, not a
 // secret. Each key of values names a {{key}} placeholder in the template; its value is a template filled from the run.
 // Runs inside the step, so a later step can read {{steps.<id>.output.url}}.
 export const googleDocsConfigSchema = z.object({
@@ -409,7 +409,7 @@ const triggerSchema = z.discriminatedUnion("type", [
       })
       .default({ channel: "both", requireImage: false }),
   }),
-  // Starts a run for each new Shopify order (orders/create). Daloy registers the webhook when the store is connected and
+  // Starts a run for each new Shopify order (orders/create). kymavo registers the webhook when the store is connected and
   // checks X-Shopify-Hmac-Sha256 with the app secret. The order arrives as trigger fields (decision 0105).
   z.object({ type: z.literal("shopify_order"), config: z.strictObject({}).default({}) }),
   // T9: starts when someone messages the owner's own Telegram bot (decision 0117). "my_chat" takes only the chat chosen
@@ -420,7 +420,7 @@ const triggerSchema = z.discriminatedUnion("type", [
       .strictObject({ from: z.enum(["my_chat", "anyone"]).default("my_chat"), requireFile: z.boolean().default(true) })
       .default({ from: "my_chat", requireFile: true }),
   }),
-  // G1 (decision 0123): Daloy internal booking/payment lifecycle events and reusable sub-workflows.
+  // G1 (decision 0123): kymavo internal booking/payment lifecycle events and reusable sub-workflows.
   z.object({
     type: z.literal("booking_event"),
     config: z.object({ events: z.array(z.enum(["created", "rescheduled", "cancelled"])).min(1).default(["created"]) }).default({ events: ["created"] }),

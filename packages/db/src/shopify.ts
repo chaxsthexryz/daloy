@@ -46,7 +46,7 @@ async function clientCredentialsToken(urls: ProviderUrls, shop: string, clientId
   if (normalizeShopDomain(shop) !== shop) throw new ProviderError("The saved Shopify shop domain is not valid. Connect Shopify again.", "invalid");
   const body = new URLSearchParams({ client_id: clientId, client_secret: secret, grant_type: "client_credentials" }).toString();
   const res = await call(`${urls.shopify ?? `https://${shop}`}/admin/oauth/access_token`, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded", accept: "application/json" }, body }, urls.timeoutMs ?? 10_000, false, "Shopify");
-  if (res.status === 429) throw new ProviderError("Shopify is limiting requests right now. Daloy will try again.", "quota", retryAfter(res.headers) ?? 1000);
+  if (res.status === 429) throw new ProviderError("Shopify is limiting requests right now. kymavo will try again.", "quota", retryAfter(res.headers) ?? 1000);
   if (res.status >= 500) throw new ProviderError(`Shopify answered ${res.status}.`, "unavailable");
   if (res.body.error === "shop_not_permitted") throw new ProviderError("Shopify only gives this app a token for stores in the same Shopify organization as the app. Make the app in the Dev Dashboard of the organization that owns this store.", "auth");
   const token = res.body.access_token;
@@ -182,21 +182,21 @@ function failure(res: Reply, write: boolean): ProviderError | undefined {
   if (s === 402) return new ProviderError("Shopify says this store is frozen, usually an unpaid bill. Pay it in Shopify, then retry.", "permission");
   if (s === 403) return new ProviderError("Shopify refused this app for this store. Check the app's access in your Shopify admin.", "permission");
   if (s === 404) return new ProviderError("Shopify could not find that store. Check the shop domain.", "invalid");
-  if (s === 423) return new ProviderError("Shopify says the store is locked right now. Daloy will try again.", "unavailable");
-  if (s === 429) return new ProviderError("Shopify is limiting requests right now. Daloy will try again.", "quota", retryAfter(res.headers) ?? 1000);
+  if (s === 423) return new ProviderError("Shopify says the store is locked right now. kymavo will try again.", "unavailable");
+  if (s === 429) return new ProviderError("Shopify is limiting requests right now. kymavo will try again.", "quota", retryAfter(res.headers) ?? 1000);
   if (s >= 500) return new ProviderError(`Shopify answered ${s}.`, write ? "ambiguous" : "unavailable");
   if (s >= 400) return new ProviderError(`Shopify refused the request (${s}).`, "invalid");
   const errors = res.body.errors;
   if (errors !== undefined && errors !== null && !(Array.isArray(errors) && errors.length === 0)) {
     const first = (Array.isArray(errors) ? errors[0] : { message: errors }) as GqlError;
     const code = first.extensions?.code;
-    if (code === "THROTTLED") return new ProviderError("Shopify is limiting requests right now. Daloy will try again.", "quota", 1000);
+    if (code === "THROTTLED") return new ProviderError("Shopify is limiting requests right now. kymavo will try again.", "quota", 1000);
     if (code === "ACCESS_DENIED") return new ProviderError(`Shopify refused this: ${clip(first.message)} Add that access scope to the app, then retry.`, "permission");
     if (code === "SHOP_INACTIVE") return new ProviderError("This Shopify store is not active.", "permission");
     if (code === "INTERNAL_SERVER_ERROR") return new ProviderError("Shopify had an internal error.", write ? "ambiguous" : "unavailable");
     return new ProviderError(`Shopify refused the request: ${clip(first.message)}`, "invalid");
   }
-  if (res.body.data === undefined || res.body.data === null) return new ProviderError("Shopify answered without data, so Daloy cannot tell what happened.", write ? "ambiguous" : "unavailable");
+  if (res.body.data === undefined || res.body.data === null) return new ProviderError("Shopify answered without data, so kymavo cannot tell what happened.", write ? "ambiguous" : "unavailable");
   return undefined;
 }
 
@@ -275,7 +275,7 @@ export async function ensureOrderWebhook(urls: ProviderUrls = providerUrls(), co
   }
 }
 
-/** Removes Daloy's subscription when the owner disconnects. Best effort: Shopify drops a dead one after 8 failed deliveries anyway. */
+/** Removes kymavo's subscription when the owner disconnects. Best effort: Shopify drops a dead one after 8 failed deliveries anyway. */
 export async function removeOrderWebhook(urls: ProviderUrls = providerUrls(), conn: ShopifyConn, ownPrefix: string): Promise<void> {
   const listed = rec(await gql(urls, conn, WEBHOOK_LIST, {}, false)).webhookSubscriptions;
   for (const n of (rec(listed).nodes as { id?: unknown; uri?: unknown }[] | undefined) ?? []) {
@@ -357,7 +357,7 @@ export async function createShopifyProduct(urls: ProviderUrls = providerUrls(), 
     await gql(urls, conn, PRODUCT_CREATE, { product: { title: f.title, ...(f.description !== undefined ? { descriptionHtml: textToHtml(f.description) } : {}), status: f.status === "draft" ? "DRAFT" : "ACTIVE" }, media: mediaFor(f.title, f.imageUrl) }, true),
     "productCreate",
   ).product as { id?: unknown; title?: unknown; status?: unknown; variants?: unknown } | null;
-  if (!product?.id) throw new ProviderError("Shopify answered without the new product, so Daloy cannot tell whether it was made.", "ambiguous");
+  if (!product?.id) throw new ProviderError("Shopify answered without the new product, so kymavo cannot tell whether it was made.", "ambiguous");
   const productId = String(product.id);
   const first = ((rec(product.variants).nodes as { id?: unknown }[] | undefined) ?? [])[0];
   const variantId = String(first?.id ?? "");

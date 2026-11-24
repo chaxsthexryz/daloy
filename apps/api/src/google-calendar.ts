@@ -8,7 +8,7 @@ import { historyHider } from "./mask";
 const input = z.strictObject({ again: z.boolean().default(false) });
 
 /**
- * Easy connect for Calendar after a Google sign-in (decision 0064). Daloy normally makes its calendar right after
+ * Easy connect for Calendar after a Google sign-in (decision 0064). kymavo normally makes its calendar right after
  * consent; this route is for when that failed, or when the owner deleted the calendar in Google Calendar and wants a new one.
  */
 @Controller("settings/connections")

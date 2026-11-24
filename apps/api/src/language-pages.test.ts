@@ -6,7 +6,7 @@ const facts: Facts = { runState: "failed", preview: false, step: null, deliverie
 describe("Tagalog fixed answers", () => {
   it("keeps the English default and translates fixed fallback and lint", () => {
     expect(explainFailure(facts)).toEqual(explainFailure(facts, "en"));
-    expect(explainFailure(facts, "tl").headline).toBe("Hindi matukoy ng Daloy kung bakit ito huminto.");
+    expect(explainFailure(facts, "tl").headline).toBe("Hindi matukoy ng kymavo kung bakit ito huminto.");
     expect(explainFailure({ ...facts, lint: [{ rule: "unreachable_step", count: 1 }] }, "tl").lines).toContain("May bahagi ng automation na hindi maaabot, kaya hindi ito tatakbo.");
   });
   it("keeps provider names, attempts and destinations in translated delivery guidance", () => {

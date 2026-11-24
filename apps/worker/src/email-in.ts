@@ -50,7 +50,7 @@ export type EmailPollOptions = {
 };
 
 const READ_FAILED = "Could not read this mailbox. Check its address, app password and folder, then check again.";
-const RETRYING = "Could not reach the mailbox. Daloy will try again shortly.";
+const RETRYING = "Could not reach the mailbox. kymavo will try again shortly.";
 const CLAIM_MS = 45_000;
 const MAX_BACKOFF_MS = 3_600_000;
 // A workspace is the owner of the source's workflow.

@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
 // Decision 0061: "Connect Slack" against the fake install. The fake's authorize endpoint answers with a redirect at once,
-// so the browser leaves Daloy and comes back to Apps with the outcome in the address.
+// so the browser leaves kymavo and comes back to Apps with the outcome in the address.
 const control = async (body?: { slackConsent?: "grant" | "declined" }) => {
   const res = await fetch(`${process.env.E2E_PROVIDERS_URL}/__control`, body ? { method: "POST", body: JSON.stringify(body) } : {});
   return (await res.json()) as { slackMessages: string[]; slackInstalls: number; slackRevokedInstalls: number };

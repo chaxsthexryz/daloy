@@ -4,7 +4,7 @@ import type { FormField } from "@daloy/engine";
  * The look of the public pages: forms, receipts, approvals (Doop rows E7 to E10, frames APOh0l4BzS, 3VWc5SBBJb,
  * rVgq6-LV9G, n0lqJe7pIU, fA3nGcTh7N, oeCtvge9o9, rtw6EaGxyf, IpTkhV7dCm, T4vwqK9vnk and the phone frames).
  * Plain server-rendered HTML with one inline stylesheet: the pages run under script-src 'self' and need no script.
- * They carry the business brand (logo, accent, name) and never the Daloy brand, except an approval with no brand set.
+ * They carry the business brand (logo, accent, name) and never the kymavo brand, except an approval with no brand set.
  */
 
 const ENTITIES: Record<string, string> = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
@@ -124,17 +124,17 @@ export function shell({ body, title, language, brand, embed }: ShellOptions) {
   return `<!doctype html><html lang="${language}"><head>${head(title, brand, { accent: "#0a0b0f", ink: "#ffffff" })}</head><body${embed ? ' class="embed"' : ""}><main${brand?.accent ? ' class="ruled"' : ""}>${header}${body}</main></body></html>`;
 }
 
-const MARK = `<svg viewBox="0 0 30 30" role="img" aria-label="Daloy"><rect width="30" height="30" rx="8" fill="#1b45c9"/><path d="M8 18.5 15 12l7 6.5" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+const MARK = `<svg viewBox="0 0 30 30" role="img" aria-label="kymavo"><rect width="30" height="30" rx="8" fill="#1b45c9"/><path d="M8 18.5 15 12l7 6.5" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 
 export type ApprovalOptions = { title: string; heading?: string; body: string; language: Language; brand?: PageBrand; eyebrow?: string };
 
 /**
  * The approval card. Branded, the business logo and name sit above it and the heading has a short accent rule;
- * with no brand it is the Daloy mark and an "Approval" label. Only the approval's own workspace brand is ever passed in.
+ * with no brand it is the kymavo mark and an "Approval" label. Only the approval's own workspace brand is ever passed in.
  */
 export function approvalShell({ title, heading, body, language, brand, eyebrow }: ApprovalOptions) {
   const named = brand && (brand.logo || brand.name) ? brand : undefined;
-  const bar = named ? `${named.logo ? logo(named) : ""}${named.name ? `<span>${escapeHtml(named.name)}</span>` : ""}` : `${MARK}<span>Daloy</span>`;
+  const bar = named ? `${named.logo ? logo(named) : ""}${named.name ? `<span>${escapeHtml(named.name)}</span>` : ""}` : `${MARK}<span>kymavo</span>`;
   const label = !named && eyebrow ? `<p class="eyebrow">${escapeHtml(eyebrow)}</p>` : "";
   return `<!doctype html><html lang="${language}"><head>${head(title, brand, { accent: "#1b45c9", ink: "#ffffff" })}</head><body><div class="wrap"><div class="brandbar">${bar}</div><main${named ? ' class="short"' : ""}>${label}${heading ? `<h1>${heading}</h1>` : ""}${body}</main></div></body></html>`;
 }

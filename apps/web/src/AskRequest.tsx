@@ -162,7 +162,7 @@ export function AskRequest({ reference, run }: { reference?: string; run?: Asked
             <p className="act-ask-foot">
               <a href={`#/runs/${reply.runId}`}>{t("Open run detail")}</a>
             </p>
-            <p className="act-muted">{t("Answers come from Daloy's own rules. Nothing here changes the request.")}</p>
+            <p className="act-muted">{t("Answers come from kymavo's own rules. Nothing here changes the request.")}</p>
           </>
         )}
       </section>
@@ -172,7 +172,7 @@ export function AskRequest({ reference, run }: { reference?: string; run?: Asked
 
 const askHead = (t: ReturnType<typeof useLanguage>["t"], last: string, sub?: string) => (
   <PageHead
-    crumbs={[{ label: "Daloy", href: "#/" }, { label: t("Activity"), href: "#/activity" }, { label: last }]}
+    crumbs={[{ label: "kymavo", href: "#/" }, { label: t("Activity"), href: "#/activity" }, { label: last }]}
     title={t("Ask about a request")}
     sub={sub}
     actions={<a className="act-button" href="#/activity">{t("Workspace activity")}</a>}

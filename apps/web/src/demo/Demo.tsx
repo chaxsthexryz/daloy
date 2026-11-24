@@ -170,11 +170,11 @@ export function Demo() {
         <aside className="dm-side">
           <div className="dm-top">
             <div className="dm-brand">
-              <svg viewBox="0 0 30 30" width="30" height="30" role="img" aria-label="Daloy">
+              <svg viewBox="0 0 30 30" width="30" height="30" role="img" aria-label="kymavo">
                 <rect width="30" height="30" rx="8" fill="#1b45c9" />
                 <path d="M8 18.5 15 12l7 6.5" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
-              <span>Daloy</span>
+              <span>kymavo</span>
             </div>
             <button type="button" className="dm-menu-button" aria-expanded={menu} aria-controls="demo-menu" onClick={() => setMenu(!menu)}>
               Menu
@@ -184,7 +184,7 @@ export function Demo() {
             <a href="#build" aria-current="page" onClick={() => setMenu(false)}>
               Build with AI
             </a>
-            <a href="../">About Daloy</a>
+            <a href="../">About kymavo</a>
             <span className="who">Demo account. Nothing is saved.</span>
           </nav>
         </aside>
@@ -239,7 +239,7 @@ export function Demo() {
                 <ol className="chat demo-lines" aria-live="polite">
                   {lines.map((l, i) => (
                     <li key={i} className={l.who === "you" ? "demo-you" : "demo-helper"}>
-                      <span className="demo-who">{l.who === "you" ? "You" : "Daloy helper (scripted example)"}</span>
+                      <span className="demo-who">{l.who === "you" ? "You" : "kymavo helper (scripted example)"}</span>
                       {l.text}
                     </li>
                   ))}
@@ -285,7 +285,7 @@ export function Demo() {
                     lead={draft.when}
                     steps={draft.definition.steps.map((_, i) => draft.plan[i] ?? "")}
                     warnings={warnings}
-                    cleanNote="The checker found nothing to fix. This is Daloy's real checker, run in your browser."
+                    cleanNote="The checker found nothing to fix. This is kymavo's real checker, run in your browser."
                     stateOf={(i) => {
                       const id = draft.definition.steps[i]!.id;
                       return (
@@ -307,7 +307,7 @@ export function Demo() {
                       </button>
                     </div>
                   ) : (
-                    <p className="muted">In Daloy, an approved draft is saved switched off. You test it, then turn it on. Here it lives only in this page.</p>
+                    <p className="muted">In kymavo, an approved draft is saved switched off. You test it, then turn it on. Here it lives only in this page.</p>
                   )}
                 </section>
               )}

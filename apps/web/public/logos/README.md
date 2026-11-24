@@ -2,7 +2,7 @@
 
 These files are shown by `src/AppMark.tsx` on the Apps page, on automation nodes and in the step lists. Each logo is shown as published: no recolouring, no cropping, no rotation, no effects, and with empty space around it (the picture fills about 60% of its tile, so the clear space is at least a fifth of the logo's width on every side). The tile is always white so a dark logo stays readable in the dark theme. Every mark has a text name for screen readers and falls back to a letter tile if the image does not load. Decision record: `docs/decisions/0085-app-logos.md`.
 
-Collected on 2026-11-21. Trademarks belong to their owners. Daloy is not affiliated with or endorsed by any of them, and the logos only identify the app a step connects to.
+Collected on 2026-11-21. Trademarks belong to their owners. kymavo is not affiliated with or endorsed by any of them, and the logos only identify the app a step connects to.
 
 ## Files
 

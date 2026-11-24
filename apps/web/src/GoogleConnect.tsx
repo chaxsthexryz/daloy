@@ -6,7 +6,7 @@ import { useLanguage } from "./Language";
 
 /**
  * Google Sheets and Drive cards for "Connect with Google" (decision 0060): the main action is a Google sign-in with
- * drive.file, then Daloy creates the sheet or folder, or the owner picks one in the Google Picker. The service account
+ * drive.file, then kymavo creates the sheet or folder, or the owner picks one in the Google Picker. The service account
  * form stays under Advanced, and is the whole card on an installation without a Google client.
  */
 
@@ -107,7 +107,7 @@ export function GoogleSheetsCard({ conn, configured, outcome, onChange, pick = d
       label={oauth ? "Account" : "Service account"}
       outcome={outcome}
       onChange={onChange}
-      intro={!conn && <p>{t("Google will ask you to let Daloy see your email address and use only the files you pick or that Daloy creates. Daloy cannot see your other files.")}</p>}
+      intro={!conn && <p>{t("Google will ask you to let kymavo see your email address and use only the files you pick or that kymavo creates. kymavo cannot see your other files.")}</p>}
       actions={
         conn?.destination && (
           <button type="button" disabled={busy} onClick={() => void act(async () => setTest(await api<TestResult>("POST", "/settings/connections/google-sheets/test")))}>
@@ -185,7 +185,7 @@ export function GoogleDriveCard({ conn, configured, outcome, onChange, pick = de
       label={oauth ? "Account" : "Service account"}
       outcome={outcome}
       onChange={onChange}
-      intro={!conn && <p>{t("Google will ask you to let Daloy see your email address and use only the files you pick or that Daloy creates. Daloy cannot see your other files.")}</p>}
+      intro={!conn && <p>{t("Google will ask you to let kymavo see your email address and use only the files you pick or that kymavo creates. kymavo cannot see your other files.")}</p>}
       after={
         <p role="alert" className="message error" hidden={!error}>
           {error}
@@ -197,7 +197,7 @@ export function GoogleDriveCard({ conn, configured, outcome, onChange, pick = de
         <p>
           {t("Files go to ")}
           <strong>{conn.destination.title}</strong>
-          {t(". Files in a request are kept in Daloy for 7 days, so save them to Drive before then.")}
+          {t(". Files in a request are kept in kymavo for 7 days, so save them to Drive before then.")}
         </p>
       )}
       {oauth && (
@@ -205,7 +205,7 @@ export function GoogleDriveCard({ conn, configured, outcome, onChange, pick = de
           {!conn.destination && <p>{t("Choose the folder that gets the files people attach. It can be in My Drive.")}</p>}
           <div className="actions">
             <button type="button" className={conn.destination ? "" : "primary"} disabled={busy} onClick={() => void create()}>
-              {t("Create a Daloy uploads folder")}
+              {t("Create a kymavo uploads folder")}
             </button>
             <button type="button" disabled={busy} onClick={() => void pickFolder()}>
               {t("Pick a folder")}

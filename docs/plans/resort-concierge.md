@@ -52,7 +52,7 @@ A persistent menu and a Get Started button are Page settings. They are left to C
 
 A Knowledge page under Business, owner and operator only. Entries have a kind (room, rate, fee, faq, policy, location, activity, arrival, review_link), a title, plain text, and for rooms and rates structured fields: room name, capacity, price per night in pesos, extra guest fee, season start and end, deposit percent or fixed deposit. Publishing saves an immutable `knowledge_versions` snapshot, like workflow versions, and each AI answer records which version and entries it used. CSV import is a later nicety; the console form is enough for one resort.
 
-Storing it in Daloy, not in a Google Sheet the bot reads, keeps prices under the owner's console and versioned, and needs no new Google read scope.
+Storing it in kymavo, not in a Google Sheet the bot reads, keeps prices under the owner's console and versioned, and needs no new Google read scope.
 
 ### (d) WhatsApp Cloud API
 
@@ -64,7 +64,7 @@ Stays out. Decision 0042 found about EUR 100 a month for a bot account created s
 
 ### (f) Meta's 24-hour window, per message
 
-Meta retired the `CONFIRMED_EVENT_UPDATE`, `POST_PURCHASE_UPDATE` and `ACCOUNT_UPDATE` message tags: requests carrying them return error 100 from 27 April 2026 (from Meta's Send API notice as quoted by several sources; the official page did not render for us, so unverified). `HUMAN_AGENT` still allows a person to reply for 7 days, needs App Review, and must be a human, so Daloy does not use it; staff reply from the Page inbox. Meta's paid Messenger marketing messages are not planned.
+Meta retired the `CONFIRMED_EVENT_UPDATE`, `POST_PURCHASE_UPDATE` and `ACCOUNT_UPDATE` message tags: requests carrying them return error 100 from 27 April 2026 (from Meta's Send API notice as quoted by several sources; the official page did not render for us, so unverified). `HUMAN_AGENT` still allows a person to reply for 7 days, needs App Review, and must be a human, so kymavo does not use it; staff reply from the Page inbox. Meta's paid Messenger marketing messages are not planned.
 
 | Message | Messenger and Instagram | Email | SMS (UniSMS) | WhatsApp, if added |
 |---|---|---|---|---|
@@ -86,7 +86,7 @@ Whether a follow-up nudge inside the window counts as standard messaging under M
 - the guest taps "Talk to staff" or the AI answer sets `needsHuman`;
 - the Page sends a message that our app did not send (an echo without our `app_id`), meaning someone replied from the Page inbox.
 
-While `staff`, inbound messages are stored and alert staff, and no concierge run replies (`meta_reply` takes `paused`). It returns to `bot` when staff press Hand back, or after a quiet period the owner sets (default 12 hours since the last staff message). Staff reply from Meta Business Suite or their mail client; replying from the Daloy console is later.
+While `staff`, inbound messages are stored and alert staff, and no concierge run replies (`meta_reply` takes `paused`). It returns to `bot` when staff press Hand back, or after a quiet period the owner sets (default 12 hours since the last staff message). Staff reply from Meta Business Suite or their mail client; replying from the kymavo console is later.
 
 ### (h) Stays (found in the code check)
 
@@ -117,13 +117,13 @@ Every new table is added by hand to `collect()`, `deleteCustomer()` and `keptOf(
 - Retention: message text is deleted by the worker sweep a set number of days after the conversation's last message (default 90, owner adjustable). Fields that a stay or payment needs stay with those records under R6's `keptOf` rules.
 - R6 export and delete must cover conversations and their messages. A Messenger guest often gives no email, so the Conversations page gets "Export this guest" and "Delete this guest" by conversation, and the email and phone search also matches `conversations.fields`. L2 (identifier in the query string) moves to a POST before the pilot, as already planned.
 - Access: owner and operator see conversations; approvers and requesters do not.
-- Copies in Sheets, Telegram, Slack or email are outside Daloy's reach, as R6 already says. The staff alert carries the guest's first name, dates and a console link, not the full conversation.
-- Daloy provides the tools; the resort remains the personal information controller and keeps its own duties.
+- Copies in Sheets, Telegram, Slack or email are outside kymavo's reach, as R6 already says. The staff alert carries the guest's first name, dates and a console link, not the full conversation.
+- kymavo provides the tools; the resort remains the personal information controller and keeps its own duties.
 
 ## AI safety rules
 
 1. Prices, rates, fees, discounts and deposit amounts come only from the published knowledge version. A deterministic guard (`guardReply`, code, tests first) checks every peso figure and every number next to words like night, pax, person or room against the entries the model cited. Any mismatch, or a figure with no cited entry, replaces the reply with a fixed "Our team will confirm the rate" message and alerts staff.
-2. Availability: the bot never says a room is available, free, fully booked or reserved, in English or Tagalog ("bakante", "may slot", "puno na"). The guard replaces such a reply with "I'll check with the team". Live availability from Daloy stays is out of the pilot, since the resort may also sell on other channels.
+2. Availability: the bot never says a room is available, free, fully booked or reserved, in English or Tagalog ("bakante", "may slot", "puno na"). The guard replaces such a reply with "I'll check with the team". Live availability from kymavo stays is out of the pilot, since the resort may also sell on other channels.
 3. A booking is confirmed only by a reviewer's or PayMongo's payment decision, or by staff confirming the stay. The confirmation text is a fixed template sent by that event, never model output.
 4. The deposit amount comes from the `stay_quote` step (nights times the knowledge rate, deposit rule from the knowledge sheet) or a fixed amount. `payment_due` refuses amounts that read an AI step's output, closing L7 for AI.
 5. Guest text is data: it stays in the delimited user message, and the reply goes only to the sender (existing check). The guard strips any link that is not the pay link or a link stored in the knowledge sheet.
@@ -175,12 +175,12 @@ Each phase follows the usual rules: plan and the owner's "go", tests first for t
 ## Owner answers (22 November 2026)
 
 1. Channels: Messenger, Instagram, email, SMS for pre-arrival, and WhatsApp. Viber stays out. C10 (WhatsApp) is in scope; it starts after C9 and once the resort has a verified Meta business account with a payment method, since every WhatsApp message is billed to the resort.
-2. The resort also sells rooms on other channels. The bot never states availability, and staff confirm every stay. Daloy stays drive reminders only.
+2. The resort also sells rooms on other channels. The bot never states availability, and staff confirm every stay. kymavo stays drive reminders only.
 3. Staff approve each deposit request (Send deposit request on the Conversations page); the amount comes from `stay_quote`.
 4. Both payment routes: manual QR Ph and GCash review, and PayMongo checkout. Checkout needs the resort's PayMongo business verification and an owner-run live check (`docs/live-paymongo-check.md`); PayMongo's fee per payment goes to the resort.
 5. Staff alerts go to Telegram, email, Slack and Messenger. A Messenger alert to a staff member is new work (C7) and has a limit: Meta's 24-hour window applies to staff too, so it only arrives if that staff member messaged the Page in the last 24 hours. Otherwise the alert falls back to Telegram or email, and the Conversations page says so.
 6. AI cost: the operator's model key, sold as a concierge plan above USD 25 with a larger AI allowance. The plan's price and allowance are set before the pilot starts (N6 quota tiers gain a concierge tier in C8).
-7. One Daloy Meta app: the owner passes App Review once (C0), every resort connects its Page to it, and the owner holds the app's platform policy duties.
+7. One kymavo Meta app: the owner passes App Review once (C0), every resort connects its Page to it, and the owner holds the app's platform policy duties.
 8. Conversations are kept 90 days after the last message, adjustable per workspace.
 
 ## Still open

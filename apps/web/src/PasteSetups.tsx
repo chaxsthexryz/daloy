@@ -90,7 +90,7 @@ export function TelegramSetup({ conn, onChange, onClose }: Props) {
         </div>
       </GuidedStep>
       <GuidedStep title="Add the bot to your chat and pick it" check={chatStep.check}>
-        <p>{t("Add the bot to the chat, then send any message there. Daloy lists the chats the bot has seen. It reads only the chat name, never the messages, and keeps nothing.")}</p>
+        <p>{t("Add the bot to the chat, then send any message there. kymavo lists the chats the bot has seen. It reads only the chat name, never the messages, and keeps nothing.")}</p>
         <div className="actions">
           <button type="button" disabled={chatStep.busy || !token} onClick={() => lookup(chatStep)}>
             {t("Find my chats")}
@@ -119,7 +119,7 @@ export function TelegramSetup({ conn, onChange, onClose }: Props) {
             <input type="checkbox" checked={receive} onChange={(e) => setReceive(e.target.checked)} />{" "}
             {t("Receive messages: start automations when someone messages this bot")}
           </label>
-          <p className="muted">{t("Telegram then sends the bot's messages to Daloy, so the chat list above stays empty until you turn this off. Needs Daloy on a public https address.")}</p>
+          <p className="muted">{t("Telegram then sends the bot's messages to kymavo, so the chat list above stays empty until you turn this off. Needs kymavo on a public https address.")}</p>
         </div>
         <div className="actions">
           <button
@@ -152,7 +152,7 @@ export function DiscordSetup({ conn, onChange, onClose }: Props) {
   const [channelName, setChannelName] = useState(conn?.account ?? "");
   const save = () =>
     void step.run(async () => {
-      // The server checks that the link is a Discord webhook address. Then Daloy sends one test message so a wrong link shows up now.
+      // The server checks that the link is a Discord webhook address. Then kymavo sends one test message so a wrong link shows up now.
       await api("PUT", "/settings/connections/discord", { url, channelName });
       setUrl("");
       const test = await api<Test>("POST", "/settings/connections/discord/test");
@@ -171,7 +171,7 @@ export function DiscordSetup({ conn, onChange, onClose }: Props) {
         </p>
       </GuidedStep>
       <GuidedStep title="Copy the webhook link">
-        <p>{t("Choose Copy Webhook URL. Anyone who has this link can post to the channel, so do not share it. Daloy keeps it encrypted and never shows it again.")}</p>
+        <p>{t("Choose Copy Webhook URL. Anyone who has this link can post to the channel, so do not share it. kymavo keeps it encrypted and never shows it again.")}</p>
       </GuidedStep>
       <GuidedStep title="Paste the link and send a test message" check={step.check}>
         <div className="field">
@@ -179,7 +179,7 @@ export function DiscordSetup({ conn, onChange, onClose }: Props) {
           <input id="dc-url" type="password" value={url} onChange={(e) => setUrl(e.target.value)} autoComplete="off" placeholder="https://discord.com/api/webhooks/…" />
         </div>
         <div className="field">
-          <label htmlFor="dc-channel">{t("Discord channel name, to show in Daloy")}</label>
+          <label htmlFor="dc-channel">{t("Discord channel name, to show in kymavo")}</label>
           <input id="dc-channel" value={channelName} onChange={(e) => setChannelName(e.target.value)} maxLength={100} placeholder={t("orders")} />
         </div>
         <div className="actions">
@@ -200,7 +200,7 @@ export function TeamsSetup({ conn, onChange, onClose }: Props) {
   const [channelName, setChannelName] = useState(conn?.account ?? "");
   const save = () =>
     void step.run(async () => {
-      // The server checks the link's host. Then Daloy sends one test message so a wrong link shows up now, not on the first real run.
+      // The server checks the link's host. Then kymavo sends one test message so a wrong link shows up now, not on the first real run.
       await api("PUT", "/settings/connections/teams", { url, channelName });
       setUrl("");
       const test = await api<Test>("POST", "/settings/connections/teams/test");
@@ -219,7 +219,7 @@ export function TeamsSetup({ conn, onChange, onClose }: Props) {
         </p>
       </GuidedStep>
       <GuidedStep title="Choose the team and channel, and who can trigger it">
-        <p>{t("Pick the team and channel that should get the notes. If the workflow asks who can trigger it, choose anyone, or Daloy's messages will be refused.")}</p>
+        <p>{t("Pick the team and channel that should get the notes. If the workflow asks who can trigger it, choose anyone, or kymavo's messages will be refused.")}</p>
       </GuidedStep>
       <GuidedStep title="Paste the link and send a test message" check={step.check}>
         <div className="field">
@@ -227,7 +227,7 @@ export function TeamsSetup({ conn, onChange, onClose }: Props) {
           <input id="tm-url" type="password" value={url} onChange={(e) => setUrl(e.target.value)} autoComplete="off" placeholder="https://…logic.azure.com/…" />
         </div>
         <div className="field">
-          <label htmlFor="tm-channel">{t("Teams channel name, to show in Daloy")}</label>
+          <label htmlFor="tm-channel">{t("Teams channel name, to show in kymavo")}</label>
           <input id="tm-channel" value={channelName} onChange={(e) => setChannelName(e.target.value)} maxLength={100} placeholder={t("Purchasing")} />
         </div>
         <div className="actions">
@@ -298,7 +298,7 @@ export function PaymongoSetup({ conn, webhookBase, onChange, onClose }: Props & 
             </p>
           </>
         ) : (
-          <p className="muted">{t("Save the secret key first. Daloy then shows the webhook address.")}</p>
+          <p className="muted">{t("Save the secret key first. kymavo then shows the webhook address.")}</p>
         )}
       </GuidedStep>
       <GuidedStep title="Paste the webhook secret" check={hookStep.check}>

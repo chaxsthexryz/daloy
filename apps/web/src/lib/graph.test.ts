@@ -207,7 +207,7 @@ describe("readCopiedStep (U2 paste check)", () => {
     expect(pasted.draft.steps[0]!.note).toBe("Wait for the bank");
   });
 
-  it("refuses text that is not a step Daloy can add", () => {
+  it("refuses text that is not a step kymavo can add", () => {
     expect(readCopiedStep("hello")).toBeNull();
     expect(readCopiedStep("null")).toBeNull();
     expect(readCopiedStep(copied({ type: "teleport", config: {} }))).toBeNull();

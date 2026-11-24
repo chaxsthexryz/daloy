@@ -5,12 +5,12 @@ import type { ReactNode } from "react";
 const HEADLINE = "Automate the routine work of your office.";
 const POINTS = ["Requests, approvals and replies follow the steps you set.", "Works with the email, chat and sheets your team already uses.", "Every run is logged, so you can see what happened and why."];
 
-/** The Daloy mark from the rail sprite, with the name beside it. */
+/** The kymavo mark from the rail sprite, with the name beside it. */
 export function Brand({ dark = true }: { dark?: boolean }) {
   return (
     <span className={`au-brand${dark ? "" : " light"}`}>
-      <svg className="au-mark" role="img" aria-label="Daloy"><use href="/navigation.svg#mark" /></svg>
-      <span aria-hidden="true">Daloy</span>
+      <svg className="au-mark" role="img" aria-label="kymavo"><use href="/navigation.svg#mark" /></svg>
+      <span aria-hidden="true">kymavo</span>
     </span>
   );
 }

@@ -4,7 +4,7 @@ import type { OAuthProvider } from "./core";
 
 /**
  * Google on the shared OAuth core (decision 0060). One OAuth client per installation and environment, one grant per
- * Daloy app (Sheets and Drive each connect on their own), so each grant carries only the scopes its feature needs.
+ * kymavo app (Sheets and Drive each connect on their own), so each grant carries only the scopes its feature needs.
  */
 
 /** Who signed in: the stable account id (sub) and the address shown in Apps. Non-sensitive. */
@@ -12,7 +12,7 @@ export const GOOGLE_IDENTITY_SCOPES = ["openid", "email"] as const;
 
 /**
  * The scopes each Google feature asks for, beside the identity scopes. Gmail (P5) and Calendar (P6) add their rows here.
- * drive.file is non-sensitive: Daloy reaches only files the owner picked in the Google Picker or that Daloy created.
+ * drive.file is non-sensitive: kymavo reaches only files the owner picked in the Google Picker or that kymavo created.
  * Never add a scope listed in FORBIDDEN_SCOPES (oauth/core.ts); scopes.test.ts checks this table.
  */
 export const GOOGLE_FEATURE_SCOPES = {
@@ -20,7 +20,7 @@ export const GOOGLE_FEATURE_SCOPES = {
   drive: ["https://www.googleapis.com/auth/drive.file"],
   // Sensitive, not restricted (decision 0063): send only. Reading mail would need a restricted scope.
   gmail: ["https://www.googleapis.com/auth/gmail.send"],
-  // Daloy creates its own calendar and works only on calendars it created (decision 0064). Class unverified: see there.
+  // kymavo creates its own calendar and works only on calendars it created (decision 0064). Class unverified: see there.
   calendar: ["https://www.googleapis.com/auth/calendar.app.created"],
 } as const satisfies Record<string, readonly string[]>;
 export type GoogleFeature = keyof typeof GOOGLE_FEATURE_SCOPES;

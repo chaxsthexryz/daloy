@@ -7,7 +7,7 @@ import { Sheet } from "./Sheet";
 /** What the Share sheet needs: the workflow slug, the published trigger, its row id (the form link) and its webhook path. */
 export type ShareInfo = { slug: string; live: Trigger | null; triggerId: string | null; webhookPath: string | null };
 
-/** Triggers that someone outside Daloy can start, so the editor offers Share for them (T5). */
+/** Triggers that someone outside kymavo can start, so the editor offers Share for them (T5). */
 export const shareable = (type: string) => type === "form" || type === "webhook";
 
 /** A read-only value with a Copy button. A refused clipboard leaves the field selected so it can be copied by hand. */

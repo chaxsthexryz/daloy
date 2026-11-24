@@ -6,7 +6,7 @@ import { hasTagalog } from "./locale";
 const src = fileURLToPath(new URL("..", import.meta.url));
 // Names that read the same in Taglish: brands, and Meta's own setup field labels, which owners match against Meta's console.
 const SAME = new Set([
-  "Daloy", "Google Sheets", "Slack",
+  "kymavo", "Google Sheets", "Slack",
   "App Secret", "Facebook Page ID", "Instagram Account ID:", "Instagram Business Account ID", "Page", "Page Access Token", "Page ID:", "Verify Token",
 ]);
 

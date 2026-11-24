@@ -1,10 +1,10 @@
-# Daloy business automation roadmap
+# kymavo business automation roadmap
 
 This is proposed work after phases 0 through 9. The first release should let one office manager set up an automation and share a form with colleagues. Employees who only submit a request should be able to use the form without learning the editor. Start the portfolio demo with **Track an office request**. Use **Reply to a website inquiry** to demonstrate a client connecting their own mailbox.
 
 ## Start here for the implementation handoff
 
-Open the portfolio folder containing `AGENTS.md` and `daloy/`. Read [Daloy's project specification](../PROJECT.md) first, then the portfolio working rules in `AGENTS.md`. Work inside the existing `daloy/` project. Use the files on disk, including pending edits and migrations.
+Open the portfolio folder containing `AGENTS.md` and `daloy/`. Read [kymavo's project specification](../PROJECT.md) first, then the portfolio working rules in `AGENTS.md`. Work inside the existing `daloy/` project. Use the files on disk, including pending edits and migrations.
 
 When the owner says “go for phases 1 through 5 in one run”, that is their go for each of those five phases. Use the [implementation sequence](#implementation-sequence) and [release acceptance checks](#release-scope-and-acceptance-checks). Plan, implement, test and commit each phase in order. Leave phase 6 for the owner's pilot choice. If an external account is unavailable, record the outstanding live check and continue the work that can run locally. Deliver the tested project and the walkthrough described at the end of this file.
 
@@ -23,7 +23,7 @@ The [workflow list](../apps/web/src/App.tsx), [editor](../apps/web/src/Editor.ts
 
 Example: Ana manages a small office. Staff message her about broken equipment. She wants requests in one place and a receipt employees can refer to. She has never used n8n.
 
-| Screen | What Ana does | What Daloy shows next |
+| Screen | What Ana does | What kymavo shows next |
 | --- | --- | --- |
 | Home | Selects **Track an office request**. | “Staff fill in a form. Each request gets a reference. Your office receives a notification.” Actions are **Try an example** and **Set up for my office**. |
 | Try an example | Submits the sample “The printer on floor 2 is jammed.” | **Preview only**. A sample reference, the row that would be recorded, the notification text and the receipt. Nothing is sent or written to an external app. |
@@ -53,7 +53,7 @@ The implementer can fill in the business name, website, inquiry inbox and reply 
 
 ## Connections in order of delivery
 
-Each connection should expose a business action, a destination picker, a sample result and a way to disconnect. Show any administrator requirement before the user leaves Daloy. Ask only for permissions needed by the chosen action. Email sending and incoming mailbox monitoring are separate capabilities.
+Each connection should expose a business action, a destination picker, a sample result and a way to disconnect. Show any administrator requirement before the user leaves kymavo. Ask only for permissions needed by the chosen action. Email sending and incoming mailbox monitoring are separate capabilities.
 
 | Priority | Connection and first action | Setup and local path |
 | --- | --- | --- |
@@ -63,7 +63,7 @@ Each connection should expose a business action, a destination picker, a sample 
 | Next for Microsoft offices | **Outlook**. Send from the authorized mailbox. **Teams**. Post a notification to a selected channel. | Use Microsoft account consent for Outlook and a supported Teams Workflows connection for channel posts. Organization policy may require an administrator. A channel post does not authenticate an approval. [Outlook permissions](https://learn.microsoft.com/en-us/graph/api/user-sendmail?view=graph-rest-1.0), [organization consent](https://learn.microsoft.com/en-us/entra/identity/enterprise-apps/configure-user-consent), and [Teams notifications](https://support.microsoft.com/en-us/workflows/send-messages-in-teams-using-incoming-webhooks) |
 | Driven by the first client | **Asana** creates an assigned task. **Jira** opens an IT ticket. **HubSpot** starts onboarding when a deal is won. **Google Calendar or Outlook Calendar** records approved dates. | Pick the one needed by a real pilot. For app events, verify the source and ignore repeated deliveries. Confirm permissions, account eligibility and quotas before promising support. [Asana task API](https://developers.asana.com/reference/createtask) |
 
-Daloy and its demo must run locally with free, open-source dependencies and no paid API or credit card. Treat hosted business tools as optional connections to accounts a client already has. Use local fixtures for connector tests. Report a live compatibility check only when someone has actually run it.
+kymavo and its demo must run locally with free, open-source dependencies and no paid API or credit card. Treat hosted business tools as optional connections to accounts a client already has. Use local fixtures for connector tests. Report a live compatibility check only when someone has actually run it.
 
 ## Templates worth building
 
@@ -79,7 +79,7 @@ Daloy and its demo must run locally with free, open-source dependencies and no p
 | Purchase request | An employee requests an item. A named manager decides. Route approved requests to purchasing and record the decision. | Requires authenticated approvers for real spending decisions. Start with tracking the request. |
 | Time off or remote work | An employee requests dates. Notify them of the manager's decision and add approved dates to the team calendar. | Requires restricted access to employee records, a named approver and a calendar connection. Keep private reasons out of shared calendars. |
 
-These examples have precedents. Talksure routed purchasing approvals through Teams. Employment Hero used Slack for creative intake alongside Asana. TUP automated calendar-related HR work. Checkwriters used a sale to start onboarding. Delivery Hero tied account recovery to manager approval. The Daloy templates above are proposals. [Talksure](https://www.microsoft.com/en/customers/story/19771-talksure-appsource), [Employment Hero](https://slack.com/customer-stories/employment-hero-drives-productivity-workflows), [TUP](https://n8n.io/case-studies/tup/), [Checkwriters](https://www.hubspot.com/case-studies/checkwriters), and [Delivery Hero](https://n8n.io/case-studies/delivery-hero/)
+These examples have precedents. Talksure routed purchasing approvals through Teams. Employment Hero used Slack for creative intake alongside Asana. TUP automated calendar-related HR work. Checkwriters used a sale to start onboarding. Delivery Hero tied account recovery to manager approval. The kymavo templates above are proposals. [Talksure](https://www.microsoft.com/en/customers/story/19771-talksure-appsource), [Employment Hero](https://slack.com/customer-stories/employment-hero-drives-productivity-workflows), [TUP](https://n8n.io/case-studies/tup/), [Checkwriters](https://www.hubspot.com/case-studies/checkwriters), and [Delivery Hero](https://n8n.io/case-studies/delivery-hero/)
 
 ## Implementation sequence
 

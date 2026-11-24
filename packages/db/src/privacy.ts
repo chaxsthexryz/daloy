@@ -152,7 +152,7 @@ export async function exportCustomer(db: AnyDb, workspaceId: string, actorId: st
     ...f,
     uploads: f.uploads.map(({ data, ...u }) => ({ ...u, dataBase64: b64(data) })),
     claims: f.claims.map(({ image, ...c }) => ({ ...c, imageBase64: b64(image) })),
-    // The deliveries show where data was sent outside Daloy, which a delete cannot reach.
+    // The deliveries show where data was sent outside kymavo, which a delete cannot reach.
   };
 }
 

@@ -1,6 +1,6 @@
 # Deployment: one VM behind a Cloudflare Tunnel
 
-How to run Daloy on a free virtual machine, reached over HTTPS through a free Cloudflare Tunnel. The stack is the same `docker compose up` as on a laptop; only `.env` changes. Nothing has been deployed with this page yet: the restore rehearsal and the exit check below are still to be run on the target.
+How to run kymavo on a free virtual machine, reached over HTTPS through a free Cloudflare Tunnel. The stack is the same `docker compose up` as on a laptop; only `.env` changes. Nothing has been deployed with this page yet: the restore rehearsal and the exit check below are still to be run on the target.
 
 What it costs: nothing, with one gap. A named tunnel needs a domain whose DNS is on Cloudflare (a Cloudflare account is free and needs no card, a domain usually costs money). Without one, `cloudflared tunnel --url http://localhost:3000` gives a random `trycloudflare.com` address that changes on every restart; it is fine for the exit check and not for a demo link.
 
@@ -153,7 +153,7 @@ The November review asked for these on the real topology. The app side is tested
 
 ## 9. Local model with Ollama (optional)
 
-Daloy can run its own model next to the rest of the stack. On your own computer:
+kymavo can run its own model next to the rest of the stack. On your own computer:
 
 ```bash
 docker compose --profile local-ai up
@@ -167,7 +167,7 @@ LLM_BASE_URL=http://ollama:11434
 LLM_MODEL=llama3.2
 ```
 
-Use the base without `/v1`: with `LLM_PROVIDER=ollama` Daloy calls Ollama's own `/api/chat`. With `LLM_PROVIDER=openai` the base would be `http://ollama:11434/v1`. llama3.2 reads text only, so leave `LLM_VISION` unset.
+Use the base without `/v1`: with `LLM_PROVIDER=ollama` kymavo calls Ollama's own `/api/chat`. With `LLM_PROVIDER=openai` the base would be `http://ollama:11434/v1`. llama3.2 reads text only, so leave `LLM_VISION` unset.
 
 Plan on about 4 GB of free memory for llama3.2 (3B). The container runs the model on the CPU; the compose file gives it no GPU. Without the profile, `docker compose up` starts nothing new, and an Ollama running on the host keeps working with the default `LLM_BASE_URL=http://host.docker.internal:11434`. The `ollama` service publishes no port, so it does not clash with a host Ollama on 11434.
 

@@ -42,7 +42,7 @@ beforeAll(async () => {
   app = await createApp({ db, boss, secretsKey, secureCookies: false, publicUrl: "http://localhost:3000", providers: { ...fake.urls, timeoutMs: 2000, microsoft }, oauthProviders, ask: true });
   await app.init();
   server = app.getHttpServer();
-  // A fake Ollama that records what Daloy sends it, for the Ask prompt check.
+  // A fake Ollama that records what kymavo sends it, for the Ask prompt check.
   llm = createServer((req, res) => {
     let raw = "";
     req.on("data", (c: Buffer) => (raw += c.toString()));
@@ -82,7 +82,7 @@ async function member(workspaceId: string, role: "operator" | "approver" | "requ
   await db.insert(sessions).values({ idHash: sha256(token), userId: u!.id, expiresAt: new Date(Date.now() + 3_600_000) });
   return { agent: request.agent(server).set("Cookie", `daloy_session=${token}`), id: u!.id };
 }
-/** Daloy's start, then the provider's consent page; returns the callback path the provider sends the browser to. */
+/** kymavo's start, then the provider's consent page; returns the callback path the provider sends the browser to. */
 async function consentBack(agent: Agent, slug = "trello") {
   const { body } = await agent.post(`/settings/connections/${slug}/oauth/start`).expect(200);
   const back = new URL((await fetch(body.url as string, { redirect: "manual" })).headers.get("location")!);

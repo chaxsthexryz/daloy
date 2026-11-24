@@ -28,7 +28,7 @@ const key = randomBytes(32);
 const mailSent: { to: string; subject: string; text: string }[] = [];
 const mail: MailDeps = {
   installation: {
-    from: "Daloy <daloy@localhost>",
+    from: "kymavo <daloy@localhost>",
     transport: {
       sendMail: async (msg: { to?: string; subject?: string; text?: string }) => {
         mailSent.push({ to: String(msg.to), subject: String(msg.subject), text: String(msg.text) });

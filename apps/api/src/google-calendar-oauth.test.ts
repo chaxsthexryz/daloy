@@ -65,7 +65,7 @@ async function member(workspaceId: string, role: "operator" | "approver" | "requ
   await db.insert(sessions).values({ idHash: sha256(token), userId: u!.id, expiresAt: new Date(Date.now() + 3_600_000) });
   return request.agent(server).set("Cookie", `daloy_session=${token}`);
 }
-/** Connect with Google: Daloy's start, the fake consent page, then the shared callback. Returns where the browser lands. */
+/** Connect with Google: kymavo's start, the fake consent page, then the shared callback. Returns where the browser lands. */
 async function connect(agent: Agent, who = ANA) {
   fake.oauth.google!.user = who;
   const { body } = await agent.post("/settings/connections/google-calendar/oauth/start").expect(200);
@@ -75,12 +75,12 @@ async function connect(agent: Agent, who = ANA) {
 const row = async (ws: string) => (await db.select().from(connections).where(eq(connections.userId, ws))).find((c) => c.provider === "google_calendar");
 
 describe("Connect with Google for Calendar", () => {
-  it("connects, makes the Daloy bookings calendar by itself, and shows the account without any token", async () => {
+  it("connects, makes the kymavo bookings calendar by itself, and shows the account without any token", async () => {
     const { agent, id } = await owner();
     expect(await connect(agent)).toBe("/#/apps/google-calendar-connected");
     const listed = (await agent.get("/settings/connections").expect(200)).body;
     expect(listed.oauth).toContain("google-calendar");
-    expect(listed.connections).toEqual([expect.objectContaining({ provider: "google_calendar", authMethod: "oauth", account: ANA.email, destination: { calendarId: expect.stringContaining("@group.calendar.google.com"), title: "Daloy bookings" } })]);
+    expect(listed.connections).toEqual([expect.objectContaining({ provider: "google_calendar", authMethod: "oauth", account: ANA.email, destination: { calendarId: expect.stringContaining("@group.calendar.google.com"), title: "kymavo bookings" } })]);
     expect(JSON.stringify(listed)).not.toMatch(/google-(access|refresh)-/);
     expect(await row(id)).toMatchObject({ externalId: ANA.id, scopes: "openid email https://www.googleapis.com/auth/calendar.app.created" });
   });
@@ -114,7 +114,7 @@ describe("Connect with Google for Calendar", () => {
     expect((await row(id))!.destination).toBeNull();
     expect((await agent.post("/settings/connections/google-calendar/test").expect(200)).body).toMatchObject({ ok: false });
     const made = (await agent.post("/settings/connections/google-calendar/create").send({}).expect(200)).body;
-    expect(made).toMatchObject({ title: "Daloy bookings" });
+    expect(made).toMatchObject({ title: "kymavo bookings" });
     expect((await row(id))!.destination).toEqual(made);
     // Pressed again, it keeps the calendar; asked to replace it, it makes a new one.
     expect((await agent.post("/settings/connections/google-calendar/create").send({}).expect(200)).body).toEqual(made);

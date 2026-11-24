@@ -22,7 +22,7 @@ Nothing here is decided, scheduled or built. This is a proposal, not a decision 
 
 | Item | Verdict | Size | Reason | Depends on |
 | --- | --- | --- | --- | --- |
-| Daloy table, with rows, a page, an "Add a row" step and "new row" trigger | Build now | Large | The table is the middle of every flow that does not need Google. Without the trigger it is only a place to write. | Nothing |
+| kymavo table, with rows, a page, an "Add a row" step and "new row" trigger | Build now | Large | The table is the middle of every flow that does not need Google. Without the trigger it is only a place to write. | Nothing |
 | Schedule watchdog: a schedule that has not fired in two cycles emails the owner | Build now | Small | The most common silent failure. A stalled schedule looks exactly like "nothing to do". | Nothing |
 | Quiet hours: hold sends outside 8am to 6pm Manila, release after | Build now | Small | Prevents 2am client email, which is the first complaint a self-hosted automation gets. | Nothing |
 | Weekly digest: runs, failures, money moved, what needs a person | Build now | Small | Makes the product visible without opening it. Uses counts already stored. | Nothing |
@@ -82,11 +82,11 @@ The owner asked which of the recommendations are actually good. Roughly half are
 
 ### Build now: six small things, one story
 
-"Daloy holds your data, keeps your paperwork and tells you when something stops."
+"kymavo holds your data, keeps your paperwork and tells you when something stops."
 
 | Item | Size | Why it earns its place |
 | --- | --- | --- |
-| Daloy table, new-row trigger, `.xlsx` and `.csv` export | Large | Replaces Sheets with no login, no sharing and no vendor review. Scope: typed columns, a read-only grid, export and import. No inline editing yet. |
+| kymavo table, new-row trigger, `.xlsx` and `.csv` export | Large | Replaces Sheets with no login, no sharing and no vendor review. Scope: typed columns, a read-only grid, export and import. No inline editing yet. |
 | Schedule watchdog | Small | The failure that makes people stop trusting automation. |
 | Weekly digest | Small | Built from counts already stored. Makes the product visible without opening it. |
 | Brand kit: logo, colour, business name | Small | One change upgrades every form, email and PDF. Best value per hour on the list. |

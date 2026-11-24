@@ -22,8 +22,8 @@ describe("Google Sheets and Drive cards", () => {
   it("offer Connect with Google first, with one heading and the service account form under Advanced", () => {
     const html = render(createElement(GoogleSheetsCard, { conn: null, configured: true, outcome: "missing_scope", onChange }));
     expect(html).toContain(">Connect with Google</button>");
-    expect(html).toContain("use only the files you pick or that Daloy creates");
-    expect(html).toContain("Some of the permissions Daloy asked for were not allowed");
+    expect(html).toContain("use only the files you pick or that kymavo creates");
+    expect(html).toContain("Some of the permissions kymavo asked for were not allowed");
     expect(html.match(/<h3/g)).toHaveLength(1);
     expect(html).toMatch(/<details><summary>Advanced: use a key or token instead<\/summary>.*Service account key file \(JSON\).*<\/details>/s);
     expect(render(createElement(GoogleSheetsCard, { conn: null, configured: true, onChange }), "tl")).toContain("Ikonekta gamit ang Google");
@@ -36,10 +36,10 @@ describe("Google Sheets and Drive cards", () => {
     expect(html).toContain("Pick an existing sheet");
     expect(html).toContain("Reconnect Google Sheets");
     expect(html).not.toContain("Add a test row");
-    const chosen = render(createElement(GoogleSheetsCard, { conn: { ...oauthSheets, destination: { spreadsheetId: "abc1234567", tab: "Sheet1", title: "Daloy requests" } }, configured: true, onChange }), "tl");
+    const chosen = render(createElement(GoogleSheetsCard, { conn: { ...oauthSheets, destination: { spreadsheetId: "abc1234567", tab: "Sheet1", title: "kymavo requests" } }, configured: true, onChange }), "tl");
     expect(chosen).toContain("Gumawa ng sheet para sa akin");
     expect(chosen).toContain("Magdagdag ng test row");
-    expect(chosen).toContain("Daloy requests");
+    expect(chosen).toContain("kymavo requests");
   });
 
   it("show the service account connection with its label when that is what is connected", () => {
@@ -49,9 +49,9 @@ describe("Google Sheets and Drive cards", () => {
     expect(html).toContain("leave empty to keep the current key");
   });
 
-  it("offer Drive a Daloy uploads folder or a picked folder", () => {
+  it("offer Drive a kymavo uploads folder or a picked folder", () => {
     const html = render(createElement(GoogleDriveCard, { conn: { ...oauthSheets, provider: "google_drive" }, configured: true, onChange }));
-    expect(html).toContain("Create a Daloy uploads folder");
+    expect(html).toContain("Create a kymavo uploads folder");
     expect(html).toContain("Pick a folder");
     expect(html).toContain("It can be in My Drive");
     expect(render(createElement(GoogleDriveCard, { conn: null, configured: false, onChange }))).toContain("Folder link");

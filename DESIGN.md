@@ -1,6 +1,6 @@
-# Daloy design
+# kymavo design
 
-This file fixes the look of the Daloy console and its public landing page (phase V1). Phase V2 applies it to the console and phase W builds the landing page. Both should be able to work from this file and the mockups in `docs/design/` without making design decisions.
+This file fixes the look of the kymavo console and its public landing page (phase V1). Phase V2 applies it to the console and phase W builds the landing page. Both should be able to work from this file and the mockups in `docs/design/` without making design decisions.
 
 ## Automations homepage
 
@@ -8,7 +8,7 @@ The owner approved this signed-in homepage on 18 November 2026. Use commit `c92d
 
 ### Recreate the layout
 
-1. Place the Daloy logo and wordmark at the top of the desktop sidebar. Group Automations, Activity and Bookings under **Work**. Group New automation and Build with AI under **Build**. Put Team, Apps, Business, Advanced and Settings under **Workspace**, with account controls at the bottom. Preserve the existing owner and operator permissions. [Navigation](apps/web/src/Nav.tsx) · [Logo](apps/web/public/logo.svg)
+1. Place the kymavo logo and wordmark at the top of the desktop sidebar. Group Automations, Activity and Bookings under **Work**. Group New automation and Build with AI under **Build**. Put Team, Apps, Business, Advanced and Settings under **Workspace**, with account controls at the bottom. Preserve the existing owner and operator permissions. [Navigation](apps/web/src/Nav.tsx) · [Logo](apps/web/public/logo.svg)
 2. Put **Automations** at the top of the page. For owners, place the Build with AI link beside the New automation button. Use Inter, with a medium-weight title and compact labels.
 3. Below the title, show **Automation status**, **Work queue** and **Recent activity**. Size the status bar segments from the actual On, Paused, Off and Draft counts. Queue counts filter the workflow list. Recent activity links to up to three runs, using the latest run per automation and sorting newest first.
 4. Place search and state filters immediately above the workflow cards. Keep each workflow’s name, state, last event and applicable actions together. Group unfinished guided setups under Drafts. Use the existing workspace data, translations and permissions. [Homepage component](apps/web/src/Automations.tsx)
@@ -406,14 +406,14 @@ What must not change:
 - Replace the framed mockup in the hero with a real screenshot of the Automations home taken after V2 (`docs/screenshots/workflows.png` is retaken by `e2e/demo.spec.ts`). Give it a `--border-soft` outline and `--radius-lg`.
 - The copy in the mockup is final unless a fact changes. Check the "What it does not do" list against the README's known limitations on the day you publish, and the "What the demo does not do" list against phase N5 as built.
 - The "Open the demo" links are placeholders (`#demo`). Point them at the public demo once N5 is up. Until then, leave those buttons out and keep the section text.
-- On 17 November 2026 the owner decided to sell Daloy as a managed subscription and to keep self-hosting off the page. This is newer than the W entry in `PROJECT.md`, which asks for a GitHub link and has no pricing. So the page has a Pricing section, no "Run it yourself" section, and GitHub only as a footer link to the source and to two README anchors. Say so in the W plan and ask the owner to update the W entry.
+- On 17 November 2026 the owner decided to sell kymavo as a managed subscription and to keep self-hosting off the page. This is newer than the W entry in `PROJECT.md`, which asks for a GitHub link and has no pricing. So the page has a Pricing section, no "Run it yourself" section, and GitHub only as a footer link to the source and to two README anchors. Say so in the W plan and ask the owner to update the W entry.
 - Pricing is stated as facts, with no sales copy: Demo at ₱0, a 14-day Pilot at ₱0, and Business at ₱1,500 per business per month plus ₱3,000 setup once. Business Plus is held back until there are three paying customers and one of them reaches 5 automations or asks for changes every month.
 - Every line in the Pricing section is a promise. Before publishing, check each one against what is deployed: the service is live on a server (N3 is not finished), backups run nightly and one restore was rehearsed, the daily email limit and the monthly AI allowance are enforced or watched by hand (N6 is not built), and the owner answers email within 2 working days. Remove any line that is not yet true. Do not add what happens when the AI allowance runs out until N6 defines it.
 - "What is planned" lists the open phases N6 to N10 in plain words, in roadmap order, with no dates. Check it against `PROJECT.md` on the day you publish. When a phase ships, remove its line and add the feature to a plan.
 - The contact address `hello@example.com` is a placeholder. Replace it with the owner's.
 - The GitHub links point at `https://github.com/chaxsthexryz/daloy` and at README anchors. Check the anchors exist.
 - Third-party products (Gmail, Outlook, Teams, Google Sheets, Slack) appear as plain words. If a logo is ever added, use the vendor's official mark file unchanged.
-- The Daloy mark is `apps/web/public/logo.svg`, used as it is.
+- The kymavo mark is `apps/web/public/logo.svg`, used as it is.
 
 ## Follow-ups outside V1 and V2
 

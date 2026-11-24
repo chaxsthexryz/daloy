@@ -93,7 +93,7 @@ export type InternalTriggerDispatch = {
 
 /**
  * Starts one keyed run for each live, unpaused workflow in `workspaceId` subscribed to this internal
- * Daloy event (`booking_event` or `payment_event`). Duplicate `eventKey` values return no new run id.
+ * kymavo event (`booking_event` or `payment_event`). Duplicate `eventKey` values return no new run id.
  * A listener already in `callChain` is skipped and nothing starts past MAX_SUB_WORKFLOW_DEPTH, so an automation
  * whose own steps raise the event it listens to cannot start itself again and again (decision 0128).
  */

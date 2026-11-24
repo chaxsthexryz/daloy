@@ -52,7 +52,7 @@ export function duration(from: string, to: string | null): string {
   return ms < 1000 ? `${ms} ms` : ms < 120_000 ? `${(ms / 1000).toFixed(1)} s` : `${Math.round(ms / 60_000)} min`;
 }
 
-export const TAKING_LONGER = "Taking longer than usual. Tell the person who runs Daloy.";
+export const TAKING_LONGER = "Taking longer than usual. Tell the person who runs kymavo.";
 const SUPERSEDED = "Superseded: its booking was rescheduled or cancelled. It stops at its next step and sends nothing more.";
 
 const kind = (r: { test: boolean; live: boolean; aiLive?: boolean; testChoices?: Record<string, object> | null }) =>
@@ -226,7 +226,7 @@ export function RunsPage({ workflowId, ask }: { workflowId?: string; ask?: boole
     return (
       <main className="page act">
         <PageHead
-          crumbs={[{ label: "Daloy", href: "#/" }, { label: t("Activity") }]}
+          crumbs={[{ label: "kymavo", href: "#/" }, { label: t("Activity") }]}
           title={t("Workspace activity")}
           sub={longDate(Date.now(), language)}
           actions={ask && <a className="act-button" href="#/activity/ask">{t("Ask about a request")}</a>}
@@ -370,7 +370,7 @@ export function RunPage({ runId, owner, ask }: { runId: string; owner: boolean; 
   if (!run) {
     return (
       <main className="page act">
-        <PageHead crumbs={[{ label: "Daloy", href: "#/" }, { label: t("Activity"), href: "#/activity" }]} title={t("Activity")} />
+        <PageHead crumbs={[{ label: "kymavo", href: "#/" }, { label: t("Activity"), href: "#/activity" }]} title={t("Activity")} />
         <div className="act-body">
           {error ? (
             <p role="alert" className="act-alert error">
@@ -391,7 +391,7 @@ export function RunPage({ runId, owner, ask }: { runId: string; owner: boolean; 
   return (
     <main className="page act run-detail">
       <PageHead
-        crumbs={[{ label: "Daloy", href: "#/" }, { label: t("Activity"), href: "#/activity" }, { label: run.reference ?? t(runKind(run)) }]}
+        crumbs={[{ label: "kymavo", href: "#/" }, { label: t("Activity"), href: "#/activity" }, { label: run.reference ?? t(runKind(run)) }]}
         title={run.workflowName}
         sub={[run.reference && t("Run {reference}", { reference: run.reference }), t(runKind(run))].filter(Boolean).join(" · ")}
         actions={
@@ -698,7 +698,7 @@ function RunActions({ run, onDone }: { run: Run; onDone: () => void }) {
     <section aria-label={t("Needs you")} className="review">
       <h3>{t("Needs you")}</h3>
       {/* Nothing was sent (a daily send cap): there is nothing to confirm, so "It went through" is not offered. */}
-      <p>{notSent ? t("Nothing was sent. Choose what to do.") : t("A message or delivery may or may not have reached its destination, and Daloy cannot tell. Check whether it arrived, then choose.")}</p>
+      <p>{notSent ? t("Nothing was sent. Choose what to do.") : t("A message or delivery may or may not have reached its destination, and kymavo cannot tell. Check whether it arrived, then choose.")}</p>
       {last?.error && <p className="message error">{last.error}</p>}
       {last?.input !== null && last?.input !== undefined && (
         <details>

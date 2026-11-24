@@ -11,7 +11,7 @@ import { redactSecrets, secretForms } from "./crypto";
  * - quota, unavailable: try again later. retryAfterMs is the provider's own hint.
  * - ambiguous: a write timed out or broke after it was sent, so the provider may have done it.
  * - invalid: the request itself was wrong. Retrying the same thing will not help.
- * - review: Daloy cannot tell what happened and must not guess; a person decides.
+ * - review: kymavo cannot tell what happened and must not guess; a person decides.
  */
 export type ProviderErrorKind = "auth" | "permission" | "quota" | "unavailable" | "ambiguous" | "invalid" | "review";
 export class ProviderError extends Error {
@@ -138,8 +138,8 @@ export async function call(url: string, init: RequestInit, timeoutMs: number, wr
   } catch (err) {
     const code = (err as { cause?: { code?: string } }).cause?.code;
     const notSent = code === "ECONNREFUSED" || code === "ENOTFOUND" || code === "EAI_AGAIN";
-    if (!write || notSent) throw new ProviderError(`${what} could not be reached. Daloy will try again.`, "unavailable");
-    throw new ProviderError(`${what} did not answer in time, so Daloy cannot tell whether it went through.`, "ambiguous");
+    if (!write || notSent) throw new ProviderError(`${what} could not be reached. kymavo will try again.`, "unavailable");
+    throw new ProviderError(`${what} did not answer in time, so kymavo cannot tell whether it went through.`, "ambiguous");
   }
 }
 
@@ -148,7 +148,7 @@ export const retryAfter = (headers: Headers) => parseRetryAfter(headers.get("ret
 
 // ---------------------------------------------------------------- Google Sheets
 
-/** The fields Daloy needs from a service account key file. The rest of the file is ignored and not stored. */
+/** The fields kymavo needs from a service account key file. The rest of the file is ignored and not stored. */
 export const serviceAccountSchema = z.object({
   client_email: z.email(),
   private_key: z.string().includes("PRIVATE KEY"),
@@ -161,9 +161,9 @@ export type ServiceAccount = z.infer<typeof serviceAccountSchema>;
 export type GoogleAuth = ServiceAccount | { accessToken: string };
 const isOAuth = (auth: GoogleAuth): auth is { accessToken: string } => "accessToken" in auth;
 const bearer = (urls: ProviderUrls, auth: GoogleAuth, scope: string) => (isOAuth(auth) ? Promise.resolve(auth.accessToken) : accessToken(urls, auth, scope));
-// Under drive.file Google answers 404 (or 403) for any file the owner did not pick and Daloy did not create, and after a reconnect a picked file may need picking again.
-const PICK_SHEET_AGAIN = "Daloy cannot open this spreadsheet with your Google connection. In Apps, pick the sheet again (Google lets Daloy reach only sheets you picked or Daloy created).";
-const PICK_FOLDER_AGAIN = "Daloy cannot open this Drive folder with your Google connection. In Apps, pick the folder again (Google lets Daloy reach only folders you picked or Daloy created).";
+// Under drive.file Google answers 404 (or 403) for any file the owner did not pick and kymavo did not create, and after a reconnect a picked file may need picking again.
+const PICK_SHEET_AGAIN = "kymavo cannot open this spreadsheet with your Google connection. In Apps, pick the sheet again (Google lets kymavo reach only sheets you picked or kymavo created).";
+const PICK_FOLDER_AGAIN = "kymavo cannot open this Drive folder with your Google connection. In Apps, pick the folder again (Google lets kymavo reach only folders you picked or kymavo created).";
 export type SheetDestination = { spreadsheetId: string; tab: string };
 
 /** Takes a sheet link (https://docs.google.com/spreadsheets/d/<id>/edit) or the id itself. */
@@ -198,7 +198,7 @@ async function accessToken(urls: ProviderUrls, sa: ServiceAccount, scope = SHEET
   if (res.status === 400 || res.status === 401) {
     throw new ProviderError("Google rejected the service account key. It may have been deleted or disabled. Connect Google Sheets again.", "auth");
   }
-  if (res.status !== 200 || typeof res.body.access_token !== "string") throw new ProviderError(`Google sign-in answered ${res.status}. Daloy will try again.`, "unavailable");
+  if (res.status !== 200 || typeof res.body.access_token !== "string") throw new ProviderError(`Google sign-in answered ${res.status}. kymavo will try again.`, "unavailable");
   const expiresIn = typeof res.body.expires_in === "number" ? res.body.expires_in : 3600;
   tokenCache.set(cacheKey(sa, scope), { token: res.body.access_token, expiresAt: Date.now() + expiresIn * 1000 });
   return res.body.access_token;
@@ -206,12 +206,12 @@ async function accessToken(urls: ProviderUrls, sa: ServiceAccount, scope = SHEET
 
 function sheetsFailure(res: Reply, auth: GoogleAuth, write: boolean): ProviderError {
   const message = String((res.body.error as { message?: unknown } | undefined)?.message ?? "");
-  if (res.status === 401) return new ProviderError("Google did not accept Daloy's access. Connect Google Sheets again.", "auth");
+  if (res.status === 401) return new ProviderError("Google did not accept kymavo's access. Connect Google Sheets again.", "auth");
   if (isOAuth(auth) && (res.status === 403 || res.status === 404)) return new ProviderError(PICK_SHEET_AGAIN, "permission");
   const share = isOAuth(auth) ? "" : `Share the sheet with ${auth.client_email} as an Editor.`;
   if (res.status === 403) return new ProviderError(`Google Sheets refused access. ${share}${message ? ` Google said: ${message}` : ""}`, "permission");
   if (res.status === 404) return new ProviderError(`The spreadsheet was not found. Check the link, and ${share.charAt(0).toLowerCase()}${share.slice(1)}`, "permission");
-  if (res.status === 429) return new ProviderError("Google Sheets is limiting requests right now. Daloy will try again.", "quota", retryAfter(res.headers));
+  if (res.status === 429) return new ProviderError("Google Sheets is limiting requests right now. kymavo will try again.", "quota", retryAfter(res.headers));
   // A server error on a write may still have written the row, so the next attempt looks first.
   if (res.status >= 500) return new ProviderError(`Google Sheets answered ${res.status}.`, write ? "ambiguous" : "unavailable");
   return new ProviderError(`Google Sheets rejected the request${message ? `: ${message}` : ` (${res.status})`}.`, "invalid");
@@ -295,7 +295,7 @@ export async function appendRowOnce(urls: ProviderUrls, auth: GoogleAuth, dest: 
     if (!(err instanceof ProviderError) || err.kind !== "invalid") throw err;
     const found = await markerAt(urls, auth, dest.spreadsheetId, key.id);
     if (found === key.value) return { sheet: dest.tab, reconciled: true };
-    if (found !== null) throw new ProviderError(`Something else in this spreadsheet already uses Daloy's marker ${key.id}, so Daloy cannot tell whether this row was added. Check the sheet, then choose Mark as posted or Post again.`, "review");
+    if (found !== null) throw new ProviderError(`Something else in this spreadsheet already uses kymavo's marker ${key.id}, so kymavo cannot tell whether this row was added. Check the sheet, then choose Mark as posted or Post again.`, "review");
     throw err;
   }
 }
@@ -326,16 +326,16 @@ export function calendarIdFrom(input: string): string | null {
  */
 export const calendarEventId = (bookingId: string) => `dl${createHash("sha256").update(bookingId).digest("hex").slice(0, 40)}`;
 
-const PICK_CALENDAR_AGAIN = "Daloy cannot open its calendar with your Google connection. It may have been deleted in Google Calendar. In Apps, choose Create a new Daloy calendar.";
+const PICK_CALENDAR_AGAIN = "kymavo cannot open its calendar with your Google connection. It may have been deleted in Google Calendar. In Apps, choose Create a new kymavo calendar.";
 
 function calendarFailure(res: Reply, auth: GoogleAuth, write: boolean): ProviderError {
   const error = (res.body.error ?? {}) as { errors?: { reason?: unknown }[] };
   const share = isOAuth(auth) ? "" : `Share the calendar with ${auth.client_email} and choose "Make changes to events".`;
-  if (res.status === 401) return new ProviderError("Google did not accept Daloy's access. Connect Google Calendar again.", "auth");
+  if (res.status === 401) return new ProviderError("Google did not accept kymavo's access. Connect Google Calendar again.", "auth");
   if (res.status === 429 || (res.status === 403 && /rateLimitExceeded|quotaExceeded/i.test(String(error.errors?.[0]?.reason ?? "")))) {
-    return new ProviderError("Google Calendar is limiting requests right now. Daloy will try again.", "quota", retryAfter(res.headers));
+    return new ProviderError("Google Calendar is limiting requests right now. kymavo will try again.", "quota", retryAfter(res.headers));
   }
-  // With calendar.app.created Google answers 403 or 404 for a calendar Daloy did not create or that was deleted (decision 0064).
+  // With calendar.app.created Google answers 403 or 404 for a calendar kymavo did not create or that was deleted (decision 0064).
   if (isOAuth(auth) && (res.status === 403 || res.status === 404)) return new ProviderError(PICK_CALENDAR_AGAIN, "permission");
   if (res.status === 403) return new ProviderError(`Google Calendar refused access. ${share}`, "permission");
   if (res.status === 404) return new ProviderError(`The calendar or event was not found. Check the calendar id, and ${share.charAt(0).toLowerCase()}${share.slice(1)}`, "permission");
@@ -361,8 +361,8 @@ async function calendar(urls: ProviderUrls, auth: GoogleAuth, path: string, init
 }
 
 /**
- * Creates the calendar Daloy writes to, in the owner's account. Under calendar.app.created Daloy may use it because
- * Daloy created it. Not idempotent: a lost answer may leave an unused calendar (decision 0064).
+ * Creates the calendar kymavo writes to, in the owner's account. Under calendar.app.created kymavo may use it because
+ * kymavo created it. Not idempotent: a lost answer may leave an unused calendar (decision 0064).
  */
 export async function createCalendar(urls: ProviderUrls, auth: GoogleAuth, title: string) {
   const res = await calendar(urls, auth, "/calendar/v3/calendars", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ summary: title }) }, true);
@@ -380,13 +380,13 @@ export async function calendarInfo(urls: ProviderUrls, sa: GoogleAuth, calendarI
 }
 
 /**
- * Proves Daloy can write: creates a one-hour event tomorrow under a one-off id and deletes it again. A calendar shared
+ * Proves kymavo can write: creates a one-hour event tomorrow under a one-off id and deletes it again. A calendar shared
  * as "see all event details" passes the read check but fails here.
  */
 export async function calendarWriteTest(urls: ProviderUrls, sa: GoogleAuth, calendarId: string) {
   const eventId = `dltest${createHash("sha256").update(String(Math.random()) + Date.now()).digest("hex").slice(0, 20)}`;
   const start = new Date(Date.now() + 24 * 3600_000);
-  const body = { id: eventId, summary: "Test event from Daloy", start: { dateTime: start.toISOString() }, end: { dateTime: new Date(start.getTime() + 3600_000).toISOString() } };
+  const body = { id: eventId, summary: "Test event from kymavo", start: { dateTime: start.toISOString() }, end: { dateTime: new Date(start.getTime() + 3600_000).toISOString() } };
   await calendar(urls, sa, eventsPath(calendarId), { method: "POST", headers: json, body: JSON.stringify(body) }, true);
   await calendar(urls, sa, `${eventsPath(calendarId)}/${eventId}`, { method: "DELETE" }, true, [404, 410]);
   return { created: true, deleted: true };
@@ -437,12 +437,12 @@ function driveFailure(res: Reply, auth: GoogleAuth, write: boolean): ProviderErr
   const error = (res.body.error ?? {}) as { message?: unknown; errors?: { reason?: unknown }[] };
   const message = String(error.message ?? "");
   const reason = String(error.errors?.[0]?.reason ?? "");
-  if (res.status === 401) return new ProviderError("Google did not accept Daloy's access. Connect Google Drive again.", "auth");
+  if (res.status === 401) return new ProviderError("Google did not accept kymavo's access. Connect Google Drive again.", "auth");
   if (res.status === 403 && reason === "storageQuotaExceeded") {
     return new ProviderError(isOAuth(auth) ? "The Google account's Drive storage is full. Free up space in Drive, then retry." : SHARED_DRIVE(auth), "permission");
   }
   if (res.status === 429 || (res.status === 403 && /rateLimitExceeded|userRateLimitExceeded/i.test(reason))) {
-    return new ProviderError("Google Drive is limiting requests right now. Daloy will try again.", "quota", retryAfter(res.headers));
+    return new ProviderError("Google Drive is limiting requests right now. kymavo will try again.", "quota", retryAfter(res.headers));
   }
   if (isOAuth(auth) && (res.status === 403 || res.status === 404)) return new ProviderError(PICK_FOLDER_AGAIN, "permission");
   const share = isOAuth(auth) ? "" : `Share the folder with ${auth.client_email} as Content manager.`;
@@ -475,7 +475,7 @@ export async function driveFolderInfo(urls: ProviderUrls, auth: GoogleAuth, fold
   if (b.mimeType !== "application/vnd.google-apps.folder") throw new ProviderError("That link is not a Drive folder. Open the folder in Drive and copy its link.", "invalid");
   if (!b.driveId && !isOAuth(auth)) throw new ProviderError(SHARED_DRIVE(auth), "permission");
   if (b.capabilities?.canAddChildren !== true) {
-    throw new ProviderError(isOAuth(auth) ? "Your Google account cannot add files to that folder. Pick a folder you can edit." : `Daloy cannot add files to that folder. Share it with ${auth.client_email} as Content manager.`, "permission");
+    throw new ProviderError(isOAuth(auth) ? "Your Google account cannot add files to that folder. Pick a folder you can edit." : `kymavo cannot add files to that folder. Share it with ${auth.client_email} as Content manager.`, "permission");
   }
   return { title: String(b.name ?? folderId) };
 }
@@ -491,7 +491,7 @@ export async function driveUpload(urls: ProviderUrls, auth: GoogleAuth, folderId
   ]);
   const res = await drive(urls, auth, "/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true&fields=id,name", { method: "POST", headers: { "content-type": `multipart/related; boundary=${boundary}` }, body }, true);
   const id = res.body.id;
-  if (typeof id !== "string" || !id) throw new ProviderError("Google Drive answered without a file id, so Daloy cannot tell whether the file was saved.", "ambiguous");
+  if (typeof id !== "string" || !id) throw new ProviderError("Google Drive answered without a file id, so kymavo cannot tell whether the file was saved.", "ambiguous");
   return { id };
 }
 
@@ -580,12 +580,12 @@ const SLACK_HINTS: Record<string, string> = {
 /** Slack's Web API answers HTTP 200 with ok: false and an error code, except for rate limits (HTTP 429). */
 async function slackCall(urls: ProviderUrls, token: string, method: string, params: Record<string, string>, write = false) {
   const res = await call(`${urls.slack}/api/${method}`, { method: "POST", headers: { authorization: `Bearer ${token}` }, body: new URLSearchParams(params) }, urls.timeoutMs ?? 10_000, write, "Slack");
-  if (res.status === 429) throw new ProviderError("Slack is limiting requests right now. Daloy will try again.", "quota", retryAfter(res.headers));
+  if (res.status === 429) throw new ProviderError("Slack is limiting requests right now. kymavo will try again.", "quota", retryAfter(res.headers));
   if (res.status >= 500) throw new ProviderError(`Slack answered ${res.status}.`, write ? "ambiguous" : "unavailable");
   if (res.body.ok === true) return res.body;
   const error = String(res.body.error ?? `HTTP ${res.status}`);
   if (SLACK_AUTH.has(error)) throw new ProviderError("Slack no longer accepts the app's token. Connect Slack again.", "auth");
-  if (error === "ratelimited") throw new ProviderError("Slack is limiting requests right now. Daloy will try again.", "quota", retryAfter(res.headers));
+  if (error === "ratelimited") throw new ProviderError("Slack is limiting requests right now. kymavo will try again.", "quota", retryAfter(res.headers));
   if (error === "missing_scope") throw new ProviderError(`The Slack app needs the ${String(res.body.needed ?? "")} scope. Add it in the app's settings, reinstall it, and connect again.`, "permission");
   if (SLACK_HINTS[error]) throw new ProviderError(SLACK_HINTS[error], "permission");
   throw new ProviderError(`Slack said ${error}.`, "invalid");
@@ -611,7 +611,7 @@ export async function slackPost(urls: ProviderUrls, token: string, channel: stri
 
 // ---------------------------------------------------------------- Telegram
 
-/** getUpdates answers 409 while the bot has a webhook, so Daloy cannot list its chats. */
+/** getUpdates answers 409 while the bot has a webhook, so kymavo cannot list its chats. */
 const TELEGRAM_WEBHOOK_SET = "This bot has a webhook set, so Telegram will not list its chats. Type the chat id instead, or remove the webhook in the Bot API.";
 
 /** Telegram's Bot API answers { ok, result } with an HTTP status that matches (401, 403, 400, 429). The token sits in the URL path, so no error here may echo the URL. */
@@ -619,7 +619,7 @@ async function telegramCall(urls: ProviderUrls, token: string, method: string, p
   const res = await call(`${urls.telegram}/bot${token}/${method}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(params) }, urls.timeoutMs ?? 10_000, write, "Telegram");
   if (res.status === 429) {
     const s = Number((res.body.parameters as { retry_after?: unknown } | undefined)?.retry_after);
-    throw new ProviderError("Telegram is limiting requests right now. Daloy will try again.", "quota", Number.isFinite(s) && s > 0 ? Math.min(s * 1000, MAX_PROVIDER_RETRY_AFTER_MS) : retryAfter(res.headers));
+    throw new ProviderError("Telegram is limiting requests right now. kymavo will try again.", "quota", Number.isFinite(s) && s > 0 ? Math.min(s * 1000, MAX_PROVIDER_RETRY_AFTER_MS) : retryAfter(res.headers));
   }
   if (res.status >= 500) throw new ProviderError(`Telegram answered ${res.status}.`, write ? "ambiguous" : "unavailable");
   if (res.status === 409) throw new ProviderError(TELEGRAM_WEBHOOK_SET, "invalid");
@@ -701,7 +701,7 @@ export async function telegramFileInfo(urls: ProviderUrls, token: string, fileId
  * never include the request URL (Trello's key and token are in it) or the answer's text.
  */
 function recordFailure(res: Reply, what: string, write: boolean, defaultWaitMs: number): never {
-  if (res.status === 429) throw new ProviderError(`${what} is limiting requests right now. Daloy will try again.`, "quota", retryAfter(res.headers) ?? defaultWaitMs);
+  if (res.status === 429) throw new ProviderError(`${what} is limiting requests right now. kymavo will try again.`, "quota", retryAfter(res.headers) ?? defaultWaitMs);
   if (res.status >= 500) throw new ProviderError(`${what} answered ${res.status}.`, write ? "ambiguous" : "unavailable");
   if (res.status === 401) throw new ProviderError(`${what} no longer accepts the saved token. Connect ${what} again.`, "auth");
   if (res.status === 403 || res.status === 404) throw new ProviderError(`${what} cannot reach that target with this token. Check that it is shared with the token and has write access.`, "permission");
@@ -735,7 +735,7 @@ export const NOTION_VERSION = "2022-06-28";
 export async function notionCall(urls: ProviderUrls, token: string, method: "GET" | "POST", path: string, body?: object, write = method === "POST") {
   const res = await call(`${urls.notion}/v1/${path}`, { method, headers: { authorization: `Bearer ${token}`, "notion-version": NOTION_VERSION, "content-type": "application/json" }, body: body && JSON.stringify(body) }, urls.timeoutMs ?? 10_000, write, "Notion");
   if (res.status === 200) return res.body;
-  if (res.status === 529) throw new ProviderError("Notion is limiting requests right now. Daloy will try again.", "quota", retryAfter(res.headers) ?? 10_000);
+  if (res.status === 529) throw new ProviderError("Notion is limiting requests right now. kymavo will try again.", "quota", retryAfter(res.headers) ?? 10_000);
   if (res.status === 503 && write && typeof (res.body.additional_data as { committed_resource_id?: unknown } | undefined)?.committed_resource_id === "string") {
     throw new ProviderError(`Notion answered 503 but may have saved the page ${(res.body.additional_data as { committed_resource_id: string }).committed_resource_id}.`, "ambiguous");
   }
@@ -802,16 +802,16 @@ function graphFailure(res: Reply, write: boolean): ProviderError {
   const err = (res.body.error ?? {}) as { code?: unknown; message?: unknown };
   const code = String(err.code ?? "");
   const said = err.message ? ` Microsoft said: ${String(err.message)}` : "";
-  if (res.status === 401) return new ProviderError("Microsoft did not accept Daloy's access. Reconnect Outlook.", "auth");
+  if (res.status === 401) return new ProviderError("Microsoft did not accept kymavo's access. Reconnect Outlook.", "auth");
   if (res.status === 403 || code === "MailboxNotEnabledForRESTAPI" || code === "ErrorSendAsDenied") {
     return new ProviderError(`The mailbox refused to send (${code || res.status}). It may have no Exchange Online licence, or a policy blocks sending.${said}`, "permission");
   }
-  if (res.status === 429 || code === "ErrorQuotaExceeded") return new ProviderError("Outlook is limiting how much this mailbox sends right now. Daloy will try again.", "quota", retryAfter(res.headers));
+  if (res.status === 429 || code === "ErrorQuotaExceeded") return new ProviderError("Outlook is limiting how much this mailbox sends right now. kymavo will try again.", "quota", retryAfter(res.headers));
   if (res.status >= 500) return new ProviderError(`Outlook answered ${res.status}.`, write ? "ambiguous" : "unavailable");
   return new ProviderError(`Outlook rejected the message${said || ` (${res.status})`}.`, "invalid");
 }
 
-/** The mailbox the owner consented with: its address is what the connection shows, its id the account Daloy pins. */
+/** The mailbox the owner consented with: its address is what the connection shows, its id the account kymavo pins. */
 export async function outlookMailbox(urls: ProviderUrls, accessToken: string) {
   const res = await call(`${urls.graph}/v1.0/me?$select=id,mail,userPrincipalName`, { headers: { authorization: `Bearer ${accessToken}` } }, urls.timeoutMs ?? 10_000, false, "Outlook");
   if (res.status !== 200) throw graphFailure(res, false);
@@ -850,7 +850,7 @@ export function teamsWebhookUrl(urls: ProviderUrls, input: string): string | nul
 
 /**
  * Posts an Adaptive Card with the text. Workflows answers 202 when it accepts the request and posts to the channel
- * afterwards, so "accepted" is all Daloy can know; a failure inside the flow shows in the flow's run history in Teams.
+ * afterwards, so "accepted" is all kymavo can know; a failure inside the flow shows in the flow's run history in Teams.
  */
 export async function teamsPost(urls: ProviderUrls, webhookUrl: string, text: string) {
   const url = teamsWebhookUrl(urls, webhookUrl);
@@ -871,7 +871,7 @@ export async function teamsPost(urls: ProviderUrls, webhookUrl: string, text: st
   if (res.status === 401 || res.status === 403) {
     throw new ProviderError("The Teams workflow only accepts signed-in callers. In the workflow's trigger, set Who can trigger the flow to Anyone, or ask your Teams administrator.", "permission");
   }
-  if (res.status === 429) throw new ProviderError("Teams is limiting requests right now. Daloy will try again.", "quota", retryAfter(res.headers));
+  if (res.status === 429) throw new ProviderError("Teams is limiting requests right now. kymavo will try again.", "quota", retryAfter(res.headers));
   if (res.status >= 500) throw new ProviderError(`Teams answered ${res.status}.`, "ambiguous");
   throw new ProviderError(`Teams rejected the card (${res.status}). Check that the workflow posts the card it receives.`, "invalid");
 }
@@ -911,7 +911,7 @@ export async function unismsSend(urls: ProviderUrls, secretKey: string, sms: Uni
     true,
     "UniSMS",
   );
-  if (res.status === 429) throw new ProviderError("UniSMS is limiting requests right now. Daloy will try again.", "quota", retryAfter(res.headers));
+  if (res.status === 429) throw new ProviderError("UniSMS is limiting requests right now. kymavo will try again.", "quota", retryAfter(res.headers));
   if (res.status === 401 || res.status === 403) {
     throw new ProviderError("UniSMS rejected the secret key or account access. Check your UniSMS credentials in Apps.", "auth");
   }
@@ -926,7 +926,7 @@ export async function unismsSend(urls: ProviderUrls, secretKey: string, sms: Uni
         : undefined);
     const id = typeof rawId === "string" || typeof rawId === "number" ? String(rawId).trim() : "";
     if (!id) {
-      throw new ProviderError("UniSMS returned an unexpected response without a message ID, so Daloy cannot tell whether the SMS went through.", "ambiguous");
+      throw new ProviderError("UniSMS returned an unexpected response without a message ID, so kymavo cannot tell whether the SMS went through.", "ambiguous");
     }
     return { id, recipient: phone.value, senderId, sent: true };
   }

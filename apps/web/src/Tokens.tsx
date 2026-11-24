@@ -89,7 +89,7 @@ export function TokensPage() {
         <section role="status" className="wk-card wk-created">
           <div className="wk-body">
             <h2 className="wk-card-title">{t("Token created for {name}", { name: created.name })}</h2>
-            <p><b>{t("Copy the token now. You will not see it again.")}</b> {t("Daloy keeps only a hash, so a lost token cannot be recovered. Create a new one instead.")}</p>
+            <p><b>{t("Copy the token now. You will not see it again.")}</b> {t("kymavo keeps only a hash, so a lost token cannot be recovered. Create a new one instead.")}</p>
             <div className="wk-copyrow">
               <pre className="wk-token" ref={tokenBox} aria-label={t("New token")}>{created.token}</pre>
               <button type="button" className="wk-button blue" onClick={() => void copy()}>{t("Copy token")}</button>

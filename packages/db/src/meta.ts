@@ -169,7 +169,7 @@ export type MetaEcho = { channel: MetaChannel; guestId: string; messageId: strin
 
 /**
  * Messages the connected Page or Instagram account sent (is_echo), for the conversation of the guest they went to.
- * ours is true when the echo carries Daloy's metadata mark; anything else is a person replying from the inbox.
+ * ours is true when the echo carries kymavo's metadata mark; anything else is a person replying from the inbox.
  */
 export function parseMetaEchoes(body: unknown, dest: Partial<MetaDestination> | null | undefined): MetaEcho[] {
   if (!body || typeof body !== "object" || !dest) return [];
@@ -436,7 +436,7 @@ function metaFailure(res: Reply, write: boolean): ProviderError {
     return new ProviderError("Past Meta's 24-hour reply window. Reply directly from your Facebook Page or Instagram inbox.", "invalid");
   }
   if (res.status === 429 || code === 4 || code === 17 || code === 613) {
-    return new ProviderError("Meta is limiting requests right now. Daloy will try again.", "quota", retryAfter(res.headers));
+    return new ProviderError("Meta is limiting requests right now. kymavo will try again.", "quota", retryAfter(res.headers));
   }
   if (res.status >= 500) {
     return new ProviderError(`Meta answered ${res.status}.`, write ? "ambiguous" : "unavailable");
@@ -481,7 +481,7 @@ export async function metaSend(
       body: JSON.stringify({
         recipient: { id: msg.recipientId },
         messaging_type: "RESPONSE",
-        // Comes back on the echo, so Daloy knows its own reply from a staff reply (decision 0115).
+        // Comes back on the echo, so kymavo knows its own reply from a staff reply (decision 0115).
         message: {
           text: msg.text,
           metadata: OWN_ECHO_METADATA,
@@ -497,7 +497,7 @@ export async function metaSend(
   if (res.status !== 200) throw metaFailure(res, true);
   const messageId = typeof res.body.message_id === "string" ? res.body.message_id.trim() : "";
   if (!messageId) {
-    throw new ProviderError("Meta returned an unexpected response without a message ID, so Daloy cannot tell whether the reply went through.", "ambiguous");
+    throw new ProviderError("Meta returned an unexpected response without a message ID, so kymavo cannot tell whether the reply went through.", "ambiguous");
   }
   return {
     recipientId: String(res.body.recipient_id ?? msg.recipientId),

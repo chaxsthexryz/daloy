@@ -87,7 +87,7 @@ export function smtpMailer(env: NodeJS.ProcessEnv = process.env): Mailer {
   return {
     host,
     transport: nodemailer.createTransport({ host, port, secure: port === 465, auth }),
-    from: env.SMTP_FROM ?? "Daloy <daloy@localhost>",
+    from: env.SMTP_FROM ?? "kymavo <daloy@localhost>",
   };
 }
 
@@ -230,8 +230,8 @@ async function sendWithGmailApi(db: Db, key: Buffer, deps: MailDeps, userId: str
     if (!(err instanceof ProviderError)) throw err;
     if (err.kind === "auth") {
       // A refused refresh marked the sender already; a second 401 after a fresh token marks it here.
-      await markSenderFailed(db, userId, "Gmail no longer accepts Daloy's access. Reconnect Gmail in Apps.");
-      throw new StepError("Gmail no longer accepts Daloy's access, so nothing was sent. Reconnect Gmail in Apps.", false, { cause: err, outcome: "not_sent" });
+      await markSenderFailed(db, userId, "Gmail no longer accepts kymavo's access. Reconnect Gmail in Apps.");
+      throw new StepError("Gmail no longer accepts kymavo's access, so nothing was sent. Reconnect Gmail in Apps.", false, { cause: err, outcome: "not_sent" });
     }
     if (err.kind === "quota") throw new StepError(`email failed: ${err.message}`, true, { cause: err, outcome: "throttled", retryAfterMs: err.retryAfterMs });
     if (err.kind === "unavailable") throw new StepError(`email failed: ${err.message}`, true, { cause: err, outcome: "not_sent" });

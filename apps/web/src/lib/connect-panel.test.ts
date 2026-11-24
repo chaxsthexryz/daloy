@@ -14,7 +14,7 @@ describe("ConnectPanel", () => {
   it("offers Connect with the outcome from the address, and keeps the paste form under Advanced", () => {
     const html = render(createElement(ConnectPanel, { slug: "trello", name: "Trello", configured: true, conn: null, label: "Account", outcome: "missing_scope", onChange, form: createElement("form", null, "PASTE FORM") }));
     expect(html).toContain("Connect Trello");
-    expect(html).toContain("Some of the permissions Daloy asked for were not allowed");
+    expect(html).toContain("Some of the permissions kymavo asked for were not allowed");
     expect(html).toMatch(/<details><summary>Advanced: use a key or token instead<\/summary><form>PASTE FORM<\/form><\/details>/);
     expect(render(createElement(ConnectPanel, { slug: "trello", name: "Trello", configured: true, conn: null, label: "Account", onChange }), "tl")).toContain("Ikonekta ang Trello");
   });

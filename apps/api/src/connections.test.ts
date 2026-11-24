@@ -321,7 +321,7 @@ describe("UniSMS", () => {
       await agent.post(`/workflows/${wf.id}/versions`).send({ definition: smsDef }).expect(201);
 
       process.env.UNISMS_SECRET_KEY = "unisms_synth_shared_op_key"; // gitleaks:allow
-      process.env.UNISMS_SENDER_ID = "Daloy";
+      process.env.UNISMS_SENDER_ID = "kymavo";
       await agent.post(`/workflows/${wf.id}/versions`).send({ definition: smsDef, publish: true }).expect(201);
     } finally {
       restore();

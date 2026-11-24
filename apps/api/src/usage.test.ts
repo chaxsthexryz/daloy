@@ -109,7 +109,7 @@ describe("live automation limit", () => {
     await live(agent, 5);
     const wf = await newWorkflow(agent);
     const res = await publish(agent, wf).expect(403);
-    expect(res.body.message).toBe("Your Business plan allows 5 live automations. Delete one, or ask Daloy to move you to a larger plan.");
+    expect(res.body.message).toBe("Your Business plan allows 5 live automations. Delete one, or ask kymavo to move you to a larger plan.");
     // A draft is free, and nothing was published.
     await agent.post(`/workflows/${wf}/versions`).send({ definition: manual }).expect(201);
     expect((await agent.get("/usage")).body.automations).toEqual({ live: 5, limit: 5 });
@@ -142,7 +142,7 @@ describe("schedule interval", () => {
     const { agent } = await owner("pilot");
     const wf = await newWorkflow(agent);
     const res = await publish(agent, wf, scheduled("*/5 * * * *")).expect(400);
-    expect(res.body.message).toBe("Your Pilot plan runs a schedule at most once every 60 minutes. Pick a less frequent schedule, or ask Daloy to move you to a larger plan.");
+    expect(res.body.message).toBe("Your Pilot plan runs a schedule at most once every 60 minutes. Pick a less frequent schedule, or ask kymavo to move you to a larger plan.");
     expect(await boss.getSchedules(SCHEDULE_QUEUE, wf)).toEqual([]);
     await publish(agent, wf, scheduled("0 9 * * 1")).expect(201);
   });

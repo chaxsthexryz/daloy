@@ -22,35 +22,35 @@ describe("Google Calendar card", () => {
   it("offers Connect with Google first, with one heading and the key and calendar id under Advanced", () => {
     const html = render(createElement(GoogleCalendarCard, { conn: null, configured: true, outcome: "declined", onChange }));
     expect(html).toContain(">Connect with Google</button>");
-    expect(html).toContain("use only the calendar Daloy creates");
+    expect(html).toContain("use only the calendar kymavo creates");
     expect(html).toContain("The permission request was declined");
     expect(html.match(/<h3/g)).toHaveLength(1);
     expect(html).toMatch(/<details><summary>Advanced: use a key or token instead<\/summary>.*Service account key file \(JSON\).*Calendar id.*<\/details>/s);
     expect(render(createElement(GoogleCalendarCard, { conn: null, configured: true, onChange }), "tl")).toContain("Ikonekta gamit ang Google");
   });
 
-  it("after a sign-in shows the calendar Daloy made, a test, and a way to make a new one, in both languages", () => {
-    const made = { ...oauth, destination: { calendarId: "x@group.calendar.google.com", title: "Daloy bookings" } };
+  it("after a sign-in shows the calendar kymavo made, a test, and a way to make a new one, in both languages", () => {
+    const made = { ...oauth, destination: { calendarId: "x@group.calendar.google.com", title: "kymavo bookings" } };
     const html = render(createElement(GoogleCalendarCard, { conn: made, configured: true, onChange }));
     expect(html).toContain("Account <strong>ana@clinic.example</strong>");
-    expect(html).toContain("<strong>Daloy bookings</strong>");
+    expect(html).toContain("<strong>kymavo bookings</strong>");
     expect(html).toContain("Add a test event");
-    expect(html).toContain("Create a new Daloy calendar");
+    expect(html).toContain("Create a new kymavo calendar");
     expect(html).toContain("Reconnect Google Calendar");
-    expect(render(createElement(GoogleCalendarCard, { conn: made, configured: true, onChange }), "tl")).toContain("Gumawa ng bagong Daloy calendar");
+    expect(render(createElement(GoogleCalendarCard, { conn: made, configured: true, onChange }), "tl")).toContain("Gumawa ng bagong kymavo calendar");
   });
 
   it("offers to create the calendar when the sign-in has none yet", () => {
     const html = render(createElement(GoogleCalendarCard, { conn: oauth, configured: true, onChange }));
-    expect(html).toContain("Create the Daloy bookings calendar");
+    expect(html).toContain("Create the kymavo bookings calendar");
     expect(html).not.toContain("Add a test event");
-    expect(render(createElement(GoogleCalendarCard, { conn: oauth, configured: true, onChange }), "tl")).toContain("Gumawa ng Daloy bookings calendar");
+    expect(render(createElement(GoogleCalendarCard, { conn: oauth, configured: true, onChange }), "tl")).toContain("Gumawa ng kymavo bookings calendar");
   });
 
   it("shows a service account connection with its label and no create button", () => {
     const html = render(createElement(GoogleCalendarCard, { conn: { ...oauth, authMethod: "service_account", account: "sa@x.iam.gserviceaccount.com", destination: { calendarId: "c@group.calendar.google.com", title: "Clinic" } }, configured: true, onChange }));
     expect(html).toContain("Service account <strong>sa@x.iam.gserviceaccount.com</strong>");
-    expect(html).not.toContain("Create a new Daloy calendar");
+    expect(html).not.toContain("Create a new kymavo calendar");
     expect(html).toContain("Calendar id");
   });
 });

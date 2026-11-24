@@ -72,10 +72,10 @@ export const periodOf = (kind: UsageKind, startedOn: string | null, today: strin
 const resetsOn = (kind: UsageKind, startedOn: string | null, today: string) => (monthly(kind) ? nextCycleStart(anchor(startedOn, today), today) : tomorrow(today));
 
 function quotaMessage(kind: UsageKind, limit: number, reset: string) {
-  if (kind === "ai") return `This office used its ${limit} AI actions for this month. They come back on ${longDate(reset)}, Manila time. To get more now, ask Daloy to move you to a larger plan.`;
+  if (kind === "ai") return `This office used its ${limit} AI actions for this month. They come back on ${longDate(reset)}, Manila time. To get more now, ask kymavo to move you to a larger plan.`;
   if (kind === "sms") {
-    if (limit === 0) return "SMS sending is not included on the Preview plan. Ask Daloy to move you to a paid plan.";
-    return `This office used its ${limit} SMS messages for this month. They come back on ${longDate(reset)}, Manila time. To get more now, ask Daloy to move you to a larger plan.`;
+    if (limit === 0) return "SMS sending is not included on the Preview plan. Ask kymavo to move you to a paid plan.";
+    return `This office used its ${limit} SMS messages for this month. They come back on ${longDate(reset)}, Manila time. To get more now, ask kymavo to move you to a larger plan.`;
   }
   if (kind === "mailbox") return `This office reached today's limit of ${limit} recipients through its Gmail or Outlook. Nothing was sent. Choose Send again after it resets (tomorrow, Manila time), or Stop.`;
   if (kind === "email") return `This office reached today's limit of ${limit} email recipients. Sending starts again tomorrow, Manila time. Press Retry on this run then.`;

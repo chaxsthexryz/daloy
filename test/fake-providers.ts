@@ -98,7 +98,7 @@ export async function startFakeProviders(port = 0) {
   const meta = {
     token: "",
     pageId: "100200300",
-    pageName: "Daloy Test Page",
+    pageName: "kymavo Test Page",
     revoked: false,
     messages: [] as { recipientId: string; text: string; messagingType: string; messageId: string; quickReplies?: { content_type: string; title: string; payload: string }[] }[],
     cdnFiles: new Map<string, { contentType: string; data: Buffer }>(),
@@ -704,7 +704,7 @@ export async function startFakeProviders(port = 0) {
       return answer(200, { ok: true, access_token: access, token_type: "bot", scope: c.scope.split(/[\s,]+/).filter(Boolean).join(","), bot_user_id: "U0BOT", app_id: "A0FAKE", team: { id: c.user.id, name: c.user.email }, authed_user: { id: "U0INSTALLER" } });
     }
     if (slackMethod === "auth.revoke") {
-      // The token comes as a form field (what Daloy sends) or as the bearer. app.revokeStatus other than 200 makes it answer ok false.
+      // The token comes as a form field (what kymavo sends) or as the bearer. app.revokeStatus other than 200 makes it answer ok false.
       const form = new URLSearchParams(raw);
       const token = form.get("token") ?? (req.headers.authorization ?? "").replace(/^Bearer /, "");
       if (oauth.v2!.revokeStatus !== 200 || !slack.installs.has(token)) return json(res, 200, { ok: false, error: "invalid_auth" });
@@ -824,7 +824,7 @@ export async function startFakeProviders(port = 0) {
       const databases = [{ id: notion.database, title: notion.title, titleProperty: notion.titleProperty }, ...notion.more];
       const known = (id: string | undefined) => databases.find((d) => d.id === (id ?? "").replace(/-/g, ""));
       const properties = (d: (typeof databases)[number]) => ({ [d.titleProperty]: { type: "title" }, Notes: { type: "rich_text" } });
-      if (req.method === "GET" && path === "/v1/users/me") return json(res, 200, { object: "user", id: notionUser?.id ?? "notion-static-bot", type: "bot", name: "Daloy", bot: { workspace_name: notion.workspace } });
+      if (req.method === "GET" && path === "/v1/users/me") return json(res, 200, { object: "user", id: notionUser?.id ?? "notion-static-bot", type: "bot", name: "kymavo", bot: { workspace_name: notion.workspace } });
       if (req.method === "POST" && path === "/v1/search") {
         // Like Notion, a database filter returns databases only; without it pages come back too.
         const q = JSON.parse(raw || "{}") as { filter?: { value?: string }; page_size?: number; start_cursor?: string };
@@ -938,7 +938,7 @@ export async function startFakeProviders(port = 0) {
     },
     /** A Google Docs template that these Google users picked (drive.file: only they may copy it). */
     addDocsTemplate: (id: string, name: string, text: string, editors: string[]) => docFiles.set(id, { name, text, editors: new Set(editors), parents: [], appProperties: {}, template: true }),
-    /** The documents Daloy copied, without the templates. */
+    /** The documents kymavo copied, without the templates. */
     docsCopies: () => [...docFiles].filter(([, f]) => !f.template).map(([id, f]) => ({ id, ...f, editors: [...f.editors] })),
     gmail,
     oauth,
@@ -959,11 +959,11 @@ export async function startFakeProviders(port = 0) {
       sheets.set(id, s);
       return s;
     },
-    /** A spreadsheet by id, such as one Daloy created through the API. */
+    /** A spreadsheet by id, such as one kymavo created through the API. */
     sheet: (id: string) => sheets.get(id),
-    /** A Drive folder by id, such as one Daloy created through the API. */
+    /** A Drive folder by id, such as one kymavo created through the API. */
     driveFolder: (id: string) => driveFolders.get(id),
-    /** A calendar by id, such as one Daloy created through the API. */
+    /** A calendar by id, such as one kymavo created through the API. */
     calendar: (id: string) => calendars.get(id),
     addCalendar: (id: string, title: string, editors: string[]) => {
       const c = { title, editors: new Set(editors), events: new Map<string, CalendarEvent>() };

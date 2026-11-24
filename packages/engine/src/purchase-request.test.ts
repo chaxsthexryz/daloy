@@ -38,9 +38,9 @@ describe("purchase request template", () => {
   it("previews every message with a sample reference", () => {
     const p = previewPurchaseRequest({ ...answers, outlook: true, teams: true }, SAMPLE_PURCHASE);
     expect(p.messages.map((m) => m.title)).toContain("Email to purchasing, once approved");
-    expect(p.messages.find((m) => m.title.startsWith("Approval"))).toMatchObject({ to: "boss@example.com", via: "Daloy approval link" });
+    expect(p.messages.find((m) => m.title.startsWith("Approval"))).toMatchObject({ to: "boss@example.com", via: "kymavo approval link" });
     expect(p.messages.find((m) => m.title.startsWith("Email to purchasing"))).toMatchObject({ to: "buy@example.com", via: "Outlook", subject: "Approved purchase PUR-SAMPLE: Ergonomic chair for the front desk" });
-    expect(p.teamsMessage).toBe("Purchase request PUR-SAMPLE was approved: Ergonomic chair for the front desk\nPurchasing has the details. Decisions are made in Daloy by the named approver.");
+    expect(p.teamsMessage).toBe("Purchase request PUR-SAMPLE was approved: Ergonomic chair for the front desk\nPurchasing has the details. Decisions are made in kymavo by the named approver.");
   });
 
   it("keeps saved office request setups valid and tells the two templates apart", () => {

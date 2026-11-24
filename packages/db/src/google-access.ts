@@ -20,7 +20,7 @@ export function withGoogle<T>(db: Db, key: Buffer, urls: ProviderUrls, workspace
 
 /**
  * A drive.file access token for the Google Picker in the owner's browser (plan 6.1, open question 6). Refreshed first,
- * so the page gets close to Google's full hour. It reaches only files Daloy created or the owner picked. Never logged.
+ * so the page gets close to Google's full hour. It reaches only files kymavo created or the owner picked. Never logged.
  */
 export async function pickerToken(db: Db, key: Buffer, urls: ProviderUrls, workspaceId: string, provider: GoogleApp, conn: GoogleConnection) {
   const def = oauthProvider(provider);
@@ -29,7 +29,7 @@ export async function pickerToken(db: Db, key: Buffer, urls: ProviderUrls, works
   return { accessToken, expiresAt: readTokenBlob(conn.credential).accessExpiresAt };
 }
 
-/** Creates a spreadsheet in the owner's Drive. Under drive.file Daloy may use it because Daloy created it. */
+/** Creates a spreadsheet in the owner's Drive. Under drive.file kymavo may use it because kymavo created it. */
 export async function createSpreadsheet(urls: ProviderUrls, auth: GoogleAuth, title: string) {
   const body = await sheetsApi(urls, auth, "/v4/spreadsheets", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ properties: { title } }) }, false);
   const spreadsheetId = String(body.spreadsheetId ?? "");

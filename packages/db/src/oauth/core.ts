@@ -58,7 +58,7 @@ export type OAuthProvider = {
   client: (urls: ProviderUrls) => OAuthClient | undefined;
   authorizeUrl: (urls: ProviderUrls) => string;
   tokenUrl: (urls: ProviderUrls) => string;
-  /** Undefined: the provider has no revoke call Daloy can use, so the page says where to remove access. */
+  /** Undefined: the provider has no revoke call kymavo can use, so the page says where to remove access. */
   revokeUrl?: (urls: ProviderUrls) => string;
   /** Notion revokes an access token. Other providers prefer the refresh token when there is one. */
   revokeToken?: "access";
@@ -100,7 +100,7 @@ export type OAuthProvider = {
   store?: GrantStore;
 };
 
-/** Scopes Daloy must never ask for: Google restricted scopes need a paid security assessment (plan section 9). */
+/** Scopes kymavo must never ask for: Google restricted scopes need a paid security assessment (plan section 9). */
 export const FORBIDDEN_SCOPES = [
   "https://mail.google.com/",
   "https://www.googleapis.com/auth/gmail.readonly",
@@ -217,16 +217,16 @@ async function tokenRequest(def: OAuthProvider, urls: ProviderUrls, params: Reco
       scope: typeof b.scope === "string" ? b.scope : undefined,
     };
   }
-  if (res.status === 429) throw new ProviderError(`${def.name} sign-in is limiting requests right now. Daloy will try again.`, "quota", retryAfter(res.headers));
-  if (res.status >= 500) throw new ProviderError(`${def.name} sign-in answered ${res.status}. Daloy will try again.`, "unavailable");
+  if (res.status === 429) throw new ProviderError(`${def.name} sign-in is limiting requests right now. kymavo will try again.`, "quota", retryAfter(res.headers));
+  if (res.status >= 500) throw new ProviderError(`${def.name} sign-in answered ${res.status}. kymavo will try again.`, "unavailable");
   if (res.status === 200) throw new ProviderError(`${def.name} sign-in answered without a bearer access token.`, "invalid");
   const error = String(b.error ?? "");
   if (error === "invalid_client") throw new ProviderError(`${def.name} rejected this installation's app settings (client id or secret).`, "invalid");
   if (def.outcome(error, String(b.error_description ?? "")) === "admin_required") {
-    throw new ProviderError(`Your organization now requires an administrator to approve Daloy. Ask them to approve it, then reconnect ${def.name}.`, "auth");
+    throw new ProviderError(`Your organization now requires an administrator to approve kymavo. Ask them to approve it, then reconnect ${def.name}.`, "auth");
   }
   // invalid_grant (expired, revoked or reused), interaction_required, consent withdrawn.
-  throw new ProviderError(`${def.name} no longer accepts Daloy's access. It may have been revoked or expired. Reconnect ${def.name}.`, "auth");
+  throw new ProviderError(`${def.name} no longer accepts kymavo's access. It may have been revoked or expired. Reconnect ${def.name}.`, "auth");
 }
 
 /** Granted scopes cover every required one. A provider may name a scope with its resource prefix (Microsoft). No scope field: granted as asked. */
@@ -249,7 +249,7 @@ export const codeTokens = (def: OAuthProvider, urls: ProviderUrls, code: string,
 export async function finishFlow(db: Db, key: Buffer, urls: ProviderUrls, publicUrl: string, def: OAuthProvider, workspaceId: string, code: string, verifier: string | undefined): Promise<"connected" | "missing_scope"> {
   const t = await codeTokens(def, urls, code, verifier, redirectUri(publicUrl, def));
   if (!grantedEnough(def, t.scope)) return "missing_scope";
-  if (def.refreshTokens && !t.refreshToken) throw new ProviderError(`${def.name} did not give Daloy lasting access.`, "invalid");
+  if (def.refreshTokens && !t.refreshToken) throw new ProviderError(`${def.name} did not give kymavo lasting access.`, "invalid");
   const who = await def.identity(urls, t.accessToken);
   const blob: TokenBlob = { v: 1, accessToken: t.accessToken, accessExpiresAt: expiry(t), refreshToken: t.refreshToken, scope: t.scope ?? def.scopes.join(" ") };
   const store = storeOf(def);
@@ -351,7 +351,7 @@ async function refreshLocked(db: Db, key: Buffer, urls: ProviderUrls, workspaceI
         await store.refused(tx, workspaceId, row.iv, err.message);
         return { refused: err };
       };
-      if (!blob.refreshToken) return refuse(new ProviderError(`${def.name} no longer accepts Daloy's access. Reconnect ${def.name}.`, "auth"));
+      if (!blob.refreshToken) return refuse(new ProviderError(`${def.name} no longer accepts kymavo's access. Reconnect ${def.name}.`, "auth"));
       let used = blob.refreshToken;
       let t: TokenAnswer;
       try {
@@ -367,7 +367,7 @@ async function refreshLocked(db: Db, key: Buffer, urls: ProviderUrls, workspaceI
           throw again;
         }
       }
-      if (!grantedEnough(def, t.scope)) return refuse(new ProviderError(`${def.name} no longer grants the permissions Daloy needs. Reconnect ${def.name}.`, "auth"));
+      if (!grantedEnough(def, t.scope)) return refuse(new ProviderError(`${def.name} no longer grants the permissions kymavo needs. Reconnect ${def.name}.`, "auth"));
       const next: TokenBlob = {
         v: 1,
         accessToken: t.accessToken,
@@ -382,7 +382,7 @@ async function refreshLocked(db: Db, key: Buffer, urls: ProviderUrls, workspaceI
       return { held: { credential: plaintext, revision: e.iv } };
     });
   } catch (err) {
-    if (lockTimedOut(err)) throw new ProviderError(`${def.name} access is being renewed by another task. Daloy will try again.`, "unavailable");
+    if (lockTimedOut(err)) throw new ProviderError(`${def.name} access is being renewed by another task. kymavo will try again.`, "unavailable");
     throw err;
   }
   if ("refused" in out) throw out.refused;
@@ -450,7 +450,7 @@ export async function keepOAuthAlive(db: Db, key: Buffer, urls: ProviderUrls, de
 }
 
 /**
- * Disconnect an OAuth connection: delete (or, for Gmail, block) the grant first, so it never looks disconnected in Daloy while still usable,
+ * Disconnect an OAuth connection: delete (or, for Gmail, block) the grant first, so it never looks disconnected in kymavo while still usable,
  * then ask the provider to revoke (5 seconds). revoked is null when the provider has no revoke call, false when it failed.
  */
 export async function disconnectOAuth(db: Db, key: Buffer, urls: ProviderUrls, workspaceId: string, def: OAuthProvider): Promise<{ removed: boolean; revoked: boolean | null }> {

@@ -7,7 +7,7 @@ import { OFFICE_REQUEST, setupInput } from "./office-request";
 
 /**
  * "Purchase request with a named approver": the Microsoft office template from roadmap phase 5 (decision 0023).
- * An employee asks to buy something, gets a reference, and one named member decides in Daloy (decision 0022).
+ * An employee asks to buy something, gets a reference, and one named member decides in kymavo (decision 0022).
  * An approved request goes to purchasing by email, optionally from the office's Outlook mailbox and with a note in a
  * Teams channel. Without Outlook and Teams it runs on the installation's mail server, so the local demo needs neither.
  */
@@ -55,7 +55,7 @@ export function purchaseRequestDefinition(a: PurchaseRequestAnswers, language: L
     ),
     // The channel sees the reference and the item only: no name, cost or reason. It cannot approve anything.
     ...(a.teams
-      ? [{ id: "post_to_teams", type: "teams" as const, config: { text: "Purchase request {{trigger.reference}} was approved: {{trigger.summary}}\nPurchasing has the details. Decisions are made in Daloy by the named approver." } }]
+      ? [{ id: "post_to_teams", type: "teams" as const, config: { text: "Purchase request {{trigger.reference}} was approved: {{trigger.summary}}\nPurchasing has the details. Decisions are made in kymavo by the named approver." } }]
       : []),
     toRequester("tell_approved", "Your purchase request {{trigger.reference}} was approved", `${a.approver} approved your request for {{trigger.summary}}. Purchasing has it now.`),
   ];
@@ -131,7 +131,7 @@ export function previewPurchaseRequest(answers: PurchaseRequestAnswers, sample: 
       messages.push({ title: TITLES[s.id]!, via: s.type === "outlook" ? "Outlook" : "Email", to: text(s.config.to), subject: text(s.config.subject), text: text(s.config.text) });
     }
     if (s.type === "approval") {
-      messages.push({ title: TITLES[s.id]!, via: "Daloy approval link", to: s.config.approver!, subject: text(s.config.subject), text: `${text(s.config.message)}\n\n(Approve or reject link, for ${s.config.approver} signed in)` });
+      messages.push({ title: TITLES[s.id]!, via: "kymavo approval link", to: s.config.approver!, subject: text(s.config.subject), text: `${text(s.config.message)}\n\n(Approve or reject link, for ${s.config.approver} signed in)` });
     }
   }
   return { reference, messages, ...(teamsMessage ? { teamsMessage } : {}) };

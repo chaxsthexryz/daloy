@@ -1,11 +1,11 @@
 import { expect, test } from "@playwright/test";
 
-// Decision 0064: Connect with Google for Calendar, against the fake Google OAuth app in e2e/global-setup.ts. Daloy makes
-// its own "Daloy bookings" calendar after consent, so the owner picks and types nothing.
+// Decision 0064: Connect with Google for Calendar, against the fake Google OAuth app in e2e/global-setup.ts. kymavo makes
+// its own "kymavo bookings" calendar after consent, so the owner picks and types nothing.
 type FakeEvent = { id: string; status: string; summary?: string };
 const events = async () => ((await (await fetch(`${process.env.E2E_PROVIDERS_URL}/__control`)).json()) as { calendarEvents: FakeEvent[] }).calendarEvents;
 
-test("an owner connects Calendar with Google, gets the Daloy bookings calendar, adds a test event and disconnects", async ({ page }) => {
+test("an owner connects Calendar with Google, gets the kymavo bookings calendar, adds a test event and disconnects", async ({ page }) => {
   page.on("dialog", (d) => void d.accept());
   await page.goto("/");
   await page.getByRole("button", { name: "Create an account", exact: true }).click();
@@ -17,24 +17,24 @@ test("an owner connects Calendar with Google, gets the Daloy bookings calendar, 
   await page.getByRole("link", { name: "Apps" }).first().click();
   await page.getByRole("button", { name: "Connect Google Calendar" }).click();
   await expect(page.getByText("Advanced: use a key or token instead")).toBeVisible();
-  await expect(page.getByText("use only the calendar Daloy creates")).toBeVisible();
+  await expect(page.getByText("use only the calendar kymavo creates")).toBeVisible();
   // The fake consent page answers at once and sends the browser back through the shared callback.
   await page.getByRole("button", { name: "Connect with Google" }).click();
   await expect(page).toHaveURL(/#\/apps\/google-calendar-connected$/);
   await expect(page.getByText("Google Calendar is connected.")).toBeVisible();
   await expect(page.getByText("owner@clinic-e2e.example")).toBeVisible();
   await expect(page.getByText("Events go to")).toBeVisible();
-  await expect(page.getByText("Daloy bookings")).toBeVisible();
+  await expect(page.getByText("kymavo bookings")).toBeVisible();
 
-  const before = (await events()).filter((e) => e.summary === "Test event from Daloy").length;
+  const before = (await events()).filter((e) => e.summary === "Test event from kymavo").length;
   await page.getByRole("button", { name: "Add a test event" }).click();
   await expect(page.getByText(/Google Calendar accepted a test event/)).toBeVisible();
-  expect((await events()).filter((e) => e.summary === "Test event from Daloy")).toHaveLength(before + 1);
+  expect((await events()).filter((e) => e.summary === "Test event from kymavo")).toHaveLength(before + 1);
 
-  // Reconnecting with the same Google account keeps the calendar Daloy made.
+  // Reconnecting with the same Google account keeps the calendar kymavo made.
   await page.getByRole("button", { name: "Reconnect Google Calendar" }).click();
   await expect(page).toHaveURL(/#\/apps\/google-calendar-connected$/);
-  await expect(page.getByText("Daloy bookings")).toBeVisible();
+  await expect(page.getByText("kymavo bookings")).toBeVisible();
 
   await page.getByRole("button", { name: "Disconnect" }).click();
   await expect(page.getByRole("button", { name: "Connect with Google" })).toBeVisible();

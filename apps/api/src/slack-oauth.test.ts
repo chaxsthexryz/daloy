@@ -79,7 +79,7 @@ async function member(workspaceId: string, role: "operator" | "approver" | "requ
   await db.insert(sessions).values({ idHash: sha256(token), userId: u!.id, expiresAt: new Date(Date.now() + 3_600_000) });
   return { agent: request.agent(server).set("Cookie", `daloy_session=${token}`), id: u!.id };
 }
-/** Daloy's start, then Slack's consent page; returns the callback path Slack sends the browser to. */
+/** kymavo's start, then Slack's consent page; returns the callback path Slack sends the browser to. */
 async function consentBack(agent: Agent) {
   const { body } = await agent.post("/settings/connections/slack/oauth/start").expect(200);
   const back = new URL((await fetch(body.url as string, { redirect: "manual" })).headers.get("location")!);

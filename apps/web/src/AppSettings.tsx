@@ -49,7 +49,7 @@ function PlanAndUsage({ phone }: { phone: boolean }) {
           {u.minScheduleMinutes !== null && <li><span>{t("Shortest schedule: every {minutes} minutes", { minutes: u.minScheduleMinutes })}</span></li>}
         </ul>
         <UsageNotice usage={u} />
-        {u.plan && <p className="wk-muted"><Text>To change your plan, message the Daloy operator. Payment is monthly by GCash or Maya.</Text></p>}
+        {u.plan && <p className="wk-muted"><Text>To change your plan, message the kymavo operator. Payment is monthly by GCash or Maya.</Text></p>}
       </div>
     </Card>
   );
@@ -58,7 +58,7 @@ function PlanAndUsage({ phone }: { phone: boolean }) {
 const OFFICE: [href: string, name: string, note: string][] = [
   ["#/apps", "Apps", "Gmail, Outlook, Google Sheets, Slack and Teams"],
   ["#/settings/business", "Business", "your business details and the website inquiry form"],
-  ["#/team", "Team", "who can use Daloy and what each person may do"],
+  ["#/team", "Team", "who can use kymavo and what each person may do"],
   ["#/resources", "Resources", "rooms, people and tables that bookings reserve"],
   ["#/settings/ai", "AI model", "which model drafts and classifies, and its key"],
   ["#/tokens", "API tokens", "for MCP clients and scripts"],

@@ -49,7 +49,7 @@ const clearOperatorEnv = () => {
 };
 
 /** The server operator's UniSMS settings as the deployment sets them in env (decision 0100); the fake accepts only the operator key. */
-const operatorEnv = (senderId = "Daloy") => {
+const operatorEnv = (senderId = "kymavo") => {
   process.env.UNISMS_SECRET_KEY = SYNTH_OP_KEY;
   process.env.UNISMS_SENDER_ID = senderId;
   fake.unisms.secretKey = SYNTH_OP_KEY;
@@ -82,10 +82,10 @@ afterEach(() => {
 
 describe("unismsSend provider client", () => {
   it("sends Basic auth with JSON payload and normalizes PH mobile numbers", async () => {
-    const out = await unismsSend(urls, SYNTH_WS_KEY, { recipient: "09171234567", content: "Hello from Daloy", senderId: "LimDental", metadata: { reference: "REF-1" } });
+    const out = await unismsSend(urls, SYNTH_WS_KEY, { recipient: "09171234567", content: "Hello from kymavo", senderId: "LimDental", metadata: { reference: "REF-1" } });
     expect(out).toMatchObject({ recipient: "+639171234567", senderId: "LimDental", sent: true });
     expect(fake.unisms.messages).toEqual([
-      expect.objectContaining({ recipient: "+639171234567", content: "Hello from Daloy", senderId: "LimDental", metadata: { reference: "REF-1" } }),
+      expect.objectContaining({ recipient: "+639171234567", content: "Hello from kymavo", senderId: "LimDental", metadata: { reference: "REF-1" } }),
     ]);
   });
 
@@ -173,11 +173,11 @@ describe("UniSMS delivery worker", () => {
   it("is configured only when both env values are set", () => {
     expect(unismsConfig({})).toBeNull();
     expect(unismsConfig({ UNISMS_SECRET_KEY: SYNTH_OP_KEY })).toBeNull();
-    expect(unismsConfig({ UNISMS_SENDER_ID: "Daloy" })).toBeNull();
-    expect(unismsConfig({ UNISMS_SECRET_KEY: "  ", UNISMS_SENDER_ID: "Daloy" })).toBeNull();
-    expect(unismsConfig({ UNISMS_SECRET_KEY: ` ${SYNTH_OP_KEY} `, UNISMS_SENDER_ID: " Daloy " })).toEqual({ secretKey: SYNTH_OP_KEY, senderId: "Daloy" });
+    expect(unismsConfig({ UNISMS_SENDER_ID: "kymavo" })).toBeNull();
+    expect(unismsConfig({ UNISMS_SECRET_KEY: "  ", UNISMS_SENDER_ID: "kymavo" })).toBeNull();
+    expect(unismsConfig({ UNISMS_SECRET_KEY: ` ${SYNTH_OP_KEY} `, UNISMS_SENDER_ID: " kymavo " })).toEqual({ secretKey: SYNTH_OP_KEY, senderId: "kymavo" });
     // The old switch no longer matters: the two values are enough.
-    expect(unismsConfig({ UNISMS_SECRET_KEY: SYNTH_OP_KEY, UNISMS_SENDER_ID: "Daloy", SHARED_UNISMS_KEY: "off" })).not.toBeNull();
+    expect(unismsConfig({ UNISMS_SECRET_KEY: SYNTH_OP_KEY, UNISMS_SENDER_ID: "kymavo", SHARED_UNISMS_KEY: "off" })).not.toBeNull();
   });
 
   it("refuses a preview workspace before sending, even with the env set", async () => {

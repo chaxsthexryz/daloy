@@ -1,10 +1,10 @@
-# Daloy page-by-page redesign handoff
+# kymavo page-by-page redesign handoff
 
 Updated 20 November 2026, Manila. Planning baseline: `design/paper-redesign` at `14f457d`. This ledger covers the Doop round. The [earlier console redesign ledger](console-redesign-phases.md) records a separate round and its test results.
 
 ## Start here
 
-**Next task: A0, shared console navigation.** B1, B2, A1 and A7 have design approval. In Doop, Ready for dev means the owner approved that frame. B1 and B2 are implemented on the design branch. For the other rows, compare the current page to the shared Daloy design and record whether it needs a new frame, a targeted change, or only verification. The sequence below is a proposed delivery order.
+**Next task: A0, shared console navigation.** B1, B2, A1 and A7 have design approval. In Doop, Ready for dev means the owner approved that frame. B1 and B2 are implemented on the design branch. For the other rows, compare the current page to the shared kymavo design and record whether it needs a new frame, a targeted change, or only verification. The sequence below is a proposed delivery order.
 
 | Owner decision | Reference |
 | --- | --- |
@@ -180,7 +180,7 @@ Beyond the current code: dialogs where the code uses `confirm()` or `prompt()` (
 | E10 | Approval landing and decision | `#/answer/:token` to `/approvals/:token`, `App.tsx`, `apps/api/src/approvals.ts` | Verify signed-in handoff, named approver, approve/reject, expiry and already-decided states. |
 | E11 | Browser demo | `apps/web/demo/index.html`, `apps/web/src/demo/Demo.tsx` | Walk the synthetic demo through its stages and restart. Keep the public demo separate from workspace data. |
 
-**Approved Phase 6 designs, 20 November 2026.** Every frame below is Ready for dev in Doop. E1 uses option B, the split layout, and E2 to E5 follow it. Public pages (E7 to E10) carry the business brand kit: logo, accent and profile name, never the Daloy brand. Each public page also has a second sample brand and a no-brand version.
+**Approved Phase 6 designs, 20 November 2026.** Every frame below is Ready for dev in Doop. E1 uses option B, the split layout, and E2 to E5 follow it. Public pages (E7 to E10) carry the business brand kit: logo, accent and profile name, never the kymavo brand. Each public page also has a second sample brand and a no-brand version.
 
 | ID | Desktop | Phone |
 | --- | --- | --- |

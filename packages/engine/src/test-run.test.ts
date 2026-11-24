@@ -48,7 +48,7 @@ describe("choiceProblems", () => {
     expect(choiceProblems(def, choices, "mock")).toEqual([
       'choices.classify: "nope" is not a label of this classify step',
       "choices.sum: only a classify step takes a label",
-      "choices.gate: only a step that reaches outside Daloy can be set to fail",
+      "choices.gate: only a step that reaches outside kymavo can be set to fail",
       "choices.log: only an approval step takes a decision",
       'choices.missing: there is no step "missing"',
     ]);

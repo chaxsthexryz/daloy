@@ -9,12 +9,12 @@ export const telegramTranslations: Record<string, string> = {
   "Connect Telegram in Apps and turn on Receive messages": "I-connect ang Telegram sa Apps at i-on ang Receive messages",
   "Telegram photo or PDF": "Photo o PDF mula sa Telegram",
   "Receive messages: start automations when someone messages this bot": "Receive messages: magsimula ang mga automation kapag may nag-message sa bot na ito",
-  "Telegram then sends the bot's messages to Daloy, so the chat list above stays empty until you turn this off. Needs Daloy on a public https address.":
-    "Ipapadala na ng Telegram sa Daloy ang mga mensahe ng bot, kaya walang laman ang listahan ng chat sa itaas hangga't hindi mo ito ino-off. Kailangang nasa public https address ang Daloy.",
+  "Telegram then sends the bot's messages to kymavo, so the chat list above stays empty until you turn this off. Needs kymavo on a public https address.":
+    "Ipapadala na ng Telegram sa kymavo ang mga mensahe ng bot, kaya walang laman ang listahan ng chat sa itaas hangga't hindi mo ito ino-off. Kailangang nasa public https address ang kymavo.",
   "Receiving messages: automations with a Telegram message trigger start when someone messages this bot.":
     "Tumatanggap ng mensahe: nagsisimula ang mga automation na may Telegram message trigger kapag may nag-message sa bot na ito.",
-  "Telegram did not accept Daloy's address, so messages to the bot do not arrive. Telegram only sends to a public https address. Save again once Daloy runs on one.":
-    "Hindi tinanggap ng Telegram ang address ng Daloy, kaya hindi dumarating ang mga mensahe sa bot. Sa public https address lang nagpapadala ang Telegram. I-save ulit kapag nasa ganoong address na ang Daloy.",
+  "Telegram did not accept kymavo's address, so messages to the bot do not arrive. Telegram only sends to a public https address. Save again once kymavo runs on one.":
+    "Hindi tinanggap ng Telegram ang address ng kymavo, kaya hindi dumarating ang mga mensahe sa bot. Sa public https address lang nagpapadala ang Telegram. I-save ulit kapag nasa ganoong address na ang kymavo.",
   // Builder
   "telegram_message": "Mensahe sa Telegram bot",
   "When someone messages your Telegram bot": "Kapag may nag-message sa Telegram bot mo",

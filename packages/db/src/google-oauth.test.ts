@@ -146,9 +146,9 @@ describe("Sheets through the OAuth token", () => {
     const ws = await workspace();
     await connectGoogle(ws.id, ANA);
     const c = await conn(ws.id);
-    const made = await withGoogle(db, key, urls, ws.id, "google_sheets", c, (auth) => createSpreadsheet(urls, auth, "Daloy requests"));
-    expect(made).toMatchObject({ title: "Daloy requests", tabs: ["Sheet1"] });
-    expect(await withGoogle(db, key, urls, ws.id, "google_sheets", c, (auth) => sheetInfo(urls, auth, made.spreadsheetId))).toEqual({ title: "Daloy requests", tabs: ["Sheet1"] });
+    const made = await withGoogle(db, key, urls, ws.id, "google_sheets", c, (auth) => createSpreadsheet(urls, auth, "kymavo requests"));
+    expect(made).toMatchObject({ title: "kymavo requests", tabs: ["Sheet1"] });
+    expect(await withGoogle(db, key, urls, ws.id, "google_sheets", c, (auth) => sheetInfo(urls, auth, made.spreadsheetId))).toEqual({ title: "kymavo requests", tabs: ["Sheet1"] });
     const notPicked = newSheet(["someone@else.example"]);
     await expect(withGoogle(db, key, urls, ws.id, "google_sheets", c, (auth) => sheetInfo(urls, auth, notPicked.id))).rejects.toMatchObject({ kind: "permission", message: expect.stringMatching(/pick the sheet again/) });
   });
@@ -239,15 +239,15 @@ describe("Drive through the OAuth token", () => {
     const ws = await workspace();
     await connectGoogle(ws.id, ANA, googleDrive);
     const c = await conn(ws.id, "google_drive");
-    const folder = await withGoogle(db, key, urls, ws.id, "google_drive", c, (auth) => createDriveFolder(urls, auth, "Daloy uploads"));
-    expect(fake.driveFolder(folder.folderId)).toMatchObject({ name: "Daloy uploads", sharedDriveId: null });
+    const folder = await withGoogle(db, key, urls, ws.id, "google_drive", c, (auth) => createDriveFolder(urls, auth, "kymavo uploads"));
+    expect(fake.driveFolder(folder.folderId)).toMatchObject({ name: "kymavo uploads", sharedDriveId: null });
     await setDestination(db, ws.id, "google_drive", folder);
     const runId = await createRun(db, ws.versionId, {});
     const file = { id: `00000000-0000-4000-8000-${String(++seq).padStart(12, "0")}`, field: "photo", name: "front.png", type: "png" as const, data: Buffer.from("png bytes") };
     await saveUploads(db, { userId: ws.id, runId, files: [file] });
     const d = await queueDelivery(db, { userId: ws.id, runId, stepId: "drive", provider: "google_drive", reference: "REQ-9", payload: { files: [{ id: file.id, name: file.name, type: file.type, size: file.data.length }] } });
     await deliver();
-    expect(await row(d.id)).toMatchObject({ state: "delivered", result: { folder: "Daloy uploads", count: 1 } });
+    expect(await row(d.id)).toMatchObject({ state: "delivered", result: { folder: "kymavo uploads", count: 1 } });
     expect(fake.driveFiles.filter((f) => f.parent === folder.folderId).map((f) => f.name)).toEqual(["REQ-9 front.png"]);
     // A picked folder in My Drive is fine for a Google sign-in; one never picked answers as not reachable.
     fake.addDriveFolder("my-drive-folder-01", "Patient files", [ANA.email], null);

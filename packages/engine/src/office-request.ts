@@ -59,7 +59,7 @@ export function officeRequestDefinition(answers: OfficeRequestAnswers, language:
     extra.push({ id: "add_to_sheet", type: "sheets", config: { columns } });
   }
   if (answers.slack) {
-    extra.push({ id: "post_to_slack", type: "slack", config: { text: "New office request {{trigger.reference}}: {{trigger.summary}}\nDetails are in Daloy under Requests." } });
+    extra.push({ id: "post_to_slack", type: "slack", config: { text: "New office request {{trigger.reference}}: {{trigger.summary}}\nDetails are in kymavo under Requests." } });
   }
   const chain = ["send_receipt", ...extra.map((s) => s.id)];
   return localizeGeneratedDefinition({

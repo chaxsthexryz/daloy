@@ -40,7 +40,7 @@ let other: ReturnType<typeof request.agent>;
 const mailSent: string[] = [];
 const mail: MailDeps = {
   installation: {
-    from: "Daloy <daloy@localhost>",
+    from: "kymavo <daloy@localhost>",
     // Records each message instead of sending it. Typed through the transport MailDeps expects.
     transport: {
       sendMail: async (msg: { subject?: string }) => {

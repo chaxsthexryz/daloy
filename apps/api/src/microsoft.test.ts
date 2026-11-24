@@ -53,7 +53,7 @@ async function signedIn() {
   return { agent, userId: user!.id };
 }
 
-/** Start in Daloy, follow Microsoft's answer back to the callback, and return where the callback sends the browser. */
+/** Start in kymavo, follow Microsoft's answer back to the callback, and return where the callback sends the browser. */
 async function consent(agent: ReturnType<typeof request.agent>) {
   const { body } = await agent.post("/settings/connections/outlook/start").expect(200);
   const back = (await fetch(body.url as string, { redirect: "manual" })).headers.get("location")!;
@@ -62,7 +62,7 @@ async function consent(agent: ReturnType<typeof request.agent>) {
 }
 
 describe("Outlook", () => {
-  it("shows the administrator link before the owner leaves Daloy, and connects the consenting mailbox", async () => {
+  it("shows the administrator link before the owner leaves kymavo, and connects the consenting mailbox", async () => {
     const { agent, userId } = await signedIn();
     const before = await agent.get("/settings/connections").expect(200);
     expect(before.body.outlook.configured).toBe(true);
@@ -89,7 +89,7 @@ describe("Outlook", () => {
     expect(await db.select().from(connections).where(eq(connections.userId, userId))).toEqual([]);
   });
 
-  it("lets an administrator approve without a Daloy session", async () => {
+  it("lets an administrator approve without a kymavo session", async () => {
     const res = await request(server).get("/settings/connections/outlook/callback?admin_consent=True&tenant=contoso").expect(302);
     expect(res.headers.location).toBe("/#/settings/business/outlook-admin_approved");
   });
@@ -115,7 +115,7 @@ describe("Outlook", () => {
     await consent(agent);
     fake.microsoft.sent.length = 0;
     expect((await agent.post("/settings/connections/outlook/test").expect(200)).body).toMatchObject({ ok: true });
-    expect(fake.microsoft.sent).toEqual([expect.objectContaining({ to: "ana@contoso.example", subject: "Test email from Daloy" })]);
+    expect(fake.microsoft.sent).toEqual([expect.objectContaining({ to: "ana@contoso.example", subject: "Test email from kymavo" })]);
     // The test rotated the refresh token; the success is still recorded (Astra, 283fa1a).
     expect((await agent.get("/settings/connections").expect(200)).body.connections[0].lastTestedAt).not.toBeNull();
 

@@ -49,12 +49,12 @@ describe("page shells", () => {
     expect(html).not.toContain("/brand/logo/");
     expect(html).not.toContain('class="ruled"');
   });
-  it("escapes the business name on the approval page and uses the Daloy mark without a brand", () => {
+  it("escapes the business name on the approval page and uses the kymavo mark without a brand", () => {
     const branded = approvalShell({ title: "Link", heading: "H", body: "", language: "en", brand });
     expect(branded).toContain("Sampaguita &lt;b&gt;");
     expect(branded).not.toContain("Sampaguita <b>");
     const plain = approvalShell({ title: "Link", heading: "H", body: "", language: "en", eyebrow: "Approval" });
-    expect(plain).toContain(">Daloy<");
+    expect(plain).toContain(">kymavo<");
     expect(plain).toContain("--accent:#1b45c9");
     expect(plain).toContain(">Approval<");
   });

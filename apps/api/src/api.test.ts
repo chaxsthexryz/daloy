@@ -273,7 +273,7 @@ describe("builder", () => {
       expect((await agent.get("/step-schemas").expect(200)).body.sms).toBe(false);
       process.env.UNISMS_SECRET_KEY = "unisms_synth_catalog_key"; // gitleaks:allow
       expect((await agent.get("/step-schemas").expect(200)).body.sms).toBe(false);
-      process.env.UNISMS_SENDER_ID = "Daloy";
+      process.env.UNISMS_SENDER_ID = "kymavo";
       expect((await agent.get("/step-schemas").expect(200)).body.sms).toBe(true);
     } finally {
       for (const [k, v] of Object.entries(saved)) {

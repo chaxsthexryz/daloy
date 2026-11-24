@@ -32,7 +32,7 @@ test("an owner connects Sheets with Google, creates and picks sheets, adds a tes
   await expect(page.getByText("owner@clinic-e2e.example")).toBeVisible();
 
   await page.getByRole("button", { name: "Create a sheet for me" }).click();
-  await expect(page.getByText("Rows go to Daloy requests, tab Sheet1.")).toBeVisible();
+  await expect(page.getByText("Rows go to kymavo requests, tab Sheet1.")).toBeVisible();
   const before = (await control()).sheetRows;
   await page.getByRole("button", { name: "Add a test row" }).click();
   await expect(page.getByText(/Google Sheets accepted a test row/)).toBeVisible();
@@ -42,7 +42,7 @@ test("an owner connects Sheets with Google, creates and picks sheets, adds a tes
   await page.evaluate(() => void ((window as unknown as PickWindow).nextPick = "e2e-unpicked-sheet-01"));
   await page.getByRole("button", { name: "Pick an existing sheet" }).click();
   await expect(page.getByRole("alert").filter({ hasText: "pick the sheet again" })).toBeVisible();
-  await expect(page.getByText("Rows go to Daloy requests, tab Sheet1.")).toBeVisible();
+  await expect(page.getByText("Rows go to kymavo requests, tab Sheet1.")).toBeVisible();
   expect(await page.evaluate(() => (window as unknown as PickWindow).pickedWith)).toEqual({ kind: "sheet", apiKey: "e2e-picker-key", appId: "000000000000", token: true });
 
   // A picked sheet: its real tabs become the tab list.
@@ -57,7 +57,7 @@ test("an owner connects Sheets with Google, creates and picks sheets, adds a tes
   await expect(page.getByText("owner@clinic-e2e.example")).toBeHidden();
 });
 
-test("an owner connects Drive with Google and lets Daloy create its uploads folder, or picks one in My Drive", async ({ page }) => {
+test("an owner connects Drive with Google and lets kymavo create its uploads folder, or picks one in My Drive", async ({ page }) => {
   page.on("dialog", (d) => void d.accept());
   await page.addInitScript(() => {
     (window as unknown as PickWindow).daloyPick = async () => "e2e-picked-folder-001";
@@ -73,8 +73,8 @@ test("an owner connects Drive with Google and lets Daloy create its uploads fold
   await page.getByRole("button", { name: "Connect Google Drive" }).click();
   await page.getByRole("button", { name: "Connect with Google" }).click();
   await expect(page.getByText("Google Drive is connected.")).toBeVisible();
-  await page.getByRole("button", { name: "Create a Daloy uploads folder" }).click();
-  await expect(page.getByText("Files go to Daloy uploads.")).toBeVisible();
+  await page.getByRole("button", { name: "Create a kymavo uploads folder" }).click();
+  await expect(page.getByText("Files go to kymavo uploads.")).toBeVisible();
   await page.getByRole("button", { name: "Pick a folder" }).click();
   await expect(page.getByText("Files go to Clinic scans.")).toBeVisible();
 });

@@ -162,7 +162,7 @@ it("connects the DeepSeek preset to DeepSeek's own API with the saved key and th
   expect(await aiConnection(db, key, user)).toMatchObject({ baseUrl: "https://api.deepseek.com", apiKey: "sk-test-deepseek", model: "deepseek-flash", extraBody: { thinking: { type: "disabled" } }, jsonMode: "object" });
 });
 
-// Daloy's AI jobs (label, summary, short draft, rewording) do not need thinking; off is faster and cheaper.
+// kymavo's AI jobs (label, summary, short draft, rewording) do not need thinking; off is faster and cheaper.
 it("turns DeepSeek thinking off", async () => {
   vi.stubEnv("LLM_PROVIDER", "openai");
   vi.stubEnv("LLM_BASE_URL", "https://api.deepseek.com");

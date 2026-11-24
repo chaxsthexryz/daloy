@@ -1,4 +1,4 @@
-/** Maximum rendered SMS length accepted by Daloy (4 concatenated GSM-7 / standard SMS segments). */
+/** Maximum rendered SMS length accepted by kymavo (4 concatenated GSM-7 / standard SMS segments). */
 export const SMS_MAX_CHARS = 670;
 
 /** UniSMS Sender ID: up to 11 ASCII letters, digits, spaces, hyphens or underscores, starting with a letter or digit. */

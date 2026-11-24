@@ -134,8 +134,8 @@ export function Shell({ user, hash, onSignOut, children }: { user: User; hash: s
           if (event.animationName === "rail-sheet-out") { setOpen(false); setClosing(false); }
         }}>
         <div className="sidebar-top">
-          <svg className="rail-brand" aria-label="Daloy" role="img"><use href="/navigation.svg#mark" /></svg>
-          <span className="sidebar-name rail-label">Daloy</span>
+          <svg className="rail-brand" aria-label="kymavo" role="img"><use href="/navigation.svg#mark" /></svg>
+          <span className="sidebar-name rail-label">kymavo</span>
           <button
             type="button"
             className="quiet rail-quick-jump"

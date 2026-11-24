@@ -93,7 +93,7 @@ function BrandKit({ name }: { name?: string | null }) {
   return (
     <section aria-labelledby="brand-h">
       <h2 id="brand-h"><Text>Logo and colour</Text></h2>
-      <p className="muted"><Text>Shown on your public forms and in the emails Daloy sends for you. Leave both empty to keep the default look.</Text></p>
+      <p className="muted"><Text>Shown on your public forms and in the emails kymavo sends for you. Leave both empty to keep the default look.</Text></p>
       <div className="field">
         <label htmlFor="b-logo"><Text>Logo (PNG, JPEG or WebP, up to 100 KB)</Text></label>
         <input id="b-logo" ref={file} className="file-input" type="file" accept="image/png,image/jpeg,image/webp" />
@@ -270,7 +270,7 @@ function InstallationNote({ data }: { data: Settings }) {
 
 function SenderLine({ sender }: { sender: Sender }) {
   const { t } = useLanguage();
-  const status = sender.status === "failed" && sender.authMethod === "oauth" ? "Google no longer accepts Daloy's access" : STATUS[sender.status];
+  const status = sender.status === "failed" && sender.authMethod === "oauth" ? "Google no longer accepts kymavo's access" : STATUS[sender.status];
   return (
     <p className="in-use">
       Gmail: <strong>{sender.address}</strong>
@@ -310,19 +310,19 @@ export function GmailCard({ data, google, outcome, onChange }: { data: Settings;
       conn={live && { account: live.address, status: live.status, lastError: live.lastError }}
       status={live && <>
         <p className="in-use">Gmail: <strong>{live.address}</strong> <span className="tag">{t(PILL[live.status])}</span></p>
-        {live.status !== "failed" && <p>{t(live.authMethod === "oauth" ? "Connected with Google. Daloy can send email as you. Daloy cannot read your mail." : "Connected with an app password.")}</p>}
+        {live.status !== "failed" && <p>{t(live.authMethod === "oauth" ? "Connected with Google. kymavo can send email as you. kymavo cannot read your mail." : "Connected with an app password.")}</p>}
       </>}
       outcome={outcome}
-      intro={!live && <p><Text>Google will ask you to let Daloy send email as you. Daloy cannot read your mail. Automations that receive email still connect their inbox with an app password.</Text></p>}
+      intro={!live && <p><Text>Google will ask you to let kymavo send email as you. kymavo cannot read your mail. Automations that receive email still connect their inbox with an app password.</Text></p>}
 
       disconnect={() => api("POST", "/settings/email/disconnect")}
-      removeHint="Daloy deleted its access to Gmail. If Google did not confirm it, or you made an app password for Daloy, remove Daloy in your Google account's security settings too."
+      removeHint="kymavo deleted its access to Gmail. If Google did not confirm it, or you made an app password for kymavo, remove kymavo in your Google account's security settings too."
       form={<GmailForm address={sender?.address ?? ""} title={t("Use an app password instead")} onSaved={async () => { setTest(null); await onChange(); }} />}
       onChange={onChange}
     >
       {!sender && <InstallationNote data={data} />}
       {live && <>
-        <p>{t(live.status === "failed" && live.authMethod === "oauth" ? "Google no longer accepts Daloy's access" : STATUS[live.status])}</p>
+        <p>{t(live.status === "failed" && live.authMethod === "oauth" ? "Google no longer accepts kymavo's access" : STATUS[live.status])}</p>
         {live.verifiedAt && <p>{t("Confirmed on {date}", { date: new Date(live.verifiedAt).toLocaleDateString(language === "tl" ? "fil-PH" : "en-PH") })}</p>}
         {data.profile?.replyTo && <p>{t("Replies go to {address}", { address: data.profile.replyTo })}</p>}
         {live.lastError && <p className="message error">{live.lastError}</p>}
@@ -389,7 +389,7 @@ function GmailForm({ address: initial, title, onSaved, onCancel }: { address: st
   return (
     <form onSubmit={save} aria-labelledby="gmail-form-h">
       <h3 id="gmail-form-h">{title}</h3>
-      <p><Text>Daloy sends as you with a Google app password, a 16-letter code that works for email only. Some work and school accounts do not offer them; ask your administrator.</Text></p>
+      <p><Text>kymavo sends as you with a Google app password, a 16-letter code that works for email only. Some work and school accounts do not offer them; ask your administrator.</Text></p>
       <ol className="numbered">
         <li><Text>Turn on 2-Step Verification in your Google account. Google offers app passwords only after that.</Text></li>
         <li>
@@ -523,7 +523,7 @@ function FormLink({ link, local, workflowId }: { link: string; local: boolean; w
       <p>
         {t("Inquiry form link:")} <code>{link}</code>
       </p>
-      {local && <p className="muted"><Text>This link works on this computer only. Customers need Daloy running on an address they can reach.</Text></p>}
+      {local && <p className="muted"><Text>This link works on this computer only. Customers need kymavo running on an address they can reach.</Text></p>}
       <div className="actions">
         <button type="button" onClick={() => void copy()}>
           {t("Copy inquiry form link")}

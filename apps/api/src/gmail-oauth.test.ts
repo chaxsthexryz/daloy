@@ -71,7 +71,7 @@ async function member(workspaceId: string, role: "operator" | "approver" | "requ
   await db.insert(sessions).values({ idHash: sha256(token), userId: u!.id, expiresAt: new Date(Date.now() + 3_600_000) });
   return request.agent(server).set("Cookie", `daloy_session=${token}`);
 }
-/** Connect Gmail: Daloy's start, the fake consent page, then the shared callback. Returns where the browser lands. */
+/** Connect Gmail: kymavo's start, the fake consent page, then the shared callback. Returns where the browser lands. */
 async function connect(agent: Agent, who = ANA) {
   fake.oauth.google!.user = who;
   const { body } = await agent.post("/settings/connections/gmail/oauth/start").expect(200);

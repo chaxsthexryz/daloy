@@ -211,7 +211,7 @@ describe("Shopify connection", () => {
     expect(res.body.missingScopes).toEqual(["write_products"]);
   });
 
-  it("tests with a read, marks a rejected token as failed, and disconnecting removes Daloy's webhook", async () => {
+  it("tests with a read, marks a rejected token as failed, and disconnecting removes kymavo's webhook", async () => {
     const o = await owner();
     await connectShopify(o.agent, o.userId);
     const ok = await o.agent.post("/settings/connections/shopify/test").expect(200);

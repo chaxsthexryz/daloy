@@ -1,4 +1,4 @@
-# Daloy security review, 22 November 2026
+# kymavo security review, 22 November 2026
 
 This repeats the N11 real-accounts review for the surfaces added after N11a to N11d. The earlier reviews are [19 November](security-review-2026-11-19.md) and [the release candidate](security-review-release.md). The reviewed revision is `main` at `69b524a`, on branch `claude/n11-refresh-6c267e`.
 
