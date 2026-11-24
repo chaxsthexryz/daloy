@@ -111,6 +111,7 @@ describe("destination line", () => {
       payment_expire: { due: "ask_deposit" },
       payment_status: { link: "pay_1" },
       meta_reply: { recipientId: "{{trigger.senderId}}", channel: "{{trigger.channel}}", text: "t" },
+      whatsapp_reply: { mode: "text", to: "{{trigger.senderId}}", text: "t" },
       conversation_update: { fields: { guests: "2" } },
       stay_quote: { room: "Garden room", checkIn: "{{trigger.check_in}}", nights: "2", guests: "2" },
       assistant_read: { what: "all" },

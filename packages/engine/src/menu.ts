@@ -18,7 +18,7 @@ type MenuStep = { type: string; config: unknown };
 const stepsOf = (def: unknown): MenuStep[] => (def as { steps?: MenuStep[] } | null)?.steps ?? [];
 const menuOf = (s: MenuStep): Menu | undefined => {
   const c = s.config as { quickReplies?: Menu; menu?: Menu };
-  return s.type === "meta_reply" ? c.quickReplies : s.type === "email" || s.type === "outlook" ? c.menu : undefined;
+  return s.type === "meta_reply" || s.type === "whatsapp_reply" ? c.quickReplies : s.type === "email" || s.type === "outlook" ? c.menu : undefined;
 };
 
 /** Every choice some menu of this workflow offers: a tap or a number for anything else is dropped. */

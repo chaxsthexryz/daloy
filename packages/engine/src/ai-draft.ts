@@ -24,7 +24,7 @@ const without = (schema: unknown, keys: readonly string[], full: boolean) => {
   }
   return { ...(schema as object), properties };
 };
-const LEFT_OUT: Record<string, readonly string[]> = { ai: ["files"], email: ["menu"], outlook: ["menu"], meta_reply: ["quickReplies"] };
+const LEFT_OUT: Record<string, readonly string[]> = { ai: ["files"], email: ["menu"], outlook: ["menu"], meta_reply: ["quickReplies"], whatsapp_reply: ["quickReplies"] };
 const LOCAL_LEFT_OUT: Record<string, readonly string[]> = { booking: ["mode", "checkIn", "nights", "timezone", "checkInTime", "checkOutTime", "conversation"], sheets: ["rows", "header"] };
 
 /**
@@ -67,9 +67,10 @@ const spec = (full: boolean) => [
 
 // Left out of a small local model's prompt to keep it inside that model's context; a hosted model gets all of them.
 // The stress test (apps/api/scripts/ai-stress.ts) showed a hosted model without them builds http or telegram steps instead.
-const HOSTED_ONLY = ["airtable", "notion", "trello", "payment_status", "payment_due", "payment_expire", "sms", "meta_reply", "conversation_update", "stay_quote", "assistant_read", "discord", "google_docs", "read_page", "shopify_create_product", "shopify_update_product", "browser", "call_workflow", "switch", "transform"];
+const HOSTED_ONLY = ["airtable", "notion", "trello", "payment_status", "payment_due", "payment_expire", "sms", "meta_reply", "whatsapp_reply", "conversation_update", "stay_quote", "assistant_read", "discord", "google_docs", "read_page", "shopify_create_product", "shopify_update_product", "browser", "call_workflow", "switch", "transform"];
 const FULL_TRIGGERS =
   'More triggers: {"type":"meta_dm","config":{"channel":"both"}} for a Facebook Messenger or Instagram DM to the connected Page (channel messenger, instagram or both; fields {{trigger.text}}, {{trigger.senderId}}, {{trigger.channel}}); ' +
+  '{"type":"whatsapp_message","config":{"requireImage":false}} for an inbound WhatsApp Cloud API message (fields {{trigger.text}}, {{trigger.senderId}}, {{trigger.senderName}}; use whatsapp_reply mode "text" inside 24h or mode "template" outside 24h); ' +
   '{"type":"payment","config":{"events":["paid"]}} for a PayMongo payment (fields {{trigger.reference}}, {{trigger.amountPesos}}, {{trigger.status}}); ' +
   '{"type":"shopify_order","config":{}} for a new order in the connected Shopify store (fields {{trigger.order_number}}, {{trigger.customer_name}}, {{trigger.customer_email}}, {{trigger.customer_phone}}, {{trigger.total}}, {{trigger.items}}); ' +
   '{"type":"telegram_message","config":{"from":"my_chat","requireFile":true}} for a photo, PDF or message sent to the Telegram bot of the owner (from my_chat or anyone; fields {{trigger.text}}, {{trigger.chatId}}, {{trigger.fromName}}, {{trigger.date}}; the photo or PDF is the file field "file" for an ai step; reply with a telegram step whose chatId is {{trigger.chatId}}); ' +

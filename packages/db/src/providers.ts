@@ -37,8 +37,9 @@ export type ProviderUrls = {
   unisms?: string;
   /** PayMongo API base. Unset in test fakes: paymongo.ts falls back to the real one. */
   paymongo?: string;
-  /** Meta Graph API base and test-only CDN override for Messenger and Instagram DMs (decision 0075). */
+  /** Meta Graph API base and test-only CDN override for Messenger and Instagram DMs (decision 0075), plus optional WhatsApp Cloud API override (decision 0138). */
   meta?: string;
+  whatsapp?: string;
   metaCdn?: string;
   /** Test-only base for the Shopify Admin API. Unset: requests go to https://<shop>.myshopify.com (decision 0105). */
   shopify?: string;
@@ -81,6 +82,7 @@ export const providerUrls = (env: NodeJS.ProcessEnv = process.env): ProviderUrls
   unisms: trim(env.UNISMS_API_URL ?? "https://unismsapi.com"),
   paymongo: trim(env.PAYMONGO_API_URL ?? "https://api.paymongo.com"),
   meta: trim(env.META_GRAPH_URL ?? "https://graph.facebook.com"),
+  whatsapp: env.WHATSAPP_GRAPH_URL ? trim(env.WHATSAPP_GRAPH_URL) : undefined,
   metaCdn: env.META_CDN_URL ? trim(env.META_CDN_URL) : undefined,
   shopify: env.SHOPIFY_API_URL ? trim(env.SHOPIFY_API_URL) : undefined,
   airtable: trim(env.AIRTABLE_API_URL ?? "https://api.airtable.com"),

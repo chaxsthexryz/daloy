@@ -192,7 +192,7 @@ export function extractDmReceiptAmount(text: string): number | null {
 }
 
 /** The guest's open (pending, live) payment due id for this conversation, or null. */
-export async function openDueForGuest(db: Db, userId: string, channel: MetaChannel, externalId: string): Promise<string | null> {
+export async function openDueForGuest(db: Db, userId: string, channel: MetaChannel | "whatsapp", externalId: string): Promise<string | null> {
   const [row] = await db
     .select({ dueId: paymentDues.id })
     .from(conversations)
@@ -258,13 +258,13 @@ export async function submitTransferClaim(db: Db, token: string, c: { transferRe
 }
 
 /**
- * C6 (decision 0121): turns a Messenger or Instagram DM receipt photo into a transfer claim on the conversation's open
- * pending due, using the same flagging pipeline as the pay page. Never marks the due paid; creates nothing when the due
- * is closed or test; deduplicates webhook replays by (userId, sourceMid).
+ * C6 (decision 0121) & C10 (decision 0138): turns a Messenger, Instagram DM or WhatsApp receipt photo into a transfer
+ * claim on the conversation's open pending due, using the same flagging pipeline as the pay page. Never marks the due
+ * paid; creates nothing when the due is closed or test; deduplicates webhook replays by (userId, sourceMid).
  */
 export async function submitDmReceiptClaim(
   db: Db,
-  o: { userId: string; dueId: string; sourceMid: string; channel: MetaChannel; caption?: string; image: { bytes: Buffer } },
+  o: { userId: string; dueId: string; sourceMid: string; channel: MetaChannel | "whatsapp"; caption?: string; image: { bytes: Buffer } },
 ): Promise<Claim | undefined> {
   return db.transaction(async (tx) => {
     const d = await lockDue(tx, and(eq(paymentDues.id, o.dueId), eq(paymentDues.userId, o.userId)));

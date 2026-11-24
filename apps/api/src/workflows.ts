@@ -39,7 +39,7 @@ const testRunInput = runInput.extend({ definition: z.unknown(), live: z.boolean(
 const workflowId = new ZodPipe(z.uuid());
 const versionNumber = new ZodPipe(z.coerce.number().int().min(1).max(1_000_000));
 /** Step types whose connection must be working before the workflow is turned on. */
-const CHECKED_PROVIDERS: Partial<Record<string, Provider>> = { sheets: "google_sheets", slack: "slack", outlook: "outlook", teams: "teams", discord: "discord", telegram: "telegram", calendar: "google_calendar", airtable: "airtable", notion: "notion", trello: "trello", meta_reply: "meta_messenger", shopify_create_product: "shopify", shopify_update_product: "shopify" };
+const CHECKED_PROVIDERS: Partial<Record<string, Provider>> = { sheets: "google_sheets", slack: "slack", outlook: "outlook", teams: "teams", discord: "discord", telegram: "telegram", calendar: "google_calendar", airtable: "airtable", notion: "notion", trello: "trello", meta_reply: "meta_messenger", whatsapp_reply: "whatsapp", shopify_create_product: "shopify", shopify_update_product: "shopify" };
 /** Every step type that uses an app, for the overview's apps list. Drive and PayMongo steps are not checked at publish, so they are not in CHECKED_PROVIDERS. */
 const APP_PROVIDERS: Partial<Record<string, Provider>> = { ...CHECKED_PROVIDERS, drive: "google_drive", google_docs: "google_drive", paymongo_link: "paymongo", payment_status: "paymongo" };
 /** The viewer's time zone, so "today" and the day bars follow their calendar. ICU checks the name; the database receives it as a bound parameter. */
@@ -366,6 +366,7 @@ export class WorkflowsController {
   private async checkConnections(userId: string, definition: WorkflowDefinition) {
     const needed = new Set(definition.steps.flatMap((s) => CHECKED_PROVIDERS[s.type] ?? []));
     if (definition.trigger.type === "meta_dm") needed.add("meta_messenger");
+    if (definition.trigger.type === "whatsapp_message") needed.add("whatsapp");
     if (definition.trigger.type === "shopify_order") needed.add("shopify");
     if (definition.trigger.type === "telegram_message") needed.add("telegram");
     // G2 (decision 0127): a Google trigger needs its app connected with the scope it reads with and a destination.
@@ -396,7 +397,7 @@ export class WorkflowsController {
     for (const provider of needed) {
       const c = conns.find((x) => x.provider === provider);
       const name = PROVIDER_NAMES[provider];
-      const where = provider === "slack" ? " and pick a channel" : provider === "telegram" ? " and choose a chat" : provider === "google_sheets" ? " and pick a sheet" : provider === "google_calendar" ? " and choose a calendar" : provider === "airtable" || provider === "notion" || provider === "trello" ? " and choose where it goes" : provider === "discord" ? " with a webhook link" : "";
+      const where = provider === "slack" ? " and pick a channel" : provider === "telegram" ? " and choose a chat" : provider === "google_sheets" ? " and pick a sheet" : provider === "google_calendar" ? " and choose a calendar" : provider === "airtable" || provider === "notion" || provider === "trello" ? " and choose where it goes" : provider === "discord" ? " with a webhook link" : provider === "whatsapp" ? " with your Phone Number ID" : "";
       if (!c || !c.destination) throw new BadRequestException(`Connect ${name}${where} in Apps before turning this on.`);
       if (c.status !== "active") throw new BadRequestException(`${name} needs to be connected again in Apps before turning this on.`);
     }

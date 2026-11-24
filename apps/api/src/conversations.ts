@@ -156,9 +156,11 @@ export class ConversationsController {
     const convoSummary = await conversationPayload(this.db, { id: detail.id, status: detail.status, fields: detail.fields, openDueId: detail.openDueId });
     const resource = body.resource ?? body.room;
     const email = detail.fields.email ?? (detail.channel === "email" ? detail.externalId : undefined);
+    const phone = detail.fields.phone ?? (detail.channel === "whatsapp" ? detail.externalId : undefined);
     const payload: Record<string, unknown> = {
       ...detail.fields,
       ...(email ? { email } : {}),
+      ...(phone ? { phone } : {}),
       ...(body.room ? { room: body.room } : {}),
       ...(resource ? { resource } : {}),
       ...(body.checkIn ? { check_in: body.checkIn } : detail.fields.check_in ? { check_in: detail.fields.check_in } : {}),
@@ -166,7 +168,7 @@ export class ConversationsController {
       ...(body.guests !== undefined ? { guests: String(body.guests) } : detail.fields.guests ? { guests: detail.fields.guests } : {}),
       conversation_id: detail.id,
       channel: detail.channel,
-      senderId: detail.channel === "messenger" || detail.channel === "instagram" ? detail.externalId : "",
+      senderId: detail.channel === "messenger" || detail.channel === "instagram" || detail.channel === "whatsapp" ? detail.externalId : "",
       conversation: convoSummary,
     };
 

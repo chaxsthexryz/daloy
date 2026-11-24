@@ -77,6 +77,7 @@ const tomorrowAtTen = () => `${new Date(Date.now() + 86_400_000).toISOString().s
 function samplePayload(trigger: Trigger, resourceId = "a resource id from the Resources page"): string {
   if (trigger.type === "email") return JSON.stringify({ from: "ana@example.com", replyTo: "ana@example.com", to: ["inquiries@example.com"], subject: "Website inquiry", text: "I would like a quote.", messageId: "sample-inquiry@example.com", receivedAt: new Date().toISOString() }, null, 2);
   if (trigger.type === "meta_dm") return JSON.stringify({ channel: trigger.config.channel === "instagram" ? "instagram" : "messenger", senderId: "1234567890", messageId: "m_sample_1", text: "Here is my GCash receipt.", timestamp: new Date().toISOString(), image: [] }, null, 2);
+  if (trigger.type === "whatsapp_message") return JSON.stringify({ channel: "whatsapp", senderId: "639171234567", senderName: "Ana Reyes", messageId: "wamid.sample_1", text: "Here is my GCash receipt.", timestamp: new Date().toISOString(), image: [] }, null, 2);
   if (trigger.type === "telegram_message") return JSON.stringify({ chatId: "123456789", chatType: "private", fromId: "123456789", fromName: "Ana Reyes", username: "anareyes", messageId: 42, updateId: 1001, date: "2026-11-23T09:15:00.000Z", text: "What's on my schedule today?", fileRefused: false, conversation: { id: "sample", channel: "telegram", turn: 1, fields: {}, history: "user: What's on my schedule today?" } }, null, 2);
   if (trigger.type === "shopify_order") return JSON.stringify({ order_id: "820982911946154508", order_number: "#1001", customer_name: "Ana Reyes", customer_email: "ana@example.com", customer_phone: "+639171234567", total: "1250.50", currency: "PHP", financial_status: "pending", created_at: new Date().toISOString(), shop: "your-shop.myshopify.com", item_count: 2, items: "2 x Tote bag [TOTE-BLU]", line_items: [{ title: "Tote bag", variant_title: "", quantity: 2, price: "625.25", sku: "TOTE-BLU" }] }, null, 2);
   if (trigger.type === "booking_event") return JSON.stringify({ event: trigger.config.events[0] ?? "created", bookingId: "sample-booking-id", reference: "BK-1001", resourceId, resourceName: "Sample room", start: `${tomorrowAtTen()}:00+08:00`, end: `${tomorrowAtTen().slice(0, 10)}T11:00:00+08:00`, minutes: 60, timezone: "Asia/Manila", status: "active", version: 1, mode: "slot" }, null, 2);
@@ -644,6 +645,11 @@ export function Editor({ id, from }: { id: string; from?: string }) {
             <DocTemplatePicker key={`${step.id}-template`} templateId={step.config.templateId} templateName={step.config.templateName} onPick={(templateId, templateName) => editStep({ ...step.config, templateId, templateName })} />
           )}
           <SchemaForm key={step.id} schema={step.type === "ai" ? withoutFiles(catalog.schemas.ai!) : step.type === "google_docs" ? withoutTemplate(catalog.schemas.google_docs!) : step.type === "browser" ? withoutActions(catalog.schemas.browser!) : step.type === "switch" ? withoutCases(catalog.schemas.switch!) : step.type === "transform" ? transformSchema(catalog.schemas.transform!, step.config.op) : catalog.schemas[step.type]!} value={step.config as Record<string, unknown>} onChange={editStep} />
+          {step.type === "whatsapp_reply" && (
+            <p className="muted hint">
+              {t("Meta bills WhatsApp Cloud API per delivered message to your Meta Business payment method. Free-form text works within 24 hours of the guest's last message; reminders outside 24 hours must use an approved Meta utility template.")}
+            </p>
+          )}
           {step.type === "browser" && <BrowserActions key={`${step.id}-actions`} actions={step.config.actions} onChange={(actions) => editStep({ ...step.config, actions })} />}
           {step.type === "switch" && <SwitchCases key={`${step.id}-cases`} cases={step.config.cases} onChange={(cases) => editStep({ ...step.config, cases })} />}
           {!stepBranches(step) && (
@@ -657,7 +663,7 @@ export function Editor({ id, from }: { id: string; from?: string }) {
             </div>
           )}
           {step.type === "ai" &&
-            ((draft.trigger.type === "form" && draft.trigger.config.fields.some((f) => f.type === "file")) || draft.trigger.type === "meta_dm" || draft.trigger.type === "telegram_message" || draft.trigger.type === "drive_file") && (
+            ((draft.trigger.type === "form" && draft.trigger.config.fields.some((f) => f.type === "file")) || draft.trigger.type === "meta_dm" || draft.trigger.type === "whatsapp_message" || draft.trigger.type === "telegram_message" || draft.trigger.type === "drive_file") && (
             <fieldset>
               <legend>{t("Let the AI read these files")}</legend>
               {(draft.trigger.type === "form"
@@ -1222,7 +1228,7 @@ function NextUp({ draft, id }: { draft: Draft; id: string }) {
   );
 }
 
-const TRIGGER_ORDER: Trigger["type"][] = ["manual", "webhook", "schedule", "page_changed", "form", "email", "gmail_message", "outlook_message", "payment", "booking_event", "payment_event", "sub_workflow", "meta_dm", "telegram_message", "slack_message", "teams_message", "discord_message", "shopify_order", "sheets_row", "calendar_event", "drive_file", "airtable_record", "notion_page", "trello_card"];
+const TRIGGER_ORDER: Trigger["type"][] = ["manual", "webhook", "schedule", "page_changed", "form", "email", "gmail_message", "outlook_message", "payment", "booking_event", "payment_event", "sub_workflow", "meta_dm", "whatsapp_message", "telegram_message", "slack_message", "teams_message", "discord_message", "shopify_order", "sheets_row", "calendar_event", "drive_file", "airtable_record", "notion_page", "trello_card"];
 const TRIGGER_DEFAULTS: Record<Trigger["type"], Trigger> = {
   manual: { type: "manual", config: {} },
   email: { type: "email", config: {} },
@@ -1237,6 +1243,7 @@ const TRIGGER_DEFAULTS: Record<Trigger["type"], Trigger> = {
   payment_event: { type: "payment_event", config: { events: ["confirmed"] } },
   sub_workflow: { type: "sub_workflow", config: {} },
   meta_dm: { type: "meta_dm", config: { channel: "both", requireImage: false } },
+  whatsapp_message: { type: "whatsapp_message", config: { requireImage: false } },
   shopify_order: { type: "shopify_order", config: {} },
   telegram_message: { type: "telegram_message", config: { from: "my_chat", requireFile: true } },
   slack_message: { type: "slack_message", config: { signingSecret: "", ignoreBots: true } },
@@ -1429,6 +1436,24 @@ function TriggerPanel({ trigger, wf, onChange }: { trigger: Trigger; wf: Loaded;
           </p>
         </>
       )}
+      {trigger.type === "whatsapp_message" && (
+        <>
+          <div className="field">
+            <label className="check">
+              <input
+                type="checkbox"
+                checked={trigger.config.requireImage}
+                onChange={(e) => onChange({ type: "whatsapp_message", config: { ...trigger.config, requireImage: e.target.checked } })}
+              />{" "}
+              {t("Only run when the message includes a photo")}
+            </label>
+          </div>
+          <p className="muted hint">
+            {t("Requires a verified Meta Business account and payment method; Meta bills per delivered message.")}{" "}
+            <a href="#/apps">{t("Connect WhatsApp Cloud API in Apps")}</a>
+          </p>
+        </>
+      )}
       {trigger.type === "payment" && (
         <fieldset>
           <legend>{t("Run when a payment is")}</legend>
@@ -1607,7 +1632,7 @@ function TriggerPanel({ trigger, wf, onChange }: { trigger: Trigger; wf: Loaded;
   );
 }
 
-const OUTSIDE = new Set(["http", "email", "approval", "sheets", "drive", "slack", "outlook", "teams", "telegram", "sms", "calendar", "airtable", "notion", "trello", "meta_reply", "shopify_create_product", "shopify_update_product", "discord", "google_docs", "browser", "read_page"]);
+const OUTSIDE = new Set(["http", "email", "approval", "sheets", "drive", "slack", "outlook", "teams", "telegram", "sms", "calendar", "airtable", "notion", "trello", "meta_reply", "whatsapp_reply", "shopify_create_product", "shopify_update_product", "discord", "google_docs", "browser", "read_page"]);
 
 /** Per-step outcomes for a mocked or AI-only test run: a classify label, an approval decision, or a failure. */
 function TestChoices({ steps, choices, onChange }: { steps: Step[]; choices: Record<string, string>; onChange: (c: Record<string, string>) => void }) {

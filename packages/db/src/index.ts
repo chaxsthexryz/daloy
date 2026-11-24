@@ -34,6 +34,7 @@ export * from "./mail";
 export * from "./mail-senders";
 export * from "./members";
 export * from "./meta";
+export * from "./whatsapp";
 export * from "./shopify";
 export * from "./telegram";
 export * from "./oauth";

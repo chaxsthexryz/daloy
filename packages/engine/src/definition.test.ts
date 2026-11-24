@@ -271,7 +271,7 @@ describe("conversation steps (decision 0115)", () => {
   it("saves conversation fields only from a message trigger, with a fixed field list", () => {
     expect(errs({ trigger: { type: "meta_dm", config: {} }, steps: [save] })).toEqual([]);
     expect(errs({ trigger: { type: "email", config: {} }, steps: [save] })).toEqual([]);
-    expect(errs({ trigger: { type: "manual", config: {} }, steps: [save] })).toEqual([': conversation_update step "save" needs a meta_dm or email trigger, which starts a conversation']);
+    expect(errs({ trigger: { type: "manual", config: {} }, steps: [save] })).toEqual([': conversation_update step "save" needs a meta_dm, whatsapp_message or email trigger, which starts a conversation']);
     expect(errs({ trigger: { type: "meta_dm", config: {} }, steps: [{ ...save, config: { fields: { budget: "1" } } }] })).not.toEqual([]);
     expect(errs({ trigger: { type: "meta_dm", config: {} }, steps: [{ ...save, config: { fields: {} } }] })).not.toEqual([]);
   });
@@ -760,5 +760,80 @@ describe("Record-tool triggers", () => {
     expect(definitionSchema.safeParse({ trigger: { type: "notion_page", config: { on: "status_changed" } }, steps: [s], edges: [] }).success).toBe(false);
     expect(definitionSchema.safeParse({ trigger: { type: "notion_page", config: { on: "created", statusProperty: "Status" } }, steps: [s], edges: [] }).success).toBe(false);
     expect(definitionSchema.safeParse({ trigger: { type: "trello_card", config: { listId: "x" } }, steps: [s], edges: [] }).success).toBe(false);
+  });
+});
+
+// C10 / N25 (decision 0138): WhatsApp Cloud API trigger and service/template reply steps.
+describe("WhatsApp Cloud API trigger and whatsapp_reply step", () => {
+  it("parses whatsapp_message trigger and both whatsapp_reply modes (text and template)", () => {
+    const textFlow = definitionSchema.parse({
+      trigger: { type: "whatsapp_message" },
+      steps: [
+        { id: "save", type: "conversation_update", config: { fields: { name: "{{trigger.senderName}}" } } },
+        { id: "reply", type: "whatsapp_reply", config: { to: "{{trigger.senderId}}", text: "Hi {{trigger.senderName}}" } },
+        { id: "late", type: "sms", config: { to: "{{trigger.senderId}}", message: "Fallback SMS" } },
+        { id: "staff", type: "delay", config: { seconds: 10 } },
+      ],
+      edges: [
+        { from: "save", to: "reply" },
+        { from: "reply", to: "late", on: "outside_window" },
+        { from: "reply", to: "staff", on: "paused" },
+      ],
+    });
+    expect(textFlow.trigger).toEqual({ type: "whatsapp_message", config: { requireImage: false } });
+    expect(issues(textFlow)).toEqual([]);
+
+    const templateFlow = definitionSchema.parse({
+      trigger: { type: "booking_event", config: { events: ["created"] } },
+      steps: [
+        {
+          id: "remind",
+          type: "whatsapp_reply",
+          config: {
+            mode: "template",
+            to: "{{trigger.conversationId}}",
+            templateName: "deposit_reminder",
+            templateLanguage: "en_US",
+            templateParams: ["{{trigger.reference}}", "PHP 500"],
+          },
+        },
+      ],
+      edges: [],
+    });
+    expect(issues(templateFlow)).toEqual([]);
+  });
+
+  it("refuses invalid whatsapp_reply modes, bad template names, and untrusted amount injection", () => {
+    expect(
+      definitionSchema.safeParse({
+        trigger: { type: "whatsapp_message" },
+        steps: [{ id: "r", type: "whatsapp_reply", config: { mode: "text", to: "{{trigger.senderId}}" } }],
+        edges: [],
+      }).success,
+    ).toBe(false);
+
+    expect(
+      definitionSchema.safeParse({
+        trigger: { type: "manual" },
+        steps: [{ id: "r", type: "whatsapp_reply", config: { mode: "template", to: "639171234567", templateName: "Bad-Template!" } }],
+        edges: [],
+      }).success,
+    ).toBe(false);
+
+    expect(
+      issues({
+        trigger: { type: "whatsapp_message", config: { requireImage: false } },
+        steps: [{ id: "ask", type: "payment_due", config: { reference: "R1", amount: "{{trigger.text}}" } }],
+        edges: [],
+      }).join(),
+    ).toMatch(/payment_due step "ask"/);
+
+    expect(
+      issues({
+        trigger: { type: "whatsapp_message", config: { requireImage: false } },
+        steps: [{ id: "make", type: "shopify_create_product", config: { title: "Room", price: "{{trigger.text}}" } }],
+        edges: [],
+      }).join(),
+    ).toMatch(/shopify_create_product step "make"/);
   });
 });

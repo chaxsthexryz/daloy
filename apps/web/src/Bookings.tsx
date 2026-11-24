@@ -8,7 +8,7 @@ import { longDate } from "./lib/activity";
 import { ampm, byDay } from "./lib/agenda";
 
 type BookingGuest = {
-  channel: "messenger" | "instagram" | "email";
+  channel: "messenger" | "instagram" | "email" | "telegram" | "whatsapp";
   externalId: string;
   name?: string;
   email?: string;

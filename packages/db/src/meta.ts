@@ -299,7 +299,7 @@ async function withDownloadSlot<T>(fn: () => Promise<T>): Promise<T> {
  */
 export async function downloadMetaImage(
   rawUrl: string,
-  opts: { urls?: ProviderUrls; resolve?: MetaImageResolver; timeoutMs?: number; maxBytes?: number; index?: number } = {},
+  opts: { urls?: ProviderUrls; resolve?: MetaImageResolver; timeoutMs?: number; maxBytes?: number; index?: number; headers?: Record<string, string> } = {},
 ): Promise<{ name: string; type: AllowedMetaImageType; data: Buffer }> {
   if (!isAllowedMetaCdnUrl(rawUrl, opts.urls)) {
     throw new MetaImageError("Image URL is not an allowed Meta CDN address.");
@@ -318,6 +318,7 @@ export async function downloadMetaImage(
           method: "GET",
           agent: false,
           signal: AbortSignal.timeout(timeoutMs),
+          ...(opts.headers ? { headers: opts.headers } : {}),
           ...(testOverride ? {} : { lookup: guardedLookup(resolve) }),
         },
         resolveReq,

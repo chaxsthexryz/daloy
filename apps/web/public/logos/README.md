@@ -36,7 +36,7 @@ Discord and Google Docs were added on 2026-11-22 (phase I1) from the same Simple
 | GCash | Not in Simple Icons. Mynt publishes no public brand kit that could be fetched here, and no Commons copy was checked. |
 | PayMongo | Not in Simple Icons and no public brand kit was found (https://www.paymongo.com/brand returns 404). |
 | UniSMS | Not in Simple Icons and no logo was found. |
-| Facebook Messenger, Instagram | Meta's guidelines say to use only the logos from its Brand Resource Center after accepting its terms (https://about.instagram.com/brand/). That download needs the owner's acceptance, and a copy from Commons or Simple Icons is not that file, so no copy is used. To switch: download the pack as the owner, add `messenger.svg` and `instagram.svg` here, add the names to `LOGOS` in `AppMark.tsx` and remove them from `LETTER_TILES`. |
+| Facebook Messenger, Instagram, WhatsApp | Meta's guidelines say to use only the logos from its Brand Resource Center after accepting its terms (https://about.instagram.com/brand/ and https://www.whatsapp.com/brand/). That download needs the owner's acceptance, and a copy from Commons or Simple Icons is not that file, so no copy is used. To switch: download the pack as the owner, add `messenger.svg`, `instagram.svg` and `whatsapp.svg` here, add the names to `LOGOS` in `AppMark.tsx` and remove them from `LETTER_TILES`. |
 
 ## What was not checked
 

@@ -1645,3 +1645,14 @@ Tests: `packages/engine/src/definition.test.ts`, `packages/db/src/record-trigger
 What it does: `AuthController.register` (`POST /auth/register`) and new-user creation inside `AuthController.acceptInvite` (`POST /auth/invites/:token/accept`) check `isPlatformAdmin(this.config.platformAdmins, email)` and reject unregistered `PLATFORM_ADMINS` addresses with indistinguishable responses (`409 Conflict` on registration after password hashing; `401 Unauthorized` inside the transaction on invite accept), preventing anyone from claiming an uncreated admin email.
 
 Tests: `apps/api/src/admin.test.ts` (S2 registration, case/whitespace variants, invite-accept refusal, and existing admin login).
+
+## WhatsApp Cloud API (C10 / N25, decision 0138)
+
+What it does: adds direct Meta WhatsApp Cloud API support (`whatsapp` provider and conversation channel, migration `0058_whatsapp_cloud.sql`) with `whatsapp_message` webhook intake, `whatsapp_reply` service replies (24-hour window with `outside_window` / `paused` edges) and pre-approved utility templates (`mode: "template"` outside 24 hours), C6 receipt photo claim attachment, R6 phone lookup, and an explicit UI billing/verification note.
+
+How it works (`packages/db/src/whatsapp.ts`, `packages/db/src/deliveries.ts`, `apps/api/src/connections.ts`, `apps/api/src/public.ts`, `apps/worker/src/steps/index.ts`, `apps/web/src/Connections.tsx`):
+- Credentials (`accessToken`, `appSecret`, `verifyToken` JSON) are encrypted per workspace in `connections` and included in both live and retired secret redaction (`packages/db/src/crypto.ts`).
+- `GET /hooks/whatsapp/:path` validates `hub.verify_token` in constant time and `POST /hooks/whatsapp/:path` verifies `X-Hub-Signature-256` against raw bytes, filters by the connected `phone_number_id`, ignores status webhooks, normalizes phone numbers (`09...` / `+639...` -> `639...`), deduplicates `wamid` replays via `run_keys`, and downloads inbound receipt photos through Graph media lookup + SSRF/magic-byte verification.
+- `whatsapp_reply` delivers service messages inside the 24-hour window (up to 3 interactive buttons, or numbered fallback for 4+, with RA 10173 notice once) and sends approved Meta utility templates with ordered body parameters anytime.
+
+Tests: `packages/engine/src/definition.test.ts`, `packages/db/src/whatsapp.test.ts`, `apps/api/src/whatsapp.test.ts`, and `apps/web/src/WhatsAppConnection.test.tsx`.

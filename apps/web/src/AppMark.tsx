@@ -36,7 +36,7 @@ const ICONS: Record<string, string> = {
 };
 
 /** Marks drawn as a letter tile because no usable logo exists (public/logos/README.md says why). */
-export const LETTER_TILES = ["unisms", "paymongo", "gcash", "messenger", "instagram"] as const;
+export const LETTER_TILES = ["unisms", "paymongo", "gcash", "messenger", "instagram", "whatsapp"] as const;
 export const ICON_KEYS = Object.keys(ICONS);
 
 /**

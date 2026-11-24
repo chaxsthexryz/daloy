@@ -66,7 +66,7 @@ async function collect(db: AnyDb, workspaceId: string, q: CustomerQuery, hide: (
     // Conversations (decision 0115): by saved fields, the email address one is keyed by, any message text, or a matched
     // run's conversation. Every run of a matched conversation belongs to the customer too.
     // shortcut: scans every message in the workspace, like the runs above; the retention sweep keeps the table bounded.
-    convIds = new Set(allConversations.filter((c) => match(c.fields) || (c.channel === "email" && match(c.externalId))).map((c) => c.id));
+    convIds = new Set(allConversations.filter((c) => match(c.fields) || ((c.channel === "email" || c.channel === "whatsapp") && match(c.externalId))).map((c) => c.id));
     const texts = await db.select({ conversationId: conversationMessages.conversationId, text: conversationMessages.text }).from(conversationMessages).innerJoin(conversations, eq(conversations.id, conversationMessages.conversationId)).where(eq(conversations.userId, workspaceId));
     for (const t of texts) if (match(t.text)) convIds.add(t.conversationId);
     for (const r of allRuns) if (r.conversationId && runIds.has(r.id)) convIds.add(r.conversationId);

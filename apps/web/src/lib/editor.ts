@@ -19,6 +19,7 @@ export function nextPaths(draft: Draft, id: string): { on?: string; steps: Step[
 
 const EMAIL_FIELDS = ["from", "subject", "text"];
 const META_DM_FIELDS = ["channel", "senderId", "messageId", "text", "timestamp"];
+const WHATSAPP_FIELDS = ["channel", "senderId", "senderName", "messageId", "text", "timestamp"];
 const TELEGRAM_FIELDS = ["text", "chatId", "fromName", "username", "date", "fileRefused", "conversation.history"];
 const SHOPIFY_ORDER_FIELDS = ["order_number", "order_id", "customer_name", "customer_email", "customer_phone", "total", "currency", "item_count", "items", "financial_status", "created_at", "shop"];
 // G2 (decision 0127) and G3 (decision 0132). A sheet row's header cells are {{trigger.cells.<header>}}, which depend on the sheet.
@@ -66,7 +67,9 @@ export function insertables(draft: Draft, id: string): string[] {
       ? EMAIL_FIELDS
       : trigger.type === "meta_dm"
         ? META_DM_FIELDS
-        : trigger.type === "shopify_order"
+        : trigger.type === "whatsapp_message"
+          ? WHATSAPP_FIELDS
+          : trigger.type === "shopify_order"
           ? SHOPIFY_ORDER_FIELDS
           : trigger.type === "telegram_message"
             ? TELEGRAM_FIELDS
@@ -150,6 +153,7 @@ const NEEDS: Record<string, { provider: string; label: string }> = {
   paymongo_link: { provider: "paymongo", label: "PayMongo" },
   payment_status: { provider: "paymongo", label: "PayMongo" },
   meta_reply: { provider: "meta_messenger", label: "Facebook Messenger & Instagram" },
+  whatsapp_reply: { provider: "whatsapp", label: "WhatsApp Cloud API" },
   shopify_create_product: { provider: "shopify", label: "Shopify" },
   shopify_update_product: { provider: "shopify", label: "Shopify" },
 };

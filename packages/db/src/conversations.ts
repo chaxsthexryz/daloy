@@ -12,7 +12,7 @@ import { bookings, businessProfiles, connections, conversationMessages, conversa
 type AnyDb = NodePgDatabase<Record<string, unknown>>;
 type Reader = Pick<AnyDb, "select">;
 
-export type ConversationChannel = "messenger" | "instagram" | "email" | "telegram";
+export type ConversationChannel = "messenger" | "instagram" | "email" | "telegram" | "whatsapp";
 export type Conversation = typeof conversations.$inferSelect;
 
 /** Meta's standard messaging window: a reply may go out up to 24 hours after the guest's last message. */
@@ -555,7 +555,7 @@ export async function sendStaffAlert(
     c.fields.check_in ? cleanAlertText(c.fields.check_out ? `${c.fields.check_in} to ${c.fields.check_out}` : c.fields.check_in, 45) : "",
     c.fields.guests ? cleanAlertText(`${c.fields.guests} guests`, 30) : "",
   ].filter(Boolean);
-  const channelLabel = c.channel === "messenger" ? "Messenger" : c.channel === "instagram" ? "Instagram" : c.channel === "telegram" ? "Telegram" : "Email";
+  const channelLabel = c.channel === "messenger" ? "Messenger" : c.channel === "instagram" ? "Instagram" : c.channel === "telegram" ? "Telegram" : c.channel === "whatsapp" ? "WhatsApp" : "Email";
   const reason = cleanAlertText(opts.reason ?? "", 120) || (owner.language === "tl" ? "Kailangan ng sagot ng staff" : "Needs staff reply");
   const base = deps.publicUrl?.replace(/\/+$/, "");
   const consoleLink = base ? `${base}/#/conversations` : "";

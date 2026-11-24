@@ -4,7 +4,7 @@ import { Text, useLanguage } from "./Language";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { api } from "./api";
 import { GmailCard, PILL, type Settings } from "./BusinessSetup";
-import { MetaMessengerConnection, ShopifyConnection, OutlookConnection, RecordConnection, PaymongoConnection, DiscordConnection, SlackConnection, TeamsConnection, TelegramConnection, type Connection, type OutlookSetup, type Provider } from "./Connections";
+import { MetaMessengerConnection, WhatsAppConnection, ShopifyConnection, OutlookConnection, RecordConnection, PaymongoConnection, DiscordConnection, SlackConnection, TeamsConnection, TelegramConnection, type Connection, type OutlookSetup, type Provider } from "./Connections";
 import { GoogleCalendarCard } from "./GoogleCalendar";
 import { SharedGrants } from "./ConnectPanel";
 import { GoogleDriveCard, GoogleSheetsCard } from "./GoogleConnect";
@@ -29,6 +29,7 @@ const APPS: { key: Key; name: string; line: string }[] = [
   { key: "notion", name: "Notion", line: "Add a page to a database for every request." },
   { key: "trello", name: "Trello", line: "Add a card to a list for every request." },
   { key: "meta_messenger", name: "Facebook Messenger & Instagram", line: "Receive DMs and receipt photos, and reply within Meta's 24-hour window." },
+  { key: "whatsapp", name: "WhatsApp Cloud API", line: "Receive WhatsApp messages and send service replies or paid Meta utility templates." },
   { key: "shopify", name: "Shopify", line: "Start from new orders, and create or update products." },
 ];
 
@@ -36,7 +37,7 @@ const APPS: { key: Key; name: string; line: string }[] = [
 export function AppsPage({ outcome }: { outcome?: { app: string; code: string } }) {
   const { t, language } = useLanguage();
   const [mail, setMail] = useState<Settings | null>(null);
-  const [conns, setConns] = useState<{ connections: Connection[]; outlook: OutlookSetup; oauth: string[]; shared: string[]; sharedGoogleApps: Partial<Record<Key, Key[]>>; usage: Partial<Record<Key, { id: string; name: string }[]>>; latestPayment: { status: string; updatedAt: string; live: boolean } | null; paymongoWebhookBase: string; metaWebhookBase: string; shopifyWebhookBase: string } | null>(null);
+  const [conns, setConns] = useState<{ connections: Connection[]; outlook: OutlookSetup; oauth: string[]; shared: string[]; sharedGoogleApps: Partial<Record<Key, Key[]>>; usage: Partial<Record<Key, { id: string; name: string }[]>>; latestPayment: { status: string; updatedAt: string; live: boolean } | null; paymongoWebhookBase: string; metaWebhookBase: string; whatsappWebhookBase: string; shopifyWebhookBase: string } | null>(null);
   const [error, setError] = useState("");
   // An app slug is its provider name with dashes (google-sheets is google_sheets). "oauth" means the flow was not found.
   const landed = outcome && APPS.find((a) => a.key === outcome.app.replaceAll("-", "_"))?.key;
@@ -95,6 +96,7 @@ export function AppsPage({ outcome }: { outcome?: { app: string; code: string } 
     notion: () => <RecordConnection key="notion" app="notion" conn={conn("notion")} configured={conns.oauth.includes("notion")} outcome={landed === "notion" ? outcome?.code : undefined} onChange={load} />,
     trello: () => <RecordConnection key="trello" app="trello" conn={conn("trello")} configured={conns.oauth.includes("trello")} outcome={landed === "trello" ? outcome?.code : undefined} onChange={load} />,
     meta_messenger: () => <MetaMessengerConnection conn={conn("meta_messenger")} webhookBase={conns.metaWebhookBase} onChange={load} />,
+    whatsapp: () => <WhatsAppConnection conn={conn("whatsapp")} webhookBase={conns.whatsappWebhookBase} onChange={load} />,
     shopify: () => <ShopifyConnection conn={conn("shopify")} webhookBase={conns.shopifyWebhookBase} onChange={load} />,
   };
   const selected = APPS.find((a) => a.key === open);

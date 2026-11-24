@@ -296,7 +296,7 @@ export function ConversationsPage({ user }: { user: User }) {
                     <div className="cv-meta">
                       <span>{channelLabel(detail.channel)}</span>
                       <span>{detail.paused ? t("Staff handling") : t("Bot replying")}</span>
-                      {(detail.channel === "messenger" || detail.channel === "instagram") && (
+                      {(detail.channel === "messenger" || detail.channel === "instagram" || detail.channel === "whatsapp") && (
                         <span>{detail.windowOpen ? t("24-hour reply window open") : t("24-hour reply window closed")}</span>
                       )}
                     </div>

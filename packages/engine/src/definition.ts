@@ -259,6 +259,37 @@ export const metaReplyConfigSchema = z.object({
   quickReplies: menuSchema.optional().describe("Buttons under the reply, up to 13. A tap sets {{trigger.choice}}."),
 });
 export type MetaReplyConfig = z.infer<typeof metaReplyConfigSchema>;
+// C10 (decision 0138): WhatsApp Cloud API reply. Service messages run inside the 24h customer window; approved
+// templates send anytime (for deposit reminders and pre-arrival) and are billed per message to the business's Meta account.
+export const whatsappReplyConfigSchema = z
+  .object({
+    mode: z.enum(["text", "template"]).default("text").describe("Service reply (inside 24-hour window) or approved Meta template (anytime)."),
+    to: template(200).min(1).default("{{trigger.senderId}}").describe("Recipient WhatsApp phone or {{trigger.senderId}}."),
+    text: template(4096).min(1).optional().describe("Message text for service replies (up to 4,096 characters)."),
+    quickReplies: menuSchema.optional().describe("Optional menu buttons (up to 3 inline WhatsApp buttons; 4+ become a numbered list)."),
+    templateName: z
+      .string()
+      .trim()
+      .regex(/^[a-z0-9_]{1,512}$/, "use lowercase letters, digits and _ matching the approved Meta template name")
+      .optional()
+      .describe("Approved Meta WhatsApp template name (e.g. deposit_reminder)."),
+    templateLanguage: z
+      .string()
+      .trim()
+      .regex(/^[a-z]{2}(?:_[A-Z]{2})?$/, "use a Meta language code such as en or en_US")
+      .default("en")
+      .describe("Approved template language code, e.g. en or fil."),
+    templateParams: z.array(template(500)).max(10, "at most 10 template parameters").optional().describe("Ordered body parameter values ({{1}}, {{2}}, ...)."),
+  })
+  .superRefine((c, ctx) => {
+    if (c.mode === "text" && (!c.text || c.text.trim() === "")) {
+      ctx.addIssue({ code: "custom", path: ["text"], message: "service replies need message text" });
+    }
+    if (c.mode === "template" && !c.templateName) {
+      ctx.addIssue({ code: "custom", path: ["templateName"], message: "template mode needs an approved templateName" });
+    }
+  });
+export type WhatsAppReplyConfig = z.infer<typeof whatsappReplyConfigSchema>;
 // Saves what the guest told so far on the conversation (decision 0115), for the next message's run. A fixed list of short
 // values; an empty value after filling in keeps the saved one.
 export const CONVERSATION_FIELD_NAMES = ["check_in", "check_out", "guests", "name", "phone", "email"] as const;
@@ -436,6 +467,7 @@ const stepSchema = z.discriminatedUnion("type", [
   z.object({ id: stepId, disabled, note, onError, type: z.literal("payment_due"), config: paymentDueConfigSchema }),
   z.object({ id: stepId, disabled, note, onError, type: z.literal("payment_expire"), config: paymentExpireConfigSchema }),
   z.object({ id: stepId, disabled, note, onError, type: z.literal("meta_reply"), config: metaReplyConfigSchema }),
+  z.object({ id: stepId, disabled, note, onError, type: z.literal("whatsapp_reply"), config: whatsappReplyConfigSchema }),
   z.object({ id: stepId, disabled, note, onError, type: z.literal("conversation_update"), config: conversationUpdateConfigSchema }),
   z.object({ id: stepId, disabled, note, onError, type: z.literal("stay_quote"), config: stayQuoteConfigSchema }),
   z.object({ id: stepId, disabled, note, onError, type: z.literal("assistant_read"), config: assistantReadConfigSchema }),
@@ -684,6 +716,11 @@ const triggerSchema = z.discriminatedUnion("type", [
         if (c.on === "created" && c.statusProperty !== undefined) ctx.addIssue({ code: "custom", path: ["statusProperty"], message: "statusProperty is only for status_changed" });
       }),
   }),
+  // C10 (decision 0138): inbound WhatsApp Cloud API message verified by X-Hub-Signature-256.
+  z.object({
+    type: z.literal("whatsapp_message"),
+    config: z.strictObject({ requireImage: z.boolean().default(false) }).default({ requireImage: false }),
+  }),
   z.object({
     type: z.literal("trello_card"),
     config: z.strictObject({ on: z.enum(["created", "moved_to_list"]).default("created") }).default({ on: "created" }),
@@ -694,7 +731,7 @@ export type Trigger = z.infer<typeof triggerSchema>;
 /** The upload fields a trigger brings in, which an AI step may read and a drive step saves. */
 export function triggerFileFields(trigger: Trigger): string[] {
   if (trigger.type === "form") return trigger.config.fields.filter((f) => f.type === "file").map((f) => f.name);
-  if (trigger.type === "meta_dm") return ["image"];
+  if (trigger.type === "meta_dm" || trigger.type === "whatsapp_message") return ["image"];
   if (trigger.type === "telegram_message" || trigger.type === "drive_file") return ["file"];
   return [];
 }
@@ -832,7 +869,7 @@ export const definitionSchema = z
     for (const s of def.steps) {
       if (byId.has(s.id)) fail(`duplicate step id "${s.id}"`);
       byId.set(s.id, s);
-      if (s.type === "drive" && !((def.trigger.type === "form" && def.trigger.config.fields.some((f) => f.type === "file")) || def.trigger.type === "meta_dm" || def.trigger.type === "telegram_message")) {
+      if (s.type === "drive" && !((def.trigger.type === "form" && def.trigger.config.fields.some((f) => f.type === "file")) || def.trigger.type === "meta_dm" || def.trigger.type === "whatsapp_message" || def.trigger.type === "telegram_message")) {
         fail(`drive step "${s.id}" needs a form trigger with at least one file field`);
       }
       if (s.type === "ai") {
@@ -852,7 +889,7 @@ export const definitionSchema = z
       if ((s.type === "shopify_create_product" || s.type === "shopify_update_product") && !priceTrusted(def.trigger) && Object.values(s.config).some((v) => typeof v === "string" && /\{\{\s*trigger\./.test(v))) {
         fail(`${s.type} step "${s.id}" cannot take its fields from a ${def.trigger.type} trigger, which anyone can fill in. Use fixed values, a signed webhook, a Shopify order or a manual run.`);
       }
-      if (s.type === "conversation_update" && def.trigger.type !== "meta_dm" && def.trigger.type !== "email") fail(`conversation_update step "${s.id}" needs a meta_dm or email trigger, which starts a conversation`);
+      if (s.type === "conversation_update" && def.trigger.type !== "meta_dm" && def.trigger.type !== "whatsapp_message" && def.trigger.type !== "email") fail(`conversation_update step "${s.id}" needs a meta_dm, whatsapp_message or email trigger, which starts a conversation`);
       if (s.type !== "booking") continue;
       if (s.config.start !== undefined && !bookingStartField(def.trigger, s.config)) fail(`booking step "${s.id}" needs start to be {{trigger.<field>}} for a datetime field of the trigger`);
       // Changing a booking is for staff (the Run button), MCP (its own tools) and signed webhooks, never a public form.
@@ -905,8 +942,8 @@ export const definitionSchema = z
       // A delay until a time may add a "late" edge next to its usual one (decision 0031).
       if (!labels && e.on === "late" && from.type === "delay") {
         if (from.config.until === undefined) fail(`only a delay with "until" can have a "late" edge, and "${from.id}" waits a fixed time`);
-        // A Meta reply may add fallbacks for a closed 24-hour window and for a conversation staff took over (decision 0115).
-      } else if (!labels && from.type === "meta_reply" && (e.on === "outside_window" || e.on === "paused")) {
+        // A Meta or WhatsApp reply may add fallbacks for a closed 24-hour window and for a conversation staff took over (decisions 0115 & 0138).
+      } else if (!labels && (from.type === "meta_reply" || from.type === "whatsapp_reply") && (e.on === "outside_window" || e.on === "paused")) {
         // allowed
       } else if (!labels && e.on === "failed") {
         if (!("onError" in from) || from.onError !== "failed_edge") {

@@ -1,6 +1,6 @@
 ﻿import { publicCopy } from "./public-copy";
 import { createHmac, randomInt, randomUUID, timingSafeEqual } from "node:crypto";
-import { dmClaimByMid, downloadTelegramFile, openDueForGuest, parseDiscordWebhook, parseSlackWebhook, parseTeamsWebhook, parseTelegramUpdate, ProviderError, submitDmReceiptClaim, telegramWebhookSecret, TooManyClaimsError, conversationPayload, parseMetaEchoes, recordEcho, recordInbound, normalizeShopDomain, parseShopifyCredential, parseShopifyOrder, verifyDaloyHmac, verifyDiscordEd25519, verifyShopifyHmac, verifySlackSignature, verifyTeamsWebhook, assertNotPaused, busyBetween, claimUsage, constantTimeEqual, downloadMetaImage, keyedRun, MetaImageError, MetaTransientImageError, parseMetaCredential, parseMetaWebhook, QuotaError, readBrand, saveUploads, usageSummary, verifyMetaSignature, workspaceLanguage, businessProfiles, connectionCredential, connections, createKeyedRun, createRun, eventSeen, finishEvent, keptEvent, markPaymentPaid, markPaymentRefunded, centavosToPesos, paymongoMode, readSecret, recordEvent, requests, runs, settleCheckout, triggers, verifyPaymongoSignature, WorkflowPausedError, workflows, workflowVersions, type Db, type NewUpload, type Payment } from "@daloy/db";
+import { dmClaimByMid, downloadTelegramFile, downloadWhatsAppMedia, openDueForGuest, parseDiscordWebhook, parseSlackWebhook, parseTeamsWebhook, parseTelegramUpdate, parseWhatsAppCredential, parseWhatsAppWebhook, ProviderError, submitDmReceiptClaim, telegramWebhookSecret, TooManyClaimsError, conversationPayload, parseMetaEchoes, recordEcho, recordInbound, normalizeShopDomain, parseShopifyCredential, parseShopifyOrder, verifyDaloyHmac, verifyDiscordEd25519, verifyShopifyHmac, verifySlackSignature, verifyTeamsWebhook, assertNotPaused, busyBetween, claimUsage, constantTimeEqual, downloadMetaImage, keyedRun, MetaImageError, MetaTransientImageError, parseMetaCredential, parseMetaWebhook, QuotaError, readBrand, saveUploads, usageSummary, verifyMetaSignature, workspaceLanguage, businessProfiles, connectionCredential, connections, createKeyedRun, createRun, eventSeen, finishEvent, keptEvent, markPaymentPaid, markPaymentRefunded, centavosToPesos, paymongoMode, readSecret, recordEvent, requests, runs, settleCheckout, triggers, verifyPaymongoSignature, WorkflowPausedError, workflows, workflowVersions, type Db, type NewUpload, type Payment } from "@daloy/db";
 import { definitionSchema, workflowChoices, FILE_MAX_BYTES, FILES_PER_FIELD, FILES_PER_SUBMISSION, fileType, OFFICE_REQUEST, parsePayload, PURCHASE_REQUEST, safeFileName, type FileRef, type FormField, type Resource } from "@daloy/engine";
 import {
   BadRequestException,
@@ -247,6 +247,25 @@ export class PaymongoHooksController {
   }
 }
 
+function replyMetaHubChallenge(req: Request, res: Response, verifyToken: string) {
+  const q = req.query as Record<string, unknown>;
+  const hub = q.hub && typeof q.hub === "object" ? (q.hub as Record<string, unknown>) : undefined;
+  const mode = q["hub.mode"] ?? hub?.mode;
+  const token = q["hub.verify_token"] ?? hub?.verify_token;
+  const challenge = q["hub.challenge"] ?? hub?.challenge;
+  if (
+    mode !== "subscribe" ||
+    typeof token !== "string" ||
+    typeof challenge !== "string" ||
+    challenge.length === 0 ||
+    challenge.length > 256 ||
+    !constantTimeEqual(token, verifyToken)
+  ) {
+    throw new ForbiddenException();
+  }
+  res.status(200).type("text/plain; charset=utf-8").send(challenge);
+}
+
 /**
  * Meta Messenger and Instagram DM webhook (decision 0075).
  * GET answers Meta's hub.challenge verification after constant-time verify_token check.
@@ -277,22 +296,7 @@ export class MetaHooksController {
   async verify(@Param("path") path: string, @Req() req: Request, @Res() res: Response) {
     const found = await this.activeConnection(path);
     if (!found) throw new ForbiddenException();
-    const q = req.query as Record<string, unknown>;
-    const hub = q.hub && typeof q.hub === "object" ? (q.hub as Record<string, unknown>) : undefined;
-    const mode = q["hub.mode"] ?? hub?.mode;
-    const token = q["hub.verify_token"] ?? hub?.verify_token;
-    const challenge = q["hub.challenge"] ?? hub?.challenge;
-    if (
-      mode !== "subscribe" ||
-      typeof token !== "string" ||
-      typeof challenge !== "string" ||
-      challenge.length === 0 ||
-      challenge.length > 256 ||
-      !constantTimeEqual(token, found.cred.verifyToken)
-    ) {
-      throw new ForbiddenException();
-    }
-    res.status(200).type("text/plain; charset=utf-8").send(challenge);
+    replyMetaHubChallenge(req, res, found.cred.verifyToken);
   }
 
   @Post(":path")
@@ -408,6 +412,167 @@ export class MetaHooksController {
             ...(found.conn.destination?.instagramAccountId ? { instagramAccountId: found.conn.destination.instagramAccountId } : {}),
           };
           const uploadClaimKey = `meta-upload:${l.workflowId}:${ev.messageId}`;
+          const run = await createKeyedRun(
+            tx,
+            l.workflowId,
+            l.version.id,
+            payload,
+            key,
+            runFiles.length > 0 ? { ...linked, uploads: { userId: found.userId, files: runFiles, claimKey: uploadClaimKey } } : linked,
+          ).catch(async (err: unknown) => {
+            if (err instanceof WorkflowPausedError) return null;
+            if (err instanceof QuotaError) {
+              if (cfg?.requireImage) return null;
+              return createKeyedRun(tx, l.workflowId, l.version.id, { ...payload, image: [] }, key, linked).catch((e: unknown) => {
+                if (e instanceof WorkflowPausedError) return null;
+                throw e;
+              });
+            }
+            throw err;
+          });
+          if (run && !run.duplicate) ids.push(run.runId);
+        }
+        return ids;
+      });
+      for (const runId of started) await enqueueRun(this.boss, runId);
+      startedCount += started.length;
+    }
+    return { ok: true, started: startedCount };
+  }
+}
+
+/**
+ * WhatsApp Cloud API webhook (C10 / N25, decision 0138).
+ * GET answers Meta's hub.challenge verification after constant-time verify_token check.
+ * POST verifies X-Hub-Signature-256 against the raw request body, deduplicates by WhatsApp wamid via run_keys,
+ * records conversations as channel "whatsapp", safely downloads verified receipt images, and starts matching runs.
+ */
+@Controller("hooks/whatsapp")
+@UseGuards(RateLimit(120))
+export class WhatsAppHooksController {
+  constructor(
+    @Inject(DB) private readonly db: Db,
+    @Inject(BOSS) private readonly boss: PgBoss,
+    @Inject(CONFIG) private readonly config: Required<ApiConfig>,
+  ) {}
+
+  private async activeConnection(path: string) {
+    const [owner] = await this.db
+      .select({ userId: connections.userId })
+      .from(connections)
+      .where(and(eq(connections.provider, "whatsapp"), eq(connections.status, "active"), sql`${connections.destination}->>'webhookPath' = ${path}`));
+    if (!owner) return null;
+    const conn = await connectionCredential(this.db, this.config.secretsKey, owner.userId, "whatsapp");
+    if (!conn || conn.status !== "active") return null;
+    return { userId: owner.userId, conn, cred: parseWhatsAppCredential(conn.credential) };
+  }
+
+  @Get(":path")
+  async verify(@Param("path") path: string, @Req() req: Request, @Res() res: Response) {
+    const found = await this.activeConnection(path);
+    if (!found) throw new ForbiddenException();
+    replyMetaHubChallenge(req, res, found.cred.verifyToken);
+  }
+
+  @Post(":path")
+  @HttpCode(200)
+  async receive(@Param("path") path: string, @Req() req: RawBodyRequest<Request>, @Headers("x-hub-signature-256") signature: string | undefined) {
+    const found = await this.activeConnection(path);
+    if (!found) throw new ForbiddenException();
+    const rawBody = req.rawBody ?? Buffer.alloc(0);
+    if (!verifyMetaSignature(rawBody, signature, found.cred.appSecret)) throw new UnauthorizedException("invalid signature");
+
+    const events = parseWhatsAppWebhook(req.body, found.conn.destination);
+    if (events.length === 0) return { ok: true, started: 0 };
+
+    const listeners = await this.db
+      .select({ workflowId: triggers.workflowId, pausedAt: workflows.pausedAt, version: workflowVersions })
+      .from(triggers)
+      .innerJoin(workflows, eq(workflows.id, triggers.workflowId))
+      .innerJoin(workflowVersions, latestPublished)
+      .where(and(eq(workflows.userId, found.userId), eq(triggers.type, "whatsapp_message")));
+
+    let startedCount = 0;
+    for (const ev of events) {
+      const openDueId = ev.mediaIds.length > 0 ? await openDueForGuest(this.db, found.userId, "whatsapp", ev.senderId) : null;
+      const matching = listeners.filter((l) => {
+        if (l.pausedAt) return false;
+        const cfg = savedTrigger(l.version.definition, "whatsapp_message") as { requireImage?: boolean } | undefined;
+        if (!cfg) return false;
+        if (cfg.requireImage && ev.mediaIds.length === 0) return false;
+        return true;
+      });
+      if (matching.length === 0 && !openDueId) continue;
+
+      const key = `wa:${ev.messageId}`;
+      const pending: typeof matching = [];
+      for (const l of matching) {
+        if (!(await keyedRun(this.db, l.workflowId, key, false))) pending.push(l);
+      }
+      const existingClaim = openDueId ? await dmClaimByMid(this.db, found.userId, ev.messageId) : undefined;
+      const needsClaim = Boolean(openDueId && !existingClaim);
+      if (pending.length === 0 && !needsClaim) continue;
+
+      const downloaded: { name: string; type: "jpeg" | "png" | "webp"; data: Buffer }[] = [];
+      if (ev.mediaIds.length > 0) {
+        const { upload } = await usageSummary(this.db, found.userId);
+        const canUpload = upload.limit === null || upload.used < upload.limit;
+        if (canUpload) {
+          for (let i = 0; i < ev.mediaIds.length; i++) {
+            try {
+              downloaded.push(await downloadWhatsAppMedia(this.config.providers, found.cred.accessToken, ev.mediaIds[i]!, { index: i + 1 }));
+            } catch (err) {
+              if (err instanceof MetaImageError) continue;
+              if (err instanceof MetaTransientImageError) {
+                throw new ServiceUnavailableException("WhatsApp media download is temporarily unavailable.");
+              }
+              throw err;
+            }
+          }
+        }
+      }
+
+      let claim = existingClaim;
+      if (needsClaim && openDueId && downloaded.length > 0) {
+        claim = await submitDmReceiptClaim(this.db, {
+          userId: found.userId,
+          dueId: openDueId,
+          sourceMid: ev.messageId,
+          channel: "whatsapp",
+          caption: ev.text,
+          image: { bytes: downloaded[0]!.data },
+        }).catch((err: unknown) => {
+          if (err instanceof QuotaError || err instanceof TooManyClaimsError) return undefined;
+          throw err;
+        });
+      }
+      if (pending.length === 0 && !claim) continue;
+
+      const started = await this.db.transaction(async (tx) => {
+        const convo = await recordInbound(tx, { userId: found.userId, channel: "whatsapp", externalId: ev.senderId, mid: ev.messageId, text: ev.text, at: new Date(ev.timestamp) });
+        const conversation = await conversationPayload(tx, convo);
+        const linked = { conversationId: convo.id, conversationVersion: convo.version };
+        const ids: string[] = [];
+        for (const l of pending) {
+          const cfg = savedTrigger(l.version.definition, "whatsapp_message") as { requireImage?: boolean } | undefined;
+          if (cfg?.requireImage && downloaded.length === 0) continue;
+
+          const runFiles: NewUpload[] = downloaded.map((img) => ({ id: randomUUID(), field: "image", name: img.name, type: img.type, data: img.data }));
+          const imageRefs: FileRef[] = runFiles.map((f) => ({ id: f.id, name: f.name, type: f.type, size: f.data.length }));
+          const payload = {
+            channel: "whatsapp",
+            senderId: ev.senderId,
+            ...(ev.senderName ? { senderName: ev.senderName } : {}),
+            messageId: ev.messageId,
+            text: ev.text,
+            timestamp: ev.timestamp,
+            image: imageRefs,
+            ...(claim ? { claimId: claim.id } : {}),
+            ...(ev.choice && workflowChoices(l.version.definition).includes(ev.choice) ? { choice: ev.choice } : {}),
+            conversation,
+            ...(found.conn.destination?.phoneNumberId ? { phoneNumberId: found.conn.destination.phoneNumberId } : {}),
+          };
+          const uploadClaimKey = `wa-upload:${l.workflowId}:${ev.messageId}`;
           const run = await createKeyedRun(
             tx,
             l.workflowId,

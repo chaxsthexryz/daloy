@@ -15,7 +15,7 @@ import { bookingChanges, bookingResults, bookings, conversations, paymentDues, p
 
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 type Row = typeof bookings.$inferSelect;
-type ConvoRow = { channel: "messenger" | "instagram" | "email" | "telegram"; externalId: string; fields: Record<string, string> };
+type ConvoRow = { channel: "messenger" | "instagram" | "email" | "telegram" | "whatsapp"; externalId: string; fields: Record<string, string> };
 
 const ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 // shortcut: 32^6 random references; a collision fails that attempt (the step retries with a new one). Lengthen when volume grows.
@@ -41,7 +41,7 @@ const withTimes = {
 };
 
 export type BookingGuest = {
-  channel: "messenger" | "instagram" | "email" | "telegram";
+  channel: "messenger" | "instagram" | "email" | "telegram" | "whatsapp";
   externalId: string;
   name?: string;
   email?: string;
@@ -70,7 +70,7 @@ function guestOf(c: ConvoRow | null | undefined): BookingGuest | undefined {
   const f = c.fields ?? {};
   const name = f.name?.trim() || undefined;
   const email = f.email?.trim() || (c.channel === "email" ? c.externalId : undefined);
-  const phone = f.phone?.trim() || undefined;
+  const phone = f.phone?.trim() || (c.channel === "whatsapp" ? c.externalId : undefined);
   return {
     channel: c.channel,
     externalId: c.externalId,

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { workspaceLanguage, readKnowledge, aiConnection, bookFromStep, bookingEventPayload, bookingOfStep, bookingReference, centavosToPesos, createDue, dispatchInternalTrigger, dueConversationId, dueForStep, DueTakenError, expireDue, findReviewer, mockAssistantSnapshot, parseAssistantScope, paymentEventPayload, pendingCheckout, pesosToCentavos, readAssistantSnapshot, checkReceiptReference, checkRecipients, claimTimeout, claimUsage, createApproval, findPaymentForStep, findApprover, queueCalendarEvent, queueDelivery, readSecrets, redactSecrets, secretForms, sendAs, startSubWorkflow, type BookingTriggerEvent, type Db, type MailDeps, type Provider, type StepBookingResult } from "@daloy/db";
-import { conversationMessages, deliveries, emailThreadFor, isPaused, PAST_WINDOW, prepareReply, providerUrls, recordOutboundEmail, recordOutboundReply, runConversation, runs, saveConversationFields, sendStaffAlert, takeOverConversation, windowOpen, type ProviderUrls } from "@daloy/db";
+import { conversationMessages, deliveries, emailThreadFor, isPaused, normalizeWhatsAppPhone, PAST_WINDOW, prepareReply, providerUrls, recordOutboundEmail, recordOutboundReply, runConversation, runs, saveConversationFields, sendStaffAlert, takeOverConversation, windowOpen, type ProviderUrls } from "@daloy/db";
 import { and, eq, gt, ne } from "drizzle-orm";
 import { approvalEmailBody, checkDiscordContent, DEFAULT_STAY_TIMEZONE, ExpressionError, numberedMenu, type Menu, wouldDo, type FileRef, bookingStartField, conditionBranch, normalizePhMobile, parseZoned, runTransform, SHEETS_MAX_COLS, SHEETS_MAX_ROWS, SMS_MAX_CHARS, stayRange, stayTimesFromKnowledge, switchBranch, TransformError, type TestChoice, type Trigger, declaresJson, parseInstant, isRetryable, mockAiOutput, parseJsonTemplate, resolveJsonTemplate, resolveTemplate, StepError, usesSecrets, type ExpressionContext, type HistoryItem, type Language, quoteStay, QuoteError, type Step } from "@daloy/engine";
 import type { StepExecutor, StepResult } from "../advance";
@@ -67,6 +67,7 @@ type SlackInput = { text: string; chatId?: string };
 type SmsInput = { to: string; message: string; senderId?: string };
 type CalendarInput = { title: string; description: string };
 type MetaReplyInput = { recipientId: string; channel?: string; text: string; quickReplies?: Menu };
+type WhatsAppReplyInput = { mode?: "text" | "template"; to: string; text?: string; quickReplies?: Menu; templateName?: string; templateLanguage?: string; templateParams?: string[] };
 type RecordInput = { fields?: Record<string, string>; title?: string; name?: string; desc?: string };
 type DueInput = { reference: string; kind: "deposit" | "full" | "balance"; amount: string; total?: string; booking?: string; checkout: boolean; reviewer?: string; channel?: "sms" | "messenger"; to?: string; confirmedMessage?: string };
 type CallWorkflowInput = { workflowSlug: string; payload: Record<string, string> };
@@ -217,6 +218,18 @@ ${numberedMenu(menu)}` : text(body, ctx) } satisfies EmailInput;
     }
     case "meta_reply":
       return { recipientId: text(step.config.recipientId, ctx), channel: text(step.config.channel, ctx), text: text(step.config.text, ctx), ...(step.config.quickReplies ? { quickReplies: step.config.quickReplies } : {}) } satisfies MetaReplyInput;
+    case "whatsapp_reply": {
+      const c = step.config;
+      return {
+        mode: c.mode ?? "text",
+        to: text(c.to, ctx),
+        ...(c.text !== undefined ? { text: text(c.text, ctx) } : {}),
+        ...(c.quickReplies ? { quickReplies: c.quickReplies } : {}),
+        ...(c.templateName !== undefined ? { templateName: c.templateName } : {}),
+        ...(c.templateLanguage !== undefined ? { templateLanguage: c.templateLanguage } : {}),
+        ...(c.templateParams ? { templateParams: c.templateParams.map((p) => text(p, ctx)) } : {}),
+      } satisfies WhatsAppReplyInput;
+    }
     case "conversation_update":
       return { fields: Object.fromEntries(Object.entries(step.config.fields).map(([k, v]) => [k, text(v ?? "", ctx)])) };
     case "stay_quote": {
@@ -739,11 +752,108 @@ async function runStep(deps: FullDeps, step: Step, input: unknown, ctx: Expressi
       });
       return { output: { deliveryId: d.id, reference, state: d.state, recipientId } };
     }
+    case "whatsapp_reply": {
+      const cfg = input as WhatsAppReplyInput;
+      const mode = cfg.mode ?? "text";
+      const to = normalizeWhatsAppPhone(cfg.to ?? "");
+      if (!to) throw new StepError("WhatsApp reply needs a valid phone number (e.g. +639171234567).", false);
+      const trig = (ctx.trigger ?? {}) as Record<string, unknown>;
+      const trigSender = typeof trig.senderId === "string" ? normalizeWhatsAppPhone(trig.senderId) : null;
+      if (mode === "text" && trigSender && to !== trigSender) {
+        throw new StepError("WhatsApp service reply recipient must match the incoming sender.", false);
+      }
+      if (mock) {
+        return {
+          output: {
+            mocked: true,
+            mode,
+            to,
+            ...(mode === "template" ? { templateName: cfg.templateName, templateLanguage: cfg.templateLanguage ?? "en" } : { text: cfg.text ?? "" }),
+          },
+        };
+      }
+      const [runRow] = UUID.test(runId)
+        ? await deps.db.select({ conversationId: runs.conversationId, createdAt: runs.createdAt }).from(runs).where(eq(runs.id, runId))
+        : [];
+      const convo = await runConversation(deps.db, runRow?.conversationId);
+      const ref = trig.reference ?? trig.messageId;
+      const reference = typeof ref === "string" ? ref : runId;
+      const receivingPhoneNumberId = typeof trig.phoneNumberId === "string" && trig.phoneNumberId.trim() ? trig.phoneNumberId.trim() : undefined;
+
+      if (mode === "text") {
+        const body = (cfg.text ?? "").trim();
+        if (!body) throw new StepError("WhatsApp reply message cannot be empty.", false);
+        if (body.length > 4096) throw new StepError("WhatsApp reply message can be at most 4,096 characters.", false);
+        const initialStatus = (trig.conversation as { status?: string } | undefined)?.status;
+        const hasHandoff = Object.values((ctx.steps ?? {}) as Record<string, { output?: Record<string, unknown> }>).some((s) => s?.output?.needsHuman === true);
+        let handoffReply = false;
+        if (convo && isPaused(convo) && hasHandoff && initialStatus !== "staff" && convo.staffUntil === null && runRow) {
+          const [alreadySent] = await deps.db
+            .select({ id: deliveries.id })
+            .from(deliveries)
+            .where(and(eq(deliveries.runId, runId), eq(deliveries.provider, "whatsapp"), ne(deliveries.stepId, step.id)))
+            .limit(1);
+          handoffReply = !alreadySent;
+        }
+        if (convo && isPaused(convo) && !handoffReply) return { branch: "paused", output: { skipped: "A staff member took over this conversation, so the bot did not reply." } };
+        if (convo && !windowOpen(convo.lastInboundAt)) return { branch: "outside_window", output: { skipped: "Past WhatsApp's 24-hour service window. Use an approved utility template instead." } };
+        const inboundTimestamp = convo?.lastInboundAt?.toISOString() ?? (typeof trig.timestamp === "string" && trig.timestamp.trim() ? trig.timestamp.trim() : undefined);
+        const d = await deps.db.transaction(async (tx) => {
+          const [queued] = await tx.select().from(deliveries).where(and(eq(deliveries.runId, runId), eq(deliveries.stepId, step.id)));
+          if (queued) return queued;
+          const sent = convo ? await prepareReply(tx, { id: convo.id, userId, runId, text: body, max: 4096 }) : body;
+          return queueDelivery(tx, {
+            userId,
+            runId,
+            stepId: step.id,
+            provider: "whatsapp",
+            reference,
+            payload: {
+              mode: "text",
+              to,
+              text: sent,
+              ...(cfg.quickReplies ? { quickReplies: cfg.quickReplies } : {}),
+              ...(inboundTimestamp ? { inboundTimestamp } : {}),
+              ...(receivingPhoneNumberId ? { receivingPhoneNumberId } : {}),
+            },
+          });
+        });
+        return { output: { deliveryId: d.id, reference, state: d.state, mode: "text", to } };
+      }
+
+      const templateName = (cfg.templateName ?? "").trim();
+      if (!templateName) throw new StepError("WhatsApp template mode needs an approved template name.", false);
+      const templateLanguage = (cfg.templateLanguage ?? "en").trim() || "en";
+      const templateParams = (cfg.templateParams ?? []).map((p) => p.slice(0, 500));
+      const d = await deps.db.transaction(async (tx) => {
+        const [queued] = await tx.select().from(deliveries).where(and(eq(deliveries.runId, runId), eq(deliveries.stepId, step.id)));
+        if (queued) return queued;
+        if (convo) {
+          await recordOutboundReply(tx, { conversationId: convo.id, runId, text: `Template: ${templateName}${templateParams.length ? ` (${templateParams.join(", ")})` : ""}` });
+        }
+        return queueDelivery(tx, {
+          userId,
+          runId,
+          stepId: step.id,
+          provider: "whatsapp",
+          reference,
+          payload: {
+            mode: "template",
+            to,
+            templateName,
+            templateLanguage,
+            ...(templateParams.length ? { templateParams } : {}),
+            ...(receivingPhoneNumberId ? { receivingPhoneNumberId } : {}),
+          },
+        });
+      });
+      return { output: { deliveryId: d.id, reference, state: d.state, mode: "template", to, templateName } };
+    }
     case "conversation_update": {
       const cfg = input as { fields: Record<string, string> };
       if (mock) return { output: { mocked: true, fields: cfg.fields } };
       const [linked] = await deps.db.select({ conversationId: runs.conversationId }).from(runs).where(eq(runs.id, runId));
-      if (!linked?.conversationId) throw new StepError("This step saves details on a customer's conversation, and this run was not started by a Messenger, Instagram or email message.", false);
+      if (!linked?.conversationId) throw new StepError("This step saves details on a customer's conversation, and this run was not started by a Messenger, Instagram, WhatsApp or email message.", false);
       return { output: { fields: (await saveConversationFields(deps.db, linked.conversationId, cfg.fields)) ?? {} } };
     }
     case "stay_quote": {

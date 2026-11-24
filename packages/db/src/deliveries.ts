@@ -11,6 +11,7 @@ import { supersededSql } from "./bookings";
 import { runSuperseded } from "./conversations";
 import { bookingForCalendar } from "./calendar";
 import { metaSend, parseMetaCredential } from "./meta";
+import { parseWhatsAppCredential, whatsappSend } from "./whatsapp";
 import { createShopifyProduct, parseShopifyCredential, shopifyConn, updateShopifyProduct, type ShopifyProductFields } from "./shopify";
 import { bookings, calendarEvents, connections, deliveries, runs, users, type Provider } from "./schema";
 import { readUpload } from "./uploads";
@@ -274,6 +275,51 @@ async function attempt(db: Db, key: Buffer, urls: ProviderUrls, d: Delivery): Pr
       const { pageAccessToken } = parseMetaCredential(activeConn.credential);
       return { state: "delivered", result: await metaSend(urls, pageAccessToken, { recipientId: m.recipientId, channel: m.channel, text: m.text, quickReplies: m.quickReplies }) };
     }
+    if (d.provider === "whatsapp") {
+      const w = d.payload as {
+        mode?: "text" | "template";
+        to?: string;
+        text?: string;
+        quickReplies?: Menu;
+        templateName?: string;
+        templateLanguage?: string;
+        templateParams?: string[];
+        inboundTimestamp?: string;
+        receivingPhoneNumberId?: string;
+      };
+      if (!destination.phoneNumberId || !w.to) {
+        return { state: "failed", error: "Missing recipient or phone number configuration for WhatsApp.", kind: "invalid" };
+      }
+      if (w.receivingPhoneNumberId && destination.phoneNumberId !== w.receivingPhoneNumberId) {
+        return {
+          state: "needs_review",
+          error: `The ${name} connection changed since this message arrived, so it cannot be sent from ${describe(d.provider, destination)}.`,
+          kind: "destination_changed",
+        };
+      }
+      const mode = w.mode ?? "text";
+      if (mode === "text") {
+        const inboundAt = w.inboundTimestamp ? Date.parse(w.inboundTimestamp) : Number.NaN;
+        if (Number.isFinite(inboundAt) && Date.now() - inboundAt > 24 * 3600_000) {
+          return { state: "failed", error: "Past WhatsApp's 24-hour service window. Use an approved utility template instead.", kind: "invalid" };
+        }
+        if (!w.text) return { state: "failed", error: "Missing message text for WhatsApp service reply.", kind: "invalid" };
+        const { accessToken } = parseWhatsAppCredential(activeConn.credential);
+        return { state: "delivered", result: await whatsappSend(urls, accessToken, destination.phoneNumberId, { mode: "text", to: w.to, text: w.text, quickReplies: w.quickReplies }) };
+      }
+      if (!w.templateName) return { state: "failed", error: "Missing WhatsApp template name.", kind: "invalid" };
+      const { accessToken } = parseWhatsAppCredential(activeConn.credential);
+      return {
+        state: "delivered",
+        result: await whatsappSend(urls, accessToken, destination.phoneNumberId, {
+          mode: "template",
+          to: w.to,
+          templateName: w.templateName,
+          templateLanguage: w.templateLanguage,
+          templateParams: w.templateParams,
+        }),
+      };
+    }
     return { state: "delivered", result: await slackPost(urls, slackToken(activeConn), destination.channelId!, text) };
   };
   try {
@@ -374,7 +420,7 @@ const DESTINATION_ONLY = new Set<Provider>(["airtable", "notion", "trello"]);
 
 /** Same place: the fields that pick where a delivery lands. Display names may change without moving anything. */
 function sameDestination(a: Record<string, string> | null, b: Record<string, string>) {
-  const where = (d: Record<string, string> | null) => JSON.stringify([d?.spreadsheetId, d?.calendarId, d?.folderId, d?.tab, d?.channelId, d?.chatId, d?.baseId, d?.tableId, d?.databaseId, d?.listId, d?.mailbox, d?.channelName, d?.senderId, d?.pageId, d?.instagramAccountId, d?.shop]);
+  const where = (d: Record<string, string> | null) => JSON.stringify([d?.spreadsheetId, d?.calendarId, d?.folderId, d?.tab, d?.channelId, d?.chatId, d?.baseId, d?.tableId, d?.databaseId, d?.listId, d?.mailbox, d?.channelName, d?.senderId, d?.pageId, d?.instagramAccountId, d?.phoneNumberId, d?.shop]);
   return where(a) === where(b);
 }
 
@@ -382,6 +428,7 @@ function reviewHint(provider: Provider, dest: Record<string, string>) {
   if (provider === "outlook") return `Look in Sent Items of ${dest.mailbox ?? "the mailbox"}, then choose Mark as sent or Send again.`;
   if (provider === "unisms") return `Check your UniSMS delivery logs (Sender ID ${dest.senderId ?? "Unisoft"}), then choose Mark as sent or Send again.`;
   if (provider === "meta_messenger") return `Check the inbox of ${describe(provider, dest)}, then choose Mark as sent or Send again.`;
+  if (provider === "whatsapp") return `Check WhatsApp Manager for ${dest.verifiedName ?? dest.displayPhone ?? dest.phoneNumberId ?? "the number"}, then choose Mark as sent or Send again.`;
   if (provider === "shopify") return `Look under Products in the admin of ${describe(provider, dest)}, then choose Mark as posted or Post again.`;
   return `Check ${describe(provider, dest)}, then choose Mark as posted or Post again.`;
 }

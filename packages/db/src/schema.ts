@@ -272,7 +272,7 @@ export const conversations = pgTable(
   {
     id: id(),
     userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
-    channel: text("channel", { enum: ["messenger", "instagram", "email", "telegram"] }).notNull(),
+    channel: text("channel", { enum: ["messenger", "instagram", "email", "telegram", "whatsapp"] }).notNull(),
     externalId: text("external_id").notNull(),
     status: text("status", { enum: ["bot", "staff", "closed"] }).notNull().default("bot"),
     version: integer("version").notNull().default(0),
@@ -288,7 +288,7 @@ export const conversations = pgTable(
   (t) => [
     unique().on(t.userId, t.channel, t.externalId),
     index("conversations_open_due").on(t.openDueId).where(sql`${t.openDueId} is not null`),
-    check("conversations_channel", sql`${t.channel} in ('messenger', 'instagram', 'email', 'telegram')`),
+    check("conversations_channel", sql`${t.channel} in ('messenger', 'instagram', 'email', 'telegram', 'whatsapp')`),
     check("conversations_status", sql`${t.status} in ('bot', 'staff', 'closed')`),
   ],
 );
@@ -695,7 +695,7 @@ export const mailSenders = pgTable("mail_senders", {
   check("mail_senders_auth_method", sql`${t.authMethod} in ('app_password', 'oauth')`),
 ]);
 
-export const PROVIDERS = ["google_sheets", "slack", "outlook", "teams", "telegram", "google_calendar", "paymongo", "airtable", "notion", "trello", "google_drive", "unisms", "meta_messenger", "shopify", "discord"] as const;
+export const PROVIDERS = ["google_sheets", "slack", "outlook", "teams", "telegram", "google_calendar", "paymongo", "airtable", "notion", "trello", "google_drive", "unisms", "meta_messenger", "shopify", "discord", "whatsapp"] as const;
 export type Provider = (typeof PROVIDERS)[number];
 /** What a connection's credential is (decision 0058): a pasted token, a Google service account key, an OAuth token blob, or a webhook URL. */
 export const AUTH_METHODS = ["token", "service_account", "oauth", "webhook_url"] as const;
@@ -740,7 +740,7 @@ export const connections = pgTable(
     primaryKey({ columns: [t.userId, t.provider] }),
     // The same provider account connected elsewhere in kymavo (plan R14).
     index("connections_external_id").on(t.externalId),
-    check("connections_provider", sql`${t.provider} in ('google_sheets', 'slack', 'outlook', 'teams', 'telegram', 'google_calendar', 'paymongo', 'airtable', 'notion', 'trello', 'google_drive', 'unisms', 'meta_messenger', 'shopify', 'discord')`),
+    check("connections_provider", sql`${t.provider} in ('google_sheets', 'slack', 'outlook', 'teams', 'telegram', 'google_calendar', 'paymongo', 'airtable', 'notion', 'trello', 'google_drive', 'unisms', 'meta_messenger', 'shopify', 'discord', 'whatsapp')`),
     check("connections_status", sql`${t.status} in ('active', 'failed')`),
     check("connections_auth_method", sql`${t.authMethod} in ('token', 'service_account', 'oauth', 'webhook_url')`),
   ],
@@ -793,7 +793,7 @@ export const deliveries = pgTable(
     stepId: text("step_id").notNull(),
     provider: text("provider", { enum: PROVIDERS }).notNull(),
     reference: text("reference").notNull(),
-    payload: jsonb("payload").$type<{ row: string[]; header?: string[] } | { rows: string[][]; header?: string[] } | { bookingId: string } | { text: string; chatId?: string } | { recipientId: string; channel?: string; text: string; inboundTimestamp?: string; receivingPageId?: string; receivingInstagramAccountId?: string } | { fields?: Record<string, string>; title?: string; name?: string; desc?: string } | { to: string; subject: string; text: string } | { to: string; message: string; senderId?: string } | { files: FileRef[] } | { shopify: "create" | "update"; by?: "id" | "sku"; product?: string; fields: Record<string, string> }>().notNull(),
+    payload: jsonb("payload").$type<{ row: string[]; header?: string[] } | { rows: string[][]; header?: string[] } | { bookingId: string } | { text: string; chatId?: string } | { recipientId: string; channel?: string; text: string; inboundTimestamp?: string; receivingPageId?: string; receivingInstagramAccountId?: string } | { mode: "text" | "template"; to: string; text?: string; templateName?: string; templateLanguage?: string; templateParams?: string[]; inboundTimestamp?: string; receivingPhoneNumberId?: string } | { fields?: Record<string, string>; title?: string; name?: string; desc?: string } | { to: string; subject: string; text: string } | { to: string; message: string; senderId?: string } | { files: FileRef[] } | { shopify: "create" | "update"; by?: "id" | "sku"; product?: string; fields: Record<string, string> }>().notNull(),
     state: text("state", { enum: DELIVERY_STATES }).notNull().default("queued"),
     checkFirst: boolean("check_first").notNull().default(false),
     attempts: integer("attempts").notNull().default(0),
@@ -824,7 +824,7 @@ export const deliveries = pgTable(
     // The worker polls for due deliveries every couple of seconds.
     index("deliveries_due").on(t.nextAttemptAt).where(sql`${t.state} in ('queued', 'sending')`),
     check("deliveries_state", sql`${t.state} in ('queued', 'sending', 'delivered', 'needs_review', 'failed')`),
-    check("deliveries_provider", sql`${t.provider} in ('google_sheets', 'slack', 'outlook', 'teams', 'telegram', 'google_calendar', 'paymongo', 'airtable', 'notion', 'trello', 'google_drive', 'unisms', 'meta_messenger', 'shopify', 'discord')`),
+    check("deliveries_provider", sql`${t.provider} in ('google_sheets', 'slack', 'outlook', 'teams', 'telegram', 'google_calendar', 'paymongo', 'airtable', 'notion', 'trello', 'google_drive', 'unisms', 'meta_messenger', 'shopify', 'discord', 'whatsapp')`),
   ],
 );
 

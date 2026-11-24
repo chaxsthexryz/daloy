@@ -54,7 +54,7 @@ export async function retireSecret(tx: Pick<Db, "select" | "insert" | "execute">
  * is either still current or already retired here, never missing from both (retest of 6e603de).
  */
 export async function secretValuesToHide(db: Pick<Db, "execute">, key: Buffer, userId: string): Promise<string[]> {
-  const { rows } = await db.execute<EncryptedSecret & { name: string; kind: "plain" | "oauth" | "meta" | "shopify" }>(sql`
+  const { rows } = await db.execute<EncryptedSecret & { name: string; kind: "plain" | "oauth" | "meta" | "whatsapp" | "shopify" }>(sql`
     select name, ciphertext, iv, auth_tag as "authTag", 'plain' as kind from secrets where user_id = ${userId}
     union all
     select name, ciphertext, iv, auth_tag as "authTag", 'plain' as kind from retired_secrets where user_id = ${userId}
@@ -64,6 +64,8 @@ export async function secretValuesToHide(db: Pick<Db, "execute">, key: Buffer, u
     select 'connection:' || provider, credential_ciphertext, credential_iv, credential_auth_tag, 'plain' as kind from connections where user_id = ${userId} and provider = 'unisms'
     union all
     select 'connection:' || provider, credential_ciphertext, credential_iv, credential_auth_tag, 'meta' as kind from connections where user_id = ${userId} and provider = 'meta_messenger'
+    union all
+    select 'connection:' || provider, credential_ciphertext, credential_iv, credential_auth_tag, 'whatsapp' as kind from connections where user_id = ${userId} and provider = 'whatsapp'
     union all
     select 'connection:' || provider, credential_ciphertext, credential_iv, credential_auth_tag, 'shopify' as kind from connections where user_id = ${userId} and provider = 'shopify'
     union all
@@ -79,8 +81,8 @@ export async function secretValuesToHide(db: Pick<Db, "execute">, key: Buffer, u
   };
   const metaTokens = (plaintext: string): string[] => {
     try {
-      const parsed = JSON.parse(plaintext) as { pageAccessToken?: unknown; appSecret?: unknown; verifyToken?: unknown } | null;
-      return [parsed?.pageAccessToken, parsed?.appSecret, parsed?.verifyToken].filter((v): v is string => typeof v === "string" && v.length > 0);
+      const parsed = JSON.parse(plaintext) as { pageAccessToken?: unknown; accessToken?: unknown; appSecret?: unknown; verifyToken?: unknown } | null;
+      return [parsed?.pageAccessToken, parsed?.accessToken, parsed?.appSecret, parsed?.verifyToken].filter((v): v is string => typeof v === "string" && v.length > 0);
     } catch {
       return [];
     }
@@ -97,12 +99,12 @@ export async function secretValuesToHide(db: Pick<Db, "execute">, key: Buffer, u
     if (r.kind === "oauth") return tokens(r);
     if (r.kind === "shopify" || r.name === "connection:shopify") return [decryptSecret(key, userId, r.name, r), ...shopifyTokens(decryptSecret(key, userId, r.name, r))];
     const plaintext = decryptSecret(key, userId, r.name, r);
-    if (r.kind === "meta" || r.name === "connection:meta_messenger") return [plaintext, ...metaTokens(plaintext)];
+    if (r.kind === "meta" || r.kind === "whatsapp" || r.name === "connection:meta_messenger" || r.name === "connection:whatsapp") return [plaintext, ...metaTokens(plaintext)];
     return [plaintext];
   });
 }
 
-/** Extracts secret values from a decrypted secret or retired connection row (including all three Meta tokens for connection:meta_messenger). */
+/** Extracts secret values from a decrypted secret or retired connection row (including Meta & WhatsApp JSON credentials). */
 export function extractRetiredSecretValues(name: string, plaintext: string): string[] {
   if (name === "connection:shopify") {
     try {
@@ -112,10 +114,10 @@ export function extractRetiredSecretValues(name: string, plaintext: string): str
       return [plaintext];
     }
   }
-  if (name === "connection:meta_messenger") {
+  if (name === "connection:meta_messenger" || name === "connection:whatsapp") {
     try {
-      const parsed = JSON.parse(plaintext) as { pageAccessToken?: unknown; appSecret?: unknown; verifyToken?: unknown } | null;
-      const tokens = [parsed?.pageAccessToken, parsed?.appSecret, parsed?.verifyToken].filter((v): v is string => typeof v === "string" && v.length > 0);
+      const parsed = JSON.parse(plaintext) as { pageAccessToken?: unknown; accessToken?: unknown; appSecret?: unknown; verifyToken?: unknown } | null;
+      const tokens = [parsed?.pageAccessToken, parsed?.accessToken, parsed?.appSecret, parsed?.verifyToken].filter((v): v is string => typeof v === "string" && v.length > 0);
       return [plaintext, ...tokens];
     } catch {
       return [plaintext];

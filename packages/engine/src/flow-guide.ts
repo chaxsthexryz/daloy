@@ -74,6 +74,13 @@ export function configProblems(def: WorkflowDefinition, language: Language): Con
     for (const f of entry.required) if (blank(config[f])) say(step.id, entryLabel(entry, language), f);
     if (step.type === "sheets" && blank(config.columns) && blank(config.rows)) say(step.id, entryLabel(entry, language), "columns");
     if (step.type === "approval" && blank(config.approver) && blank(config.to)) say(step.id, entryLabel(entry, language), "to");
+    if (step.type === "whatsapp_reply") {
+      if ((config.mode ?? "text") === "template") {
+        if (blank(config.templateName)) say(step.id, entryLabel(entry, language), "templateName");
+      } else if (blank(config.text)) {
+        say(step.id, entryLabel(entry, language), "text");
+      }
+    }
   }
   return out;
 }

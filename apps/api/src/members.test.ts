@@ -342,6 +342,8 @@ describe("role permissions", () => {
       ["post", "/settings/connections/google-drive/template", only, {}],
       ["put", "/settings/connections/meta-messenger", only, {}],
       ["post", "/settings/connections/meta-messenger/test", only, {}],
+      ["put", "/settings/connections/whatsapp", only, {}],
+      ["post", "/settings/connections/whatsapp/test", only, {}],
       ["put", "/settings/connections/shopify", only, {}],
       ["post", "/settings/connections/shopify/test", only, {}],
       ["delete", "/settings/connections/slack", only],
@@ -383,7 +385,7 @@ describe("role permissions", () => {
   const outsideMatrix = new Set([
     "GET /health",
     "POST /auth/register", "POST /auth/login", "POST /auth/invites/:token/accept", "POST /auth/logout", "POST /auth/password", "POST /auth/password-reset", "POST /auth/password-reset/:token",
-    "POST /hooks/:path", "POST /hooks/paymongo/:path", "GET /hooks/meta/:path", "POST /hooks/meta/:path", "POST /hooks/shopify/:path", "POST /hooks/telegram/:path", "POST /hooks/slack/:path", "POST /hooks/teams/:path", "POST /hooks/discord/:path", "GET /forms/:id", "GET /forms/:id/slots", "GET /public/slots.js", "GET /public/compress.js", "GET /forms/:id/embed", "POST /forms/:id", "POST /forms/:id/embed",
+    "POST /hooks/:path", "POST /hooks/paymongo/:path", "GET /hooks/meta/:path", "POST /hooks/meta/:path", "GET /hooks/whatsapp/:path", "POST /hooks/whatsapp/:path", "POST /hooks/shopify/:path", "POST /hooks/telegram/:path", "POST /hooks/slack/:path", "POST /hooks/teams/:path", "POST /hooks/discord/:path", "GET /forms/:id", "GET /forms/:id/slots", "GET /public/slots.js", "GET /public/compress.js", "GET /forms/:id/embed", "POST /forms/:id", "POST /forms/:id/embed",
     "GET /approvals/:token", "POST /approvals/:token", "GET /pay/:token", "GET /pay/:token/qr", "POST /pay/:token", "GET /settings/connections/oauth/callback", "GET /settings/connections/outlook/callback", "GET /brand/logo/:id",
     // Platform admin routes answer 404 to every workspace role (admin.test.ts).
     "GET /admin/overview", "GET /admin/runs", "PUT /admin/workspaces/:id/plan", "PUT /admin/workspaces/:id/shared-mail",

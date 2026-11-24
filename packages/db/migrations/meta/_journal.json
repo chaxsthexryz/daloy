@@ -407,6 +407,13 @@
       "when": 1795523395498,
       "tag": "0057_telegram_conversations",
       "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "7",
+      "when": 1795560000000,
+      "tag": "0058_whatsapp_cloud",
+      "breakpoints": true
     }
   ]
 }

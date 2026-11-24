@@ -1,7 +1,7 @@
 import * as z from "zod";
 import { aiConfigSchema } from "./ai";
 import { browserConfigSchema } from "./browser";
-import { approvalConfigSchema, assistantReadConfigSchema, callWorkflowConfigSchema, discordConfigSchema, googleDocsConfigSchema, readPageConfigSchema, bookingConfigSchema, calendarConfigSchema, conditionSchema, delayConfigSchema, driveConfigSchema, emailConfigSchema, httpConfigSchema, metaReplyConfigSchema, conversationUpdateConfigSchema, stayQuoteConfigSchema, outlookConfigSchema, paymentDueConfigSchema, paymentExpireConfigSchema, paymentStatusConfigSchema, paymongoLinkConfigSchema, shopifyCreateProductConfigSchema, shopifyUpdateProductConfigSchema, airtableConfigSchema, notionConfigSchema, trelloConfigSchema, sheetsConfigSchema, slackConfigSchema, smsConfigSchema, switchConfigSchema, teamsConfigSchema, telegramConfigSchema, transformConfigSchema, type Step } from "./definition";
+import { approvalConfigSchema, assistantReadConfigSchema, callWorkflowConfigSchema, discordConfigSchema, googleDocsConfigSchema, readPageConfigSchema, bookingConfigSchema, calendarConfigSchema, conditionSchema, delayConfigSchema, driveConfigSchema, emailConfigSchema, httpConfigSchema, metaReplyConfigSchema, whatsappReplyConfigSchema, conversationUpdateConfigSchema, stayQuoteConfigSchema, outlookConfigSchema, paymentDueConfigSchema, paymentExpireConfigSchema, paymentStatusConfigSchema, paymongoLinkConfigSchema, shopifyCreateProductConfigSchema, shopifyUpdateProductConfigSchema, airtableConfigSchema, notionConfigSchema, trelloConfigSchema, sheetsConfigSchema, slackConfigSchema, smsConfigSchema, switchConfigSchema, teamsConfigSchema, telegramConfigSchema, transformConfigSchema, type Step } from "./definition";
 
 /**
  * JSON Schema for each step type's config, which the builder turns into a form.
@@ -36,6 +36,7 @@ export function stepJsonSchemas(): Record<Step["type"], unknown> {
     payment_due: json(paymentDueConfigSchema),
     payment_expire: json(paymentExpireConfigSchema),
     meta_reply: json(metaReplyConfigSchema),
+    whatsapp_reply: json(whatsappReplyConfigSchema),
     conversation_update: json(conversationUpdateConfigSchema),
     stay_quote: json(stayQuoteConfigSchema),
     assistant_read: json(assistantReadConfigSchema),

@@ -23,6 +23,8 @@ import {
   outlookSend,
   checkPaymongoKey,
   metaIdentity,
+  whatsappIdentity,
+  parseWhatsAppCredential,
   checkShopifyConnection,
   ensureOrderWebhook,
   normalizeShopDomain,
@@ -145,6 +147,18 @@ const metaMessengerInput = z.strictObject({
   appSecret: z.string().trim().min(8, "Paste the Meta App Secret").max(200).optional(),
   verifyToken: z.string().trim().min(6, "Enter a Verify Token of at least 6 characters").max(200).optional(),
 });
+const whatsappInput = z.strictObject({
+  phoneNumberId: z.string().trim().regex(/^\d{5,30}$/, "Enter the numeric WhatsApp Phone Number ID"),
+  wabaId: z
+    .string()
+    .trim()
+    .regex(/^(\d{5,30})?$/, "Enter the numeric WhatsApp Business Account ID")
+    .optional()
+    .transform((v) => (v ? v : undefined)),
+  accessToken: z.string().trim().min(10, "Paste the WhatsApp Cloud API System User Token").max(1000),
+  appSecret: z.string().trim().min(8, "Paste the Meta App Secret").max(200).optional(),
+  verifyToken: z.string().trim().min(6, "Enter a Verify Token of at least 6 characters").max(200).optional(),
+});
 // Shopify (decision 0105): the shop domain, the owner's own app's client secret (it signs the order webhook), and either
 // the app's client ID (an app made in the Dev Dashboard, which gets 24-hour tokens) or the Admin API access token of an
 // app made in the store admin before Shopify closed that. The shop is checked by normalizeShopDomain, so nothing but a
@@ -157,7 +171,7 @@ const shopifyInput = z
     appSecret: z.string().trim().min(8, "Paste the app's client secret").max(200).optional(),
   })
   .refine((b) => (b.clientId === undefined) !== (b.accessToken === undefined), { message: "Paste the app's client ID, or the access token of an older app, but not both", path: ["clientId"] });
-const SLUGS: Record<string, Provider> = { shopify: "shopify", "google-sheets": "google_sheets", slack: "slack", outlook: "outlook", teams: "teams", discord: "discord", telegram: "telegram", "google-calendar": "google_calendar", "google-drive": "google_drive", paymongo: "paymongo", airtable: "airtable", notion: "notion", trello: "trello", unisms: "unisms", "meta-messenger": "meta_messenger" };
+const SLUGS: Record<string, Provider> = { shopify: "shopify", "google-sheets": "google_sheets", slack: "slack", outlook: "outlook", teams: "teams", discord: "discord", telegram: "telegram", "google-calendar": "google_calendar", "google-drive": "google_drive", paymongo: "paymongo", airtable: "airtable", notion: "notion", trello: "trello", unisms: "unisms", "meta-messenger": "meta_messenger", whatsapp: "whatsapp" };
 const providerSlug = new ZodPipe(z.enum(Object.keys(SLUGS) as [string, ...string[]]).transform((s) => SLUGS[s]!));
 const uuid = new ZodPipe(z.uuid());
 
@@ -215,8 +229,9 @@ export class ConnectionsController {
       union select id, name, 'airtable' from current_versions where definition->'trigger'->>'type' = 'airtable_record'
       union select id, name, 'notion' from current_versions where definition->'trigger'->>'type' = 'notion_page'
       union select id, name, 'trello' from current_versions where definition->'trigger'->>'type' = 'trello_card'
+      union select id, name, 'whatsapp' from current_versions where definition->'trigger'->>'type' = 'whatsapp_message'
       order by name, id`);
-    const providerFor: Record<string, string> = { email: "gmail", sheets: "google_sheets", drive: "google_drive", calendar: "google_calendar", paymongo_link: "paymongo", payment_status: "paymongo", sms: "unisms", meta_reply: "meta_messenger", shopify_create_product: "shopify", shopify_update_product: "shopify", google_docs: "google_drive" };
+    const providerFor: Record<string, string> = { email: "gmail", sheets: "google_sheets", drive: "google_drive", calendar: "google_calendar", paymongo_link: "paymongo", payment_status: "paymongo", sms: "unisms", meta_reply: "meta_messenger", whatsapp_reply: "whatsapp", shopify_create_product: "shopify", shopify_update_product: "shopify", google_docs: "google_drive" };
     const usage: Record<string, { id: string; name: string }[]> = {};
     const supported = new Set(["gmail", ...Object.keys(PROVIDER_NAMES)]);
     for (const { id, name, kind } of used.rows) {
@@ -227,7 +242,7 @@ export class ConnectionsController {
     }
     const [latestPayment] = await this.db.select({ status: payments.status, updatedAt: payments.updatedAt, live: payments.livemode })
       .from(payments).where(eq(payments.userId, user.workspaceId)).orderBy(desc(payments.updatedAt), desc(payments.id)).limit(1);
-    return { connections: list, outlook: ms, oauth, usage, latestPayment: latestPayment ?? null, shared: await sharedGrants(this.db, user.workspaceId), sharedGoogleApps: await sharedGoogleApps(this.db, user.workspaceId), paymongoWebhookBase: `${this.config.publicUrl}/hooks/paymongo`, shopifyWebhookBase: `${this.config.publicUrl}/hooks/shopify`, metaWebhookBase: `${this.config.publicUrl}/hooks/meta` };
+    return { connections: list, outlook: ms, oauth, usage, latestPayment: latestPayment ?? null, shared: await sharedGrants(this.db, user.workspaceId), sharedGoogleApps: await sharedGoogleApps(this.db, user.workspaceId), paymongoWebhookBase: `${this.config.publicUrl}/hooks/paymongo`, shopifyWebhookBase: `${this.config.publicUrl}/hooks/shopify`, metaWebhookBase: `${this.config.publicUrl}/hooks/meta`, whatsappWebhookBase: `${this.config.publicUrl}/hooks/whatsapp` };
   }
 
   /** The sheet and tab, checked with a read before saving. Shared by connect and "change sheet". */
@@ -588,6 +603,56 @@ export class ConnectionsController {
         throw new ProviderError("The Page Access Token no longer matches the connected Instagram Business Account ID.", "auth");
       }
       return { pageId: info.id, pageName: info.name };
+    });
+  }
+
+  /** Connect or Reconnect WhatsApp Cloud API. Preserves webhookPath across updates. */
+  @Put("whatsapp")
+  @UseGuards(RateLimit(10))
+  async putWhatsapp(@CurrentUser() user: SessionUser, @Body(new ZodPipe(whatsappInput)) body: z.output<typeof whatsappInput>) {
+    const old = await connectionCredential(this.db, this.config.secretsKey, user.workspaceId, "whatsapp");
+    const oldCred = old ? parseWhatsAppCredential(old.credential) : null;
+    const appSecret = body.appSecret ?? oldCred?.appSecret;
+    const verifyToken = body.verifyToken ?? oldCred?.verifyToken;
+    if (!appSecret) throw new BadRequestException("Paste the Meta App Secret.");
+    if (!verifyToken) throw new BadRequestException("Enter a Verify Token of at least 6 characters.");
+    const info = await whatsappIdentity(this.urls, body.accessToken, body.phoneNumberId).catch(this.asBadRequest(user.workspaceId));
+    if (info.id !== body.phoneNumberId) {
+      throw new BadRequestException(`The WhatsApp token answered for Phone Number ID ${info.id}, which does not match ${body.phoneNumberId}.`);
+    }
+    const webhookPath = old?.destination?.webhookPath ?? randomBytes(32).toString("base64url");
+    const destination: Record<string, string> = {
+      phoneNumberId: body.phoneNumberId,
+      ...(body.wabaId ? { wabaId: body.wabaId } : {}),
+      ...(info.displayPhone ? { displayPhone: info.displayPhone } : {}),
+      ...(info.verifiedName ? { verifiedName: info.verifiedName } : {}),
+      webhookPath,
+    };
+    await saveConnection(this.db, this.config.secretsKey, user.workspaceId, "whatsapp", {
+      account: info.displayPhone || info.verifiedName || body.phoneNumberId,
+      credential: JSON.stringify({ accessToken: body.accessToken, appSecret, verifyToken }),
+      destination,
+    });
+    return { ...(await this.get(user)), webhookUrl: `${this.config.publicUrl}/hooks/whatsapp/${webhookPath}`, status: "active" as const };
+  }
+
+  @Post("whatsapp/test")
+  @HttpCode(200)
+  @UseGuards(RateLimit(5))
+  async testWhatsapp(@CurrentUser() user: SessionUser) {
+    const conn = await this.connection(user.workspaceId, "whatsapp");
+    return this.test(user.workspaceId, "whatsapp", conn, async () => {
+      const { accessToken } = parseWhatsAppCredential(conn.credential);
+      const phoneNumberId = conn.destination?.phoneNumberId ?? "";
+      const info = await whatsappIdentity(this.urls, accessToken, phoneNumberId);
+      if (phoneNumberId && info.id !== phoneNumberId) {
+        throw new ProviderError("The WhatsApp token no longer matches the connected Phone Number ID.", "auth");
+      }
+      return {
+        phoneNumberId: info.id,
+        ...(info.displayPhone ? { displayPhone: info.displayPhone } : {}),
+        ...(info.verifiedName ? { verifiedName: info.verifiedName } : {}),
+      };
     });
   }
 

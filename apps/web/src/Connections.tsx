@@ -5,7 +5,7 @@ import { ConnectPanel, Status, useAction } from "./ConnectPanel";
 import { RecordTargetPicker } from "./RecordTargetPicker";
 import { DiscordSetup, PaymongoSetup, TeamsSetup, TelegramSetup } from "./PasteSetups";
 
-export type Provider = "google_sheets" | "slack" | "outlook" | "teams" | "telegram" | "unisms" | "google_calendar" | "google_drive" | "paymongo" | "airtable" | "notion" | "trello" | "meta_messenger" | "shopify" | "discord";
+export type Provider = "google_sheets" | "slack" | "outlook" | "teams" | "telegram" | "unisms" | "google_calendar" | "google_drive" | "paymongo" | "airtable" | "notion" | "trello" | "meta_messenger" | "shopify" | "discord" | "whatsapp";
 export type Connection = { provider: Provider; status: "active" | "failed"; authMethod?: "token" | "service_account" | "oauth" | "webhook_url"; account: string; destination: Record<string, string> | null; lastError: string | null; lastTestedAt: string | null };
 export type TestResult = { ok: true; range?: string; channel?: string } | { ok: false; error: string };
 export type OutlookSetup = { configured: boolean; adminConsentUrl?: string };
@@ -763,6 +763,148 @@ export function MetaMessengerConnection({ conn, webhookBase, onChange }: { conn:
 }
 
 /**
+ * WhatsApp Cloud API (C10 / N25, decision 0138): system-user token + Phone Number ID + webhook verify credentials.
+ * Meta bills each delivered WhatsApp message directly to the business's verified Meta Business account.
+ */
+export function WhatsAppConnection({ conn, webhookBase, onChange }: { conn: Connection | null; webhookBase: string; onChange: () => Promise<unknown> }) {
+  const { t } = useLanguage();
+  const { error, busy, act } = useAction(onChange);
+  const [editing, setEditing] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [test, setTest] = useState<(TestResult & { displayPhone?: string; verifiedName?: string }) | null>(null);
+  const [form, setForm] = useState({
+    phoneNumberId: conn?.destination?.phoneNumberId ?? "",
+    wabaId: conn?.destination?.wabaId ?? "",
+    accessToken: "",
+    appSecret: "",
+    verifyToken: "",
+  });
+  const webhookUrl = conn?.destination?.webhookPath ? `${webhookBase}/${conn.destination.webhookPath}` : null;
+  const save = (e: FormEvent) => {
+    e.preventDefault();
+    void act(async () => {
+      await api("PUT", "/settings/connections/whatsapp", {
+        phoneNumberId: form.phoneNumberId.trim(),
+        ...(form.wabaId.trim() ? { wabaId: form.wabaId.trim() } : {}),
+        accessToken: form.accessToken.trim(),
+        ...(form.appSecret.trim() ? { appSecret: form.appSecret.trim() } : {}),
+        ...(form.verifyToken.trim() ? { verifyToken: form.verifyToken.trim() } : {}),
+      });
+      setForm({ ...form, accessToken: "", appSecret: "", verifyToken: "" });
+      setEditing(false);
+      setTest(null);
+    });
+  };
+  const copyUrl = () => {
+    if (!webhookUrl) return;
+    void navigator.clipboard?.writeText(webhookUrl);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <div className="connection" aria-busy={busy} aria-labelledby="whatsapp-h">
+      <h3 id="whatsapp-h">WhatsApp Cloud API</h3>
+      {conn && <Status conn={conn} label={t("WhatsApp Business number")} />}
+      {conn?.destination && (
+        <p>
+          {t("Phone Number ID:")} <strong>{conn.destination.phoneNumberId}</strong>
+          {conn.destination.displayPhone && (
+            <>
+              {" · "}
+              {conn.destination.displayPhone}
+            </>
+          )}
+          {conn.destination.wabaId && (
+            <>
+              {" · "}
+              {t("WABA ID:")} <strong>{conn.destination.wabaId}</strong>
+            </>
+          )}
+        </p>
+      )}
+      {webhookUrl && (
+        <p>
+          {t("Webhook URL:")} <code>{webhookUrl}</code>{" "}
+          <button type="button" className="quiet" onClick={copyUrl}>
+            {copied ? t("Copied") : t("Copy webhook URL")}
+          </button>
+        </p>
+      )}
+      <p className="muted">
+        {t("Billing and setup note: Meta bills WhatsApp Cloud API per delivered message directly to your Meta Business payment method (service replies past Meta's free monthly allowance, and every utility or marketing template). Your Meta Business account must be verified with a payment method attached, and reminders outside the 24-hour window must use pre-approved Meta utility templates.")}
+      </p>
+      {conn && (
+        <div className="actions">
+          <button type="button" disabled={busy} onClick={() => void act(async () => setTest(await api<TestResult & { displayPhone?: string; verifiedName?: string }>("POST", "/settings/connections/whatsapp/test")))}>
+            {t("Test connection")}
+          </button>
+          {!editing && (
+            <button type="button" className="quiet" onClick={() => setEditing(true)}>
+              {t("Replace credentials")}
+            </button>
+          )}
+          <button
+            type="button"
+            className="quiet"
+            disabled={busy}
+            onClick={() => window.confirm(t("Disconnect WhatsApp Cloud API? Incoming WhatsApp messages and replies stop until you reconnect.")) && void act(() => api("DELETE", "/settings/connections/whatsapp"))}
+          >
+            {t("Disconnect")}
+          </button>
+        </div>
+      )}
+      <Outcome test={test} what={t("Meta accepted the WhatsApp Cloud API token")} />
+      {(!conn || editing) && (
+        <form onSubmit={save}>
+          <div className="field">
+            <label htmlFor="wa-phone-id">{t("Phone Number ID")}</label>
+            <input id="wa-phone-id" value={form.phoneNumberId} onChange={(e) => setForm({ ...form, phoneNumberId: e.target.value })} required placeholder="100200300400" autoComplete="off" />
+          </div>
+          <div className="field">
+            <label htmlFor="wa-waba-id">
+              {t("WhatsApp Business Account ID")} <span className="muted">{t("(optional)")}</span>
+            </label>
+            <input id="wa-waba-id" value={form.wabaId} onChange={(e) => setForm({ ...form, wabaId: e.target.value })} placeholder="900800700600" autoComplete="off" />
+          </div>
+          <div className="field">
+            <label htmlFor="wa-access-token">{t("System User Access Token")}</label>
+            <input id="wa-access-token" type="password" value={form.accessToken} onChange={(e) => setForm({ ...form, accessToken: e.target.value })} required autoComplete="off" />
+          </div>
+          <div className="field">
+            <label htmlFor="wa-app-secret">
+              {t("App Secret")}
+              {conn ? t(", leave empty to keep the current secret") : ""}
+            </label>
+            <input id="wa-app-secret" type="password" value={form.appSecret} onChange={(e) => setForm({ ...form, appSecret: e.target.value })} required={!conn} autoComplete="off" />
+          </div>
+          <div className="field">
+            <label htmlFor="wa-verify-token">
+              {t("Verify Token")}
+              {conn ? t(", leave empty to keep the current token") : ""}
+            </label>
+            <input id="wa-verify-token" type="password" value={form.verifyToken} onChange={(e) => setForm({ ...form, verifyToken: e.target.value })} required={!conn} autoComplete="off" />
+          </div>
+          <div className="actions">
+            <button type="submit" className="primary" disabled={busy}>
+              {conn ? t("Save") : t("Connect WhatsApp Cloud API")}
+            </button>
+            {conn && (
+              <button type="button" className="quiet" onClick={() => setEditing(false)}>
+                {t("Cancel")}
+              </button>
+            )}
+          </div>
+        </form>
+      )}
+      <p role="alert" className="message error" hidden={!error}>
+        {error}
+      </p>
+    </div>
+  );
+}
+
+/**
  * Shopify (decision 0105): the shop domain, the app's client secret (it signs the order webhook), and the client ID of an
  * app made in the Dev Dashboard, or the Admin API access token of an older app made in the store admin.
  */
@@ -902,10 +1044,10 @@ export type Delivery = {
   lastError: string | null;
 };
 
-const NAMES: Record<Provider, string> = { google_sheets: "Sheet row", slack: "Slack note", outlook: "Outlook email", teams: "Teams note", discord: "Discord message", telegram: "Telegram message", unisms: "SMS message", google_calendar: "Calendar event", google_drive: "Drive file", paymongo: "PayMongo", airtable: "Airtable record", notion: "Notion page", trello: "Trello card", meta_messenger: "Messenger or Instagram reply", shopify: "Shopify product" };
+const NAMES: Record<Provider, string> = { google_sheets: "Sheet row", slack: "Slack note", outlook: "Outlook email", teams: "Teams note", discord: "Discord message", telegram: "Telegram message", unisms: "SMS message", google_calendar: "Calendar event", google_drive: "Drive file", paymongo: "PayMongo", airtable: "Airtable record", notion: "Notion page", trello: "Trello card", meta_messenger: "Messenger or Instagram reply", whatsapp: "WhatsApp message", shopify: "Shopify product" };
 
 function describe(d: Delivery, t: ReturnType<typeof useLanguage>["t"]): string {
-  const sent = d.provider === "outlook" || d.provider === "unisms" || d.provider === "meta_messenger";
+  const sent = d.provider === "outlook" || d.provider === "unisms" || d.provider === "meta_messenger" || d.provider === "whatsapp";
   switch (d.state) {
     case "queued":
       return d.attempts > 0 ? t("waiting to try again ({error})", { error: d.lastError ?? t("temporary problem") }) : t("queued");
@@ -920,7 +1062,7 @@ function describe(d: Delivery, t: ReturnType<typeof useLanguage>["t"]): string {
       if (d.provider === "google_drive") return t("saved to {folder}", { folder: String(d.result?.folder ?? t("the folder")) });
       if (d.provider === "outlook") return t("sent to {email}", { email: String(d.result?.to ?? "") });
       if (d.provider === "unisms") return t("sent to {phone}", { phone: String(d.result?.recipient ?? "") });
-      if (d.provider === "meta_messenger") return t("sent");
+      if (d.provider === "meta_messenger" || d.provider === "whatsapp") return t("sent");
       return t(d.provider === "teams" ? "accepted by Teams" : "posted");
     case "needs_review":
       return d.lastError ?? t(sent ? "may have been sent" : "may have been posted");
@@ -937,7 +1079,7 @@ export function DeliveryList({ deliveries, onChange }: { deliveries: Delivery[];
   return (
     <ul className="deliveries">
       {deliveries.map((d) => {
-        const sent = d.provider === "outlook" || d.provider === "unisms" || d.provider === "meta_messenger";
+        const sent = d.provider === "outlook" || d.provider === "unisms" || d.provider === "meta_messenger" || d.provider === "whatsapp";
         return (
           <li key={d.id} data-state={d.state}>
             {t(NAMES[d.provider])}: {describe(d, t)}{" "}
@@ -959,7 +1101,7 @@ export function DeliveryList({ deliveries, onChange }: { deliveries: Delivery[];
                       ? "Send this email again? If it already went out, the recipient gets it twice."
                       : d.provider === "unisms"
                         ? "Send this SMS again? If it already went out, the recipient gets it twice."
-                        : d.provider === "meta_messenger"
+                        : d.provider === "meta_messenger" || d.provider === "whatsapp"
                           ? "Send this reply again? If it already went out, the customer gets it twice."
                           : "Post this note again? If it is already in the channel, people will see it twice.";
                     if (window.confirm(t(ask))) void act(() => api("POST", `/deliveries/${d.id}/retry`, { postAgain: true }));

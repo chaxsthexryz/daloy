@@ -1,6 +1,6 @@
 export type ConversationSummary = {
   id: string;
-  channel: "messenger" | "instagram" | "email" | "telegram";
+  channel: "messenger" | "instagram" | "email" | "telegram" | "whatsapp";
   externalId: string;
   status: "bot" | "staff" | "closed";
   paused: boolean;
@@ -36,6 +36,7 @@ export function channelLabel(channel: ConversationSummary["channel"]): string {
   if (channel === "messenger") return "Messenger";
   if (channel === "instagram") return "Instagram";
   if (channel === "telegram") return "Telegram";
+  if (channel === "whatsapp") return "WhatsApp";
   return "Email";
 }
 

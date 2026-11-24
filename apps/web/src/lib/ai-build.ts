@@ -28,7 +28,7 @@ export const withPeople = (def: WorkflowDefinition, real: { owner: string; membe
 export const withLabels = (def: WorkflowDefinition, real: { owner: string; member1?: string }): WorkflowDefinition =>
   swap(def, [[real.owner, PEOPLE.owner], ...(real.member1 ? ([[real.member1, PEOPLE.member1]] as [string, string][]) : [])]);
 
-const WHEN: Record<string, string> = { email: "When an email arrives", gmail_message: "When a Gmail message arrives", outlook_message: "When an Outlook message arrives", payment: "When a payment event arrives", form: "When someone fills the form", webhook: "When another system sends a web request", manual: "When you run it by hand", meta_dm: "When a Messenger or Instagram DM arrives", shopify_order: "When a new Shopify order comes in", telegram_message: "When someone messages your Telegram bot", booking_event: "When a kymavo booking changes", payment_event: "When a kymavo payment changes", sub_workflow: "When another automation calls this one", sheets_row: "When a row is added to Google Sheets", calendar_event: "When a Google Calendar event is added or starts soon", drive_file: "When a file is added to Google Drive", page_changed: "When a monitored web page or feed changes", slack_message: "When a Slack message arrives", teams_message: "When a Teams message arrives", discord_message: "When a Discord command or message arrives", airtable_record: "When an Airtable record is added or changes status", notion_page: "When a Notion page is added or changes status", trello_card: "When a Trello card is added or moved to the list" };
+const WHEN: Record<string, string> = { email: "When an email arrives", gmail_message: "When a Gmail message arrives", outlook_message: "When an Outlook message arrives", payment: "When a payment event arrives", form: "When someone fills the form", webhook: "When another system sends a web request", manual: "When you run it by hand", meta_dm: "When a Messenger or Instagram DM arrives", whatsapp_message: "When a WhatsApp message arrives", shopify_order: "When a new Shopify order comes in", telegram_message: "When someone messages your Telegram bot", booking_event: "When a kymavo booking changes", payment_event: "When a kymavo payment changes", sub_workflow: "When another automation calls this one", sheets_row: "When a row is added to Google Sheets", calendar_event: "When a Google Calendar event is added or starts soon", drive_file: "When a file is added to Google Drive", page_changed: "When a monitored web page or feed changes", slack_message: "When a Slack message arrives", teams_message: "When a Teams message arrives", discord_message: "When a Discord command or message arrives", airtable_record: "When an Airtable record is added or changes status", notion_page: "When a Notion page is added or changes status", trello_card: "When a Trello card is added or moved to the list" };
 const BRANCH: Record<string, string> = {
   approved: "If approved:",
   rejected: "If rejected:",
@@ -100,6 +100,8 @@ function sentence(step: WorkflowDefinition["steps"][number], language: Language)
       return t("Send an SMS to {recipient}", { recipient: who(c.to) });
     case "meta_reply":
       return t("Reply on Messenger or Instagram");
+    case "whatsapp_reply":
+      return t("Send a WhatsApp message");
     case "discord":
       return t("Post to your Discord channel");
     case "read_page":

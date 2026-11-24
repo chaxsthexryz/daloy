@@ -103,6 +103,15 @@ export async function startFakeProviders(port = 0) {
     messages: [] as { recipientId: string; text: string; messagingType: string; messageId: string; quickReplies?: { content_type: string; title: string; payload: string }[] }[],
     cdnFiles: new Map<string, { contentType: string; data: Buffer }>(),
   };
+  const whatsapp = {
+    token: "",
+    phoneNumberId: "9988776655",
+    displayPhone: "+63 917 000 0999",
+    verifiedName: "kymavo Resort",
+    revoked: false,
+    messages: [] as { to: string; type: string; text?: string; template?: { name: string; language?: { code?: string }; components?: unknown[] }; interactive?: unknown; messageId: string }[],
+    media: new Map<string, { url: string }>(),
+  };
   // Airtable, Notion and Trello (N15, decision 0046): a bearer or key/token check, one target each, and the records added.
   // The OAuth pickers (decision 0062) list what is here: bases and tables for Airtable, databases for Notion, boards and lists for Trello.
   const airtable = {
@@ -1069,6 +1078,44 @@ export async function startFakeProviders(port = 0) {
       }
       return res.writeHead(404, { "content-type": "text/plain" }).end("not found");
     }
+    // WhatsApp Cloud API v21.0 (C10 / N25): phone verification, media lookup, and service/template messages.
+    if (path === `/v21.0/${whatsapp.phoneNumberId}` || path === `/v21.0/${whatsapp.phoneNumberId}/messages`) {
+      if (whatsapp.revoked || !whatsapp.token || req.headers.authorization !== `Bearer ${whatsapp.token}`) {
+        return json(res, 401, { error: { message: "Invalid OAuth access token", type: "OAuthException", code: 190 } });
+      }
+      if (req.method === "GET" && path === `/v21.0/${whatsapp.phoneNumberId}`) {
+        return json(res, 200, { id: whatsapp.phoneNumberId, display_phone_number: whatsapp.displayPhone, verified_name: whatsapp.verifiedName });
+      }
+      if (req.method === "POST" && path === `/v21.0/${whatsapp.phoneNumberId}/messages`) {
+        const w = JSON.parse(raw || "{}") as {
+          to?: string;
+          type?: string;
+          text?: { body?: string };
+          interactive?: { body?: { text?: string } };
+          template?: { name: string; language?: { code?: string }; components?: unknown[] };
+        };
+        if (!w.to) return json(res, 400, { error: { message: "Missing recipient", code: 100 } });
+        const messageId = `wamid.fake_${++seq}`;
+        whatsapp.messages.push({
+          to: w.to,
+          type: w.type ?? "text",
+          ...(w.text?.body !== undefined ? { text: w.text.body } : {}),
+          ...(w.interactive ? { interactive: w.interactive } : {}),
+          ...(w.template ? { template: w.template } : {}),
+          messageId,
+        });
+        return answer(200, { messaging_product: "whatsapp", contacts: [{ input: w.to, wa_id: w.to }], messages: [{ id: messageId }] });
+      }
+    }
+    const waMediaMatch = /^\/v21\.0\/(wa-media-[^/]+)$/.exec(path);
+    if (req.method === "GET" && waMediaMatch) {
+      if (whatsapp.revoked || !whatsapp.token || req.headers.authorization !== `Bearer ${whatsapp.token}`) {
+        return json(res, 401, { error: { message: "Invalid OAuth access token", type: "OAuthException", code: 190 } });
+      }
+      const item = whatsapp.media.get(waMediaMatch[1]!);
+      if (!item) return json(res, 404, { error: { message: "Media not found", code: 100 } });
+      return json(res, 200, { id: waMediaMatch[1]!, url: item.url });
+    }
     // Meta Graph API v21.0 (N16): Page token verification and Send API replies.
     if (path.startsWith("/v21.0/")) {
       if (meta.revoked || !meta.token || req.headers.authorization !== `Bearer ${meta.token}`) {
@@ -1102,7 +1149,7 @@ export async function startFakeProviders(port = 0) {
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 
   return {
-    urls: { googleToken: `${base}/token`, sheets: base, calendar: base, drive: base, paymongo: base, shopify: base, meta: base, metaCdn: base, airtable: base, notion: base, trello: base, slack: base, telegram: base, unisms: base, microsoftLogin: `${base}/ms`, graph: `${base}/graph`, gmail: base, airtableLogin: `${base}/airtable-login`, trelloLogin: `${base}/atlassian`, teamsHosts: ["127.0.0.1"], discordHosts: ["127.0.0.1"], docs: base },
+    urls: { googleToken: `${base}/token`, sheets: base, calendar: base, drive: base, paymongo: base, shopify: base, meta: base, whatsapp: base, metaCdn: base, airtable: base, notion: base, trello: base, slack: base, telegram: base, unisms: base, microsoftLogin: `${base}/ms`, graph: `${base}/graph`, gmail: base, airtableLogin: `${base}/airtable-login`, trelloLogin: `${base}/atlassian`, teamsHosts: ["127.0.0.1"], discordHosts: ["127.0.0.1"], docs: base },
     /** The installation's OAuth clients for the record apps, as providerUrls() would read them from env (decision 0062). */
     recordClients: () => ({
       airtableClient: { clientId: oauth.airtable!.clientId, clientSecret: oauth.airtable!.clientSecret },
@@ -1114,6 +1161,7 @@ export async function startFakeProviders(port = 0) {
     telegram,
     unisms,
     meta,
+    whatsapp,
     shopify: shopify.state,
     airtable,
     notion,

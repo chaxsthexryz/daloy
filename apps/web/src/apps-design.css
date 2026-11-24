@@ -90,11 +90,13 @@ main.page:is(.admin-apps,.admin-business,.verify-sender) h1, .admin-apps .panel-
 .app-mark[data-kind="letter"][data-mark="gcash"] { background: #e6f4ff; color: #0052d9; border-color: #c2e0ff; }
 .app-mark[data-kind="letter"][data-mark="messenger"] { background: #eef0ff; color: #3b5bdb; border-color: #d1d8ff; }
 .app-mark[data-kind="letter"][data-mark="instagram"] { background: #fff0f5; color: #b8255f; border-color: #f7cadb; }
+.app-mark[data-kind="letter"][data-mark="whatsapp"] { background: #ecfdf3; color: #15803d; border-color: #bfe8cf; }
 :root[data-theme="dark"] .app-mark[data-kind="letter"][data-mark="unisms"] { background: #1c2a55; color: #8fb0ff; border-color: #2f4582; }
 :root[data-theme="dark"] .app-mark[data-kind="letter"][data-mark="paymongo"] { background: #173323; color: #7fcfa3; border-color: #26543a; }
 :root[data-theme="dark"] .app-mark[data-kind="letter"][data-mark="gcash"] { background: #162d4f; color: #8fb0ff; border-color: #26487c; }
 :root[data-theme="dark"] .app-mark[data-kind="letter"][data-mark="messenger"] { background: #202754; color: #9fb4ff; border-color: #343f85; }
 :root[data-theme="dark"] .app-mark[data-kind="letter"][data-mark="instagram"] { background: #3d192b; color: #f59ec1; border-color: #632846; }
+:root[data-theme="dark"] .app-mark[data-kind="letter"][data-mark="whatsapp"] { background: #173323; color: #7fcfa3; border-color: #26543a; }
 
 /* Styled native file inputs (keeps real <input type="file"> accessible for Playwright setInputFiles). */
 .file-input {
