@@ -49,7 +49,7 @@
 .a7-editor .a7-tabs a[aria-current="page"] { border-color: var(--accent); color: var(--text); font-weight: 600; }
 .a7-tabs a:hover { color: var(--text); }
 .a7-actions { display: flex; flex-wrap: wrap; gap: 8px; }
-.a7-head > .a7-actions { padding-bottom: 20px; }
+.a7-head > .a7-actions { align-self: center; padding-bottom: 14px; }
 
 /* Body */
 .a7-body { display: grid; grid-template-columns: minmax(0, 1fr); flex: 1; min-height: 0; }
@@ -77,7 +77,7 @@
 .a7-zoom-level { min-width: 42px; padding: 0 6px; color: var(--a7-label); font-size: 12px; font-weight: 600; text-align: center; font-variant-numeric: tabular-nums; }
 
 /* Nodes and edges */
-.a7-node { gap: 3px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--text); font-size: 12px; line-height: 16px; }
+.a7-node { position: relative; gap: 3px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--text); font-size: 12px; line-height: 16px; }
 .a7-node .node-title { font-size: 14px; font-weight: 600; line-height: 18px; }
 .a7-node .node-summary { color: var(--muted); }
 .a7-node-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
@@ -116,9 +116,6 @@
 /* Panel */
 .a7-panel { display: flex; flex-direction: column; gap: 20px; padding: 22px 24px; border-top: 1px solid var(--border-soft); background: var(--surface); }
 .a7-panel > * + :is(.a7-checks, .a7-ai, .a7-test, .a7-test-settings) { padding-top: 20px; border-top: 1px solid var(--border-soft); }
-/* The four actions stay at the top of the panel while it scrolls. */
-.a7-panel > .a7-actions { position: sticky; top: -22px; z-index: 3; margin: -22px -24px 0; padding: 22px 24px 14px; border-bottom: 1px solid var(--border-soft); background: var(--surface); }
-.a7-panel > .a7-actions button { flex: 1 1 auto; padding: 0 10px; }
 .a7-test-settings > :not(summary) { margin-top: 12px; }
 .a7-test-settings summary { min-height: 32px; font-size: 14px; font-weight: 600; line-height: 32px; cursor: pointer; }
 .a7-editor .a7-close { min-height: 32px; padding: 0 8px; border: 0; background: transparent; box-shadow: none; color: var(--muted); font-weight: 400; }
@@ -178,6 +175,9 @@
   .a7-editor .a7-fold { display: grid; place-items: center; position: absolute; top: 18px; left: -16px; z-index: 6; width: 32px; min-width: 32px; height: 32px; min-height: 32px; padding: 0; border: 1px solid var(--border); border-radius: 50%; background: var(--surface); color: var(--a7-label); font-size: 18px; line-height: 1; }
   .a7-side[data-folded] .a7-fold { left: 5px; }
 }
+@media (min-width: 1000px) and (max-width: 1359.98px) {
+  .a7-body { grid-template-columns: minmax(0, 1fr) 312px; }
+}
 @media (min-width: 1400px) {
   .a7-body { grid-template-columns: minmax(0, 1fr) 380px; }
   .a7-body:has(> .a7-side[data-folded]) { grid-template-columns: minmax(0, 1fr) 44px; }
@@ -205,6 +205,15 @@
 .a7-editor .a7-list .a7-move button { display: grid; place-items: center; flex: none; width: 44px; min-width: 44px; height: auto; min-height: 44px; padding: 0; font-size: 18px; line-height: 1; }
 .a7-editor .a7-insert { display: grid; place-items: center; position: absolute; width: 24px; height: 24px; min-height: 0; padding: 0; border: 1px solid var(--border); border-radius: 50%; background: var(--surface); color: var(--accent); font-size: 16px; line-height: 1; cursor: pointer; pointer-events: all; }
 .a7-insert:hover { background: var(--accent-tint); }
+/* Visible add stubs below leaf nodes and open branch exits without inflating node layout height. */
+.a7-exit-adds { position: absolute; top: calc(100% + 6px); left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 6px; width: max-content; pointer-events: all; }
+.a7-exit-adds::before { content: ""; position: absolute; bottom: 100%; left: 50%; width: 1.5px; height: 6px; background: var(--a7-line); transform: translateX(-50%); pointer-events: none; }
+.a7-editor .a7-leaf-add { display: grid; place-items: center; width: 22px; height: 22px; min-height: 0; padding: 0; border: 1px dashed var(--a7-line); border-radius: 50%; background: var(--surface); color: var(--accent); font-size: 15px; line-height: 1; cursor: pointer; }
+.a7-editor .a7-leaf-add:hover { border-style: solid; border-color: var(--accent); background: var(--accent-tint); }
+.a7-editor .a7-branch-add { display: inline-flex; align-items: center; min-height: 22px; padding: 0 8px; border: 1px dashed var(--a7-line); border-radius: 11px; background: var(--surface); color: var(--a7-label); font-size: 11px; font-weight: 600; line-height: 1; white-space: nowrap; cursor: pointer; }
+.a7-editor .a7-branch-add:hover { border-style: solid; border-color: var(--accent); background: var(--accent-tint); color: var(--accent); }
+.a7-editor .a7-branch-add:is([data-branch="approved"], [data-branch="true"], [data-branch="done"]) { border-color: var(--a7-ok); background: var(--a7-ok-bg); color: var(--a7-ok); }
+.a7-editor .a7-branch-add:is([data-branch="rejected"], [data-branch="false"], [data-branch="taken"], [data-branch="not_found"]) { border-color: var(--a7-bad); background: var(--a7-bad-bg); color: var(--a7-bad); }
 @media (max-width: 599.98px) {
   .a7-undo { flex: 1 1 100%; }
   .a7-editor :is(.a7-undo button, .a7-add) { min-height: var(--target); }

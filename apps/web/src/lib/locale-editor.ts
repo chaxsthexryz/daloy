@@ -68,6 +68,8 @@ export const editorTranslations: Record<string, string> = {
   "No step matches that.": "Walang hakbang na tugma.",
   "Add a step between {from} and {to}": "Magdagdag ng hakbang sa pagitan ng {from} at {to}",
   "Add a step at the start": "Magdagdag ng hakbang sa simula",
+  "Add a step after {step}": "Magdagdag ng hakbang pagkatapos ng {step}",
+  "Add a step on {branch} after {step}": "Magdagdag ng hakbang sa {branch} pagkatapos ng {step}",
   "Connect to": "Ikonekta sa",
   "Go to": "Susunod na hakbang",
   "On {branch} go to": "Kapag {branch}, susunod ang",

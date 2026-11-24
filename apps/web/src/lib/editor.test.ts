@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Draft } from "./graph";
-import { chosenFor, destinationName, insertables, nextPaths, setupLeft, unconnectedNodes } from "./editor";
+import { chosenFor, destinationName, insertables, nextPaths, openExits, setupLeft, unconnectedNodes } from "./editor";
 
 // The receipt approval from the approved editor frame: a form, three steps, then three approval branches.
 const receipt: Draft = {
@@ -139,5 +139,81 @@ describe("unconnectedNodes", () => {
   });
   it("covers a trigger that needs an app, under the id trigger", () => {
     expect(unconnectedNodes({ ...receipt, steps: [], edges: [], trigger: { type: "payment", config: { events: ["paid"] } } } as Draft, new Set(), true).get("trigger")).toBe("PayMongo");
+  });
+});
+
+describe("openExits", () => {
+  const trigger = { type: "manual", config: {} } as const;
+
+  it("offers one start exit on an empty trigger and none once a step exists", () => {
+    expect(openExits({ trigger, steps: [], edges: [] }, "trigger")).toEqual([{}]);
+    expect(openExits(receipt, "trigger")).toEqual([]);
+  });
+
+  it("offers one exit on a leaf plain step and none when connected", () => {
+    const draft: Draft = {
+      trigger,
+      steps: [
+        { id: "first", type: "delay", config: { seconds: 10 } },
+        { id: "second", type: "delay", config: { seconds: 20 } },
+      ],
+      edges: [{ from: "first", to: "second" }],
+    };
+    expect(openExits(draft, "first")).toEqual([]);
+    expect(openExits(draft, "second")).toEqual([{}]);
+  });
+
+  it("excludes optional invalid on condition and lists remaining primary branches", () => {
+    const cond: Draft = {
+      trigger,
+      steps: [
+        { id: "check", type: "condition", config: { condition: { left: "{{trigger.amount}}", op: "gt", right: 100 } } },
+        { id: "next", type: "delay", config: { seconds: 5 } },
+      ],
+      edges: [],
+    };
+    expect(openExits(cond, "check")).toEqual([{ on: "true" }, { on: "false" }]);
+    expect(openExits({ ...cond, edges: [{ from: "check", to: "next", on: "true" }] }, "check")).toEqual([{ on: "false" }]);
+    expect(openExits({ ...cond, edges: [{ from: "check", to: "next", on: "true" }, { from: "check", to: "next", on: "false" }] }, "check")).toEqual([]);
+  });
+
+  it("lists remaining branches for approval, booking actions, and payment_expire", () => {
+    const approval: Draft = {
+      trigger,
+      steps: [
+        { id: "ask", type: "approval", config: { to: "a@b.c", subject: "Hi", message: "Ok?", timeoutSeconds: 60 } },
+        { id: "done", type: "delay", config: { seconds: 5 } },
+      ],
+      edges: [{ from: "ask", to: "done", on: "approved" }],
+    };
+    expect(openExits(approval, "ask")).toEqual([{ on: "rejected" }, { on: "timeout" }]);
+
+    const bookCreate: Draft = {
+      trigger,
+      steps: [{ id: "b1", type: "booking", config: { action: "create", resource: "r1", start: "{{trigger.at}}", minutes: 30 } }],
+      edges: [],
+    };
+    expect(openExits(bookCreate, "b1")).toEqual([{ on: "done" }, { on: "taken" }]);
+
+    const bookMove: Draft = {
+      trigger,
+      steps: [{ id: "b2", type: "booking", config: { action: "reschedule", booking: "B-1", start: "{{trigger.at}}" } }],
+      edges: [],
+    };
+    expect(openExits(bookMove, "b2")).toEqual([{ on: "done" }, { on: "not_found" }]);
+
+    const bookCancel: Draft = {
+      trigger,
+      steps: [{ id: "b3", type: "booking", config: { action: "cancel", booking: "B-1" } }],
+      edges: [],
+    };
+    expect(openExits(bookCancel, "b3")).toEqual([{ on: "done" }, { on: "not_found" }]);
+
+    const expire: Draft = {
+      trigger,
+      steps: [{ id: "p1", type: "payment_expire", config: { due: "pay_1" } }],
+      edges: [],
+    };
+    expect(openExits(expire, "p1")).toEqual([{ on: "expired" }, { on: "kept" }]);
   });
 });

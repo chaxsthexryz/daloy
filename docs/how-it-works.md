@@ -1501,3 +1501,19 @@ What it does: `workspace.css`, `activity.css`, `auth.css`, `ai-workspace.css`, `
 Why this way: styling native `<input type="file">` with `::file-selector-button` improves visual consistency without breaking label bindings or file uploads, and keeping third-party SVGs untouched preserves brand permissions (decision 0085).
 
 Tests: `apps/web/src/AppMark.test.ts` (letter-tile tint rules and SVG logo integrity), `e2e/library.spec.ts`, `e2e/build-with-ai.spec.ts`, `e2e/editor.spec.ts`, `e2e/receipt-expense.spec.ts` and `e2e/business-setup.spec.ts`.
+
+## Editor leaf/branch add buttons and pinned header actions (phase E1)
+
+What it does: `openExits(draft, nodeId)` in `apps/web/src/lib/editor.ts` reports unconnected exits for the trigger, plain leaf steps, and primary branches (`condition` true/false excluding optional `invalid`, `approval`, `booking` create vs reschedule/cancel, and `payment_expire`). `EditorTriggerNode` and `EditorStepNode` in `apps/web/src/FlowCanvas.tsx` render clickable `.a7-exit-adds` controls (`+` circles for plain leaves and start triggers, `+ branch` pills for open branches) anchored below each card via `editor.css` without inflating node layout bounds. On desktop (`>= 1000 px`), `apps/web/src/Editor.tsx` keeps the global `Workflow actions` (`Test run`, `Explain`, `Share`, `Save`, `Publish`) pinned in `.a7-head` regardless of whether the side panel is open or folded.
+
+Why this way: rendering open exits explicitly lets owners append steps after leaf nodes or fill empty branches with one click instead of dragging handle dots or right-clicking cards, while keeping `.a7-panel` dedicated to step inspection, Setup guide, and Ask AI.
+
+Tests: `apps/web/src/lib/editor.test.ts` (`openExits` across empty trigger, connected/leaf steps, `condition`, `approval`, `booking` variants, and `payment_expire`), `apps/web/src/lib/locale-coverage.test.ts` (`locale-editor.ts` Tagalog strings), and `e2e/editor.spec.ts` (pinned header actions and non-overlapping leaf/branch add stubs).
+
+## Branch-aware layered DAG layout and 1280 px inspector fit (phase E2)
+
+What it does: `layout(draft, measured)` in `apps/web/src/lib/graph.ts` places nodes top-to-bottom using deepest-parent assignment, orders children by `BRANCHES` order (`true` left of `false`, `approved`/`rejected`/`timeout` in order), allocates horizontal subtree slots so sibling branches never cross under another parent's branch, enforces a `260 px` row spacing minimum across joins, and computes each row's `y` from `measured[id].height` (`88 px` default plus `82 px` gap). `apps/web/src/Editor.tsx` feeds measured dimensions back into `toFlow(...)` (skipping sub-pixel noise), and `apps/web/src/editor.css` uses a `312 px` inspector panel between `1000 px` and `1359.98 px` so 3-branch flows fit cleanly on 1280 px screens.
+
+Why this way: centering each depth row by array order previously pushed deep branches across sibling leaves whenever one side branched wider or tall cards wrapped. Using subtree width slots and live measured heights keeps branch layouts predictable and prevents crowding.
+
+Tests: `apps/web/src/lib/graph.test.ts` (left-to-right branch ordering regardless of step array order, non-overlapping asymmetric subtrees, parent centering over children, and tall measured-card row spacing) and `e2e/editor.spec.ts`.

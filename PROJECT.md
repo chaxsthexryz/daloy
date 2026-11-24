@@ -390,8 +390,8 @@ C3 and C4 cover T7 (answer from my price list). Decisions from 0115 (0111 to 011
 
 ## Editor layout and engine usability (docs/plans/editor-and-triggers-roadmap.md, 24 November 2026)
 
-- [ ] E1. Visible leaf and empty-branch `+` add buttons in `FlowCanvas.tsx` and `Editor.tsx`, plus global actions (`Test run`, `Explain`, `Save`, `Publish`) pinned to `a7-head`. (claimed: neon, branch neon/e1-editor-adds-and-header)
-- [ ] E2. Branch-aware layered DAG auto-layout in `lib/graph.ts` using `BRANCHES` order and measured card heights, plus 1280 px inspector fit improvements. (claimed: neon, branch neon/e2-editor-dag-layout)
+- [x] E1. Visible leaf and empty-branch `+` add buttons in `FlowCanvas.tsx` and `Editor.tsx`, plus global actions (`Test run`, `Explain`, `Save`, `Publish`) pinned to `a7-head`. (claimed: neon, branch neon/e1-editor-adds-and-header)
+- [x] E2. Branch-aware layered DAG auto-layout in `lib/graph.ts` using `BRANCHES` order and measured card heights, plus 1280 px inspector fit improvements. (claimed: neon, branch neon/e2-editor-dag-layout)
 - [ ] E3. Clickable variable picker (`{{trigger.*}}`, upstream `{{steps.<id>.output.*}}`) and inline upstream sample output preview in the step inspector.
 - [ ] E4. Multi-way `switch` branching, per-step error policy (`T3`), deterministic `transform` step, and `for_each` / `N30` batched Sheets row appends.
 

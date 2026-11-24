@@ -13,7 +13,7 @@ import { RunResult, StepAttempt, useRun } from "./Runs";
 import { ADDABLE, addStep, blankDraft, canMove, connectSteps, duplicateStep, moveStep, readCopiedStep, removeStep, setDisabled, toFlow, type AddableType, type ConnectError, type Draft } from "./lib/graph";
 import { record, redo, startHistory, undo } from "./lib/history";
 import { Popover, Sheet, useMedia, usePhone } from "./Sheet";
-import { chosenFor, insertables, nextPaths, setupLeft, unconnectedNodes, type ConnInfo } from "./lib/editor";
+import { chosenFor, insertables, nextPaths, openExits, setupLeft, unconnectedNodes, type ConnInfo } from "./lib/editor";
 import { warningForLanguage } from "./lib/ai-build";
 import { runFlow } from "./lib/run-flow";
 import { AutomationTabs } from "./Nav";
@@ -232,7 +232,7 @@ export function Editor({ id, from }: { id: string; from?: string }) {
     line?.scrollIntoView({ block: "center" });
     setTestFocus(null);
   }, [run, runId, testFocus]);
-  const flow = useMemo(() => toFlow(draft, selected, run ? runFlow(draft, run) : undefined, language), [draft, selected, run, language]);
+  const flow = useMemo(() => toFlow(draft, selected, run ? runFlow(draft, run) : undefined, language, measured), [draft, selected, run, language, measured]);
   // Advice only (decision 0033): a draft that does not parse yet is a work in progress, so it gets no checks.
   const warnings = useMemo(() => {
     const parsed = definitionSchema.safeParse(draft);
@@ -245,14 +245,28 @@ export function Editor({ id, from }: { id: string; from?: string }) {
   const nodes = flow.nodes.map((n) => ({
     ...n,
     ...(measured[n.id] && { measured: measured[n.id] }),
-    data: { ...n.data, index: draft.steps.findIndex((s) => s.id === n.id) + 1, needsApp: unconnected.get(n.id), chosen: chosen.get(n.id) },
+    data: {
+      ...n.data,
+      index: draft.steps.findIndex((s) => s.id === n.id) + 1,
+      needsApp: unconnected.get(n.id),
+      chosen: chosen.get(n.id),
+      openExits: openExits(draft, n.id),
+      onAdd: (on: string | undefined, at: Point) => setMenu(n.id === "trigger" ? { at } : { after: n.id, on, at }),
+    },
   }));
   // Every editor edge uses the square editor edge; it carries the branch so the pill can take its colour.
   const edges = flow.edges.map((e) => ({ ...e, type: "editor", data: { ...e.data, on: e.sourceHandle ?? undefined, insert: (at: Point) => setMenu(e.source === "trigger" ? { at } : { after: e.source, on: e.sourceHandle ?? undefined, at }) } }));
 
   const onNodesChange = (changes: NodeChange[]) => {
     for (const c of changes) {
-      if (c.type === "dimensions" && c.dimensions) setMeasured((m) => ({ ...m, [c.id]: c.dimensions! }));
+      if (c.type === "dimensions" && c.dimensions) {
+        const next = c.dimensions;
+        setMeasured((m) => {
+          const prev = m[c.id];
+          if (prev && Math.abs(prev.width - next.width) < 1 && Math.abs(prev.height - next.height) < 1) return m;
+          return { ...m, [c.id]: next };
+        });
+      }
       if (c.type === "select" && c.selected) {
         setSelected(c.id);
         setFolded(false); // selecting a step opens a folded panel
@@ -666,8 +680,8 @@ export function Editor({ id, from }: { id: string; from?: string }) {
             <a href={`#/w/${id}/versions`}>{t("Versions")}</a>
           </div>
         </div>
-        {/* The actions live at the top of the side panel; with the panel folded they come back here, so they are never hidden. */}
-        {wide && folded && actions}
+        {/* Keep global workflow actions pinned in the desktop header regardless of panel fold state. */}
+        {wide && actions}
       </header>
       <div className="a7-body">
         <section className="a7-canvas" aria-label={t("Workflow diagram. Tab to a step and press Enter to select it, Delete to remove it.")}>
@@ -799,7 +813,6 @@ export function Editor({ id, from }: { id: string; from?: string }) {
           )}
           {!(wide && folded) && (
             <aside className="a7-panel" id="a7-panel" aria-label={t("Side panel")}>
-              {wide && actions}
               {message && (
                 <p role={message.kind === "error" ? "alert" : "status"} className={`message ${message.kind}`}>
                   {message.text}

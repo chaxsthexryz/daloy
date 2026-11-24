@@ -1,4 +1,4 @@
-import { mockAiOutput, stepEntry, triggerEntry, type Step } from "@daloy/engine";
+import { BRANCHES, mockAiOutput, stepEntry, triggerEntry, type Step } from "@daloy/engine";
 import { entryOf, type Draft } from "./graph";
 
 /** What happens after a step: one path per outgoing edge, each the chain of steps until a fork, a join already listed, or the end. */
@@ -130,4 +130,22 @@ export function unconnectedNodes(draft: Draft, connected: ReadonlySet<string>, m
     }
   }
   return out;
+}
+
+/** Exits on `nodeId` that do not yet lead to a next step; primary branches exclude optional `condition.invalid`. */
+export function openExits(draft: Draft, nodeId: string): { on?: string }[] {
+  if (nodeId === "trigger") return draft.steps.length === 0 ? [{}] : [];
+  const step = draft.steps.find((s) => s.id === nodeId);
+  if (!step) return [];
+  const branches =
+    step.type === "condition"
+      ? (["true", "false"] as const)
+      : step.type === "booking"
+        ? step.config.action === "create"
+          ? (["done", "taken"] as const)
+          : (["done", "not_found"] as const)
+        : BRANCHES[step.type];
+  if (!branches) return draft.edges.some((e) => e.from === nodeId) ? [] : [{}];
+  const taken = new Set(draft.edges.filter((e) => e.from === nodeId && e.on).map((e) => e.on!));
+  return branches.filter((on) => !taken.has(on)).map((on) => ({ on }));
 }
