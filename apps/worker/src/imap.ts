@@ -6,6 +6,7 @@ import type { EmailPayload, ImapAdapter, ImapMessage } from "./email-in";
 import { blockListOf, isBlocked, type SsrfGuard } from "./steps/ssrf";
 
 export const MAX_EMAIL_BYTES = 256 * 1024;
+export const MAX_BATCH_BYTES = 2 * 1024 * 1024;
 const MAX_TEXT_LENGTH = 20_000;
 type Source = Parameters<ImapAdapter>[0];
 const defaultImapGuard = (): SsrfGuard => ({
@@ -146,9 +147,18 @@ export const connectImap: ImapAdapter = async (source, signal) => {
         const metas = await client!.fetchAll(`${afterUid + 1}:${throughUid}`, { uid: true, size: true }, { uid: true });
         if (metas.length > 20 || metas.some((m) => m.uid <= afterUid || m.uid > throughUid)) throw new Error("Invalid mailbox response");
         const messages: ImapMessage[] = [];
+        let batchBytes = 0;
+        let lastUid = afterUid;
+        let stoppedEarly = false;
         for (const meta of metas.sort((a, b) => a.uid - b.uid)) {
-          if ((meta.size ?? Infinity) > MAX_EMAIL_BYTES) {
+          const size = meta.size ?? Infinity;
+          if (messages.length > 0 && Number.isFinite(size) && batchBytes + size > MAX_BATCH_BYTES) {
+            stoppedEarly = true;
+            break;
+          }
+          if (size > MAX_EMAIL_BYTES) {
             messages.push({ uid: meta.uid, payload: null, warning: "Skipped an email larger than 256 KB. Open the mailbox to read it." });
+            lastUid = meta.uid;
             continue;
           }
           const message = await client!.fetchOne(
@@ -156,9 +166,14 @@ export const connectImap: ImapAdapter = async (source, signal) => {
             { uid: true, source: { start: 0, maxLength: MAX_EMAIL_BYTES + 1 }, internalDate: true },
             { uid: true },
           );
-          if (!message) continue; // A person may delete a message between the two reads.
+          if (!message) {
+            lastUid = meta.uid;
+            continue; // A person may delete a message between the two reads.
+          }
           if (!message.source) throw new Error("Mailbox omitted the requested message body");
           if (message.uid !== meta.uid) throw new Error("Wrong message UID");
+          batchBytes += message.source.length;
+          lastUid = meta.uid;
           try {
             messages.push({
               uid: meta.uid,
@@ -172,7 +187,7 @@ export const connectImap: ImapAdapter = async (source, signal) => {
             });
           }
         }
-        return { messages, throughUid };
+        return { messages, throughUid: stoppedEarly ? lastUid : throughUid };
       },
       close,
     };

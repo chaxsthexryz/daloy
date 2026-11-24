@@ -1,8 +1,8 @@
-import { and, eq, inArray, isNotNull, lt, or, sql } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import {
-  bookingChanges, bookingResults, bookings, calendarEvents, conversationMessages, conversations, deliveries, paymentClaims, paymentDues, paymentHistory, paymentSettings, paymongoEvents, privacyRequests, receiptReferences, requests, runs, stepRuns, uploads, users, workflows, workflowVersions,
+  approvals, bookingChanges, bookingResults, bookings, calendarEvents, conversationMessages, conversations, deliveries, paymentClaims, paymentDues, paymentHistory, paymentSettings, paymongoEvents, privacyRequests, receiptReferences, requests, runs, stepRuns, uploads, users, workflows, workflowVersions,
 } from "./schema";
 
 type AnyDb = NodePgDatabase<Record<string, unknown>>;
@@ -41,9 +41,9 @@ export function matcher(q: { email: string } | { phone: string }): (value: unkno
 const b64 = (b: Buffer | null) => (b ? b.toString("base64") : null);
 
 /** Every row of the workspace that belongs to the customer. Nothing is read outside the workspace. */
-async function collect(db: AnyDb, workspaceId: string, q: CustomerQuery) {
+async function collect(db: AnyDb, workspaceId: string, q: CustomerQuery, hide: (v: unknown) => unknown = (v) => v) {
   const allRuns = await db
-    .select({ id: runs.id, triggerPayload: runs.triggerPayload, conversationId: runs.conversationId })
+    .select({ id: runs.id, triggerPayload: runs.triggerPayload, conversationId: runs.conversationId, bookingId: runs.bookingId })
     .from(runs)
     .innerJoin(workflowVersions, eq(workflowVersions.id, runs.workflowVersionId))
     .innerJoin(workflows, eq(workflows.id, workflowVersions.workflowId))
@@ -59,7 +59,7 @@ async function collect(db: AnyDb, workspaceId: string, q: CustomerQuery) {
     runIds = new Set(allRuns.filter((r) => r.conversationId === q.conversationId).map((r) => r.id));
     events = [];
   } else {
-    const match = matcher(q);
+    const match = (v: unknown) => matcher(q)(hide(v));
     // shortcut: scans every run in the workspace, add an index or customer table if workspaces reach many thousands of runs.
     runIds = new Set(allRuns.filter((r) => match(r.triggerPayload)).map((r) => r.id));
     for (const d of await db.select({ runId: paymentDues.runId, replyTo: paymentDues.replyTo }).from(paymentDues).where(and(eq(paymentDues.userId, workspaceId), isNotNull(paymentDues.replyTo)))) if (match(d.replyTo)) runIds.add(d.runId);
@@ -75,11 +75,10 @@ async function collect(db: AnyDb, workspaceId: string, q: CustomerQuery) {
   }
   const openDueIds = new Set(allConversations.filter((c) => convIds.has(c.id) && c.openDueId).map((c) => c.openDueId!));
   const cIds = [...convIds];
-  const ids = [...runIds];
+  let ids = [...runIds];
   const inRuns = (col: AnyPgColumn) => (ids.length ? inArray(col, ids) : sql`false`);
   const linkedDueIds = [...openDueIds];
 
-  const runRows = ids.length ? await db.select().from(runs).where(inArray(runs.id, ids)) : [];
   const dues = await db
     .select()
     .from(paymentDues)
@@ -92,8 +91,12 @@ async function collect(db: AnyDb, workspaceId: string, q: CustomerQuery) {
     for (const r of await db.select({ id: bookings.id }).from(bookings).where(and(eq(bookings.userId, workspaceId), inArray(bookings.conversationId, cIds)))) bookingIds.add(r.id);
   }
   for (const d of dues) if (d.bookingId) bookingIds.add(d.bookingId);
+  const initialResults = await db.select().from(bookingResults).where(inRuns(bookingResults.runId));
+  for (const r of initialResults) if (r.bookingId) bookingIds.add(r.bookingId);
+  for (const r of allRuns) if (r.bookingId && bookingIds.has(r.bookingId)) runIds.add(r.id);
+  ids = [...runIds];
+  const runRows = ids.length ? await db.select().from(runs).where(inArray(runs.id, ids)) : [];
   const results = await db.select().from(bookingResults).where(inRuns(bookingResults.runId));
-  for (const r of results) if (r.bookingId) bookingIds.add(r.bookingId);
   const bIds = [...bookingIds];
   const inBookings = (col: AnyPgColumn) => (bIds.length ? inArray(col, bIds) : sql`false`);
   const changes = await db.select().from(bookingChanges).where(inBookings(bookingChanges.bookingId));
@@ -142,8 +145,8 @@ async function audit(db: AnyDb, workspaceId: string, actorId: string, action: "e
 }
 
 /** Everything the workspace holds about the customer, as one JSON-ready object. Writes an audit row. */
-export async function exportCustomer(db: AnyDb, workspaceId: string, actorId: string, q: CustomerQuery) {
-  const f = await collect(db, workspaceId, q);
+export async function exportCustomer(db: AnyDb, workspaceId: string, actorId: string, q: CustomerQuery, opts: { hide?: (v: unknown) => unknown } = {}) {
+  const f = await collect(db, workspaceId, q, opts.hide);
   const counts = countsOf(f);
   await audit(db, workspaceId, actorId, "export", counts, []);
   return {
@@ -161,7 +164,11 @@ async function eraseRuns(tx: AnyDb, workspaceId: string, runIds: string[]) {
   if (!runIds.length) return;
   await tx.update(runs).set({ triggerPayload: { erased: true }, error: null }).where(inArray(runs.id, runIds));
   await tx.update(runs).set({ state: "cancelled", finishedAt: new Date() }).where(and(inArray(runs.id, runIds), inArray(runs.state, ["pending", "running", "waiting", "needs_review"])));
-  await tx.update(stepRuns).set({ input: null, output: null, error: null }).where(inArray(stepRuns.runId, runIds));
+  // S5: clear claimId and close running/waiting step attempts as not_sent so an in-flight worker is fenced on claimSend and moveStep.
+  await tx.update(stepRuns).set({ state: "failed", outcome: "not_sent", claimId: null, finishedAt: new Date() }).where(and(inArray(stepRuns.runId, runIds), inArray(stepRuns.state, ["running", "waiting"])));
+  await tx.update(stepRuns).set({ input: null, output: null, error: null, claimId: null }).where(inArray(stepRuns.runId, runIds));
+  const stepIds = tx.select({ id: stepRuns.id }).from(stepRuns).where(inArray(stepRuns.runId, runIds));
+  await tx.update(approvals).set({ expiresAt: sql`now()` }).where(and(isNull(approvals.usedAt), inArray(approvals.stepRunId, stepIds)));
   await tx.delete(uploads).where(and(eq(uploads.userId, workspaceId), inArray(uploads.runId, runIds)));
   await tx.delete(deliveries).where(and(eq(deliveries.userId, workspaceId), inArray(deliveries.runId, runIds)));
   await tx.update(requests).set({ subject: "Deleted on request" }).where(and(eq(requests.userId, workspaceId), inArray(requests.runId, runIds)));

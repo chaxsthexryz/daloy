@@ -23,21 +23,33 @@ const answer = z.object({ url: z.string(), extracted: z.record(z.string(), z.str
  * Runs the action list and keeps each screenshot as an upload of this run, next to a form's files. The output is the
  * extracted names at the top level ({{steps.<id>.output.price}}), the final address and the screenshot file refs.
  */
-export async function browserStep(db: Db, service: BrowserService | null, at: { userId: string; runId: string; stepId: string }, input: BrowserInput): Promise<Record<string, unknown>> {
+export async function browserStep(
+  db: Db,
+  service: BrowserService | null,
+  at: { userId: string; runId: string; stepId: string },
+  input: BrowserInput,
+  claim?: () => Promise<() => void>,
+): Promise<Record<string, unknown>> {
   if (!service) throw new StepError("The browser step is not set up on this server: the operator has not started the browser service (BROWSER_URL and BROWSER_TOKEN, docs/deployment.md).", false);
   // Reading pages is safe to try again. A click or a typed value may already have done something on the site, so
   // only a run that was never started (busy) is retried then; a lost answer is an unknown outcome, for a person.
   const readOnly = input.actions.every((a) => a.action !== "click" && a.action !== "fill");
   const lost = (message: string) => new StepError(message, readOnly, readOnly ? {} : { outcome: "unknown" });
+  // S5: a mutating job claims the send first (the dispatch mark), so a takeover after a lost worker parks for review instead of clicking twice.
+  const release = !readOnly && claim ? await claim() : undefined;
   let res: Response;
   try {
-    res = await fetch(`${service.url}/run`, {
+    const pending = fetch(`${service.url}/run`, {
       method: "POST",
       headers: { authorization: `Bearer ${service.token}`, "content-type": "application/json" },
       body: JSON.stringify(input),
       signal: AbortSignal.timeout(120_000),
     });
+    // The request is on its way: the claim lock is not held for the whole job.
+    release?.();
+    res = await pending;
   } catch (err) {
+    release?.();
     throw lost(`The browser service did not answer (${err instanceof Error ? err.message : String(err)}).`);
   }
   const body = (await res.json().catch(() => ({}))) as { error?: unknown };

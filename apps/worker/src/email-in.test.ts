@@ -333,6 +333,49 @@ describe("email intake fairness (M13)", () => {
     expect(second.wait).toBeGreaterThan(first.wait + 500);
     expect(ok.failures).toBe(0);
   });
+
+  it("polls workspaces fairly: a slow or multi-mailbox workspace never starves another workspace (S4)", async () => {
+    const wsA1 = await setup({ ...input, username: "a1@example.com" });
+    const wfA2 = (await db.insert(workflows).values({ userId: wsA1.userId, name: "Email intake 2", slug: "email-2" }).returning())[0]!;
+    await db.insert(workflowVersions).values({
+      workflowId: wfA2.id,
+      version: 1,
+      definition: { trigger: { type: "email", config: {} }, steps: [], edges: [] },
+      published: true,
+    });
+    await db.insert(triggers).values({ workflowId: wfA2.id, type: "email", config: {} });
+    await saveEmailSource(db, key, wsA1.userId, wfA2.id, { ...input, username: "a2@example.com" });
+    await setup({ ...input, username: "b1@example.com" });
+
+    // Baseline all three.
+    await poll(mailbox());
+    await poll(mailbox());
+    await poll(mailbox());
+    await due();
+
+    // Workspace A's mailbox hangs until Workspace B's mailbox finishes; B must still be polled in the same pass,
+    // and A2 must not be polled in the same pass as A1.
+    let releaseA!: () => void;
+    const aDone = new Promise<void>((r) => (releaseA = r));
+    const polled: string[] = [];
+    let bFinishedFirst = false;
+    const adapter: ImapAdapter = async (s) => {
+      polled.push(s.username);
+      if (s.username.startsWith("a")) {
+        await aDone;
+        return mailbox({ uidNext: 6, messages: [{ uid: 5, payload }] })(s);
+      }
+      const sess = await mailbox({ uidNext: 6, messages: [{ uid: 5, payload: { ...payload, messageId: "<b1@example.com>" } }] })(s);
+      bFinishedFirst = true;
+      releaseA();
+      return sess;
+    };
+
+    await pollEmailSources({ db, secretsKey: key, adapter, intervalMs: 0, enqueue: async () => {} });
+    expect(bFinishedFirst).toBe(true);
+    expect(polled.filter((u) => u.startsWith("a"))).toHaveLength(1);
+    expect(polled).toContain("b1@example.com");
+  });
 });
 
 describe("email intake and pause (N11b)", () => {

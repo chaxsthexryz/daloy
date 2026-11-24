@@ -362,6 +362,13 @@ export async function decideClaim(db: Db, o: { workspaceId: string; actor: { id:
       .returning();
     if (o.decision === "confirm") {
       await confirm(tx, d, { source: c.channel, actorId: o.actor.id, claimId: c.id, paymentId: c.paymentId });
+      if (c.paymentId) {
+        const [p] = await tx.select({ status: payments.status, providerPaymentId: payments.providerPaymentId }).from(payments).where(eq(payments.id, c.paymentId));
+        if (p?.status === "refunded") {
+          const [refRow] = await tx.update(paymentDues).set({ status: "refunded", updatedAt: now as unknown as Date }).where(and(eq(paymentDues.id, d.id), eq(paymentDues.status, "confirmed"))).returning();
+          if (refRow) await log(tx, refRow, "refunded", "checkout", { detail: { payment: p.providerPaymentId } });
+        }
+      }
     } else {
       const text = o.decision === "reject" ? `We could not confirm your payment for ${d.reference}: ${reason}` : `About your payment for ${d.reference}: ${reason}`;
       const sent = await message(tx, d, `${d.stepId}#claim-${c.id}-${c.version}`, text);

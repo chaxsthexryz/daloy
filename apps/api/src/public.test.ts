@@ -59,6 +59,7 @@ describe("webhook signature with a timestamp (N11b)", () => {
     const old = `sha256=${createHmac("sha256", "k").update(body).digest("hex")}`;
     expect(check({ timestamp: undefined, signature: old })).toEqual({ ok: true, legacy: true, replayKey: undefined });
     expect(check({ timestamp: undefined, signature: old, requireTimestamp: true })).toEqual({ ok: false, reason: "This webhook requires the X-Daloy-Timestamp header. See how-it-works.md, webhook signatures." });
+    expect(check({ timestamp: undefined, signature: undefined, requireTimestamp: true })).toEqual({ ok: false, reason: "bad signature" });
     expect(check({ timestamp: undefined, signature: "sha256=wrong" })).toEqual({ ok: false, reason: "bad signature" });
   });
 });

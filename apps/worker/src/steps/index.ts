@@ -391,7 +391,7 @@ async function runStep(deps: FullDeps, step: Step, input: unknown, ctx: Expressi
       // A test run opens nothing: it lists what the page would see, with each extract name present but empty.
       if (mock) return { output: { mocked: true, url: cfg.url, wouldDo: wouldDo(cfg.url, cfg.actions), screenshots: [], ...Object.fromEntries(cfg.actions.flatMap((a) => (a.action === "extract" ? [[a.name, ""]] : []))) } };
       await claim("http");
-      return { output: await browserStep(deps.db, deps.browser, { userId, runId, stepId: step.id }, cfg) };
+      return { output: await browserStep(deps.db, deps.browser, { userId, runId, stepId: step.id }, cfg, claimSend) };
     }
     case "email": {
       const mail = input as EmailInput;

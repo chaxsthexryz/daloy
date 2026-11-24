@@ -7,7 +7,7 @@ import { and, eq } from "drizzle-orm";
 import type { Pool } from "pg";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { freshDatabase } from "../../../../test/db";
-import { pdfText } from "./ai-files";
+import { MAX_PDF_CHARS, pdfText } from "./ai-files";
 import { createExecutor } from "./index";
 
 const key = randomBytes(32);
@@ -43,7 +43,8 @@ beforeEach(() => {
 
 /** A one-page PDF built byte by byte, so the xref offsets are right and the text layer is known. */
 function pdf(text?: string) {
-  const stream = text ? `BT /F1 24 Tf 72 700 Td (${text}) Tj ET` : "";
+  const chunks = text ? (text.match(/.{1,25}/gs) ?? []) : [];
+  const stream = chunks.length ? `BT /F1 12 Tf ${chunks.map((c) => `1 0 0 1 72 700 Tm (${c}) Tj`).join(" ")} ET` : "";
   const objs = [
     "<< /Type /Catalog /Pages 2 0 R >>",
     "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
@@ -75,6 +76,13 @@ describe("pdfText", () => {
   });
   it("stops reading at the timeout", async () => {
     await expect(pdfText(pdf("hello"), 1)).rejects.toMatchObject({ retryable: false, message: "This PDF took too long to read." });
+  });
+
+  it("caps extracted PDF text characters cleanly (S4)", async () => {
+    const huge = pdf("A".repeat(MAX_PDF_CHARS + 10_000));
+    const text = await pdfText(huge);
+    expect(text.length).toBeLessThanOrEqual(MAX_PDF_CHARS + 200);
+    expect(text).toContain("truncated");
   });
 });
 

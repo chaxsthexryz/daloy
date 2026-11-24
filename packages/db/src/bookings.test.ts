@@ -5,7 +5,9 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { freshDatabase } from "../../../test/db";
 import { bookFromStep, bookingSuperseded, confirmStay, listBookings, staffChange, type StepAction } from "./bookings";
 import type { Db } from "./index";
-import { bookingChanges, bookings, conversations, resources, runs, users, workflows, workflowVersions } from "./schema";
+import { createDue, decideClaim, submitTransferClaim } from "./payment-review";
+import { insertPayment } from "./paymongo";
+import { bookingChanges, bookings, conversations, paymentDues, paymentHistory, payments, resources, runs, users, workflows, workflowVersions } from "./schema";
 
 // Decision 0032: the exclusion constraint decides every conflict, a step's result is stored with its change, and a
 // staff change is logged per version so a repeat finds it.
@@ -320,5 +322,88 @@ describe("stays (C5)", () => {
       result: "done",
       booking: { version: 2, start: "2031-06-10T14:00:00+08:00", end: "2031-06-12T12:00:00+08:00", nights: 2, checkIn: "2031-06-10", checkOut: "2031-06-12" },
     });
+  });
+
+  it("cancelling a booking via staff or step also cancels pending payment_dues, clears open_due_id, and expires open checkouts while keeping confirmed dues (S3)", async () => {
+    const w = await workspace();
+    const ana = await w.resource("Ana");
+
+    // 1. Staff cancel cancels pending due linked to booking + expires checkout + clears conversation openDueId, keeps confirmed due.
+    const [convo] = await db.insert(conversations).values({ userId: w.id, channel: "messenger", externalId: "psid-s3-staff" }).returning();
+    const first = await w.step(create(ana, hour(14)));
+    const booking1 = await rowOf(String(first.output.reference));
+    const pendingDue = await createDue(db, {
+      userId: w.id,
+      test: false,
+      workflowId: w.workflowId,
+      runId: first.runId,
+      stepId: "ask_dep",
+      reference: booking1.reference,
+      kind: "deposit",
+      amountCentavos: 35000,
+      bookingId: booking1.id,
+      conversationId: convo!.id,
+    });
+    const openCheckout = await insertPayment(db, {
+      userId: w.id,
+      workflowId: w.workflowId,
+      runId: first.runId,
+      stepId: "ask_dep",
+      reference: booking1.reference,
+      amountCentavos: 35000,
+      livemode: false,
+      providerSessionId: `cs_s3_staff_${randomBytes(4).toString("hex")}`,
+      url: "https://pm.test/s3-staff",
+      dueId: pendingDue.id,
+    });
+    const confirmedDue = await createDue(db, {
+      userId: w.id,
+      test: false,
+      workflowId: w.workflowId,
+      runId: await w.run(),
+      stepId: "ask_bal",
+      reference: `${booking1.reference}-BAL`,
+      kind: "balance",
+      amountCentavos: 50000,
+      bookingId: booking1.id,
+    });
+    const claim = (await submitTransferClaim(db, confirmedDue.token, { transferRef: `S3CONF${randomBytes(3).toString("hex")}` }))!;
+    await decideClaim(db, { workspaceId: w.id, actor: { id: w.id, role: "owner" }, claimId: claim.id, version: 1, decision: "confirm" });
+
+    expect((await staffChange(db, { workspaceId: w.id, bookingId: booking1.id, version: booking1.version, action: "cancel" }, `user:${w.id}`)).result).toBe("done");
+
+    const [dueAfterStaff] = await db.select().from(paymentDues).where(eq(paymentDues.id, pendingDue.id));
+    expect(dueAfterStaff!.status).toBe("cancelled");
+    const [payAfterStaff] = await db.select().from(payments).where(eq(payments.id, openCheckout.id));
+    expect(payAfterStaff!.status).toBe("expired");
+    const [convoAfterStaff] = await db.select().from(conversations).where(eq(conversations.id, convo!.id));
+    expect(convoAfterStaff!.openDueId).toBeNull();
+    const [confAfterStaff] = await db.select().from(paymentDues).where(eq(paymentDues.id, confirmedDue.id));
+    expect(confAfterStaff!.status).toBe("confirmed");
+    const staffHist = await db.select().from(paymentHistory).where(eq(paymentHistory.dueId, pendingDue.id));
+    expect(staffHist.some((h) => h.event === "cancelled")).toBe(true);
+
+    // 2. Step cancel cancels pending due linked to booking.
+    const [convo2] = await db.insert(conversations).values({ userId: w.id, channel: "messenger", externalId: "psid-s3-step" }).returning();
+    const second = await w.step(create(ana, hour(16)));
+    const booking2 = await rowOf(String(second.output.reference));
+    const stepDue = await createDue(db, {
+      userId: w.id,
+      test: false,
+      workflowId: w.workflowId,
+      runId: second.runId,
+      stepId: "ask_dep2",
+      reference: booking2.reference,
+      kind: "deposit",
+      amountCentavos: 35000,
+      bookingId: booking2.id,
+      conversationId: convo2!.id,
+    });
+    const cancelledByStep = await w.step({ action: "cancel", reference: booking2.reference });
+    expect(cancelledByStep.branch).toBe("done");
+    const [dueAfterStep] = await db.select().from(paymentDues).where(eq(paymentDues.id, stepDue.id));
+    expect(dueAfterStep!.status).toBe("cancelled");
+    const [convoAfterStep] = await db.select().from(conversations).where(eq(conversations.id, convo2!.id));
+    expect(convoAfterStep!.openDueId).toBeNull();
   });
 });

@@ -538,6 +538,23 @@ describe("Shopify steps and trigger", () => {
     expect(issues(def(order, { id: "up", type: "shopify_update_product", config: { product: "TOTE-1" } })).join()).toMatch(/choose at least one thing to change/);
     expect(issues(def(order, { id: "up", type: "shopify_update_product", config: { product: "TOTE-1", price: "12", status: "active" } }))).toEqual([]);
   });
+
+  it("refuses Shopify product fields coming from an AI step or indirectly from an untrusted trigger (S5)", () => {
+    const manual = { type: "manual", config: { fields } };
+    const ai = { id: "draft", type: "ai", config: { task: "draft", input: "Write a product title" } };
+    const relay = { id: "relay", type: "http", config: { method: "GET", url: "https://example.com/?q={{steps.draft.output.text}}", headers: {} } };
+    const chainDef = (trigger: object, steps: object[]) => ({
+      trigger,
+      steps,
+      edges: steps.slice(1).map((s, i) => ({ from: (steps[i] as { id: string }).id, to: (s as { id: string }).id })),
+    });
+
+    expect(issues(chainDef(manual, [ai, create("{{steps.draft.output.text}}")])).join()).toMatch(/shopify_create_product step "make".*AI step "draft"/);
+    expect(issues(chainDef(manual, [ai, relay, { id: "up", type: "shopify_update_product", config: { product: "TOTE-1", description: "{{steps.relay.output.body}}" } }])).join()).toMatch(/shopify_update_product step "up".*AI step "draft"/);
+
+    const formRelay = { id: "relay", type: "http", config: { method: "GET", url: "https://example.com/?q={{trigger.sku}}", headers: {} } };
+    expect(issues(chainDef(form, [formRelay, create("{{steps.relay.output.body}}")])).join()).toMatch(/shopify_create_product step "make".*step "relay"/);
+  });
 });
 
 // G1 (decision 0123): kymavo internal triggers (booking_event, payment_event) and reusable sub-workflows.

@@ -46,6 +46,7 @@ export type EmailPollOptions = {
   adapter: ImapAdapter;
   enqueue: (runId: string) => Promise<void>;
   intervalMs?: number;
+  maxWorkspaces?: number;
   signal?: AbortSignal;
 };
 
@@ -53,49 +54,59 @@ const READ_FAILED = "Could not read this mailbox. Check its address, app passwor
 const RETRYING = "Could not reach the mailbox. kymavo will try again shortly.";
 const CLAIM_MS = 45_000;
 const MAX_BACKOFF_MS = 3_600_000;
+export const MAX_POLL_WORKSPACES = 10;
 // A workspace is the owner of the source's workflow.
 const workspaceOf = sql`(select user_id from workflows where id = ${emailSources.workflowId})`;
 
-/** A short, bounded poll. Each result is fenced by both credential revision and claim, including late errors. */
-export async function pollEmailSources({ db, secretsKey, adapter, enqueue, intervalMs = 60_000, signal }: EmailPollOptions) {
+/** A short, bounded, per-workspace fair poll. Claims at most one mailbox per workspace and runs up to maxWorkspaces in parallel. */
+export async function pollEmailSources(opts: EmailPollOptions) {
+  const { db, intervalMs = 60_000, maxWorkspaces = MAX_POLL_WORKSPACES, signal } = opts;
   if (signal?.aborted) return;
-  const claim = await db.transaction(async (tx) => {
+  const claims = await db.transaction(async (tx) => {
     // Serializes claims so the one-poller-per-workspace check below cannot race.
     await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended('email-claim', 0))`);
     const now = new Date();
     // Live: a published email trigger. A live source back to pending after a transient failure keeps its priority.
     const published = sql`exists (select 1 from triggers where workflow_id = ${emailSources.workflowId} and type = 'email')`;
     const live = sql`(${emailSources.status} = 'active' and ${published})`;
-    const [row] = await tx
-      .select()
-      .from(emailSources)
-      .where(
-        and(
-          or(
-            eq(emailSources.status, "pending"),
-            live,
+    const picked: (typeof emailSources.$inferSelect)[] = [];
+    for (let i = 0; i < maxWorkspaces; i++) {
+      const [row] = await tx
+        .select()
+        .from(emailSources)
+        .where(
+          and(
+            or(
+              eq(emailSources.status, "pending"),
+              live,
+            ),
+            sql`not exists (select 1 from email_sources o join workflows ow on ow.id = o.workflow_id where ow.user_id = ${workspaceOf} and o.id <> ${emailSources.id} and o.claim_until > ${now})`,
+            lte(emailSources.nextPollAt, now),
+            or(isNull(emailSources.claimUntil), lte(emailSources.claimUntil, now)),
           ),
-          sql`not exists (select 1 from email_sources o join workflows ow on ow.id = o.workflow_id where ow.user_id = ${workspaceOf} and o.id <> ${emailSources.id} and o.claim_until > ${now})`,
-          lte(emailSources.nextPollAt, now),
-          or(isNull(emailSources.claimUntil), lte(emailSources.claimUntil, now)),
-        ),
-      )
-      .orderBy(
-        sql`${published} desc`,
-        sql`(select max(es.last_checked_at) from email_sources es join workflows ew on ew.id = es.workflow_id where ew.user_id = ${workspaceOf}) asc nulls first`,
-        emailSources.nextPollAt,
-      )
-      .limit(1)
-      .for("update", { skipLocked: true });
-    if (!row) return null;
-    const [owned] = await tx
-      .update(emailSources)
-      .set({ claimId: randomUUID(), claimUntil: new Date(Date.now() + CLAIM_MS), nextPollAt: new Date(Date.now() + intervalMs) })
-      .where(eq(emailSources.id, row.id))
-      .returning();
-    return owned!;
+        )
+        .orderBy(
+          sql`${published} desc`,
+          sql`(select max(es.last_checked_at) from email_sources es join workflows ew on ew.id = es.workflow_id where ew.user_id = ${workspaceOf}) asc nulls first`,
+          emailSources.nextPollAt,
+        )
+        .limit(1)
+        .for("update", { skipLocked: true });
+      if (!row) break;
+      const [owned] = await tx
+        .update(emailSources)
+        .set({ claimId: randomUUID(), claimUntil: new Date(Date.now() + CLAIM_MS), nextPollAt: new Date(Date.now() + intervalMs) })
+        .where(eq(emailSources.id, row.id))
+        .returning();
+      picked.push(owned!);
+    }
+    return picked;
   });
-  if (!claim) return;
+  if (claims.length === 0) return;
+  await Promise.all(claims.map((claim) => pollOneSource(claim, opts)));
+}
+
+async function pollOneSource(claim: typeof emailSources.$inferSelect, { db, secretsKey, adapter, enqueue, intervalMs = 60_000, signal }: EmailPollOptions) {
   const fence = and(eq(emailSources.id, claim.id), eq(emailSources.revision, claim.revision), eq(emailSources.claimId, claim.claimId!));
   let session: ImapSession | undefined;
   try {

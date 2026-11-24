@@ -225,6 +225,36 @@ describe("automatic checkout", () => {
     expect((await fresh(d.id)).status).toBe("refunded");
     expect((await history(d)).filter((e) => e === "refunded")).toHaveLength(1);
   });
+
+  it("refunds also apply to a due confirmed from a needs_review claim (S3)", async () => {
+    const d = await due();
+    const p = await checkout(d);
+    // Wrong amount puts the payment in needs_review and creates a review claim.
+    await paid(p, 30000, "pay_refund_review");
+    const row = (await reviewList(db, owner)).find((r) => r.dueId === d.id)!;
+    expect(row.claimId).toBeTruthy();
+    await decideClaim(db, { workspaceId: owner, actor: asOwner, claimId: row.claimId!, version: row.version!, decision: "confirm" });
+    expect((await fresh(d.id)).status).toBe("confirmed");
+
+    const refunded = await markPaymentRefunded(db, { userId: owner, providerPaymentId: "pay_refund_review", livemode: false });
+    expect(refunded.changed).toBe(true);
+    expect(refunded.payment!.status).toBe("refunded");
+    await settleCheckout(db, owner, p.id);
+    expect((await fresh(d.id)).status).toBe("refunded");
+    expect(await history(d)).toContain("refunded");
+
+    // Out-of-order: refund arrives while claim is still open, then reviewer confirms.
+    const d2 = await due();
+    const p2 = await checkout(d2);
+    await paid(p2, 30000, "pay_refund_early_review");
+    const row2 = (await reviewList(db, owner)).find((r) => r.dueId === d2.id)!;
+    await markPaymentRefunded(db, { userId: owner, providerPaymentId: "pay_refund_early_review", livemode: false });
+    await settleCheckout(db, owner, p2.id);
+    expect((await fresh(d2.id)).status).toBe("pending");
+    await decideClaim(db, { workspaceId: owner, actor: asOwner, claimId: row2.claimId!, version: row2.version!, decision: "confirm" });
+    expect((await fresh(d2.id)).status).toBe("refunded");
+    expect(await history(d2)).toContain("refunded");
+  });
 });
 
 describe("expireDue", () => {

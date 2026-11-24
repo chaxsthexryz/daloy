@@ -627,6 +627,11 @@ export const definitionSchema = z
     if (new Set(emailMenus).size > 1) fail("every email menu in a workflow must list the same choices in the same order, so a reply's number means one thing");
 
     for (const s of def.steps) {
+      if (s.type === "shopify_create_product" || s.type === "shopify_update_product") {
+        // S5: a product step also refuses values that reach it through other steps (model output, or a step that reads a public visitor's text).
+        const source = untrustedSource(Object.values(s.config).filter((v): v is string => typeof v === "string").join(" "), byId, def.trigger);
+        if (source) fail(`${s.type} step "${s.id}" cannot take its fields from ${source}. Use fixed values, a signed webhook, a Shopify order or a manual run.`);
+      }
       if (s.type === "payment_due") {
         const source = untrustedSource([s.config.amount, s.config.total ?? ""].join(" "), byId, def.trigger);
         if (source) fail(`payment_due step "${s.id}" cannot take its amount or total from ${source}. Take prices from a stay_quote step, a fixed amount or a manual run.`);

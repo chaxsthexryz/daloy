@@ -1,7 +1,7 @@
 import { createHmac, randomBytes } from "node:crypto";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { connections, insertPayment, markPaymentPaid, paymongoEvents, payments, runs, saveConnection, triggers, users, workflows, workflowVersions, type Db } from "@daloy/db";
+import { connections, createDue, decideClaim, insertPayment, markPaymentPaid, paymentClaims, paymentDues, paymongoEvents, payments, runs, saveConnection, triggers, users, workflows, workflowVersions, type Db } from "@daloy/db";
 import type { INestApplication } from "@nestjs/common";
 import { and, eq, inArray } from "drizzle-orm";
 import type { Pool } from "pg";
@@ -212,6 +212,29 @@ describe("PayMongo webhook", () => {
     await post(path, paidEvent("evt_late", sessionId)).expect(200);
     expect(await statusOf(p.id)).toBe("refunded");
     expect(await runsOf(paidWf)).toHaveLength(1);
+  });
+
+  it("refunds a due that was confirmed from a needs_review checkout claim and starts refund listeners (S3)", async () => {
+    const { agent, userId } = await owner();
+    const path = await connect(agent, userId);
+    const refundWf = await listener(agent, ["refunded"]);
+    const [wf] = await db.insert(workflows).values({ userId, name: "Ask", slug: `ask-${++seq}` }).returning();
+    const [v] = await db.insert(workflowVersions).values({ workflowId: wf!.id, version: 1, definition: {} }).returning();
+    const [r] = await db.insert(runs).values({ workflowVersionId: v!.id, triggerPayload: {} }).returning();
+    const due = await createDue(db, { userId, test: false, workflowId: wf!.id, runId: r!.id, stepId: "ask", reference: `DUE-${seq}`, kind: "deposit", amountCentavos: 15000 });
+    const sessionId = `cs_nr_${seq}`;
+    const p = await insertPayment(db, { userId, workflowId: wf!.id, runId: r!.id, stepId: "ask", reference: due.reference, amountCentavos: 15000, livemode: false, providerSessionId: sessionId, url: `https://pm.test/${sessionId}`, dueId: due.id });
+
+    await post(path, paidEvent(`evt_nr_p_${seq}`, sessionId, 12000)).expect(200);
+    expect(await statusOf(p.id)).toBe("needs_review");
+    const [claim] = await db.select().from(paymentClaims).where(eq(paymentClaims.dueId, due.id));
+    await decideClaim(db, { workspaceId: userId, actor: { id: userId, role: "owner" }, claimId: claim!.id, version: claim!.version, decision: "confirm" });
+
+    await post(path, refundEvent(`evt_nr_r_${seq}`)).expect(200);
+    expect(await statusOf(p.id)).toBe("refunded");
+    const [dueAfter] = await db.select().from(paymentDues).where(eq(paymentDues.id, due.id));
+    expect(dueAfter!.status).toBe("refunded");
+    expect(await runsOf(refundWf)).toHaveLength(1);
   });
 
   it("a live payment made by a builder test run starts a test run; one made by a real run starts a real run", async () => {

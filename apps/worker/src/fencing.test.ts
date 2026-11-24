@@ -1,7 +1,7 @@
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import nodemailer from "nodemailer";
-import { createDb, resolveRun, runs, stepRuns, users, workflows, workflowVersions, type Db } from "@daloy/db";
+import { createDb, deleteCustomer, resolveRun, runs, stepRuns, users, workflows, workflowVersions, type Db } from "@daloy/db";
 import { StepError } from "@daloy/engine";
 import { asc, eq } from "drizzle-orm";
 import type { Pool } from "pg";
@@ -359,5 +359,82 @@ describe("send claims and dispatch marks (decision 0030)", () => {
     expect((await runOf(runId)).state).toBe("succeeded");
     expect(new Set(calls.map((c) => c.key))).toEqual(new Set([`${runId}:check`]));
     expect(calls.map((c) => c.attempt)).toEqual([1, 2, 3, 4]);
+  });
+
+  it("fences an in-flight step attempt and blocks claimSend when deleteCustomer erases the customer mid-step (S5)", async () => {
+    const [user] = await db.insert(users).values({ email: `f${++seq}@test.local`, passwordHash: "x" }).returning();
+    const [wf] = await db.insert(workflows).values({ userId: user!.id, name: "f", slug: `f${seq}` }).returning();
+    const [version] = await db.insert(workflowVersions).values({ workflowId: wf!.id, version: 1, definition: flow(post("send"), done), published: true }).returning();
+    const [run] = await db.insert(runs).values({ workflowVersionId: version!.id, triggerPayload: { email: "erased.midstep@test.local" } }).returning();
+    const runId = run!.id;
+
+    const entered = gate();
+    const release = gate();
+    let sentError: unknown;
+    const exec = executor([], async ({ claimSend }) => {
+      entered.open();
+      await release.opened;
+      try {
+        const doneSend = await claimSend?.();
+        doneSend?.();
+      } catch (err) {
+        sentError = err;
+      }
+      return { output: { leaked: "erased.midstep@test.local" } };
+    });
+
+    const worker = advance(deps("w-erase", exec), runId);
+    await entered.opened;
+    await deleteCustomer(db, user!.id, user!.id, { email: "erased.midstep@test.local" });
+    release.open();
+    await expect(worker).rejects.toThrow(/under this worker's claim/);
+
+    expect(sentError).toBeInstanceOf(StepError);
+    expect((sentError as StepError).outcome).toBe("not_sent");
+    expect((await runOf(runId)).state).toBe("cancelled");
+    const [row] = await rowsOf(runId);
+    expect(row!.input).toBeNull();
+    expect(row!.output).toBeNull();
+  });
+
+  it("gives mutating browser steps (click/fill) a send claim so a takeover parks in needs_review, and skips claim for read-only browser steps (S5)", async () => {
+    const mutating = { id: "act", type: "browser", config: { url: "https://shop.example.com", actions: [{ action: "click", text: "Submit" }] } };
+    const { runId } = await createRun(flow(mutating, done));
+    const entered = gate();
+    const stuck = gate();
+    const callsA: Call[] = [];
+    const callsB: Call[] = [];
+
+    const a = advance(
+      deps("w-a", executor(callsA, async ({ claimSend }) => {
+        const rel = await claimSend?.();
+        rel?.();
+        entered.open();
+        await stuck.opened;
+        return { output: { ok: true } };
+      })),
+      runId,
+    );
+    await entered.opened;
+    expect((await rowsOf(runId))[0]!.dispatchedAt).toBeInstanceOf(Date);
+    await loseLease(runId);
+    await advance(deps("w-b", executor(callsB)), runId);
+    expect(callsB).toHaveLength(0);
+    expect((await runOf(runId)).state).toBe("needs_review");
+    stuck.open();
+    await expect(a).rejects.toThrow();
+
+    // Read-only browser step does not get claimSend.
+    const readonly = { id: "read", type: "browser", config: { url: "https://shop.example.com", actions: [{ action: "extract", selector: "h1", name: "title" }] } };
+    const { runId: roRun } = await createRun(flow(readonly));
+    let sawClaim = false;
+    await advance(
+      deps("w-ro", executor([], async ({ claimSend }) => {
+        sawClaim = claimSend !== undefined;
+        return { output: { title: "Hi" } };
+      })),
+      roRun,
+    );
+    expect(sawClaim).toBe(false);
   });
 });
