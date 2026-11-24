@@ -89,11 +89,11 @@ function Field({ name, schema, required, value, onChange }: { name: string; sche
   } else if (schema.anyOf) {
     // Numbers and true/false are stored as values, so "gt 100" compares numbers.
     const parse = (v: string) => (v === "true" ? true : v === "false" ? false : v.trim() !== "" && !Number.isNaN(Number(v)) ? Number(v) : v);
-    input = <input id={id} value={value === undefined || value === null ? "" : String(value)} onChange={(e) => onChange(e.target.value === "" ? undefined : parse(e.target.value))} />;
+    input = <input id={id} data-variable-target value={value === undefined || value === null ? "" : String(value)} onChange={(e) => onChange(e.target.value === "" ? undefined : parse(e.target.value))} />;
   } else if ((schema.maxLength ?? 0) > 2000) {
-    input = <textarea id={id} rows={4} required={required} maxLength={schema.maxLength} value={String(value ?? "")} onChange={(e) => text(e.target.value)} />;
+    input = <textarea id={id} data-variable-target rows={4} required={required} maxLength={schema.maxLength} value={String(value ?? "")} onChange={(e) => text(e.target.value)} />;
   } else {
-    input = <input id={id} required={required} maxLength={schema.maxLength} value={String(value ?? "")} onChange={(e) => text(e.target.value)} />;
+    input = <input id={id} data-variable-target required={required} maxLength={schema.maxLength} value={String(value ?? "")} onChange={(e) => text(e.target.value)} />;
   }
   return (
     <div className="field">
@@ -117,7 +117,7 @@ function MapField({ name, value, onChange }: { name: string; value: Record<strin
       {rows.map(([k, v], i) => (
         <div className="row" key={i}>
           <input aria-label={t("{field} {number} name", { field: t(label(name)), number: i + 1 })} value={k} onChange={(e) => set(rows.map((r, j) => (j === i ? [e.target.value, r[1]] : r)))} />
-          <input aria-label={t("{field} {number} value", { field: t(label(name)), number: i + 1 })} value={v} onChange={(e) => set(rows.map((r, j) => (j === i ? [r[0], e.target.value] : r)))} />
+          <input data-variable-target aria-label={t("{field} {number} value", { field: t(label(name)), number: i + 1 })} value={v} onChange={(e) => set(rows.map((r, j) => (j === i ? [r[0], e.target.value] : r)))} />
           <button type="button" className="quiet" onClick={() => set(rows.filter((_, j) => j !== i))} aria-label={t("Remove {name}", { name: k || t("row") })}>{t("Remove")}</button>
         </div>
       ))}

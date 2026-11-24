@@ -138,6 +138,12 @@
 .a7-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; }
 .a7-editor .a7-chips button { min-height: 28px; padding: 4px 8px; border: 0; border-radius: 6px; background: var(--accent-tint); color: var(--a7-chip); font-size: 12px; font-weight: 500; }
 .a7-editor .a7-chips button:hover:not(:disabled) { background: var(--accent-tint); color: var(--a7-chip); text-decoration: underline; }
+.a7-vars-group { margin: 10px 0 0; }
+.a7-vars-group h4 { margin: 0 0 4px; font-size: 12px; font-weight: 600; color: var(--muted); }
+.a7-vars-group .hint { margin: 0 0 4px; }
+.a7-editor .a7-chips button { display: inline-flex; flex-direction: column; align-items: flex-start; gap: 1px; max-width: 100%; text-align: left; }
+.a7-var-path { overflow-wrap: anywhere; }
+.a7-var-preview { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 400; opacity: 0.75; }
 .a7-copied { min-height: 16px; margin: 0; color: var(--muted); font-size: 12px; animation: a7-fade var(--dur-fast) var(--ease); }
 .a7-copied:empty { animation: none; }
 .a7-next { display: flex; flex-direction: column; gap: 8px; margin: 0; }
