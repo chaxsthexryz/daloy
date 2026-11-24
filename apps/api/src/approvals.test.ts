@@ -55,7 +55,7 @@ describe("approval page", () => {
     expect(res.text).toContain('name="decision" value="approved"');
     expect(res.text).toContain('name="decision" value="rejected"');
     // The token is in the URL; it must not leak to other sites or caches.
-    expect(res.headers["referrer-policy"]).toBe("no-referrer");
+    expect(res.headers["referrer-policy"]).toBe("same-origin"); // other sites get no referrer; the own form keeps a real Origin (decision 0128)
     expect(res.headers["cache-control"]).toBe("no-store");
     // A link scanner that only follows GET does not approve anything.
     expect((await decisionOf(stepRunId)).usedAt).toBeNull();

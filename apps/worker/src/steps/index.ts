@@ -76,10 +76,28 @@ async function enqueueAll(enqueue: ExecutorDeps["enqueue"], runIds: string[]) {
   for (const id of runIds) await enqueue(id);
 }
 
-async function notifyBookingStepEvent(deps: FullDeps, userId: string, event: BookingTriggerEvent, output: Record<string, unknown>) {
+/**
+ * The automations whose runs led to this run, this one last. Events and sub-workflow calls raised by its steps carry
+ * it on, so a loop of automations stops (decision 0128).
+ */
+async function runCallChain(db: Db, runId: string, workflowId: string | undefined): Promise<string[]> {
+  let callChain: string[] = workflowId ? [workflowId] : [];
+  if (UUID.test(runId)) {
+    const [parentRun] = await db.select({ triggerPayload: runs.triggerPayload }).from(runs).where(eq(runs.id, runId));
+    const raw = (parentRun?.triggerPayload as { _callChain?: unknown } | undefined)?._callChain;
+    if (Array.isArray(raw)) {
+      const parsed = raw.filter((x): x is string => typeof x === "string");
+      callChain = workflowId && !parsed.includes(workflowId) ? [...parsed, workflowId] : parsed;
+    }
+  }
+  return callChain;
+}
+
+async function notifyBookingStepEvent(deps: FullDeps, userId: string, event: BookingTriggerEvent, output: Record<string, unknown>, callChain: string[]) {
   const out = output as { id?: string; version?: number } & Record<string, unknown>;
   if (!out.id || out.version === undefined) return;
   const { runIds } = await dispatchInternalTrigger(deps.db, {
+    callChain,
     workspaceId: userId,
     type: "booking_event",
     event,
@@ -332,7 +350,7 @@ async function runStep(deps: FullDeps, step: Step, input: unknown, ctx: Expressi
       }
       if (!booking.test && r.branch === "done") {
         const event: BookingTriggerEvent = cfg.action === "create" ? "created" : cfg.action === "reschedule" ? "rescheduled" : "cancelled";
-        await notifyBookingStepEvent(deps, userId, event, r.output);
+        await notifyBookingStepEvent(deps, userId, event, r.output, await runCallChain(deps.db, runId, workflowId));
       }
       return { branch: r.branch, output: r.output };
     }
@@ -742,7 +760,9 @@ async function runStep(deps: FullDeps, step: Step, input: unknown, ctx: Expressi
       }
       if (!due.test && r.result === "expired" && r.due) {
         const convoId = await dueConversationId(deps.db, r.due.bookingId);
+        const callChain = await runCallChain(deps.db, runId, workflowId);
         const { runIds } = await dispatchInternalTrigger(deps.db, {
+          callChain,
           workspaceId: userId,
           type: "payment_event",
           event: "expired",
@@ -751,7 +771,7 @@ async function runStep(deps: FullDeps, step: Step, input: unknown, ctx: Expressi
         });
         await enqueueAll(deps.enqueue, runIds);
         if (cancelledBooking?.branch === "done") {
-          await notifyBookingStepEvent(deps, userId, "cancelled", cancelledBooking.output);
+          await notifyBookingStepEvent(deps, userId, "cancelled", cancelledBooking.output, callChain);
         }
       }
       return { branch: r.result, output: { status: r.due!.status, reference: due.reference, bookingReleased: released } };
@@ -759,15 +779,7 @@ async function runStep(deps: FullDeps, step: Step, input: unknown, ctx: Expressi
     case "call_workflow": {
       const cfg = input as CallWorkflowInput;
       if (mock) return { output: { mocked: true, simulated: true, workflowSlug: cfg.workflowSlug, payload: cfg.payload } };
-      let callChain: string[] = workflowId ? [workflowId] : [];
-      if (UUID.test(runId)) {
-        const [parentRun] = await deps.db.select({ triggerPayload: runs.triggerPayload }).from(runs).where(eq(runs.id, runId));
-        const raw = (parentRun?.triggerPayload as { _callChain?: unknown } | undefined)?._callChain;
-        if (Array.isArray(raw)) {
-          const parsed = raw.filter((x): x is string => typeof x === "string");
-          callChain = workflowId && !parsed.includes(workflowId) ? [...parsed, workflowId] : parsed;
-        }
-      }
+      const callChain = await runCallChain(deps.db, runId, workflowId);
       let res;
       try {
         res = await startSubWorkflow(deps.db, {

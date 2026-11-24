@@ -68,7 +68,7 @@ describe("dispatchInternalTrigger (G1)", () => {
     const otherRuns = await db.select().from(runs).where(eq(runs.workflowVersionId, otherOwner.versionId));
     const cancelRuns = await db.select().from(runs).where(eq(runs.workflowVersionId, onCancel.versionId));
     expect(cancelRuns).toHaveLength(1);
-    expect(cancelRuns[0]!.triggerPayload).toEqual(payload);
+    expect(cancelRuns[0]!.triggerPayload).toEqual({ ...payload, _callChain: [onCancel.workflowId] });
     expect(createRuns).toEqual([]);
     expect(pausedRuns).toEqual([]);
     expect(otherRuns).toEqual([]);
@@ -88,6 +88,24 @@ describe("dispatchInternalTrigger (G1)", () => {
     expect(res.runIds).toHaveLength(1);
     const created = await db.select().from(runs).where(eq(runs.workflowVersionId, onExpired.versionId));
     expect(created).toHaveLength(1);
+  });
+
+  it("skips a listener already in the call chain and stops at the depth limit (S1)", async () => {
+    const owner = await makeUser("s1-loop");
+    const self = await publishFlow(owner, "self-expire", { type: "payment_event", config: { events: ["expired"] } });
+    const other = await publishFlow(owner, "other-expire", { type: "payment_event", config: { events: ["expired"] } });
+    const payload = { event: "expired", dueId: "d2", reference: "D-102", amountPesos: 100, status: "cancelled" };
+
+    // The run of `self` expired a due: only `other` starts, and it carries the chain on.
+    const hop = await dispatchInternalTrigger(db, { workspaceId: owner, type: "payment_event", event: "expired", eventKey: "payment_due:d2:expired", payload, callChain: [self.workflowId] });
+    expect(hop.runIds).toHaveLength(1);
+    expect(await db.select().from(runs).where(eq(runs.workflowVersionId, self.versionId))).toEqual([]);
+    const [child] = await db.select().from(runs).where(eq(runs.workflowVersionId, other.versionId));
+    expect(child!.triggerPayload).toEqual({ ...payload, _callChain: [self.workflowId, other.workflowId] });
+
+    // Three automations deep, nothing more is started.
+    const deep = await dispatchInternalTrigger(db, { workspaceId: owner, type: "payment_event", event: "expired", eventKey: "payment_due:d3:expired", payload, callChain: ["a", "b", "c"] });
+    expect(deep.runIds).toEqual([]);
   });
 });
 

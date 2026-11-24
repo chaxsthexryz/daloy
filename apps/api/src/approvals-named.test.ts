@@ -65,6 +65,19 @@ const decide = (token: string, cookie: string | undefined, decision = "approved"
 };
 
 describe("named approval page", () => {
+  it("refuses a decision posted from another origin, and takes one from its own page (S1)", async () => {
+    const approver = await signedIn("approver", ownerId);
+    const { stepRunId, token } = await namedApproval(approver.id);
+    // With Helmet's no-referrer the page's own form would post `Origin: null` and be refused.
+    const page = await request(server).get(`/approvals/${token}`).set("Cookie", approver.cookie).expect(200);
+    expect(page.headers["referrer-policy"]).toBe("same-origin");
+    // SameSite=Lax still sends the cookie from a sibling origin, so the Origin decides.
+    await decide(token, approver.cookie).set("Origin", "https://evil.daloy.example.com").expect(403);
+    expect((await rowOf(stepRunId)).usedAt).toBeNull();
+    await decide(token, approver.cookie).set("Origin", "http://localhost:3000").expect(200);
+    expect((await rowOf(stepRunId)).decision).toBe("approved");
+  });
+
   it("asks a signed-out visitor to sign in, without showing the request", async () => {
     const approver = await signedIn("approver", ownerId);
     const { stepRunId, token } = await namedApproval(approver.id);

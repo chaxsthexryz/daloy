@@ -102,6 +102,22 @@ export function fromOwnOrigin(req: Request, publicUrl: string | undefined): bool
   }
 }
 
+/**
+ * Refuses a change sent from another origin, for routes that run without SessionGuard: sign-in, sign-up, invites,
+ * sign-out, password reset and the approval decision. Without it a sibling page could post a form that signs the
+ * visitor into the attacker's account, signs them out, or decides their named approval (decision 0128).
+ */
+@Injectable()
+export class OwnOriginGuard implements CanActivate {
+  constructor(@Inject(CONFIG) private readonly config: ApiConfig) {}
+
+  canActivate(ctx: ExecutionContext): boolean {
+    const req = ctx.switchToHttp().getRequest<Request>();
+    if (!["GET", "HEAD", "OPTIONS"].includes(req.method) && !fromOwnOrigin(req, this.config.publicUrl)) throw new ForbiddenException("this change must be made from the Daloy page itself");
+    return true;
+  }
+}
+
 // New accounts start on the preview plan until the operator sets a real one; SIGNUP_PLAN=none keeps them unlimited (decision 0057).
 const signupPlan = () => (process.env.SIGNUP_PLAN === "none" ? {} : { plan: "preview", planStartedOn: manilaDay() });
 
@@ -109,6 +125,7 @@ const signupPlan = () => (process.env.SIGNUP_PLAN === "none" ? {} : { plan: "pre
 let dummyHash: Promise<string> | undefined;
 
 @Controller("auth")
+@UseGuards(OwnOriginGuard)
 export class AuthController {
   constructor(
     @Inject(DB) private readonly db: Db,

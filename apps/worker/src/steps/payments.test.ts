@@ -1,7 +1,7 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { bookFromStep, paymentDues, payments, resources, runs, saveConnection, users, workflows, workflowVersions, workspaceMembers, type Db } from "@daloy/db";
+import { bookFromStep, paymentDues, payments, resources, runs, saveConnection, triggers, users, workflows, workflowVersions, workspaceMembers, type Db } from "@daloy/db";
 import type { Step } from "@daloy/engine";
 import { eq } from "drizzle-orm";
 import type { Pool } from "pg";
@@ -128,6 +128,22 @@ describe("payment_expire step", () => {
     expect(expired).toContain(sessions.at(-1)!.id);
     const [p] = await db.select().from(payments).where(eq(payments.runId, s.runId));
     expect(p!.status).toBe("expired");
+  });
+
+  it("does not restart an automation that listens to the expiry it caused (S1, decision 0128)", async () => {
+    const s = await setup();
+    // The audit's loop: on payment_event(expired), ask for a payment and expire it at once.
+    const trigger = { type: "payment_event", config: { events: ["expired"] } };
+    const definition = { trigger, steps: [ask(), expire], edges: [{ from: "ask", to: "expire" }] };
+    const [loop] = await db.insert(workflows).values({ userId: s.userId, name: "Loop", slug: `loop-${randomUUID().slice(0, 8)}` }).returning();
+    const [v] = await db.insert(workflowVersions).values({ workflowId: loop!.id, version: 1, definition, published: true }).returning();
+    await db.insert(triggers).values({ workflowId: loop!.id, type: trigger.type, config: trigger.config });
+    const [r] = await db.insert(runs).values({ workflowVersionId: v!.id, triggerPayload: { event: "expired", _callChain: [loop!.id] } }).returning();
+    const exec = (step: Step) =>
+      createExecutor({ db, secretsKey: key, mail: {} as never, publicUrl: "https://daloy.test" }).execute({ runId: r!.id, stepRunId: NO_STEP_RUN, userId: s.userId, step, attempt: 1, idempotencyKey: `${r!.id}:${step.id}`, ctx: { trigger: { order: "D-2001", phone: "0917 123 4567" }, steps: {} }, workflowId: loop!.id });
+    await exec(ask());
+    expect((await exec(expire)).branch).toBe("expired");
+    expect(await db.select({ id: runs.id }).from(runs).where(eq(runs.workflowVersionId, v!.id))).toEqual([{ id: r!.id }]);
   });
 
   it("keeps the order while PayMongo is taking a payment", async () => {

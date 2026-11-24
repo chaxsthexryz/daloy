@@ -72,7 +72,10 @@ export async function dueConversationId(db: Db, bookingId: string | null | undef
   return row?.conversationId ?? undefined;
 }
 
-export type InternalTriggerDispatch =
+export type InternalTriggerDispatch = {
+  /** Automations whose runs led to this event, oldest first. An event from outside Daloy has none (decision 0128). */
+  callChain?: string[];
+} & (
   | {
       workspaceId: string;
       type: "booking_event";
@@ -86,11 +89,13 @@ export type InternalTriggerDispatch =
       event: PaymentTriggerEvent;
       eventKey: string;
       payload: Record<string, unknown>;
-    };
+    });
 
 /**
  * Starts one keyed run for each live, unpaused workflow in `workspaceId` subscribed to this internal
  * Daloy event (`booking_event` or `payment_event`). Duplicate `eventKey` values return no new run id.
+ * A listener already in `callChain` is skipped and nothing starts past MAX_SUB_WORKFLOW_DEPTH, so an automation
+ * whose own steps raise the event it listens to cannot start itself again and again (decision 0128).
  */
 export async function dispatchInternalTrigger(db: Db, input: InternalTriggerDispatch): Promise<{ runIds: string[] }> {
   const rows = await db
@@ -99,9 +104,11 @@ export async function dispatchInternalTrigger(db: Db, input: InternalTriggerDisp
     .innerJoin(workflows, eq(workflows.id, triggers.workflowId))
     .where(and(eq(workflows.userId, input.workspaceId), eq(triggers.type, input.type)));
 
+  const chain = input.callChain ?? [];
   const runIds: string[] = [];
+  if (chain.length >= MAX_SUB_WORKFLOW_DEPTH) return { runIds };
   for (const row of rows) {
-    if (row.pausedAt) continue;
+    if (row.pausedAt || chain.includes(row.workflowId)) continue;
     const version = await publishedVersion(db, row.workflowId);
     if (!version) continue;
     const parsed = definitionSchema.safeParse(version.definition);
@@ -110,7 +117,7 @@ export async function dispatchInternalTrigger(db: Db, input: InternalTriggerDisp
     if (!events.includes(input.event)) continue;
 
     try {
-      const res = await createKeyedRun(db, row.workflowId, version.id, input.payload, input.eventKey);
+      const res = await createKeyedRun(db, row.workflowId, version.id, { ...input.payload, _callChain: [...chain, row.workflowId] }, input.eventKey);
       if (!res.duplicate) runIds.push(res.runId);
     } catch (err) {
       if (err instanceof WorkflowPausedError) continue;
