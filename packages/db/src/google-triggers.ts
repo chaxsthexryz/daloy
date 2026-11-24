@@ -39,7 +39,7 @@ export type TriggerConnection = { status: "active" | "failed"; authMethod: AuthM
 export function connectionProblem(type: GoogleTriggerType, conn: TriggerConnection): string | null {
   const name = PROVIDER_NAMES[GOOGLE_TRIGGER_APPS[type]];
   if (!conn) return `${name} is not connected. Connect it in Apps.`;
-  if (conn.status !== "active") return `${name} stopped accepting Daloy's access. Reconnect ${name} in Apps.`;
+  if (conn.status !== "active") return `${name} stopped accepting kymavo's access. Reconnect ${name} in Apps.`;
   // A service account key has no stored scopes: the read itself checks it, and a refusal names what to share.
   if (conn.authMethod === "oauth" && conn.scopes !== null) {
     const have = conn.scopes.split(/[\s,]+/);
@@ -211,7 +211,7 @@ async function pollOne(o: GooglePollOptions, workflowId: string) {
       const failures = row.failures + 1;
       return save({ failures, problem: err.message.slice(0, 500), nextPollAt: later(failures, err.retryAfterMs) });
     }
-    return pause(err.kind === "auth" ? `${name} stopped accepting Daloy's access. Reconnect ${name} in Apps.` : err.message);
+    return pause(err.kind === "auth" ? `${name} stopped accepting kymavo's access. Reconnect ${name} in Apps.` : err.message);
   }
 
   // Runs first, cursor second: a crash in between reads the same items again, and their keys find the runs made.

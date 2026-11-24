@@ -39,7 +39,7 @@ test("an owner sets up a new-row trigger on a Google Sheet tab, and only rows ad
   await page.getByLabel("Starts when").selectOption("sheets_row");
   // The tab list comes from the chosen spreadsheet, read with the workspace's own Google connection.
   await page.getByLabel("Tab to watch").selectOption("Walk-ins");
-  await expect(page.getByText("Daloy checks Front desk log every few minutes once this is turned on.")).toBeVisible();
+  await expect(page.getByText("kymavo checks Front desk log every few minutes once this is turned on.")).toBeVisible();
 
   await addStep(page, "condition");
   await page.getByLabel("Value", { exact: true }).fill("{{trigger.rowNumber}}");
@@ -64,5 +64,5 @@ test("an owner sets up a new-row trigger on a Google Sheet tab, and only rows ad
   await page.reload();
   await page.getByRole("button", { name: "List", exact: true }).click();
   await page.getByRole("button", { name: "Trigger: Google Sheets, A row is added" }).click();
-  await expect(page.getByText("Watching Front desk log. Daloy checks every few minutes.")).toBeVisible();
+  await expect(page.getByText("Watching Front desk log. kymavo checks every few minutes.")).toBeVisible();
 });

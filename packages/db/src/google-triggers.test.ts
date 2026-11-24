@@ -16,7 +16,7 @@ describe("connectionProblem", () => {
     expect(connectionProblem("drive_file", null)).toBe("Google Drive is not connected. Connect it in Apps.");
   });
   it("says which app to reconnect when Google stopped accepting the grant", () => {
-    expect(connectionProblem("sheets_row", { ...oauth(FILE), status: "failed" })).toMatch(/^Google Sheets stopped accepting Daloy's access\. Reconnect Google Sheets in Apps\./);
+    expect(connectionProblem("sheets_row", { ...oauth(FILE), status: "failed" })).toMatch(/^Google Sheets stopped accepting kymavo's access\. Reconnect Google Sheets in Apps\./);
   });
   it("names the missing permission for a narrower grant", () => {
     const p = connectionProblem("calendar_event", oauth("openid email", { calendarId: "c@x.y", title: "t" }));

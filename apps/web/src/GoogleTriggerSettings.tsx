@@ -86,14 +86,14 @@ export function GoogleTriggerSettings({ trigger, workflowId, onChange }: { trigg
             {status.problem} <a href="#/apps">{t("Open Apps")}</a>
           </>
         ) : watching?.problem ? (
-          watching.failures > 0 ? t("Daloy will check Google again soon. Last answer: {problem}", { problem: watching.problem }) : t("Paused: {problem}", { problem: watching.problem })
+          watching.failures > 0 ? t("kymavo will check Google again soon. Last answer: {problem}", { problem: watching.problem }) : t("Paused: {problem}", { problem: watching.problem })
         ) : watching?.started ? (
-          t("Watching {where}. Daloy checks every few minutes.", { where: status?.destination ?? "" })
+          t("Watching {where}. kymavo checks every few minutes.", { where: status?.destination ?? "" })
         ) : status ? (
-          t("Daloy checks {where} every few minutes once this is turned on. What is already there does not start a run.", { where: status.destination ?? "" })
+          t("kymavo checks {where} every few minutes once this is turned on. What is already there does not start a run.", { where: status.destination ?? "" })
         ) : null}
       </p>
-      {trigger.type === "drive_file" && <p className="muted hint">{t("With a Google sign-in, Daloy sees only files it saved in the folder or that you picked. To watch files other people add, connect Drive with a service account key shared on the folder.")}</p>}
+      {trigger.type === "drive_file" && <p className="muted hint">{t("With a Google sign-in, kymavo sees only files it saved in the folder or that you picked. To watch files other people add, connect Drive with a service account key shared on the folder.")}</p>}
     </>
   );
 }

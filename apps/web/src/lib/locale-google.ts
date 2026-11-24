@@ -18,13 +18,13 @@ export const googleTranslations: Record<string, string> = {
   "Minutes before the start": "Ilang minuto bago magsimula",
   "Only run for a photo or PDF up to 5 MB": "Patakbuhin lang para sa photo o PDF na hanggang 5 MB",
   "Open Apps": "Buksan ang Apps",
-  "Daloy will check Google again soon. Last answer: {problem}": "Titingin ulit ang Daloy sa Google maya-maya. Huling sagot: {problem}",
+  "kymavo will check Google again soon. Last answer: {problem}": "Titingin ulit ang kymavo sa Google maya-maya. Huling sagot: {problem}",
   "Paused: {problem}": "Naka-pause: {problem}",
-  "Watching {where}. Daloy checks every few minutes.": "Binabantayan ang {where}. Tumitingin ang Daloy kada ilang minuto.",
-  "Daloy checks {where} every few minutes once this is turned on. What is already there does not start a run.":
-    "Titingnan ng Daloy ang {where} kada ilang minuto kapag naka-on na ito. Hindi magsisimula ng run ang mga nandoon na.",
-  "With a Google sign-in, Daloy sees only files it saved in the folder or that you picked. To watch files other people add, connect Drive with a service account key shared on the folder.":
-    "Kapag Google sign-in, ang nakikita lang ng Daloy ay ang mga file na ito mismo ang nag-save sa folder o na pinili mo. Para bantayan ang mga file na idinadagdag ng iba, ikonekta ang Drive gamit ang service account key na naka-share sa folder.",
+  "Watching {where}. kymavo checks every few minutes.": "Binabantayan ang {where}. Tumitingin ang kymavo kada ilang minuto.",
+  "kymavo checks {where} every few minutes once this is turned on. What is already there does not start a run.":
+    "Titingnan ng kymavo ang {where} kada ilang minuto kapag naka-on na ito. Hindi magsisimula ng run ang mga nandoon na.",
+  "With a Google sign-in, kymavo sees only files it saved in the folder or that you picked. To watch files other people add, connect Drive with a service account key shared on the folder.":
+    "Kapag Google sign-in, ang nakikita lang ng kymavo ay ang mga file na ito mismo ang nag-save sa folder o na pinili mo. Para bantayan ang mga file na idinadagdag ng iba, ikonekta ang Drive gamit ang service account key na naka-share sa folder.",
   "Drive photo or PDF": "Photo o PDF mula sa Drive",
   "When a row is added to Google Sheets": "Kapag may nadagdag na row sa Google Sheets",
   "When a Google Calendar event is added or starts soon": "Kapag may bagong event sa Google Calendar o malapit na itong magsimula",
