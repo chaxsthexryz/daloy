@@ -18,7 +18,7 @@ type Overview = {
 };
 type AdminRun = { id: string; email: string; workflow: string; version: number; state: string; test: boolean; live: boolean; createdAt: string; finishedAt: string | null; hasError: boolean; steps: Record<string, number> };
 
-const PLANS = ["preview", "pilot", "business", "business_plus"];
+const PLANS = ["preview", "pilot", "business", "business_plus", "concierge"];
 const STATES = ["pending", "running", "waiting", "needs_review", "succeeded", "failed", "cancelled"];
 const show = (v: Record<string, unknown>) => Object.values(v).map((x) => (x === null ? "none" : String(x))).join(", ");
 

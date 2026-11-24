@@ -41,6 +41,7 @@ const settingsInput = z.object({
 const depositInput = z.object({
   workflowId: z.uuid().optional(),
   room: z.string().trim().min(1).max(200).optional(),
+  resource: z.string().trim().min(1).max(200).optional(),
   checkIn: z.string().trim().min(1).max(40).optional(),
   nights: z.coerce.number().int().min(1).max(30).optional(),
   guests: z.coerce.number().int().min(1).max(100).optional(),
@@ -152,12 +153,19 @@ export class ConversationsController {
     }
 
     const convoSummary = await conversationPayload(this.db, { id: detail.id, status: detail.status, fields: detail.fields, openDueId: detail.openDueId });
+    const resource = body.resource ?? body.room;
+    const email = detail.fields.email ?? (detail.channel === "email" ? detail.externalId : undefined);
     const payload: Record<string, unknown> = {
       ...detail.fields,
+      ...(email ? { email } : {}),
       ...(body.room ? { room: body.room } : {}),
+      ...(resource ? { resource } : {}),
       ...(body.checkIn ? { check_in: body.checkIn } : detail.fields.check_in ? { check_in: detail.fields.check_in } : {}),
       ...(body.nights !== undefined ? { nights: String(body.nights) } : {}),
       ...(body.guests !== undefined ? { guests: String(body.guests) } : detail.fields.guests ? { guests: detail.fields.guests } : {}),
+      conversation_id: detail.id,
+      channel: detail.channel,
+      senderId: detail.channel === "email" ? "" : detail.externalId,
       conversation: convoSummary,
     };
 

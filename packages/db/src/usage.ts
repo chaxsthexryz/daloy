@@ -9,6 +9,7 @@ export const PLANS = {
   pilot: { label: "Pilot", automations: 1, ai: 100, sms: 50, email: 100, http: 200, upload: 100, minScheduleMinutes: 60 },
   business: { label: "Business", automations: 5, ai: 500, sms: 300, email: 300, http: 1000, upload: 500, minScheduleMinutes: 15 },
   business_plus: { label: "Business Plus", automations: 15, ai: 2000, sms: 1500, email: 1000, http: 5000, upload: 2000, minScheduleMinutes: 5 },
+  concierge: { label: "Concierge", automations: 10, ai: 3000, sms: 500, email: 500, http: 2000, upload: 1000, minScheduleMinutes: 15 },
 } as const;
 export type Plan = keyof typeof PLANS;
 /** Files a hosted form takes a day when the operator has set no plan. Other kinds stay unlimited without a plan. */

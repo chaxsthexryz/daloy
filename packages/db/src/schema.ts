@@ -31,7 +31,7 @@ export const users = pgTable("users", {
   // C7 (decision 0125): optional Messenger PSID for direct staff alerts (within 24-hour window, else Telegram/email fallback).
   staffAlertPsid: text("staff_alert_psid"),
 }, (t) => [
-  check("users_plan", sql`${t.plan} in ('preview', 'pilot', 'business', 'business_plus')`),
+  check("users_plan", sql`${t.plan} in ('preview', 'pilot', 'business', 'business_plus', 'concierge')`),
   check("users_language", sql`${t.language} in ('en', 'tl')`),
   check("users_conversation_retention", sql`${t.conversationRetentionDays} between 1 and 3650`),
   check("users_staff_quiet", sql`${t.staffQuietHours} between 1 and 168`),

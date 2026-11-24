@@ -1,5 +1,6 @@
 import type { Language } from "./language";
 import type { WorkflowDefinition } from "./definition";
+import type { Menu } from "./menu";
 import { TAGLISH } from "./taglish";
 import { TEMPLATES } from "./templates";
 
@@ -9,7 +10,16 @@ const LABELS: Record<string, string> = {
   "What do you want to buy?": "Ano ang gusto mong bilhin?", "Estimated cost": "Tinatayang halaga", "Why is it needed?": "Bakit ito kailangan?",
   "Service": "Serbisyo", "Appointment time": "Oras ng appointment", "Preferred time": "Gustong oras", "Who or what to book": "Sino o ano ang ibu-book", "What do you need?": "Ano ang kailangan mo?", "What do you want to order?": "Ano ang gusto mong i-order?", "Amount in pesos": "Halaga sa piso", "Deposit in pesos": "Deposito sa piso", "Invoice number": "Numero ng invoice", "Customer name": "Pangalan ng customer", "Customer email": "Email ng customer", "What renews? (domain, hosting, SSL, permit, insurance)": "Ano ang ire-renew? (domain, hosting, SSL, permit, insurance)", "Expires on": "Mag-e-expire sa", "Send the reminder to": "Pagpapadalhan ng paalala", "Order number": "Numero ng order", "Total in pesos": "Kabuuan sa piso", "Receipt photo": "Litrato ng resibo", "Note": "Tala", "Mobile number": "Numero ng mobile",
 };
-type Message = { subject?: string; text?: string; message?: string; confirmedMessage?: string };
+type Message = { subject?: string; text?: string; message?: string; confirmedMessage?: string; quickReplies?: Menu; menu?: Menu };
+
+const RESORT_MENU_TL: Menu = [
+  { title: "Mga kuwarto", choice: "rooms" },
+  { title: "Mga presyo", choice: "rates" },
+  { title: "Lokasyon", choice: "location" },
+  { title: "Mga gawain", choice: "activities" },
+  { title: "Mag-book ng stay", choice: "book" },
+  { title: "Kausapin ang staff", choice: "staff" },
+];
 
 /** Used only when generating a fresh template, never when reading or running saved definitions. */
 export function localizeGeneratedDefinition(definition: WorkflowDefinition, language: Language, kind: string, values: { businessName?: string; approver?: string; extraFields?: string[] } = {}): WorkflowDefinition {
@@ -115,6 +125,28 @@ export function localizeGeneratedDefinition(definition: WorkflowDefinition, lang
     },
     "telegram-gcash-receipts": {
       reply: { text: "Naitala bilang To check: {{steps.read_receipt.output.amount}} mula kay {{steps.read_receipt.output.sender_name}}, reference {{steps.read_receipt.output.reference}}. {{steps.read_receipt.output.duplicate_warning}}" },
+    },
+    "resort-concierge-dm": {
+      reply_staff_choice: { text: "Ipapaalam ko sa team namin at may sasagot sa iyo rito sa lalong madaling panahon." },
+      reply_handoff: { text: "{{steps.answer.output.reply}}\n\nNaabisuhan na ang aming team at magre-reply sila rito." },
+      reply_guest: { quickReplies: RESORT_MENU_TL },
+      send_followup: { text: "Hi ulit! Sabihan mo lang kami kung gusto mo ng presyo para sa tiyak na petsa o tulong sa pagplano ng stay mo.", quickReplies: RESORT_MENU_TL },
+    },
+    "resort-concierge-email": {
+      reply_staff_choice: { subject: "Re: {{trigger.subject}}", text: "Salamat sa pagsulat. Naipasa na namin ang mensahe mo sa resort team at may sasagot sa iyo agad." },
+      reply_handoff: { subject: "Re: {{trigger.subject}}", text: "{{steps.answer.output.reply}}\n\nNaabisuhan na ang aming team at magre-reply sila sa lalong madaling panahon." },
+      reply_guest: { menu: RESORT_MENU_TL },
+      send_followup: { subject: "Re: {{trigger.subject}}", text: "Hi ulit! Sabihan mo lang kami kung gusto mo ng presyo para sa tiyak na petsa o tulong sa pagplano ng stay mo.", menu: RESORT_MENU_TL },
+    },
+    "resort-deposit-and-stay": {
+      tell_taken: { subject: "Hindi na available ang kuwarto para sa {{trigger.check_in}}", text: "Hi {{trigger.name}}, paumanhin pero hindi na available ang {{steps.quote.output.title}} sa {{trigger.check_in}} ({{trigger.nights}} gabi). Mag-reply ng ibang petsa para matingnan namin agad." },
+      ask_deposit: { confirmedMessage: "Hi {{trigger.name}}, kumpirmado na ang deposito mong {{steps.quote.output.deposit}} piso para sa {{steps.quote.output.title}} ({{steps.book_stay.output.reference}}, check-in {{trigger.check_in}}). Kita tayo!" },
+      send_pay_dm: { text: "Hi {{trigger.name}}, naka-hold ang {{steps.quote.output.title}} para sa {{trigger.check_in}} ({{trigger.nights}} gabi, ref {{steps.book_stay.output.reference}}). Ang deposito ay {{steps.quote.output.deposit}} piso (kabuuan {{steps.quote.output.total}} piso). Magbayad dito: {{steps.ask_deposit.output.payUrl}}" },
+      send_pay_email: { subject: "Kahilingan sa deposito para sa {{steps.book_stay.output.reference}}", text: "Hi {{trigger.name}},\n\nNaka-hold ang {{steps.quote.output.title}} para sa check-in sa {{trigger.check_in}} ({{trigger.nights}} gabi, {{trigger.guests}} guest).\nReference: {{steps.book_stay.output.reference}}\nKabuuan: {{steps.quote.output.total}} piso\nDeposito na kailangan: {{steps.quote.output.deposit}} piso\n\nMagbayad dito: {{steps.ask_deposit.output.payUrl}}" },
+      remind_email: { subject: "Paalala: deposito para sa {{steps.book_stay.output.reference}}", text: "Hi {{trigger.name}}, paalala lang na hinihintay pa ang {{steps.quote.output.deposit}} pisong deposito para sa {{steps.book_stay.output.reference}} (check-in {{trigger.check_in}}). Magbayad dito: {{steps.ask_deposit.output.payUrl}}" },
+      tell_released: { subject: "Binitawan na ang hold para sa {{steps.book_stay.output.reference}}", text: "Hi {{trigger.name}}, hindi namin natanggap sa oras ang deposito para sa {{steps.book_stay.output.reference}}, kaya binitawan na ang hold. Mag-message lang ulit kung gusto mong mag-book muli." },
+      send_pre_arrival: { subject: "Paghahanda para sa stay mo ({{steps.book_stay.output.reference}})", text: "Hi {{trigger.name}},\n\nExcited na kaming tanggapin ka sa {{steps.quote.output.title}} sa {{steps.book_stay.output.checkIn}} (check-out {{steps.book_stay.output.checkOut}}, reference {{steps.book_stay.output.reference}}).\nSumagot sa email na ito o mag-message sa Messenger kung kailangan mo ng direksyon o tulong sa pagdating." },
+      send_review: { subject: "Salamat sa pag-stay sa amin ({{steps.book_stay.output.reference}})", text: "Hi {{trigger.name}},\n\nSalamat sa pag-stay sa amin! Bukas kami sa tapat na feedback mula sa bawat guest sa aming Google profile at Facebook page. Sumagot lang dito kung may mensahe ka para sa aming team." },
     },
   };
   if (result.trigger.type === "form") {

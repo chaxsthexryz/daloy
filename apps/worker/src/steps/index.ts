@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { workspaceLanguage, readKnowledge, aiConnection, bookFromStep, bookingEventPayload, bookingOfStep, bookingReference, centavosToPesos, createDue, dispatchInternalTrigger, dueConversationId, dueForStep, DueTakenError, expireDue, findReviewer, paymentEventPayload, pendingCheckout, pesosToCentavos, checkReceiptReference, checkRecipients, claimTimeout, claimUsage, createApproval, findPaymentForStep, findApprover, queueCalendarEvent, queueDelivery, readSecrets, redactSecrets, secretForms, sendAs, startSubWorkflow, type BookingTriggerEvent, type Db, type MailDeps, type Provider, type StepBookingResult } from "@daloy/db";
-import { deliveries, emailThreadFor, isPaused, PAST_WINDOW, prepareReply, providerUrls, recordOutboundEmail, runConversation, runs, saveConversationFields, sendStaffAlert, takeOverConversation, windowOpen, type ProviderUrls } from "@daloy/db";
-import { and, eq } from "drizzle-orm";
+import { conversationMessages, deliveries, emailThreadFor, isPaused, PAST_WINDOW, prepareReply, providerUrls, recordOutboundEmail, runConversation, runs, saveConversationFields, sendStaffAlert, takeOverConversation, windowOpen, type ProviderUrls } from "@daloy/db";
+import { and, eq, gt, ne } from "drizzle-orm";
 import { approvalEmailBody, checkDiscordContent, DEFAULT_STAY_TIMEZONE, numberedMenu, type Menu, wouldDo, type FileRef, bookingStartField, conditionBranch, normalizePhMobile, parseZoned, SMS_MAX_CHARS, stayRange, stayTimesFromKnowledge, type TestChoice, type Trigger, declaresJson, parseInstant, isRetryable, mockAiOutput, parseJsonTemplate, resolveJsonTemplate, resolveTemplate, StepError, usesSecrets, type ExpressionContext, type HistoryItem, type Language, quoteStay, QuoteError, type Step } from "@daloy/engine";
 import type { StepExecutor, StepResult } from "../advance";
 import { runAi, runAnswer } from "./ai";
@@ -587,9 +587,27 @@ async function runStep(deps: FullDeps, step: Step, input: unknown, ctx: Expressi
       // A run a guest message started checks its conversation first (decision 0115): staff took over, or Meta's window
       // (24 hours from the guest's last message, not this run's) has closed. Each takes its edge, so a template can
       // fall back to SMS or email.
-      const [linked] = await deps.db.select({ conversationId: runs.conversationId }).from(runs).where(eq(runs.id, runId));
-      const convo = await runConversation(deps.db, linked?.conversationId);
-      if (convo && isPaused(convo)) return { branch: "paused", output: { skipped: "A staff member replied from the inbox, so the bot did not reply." } };
+      const [runRow] = UUID.test(runId)
+        ? await deps.db.select({ conversationId: runs.conversationId, createdAt: runs.createdAt }).from(runs).where(eq(runs.id, runId))
+        : [];
+      const convo = await runConversation(deps.db, runRow?.conversationId);
+      const initialStatus = (trig.conversation as { status?: string } | undefined)?.status;
+      const hasHandoff = Object.values((ctx.steps ?? {}) as Record<string, { output?: Record<string, unknown> }>).some((s) => s?.output?.needsHuman === true);
+      let handoffReply = false;
+      if (convo && isPaused(convo) && hasHandoff && initialStatus !== "staff" && convo.staffUntil === null && runRow) {
+        const [staffReply] = await deps.db
+          .select({ id: conversationMessages.id })
+          .from(conversationMessages)
+          .where(and(eq(conversationMessages.conversationId, convo.id), eq(conversationMessages.direction, "staff"), gt(conversationMessages.createdAt, runRow.createdAt)))
+          .limit(1);
+        const [alreadySent] = await deps.db
+          .select({ id: deliveries.id })
+          .from(deliveries)
+          .where(and(eq(deliveries.runId, runId), eq(deliveries.provider, "meta_messenger"), ne(deliveries.stepId, step.id)))
+          .limit(1);
+        handoffReply = !staffReply && !alreadySent;
+      }
+      if (convo && isPaused(convo) && !handoffReply) return { branch: "paused", output: { skipped: "A staff member replied from the inbox, so the bot did not reply." } };
       if (convo && !windowOpen(convo.lastInboundAt)) return { branch: "outside_window", output: { skipped: PAST_WINDOW } };
       const ref = trig.reference ?? trig.messageId;
       const reference = typeof ref === "string" ? ref : runId;

@@ -35,4 +35,24 @@ export const TAGLISH: Record<string, Record<string, Message>> = {
   "store-orders": {
     send_receipt: { subject: "Natanggap na namin ang order mo {{trigger.order_id}}", text: "Hi {{trigger.customer_name}}, thank you sa order mo {{trigger.order_id}} ({{trigger.total}} pesos). I-email ka namin kapag na-ship na ito." },
   },
+  "resort-concierge-dm": {
+    reply_staff_choice: { text: "Sige po, ipapasa namin ito sa staff at may sasagot dito soon." },
+    reply_handoff: { text: "{{steps.answer.output.reply}}\n\nNa-notify na namin ang team at magre-reply kami dito." },
+    send_followup: { text: "Hi ulit! Message ka lang kung gusto mo ng rates para sa target dates mo o tulong sa pag-book." },
+  },
+  "resort-concierge-email": {
+    reply_staff_choice: { subject: "Re: {{trigger.subject}}", text: "Thank you sa pag-email! Naipasa na namin ito sa resort team at magre-reply kami soon." },
+    reply_handoff: { subject: "Re: {{trigger.subject}}", text: "{{steps.answer.output.reply}}\n\nNa-notify na namin ang team at magre-reply kami soon." },
+    send_followup: { subject: "Re: {{trigger.subject}}", text: "Hi ulit! Reply ka lang kung gusto mo ng rates para sa target dates mo o tulong sa pag-book." },
+  },
+  "resort-deposit-and-stay": {
+    tell_taken: { subject: "Taken na ang room para sa {{trigger.check_in}}", text: "Hi {{trigger.name}}, sorry pero hindi na available ang {{steps.quote.output.title}} sa {{trigger.check_in}} ({{trigger.nights}} nights). Reply ka ng ibang dates para ma-check namin agad." },
+    ask_deposit: { confirmedMessage: "Hi {{trigger.name}}, confirmed na ang deposit mong {{steps.quote.output.deposit}} pesos para sa {{steps.quote.output.title}} ({{steps.book_stay.output.reference}}, check-in {{trigger.check_in}}). See you!" },
+    send_pay_dm: { text: "Hi {{trigger.name}}, naka-hold na ang {{steps.quote.output.title}} sa {{trigger.check_in}} ({{trigger.nights}} nights, ref {{steps.book_stay.output.reference}}). Deposit ay {{steps.quote.output.deposit}} pesos (total {{steps.quote.output.total}} pesos). Pay dito: {{steps.ask_deposit.output.payUrl}}" },
+    send_pay_email: { subject: "Deposit request para sa {{steps.book_stay.output.reference}}", text: "Hi {{trigger.name}},\n\nNaka-hold na ang {{steps.quote.output.title}} para sa check-in sa {{trigger.check_in}} ({{trigger.nights}} nights, {{trigger.guests}} guests).\nReference: {{steps.book_stay.output.reference}}\nTotal: {{steps.quote.output.total}} pesos\nDeposit due: {{steps.quote.output.deposit}} pesos\n\nPay dito: {{steps.ask_deposit.output.payUrl}}" },
+    remind_email: { subject: "Reminder: deposit para sa {{steps.book_stay.output.reference}}", text: "Hi {{trigger.name}}, reminder lang po na pending pa ang {{steps.quote.output.deposit}} pesos deposit para sa {{steps.book_stay.output.reference}} (check-in {{trigger.check_in}}). Pay dito: {{steps.ask_deposit.output.payUrl}}" },
+    tell_released: { subject: "Na-release na ang hold para sa {{steps.book_stay.output.reference}}", text: "Hi {{trigger.name}}, hindi namin natanggap on time ang deposit para sa {{steps.book_stay.output.reference}}, kaya na-release na ang hold. Message ka lang ulit anytime kung magbu-book ka uli." },
+    send_pre_arrival: { subject: "Ready na para sa stay mo ({{steps.book_stay.output.reference}})", text: "Hi {{trigger.name}},\n\nSee you sa {{steps.quote.output.title}} on {{steps.book_stay.output.checkIn}} (check-out {{steps.book_stay.output.checkOut}}, reference {{steps.book_stay.output.reference}}).\nReply ka lang dito o sa Messenger kung kailangan mo ng directions or arrival help." },
+    send_review: { subject: "Thank you sa pag-stay sa amin ({{steps.book_stay.output.reference}})", text: "Hi {{trigger.name}},\n\nThank you sa pag-stay sa amin! Welcome ang honest feedback ng lahat ng guests sa Google profile at Facebook page namin. Reply ka lang dito kung may notes ka para sa team." },
+  },
 };

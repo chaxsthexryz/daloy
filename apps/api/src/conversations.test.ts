@@ -1,11 +1,14 @@
 import { createHmac, randomBytes } from "node:crypto";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
+import { TEMPLATES } from "@daloy/engine";
 import { connections, conversationMessages, conversations, createDue, decideClaim, deleteCustomer, digestCounts, expireDue, exportCustomer, joinWorkspace, mailDeps, paymentClaims, paymentDues, purgeConversations, receiptReferences, runDueDeliveries, runs, sessions, stepRuns, submitTransferClaim, users, windowOpen, workflowVersions, type Db, type MailDeps } from "@daloy/db";
 import type { INestApplication } from "@nestjs/common";
 import { and, asc, eq, inArray } from "drizzle-orm";
 import type { Pool } from "pg";
 import { PgBoss } from "pg-boss";
 import request from "supertest";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { freshDatabase } from "../../../test/db";
 import { startFakeProviders, type FakeProviders } from "../../../test/fake-providers";
 import { advance } from "../../worker/src/advance";
@@ -75,7 +78,7 @@ beforeEach(() => {
   fake.meta.cdnFiles.set("receipt2.png", { contentType: "image/png", data: Buffer.from("89504e470d0a1a0a0000000d49484452", "hex") });
 });
 
-const deps = () => ({ db, executor: createExecutor({ db, secretsKey, mail: {} as never, urls: fake.urls }), owner: "c1", leaseMs: 5000, retryPolicy: { maxAttempts: 2, baseDelayMs: 1, maxDelayMs: 1 }, enqueue: async () => {} });
+const deps = () => ({ db, executor: createExecutor({ db, secretsKey, mail, urls: fake.urls }), owner: "c1", leaseMs: 5000, retryPolicy: { maxAttempts: 2, baseDelayMs: 1, maxDelayMs: 1 }, enqueue: async () => {} });
 
 /** Advances a run until it finishes or waits. */
 async function drive(runId: string) {
@@ -543,5 +546,88 @@ describe("C7 conversations inbox, alerts, digest, and privacy", () => {
     expect(statusRes.body.alertStatus).toMatchObject({ staffWindowOpen: false, activeChannel: "telegram" });
     const fallbackAlert = await s.agent.post(`/conversations/${guest.id}/alert`).send({}).expect(200);
     expect(fallbackAlert.body.channel).toBe("telegram");
+  });
+});
+
+describe("C8 resort concierge template on fake providers", () => {
+  it("handles a menu tap, priced knowledge answer, guarded handoff, and superseded follow-up", async () => {
+    const dmTemplate = TEMPLATES.find((t) => t.slug === "resort-concierge-dm")!;
+    let nextAiReply: Record<string, unknown> = {};
+    const aiServer = createServer((req, res) => {
+      let raw = "";
+      req.on("data", (c: Buffer) => (raw += c.toString()));
+      req.on("end", () => {
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ message: { role: "assistant", content: JSON.stringify(nextAiReply) }, prompt_eval_count: 10, eval_count: 10 }));
+      });
+    });
+    await new Promise<void>((r) => aiServer.listen(0, "127.0.0.1", r));
+    vi.stubEnv("LLM_BASE_URL", `http://127.0.0.1:${(aiServer.address() as AddressInfo).port}`);
+
+    try {
+      const email = `c8-${++seq}@test.local`;
+      const agent = request.agent(server);
+      await agent.post("/auth/register").send({ email, password: "correct horse battery" }).expect(201); // gitleaks:allow
+      const [u] = await db.select().from(users).where(eq(users.email, email));
+      await agent.put("/settings/connections/meta-messenger").send({ pageId: PAGE_ID, pageAccessToken: PAGE_TOKEN, appSecret: APP_SECRET, verifyToken: VERIFY_TOKEN }).expect(200);
+
+      const entry = (await agent.post("/knowledge/entries").send({ kind: "room", title: "Garden room", body: "Fan cottage near the beach.", fields: { price: 3500, unit: "night", capacity: 4, deposit: { mode: "percent", value: 30 } } }).expect(201)).body;
+      await agent.post("/knowledge/publish").expect(201);
+
+      const wf = await agent.post("/workflows").send({ name: "Resort Concierge", slug: `c8-dm-${seq}` }).expect(201);
+      await agent.post(`/workflows/${wf.body.id}/versions`).send({ definition: dmTemplate.definition, publish: true }).expect(201);
+      const [c] = await db.select().from(connections).where(and(eq(connections.userId, u!.id), eq(connections.provider, "meta_messenger")));
+      const webhookPath = (c!.destination as { webhookPath: string }).webhookPath;
+
+      // 1. Menu tap ("rates") + priced knowledge answer -> sends guarded rate reply + schedules 20h follow-up.
+      nextAiReply = {
+        reply: "Our Garden room is 3,500 pesos per night for up to 4 guests.",
+        entryIds: [entry.id],
+        intent: "rates",
+        needsHuman: false,
+        fields: { guests: "2", name: "Ana Reyes" },
+      };
+      await post(webhookPath, [{ sender: { id: "psid-c8-guest" }, recipient: { id: PAGE_ID }, timestamp: Date.now(), message: { mid: "m_c8_1", text: "Rates", quick_reply: { payload: "rates" } } }]);
+      const [run1] = await runsOf(wf.body.id);
+      expect(await drive(run1!.id)).toBe("waiting");
+      await runDueDeliveries(db, secretsKey, fake.urls);
+      expect(fake.meta.messages).toHaveLength(1);
+      expect(fake.meta.messages[0]!.text).toContain("3,500 pesos");
+      expect(fake.meta.messages[0]!.quickReplies).toHaveLength(6);
+      expect((await conversationOf(u!.id, "psid-c8-guest")).fields).toMatchObject({ guests: "2", name: "Ana Reyes" });
+
+      // 2. Guest sends a newer message before the 20h follow-up -> run1 supersedes cleanly without sending follow-up,
+      //    and an unsafe AI price triggers guardReply swap + handoff reply + Needs staff status + staff email alert.
+      nextAiReply = {
+        reply: "Special deal: 1,999 pesos per night! Check-in Dec 20.",
+        entryIds: [entry.id],
+        intent: "question",
+        needsHuman: false,
+        fields: { check_in: "2027-12-20" },
+      };
+      await post(webhookPath, [inbound("psid-c8-guest", "m_c8_2", "May promo ba sa Dec 20? Text +63 917 555 0101")]);
+
+      // Advancing wait_followup on superseded run1 must cancel it cleanly rather than firing send_followup.
+      await db.update(runs).set({ nextAttemptAt: new Date(Date.now() - 1000) }).where(eq(runs.id, run1!.id));
+      await advance(deps(), run1!.id);
+      expect(await drive(run1!.id)).toBe("cancelled");
+
+      const [, run2] = await runsOf(wf.body.id);
+      expect(await drive(run2!.id)).toBe("succeeded");
+      await runDueDeliveries(db, secretsKey, fake.urls);
+
+      expect(fake.meta.messages).toHaveLength(2);
+      expect(fake.meta.messages[1]!.text).toContain("Our team will confirm the rate and reply here shortly.");
+      expect(fake.meta.messages[1]!.text).not.toContain("1,999");
+
+      const convo = await conversationOf(u!.id, "psid-c8-guest");
+      expect(convo.status).toBe("staff");
+      expect(convo.fields).toMatchObject({ check_in: "2027-12-20", phone: "+639175550101" });
+      expect(mailSent.length).toBeGreaterThanOrEqual(1);
+    } finally {
+      vi.unstubAllEnvs();
+      aiServer.closeAllConnections();
+      aiServer.close();
+    }
   });
 });
