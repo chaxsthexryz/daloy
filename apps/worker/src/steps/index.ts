@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { workspaceLanguage, readKnowledge, aiConnection, bookFromStep, bookingEventPayload, bookingOfStep, bookingReference, centavosToPesos, createDue, dispatchInternalTrigger, dueConversationId, dueForStep, DueTakenError, expireDue, findReviewer, paymentEventPayload, pendingCheckout, pesosToCentavos, checkReceiptReference, checkRecipients, claimTimeout, claimUsage, createApproval, findPaymentForStep, findApprover, queueCalendarEvent, queueDelivery, readSecrets, redactSecrets, secretForms, sendAs, startSubWorkflow, type BookingTriggerEvent, type Db, type MailDeps, type Provider, type StepBookingResult } from "@daloy/db";
-import { conversationMessages, deliveries, emailThreadFor, isPaused, PAST_WINDOW, prepareReply, providerUrls, recordOutboundEmail, runConversation, runs, saveConversationFields, sendStaffAlert, takeOverConversation, windowOpen, type ProviderUrls } from "@daloy/db";
+import { workspaceLanguage, readKnowledge, aiConnection, bookFromStep, bookingEventPayload, bookingOfStep, bookingReference, centavosToPesos, createDue, dispatchInternalTrigger, dueConversationId, dueForStep, DueTakenError, expireDue, findReviewer, mockAssistantSnapshot, parseAssistantScope, paymentEventPayload, pendingCheckout, pesosToCentavos, readAssistantSnapshot, checkReceiptReference, checkRecipients, claimTimeout, claimUsage, createApproval, findPaymentForStep, findApprover, queueCalendarEvent, queueDelivery, readSecrets, redactSecrets, secretForms, sendAs, startSubWorkflow, type BookingTriggerEvent, type Db, type MailDeps, type Provider, type StepBookingResult } from "@daloy/db";
+import { conversationMessages, deliveries, emailThreadFor, isPaused, PAST_WINDOW, prepareReply, providerUrls, recordOutboundEmail, recordOutboundReply, runConversation, runs, saveConversationFields, sendStaffAlert, takeOverConversation, windowOpen, type ProviderUrls } from "@daloy/db";
 import { and, eq, gt, ne } from "drizzle-orm";
 import { approvalEmailBody, checkDiscordContent, DEFAULT_STAY_TIMEZONE, numberedMenu, type Menu, wouldDo, type FileRef, bookingStartField, conditionBranch, normalizePhMobile, parseZoned, SMS_MAX_CHARS, stayRange, stayTimesFromKnowledge, type TestChoice, type Trigger, declaresJson, parseInstant, isRetryable, mockAiOutput, parseJsonTemplate, resolveJsonTemplate, resolveTemplate, StepError, usesSecrets, type ExpressionContext, type HistoryItem, type Language, quoteStay, QuoteError, type Step } from "@daloy/engine";
 import type { StepExecutor, StepResult } from "../advance";
@@ -175,6 +175,10 @@ ${numberedMenu(menu)}` : text(body, ctx) } satisfies EmailInput;
     case "stay_quote": {
       const { room, checkIn, nights, guests } = step.config;
       return { room: text(room, ctx).trim(), checkIn: text(checkIn, ctx).trim(), nights: text(nights, ctx).trim(), guests: text(guests, ctx).trim() };
+    }
+    case "assistant_read": {
+      const what = text(step.config.what, ctx).trim().toLowerCase() || "all";
+      return { what, ...(step.config.timezone ? { timezone: step.config.timezone } : {}) };
     }
     case "shopify_create_product": {
       const c = step.config;
@@ -583,6 +587,19 @@ async function runStep(deps: FullDeps, step: Step, input: unknown, ctx: Expressi
       // Queued, not sent: the worker delivers it apart from the run, so one provider's trouble never holds up the other
       // (decision 0021). A re-run of this step gets the first delivery back, with its original payload.
       const provider: Provider = step.type === "sheets" ? "google_sheets" : step.type;
+      if (step.type === "telegram" && chatId !== undefined && UUID.test(runId)) {
+        const [linked] = await deps.db.select({ conversationId: runs.conversationId }).from(runs).where(eq(runs.id, runId));
+        const convo = await runConversation(deps.db, linked?.conversationId);
+        if (convo && convo.channel === "telegram" && convo.externalId === chatId) {
+          const d = await deps.db.transaction(async (tx) => {
+            const [queued] = await tx.select().from(deliveries).where(and(eq(deliveries.runId, runId), eq(deliveries.stepId, step.id)));
+            if (queued) return queued;
+            await recordOutboundReply(tx, { conversationId: convo.id, runId, text: (payload as { text: string }).text });
+            return queueDelivery(tx, { userId, runId, stepId: step.id, provider, reference, payload });
+          });
+          return { output: { deliveryId: d.id, reference, state: d.state } };
+        }
+      }
       const d = await queueDelivery(deps.db, { userId, runId, stepId: step.id, provider, reference, payload });
       return { output: { deliveryId: d.id, reference, state: d.state } };
     }
@@ -678,6 +695,15 @@ async function runStep(deps: FullDeps, step: Step, input: unknown, ctx: Expressi
         if (err instanceof QuoteError) throw new StepError(err.message, false);
         throw err;
       }
+    }
+    case "assistant_read": {
+      const cfg = input as { what: string; timezone?: string };
+      const scope = parseAssistantScope(cfg.what);
+      if (!scope) {
+        throw new StepError(`assistant_read "what" must be all, calendar, bookings, payments or runs, but got ${JSON.stringify(cfg.what)}.`, false);
+      }
+      if (mock) return { output: mockAssistantSnapshot(scope, cfg.timezone) };
+      return { output: await readAssistantSnapshot({ db: deps.db, secretsKey: deps.secretsKey, urls: deps.urls, userId, what: scope, timezone: cfg.timezone }) };
     }
     case "shopify_create_product":
     case "shopify_update_product": {

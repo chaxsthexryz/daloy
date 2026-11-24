@@ -22,7 +22,7 @@ export type TestChoice = z.infer<typeof testChoiceSchema>;
 export const testChoicesSchema = z.record(z.string().max(64), testChoiceSchema).refine((c) => Object.keys(c).length <= 100, "at most 100 choices");
 
 // Steps a mocked run fakes, so a tester can make them fail to see the failure path.
-const OUTSIDE = new Set(["http", "email", "approval", "sheets", "drive", "slack", "outlook", "teams", "telegram", "sms", "calendar", "airtable", "notion", "trello", "meta_reply", "shopify_create_product", "shopify_update_product", "discord", "google_docs", "read_page", "browser"]);
+const OUTSIDE = new Set(["http", "email", "approval", "sheets", "drive", "slack", "outlook", "teams", "telegram", "sms", "calendar", "airtable", "notion", "trello", "meta_reply", "shopify_create_product", "shopify_update_product", "discord", "google_docs", "read_page", "browser", "assistant_read"]);
 
 // Steps a preview may send for real on their own. An approval has nothing to check alone, and a real payment link or
 // Shopify product is not a test.

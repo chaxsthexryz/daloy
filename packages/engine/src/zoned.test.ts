@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isTimeZone, parseInstant, parseZoned } from "./zoned";
+import { dayBounds, isTimeZone, parseInstant, parseZoned } from "./zoned";
 
 const now = Date.UTC(2026, 0, 1);
 const ok = (input: string, timezone: string, slotMinutes?: number) => {
@@ -125,5 +125,22 @@ describe("parseInstant", () => {
   });
   it("refuses times without an offset, since the server's zone would decide them", () => {
     for (const bad of ["2027-01-20T14:00", "2027-01-20", "soon", "2027-02-30T10:00:00Z", "2027-01-20T25:00:00Z", ""]) expect(parseInstant(bad), bad).toBeUndefined();
+  });
+});
+
+describe("dayBounds", () => {
+  it("computes the local calendar day start and next-day start in Asia/Manila", () => {
+    // 2026-11-23T18:00:00Z is 2026-11-24T02:00:00+08:00 in Manila.
+    const bounds = dayBounds(new Date("2026-11-23T18:00:00.000Z"), "Asia/Manila");
+    expect(bounds.date).toBe("2026-11-24");
+    expect(bounds.start.toISOString()).toBe("2026-11-23T16:00:00.000Z");
+    expect(bounds.end.toISOString()).toBe("2026-11-24T16:00:00.000Z");
+  });
+
+  it("handles DST spring-forward and fall-back days in America/New_York", () => {
+    const spring = dayBounds(new Date("2026-03-08T15:00:00.000Z"), "America/New_York");
+    expect(spring.date).toBe("2026-03-08");
+    expect(spring.start.toISOString()).toBe("2026-03-08T05:00:00.000Z");
+    expect(spring.end.toISOString()).toBe("2026-03-09T04:00:00.000Z");
   });
 });

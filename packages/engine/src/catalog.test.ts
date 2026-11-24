@@ -111,6 +111,7 @@ describe("destination line", () => {
       meta_reply: { recipientId: "{{trigger.senderId}}", channel: "{{trigger.channel}}", text: "t" },
       conversation_update: { fields: { guests: "2" } },
       stay_quote: { room: "Garden room", checkIn: "{{trigger.check_in}}", nights: "2", guests: "2" },
+      assistant_read: { what: "all" },
       calendar: { title: "t" },
       sheets: { columns: ["a"] },
       shopify_create_product: { title: "Tote bag" },

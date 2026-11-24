@@ -18,4 +18,8 @@ export const telegramTranslations: Record<string, string> = {
   // Builder
   "telegram_message": "Mensahe sa Telegram bot",
   "When someone messages your Telegram bot": "Kapag may nag-message sa Telegram bot mo",
+  "assistant_read": "Basahin ang buod ng assistant",
+  "Read today's summary": "Basahin ang buod ngayon",
+  "What to read": "Ano ang babasahin",
+  "Time zone": "Time zone",
 };

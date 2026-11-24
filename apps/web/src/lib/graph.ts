@@ -11,7 +11,7 @@ export type Draft = WorkflowDefinition;
 export type Edge = Draft["edges"][number];
 
 /** Step types the builder can add. */
-export const ADDABLE = ["condition", "http", "email", "delay", "ai", "approval", "sheets", "drive", "slack", "outlook", "teams", "telegram", "sms", "calendar", "airtable", "notion", "trello", "booking", "meta_reply", "shopify_create_product", "shopify_update_product", "discord", "google_docs", "browser", "read_page", "call_workflow"] as const;
+export const ADDABLE = ["condition", "http", "email", "delay", "ai", "approval", "sheets", "drive", "slack", "outlook", "teams", "telegram", "sms", "calendar", "airtable", "notion", "trello", "booking", "meta_reply", "shopify_create_product", "shopify_update_product", "discord", "google_docs", "browser", "read_page", "call_workflow", "assistant_read"] as const;
 export type AddableType = (typeof ADDABLE)[number];
 
 export const blankDraft = (): Draft => ({ trigger: { type: "manual", config: {} }, steps: [], edges: [] });
@@ -71,6 +71,8 @@ export function defaultConfig(type: AddableType, language: Language = "en"): Ste
       return { url: "https://example.com/", actions: [{ action: "extract", selector: "h1", name: "heading" }] };
     case "call_workflow":
       return { workflowSlug: "", payload: {} };
+    case "assistant_read":
+      return { what: "all", timezone: "Asia/Manila" };
   }
 }
 

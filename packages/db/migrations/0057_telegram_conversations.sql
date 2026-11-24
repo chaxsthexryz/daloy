@@ -1,0 +1,2 @@
+ALTER TABLE "conversations" DROP CONSTRAINT "conversations_channel";--> statement-breakpoint
+ALTER TABLE "conversations" ADD CONSTRAINT "conversations_channel" CHECK ("conversations"."channel" in ('messenger', 'instagram', 'email', 'telegram'));

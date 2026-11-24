@@ -15,7 +15,7 @@ import { bookingChanges, bookingResults, bookings, conversations, resources, run
 
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 type Row = typeof bookings.$inferSelect;
-type ConvoRow = { channel: "messenger" | "instagram" | "email"; externalId: string; fields: Record<string, string> };
+type ConvoRow = { channel: "messenger" | "instagram" | "email" | "telegram"; externalId: string; fields: Record<string, string> };
 
 const ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 // shortcut: 32^6 random references; a collision fails that attempt (the step retries with a new one). Lengthen when volume grows.
@@ -41,7 +41,7 @@ const withTimes = {
 };
 
 export type BookingGuest = {
-  channel: "messenger" | "instagram" | "email";
+  channel: "messenger" | "instagram" | "email" | "telegram";
   externalId: string;
   name?: string;
   email?: string;

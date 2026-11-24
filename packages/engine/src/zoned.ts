@@ -115,6 +115,28 @@ export function parseZoned(input: string, field: ZonedField, now = Date.now()): 
 /** An instant as wall time in `timeZone` with that zone's offset, the form a datetime field stores. */
 export const formatZoned = (at: Date, timeZone: string) => `${wallText(wallAt(timeZone, at.getTime()))}${offsetText(offsetAt(timeZone, at.getTime()))}`;
 
+function startOfDayInstant(timeZone: string, w: { y: number; mo: number; d: number }): Date {
+  const found = instantsOf(timeZone, { ...w, h: 0, mi: 0, s: 0 });
+  if (found.length > 0) return new Date(found[0]!);
+  // Spring-forward right at midnight (00:00 skipped): 01:00 is the first wall hour of that date.
+  const nextHour = instantsOf(timeZone, { ...w, h: 1, mi: 0, s: 0 });
+  if (nextHour.length > 0) return new Date(nextHour[0]!);
+  const approx = wallMs({ ...w, h: 0, mi: 0, s: 0 });
+  return new Date(approx - offsetAt(timeZone, approx));
+}
+
+/** The local calendar date (YYYY-MM-DD) and exact [start, end) UTC instants for `now` in `timeZone`. */
+export function dayBounds(now: Date, timeZone: string): { date: string; start: Date; end: Date } {
+  const today = wallAt(timeZone, now.getTime());
+  const tomorrowDate = new Date(Date.UTC(today.y, today.mo - 1, today.d + 1));
+  const tomorrow = { y: tomorrowDate.getUTCFullYear(), mo: tomorrowDate.getUTCMonth() + 1, d: tomorrowDate.getUTCDate() };
+  return {
+    date: `${pad(today.y, 4)}-${pad(today.mo)}-${pad(today.d)}`,
+    start: startOfDayInstant(timeZone, today),
+    end: startOfDayInstant(timeZone, tomorrow),
+  };
+}
+
 // What a datetime field stores, and what toISOString() gives: the offset is required.
 const INSTANT = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.\d{1,3})?)?(Z|[+-]\d{2}:\d{2})$/;
 

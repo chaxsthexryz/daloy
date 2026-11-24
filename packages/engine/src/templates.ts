@@ -1071,4 +1071,56 @@ export const TEMPLATES = [
       ],
     },
   },
+  // J1 (decision 0135): read-only Telegram assistant with multi-turn memory.
+  {
+    slug: "telegram-assistant",
+    name: "Ask my assistant on Telegram",
+    description: "Message your own Telegram bot to ask about today's Google Calendar events, kymavo bookings, open unpaid payments or today's runs. AI picks the intent, reads your workspace data (read-only), and replies in the same chat with follow-up memory. Needs Telegram (with receiving turned on) and an AI model.",
+    category: "Office",
+    definition: {
+      trigger: { type: "telegram_message", config: { from: "my_chat", requireFile: false } },
+      steps: [
+        {
+          id: "pick_intent",
+          type: "ai",
+          config: {
+            task: "classify",
+            input: "Recent messages: {{trigger.conversation.history}}\nLatest question: {{trigger.text}}",
+            instructions: "Choose the single intent that best matches the owner's latest question, using recent messages only to understand follow-up questions.",
+            labels: {
+              calendar: "Questions about today's Google Calendar events or schedule",
+              bookings: "Questions about today's kymavo bookings or appointments",
+              payments: "Questions about open unpaid payment dues or pending balances",
+              runs: "Questions about today's automation runs, failures or activity",
+              all: "A daily briefing, greeting, or anything asking across multiple areas",
+            },
+          },
+        },
+        {
+          id: "read_data",
+          type: "assistant_read",
+          config: { what: "{{steps.pick_intent.output.label}}" },
+        },
+        {
+          id: "write_answer",
+          type: "ai",
+          config: {
+            task: "draft",
+            input: "Question: {{trigger.text}}\nConversation history: {{trigger.conversation.history}}\nToday ({{steps.read_data.output.timezone}}): {{steps.read_data.output.date}}\nWorkspace summary:\n{{steps.read_data.output.summaryText}}",
+            instructions: "You are kymavo's read-only assistant answering the workspace owner on Telegram. Answer using only the workspace summary in the data block. Never invent events, bookings, amounts or run statuses, and never claim to book, cancel, pay or change anything. If Google Calendar is not connected, say they can connect it in Apps. Reply concisely in under 2,500 characters in the owner's language (English, Tagalog or Taglish).",
+          },
+        },
+        {
+          id: "reply",
+          type: "telegram",
+          config: { chatId: "{{trigger.chatId}}", text: "kymavo assistant:\n{{steps.write_answer.output.draft}}" },
+        },
+      ],
+      edges: [
+        { from: "pick_intent", to: "read_data" },
+        { from: "read_data", to: "write_answer" },
+        { from: "write_answer", to: "reply" },
+      ],
+    },
+  },
 ] as const;
