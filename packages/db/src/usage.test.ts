@@ -112,7 +112,7 @@ describe("usage", () => {
   });
 
   it("limits uploads per Manila day by plan", async () => {
-    expect([PLANS.pilot.upload, PLANS.business.upload, PLANS.business_plus.upload]).toEqual([100, 500, 2000]);
+    expect([PLANS.pilot.upload, PLANS.business.upload, PLANS.business_plus.upload, PLANS.concierge.upload]).toEqual([100, 500, 2000, 1000]);
     const u = await newUser();
     await claimUsage(db, u, "upload", { n: 100, now: noon });
     const err = await claimUsage(db, u, "upload", { now: noon }).catch((e: unknown) => e);
@@ -176,6 +176,18 @@ describe("usage", () => {
     });
     const none = await newUser(null);
     expect(await usageSummary(db, none, noon)).toMatchObject({ plan: null, label: null, limits: null, ai: { used: 0, limit: null }, sms: { used: 0, limit: null }, automations: { live: 0, limit: null }, minScheduleMinutes: null });
+
+    const concierge = await newUser("concierge", "2026-10-20");
+    await claimUsage(db, concierge, "ai", { n: 2500, now: noon });
+    expect(await usageSummary(db, concierge, noon)).toMatchObject({
+      plan: "concierge",
+      label: "Concierge",
+      limits: PLANS.concierge,
+      ai: { used: 2500, limit: 3000, resetsOn: "2026-11-20" },
+      sms: { used: 0, limit: 500 },
+      automations: { live: 0, limit: 10 },
+      minScheduleMinutes: 15,
+    });
   });
 
   it("enforces monthly sms limits per plan and allows unlimited sms when plan is null", async () => {

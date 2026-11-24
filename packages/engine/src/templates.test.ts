@@ -7,7 +7,7 @@ import { templatesForLanguage } from "./template-language";
 import { TEMPLATES, TEMPLATE_CATEGORIES } from "./templates";
 import { websiteInquiryDefinition } from "./website-inquiry";
 
-const SLUGS = ["inquiry-triage", "invoice-follow-up", "no-show-follow-up", "appointment-reminder", "request-to-sheets", "lead-to-booking", "order-to-sheets", "order-paid", "invoice-paymongo", "quote-deposit", "renewal-reminders", "store-orders", "shopify-orders", "receipt-expense", "meta-receipt-intake", "telegram-gcash-receipts", "booking-deposit-review", "order-gcash-checkout"];
+const SLUGS = ["inquiry-triage", "invoice-follow-up", "no-show-follow-up", "appointment-reminder", "request-to-sheets", "lead-to-booking", "order-to-sheets", "order-paid", "invoice-paymongo", "quote-deposit", "renewal-reminders", "store-orders", "shopify-orders", "receipt-expense", "meta-receipt-intake", "telegram-gcash-receipts", "booking-deposit-review", "order-gcash-checkout", "resort-concierge-dm", "resort-concierge-email", "resort-deposit-and-stay"];
 const parse = (slug: string) => definitionSchema.parse(TEMPLATES.find((t) => t.slug === slug)!.definition);
 
 describe("starter templates", () => {
@@ -16,7 +16,7 @@ describe("starter templates", () => {
   });
 
   it("gives every template one of the library categories, and every category at least one template", () => {
-    expect(TEMPLATE_CATEGORIES).toEqual(["Inquiries", "Bookings", "Payments and receipts", "Orders", "Office"]);
+    expect(TEMPLATE_CATEGORIES).toEqual(["Inquiries", "Bookings", "Payments and receipts", "Orders", "Resorts and hotels", "Office"]);
     for (const t of TEMPLATES) expect(TEMPLATE_CATEGORIES as readonly string[], t.slug).toContain(t.category);
     for (const c of TEMPLATE_CATEGORIES.filter((c) => c !== "Office")) expect(TEMPLATES.some((t) => t.category === c), c).toBe(true);
   });
@@ -193,5 +193,35 @@ describe("starter templates", () => {
     expect(def.trigger).toMatchObject({ type: "webhook", config: { hmacSecret: "order_webhook_secret", requireTimestamp: true } });
     expect(def.steps.find((s) => s.id === "ask_payment")).toMatchObject({ type: "payment_due", config: { kind: "full", checkout: true } });
     expect(def.edges).toContainEqual({ from: "cancel_order", to: "tell_cancelled", on: "expired" });
+  });
+
+  it("resort concierge DM and email templates answer from knowledge, save guest details, hand off unsure questions, and follow up", () => {
+    const dm = parse("resort-concierge-dm");
+    expect(dm.trigger).toMatchObject({ type: "meta_dm" });
+    expect(dm.steps.find((s) => s.id === "answer")).toMatchObject({ type: "ai", config: { task: "answer" } });
+    expect(dm.edges).toContainEqual({ from: "needs_staff", to: "reply_handoff", on: "true" });
+    expect(dm.edges).toContainEqual({ from: "needs_staff", to: "reply_guest", on: "false" });
+    expect(dm.steps.find((s) => s.id === "wait_followup")).toMatchObject({ type: "delay", config: { seconds: 72_000 } });
+
+    const email = parse("resort-concierge-email");
+    expect(email.trigger).toMatchObject({ type: "email" });
+    expect(email.steps.find((s) => s.id === "answer")).toMatchObject({ type: "ai", config: { task: "answer" } });
+    expect(email.edges).toContainEqual({ from: "needs_staff", to: "reply_handoff", on: "true" });
+    expect(email.steps.find((s) => s.id === "wait_followup")).toMatchObject({ type: "delay", config: { seconds: 86_400 } });
+  });
+
+  it("resort-deposit-and-stay quotes from knowledge, holds stay, requests deposit with fallback, expires unpaid holds, and schedules pre-arrival and review emails", () => {
+    const def = parse("resort-deposit-and-stay");
+    expect(def.trigger).toEqual({ type: "manual", config: {} });
+    expect(def.steps.find((s) => s.id === "book_stay")).toMatchObject({ type: "booking", config: { action: "create", mode: "stay" } });
+    expect(def.steps.find((s) => s.id === "ask_deposit")).toMatchObject({
+      type: "payment_due",
+      config: { kind: "deposit", amount: "{{steps.quote.output.deposit}}", total: "{{steps.quote.output.total}}", booking: "book_stay", checkout: true },
+    });
+    expect(def.edges).toContainEqual({ from: "send_pay_dm", to: "send_pay_email", on: "outside_window" });
+    expect(def.edges).toContainEqual({ from: "send_pay_dm", to: "send_pay_email", on: "paused" });
+    expect(def.edges).toContainEqual({ from: "release_stay", to: "tell_released", on: "expired" });
+    expect(def.steps.find((s) => s.id === "wait_pre_arrival")).toMatchObject({ type: "delay", config: { until: "{{steps.book_stay.output.start}}", offsetSeconds: -172_800 } });
+    expect(def.steps.find((s) => s.id === "wait_post_checkout")).toMatchObject({ type: "delay", config: { until: "{{steps.book_stay.output.end}}", offsetSeconds: 86_400 } });
   });
 });
