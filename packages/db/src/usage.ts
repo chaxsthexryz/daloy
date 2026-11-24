@@ -67,7 +67,7 @@ export async function planOf(db: Pick<Db, "select">, userId: string) {
 /** The AI and SMS cycle's anchor: the plan start, or the first of the Manila month when there is none. */
 const anchor = (startedOn: string | null, today: string) => startedOn ?? `${today.slice(0, 8)}01`;
 const monthly = (kind: UsageKind) => kind === "ai" || kind === "sms";
-const periodOf = (kind: UsageKind, startedOn: string | null, today: string) => (monthly(kind) ? cycleStart(anchor(startedOn, today), today) : today);
+export const periodOf = (kind: UsageKind, startedOn: string | null, today: string) => (monthly(kind) ? cycleStart(anchor(startedOn, today), today) : today);
 const resetsOn = (kind: UsageKind, startedOn: string | null, today: string) => (monthly(kind) ? nextCycleStart(anchor(startedOn, today), today) : tomorrow(today));
 
 function quotaMessage(kind: UsageKind, limit: number, reset: string) {

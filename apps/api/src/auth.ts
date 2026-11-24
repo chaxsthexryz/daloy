@@ -90,7 +90,7 @@ export class SessionGuard implements CanActivate {
  * must come from this installation's page. Own origin means PUBLIC_URL, or the host the request itself was sent to
  * (a LAN address, the Vite dev server). A request with no Origin header is not from a browser page and passes.
  */
-function fromOwnOrigin(req: Request, publicUrl: string | undefined): boolean {
+export function fromOwnOrigin(req: Request, publicUrl: string | undefined): boolean {
   const origin = req.get("origin");
   if (origin === undefined) return true;
   try {

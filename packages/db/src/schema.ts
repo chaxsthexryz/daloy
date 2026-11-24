@@ -47,6 +47,24 @@ export const usageCounts = pgTable(
   (t) => [primaryKey({ columns: [t.userId, t.kind, t.period] })],
 );
 
+/**
+ * What a platform admin changed (A1, decision 0120): a plan override or a shared mail approval, with the values before
+ * and after. Rows are only ever inserted; no route updates or deletes them.
+ */
+export const adminActions = pgTable(
+  "admin_actions",
+  {
+    id: id(),
+    adminEmail: text("admin_email").notNull(),
+    action: text("action", { enum: ["plan", "shared_mail"] }).notNull(),
+    workspaceId: uuid("workspace_id").references(() => users.id, { onDelete: "set null" }),
+    before: jsonb("before").$type<Record<string, unknown>>().notNull(),
+    after: jsonb("after").$type<Record<string, unknown>>().notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [check("admin_actions_action", sql`${t.action} in ('plan', 'shared_mail')`), index("admin_actions_created").on(t.createdAt)],
+);
+
 /** Keys of work already counted, so a retried step is not counted twice. */
 export const usageClaims = pgTable(
   "usage_claims",

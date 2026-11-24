@@ -85,6 +85,8 @@ Any row means someone should look. A workflow that keeps failing the same way ca
 
 Limits come from a workspace's plan (decision 0038). `pilot`, `business` and `business_plus` are the only values. Only you can set one, with SQL. A workspace with no plan has no limits and cannot use the shared AI key.
 
+The platform admin page (`#/admin`, decision 0120) sets plans and shared mail approval for the accounts listed in `PLATFORM_ADMINS`, and records each change. The SQL below does the same thing without the record.
+
 Set a plan and the date its monthly cycle starts. The AI count resets on that day each month, Manila time:
 
 ```bash
