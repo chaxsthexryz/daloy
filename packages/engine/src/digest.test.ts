@@ -32,6 +32,15 @@ describe("digestEmail", () => {
     expect(digestEmail(some, undefined)!.text).not.toContain("http");
   });
 
+  it("includes conversations waiting for staff in both languages", () => {
+    const withConvos = { receipts: 0, unpaid: 0, failedReplies: 0, conversationsWaiting: 2 };
+    const en = digestEmail(withConvos, "https://d.example", "en")!;
+    expect(en.subject).toBe("2 things need you in Daloy this morning");
+    expect(en.text).toContain("2 conversations waiting for staff: https://d.example/#/conversations");
+    const tl = digestEmail({ ...withConvos, conversationsWaiting: 1 }, "https://d.example", "tl")!;
+    expect(tl.text).toContain("1 usapang naghihintay ng staff: https://d.example/#/conversations");
+  });
+
   it("has Tagalog copy and no dashes", () => {
     const m = digestEmail(some, "https://d.example", "tl")!;
     expect(m.subject).toContain("6");

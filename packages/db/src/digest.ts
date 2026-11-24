@@ -1,6 +1,6 @@
-import { and, asc, eq, gte, inArray, lt, sql } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import type { Db } from "./index";
-import { bookings, deliveries, paymentClaims, paymentDues, runs, users } from "./schema";
+import { bookings, conversations, deliveries, paymentClaims, paymentDues, runs, users } from "./schema";
 
 /** A failed message older than this is no longer news for a morning digest. */
 const FAILED_WITHIN_DAYS = 7;
@@ -33,7 +33,11 @@ export async function digestCounts(db: Db, workspaceId: string, now = new Date()
         gte(deliveries.createdAt, new Date(now.getTime() - FAILED_WITHIN_DAYS * 86_400_000)),
       ),
     );
-  return { receipts: receipts!.n, unpaid: unpaid!.n, failedReplies: failedReplies!.n };
+  const [waiting] = await db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(conversations)
+    .where(and(eq(conversations.userId, workspaceId), eq(conversations.status, "staff"), or(isNull(conversations.staffUntil), sql`${conversations.staffUntil} > ${now.toISOString()}::timestamptz`)));
+  return { receipts: receipts!.n, unpaid: unpaid!.n, failedReplies: failedReplies!.n, conversationsWaiting: waiting!.n };
 }
 
 /** The first millisecond of a Manila calendar day (YYYY-MM-DD), as an instant. */

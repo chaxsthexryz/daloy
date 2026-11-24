@@ -23,8 +23,19 @@ export class PrivacyController {
 
   @Get("customer")
   async export(@CurrentUser() user: SessionUser, @Query(new ZodPipe(who)) q: z.output<typeof who>, @Res({ passthrough: true }) res: Response) {
+    return this.exportBody(user, query(q), res);
+  }
+
+  /** L2 fix alongside R6: exports customer data without putting an email or phone in the URL query string. */
+  @Post("customer/export")
+  @HttpCode(200)
+  async exportPost(@CurrentUser() user: SessionUser, @Body(new ZodPipe(who)) q: z.output<typeof who>, @Res({ passthrough: true }) res: Response) {
+    return this.exportBody(user, query(q), res);
+  }
+
+  private async exportBody(user: SessionUser, q: { email: string } | { phone: string }, res: Response) {
     res.set({ "Content-Disposition": 'attachment; filename="customer-data.json"', "Cache-Control": "no-store" });
-    const data = await exportCustomer(this.db, user.workspaceId, user.id, query(q));
+    const data = await exportCustomer(this.db, user.workspaceId, user.id, q);
     // The file is handed to the customer, so it hides current and retired workspace secrets like every history reader (review of 22 November, M3).
     // Through JSON first, so dates are text and the hider walks plain values.
     const hide = await historyHider(this.db, this.config.secretsKey, user.workspaceId);

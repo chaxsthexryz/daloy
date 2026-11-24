@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { workspaceLanguage, readKnowledge, aiConnection, bookFromStep, bookingEventPayload, bookingOfStep, bookingReference, centavosToPesos, createDue, dispatchInternalTrigger, dueConversationId, dueForStep, DueTakenError, expireDue, findReviewer, paymentEventPayload, pendingCheckout, pesosToCentavos, checkReceiptReference, checkRecipients, claimTimeout, claimUsage, createApproval, findPaymentForStep, findApprover, queueCalendarEvent, queueDelivery, readSecrets, redactSecrets, secretForms, sendAs, startSubWorkflow, type BookingTriggerEvent, type Db, type MailDeps, type Provider, type StepBookingResult } from "@daloy/db";
-import { deliveries, emailThreadFor, isPaused, PAST_WINDOW, prepareReply, providerUrls, recordOutboundEmail, runConversation, runs, saveConversationFields, windowOpen, type ProviderUrls } from "@daloy/db";
+import { deliveries, emailThreadFor, isPaused, PAST_WINDOW, prepareReply, providerUrls, recordOutboundEmail, runConversation, runs, saveConversationFields, sendStaffAlert, takeOverConversation, windowOpen, type ProviderUrls } from "@daloy/db";
 import { and, eq } from "drizzle-orm";
 import { approvalEmailBody, checkDiscordContent, DEFAULT_STAY_TIMEZONE, numberedMenu, type Menu, wouldDo, type FileRef, bookingStartField, conditionBranch, normalizePhMobile, parseZoned, SMS_MAX_CHARS, stayRange, stayTimesFromKnowledge, type TestChoice, type Trigger, declaresJson, parseInstant, isRetryable, mockAiOutput, parseJsonTemplate, resolveJsonTemplate, resolveTemplate, StepError, usesSecrets, type ExpressionContext, type HistoryItem, type Language, quoteStay, QuoteError, type Step } from "@daloy/engine";
 import type { StepExecutor, StepResult } from "../advance";
@@ -411,7 +411,18 @@ async function runStep(deps: FullDeps, step: Step, input: unknown, ctx: Expressi
         const convo = trigger.conversation as { history?: unknown } | undefined;
         const history = Array.isArray(convo?.history) ? (convo.history as HistoryItem[]).filter((h) => typeof h?.text === "string") : [];
         const language = (await workspaceLanguage(deps.db, userId)) as Language;
-        return await runAnswer(step.config, (input as AiInput).input, { connection, model, attempt, entries: published.entries, version: published.version, history, language });
+        const ans = await runAnswer(step.config, (input as AiInput).input, { connection, model, attempt, entries: published.entries, version: published.version, history, language });
+        if (!mock && !test && !booking?.test && (ans.output as { needsHuman?: boolean })?.needsHuman && UUID.test(runId)) {
+          const [linked] = await deps.db.select({ conversationId: runs.conversationId }).from(runs).where(eq(runs.id, runId));
+          if (linked?.conversationId) {
+            await takeOverConversation(deps.db, userId, linked.conversationId);
+            await sendStaffAlert(
+              { db: deps.db, secretsKey: deps.secretsKey, mail: deps.mail, urls: deps.urls, publicUrl: deps.publicUrl },
+              { workspaceId: userId, conversationId: linked.conversationId, reason: "Needs staff reply" },
+            ).catch((err: unknown) => console.error("staff alert failed", err));
+          }
+        }
+        return ans;
       }
       const aiRes = await runAi(step.config, (input as AiInput).input, { connection, model, attempt, files });
       if (step.config.task === "extract" && refs.length > 0 && aiRes.output && typeof aiRes.output === "object") {

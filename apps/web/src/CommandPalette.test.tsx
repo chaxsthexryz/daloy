@@ -11,12 +11,13 @@ import {
 const id = (text: string) => text;
 
 describe("quickJumpItems", () => {
-  it("lists all 13 console pages for owners", () => {
+  it("lists all 14 console pages for owners", () => {
     const items = quickJumpItems("owner", id);
     expect(items.map((item) => item.href)).toEqual([
       "#/",
       "#/activity",
       "#/bookings",
+      "#/conversations",
       "#/receipts",
       "#/knowledge",
       "#/new",
@@ -30,12 +31,13 @@ describe("quickJumpItems", () => {
     ]);
   });
 
-  it("limits operators to their allowed 7 pages including receipts and knowledge", () => {
+  it("limits operators to their allowed 8 pages including conversations, receipts and knowledge", () => {
     const items = quickJumpItems("operator", id);
     expect(items.map((item) => item.href)).toEqual([
       "#/",
       "#/activity",
       "#/bookings",
+      "#/conversations",
       "#/receipts",
       "#/knowledge",
       "#/settings",
