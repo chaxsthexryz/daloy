@@ -409,6 +409,14 @@ C3 and C4 cover T7 (answer from my price list). Decisions from 0115 (0111 to 011
 - [x] A1. Internal Super-Admin page (`#/admin`, gated by `PLATFORM_ADMINS` env allowlist, never a workspace role): total and new users/workspaces, cross-tenant AI/SMS/run usage, failed and `needs_review` counts, plan overrides, `SHARED_MAIL` approval, and read-only run metadata without decrypting customer secrets. Decision 0122, migration 0053.
 - [x] A2. Error reporting hook (Sentry or GlitchTip DSN optional in `api`, `worker`, and `web`) and uptime monitor setup alongside `docs/deployment.md`. Decision 0124.
 
+## Security audit fixes (24 November 2026, audit daloy-run-1 against 47f34a3)
+
+- [x] S1. Stop the internal event run loop (`payment_event` to `payment_due` to `payment_expire`) and add Origin checks to sign-in routes and the approval decision (decision 0128).
+- [ ] S2. Stop public sign-up from claiming an unregistered `PLATFORM_ADMINS` email. Needs the owner's choice: block those emails at sign-up, or add email verification.
+- [ ] S3. Payment and booking lifecycle: cancelling a booking cancels its pending dues, a guest message no longer cancels a staff deposit request, and a refund also applies to dues confirmed from a needs_review claim.
+- [ ] S4. Resource limits: JSON template output, PDF text extraction, and fair IMAP polling across workspaces.
+- [ ] S5. Low findings: fence in-flight steps after a customer erase, hide retired secrets in exports before collecting, a send claim for mutating browser steps, the legacy webhook timestamp, and untrusted values reaching Shopify product steps.
+
 ## Rebrand to kymavo (23 November 2026, orchestrator: Neon)
 
 The product name is now `kymavo`, always lowercase. Logo marks stay as they are. Onboarding files (`Onboarding.tsx`, `onboarding.css`, `lib/onboarding*.ts`, `lib/locale-onboarding.ts`, `e2e/onboarding.spec.ts`) are left alone until the owner finishes that design. Internal identifiers (`@daloy/*`, `daloy_session`, `Daloy-Signature` headers, `DALOY_*` env vars, database role and volume names) stay for now and keep working.

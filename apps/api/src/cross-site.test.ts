@@ -94,10 +94,28 @@ describe("a signed-in change from another origin", () => {
     expect(await names(a)).toEqual(["Matching HTTPS LAN"]);
   });
 
-  it("leaves reads, sign-in and public routes alone", async () => {
+  it("refuses sign-in, sign-up, invite, sign-out and password reset posts from another origin (S1)", async () => {
+    const a = await owner();
+    const email = `site${seq}@test.local`;
+    const login = { email, password: "correct horse battery" };
+    // Login CSRF: a sibling page would swap the visitor's session for the attacker's account.
+    const forced = await request(server).post("/auth/login").set("Origin", SIBLING).type("form").send(login).expect(403);
+    expect(forced.headers["set-cookie"]).toBeUndefined();
+    await request(server).post("/auth/register").set("Origin", SIBLING).type("form").send({ email: "planted@test.local", password: "correct horse battery" }).expect(403);
+    await request(server).post(`/auth/invites/${"x".repeat(43)}/accept`).set("Origin", SIBLING).type("form").send({ password: "correct horse battery" }).expect(403);
+    await request(server).post("/auth/password-reset").set("Origin", SIBLING).type("form").send({ email }).expect(403);
+    await request(server).post(`/auth/password-reset/${"x".repeat(43)}`).set("Origin", SIBLING).type("form").send({ password: "correct horse battery" }).expect(403);
+    // Logout CSRF: the session must survive.
+    await a.post("/auth/logout").set("Origin", SIBLING).expect(403);
+    await a.get("/auth/me").expect(200);
+    // From this installation's own page, or with no Origin at all, sign-in works as before.
+    await request(server).post("/auth/login").set("Origin", OWN).send(login).expect(200);
+    await request(server).post("/auth/login").send(login).expect(200);
+  });
+
+  it("leaves reads and public routes alone", async () => {
     const a = await owner();
     await a.get("/workflows").set("Origin", SIBLING).expect(200);
-    await request(server).post("/auth/login").set("Origin", SIBLING).send({ email: "nobody@test.local", password: "wrong password" }).expect(401);
     await request(server).post("/forms/4039ded1-2916-43ae-b6fe-60d4ab2fa748").set("Origin", SIBLING).type("form").send({}).expect(404);
     // Signed out is still a 401, whatever the Origin.
     await request(server).post("/workflows").set("Origin", SIBLING).send({ name: "x", slug: "x" }).expect(401);

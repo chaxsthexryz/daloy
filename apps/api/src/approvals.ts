@@ -4,7 +4,7 @@ import { Body, Controller, Get, Header, HttpCode, Inject, Param, Post, Req, Res,
 import type { Request, Response } from "express";
 import type { PgBoss } from "pg-boss";
 import * as z from "zod";
-import { sessionUser } from "./auth";
+import { OwnOriginGuard, sessionUser } from "./auth";
 import { BOSS, CONFIG, DB, enqueueRun, RateLimit, ZodPipe, type ApiConfig, type SessionUser } from "./http";
 import { historyHider } from "./mask";
 import { escapeHtml, pageBrand, type PageBrand } from "./public";
@@ -44,6 +44,9 @@ export class ApprovalsController {
   @UseGuards(RateLimit(30))
   @Header("Content-Type", "text/html; charset=utf-8")
   @Header("Cache-Control", "no-store")
+  // Helmet's no-referrer makes the form post with `Origin: null`, which OwnOriginGuard refuses. same-origin sends
+  // the real Origin to this page's own form and still keeps the link token out of referrers to other sites (decision 0128).
+  @Header("Referrer-Policy", "same-origin")
   async show(@Param("token", token) value: string, @Req() req: Request, @Res({ passthrough: true }) res: Response) {
     // One REPEATABLE READ snapshot for both the approval input and retired secrets, so a concurrent purge cannot remove a retired secret between the two reads.
     const snapshot = await this.db.transaction(
@@ -82,7 +85,7 @@ export class ApprovalsController {
 
   @Post(":token")
   @HttpCode(200)
-  @UseGuards(RateLimit(10))
+  @UseGuards(OwnOriginGuard, RateLimit(10))
   @Header("Content-Type", "text/html; charset=utf-8")
   @Header("Cache-Control", "no-store")
   async decide(
