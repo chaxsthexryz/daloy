@@ -580,3 +580,18 @@ describe("G1 internal triggers and call_workflow step", () => {
     expect(issues(badSlug).join()).toMatch(/a-z, 0-9 and -/);
   });
 });
+
+// G2 (decision 0127): Google Workspace triggers.
+describe("Google triggers", () => {
+  const s = step("a");
+  it("needs a tab for sheets_row and defaults calendar_event and drive_file", () => {
+    expect(definitionSchema.safeParse({ trigger: { type: "sheets_row", config: {} }, steps: [s], edges: [] }).success).toBe(false);
+    expect(definitionSchema.parse({ trigger: { type: "sheets_row", config: { tab: " Orders " } }, steps: [s], edges: [] }).trigger).toEqual({ type: "sheets_row", config: { tab: "Orders" } });
+    expect(definitionSchema.parse({ trigger: { type: "calendar_event" }, steps: [s], edges: [] }).trigger).toEqual({ type: "calendar_event", config: { on: "created", minutesBefore: 60 } });
+    expect(definitionSchema.parse({ trigger: { type: "drive_file" }, steps: [s], edges: [] }).trigger).toEqual({ type: "drive_file", config: { requireFile: false } });
+  });
+  it("refuses a reminder window outside 5 minutes to a day, and unknown keys", () => {
+    expect(definitionSchema.safeParse({ trigger: { type: "calendar_event", config: { on: "starting", minutesBefore: 2 } }, steps: [s], edges: [] }).success).toBe(false);
+    expect(definitionSchema.safeParse({ trigger: { type: "drive_file", config: { folderId: "x" } }, steps: [s], edges: [] }).success).toBe(false);
+  });
+});

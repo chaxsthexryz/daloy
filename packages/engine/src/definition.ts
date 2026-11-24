@@ -433,6 +433,18 @@ const triggerSchema = z.discriminatedUnion("type", [
     type: z.literal("sub_workflow"),
     config: z.object({ fields: fieldList.optional() }).default({}),
   }),
+  // G2 (decision 0127): Google Workspace triggers on the connections chosen in Apps, read by the worker's poll.
+  // sheets_row: a new row in this tab of the spreadsheet picked for Google Sheets.
+  z.object({ type: z.literal("sheets_row"), config: z.strictObject({ tab: z.string().trim().min(1).max(100) }) }),
+  // calendar_event: a new event, or one starting within minutesBefore, in the calendar chosen for Google Calendar.
+  z.object({
+    type: z.literal("calendar_event"),
+    config: z
+      .strictObject({ on: z.enum(["created", "starting"]).default("created"), minutesBefore: z.number().int().min(5).max(1440).default(60) })
+      .default({ on: "created", minutesBefore: 60 }),
+  }),
+  // drive_file: a new file in the folder chosen for Google Drive. requireFile: only files Daloy can attach (type and size limits).
+  z.object({ type: z.literal("drive_file"), config: z.strictObject({ requireFile: z.boolean().default(false) }).default({ requireFile: false }) }),
 ]);
 export type Trigger = z.infer<typeof triggerSchema>;
 
@@ -440,7 +452,7 @@ export type Trigger = z.infer<typeof triggerSchema>;
 export function triggerFileFields(trigger: Trigger): string[] {
   if (trigger.type === "form") return trigger.config.fields.filter((f) => f.type === "file").map((f) => f.name);
   if (trigger.type === "meta_dm") return ["image"];
-  if (trigger.type === "telegram_message") return ["file"];
+  if (trigger.type === "telegram_message" || trigger.type === "drive_file") return ["file"];
   return [];
 }
 

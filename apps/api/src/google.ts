@@ -4,6 +4,7 @@ import {
   createSpreadsheet,
   driveFolderInfo,
   docsTemplateInfo,
+  googleTriggerStatus,
   pickerToken,
   ProviderError,
   setDestination,
@@ -11,13 +12,14 @@ import {
   withGoogle,
   type Db,
   type GoogleConnection,
+  type GoogleTriggerType,
   type ProviderUrls,
 } from "@daloy/db";
-import { BadRequestException, Body, Controller, Get, Header, HttpCode, Inject, NotFoundException, Param, Post, UseGuards } from "@nestjs/common";
+import { BadRequestException, Body, Controller, Get, Header, HttpCode, Inject, NotFoundException, Param, Post, Query, UseGuards } from "@nestjs/common";
 import type { HelmetOptions } from "helmet";
 import * as z from "zod";
 import { SessionGuard } from "./auth";
-import { Allow, CONFIG, CurrentUser, DB, MANAGE, RateLimit, ZodPipe, type ApiConfig, type SessionUser } from "./http";
+import { Allow, CONFIG, CurrentUser, DB, MANAGE, OPERATE, RateLimit, ZodPipe, type ApiConfig, type SessionUser } from "./http";
 import { historyHider } from "./mask";
 
 /**
@@ -169,5 +171,40 @@ export class GoogleController {
     if (!conn) throw new NotFoundException(`${provider === "google_sheets" ? "Google Sheets" : "Google Drive"} is not connected.`);
     if (conn.authMethod !== "oauth") throw new BadRequestException("This works with a Google sign-in. Choose Connect with Google first.");
     return conn;
+  }
+}
+
+const statusSchema = z.strictObject({ workflowId: z.uuid().optional(), tabs: z.enum(["1"]).optional() });
+
+/**
+ * G2 (decision 0127): what the editor shows under a Google trigger. Whether the app is connected with the permission the
+ * trigger reads with and a destination (no network), the watcher's last check for a saved automation, and with tabs=1
+ * the chosen spreadsheet's tab names, read with the workspace's own connection.
+ */
+@Controller("triggers/google")
+@UseGuards(SessionGuard, Allow(OPERATE))
+export class GoogleTriggersController {
+  constructor(
+    @Inject(DB) private readonly db: Db,
+    @Inject(CONFIG) private readonly config: Required<ApiConfig>,
+  ) {}
+
+  @Get(":type")
+  @Header("Cache-Control", "no-store")
+  @UseGuards(RateLimit(30))
+  async status(@CurrentUser() user: SessionUser, @Param("type", new ZodPipe(z.enum(["sheets_row", "calendar_event", "drive_file"]))) type: GoogleTriggerType, @Query(new ZodPipe(statusSchema)) q: z.output<typeof statusSchema>) {
+    const status = await googleTriggerStatus(this.db, user.workspaceId, type, q.workflowId);
+    if (type !== "sheets_row" || !q.tabs || status.problem) return status;
+    const conn = await connectionCredential(this.db, this.config.secretsKey, user.workspaceId, "google_sheets");
+    const id = conn?.destination?.spreadsheetId;
+    if (!conn || !id) return status;
+    try {
+      const info = await withGoogle(this.db, this.config.secretsKey, this.config.providers, user.workspaceId, "google_sheets", conn, (auth) => sheetInfo(this.config.providers, auth, id));
+      return { ...status, tabs: info.tabs };
+    } catch (err) {
+      if (!(err instanceof ProviderError)) throw err;
+      const hide = await historyHider(this.db, this.config.secretsKey, user.workspaceId);
+      return { ...status, problem: hide(err.message) as string };
+    }
   }
 }

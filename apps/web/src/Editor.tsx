@@ -21,6 +21,7 @@ import { DocTemplatePicker } from "./DocTemplatePicker";
 import { BrowserActions } from "./BrowserActions";
 import { SchemaForm, type JsonSchema } from "./SchemaForm";
 import { EmailSource } from "./EmailSource";
+import { GoogleTriggerSettings } from "./GoogleTriggerSettings";
 import { ExplainSheet, SampleTest, SetupGuide, TurnOnSheet } from "./Guide";
 import { testState, type SampleResult } from "./lib/guide";
 
@@ -73,6 +74,9 @@ function samplePayload(trigger: Trigger, resourceId = "a resource id from the Re
   if (trigger.type === "telegram_message") return JSON.stringify({ chatId: "123456789", chatType: "private", fromId: "123456789", fromName: "Ana Reyes", username: "anareyes", messageId: 42, updateId: 1001, date: "2026-11-23T09:15:00.000Z", text: "GCash for order 12", fileRefused: false }, null, 2);
   if (trigger.type === "shopify_order") return JSON.stringify({ order_id: "820982911946154508", order_number: "#1001", customer_name: "Ana Reyes", customer_email: "ana@example.com", customer_phone: "+639171234567", total: "1250.50", currency: "PHP", financial_status: "pending", created_at: new Date().toISOString(), shop: "your-shop.myshopify.com", item_count: 2, items: "2 x Tote bag [TOTE-BLU]", line_items: [{ title: "Tote bag", variant_title: "", quantity: 2, price: "625.25", sku: "TOTE-BLU" }] }, null, 2);
   if (trigger.type === "booking_event") return JSON.stringify({ event: trigger.config.events[0] ?? "created", bookingId: "sample-booking-id", reference: "BK-1001", resourceId, resourceName: "Sample room", start: `${tomorrowAtTen()}:00+08:00`, end: `${tomorrowAtTen().slice(0, 10)}T11:00:00+08:00`, minutes: 60, timezone: "Asia/Manila", status: "active", version: 1, mode: "slot" }, null, 2);
+  if (trigger.type === "sheets_row") return JSON.stringify({ spreadsheetId: "sample-sheet", tab: trigger.config.tab, rowNumber: 2, values: ["Ana Reyes", "Ube jam"], cells: { name: "Ana Reyes", item: "Ube jam" } }, null, 2);
+  if (trigger.type === "calendar_event") return JSON.stringify({ calendarId: "sample-calendar", event: trigger.config.on, eventId: "sample-event", title: "Ana Reyes, haircut", description: "", location: "Main branch", start: `${tomorrowAtTen()}:00+08:00`, end: `${tomorrowAtTen().slice(0, 10)}T11:00:00+08:00`, link: "" }, null, 2);
+  if (trigger.type === "drive_file") return JSON.stringify({ folderId: "sample-folder", fileId: "sample-file", name: "receipt.pdf", mimeType: "application/pdf", size: 120000, createdTime: new Date().toISOString(), link: "", file: [] }, null, 2);
   if (trigger.type === "payment_event") return JSON.stringify({ event: trigger.config.events[0] ?? "confirmed", dueId: "sample-due-id", reference: "ORD-1001", kind: "deposit", status: trigger.config.events[0] ?? "confirmed", amountCentavos: 35000, amountPesos: "350.00" }, null, 2);
   const fields = trigger.type === "form" ? trigger.config.fields : trigger.type === "sub_workflow" ? (trigger.config.fields ?? []) : null;
   if (!fields || fields.length === 0) return "{}";
@@ -593,13 +597,15 @@ export function Editor({ id, from }: { id: string; from?: string }) {
           <SchemaForm key={step.id} schema={step.type === "ai" ? withoutFiles(catalog.schemas.ai!) : step.type === "google_docs" ? withoutTemplate(catalog.schemas.google_docs!) : step.type === "browser" ? withoutActions(catalog.schemas.browser!) : catalog.schemas[step.type]!} value={step.config as Record<string, unknown>} onChange={editStep} />
           {step.type === "browser" && <BrowserActions key={`${step.id}-actions`} actions={step.config.actions} onChange={(actions) => editStep({ ...step.config, actions })} />}
           {step.type === "ai" &&
-            ((draft.trigger.type === "form" && draft.trigger.config.fields.some((f) => f.type === "file")) || draft.trigger.type === "meta_dm" || draft.trigger.type === "telegram_message") && (
+            ((draft.trigger.type === "form" && draft.trigger.config.fields.some((f) => f.type === "file")) || draft.trigger.type === "meta_dm" || draft.trigger.type === "telegram_message" || draft.trigger.type === "drive_file") && (
             <fieldset>
               <legend>{t("Let the AI read these files")}</legend>
               {(draft.trigger.type === "form"
                 ? draft.trigger.config.fields.filter((f) => f.type === "file").map((f) => ({ name: f.name, label: f.label }))
                 : draft.trigger.type === "telegram_message"
                   ? [{ name: "file", label: t("Telegram photo or PDF") }]
+                  : draft.trigger.type === "drive_file"
+                  ? [{ name: "file", label: t("Drive photo or PDF") }]
                   : [{ name: "image", label: t("DM photo attachment") }]
               ).map((f) => (
                 <label key={f.name} className="check">
@@ -1174,7 +1180,7 @@ function NextUp({ draft, id }: { draft: Draft; id: string }) {
   );
 }
 
-const TRIGGER_ORDER: Trigger["type"][] = ["manual", "webhook", "schedule", "form", "email", "payment", "booking_event", "payment_event", "sub_workflow", "meta_dm", "telegram_message", "shopify_order"];
+const TRIGGER_ORDER: Trigger["type"][] = ["manual", "webhook", "schedule", "form", "email", "payment", "booking_event", "payment_event", "sub_workflow", "meta_dm", "telegram_message", "shopify_order", "sheets_row", "calendar_event", "drive_file"];
 const TRIGGER_DEFAULTS: Record<Trigger["type"], Trigger> = {
   manual: { type: "manual", config: {} },
   email: { type: "email", config: {} },
@@ -1188,6 +1194,9 @@ const TRIGGER_DEFAULTS: Record<Trigger["type"], Trigger> = {
   meta_dm: { type: "meta_dm", config: { channel: "both", requireImage: false } },
   shopify_order: { type: "shopify_order", config: {} },
   telegram_message: { type: "telegram_message", config: { from: "my_chat", requireFile: true } },
+  sheets_row: { type: "sheets_row", config: { tab: "Sheet1" } },
+  calendar_event: { type: "calendar_event", config: { on: "created", minutesBefore: 60 } },
+  drive_file: { type: "drive_file", config: { requireFile: false } },
 };
 
 function TriggerPanel({ trigger, wf, onChange }: { trigger: Trigger; wf: Loaded; onChange: (t: Trigger) => void }) {
@@ -1217,6 +1226,7 @@ function TriggerPanel({ trigger, wf, onChange }: { trigger: Trigger; wf: Loaded;
           ))}
         </select>
       </div>
+      {(trigger.type === "sheets_row" || trigger.type === "calendar_event" || trigger.type === "drive_file") && <GoogleTriggerSettings trigger={trigger} workflowId={wf.id} onChange={onChange} />}
       {trigger.type === "shopify_order" && (
         <p className="muted hint">
           {t("Runs for each new order in your Shopify store. The order number, customer, total and items are available as trigger fields.")}{" "}

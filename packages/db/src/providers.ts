@@ -495,6 +495,78 @@ export async function driveUpload(urls: ProviderUrls, auth: GoogleAuth, folderId
   return { id };
 }
 
+// ---------------------------------------------------------------- Google trigger reads (G2, decision 0127)
+
+/** Every filled row of the tab, as text. Reads only. Columns past ZZ are not read. */
+export async function sheetValues(urls: ProviderUrls, auth: GoogleAuth, spreadsheetId: string, tab: string): Promise<string[][]> {
+  const body = await sheets(urls, auth, `/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}/values/${range(tab, "A:ZZ")}?majorDimension=ROWS`, {}, false);
+  return ((body.values as unknown[][] | undefined) ?? []).map((row) => row.map((v) => String(v ?? "")));
+}
+
+export type GoogleEvent = { id: string; status?: string; summary?: string; description?: string; location?: string; htmlLink?: string; created?: string; updated?: string; start?: { dateTime?: string; date?: string }; end?: { dateTime?: string; date?: string } };
+
+/** Events changed since updatedMin (oldest change first), one page. more: another page is waiting. */
+export async function calendarEventsSince(urls: ProviderUrls, auth: GoogleAuth, calendarId: string, updatedMin: string) {
+  const q = new URLSearchParams({ updatedMin, singleEvents: "true", orderBy: "updated", maxResults: "250" });
+  const res = await calendar(urls, auth, `${eventsPath(calendarId)}?${q}`, {}, false);
+  return { items: (res.body.items as GoogleEvent[] | undefined) ?? [], more: typeof res.body.nextPageToken === "string" };
+}
+
+/** Events that end after timeMin and start before timeMax, one page. */
+export async function calendarEventsBetween(urls: ProviderUrls, auth: GoogleAuth, calendarId: string, timeMin: string, timeMax: string) {
+  const q = new URLSearchParams({ timeMin, timeMax, singleEvents: "true", orderBy: "startTime", maxResults: "250" });
+  const res = await calendar(urls, auth, `${eventsPath(calendarId)}?${q}`, {}, false);
+  return (res.body.items as GoogleEvent[] | undefined) ?? [];
+}
+
+export type DriveFile = { id: string; name: string; mimeType: string; size?: string; createdTime: string; webViewLink?: string };
+
+/** Files created in the folder at or after since, oldest first, one page of 10 (each may be downloaded). more: another page is waiting. */
+export async function driveFilesSince(urls: ProviderUrls, auth: GoogleAuth, folderId: string, since: string) {
+  const q = new URLSearchParams({
+    q: `'${folderId}' in parents and trashed = false and createdTime >= '${since}' and mimeType != 'application/vnd.google-apps.folder'`,
+    orderBy: "createdTime",
+    pageSize: "10",
+    supportsAllDrives: "true",
+    includeItemsFromAllDrives: "true",
+    fields: "nextPageToken,files(id,name,mimeType,size,createdTime,webViewLink)",
+  });
+  const res = await drive(urls, auth, `/drive/v3/files?${q}`, {}, false);
+  return { files: (res.body.files as DriveFile[] | undefined) ?? [], more: typeof res.body.nextPageToken === "string" };
+}
+
+/** A file's bytes, at most maxBytes; null when it is larger. Errors are "unavailable", so the poll tries again later. */
+export async function driveDownload(urls: ProviderUrls, auth: GoogleAuth, fileId: string, maxBytes: number): Promise<Buffer | null> {
+  const token = await bearer(urls, auth, DRIVE_SCOPE);
+  let res: Response;
+  try {
+    res = await fetch(`${urls.drive}/drive/v3/files/${encodeURIComponent(fileId)}?alt=media&supportsAllDrives=true`, { headers: { authorization: `Bearer ${token}` }, redirect: "error", signal: AbortSignal.timeout(urls.timeoutMs ?? 30_000) });
+  } catch {
+    throw new ProviderError("Google Drive could not be reached. Daloy will try again.", "unavailable");
+  }
+  if (res.status !== 200 || !res.body) {
+    await res.body?.cancel();
+    if (res.status === 401) throw new ProviderError("Google did not accept Daloy's access. Connect Google Drive again.", "auth");
+    throw new ProviderError(`Google Drive answered ${res.status} for a file. Daloy will try again.`, "unavailable");
+  }
+  if (Number(res.headers.get("content-length")) > maxBytes) {
+    await res.body.cancel();
+    return null;
+  }
+  const chunks: Buffer[] = [];
+  let total = 0;
+  try {
+    for await (const chunk of res.body) {
+      total += chunk.length;
+      if (total > maxBytes) return null;
+      chunks.push(Buffer.from(chunk));
+    }
+  } catch {
+    throw new ProviderError("The download from Google Drive broke off. Daloy will try again.", "unavailable");
+  }
+  return Buffer.concat(chunks);
+}
+
 // ---------------------------------------------------------------- Slack
 
 const SLACK_AUTH = new Set(["invalid_auth", "not_authed", "token_revoked", "token_expired", "account_inactive"]);

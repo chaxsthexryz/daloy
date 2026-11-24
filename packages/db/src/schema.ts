@@ -188,6 +188,26 @@ export const triggers = pgTable("triggers", {
   createdAt: createdAt(),
 });
 
+/**
+ * G2 (decision 0127): what the worker's poll knows about one automation's Google trigger. source is what it watches
+ * (a change starts over with a new first poll); cursor null means the first poll has not run. problem is the reason
+ * shown to the owner, set while paused or retrying. No credentials here.
+ */
+export const triggerPolls = pgTable(
+  "trigger_polls",
+  {
+    workflowId: uuid("workflow_id").primaryKey().references(() => workflows.id, { onDelete: "cascade" }),
+    source: text("source"),
+    cursor: jsonb("cursor").$type<Record<string, unknown>>(),
+    nextPollAt: ts("next_poll_at").notNull().defaultNow(),
+    claimUntil: ts("claim_until"),
+    failures: integer("failures").notNull().default(0),
+    problem: text("problem"),
+    lastPolledAt: ts("last_polled_at"),
+  },
+  (t) => [index("trigger_polls_due").on(t.nextPollAt)],
+);
+
 /** One dedicated mailbox per workflow. Revision and claim fence old checks, polls and disconnected credentials. */
 export const emailSources = pgTable("email_sources", {
   id: id(),
