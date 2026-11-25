@@ -70,7 +70,7 @@ async function member(ownerAgent: Agent, role: "operator" | "approver" | "reques
 describe("registration and sign-in", () => {
   it("makes a new account the owner of its own workspace", async () => {
     const o = await owner();
-    expect((await o.agent.get("/auth/me").expect(200)).body).toEqual({ id: o.id, email: o.email, workspaceId: o.id, role: "owner", ask: false, language: "en" });
+    expect((await o.agent.get("/auth/me").expect(200)).body).toEqual({ id: o.id, email: o.email, workspaceId: o.id, role: "owner", ask: false, language: "en", admin: false });
   });
 });
 
