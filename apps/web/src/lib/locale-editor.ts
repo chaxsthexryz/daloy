@@ -196,4 +196,12 @@ export const editorTranslations: Record<string, string> = {
   date: "Petsa",
   time: "Oras",
   datetime: "Petsa at oras",
+  "Open Knowledge": "Buksan ang Knowledge",
+  "See plan and usage": "Tingnan ang plan at nagamit",
+  "Manage rooms and resources": "Pamahalaan ang mga kuwarto at resource",
+  "Add a room or resource": "Magdagdag ng kuwarto o resource",
+  "e.g. Deluxe Room": "hal. Deluxe Room",
+  "Adding...": "Idinaragdag...",
+  "Add": "Idagdag",
+  "Fix the blocking checks above before turning this automation on.": "Ayusin muna ang mga nakaharang na check sa itaas bago i-on ang automation na ito.",
 };

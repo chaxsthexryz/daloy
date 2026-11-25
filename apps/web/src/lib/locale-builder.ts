@@ -400,5 +400,8 @@ export const builderTranslations: Record<string, string> = {
   "Anyone with this URL can start a run. Add a signing secret in the trigger settings to refuse other callers.": "Kahit sino na may URL na ito ay puwedeng magsimula ng run. Maglagay ng signing secret sa settings ng trigger para tanggihan ang ibang tumatawag.",
   "Try it from a terminal": "Subukan mula sa terminal",
   "curl example": "Halimbawa sa curl",
-  "Set SECRET to the value of {name} first. Never paste the secret into a shared chat.": "Ilagay muna sa SECRET ang value ng {name}. Huwag kailanman i-paste ang secret sa chat na kita ng iba."
+  "Set SECRET to the value of {name} first. Never paste the secret into a shared chat.": "Ilagay muna sa SECRET ang value ng {name}. Huwag kailanman i-paste ang secret sa chat na kita ng iba.",
+  "Browse the template library": "Tingnan ang template library",
+  "Use this template": "Gamitin ang template na ito",
+  "Failed": "Nabigo",
 };

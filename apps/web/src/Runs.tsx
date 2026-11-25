@@ -361,7 +361,7 @@ function RunPanel({ runId, overview }: { runId: string | null; overview: string 
 const STEP_STATE: Record<string, string> = { succeeded: "Done", failed: "Failed", running: "Working", pending: "Working", waiting: "Waiting", needs_review: "Needs you", cancelled: "Cancelled", skipped: "Skipped" };
 
 /** #/runs/<id> (O2, Doop frame aquI2X-gdg): the run's step timeline beside its outcome and recovery controls. Polls until the run finishes. */
-export function RunPage({ runId, owner, ask }: { runId: string; owner: boolean; ask?: boolean }) {
+export function RunPage({ runId, owner, ask, admin = false }: { runId: string; owner: boolean; ask?: boolean; admin?: boolean }) {
   const { t } = useLanguage();
   const [reload, setReload] = useState(0);
   const [deliveryFailed, setDeliveryFailed] = useState(false);
@@ -419,7 +419,7 @@ export function RunPage({ runId, owner, ask }: { runId: string; owner: boolean; 
             <StatePill run={{ ...run, deliveryFailed }} note />
           </p>
           {run.superseded && <p className="act-alert">{t(SUPERSEDED)}</p>}
-          <RunWhy run={run} owner={owner} />
+          <RunWhy run={run} owner={owner} admin={admin} />
           <RunDeliveries runId={runId} onLoad={(l) => setDeliveryFailed(l.some((d) => d.state === "failed"))} />
           <dl className="act-facts">
             <div>
@@ -508,7 +508,7 @@ function RunFiles({ runId, payload }: { runId: string; payload: unknown }) {
 type Explanation = { facts: unknown; fixed: { headline: string; lines: string[]; fix: { href: string; label: string } | null } };
 
 /** Why a stopped run stopped: the server's fixed explanation (fetched once per state change), else the plain error. Owners can ask the AI model to reword it. */
-function RunWhy({ run, owner }: { run: Run; owner: boolean }) {
+function RunWhy({ run, owner, admin }: { run: Run; owner: boolean; admin: boolean }) {
   const { language, t } = useLanguage();
   const key = plainState(run).key;
   const stopped = key === "problem" || key === "needs_you";
@@ -528,7 +528,7 @@ function RunWhy({ run, owner }: { run: Run; owner: boolean }) {
       live = false;
     };
   }, [run.id, stopped, key, language]);
-  if (!fixed) return run.error ? <section aria-label={t("Why it stopped")}><RunError error={run.error} owner={owner} /></section> : null;
+  if (!fixed) return run.error ? <section aria-label={t("Why it stopped")}><RunError error={run.error} owner={owner} admin={admin} /></section> : null;
   const ask = () => {
     setAsking(true);
     api<{ text: string }>("POST", `/runs/${run.id}/explanation/reword`, {})
@@ -536,15 +536,16 @@ function RunWhy({ run, owner }: { run: Run; owner: boolean }) {
       .catch((e) => setReply(e instanceof ApiError && e.status === 429 ? { error: e.message } : { modelFailed: true }))
       .finally(() => setAsking(false));
   };
+  const visibleFix = fixed.fix && fixed.fix.href === "#/settings/ai" && !admin ? { href: "#/settings", label: t("See plan and usage") } : fixed.fix;
   return (
     <section aria-label={t("Why it stopped")}>
       <p className={key === "problem" ? "message error" : "message"}>{fixed.headline}</p>
       {fixed.lines.map((l, i) => (
         <p key={i}>{l}</p>
       ))}
-      {owner && fixed.fix && (
+      {owner && visibleFix && (
         <p>
-          <a href={fixed.fix.href}>{fixed.fix.label}</a>
+          <a href={visibleFix.href}>{visibleFix.label}</a>
         </p>
       )}
       {owner && (
@@ -561,7 +562,13 @@ function RunWhy({ run, owner }: { run: Run; owner: boolean }) {
       {reply?.error && <p role="alert" className="message error">{reply.error}</p>}
       {reply?.modelFailed && (
         <p role="alert" className="message error">
-          {t("The AI model could not answer.")} <a href="#/settings/ai">{t("Check the AI model")}</a>
+          {t("The AI model could not answer.")}
+          {admin && (
+            <>
+              {" "}
+              <a href="#/settings/ai">{t("Check the AI model")}</a>
+            </>
+          )}
         </p>
       )}
     </section>
@@ -569,9 +576,9 @@ function RunWhy({ run, owner }: { run: Run; owner: boolean }) {
 }
 
 /** The run's error in the owner's words, with a link to the page that fixes it when the error says which (owners only). */
-function RunError({ error, owner }: { error: string; owner: boolean }) {
+function RunError({ error, owner, admin }: { error: string; owner: boolean; admin: boolean }) {
   const { t } = useLanguage();
-  const fix = owner ? fixFor(error) : null;
+  const fix = owner ? fixFor(error, admin) : null;
   return (
     <p className="message error">
       {ownerError(error)}

@@ -283,6 +283,10 @@
 .r2b-state { color: var(--a7-label); font-weight: 600; }
 .r2b-guide li[data-done] .r2b-state { color: var(--a7-ok); }
 .r2b-example { padding: 8px 10px; border: 1px dashed var(--a7-line); border-radius: 8px; }
+.r2b-inline-resource { display: grid; gap: 6px; padding: 8px 10px; border: 1px solid var(--a7-line); border-radius: 8px; }
+.r2b-inline-resource label { font-size: 12px; font-weight: 600; }
+.r2b-inline-resource-row { display: flex; gap: 6px; align-items: center; }
+.r2b-inline-resource-row input { flex: 1; min-width: 0; }
 .r2b-lines { display: grid; gap: 6px; margin-top: 10px; max-height: 50vh; overflow: auto; font-size: 14px; line-height: 20px; }
 
 /* Letter-tile brand tints inside editor nodes and menus (decision 0085 keeps SVG marks unaltered). */

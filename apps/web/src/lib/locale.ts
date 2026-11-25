@@ -102,6 +102,10 @@ const tagalog: Record<string, string> = {
   "Loading…": "Naglo-load…", "Retry": "Subukan ulit", "Cancel": "Kanselahin", "Save": "I-save", "Back": "Bumalik", "Next": "Susunod", "Close": "Isara", "Delete": "Burahin", "Edit": "Baguhin", "Done": "Tapos na", "Continue": "Magpatuloy", "Connect": "Ikonekta", "Disconnect": "Idiskonekta", "Connected": "Nakakonekta", "More": "Iba pa", "All": "Lahat", "Name": "Pangalan", "Email": "Email", "Status": "Status", "Actions": "Mga aksyon", "Reference": "Reference", "Resource": "Resource", "Time": "Oras", "Move": "Ilipat", "No bookings yet. They appear when a workflow's booking step books a resource.": "Wala pang booking. Lalabas dito ang booking kapag may nareserbang resource ang automation.",
   "Find an app": "Maghanap ng app", "Choose an automation": "Pumili ng automation", "Receive website form emails": "Tumanggap ng email mula sa website form", "Your business": "Ang negosyo mo", "Business name": "Pangalan ng negosyo", "Website": "Website", "Inbox for new inquiries": "Inbox para sa mga bagong inquiry", "Reply address (optional)": "Reply address (opsyonal)",
   "Resources": "Mga resource", "AI model": "AI model", "API tokens": "API tokens",
+  "Page not found": "Hindi makita ang page",
+  "AI model settings are managed by the kymavo operator for this workspace.": "Ang mga setting ng AI model ay pinamamahalaan ng kymavo operator para sa workspace na ito.",
+  "This page does not exist, or your account cannot open it.": "Hindi umiiral ang page na ito, o walang access dito ang account mo.",
+  "Back to Automations": "Bumalik sa Mga automation",
 };
 
 /** True when the Tagalog dictionary has an entry for `source`, even one that keeps the English word. */

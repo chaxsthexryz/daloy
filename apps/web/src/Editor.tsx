@@ -1,6 +1,6 @@
 import "./editor.css";
 import { useLanguage } from "./Language";
-import { canSendAlone, configProblems, definitionSchema, destination, lintDefinition, markText, stepBranches, stepEntry, stepLabel, STEP_NOTE_MAX, triggerEntry, triggerLabel, type FormField, type Step, type StepErrorPolicy, type Trigger } from "@daloy/engine";
+import { canSendAlone, definitionSchema, destination, lintDefinition, markText, preflightProblems, stepBranches, stepEntry, stepLabel, STEP_NOTE_MAX, triggerEntry, triggerLabel, type FormField, type Step, type StepErrorPolicy, type Trigger } from "@daloy/engine";
 import { OUTSIDE_STEPS } from "@daloy/engine";
 import { AppMark } from "./AppMark";
 import { Breadcrumb } from "./Breadcrumb";
@@ -10,7 +10,7 @@ import { AskAi } from "./AiDraft";
 import { ChatTest } from "./ChatTest";
 import { FormEmbed } from "./FormEmbed";
 import { shareable, ShareSheet } from "./SharePanel";
-import { api, FINISHED, type Run, type RunSummary, type Version, type Workflow } from "./api";
+import { api, FINISHED, getUsage, type Run, type RunSummary, type Version, type Workflow } from "./api";
 import { DropLine, editorEdgeTypes, editorNodeTypes, flowAriaLabels, ZoomBar } from "./FlowCanvas";
 import { RunResult, StatePill, StepAttempt, useRun } from "./Runs";
 import { ADDABLE, addStep, blankDraft, canMove, connectSteps, duplicateStep, moveStep, readCopiedStep, removeStep, setDisabled, toFlow, type AddableType, type ConnectError, type Draft } from "./lib/graph";
@@ -73,7 +73,7 @@ function connectReason(e: ConnectError, t: (source: string, values?: Record<stri
 
 const PANEL_STEPS_FIT = { maxZoom: 1, padding: { top: "16px", right: "16px", bottom: "64px", left: "16px" } } as const;
 
-type Catalog = { schemas: Record<string, JsonSchema>; branches: Record<string, string[]> };
+type Catalog = { schemas: Record<string, JsonSchema>; branches: Record<string, string[]>; sms?: boolean };
 type Loaded = Workflow & { trigger: { id: string; type: string; webhookPath: string | null; legacySignatureAt?: string | null } | null; live: Version | null; latest: Version | null };
 
 // Tomorrow at 10:00 in the field's own zone, which is on any slot grid that divides the hours evenly.
@@ -107,7 +107,20 @@ function samplePayload(trigger: Trigger, resourceId = "a resource id from the Re
   if (!fields || fields.length === 0) return "{}";
   // File fields are left out: a test run takes no files, and the server drops a value sent for one.
   const sample = Object.fromEntries(
-    fields.filter((f) => f.type !== "file").map((f) => [f.name, f.type === "number" ? 1 : f.type === "email" ? "ana@example.com" : f.type === "datetime" ? tomorrowAtTen() : f.type === "resource" ? resourceId : `Sample ${f.label.toLowerCase()}`]),
+    fields.filter((f) => f.type !== "file").map((f) => [
+      f.name,
+      f.type === "number"
+        ? 1
+        : f.type === "email"
+          ? "ana@example.com"
+          : f.type === "datetime"
+            ? tomorrowAtTen()
+            : f.type === "resource"
+              ? resourceId
+              : /(phone|mobile|whatsapp)/i.test(`${f.name} ${f.label}`)
+                ? "+639171234567"
+                : `Sample ${f.label.toLowerCase()}`,
+    ]),
   );
   return JSON.stringify(sample, null, 2);
 }
@@ -158,6 +171,9 @@ export function Editor({ id, from }: { id: string; from?: string }) {
   const wide = useMedia("(min-width: 1000px)");
   const [selected, setSelected] = useState<string | null>(null);
   const [firstResource, setFirstResource] = useState<string | undefined>();
+  const [activeResourceCount, setActiveResourceCount] = useState<number | undefined>();
+  const [smsMeter, setSmsMeter] = useState<{ limit: number | null; used: number } | undefined>();
+  const [knowledgePublished, setKnowledgePublished] = useState<boolean | undefined>();
   const [measured, setMeasured] = useState<Record<string, { width: number; height: number }>>({});
   const [message, setMessage] = useState<{ kind: "error" | "ok"; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -191,12 +207,18 @@ export function Editor({ id, from }: { id: string; from?: string }) {
     return w;
   };
   useEffect(() => {
-    void Promise.all([reload(), api<Catalog>("GET", "/step-schemas"), api<{ id: string; active: boolean }[]>("GET", "/resources").catch(() => [])])
+    void Promise.all([
+      reload(),
+      api<Catalog>("GET", "/step-schemas"),
+      api<{ id: string; active: boolean }[]>("GET", "/resources").catch(() => null),
+    ])
       .then(([w, c, r]) => {
         const d = (w.latest?.definition as Draft | undefined) ?? blankDraft();
         setDraft(d);
-        setFirstResource(r.find((x) => x.active)?.id);
-        setPayload(samplePayload(d.trigger, r.find((x) => x.active)?.id));
+        const active = r ? r.filter((x) => x.active) : [];
+        setFirstResource(active[0]?.id);
+        setActiveResourceCount(r ? active.length : undefined);
+        setPayload(samplePayload(d.trigger, active[0]?.id));
         if (from) {
           void api<Run>("GET", `/runs/${from}`).then(
             (x) => {
@@ -212,6 +234,14 @@ export function Editor({ id, from }: { id: string; from?: string }) {
         if (w.setup && !w.live && d.steps.length > 0 && !wasExplained(id)) setShowExplain(true);
       })
       .catch((e: Error) => setMessage({ kind: "error", text: e.message }));
+    getUsage().then(
+      (u) => setSmsMeter(u.sms ? { limit: u.sms.limit, used: u.sms.used } : undefined),
+      () => undefined,
+    );
+    api<{ published: { entryCount: number } | null }>("GET", "/knowledge").then(
+      (k) => setKnowledgePublished(Boolean(k.published && k.published.entryCount > 0)),
+      () => undefined,
+    );
     api<{ connections: ConnInfo[] }>("GET", "/settings/connections").then(
       (r) => {
         setConns(r.connections);
@@ -403,7 +433,37 @@ export function Editor({ id, from }: { id: string; from?: string }) {
   if (!wf || !catalog) return <main className="page a7-loading">{message ? <p role="alert">{message.text}</p> : <p>{t("Loading…")}</p>}</main>;
 
   const step = draft.steps.find((s) => s.id === selected);
-  const problems = configProblems(draft, language);
+  const problems = preflightProblems(
+    draft,
+    {
+      smsConfigured: catalog.sms,
+      smsLimit: smsMeter?.limit,
+      smsUsed: smsMeter?.used,
+      resourceCount: activeResourceCount,
+      knowledgePublished,
+    },
+    language,
+  );
+  const addInlineResource = async (name: string) => {
+    const created = await api<{ id: string; active: boolean }>("POST", "/resources", { name });
+    setActiveResourceCount((c) => (c ?? 0) + 1);
+    setFirstResource((prev) => prev ?? created.id);
+    if (draft.trigger.type === "form" || draft.trigger.type === "sub_workflow") {
+      const resourceFields = (draft.trigger.config.fields ?? []).filter((f) => f.type === "resource").map((f) => f.name);
+      if (resourceFields.length > 0) {
+        try {
+          const parsed = JSON.parse(payload) as Record<string, unknown>;
+          for (const field of resourceFields) {
+            const cur = parsed[field];
+            if (!cur || cur === "a resource id from the Resources page") parsed[field] = created.id;
+          }
+          setPayload(JSON.stringify(parsed, null, 2));
+        } catch {
+          setPayload(samplePayload(draft.trigger, created.id));
+        }
+      }
+    }
+  };
   const test = testState(JSON.stringify(draft), sample, sample ? (sampleRun?.id === sample.runId ? sampleRun.state : null) : null);
   const closeExplain = () => {
     setShowExplain(false);
@@ -969,7 +1029,7 @@ export function Editor({ id, from }: { id: string; from?: string }) {
                       </ul>
                     </section>
                   )}
-                  <SampleTest draft={draft} apps={apps} test={test} run={sampleRun} busy={busy} onTry={() => void testRun("mock")} />
+                  <SampleTest draft={draft} apps={apps} problems={problems} test={test} run={sampleRun} busy={busy} onTry={() => void testRun("mock")} onAddResource={addInlineResource} />
                   <ChatTest workflowId={id} draft={draft} onRun={(r) => { setRunId(r); setDirty(false); void reload(); }} />
                   <div className="a7-ai">
                     <AskAi
@@ -1074,7 +1134,7 @@ export function Editor({ id, from }: { id: string; from?: string }) {
           apps={apps}
           chosen={chosen}
           test={test}
-          problems={problems.length}
+          problems={problems}
           onConfirm={() => {
             setShowTurnOn(false);
             void save(true);

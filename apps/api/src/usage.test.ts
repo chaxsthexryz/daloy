@@ -101,6 +101,24 @@ describe("Build with AI quota", () => {
     replies = [valid];
     await agent.post("/ai/draft").send({ request: "thank people" }).expect(200);
   });
+
+  it("spends 0 AI quota when /ai/draft or /ai/chat fails with 502 or 422", async () => {
+    const { agent } = await owner("pilot");
+    replies = ["not json", "still not json"];
+    await agent.post("/ai/draft").send({ request: "thank people" }).expect(422);
+    expect((await agent.get("/usage").expect(200)).body.ai.used).toBe(0);
+
+    replies = ["not json", "still not json"];
+    await agent.post("/ai/chat").send({ messages: [{ role: "user", content: "thank people" }] }).expect(422);
+    expect((await agent.get("/usage").expect(200)).body.ai.used).toBe(0);
+
+    vi.stubEnv("LLM_BASE_URL", "http://127.0.0.1:9");
+    await agent.post("/ai/draft").send({ request: "thank people" }).expect(502);
+    await agent.post("/ai/chat").send({ messages: [{ role: "user", content: "thank people" }] }).expect(502);
+    expect((await agent.get("/usage").expect(200)).body.ai.used).toBe(0);
+    vi.unstubAllEnvs();
+    vi.stubEnv("LLM_BASE_URL", `http://127.0.0.1:${(llm.address() as AddressInfo).port}`);
+  });
 });
 
 describe("live automation limit", () => {

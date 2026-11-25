@@ -127,6 +127,17 @@ describe("closestTemplate", () => {
     expect(closestTemplate({}, "Reply to my WEBSITE visitors")).toMatchObject({ label: "Reply to a website inquiry", href: "#/settings/business" });
     expect(closestTemplate({ approve: "no" }, "Answer every Inquiry")).toMatchObject({ href: "#/settings/business" });
   });
+  it("matches resort, Messenger, GCash, booking, invoice, Shopify and Lalamove keywords", () => {
+    expect(closestTemplate({}, "Resort concierge on Messenger and Instagram with GCash")).toMatchObject({ slug: "resort-concierge-dm" });
+    expect(closestTemplate({}, "Hotel guest email concierge for inquiries")).toMatchObject({ slug: "resort-concierge-email" });
+    expect(closestTemplate({}, "Appointment booking with GCash or QR Ph deposit")).toMatchObject({ slug: "booking-deposit-review" });
+    expect(closestTemplate({}, "Order checkout with GCash and PayMongo")).toMatchObject({ slug: "order-gcash-checkout" });
+    expect(closestTemplate({}, "GCash receipt photo on Messenger")).toMatchObject({ slug: "meta-receipt-intake" });
+    expect(closestTemplate({}, "Book a Lalamove rider for my orders")).toMatchObject({ slug: "lalamove-confirmed-order" });
+    expect(closestTemplate({}, "Send invoice PDF and chase unpaid clients")).toMatchObject({ slug: "invoice-pdf" });
+    expect(closestTemplate({}, "Log my Shopify store orders to Google Sheets")).toMatchObject({ slug: "shopify-orders" });
+    expect(closestTemplate({}, "Lead to booking appointment reminder")).toMatchObject({ slug: "lead-to-booking" });
+  });
   it("falls back to tracking an office request", () => {
     expect(closestTemplate({ approve: "no" }, "keep track of things")).toMatchObject({ action: "office", label: "Track an office request" });
   });

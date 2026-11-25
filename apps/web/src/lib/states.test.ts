@@ -20,8 +20,10 @@ describe("fixFor", () => {
     for (const e of ["Slack no longer accepts the app's token.", "Connect Google Sheets again.", "Reconnect Outlook.", "The Teams workflow was deleted."])
       expect(fixFor(e)).toEqual({ href: "#/apps", label: "Check the connection" });
   });
-  it("points AI key errors to the AI model page", () => {
-    expect(fixFor("step c: OpenRouter has no saved API key")).toEqual({ href: "#/settings/ai", label: "Check the AI model" });
+  it("points AI key errors to the AI model page only for admins", () => {
+    expect(fixFor("step c: OpenRouter has no saved API key", true)).toEqual({ href: "#/settings/ai", label: "Check the AI model" });
+    expect(fixFor("step c: OpenRouter has no saved API key", false)).toEqual({ href: "#/settings", label: "See plan and usage" });
+    expect(fixFor("step c: OpenRouter has no saved API key")).toEqual({ href: "#/settings", label: "See plan and usage" });
   });
   it("offers nothing when it cannot tell", () => {
     expect(fixFor("step h: HTTP 500 from https://example.com")).toBeNull();

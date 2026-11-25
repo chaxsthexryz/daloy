@@ -10,6 +10,16 @@ export type ChatTrigger = Extract<Trigger, { type: keyof typeof REPLY_STEP }>;
 
 export const isChatTrigger = (trigger: Trigger): trigger is ChatTrigger => Object.hasOwn(REPLY_STEP, trigger.type);
 
+/** True when any enabled step in the draft requires a published Knowledge sheet. */
+export function needsPublishedKnowledge(draft: Draft): boolean {
+  return draft.steps.some((s) => !s.disabled && ((s.type === "ai" && s.config.task === "answer") || s.type === "stay_quote"));
+}
+
+/** Only pending or waiting runs can be cancelled without a 409 Conflict. */
+export function canCancelChatRun(run: { state: string } | null): boolean {
+  return run !== null && (run.state === "pending" || run.state === "waiting");
+}
+
 export type ChatTurn = { direction: "in" | "out"; text: string };
 type Row = { stepId: string; state: string; branch: string | null; input: unknown; output: unknown; error: string | null; createdAt: string };
 /** The part of a run the chat reads. */

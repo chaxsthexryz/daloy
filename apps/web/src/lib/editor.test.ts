@@ -103,6 +103,19 @@ describe("setupLeft", () => {
     expect(unconnectedNodes(sms, new Set(), true).size).toBe(0);
   });
 
+  it("does not ask to connect PayMongo for manual QR Ph payment_due + payment_status", () => {
+    const manualDeposit: Draft = {
+      trigger: { type: "manual", config: {} },
+      steps: [
+        { id: "ask_deposit", type: "payment_due", config: { reference: "BK-1", kind: "deposit", amount: "350", checkout: false, channel: "sms", to: "{{trigger.phone}}" } },
+        { id: "check_paid", type: "payment_status", config: { link: "ask_deposit" } },
+      ],
+      edges: [{ from: "ask_deposit", to: "check_paid" }],
+    };
+    expect(setupLeft(manualDeposit, new Set())).toEqual([]);
+    expect(unconnectedNodes(manualDeposit, new Set(), true).size).toBe(0);
+  });
+
   it("needs nothing for steps without an app", () => {
     expect(setupLeft({ ...receipt, steps: receipt.steps.filter((s) => s.type === "email") }, new Set())).toEqual([]);
   });

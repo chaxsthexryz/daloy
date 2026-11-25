@@ -1,5 +1,5 @@
-import { configProblems, explainFlow, paymentMode, stepLines, withoutRecipient } from "@daloy/engine";
-import { useState } from "react";
+import { configProblems, explainFlow, paymentMode, stepLines, withoutRecipient, type ConfigProblem } from "@daloy/engine";
+import { useState, type FormEvent } from "react";
 import { useLanguage } from "./Language";
 import { Sheet } from "./Sheet";
 import type { Run } from "./api";
@@ -70,17 +70,103 @@ const TEST_TEXT: Record<TestState, string> = {
 };
 
 /** Sample test results in three separate groups: configuration checks, simulated steps and live connections. */
-export function SampleTest({ draft, apps, test, run, busy, onTry }: { draft: Draft; apps: AppNeed[]; test: TestState; run: Run | null; busy: boolean; onTry: () => void }) {
+export function SampleTest({
+  draft,
+  apps,
+  problems,
+  test,
+  run,
+  busy,
+  onTry,
+  onAddResource,
+}: {
+  draft: Draft;
+  apps: AppNeed[];
+  problems: ConfigProblem[];
+  test: TestState;
+  run: Run | null;
+  busy: boolean;
+  onTry: () => void;
+  onAddResource?: (name: string) => Promise<void>;
+}) {
   const { t, language } = useLanguage();
   const [example, setExample] = useState(false);
-  const problems = configProblems(draft, language);
+  const [resourceName, setResourceName] = useState("");
+  const [addingResource, setAddingResource] = useState(false);
+  const [resourceError, setResourceError] = useState("");
   const failing = example ? configProblems(withoutRecipient(draft), language) : [];
+  const needsResource = problems.some((p) => p.kind === "missing_resource");
+  const createResource = async (e: FormEvent) => {
+    e.preventDefault();
+    const clean = resourceName.trim();
+    if (!clean || !onAddResource || addingResource) return;
+    setAddingResource(true);
+    setResourceError("");
+    try {
+      await onAddResource(clean);
+      setResourceName("");
+    } catch (err) {
+      setResourceError((err as Error).message);
+    } finally {
+      setAddingResource(false);
+    }
+  };
   return (
     <section className="r2b-sample" id="sample-checks" aria-labelledby="r2b-sample-title">
       <h2 id="r2b-sample-title">{t("Try a sample")}</h2>
       <p>{t(TEST_TEXT[test])}</p>
       <h3>{t("Configuration checks")}</h3>
-      {problems.length === 0 ? <p>{t("Every step has what it needs.")}</p> : <ul>{problems.map((p) => <li key={p.message}>{p.message}</li>)}</ul>}
+      {problems.length === 0 ? (
+        <p>{t("Every step has what it needs.")}</p>
+      ) : (
+        <ul className="r2b-problems">
+          {problems.map((p) => (
+            <li key={`${p.kind ?? "cfg"}:${p.message}`}>
+              <span>{p.message}</span>
+              {p.kind === "knowledge" && (
+                <>
+                  {" "}
+                  <a href="#/knowledge">{t("Open Knowledge")}</a>
+                </>
+              )}
+              {(p.kind === "sms_plan" || p.kind === "sms_quota") && (
+                <>
+                  {" "}
+                  <a href="#/settings">{t("See plan and usage")}</a>
+                </>
+              )}
+              {p.kind === "missing_resource" && (
+                <>
+                  {" "}
+                  <a href="#/resources">{t("Manage rooms and resources")}</a>
+                </>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+      {needsResource && onAddResource && (
+        <form className="r2b-inline-resource" onSubmit={(e) => void createResource(e)}>
+          <label htmlFor="r2b-resource-name">{t("Add a room or resource")}</label>
+          <div className="r2b-inline-resource-row">
+            <input
+              id="r2b-resource-name"
+              value={resourceName}
+              onChange={(e) => setResourceName(e.target.value)}
+              placeholder={t("e.g. Deluxe Room")}
+              maxLength={100}
+            />
+            <button type="submit" disabled={addingResource || !resourceName.trim()}>
+              {addingResource ? t("Adding...") : t("Add")}
+            </button>
+          </div>
+          {resourceError && (
+            <p role="alert" className="message error">
+              {resourceError}
+            </p>
+          )}
+        </form>
+      )}
       <h3>{t("Simulated steps")}</h3>
       {test === "none" || !run ? (
         <p>{t("Nothing is sent. Run the sample to see each step's outcome.")}</p>
@@ -90,7 +176,7 @@ export function SampleTest({ draft, apps, test, run, busy, onTry }: { draft: Dra
       <h3>{t("Live connections")}</h3>
       {apps.length === 0 ? <p>{t("This draft needs no connected app.")}</p> : <ul>{apps.map((a) => <li key={a.provider}>{t(a.label)}: {t(a.connected ? "Connected" : "Not connected")}</li>)}</ul>}
       <div className="actions">
-        <button type="button" onClick={onTry} disabled={busy || draft.steps.length === 0}>{t("Try a sample")}</button>
+        <button type="button" onClick={onTry} disabled={busy || draft.steps.length === 0 || needsResource}>{t("Try a sample")}</button>
         <button type="button" aria-pressed={example} onClick={() => setExample(!example)}>{t("Show a failing example")}</button>
       </div>
       {example && (
@@ -110,9 +196,26 @@ const PAYMENT: Record<NonNullable<ReturnType<typeof paymentMode>>, string> = {
 };
 
 /** The Turn on summary: the apps, recipients and payment mode this version will use. The owner decides. */
-export function TurnOnSheet({ draft, apps, chosen, test, problems, onConfirm, onClose }: { draft: Draft; apps: AppNeed[]; chosen: ReadonlyMap<string, string>; test: TestState; problems: number; onConfirm: () => void; onClose: () => void }) {
+export function TurnOnSheet({
+  draft,
+  apps,
+  chosen,
+  test,
+  problems,
+  onConfirm,
+  onClose,
+}: {
+  draft: Draft;
+  apps: AppNeed[];
+  chosen: ReadonlyMap<string, string>;
+  test: TestState;
+  problems: ConfigProblem[];
+  onConfirm: () => void;
+  onClose: () => void;
+}) {
   const { t, language } = useLanguage();
   const mode = paymentMode(draft);
+  const blocked = problems.some((p) => p.blocksPublish);
   return (
     <Sheet title={t("Turn on this automation")} onClose={onClose}>
       <div className="r2b-lines">
@@ -124,11 +227,22 @@ export function TurnOnSheet({ draft, apps, chosen, test, problems, onConfirm, on
         <p>{mode ? t(PAYMENT[mode]) : t("This automation does not ask for payment.")}</p>
         <h3>{t("Sample test")}</h3>
         <p>{t(TEST_TEXT[test])}</p>
-        {problems > 0 && <p className="message error">{t("{count} configuration checks still fail.", { count: problems })}</p>}
+        {problems.length > 0 && (
+          <div className="message error" role="alert">
+            <p>{t("{count} configuration checks still fail.", { count: problems.length })}</p>
+            <ul>
+              {problems.map((p) => (
+                <li key={`${p.kind ?? "cfg"}:${p.message}`}>{p.message}</li>
+              ))}
+            </ul>
+          </div>
+        )}
       </div>
-      <p className="wk-sheet-text">{t("Turning on replaces the live version at once.")}</p>
+      <p className="wk-sheet-text">
+        {t(blocked ? "Fix the blocking checks above before turning this automation on." : "Turning on replaces the live version at once.")}
+      </p>
       <div className="wk-sheet-actions">
-        <button type="button" className="wk-button blue" onClick={onConfirm}>{t("Turn on")}</button>
+        <button type="button" className="wk-button blue" disabled={blocked} onClick={onConfirm}>{t("Turn on")}</button>
         <button type="button" className="wk-button" onClick={onClose}>{t("Cancel")}</button>
       </div>
     </Sheet>

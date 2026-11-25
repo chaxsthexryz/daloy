@@ -1,11 +1,11 @@
-import { aiConnection, claimUsage, isLocalModel, QuotaError, type AiConnection, type Db } from "@daloy/db";
+import { aiConnection, claimUsage, isLocalModel, QuotaError, refundUsage, type AiConnection, type Db } from "@daloy/db";
 import { chatPrompt, lintDefinition, parseChatReply, type ChatMessage } from "@daloy/engine";
 import { generate, type Message } from "@daloy/llm-ts";
 import { Body, Controller, HttpCode, HttpException, HttpStatus, Inject, Post, UseGuards } from "@nestjs/common";
 import * as z from "zod";
 import { SessionGuard } from "./auth";
 import { Allow, CONFIG, CurrentUser, DB, RateLimit, ZodPipe, type ApiConfig, type SessionUser, MANAGE } from "./http";
-import { explain } from "./settings";
+import { explainForOwner } from "./settings";
 
 /** The app kinds the page may name, so nothing typed by a person reaches the prompt through this field. */
 const APP_KINDS = ["google_sheets", "slack", "outlook", "teams"] as const;
@@ -35,12 +35,20 @@ export class AiChatController {
   @HttpCode(200)
   @UseGuards(RateLimit(10))
   async chat(@CurrentUser() user: SessionUser, @Body(new ZodPipe(chatInput)) body: z.output<typeof chatInput>) {
-    const { model, ...connection } = await aiConnection(this.db, this.config.secretsKey, user.workspaceId);
-    // One message is one AI action, whatever the repair below does.
-    await claimUsage(this.db, user.workspaceId, "ai").catch((err: unknown) => {
+    const { model, ...connection } = await aiConnection(this.db, this.config.secretsKey, user.workspaceId).catch((err: unknown) => {
+      throw new HttpException({ message: explainForOwner(err) }, HttpStatus.BAD_GATEWAY);
+    });
+    const now = new Date();
+    // One message is one AI action, whatever the repair below does; failed calls refund the action.
+    await claimUsage(this.db, user.workspaceId, "ai", { now }).catch((err: unknown) => {
       throw err instanceof QuotaError ? new HttpException({ message: err.message }, HttpStatus.TOO_MANY_REQUESTS) : err;
     });
-    return chatTurn({ ...body, model, connection });
+    try {
+      return await chatTurn({ ...body, model, connection });
+    } catch (err) {
+      await refundUsage(this.db, user.workspaceId, "ai", { now }).catch(() => undefined);
+      throw err;
+    }
   }
 }
 
@@ -69,7 +77,7 @@ export async function chatTurn(input: {
       ({ text, usage } = await generate({ system: prompt.system, messages, model: input.model, connection: input.connection, temperature: 0.2, maxTokens: 4096, timeoutMs: 90_000 }));
     } catch (err) {
       if (firstDraft) return firstDraft;
-      throw new HttpException({ message: explain(err) }, HttpStatus.BAD_GATEWAY);
+      throw new HttpException({ message: explainForOwner(err) }, HttpStatus.BAD_GATEWAY);
     }
     if (input.stats) {
       input.stats.calls++;

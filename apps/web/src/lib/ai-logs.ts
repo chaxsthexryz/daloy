@@ -1,12 +1,13 @@
 import type { Draft, Turn } from "./ai-chat";
 
-export type AiLogStatus = "draft" | "saved" | "live";
+export type AiLogStatus = "draft" | "saved" | "live" | "failed";
 
 export interface AiConversationLog {
   id: string;
   title: string;
   updatedAt: string;
   status: AiLogStatus;
+  error?: string;
   turns: Turn[];
   draft: Draft | null;
 }
@@ -64,6 +65,7 @@ export function upsertAiLog(
     turns: Turn[];
     draft: Draft | null;
     status?: AiLogStatus;
+    error?: string;
   },
 ): AiConversationLog[] {
   if (entry.turns.length === 0 && !entry.draft) return loadAiLogs(email);
@@ -75,6 +77,7 @@ export function upsertAiLog(
     title: deriveTitle(entry.turns, entry.draft),
     updatedAt: new Date().toISOString(),
     status: nextStatus,
+    ...(nextStatus === "failed" && entry.error ? { error: entry.error } : {}),
     turns: entry.turns,
     draft: entry.draft,
   };
