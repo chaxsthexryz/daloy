@@ -57,7 +57,7 @@ export default async function setup() {
   let url = process.env.DATABASE_URL;
   let pg: EmbeddedPostgres | undefined;
   if (!url) {
-    pg = new EmbeddedPostgres({ databaseDir: mkdtempSync(join(tmpdir(), "daloy-e2e-")), port: 54330, user: "daloy", password: "daloy", persistent: false, onLog: () => {} });
+    pg = new EmbeddedPostgres({ databaseDir: mkdtempSync(join(tmpdir(), "daloy-e2e-")), port: 54330, user: "daloy", password: "daloy", persistent: false, initdbFlags: ["-E", "UTF8", "--no-locale"], onLog: () => {} });
     await pg.initialise();
     await pg.start();
     url = "postgres://daloy:daloy@localhost:54330/postgres";

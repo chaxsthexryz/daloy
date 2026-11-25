@@ -5,6 +5,7 @@ import { AppMark } from "./AppMark";
 import { Background, ReactFlow, type NodeChange } from "@xyflow/react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { AskAi } from "./AiDraft";
+import { ChatTest } from "./ChatTest";
 import { FormEmbed } from "./FormEmbed";
 import { shareable, ShareSheet } from "./SharePanel";
 import { api, FINISHED, type Run, type RunSummary, type Version, type Workflow } from "./api";
@@ -968,6 +969,7 @@ export function Editor({ id, from }: { id: string; from?: string }) {
                     </section>
                   )}
                   <SampleTest draft={draft} apps={apps} test={test} run={sampleRun} busy={busy} onTry={() => void testRun("mock")} />
+                  <ChatTest workflowId={id} draft={draft} onRun={(r) => { setRunId(r); setDirty(false); void reload(); }} />
                   <div className="a7-ai">
                     <AskAi
                       workflowId={id}
