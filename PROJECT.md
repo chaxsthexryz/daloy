@@ -343,8 +343,8 @@ DeepSeek's review is in `docs/roadmap-review-2026-11-18.md`. Claude's second opi
 - [x] T4. Notes on steps, shown on the canvas card and read by Explain this flow. Plain text up to 300 characters, never a template. No decision record, no migration.
 - [x] T5. One Share panel: form link and embed code, MCP tool name, webhook URL with its signing rule and a curl example. API tokens work on `/mcp` only, so the API example is the webhook call. No decision record, no migration.
 - [x] T6. `docker compose --profile local-ai up` runs Ollama with a small model. `ollama` and a one-shot `ollama-pull` (llama3.2) under the `local-ai` profile; set `LLM_BASE_URL=http://ollama:11434`. Compose and docs only, no code change.
-- [ ] T7. Answer from my price list: owner-written price list and answers, an AI `answer` task and a Messenger template. Covered by C3 and C4.
-- [ ] T8. Chat as your customer: test a Messenger workflow by typing as the customer.
+- [x] T7. Answer from my price list: owner-written price list and answers, an AI `answer` task and a Messenger template. Covered by C3 and C4.
+- [x] T8. Chat as your customer: test a Messenger, WhatsApp or Telegram workflow by typing as the customer. Each message is a real-AI test run with the reply step mocked; the bubble shows the reply step's text or the path the run took, and a failed AI step falls back to a mocked run. Decision 0139, no migration. (claimed: claude, branch claude/t8-chat-customer)
 - [x] T9. Telegram message trigger: a photo or PDF sent to your own bot (made with @BotFather) starts a workflow, from your chat only or from anyone. Photos and PDFs become uploads the AI step can read, the telegram step can reply to the sender, and a "Log GCash receipts from Telegram" template adds a Sheets row marked To check. Decision 0117, no migration. (claimed: claude, branch claude/t9-telegram-trigger)
 
 ## Console UI from the Paper file (docs/plans/console-ui-paper.md, 21 November 2026)

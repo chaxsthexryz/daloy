@@ -31,6 +31,7 @@ import { monitorChatTranslations } from "./locale-monitor-chat";
 import { adminTranslations } from "./locale-admin";
 import { whatsappTranslations } from "./locale-whatsapp";
 import { liveTranslations } from "./locale-live";
+import { chatTestTranslations } from "./locale-chat-test";
 export type Language = "en" | "tl";
 
 const tagalog: Record<string, string> = {
@@ -68,6 +69,7 @@ const tagalog: Record<string, string> = {
   ...adminTranslations,
   ...whatsappTranslations,
   ...liveTranslations,
+  ...chatTestTranslations,
   "Plan: {plan}": "Plan: {plan}",
   "{used}, no limit": "{used}, walang limit",
   "{used} of {limit}": "{used} sa {limit}",

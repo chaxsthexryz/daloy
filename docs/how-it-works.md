@@ -959,6 +959,22 @@ Edge cases:
 
 Tests: `e2e/test-with-data.spec.ts` (a failed run's data, with a password field shown as `[secret]`, becomes the sample, and the test run posts it in mock mode).
 
+#### Chat as your customer (T8, decision 0139)
+
+What it does: a workflow whose trigger is a Messenger or Instagram message (`meta_dm`), a WhatsApp message or a Telegram message gets a "Chat as your customer" box in the editor panel (`apps/web/src/ChatTest.tsx`). The owner types what a customer would send. Each message starts its own real-AI test run (`POST /workflows/:id/test-runs` with `mode: "ai"`), and the canvas lights up each step with the usual run animation. The bot bubble shows the reply step's resolved text (`meta_reply`, `whatsapp_reply` or `telegram`). When no reply step ran, the bubble lists the steps the run went through with their branch, for example "is_receipt (false)", and the run's error if it failed.
+
+Why it is built this way: the payload has the same fields as the real webhook's (`apps/api/src/public.ts`), with `senderId: "test-customer"`, so expressions such as `{{trigger.senderId}}` resolve as they would live. It also carries a test `conversation` whose history is the chat so far plus the new message, the way C1 records it, so an AI `answer` step (C4) reads the earlier turns and its reply still passes `guardReply`. A price-list flow can be tested by typing questions. The chat lives only in component state and is gone on reload.
+
+Nothing is sent and no real conversation changes: a test run is never linked to a conversation, reply steps and `conversation_update` are mocked in an ai run, and the answer step's staff take-over only runs outside test runs. Each message claims AI usage like any ai test run.
+
+Edge cases:
+- The console cannot tell whether a model is set up (the operator's env model is always the fallback), so the chat watches the run instead. When an AI step fails (no model reachable, no key, the AI limit), it cancels that run so it stops retrying, runs the same message mocked and says so under the bubble with the error (decision 0139).
+- A run that waits (a delay, an approval) or needs review ends the wait and shows its path so far.
+- A WhatsApp template reply shows as the template name in brackets.
+- A refused test run (an invalid draft, a rate limit) shows the API's message in the bubble.
+
+Tests: `apps/web/src/lib/chat-test.test.ts` (payload per trigger, history, reading the reply, the path, the failed AI step), `e2e/chat-test.spec.ts` (a typed question gets the fake model's answer from a published price list and the reply step lights up, the second message carries the history; a flow with no reply step shows its path).
+
 #### One Share panel (T5)
 
 A form or webhook workflow has a Share button in the editor toolbar. It reloads the workflow, then opens one sheet (`apps/web/src/SharePanel.tsx`) with what someone outside kymavo needs to start the published version. Nothing new on the API side: it reads the same published trigger as the trigger panel.

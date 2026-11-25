@@ -1,0 +1,14 @@
+/* T8: Chat as your customer, in the editor panel. */
+.t8-chat { display: flex; flex-direction: column; gap: 10px; padding-top: 20px; border-top: 1px solid var(--border-soft); }
+.t8-chat h2 { font-size: 16px; }
+.t8-chat-log { list-style: none; margin: 0; padding: 12px; display: flex; flex-direction: column; gap: 8px; max-height: 360px; overflow-y: auto; border: 1px solid var(--border-soft); border-radius: 10px; background: var(--sunken); }
+.t8-bubble { display: flex; flex-direction: column; gap: 2px; max-width: 85%; padding: 8px 12px; border-radius: 12px; background: var(--surface); border: 1px solid var(--border-soft); overflow-wrap: anywhere; }
+.t8-bubble.is-customer { align-self: flex-end; background: var(--accent-tint); }
+.t8-bubble.is-bot { align-self: flex-start; }
+.t8-who { font-size: 11px; color: var(--muted); }
+.t8-text { white-space: pre-wrap; color: var(--text); }
+.t8-bubble[aria-busy="true"] .t8-text { color: var(--muted); }
+.t8-note { font-size: 12px; color: var(--muted); }
+.t8-chat-form { display: flex; gap: 8px; }
+.t8-chat-form input { flex: 1; min-width: 0; }
+.t8-chat > .quiet { align-self: flex-start; }

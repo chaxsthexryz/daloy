@@ -57,6 +57,13 @@ export function startLlmFake(port: number) {
       if (body.model === "fake-broken") return res.writeHead(404).end(JSON.stringify({ error: "model 'fake-broken' not found" }));
       if (body.messages.some((m) => m.content.includes("charged twice for my March invoice")))
         return res.end(JSON.stringify({ message: { content: JSON.stringify({ label: "billing" }) }, prompt_eval_count: 40, eval_count: 3 }));
+      // T8: the answer task (C4) gets the knowledge sheet in its system prompt; quote the first entry's price and cite it.
+      const sheet = body.messages.find((m) => m.role === "system" && m.content.includes("These entries are the only facts you may use:\n"));
+      if (sheet) {
+        const [first] = JSON.parse(sheet.content.split("These entries are the only facts you may use:\n")[1]!) as { id: string; title: string; fields?: { price?: number } }[];
+        const reply = first ? { reply: `${first.title} is ₱${first.fields?.price ?? 0} per day.`, entryIds: [first.id], intent: "rates", needsHuman: false, fields: {} } : { reply: "Our team will reply here.", entryIds: [], intent: "other", needsHuman: true, fields: {} };
+        return res.end(JSON.stringify({ message: { content: JSON.stringify(reply) }, prompt_eval_count: 1, eval_count: 1 }));
+      }
       // An AI step (buildPrompt): record the images and the user text, and answer an extract task.
       if (body.messages.some((m) => m.role === "system" && m.content.startsWith("You are one step in an automated workflow"))) {
         const user = body.messages.filter((m) => m.role === "user");
