@@ -6,7 +6,7 @@ import { lintDefinition } from "./lint";
 
 // R5: Taglish wording next to English and Tagalog, for the templates that message customers.
 const ids = (d: { steps: { id: string }[] }) => d.steps.map((s) => s.id);
-const customerCopy = (d: { steps: { type: string; config: Record<string, unknown> }[] }) => JSON.stringify(d.steps.filter((s) => ["email", "sms", "meta_reply", "payment_due", "telegram"].includes(s.type)).map((s) => s.config));
+const customerCopy = (d: { steps: { type: string; config: Record<string, unknown> }[] }) => JSON.stringify(d.steps.filter((s) => ["email", "sms", "meta_reply", "whatsapp_reply", "payment_due", "telegram"].includes(s.type)).map((s) => s.config));
 
 describe("Taglish templates", () => {
   const en = templatesForLanguage("en");
@@ -18,7 +18,7 @@ describe("Taglish templates", () => {
   });
 
   it("changes the customer messages of the payment, reminder and order templates and nothing else", () => {
-    for (const slug of ["booking-deposit-review", "order-gcash-checkout", "invoice-follow-up", "appointment-reminder", "no-show-follow-up", "store-orders", "shopify-orders", "resort-concierge-dm", "resort-concierge-email", "resort-deposit-and-stay", "telegram-assistant"]) {
+    for (const slug of ["booking-deposit-review", "order-gcash-checkout", "invoice-follow-up", "appointment-reminder", "no-show-follow-up", "store-orders", "shopify-orders", "resort-concierge-dm", "resort-concierge-email", "resort-deposit-and-stay", "telegram-assistant", "freelancer-lead-crm", "freelancer-client-onboarding", "client-brief-to-trello", "whatsapp-inquiry-to-sheets", "customer-feedback-triage", "daily-morning-briefing"]) {
       const a = en.find((t) => t.slug === slug)!;
       const b = tg.find((t) => t.slug === slug)!;
       expect(customerCopy(b.definition as never), slug).not.toEqual(customerCopy(a.definition as never));

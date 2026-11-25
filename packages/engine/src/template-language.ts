@@ -8,7 +8,7 @@ const LABELS: Record<string, string> = {
   "Your name": "Pangalan mo", "Your email": "Email mo", "Email": "Email", "How can we help?": "Paano kami makakatulong?",
   "What needs attention?": "Ano ang kailangang asikasuhin?", "Where is it?": "Saan ito?", "Anything else we should know?": "May iba pa ba kaming dapat malaman?",
   "What do you want to buy?": "Ano ang gusto mong bilhin?", "Estimated cost": "Tinatayang halaga", "Why is it needed?": "Bakit ito kailangan?",
-  "Service": "Serbisyo", "Appointment time": "Oras ng appointment", "Preferred time": "Gustong oras", "Who or what to book": "Sino o ano ang ibu-book", "What do you need?": "Ano ang kailangan mo?", "What do you want to order?": "Ano ang gusto mong i-order?", "Amount in pesos": "Halaga sa piso", "Deposit in pesos": "Deposito sa piso", "Invoice number": "Numero ng invoice", "Customer name": "Pangalan ng customer", "Customer email": "Email ng customer", "What renews? (domain, hosting, SSL, permit, insurance)": "Ano ang ire-renew? (domain, hosting, SSL, permit, insurance)", "Expires on": "Mag-e-expire sa", "Send the reminder to": "Pagpapadalhan ng paalala", "Order number": "Numero ng order", "Total in pesos": "Kabuuan sa piso", "Receipt photo": "Litrato ng resibo", "Note": "Tala", "Mobile number": "Numero ng mobile", "Client name": "Pangalan ng kliyente", "Client email": "Email ng kliyente", "What is it for?": "Para saan ito?", "Quantity or hours": "Dami o oras", "Rate in pesos": "Presyo sa piso", "Due date": "Takdang petsa", "What is the work?": "Ano ang trabaho?",
+  "Service": "Serbisyo", "Appointment time": "Oras ng appointment", "Preferred time": "Gustong oras", "Who or what to book": "Sino o ano ang ibu-book", "What do you need?": "Ano ang kailangan mo?", "What do you want to order?": "Ano ang gusto mong i-order?", "Amount in pesos": "Halaga sa piso", "Deposit in pesos": "Deposito sa piso", "Invoice number": "Numero ng invoice", "Customer name": "Pangalan ng customer", "Customer email": "Email ng customer", "What renews? (domain, hosting, SSL, permit, insurance)": "Ano ang ire-renew? (domain, hosting, SSL, permit, insurance)", "Expires on": "Mag-e-expire sa", "Send the reminder to": "Pagpapadalhan ng paalala", "Order number": "Numero ng order", "Total in pesos": "Kabuuan sa piso", "Receipt photo": "Litrato ng resibo", "Note": "Tala", "Mobile number": "Numero ng mobile", "Client name": "Pangalan ng kliyente", "Client email": "Email ng kliyente", "What is it for?": "Para saan ito?", "Quantity or hours": "Dami o oras", "Rate in pesos": "Presyo sa piso", "Due date": "Takdang petsa", "What is the work?": "Ano ang trabaho?", "Business or project": "Negosyo o proyekto", "Budget in pesos": "Badyet sa piso", "Project brief": "Detalye ng proyekto", "Project name": "Pangalan ng proyekto", "Goals and deliverables": "Mga layunin at kailangan ipasa", "Brand assets or brief": "Mga brand file o brief", "Task or revision title": "Pamagat ng task o revision", "What needs to be done?": "Ano ang kailangang gawin?", "Rating (1 to 5)": "Rating (1 hanggang 5)", "How did we do?": "Kumusta ang serbisyo namin?",
 };
 type Message = { subject?: string; text?: string; message?: string; confirmedMessage?: string; quickReplies?: Menu; menu?: Menu };
 
@@ -177,6 +177,52 @@ export function localizeGeneratedDefinition(definition: WorkflowDefinition, lang
     },
     "telegram-assistant": {
       reply: { text: "Sagot ng kymavo assistant:\n{{steps.write_answer.output.draft}}" },
+    },
+    "freelancer-lead-crm": {
+      send_receipt: { subject: "Natanggap namin ang inquiry mo", text: "Salamat sa pag-contact. Natanggap namin ang detalye ng proyekto mo at sasagot kami sa loob ng isang araw ng trabaho." },
+      alert_hot: { subject: "Hot lead: {{trigger.name}} ({{trigger.company}})", text: "High-priority lead mula kay {{trigger.name}} ({{trigger.email}}).\nProyekto: {{trigger.company}}\nBadyet: {{trigger.budget}} piso\n\n{{trigger.brief}}" },
+      tell_warm: { subject: "Warm lead: {{trigger.name}}", text: "Bagong lead mula kay {{trigger.name}} ({{trigger.email}}) para sa {{trigger.company}} (badyet {{trigger.budget}} piso). Naitala na sa Airtable." },
+      tell_other: { subject: "Mababang priority na inquiry: {{trigger.name}}", text: "Naitala sa Airtable bilang other ang inquiry mula kay {{trigger.name}} ({{trigger.email}})." },
+    },
+    "freelancer-client-onboarding": {
+      send_welcome: { subject: "Maligayang pagdating sa proyekto", text: "Salamat sa pagpapadala ng onboarding details mo. Naihanda na namin ang project space at mag-u-update kami sa susunod na hakbang." },
+      tell_owner: { subject: "Na-onboard na kliyente: {{trigger.project}}", text: "Nakumpleto ni {{trigger.name}} ({{trigger.email}}) ang onboarding para sa {{trigger.project}}.\n\nMga layunin:\n{{trigger.goals}}\n\nNa-save sa Google Drive ang mga file at gumawa ng page sa Notion." },
+    },
+    "client-brief-to-trello": {
+      send_receipt: { subject: "Natanggap na ang task request", text: "Salamat sa pagpapadala ng request mo. Naidagdag na namin ito sa aming task board at mag-a-update kami kapag nasimulan na." },
+    },
+    "meeting-prep-telegram": {
+      notify_telegram: { text: "Paparating na meeting sa loob ng 1 oras:\n{{trigger.title}}\nSimula: {{trigger.start}}\nLokasyon: {{trigger.location}}\nLink: {{trigger.link}}\n\nTala: {{trigger.description}}" },
+    },
+    "drive-doc-to-notion-summary": {
+      email_owner: { subject: "Handa na ang buod: {{trigger.name}}", text: "File: {{trigger.name}}\nLink: {{trigger.link}}\n\nBuod:\n{{steps.read_doc.output.summary}}\n\nMga susunod na hakbang:\n{{steps.read_doc.output.action_items}}" },
+    },
+    "daily-morning-briefing": {
+      send_brief: { text: "Magandang umaga! Narito ang daily briefing mo:\n\n{{steps.write_brief.output.draft}}" },
+    },
+    "email-ai-triage-draft": {
+      alert_urgent: { subject: "[Apurahan] Draft na sagot para sa {{trigger.subject}}", text: "Mula kay: {{trigger.from}}\n\nMungkahing sagot:\n{{steps.draft_reply.output.draft}}\n\nOrihinal na mensahe:\n{{trigger.text}}" },
+      send_sales: { subject: "[Sales] Draft na sagot para sa {{trigger.subject}}", text: "Mula kay: {{trigger.from}}\n\nMungkahing sagot:\n{{steps.draft_reply.output.draft}}\n\nOrihinal na mensahe:\n{{trigger.text}}" },
+      send_general: { subject: "Draft na sagot para sa {{trigger.subject}}", text: "Mula kay: {{trigger.from}}\n\nMungkahing sagot:\n{{steps.draft_reply.output.draft}}\n\nOrihinal na mensahe:\n{{trigger.text}}" },
+    },
+    "whatsapp-inquiry-to-sheets": {
+      reply_customer: { text: "Salamat sa pag-message! Natanggap namin ang inquiry mo at may sasagot mula sa aming team maya-maya." },
+      notify_team: { text: "Bagong WhatsApp inquiry mula kay {{trigger.senderName}}. Naitala na sa Google Sheets para sa follow-up." },
+    },
+    "customer-feedback-triage": {
+      send_thanks: { subject: "Salamat sa feedback mo", text: "Salamat sa paglalaan ng oras para ibahagi ang feedback mo. Binabasa namin ang bawat sagot nang maingat." },
+      alert_owner: { subject: "Kailangang balikan: feedback mula kay {{trigger.name}} ({{trigger.rating}}/5)", text: "Nagbigay si {{trigger.name}} ({{trigger.email}}) ng {{trigger.rating}}/5 na rating:\n\n{{trigger.feedback}}\n\nKausapin siya nang personal para maayos ito." },
+      share_win: { text: "May bagong magandang feedback ({{trigger.rating}}/5) na naitala sa Google Sheets!" },
+    },
+    "competitor-price-watch": {
+      email_owner: { subject: "Nagbago ang page: {{trigger.title}}", text: "Nagbago ang binabantayang page: {{trigger.url}}\n\nAno ang nagbago:\n{{steps.summarize_change.output.summary}}" },
+      notify_slack: { text: "Nagbago ang binabantayang page ({{trigger.title}}): {{steps.summarize_change.output.summary}}" },
+    },
+    "rss-news-to-discord": {
+      post_discord: { text: "**{{trigger.title}}**\n{{steps.summarize_post.output.summary}}\n{{trigger.link}}" },
+    },
+    "trello-status-to-teams": {
+      post_teams: { text: "Nalipat ang Trello card: {{trigger.name}}\nMula: {{trigger.previousListName}} -> Papunta sa: {{trigger.listName}}\nLink: {{trigger.url}}" },
     },
   };
   if (result.trigger.type === "form") {

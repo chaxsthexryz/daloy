@@ -58,4 +58,22 @@ export const TAGLISH: Record<string, Record<string, Message>> = {
   "telegram-assistant": {
     reply: { text: "kymavo assistant update:\n{{steps.write_answer.output.draft}}" },
   },
+  "freelancer-lead-crm": {
+    send_receipt: { subject: "Natanggap na namin ang inquiry mo", text: "Thank you sa pag-reach out! Na-receive namin ang project details mo at babalikan ka namin within one working day." },
+  },
+  "freelancer-client-onboarding": {
+    send_welcome: { subject: "Welcome on board", text: "Thank you sa pag-send ng onboarding details! Na-set up na namin ang project space mo at mag-a-update kami sa next steps." },
+  },
+  "client-brief-to-trello": {
+    send_receipt: { subject: "Natanggap na ang task request", text: "Thank you sa pag-send ng request! Naidagdag na namin ito sa task board at mag-a-update kami pag nagsimula na." },
+  },
+  "whatsapp-inquiry-to-sheets": {
+    reply_customer: { text: "Hi! Thank you sa pag-message. Na-receive namin ang inquiry mo at may magre-reply sa team namin soon." },
+  },
+  "customer-feedback-triage": {
+    send_thanks: { subject: "Thank you sa feedback mo", text: "Salamat sa pag-share ng feedback mo! Binabasa namin lahat ng response para mas mapaganda ang service namin." },
+  },
+  "daily-morning-briefing": {
+    send_brief: { text: "Good morning! Eto ang daily briefing mo for today:\n\n{{steps.write_brief.output.draft}}" },
+  },
 };

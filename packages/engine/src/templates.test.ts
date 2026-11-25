@@ -8,7 +8,7 @@ import { templatesForLanguage } from "./template-language";
 import { TEMPLATES, TEMPLATE_CATEGORIES } from "./templates";
 import { websiteInquiryDefinition } from "./website-inquiry";
 
-const SLUGS = ["inquiry-triage", "invoice-follow-up", "no-show-follow-up", "appointment-reminder", "request-to-sheets", "lead-to-booking", "order-to-sheets", "order-paid", "invoice-paymongo", "invoice-pdf", "quote-deposit", "deposit-first", "renewal-reminders", "store-orders", "shopify-orders", "marketplace-orders-to-sheets", "low-stock-alert", "receipt-expense", "meta-receipt-intake", "telegram-gcash-receipts", "booking-deposit-review", "order-gcash-checkout", "lalamove-confirmed-order", "resort-concierge-dm", "resort-concierge-email", "resort-deposit-and-stay", "telegram-assistant"];
+const SLUGS = ["inquiry-triage", "invoice-follow-up", "no-show-follow-up", "appointment-reminder", "request-to-sheets", "lead-to-booking", "order-to-sheets", "order-paid", "invoice-paymongo", "invoice-pdf", "quote-deposit", "deposit-first", "renewal-reminders", "store-orders", "shopify-orders", "marketplace-orders-to-sheets", "low-stock-alert", "receipt-expense", "meta-receipt-intake", "telegram-gcash-receipts", "booking-deposit-review", "order-gcash-checkout", "lalamove-confirmed-order", "resort-concierge-dm", "resort-concierge-email", "resort-deposit-and-stay", "telegram-assistant", "freelancer-lead-crm", "freelancer-client-onboarding", "client-brief-to-trello", "meeting-prep-telegram", "drive-doc-to-notion-summary", "daily-morning-briefing", "email-ai-triage-draft", "whatsapp-inquiry-to-sheets", "customer-feedback-triage", "competitor-price-watch", "rss-news-to-discord", "trello-status-to-teams"];
 const parse = (slug: string) => definitionSchema.parse(TEMPLATES.find((t) => t.slug === slug)!.definition);
 
 describe("starter templates", () => {
@@ -17,7 +17,7 @@ describe("starter templates", () => {
   });
 
   it("gives every template one of the library categories, and every category at least one template", () => {
-    expect(TEMPLATE_CATEGORIES).toEqual(["Inquiries", "Bookings", "Payments and receipts", "Orders", "Resorts and hotels", "Office"]);
+    expect(TEMPLATE_CATEGORIES).toEqual(["Inquiries", "Bookings", "Payments and receipts", "Orders", "Resorts and hotels", "Freelancers", "Office"]);
     for (const t of TEMPLATES) expect(TEMPLATE_CATEGORIES as readonly string[], t.slug).toContain(t.category);
     for (const c of TEMPLATE_CATEGORIES.filter((c) => c !== "Office")) expect(TEMPLATES.some((t) => t.category === c), c).toBe(true);
   });
@@ -287,5 +287,28 @@ describe("starter templates", () => {
     expect(def.edges).toEqual([{ from: "is_low", to: "tell_owner", on: "true" }, { from: "is_low", to: "tell_bad_row", on: "invalid" }]);
     expect(at("", "5")).toBe("invalid");
     expect(def.steps[1]).toMatchObject({ type: "email" });
+  });
+
+  it("covers the freelancer and small-business templates (CRM routing, Drive/Notion summaries, WhatsApp, page & feed watches)", () => {
+    const crm = parse("freelancer-lead-crm");
+    expect(crm.steps.map((s) => s.type)).toEqual(["email", "ai", "airtable", "switch", "email", "email", "email"]);
+    expect(crm.edges).toContainEqual({ from: "route_priority", to: "alert_hot", on: "hot" });
+    expect(crm.edges).toContainEqual({ from: "route_priority", to: "tell_warm", on: "warm" });
+    expect(crm.edges).toContainEqual({ from: "route_priority", to: "tell_other", on: "default" });
+
+    const driveDoc = parse("drive-doc-to-notion-summary");
+    expect(driveDoc.trigger).toEqual({ type: "drive_file", config: { requireFile: true } });
+    expect(driveDoc.steps[0]).toMatchObject({ type: "ai", config: { task: "extract", files: ["file"] } });
+    expect(driveDoc.steps[1]).toMatchObject({ type: "notion" });
+
+    const wa = parse("whatsapp-inquiry-to-sheets");
+    expect(wa.trigger).toEqual({ type: "whatsapp_message", config: { requireImage: false } });
+    expect(wa.steps.map((s) => s.type)).toEqual(["sheets", "whatsapp_reply", "slack"]);
+
+    const priceWatch = parse("competitor-price-watch");
+    expect(priceWatch.trigger).toMatchObject({ type: "page_changed", config: { mode: "page" } });
+    const rss = parse("rss-news-to-discord");
+    expect(rss.trigger).toMatchObject({ type: "page_changed", config: { mode: "feed" } });
+    expect(rss.steps.map((s) => s.type)).toEqual(["ai", "discord"]);
   });
 });

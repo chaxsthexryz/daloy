@@ -3,7 +3,7 @@
  * Inquiry triage uses an AI classify step; a test run without live calls gets the first label ("billing") from the mock.
  */
 /** The groups the Library page filters by (U5). Every template has exactly one. */
-export const TEMPLATE_CATEGORIES = ["Inquiries", "Bookings", "Payments and receipts", "Orders", "Resorts and hotels", "Office"] as const;
+export const TEMPLATE_CATEGORIES = ["Inquiries", "Bookings", "Payments and receipts", "Orders", "Resorts and hotels", "Freelancers", "Office"] as const;
 export type TemplateCategory = (typeof TEMPLATE_CATEGORIES)[number];
 
 export const TEMPLATES = [
@@ -1377,6 +1377,591 @@ export const TEMPLATES = [
         { from: "read_data", to: "write_answer" },
         { from: "write_answer", to: "reply" },
       ],
+    },
+  },
+  {
+    slug: "freelancer-lead-crm",
+    name: "Qualify client leads into Airtable",
+    description: "When a prospect fills in your inquiry form, AI scores the lead as hot, warm or low priority, logs it to Airtable, sends a safe receipt, and alerts you right away for hot leads. Needs Airtable and an AI model.",
+    category: "Freelancers",
+    definition: {
+      trigger: {
+        type: "form",
+        config: {
+          fields: [
+            { name: "name", label: "Your name", type: "text", required: true },
+            { name: "email", label: "Email", type: "email", required: true },
+            { name: "company", label: "Business or project", type: "text", required: true },
+            { name: "budget", label: "Budget in pesos", type: "number", required: true, min: 1 },
+            { name: "brief", label: "Project brief", type: "textarea", required: true },
+          ],
+        },
+      },
+      steps: [
+        {
+          id: "send_receipt",
+          type: "email",
+          config: {
+            to: "{{trigger.email}}",
+            subject: "We got your inquiry",
+            text: "Thanks for reaching out. We received your project details and will get back to you within one working day.",
+          },
+        },
+        {
+          id: "qualify",
+          type: "ai",
+          config: {
+            task: "classify",
+            input: "Business: {{trigger.company}}\nBudget: {{trigger.budget}}\nBrief: {{trigger.brief}}",
+            labels: {
+              hot: "Clear project scope, ready soon or strong budget",
+              warm: "Real interest, needs more details or smaller scope",
+              other: "Unclear inquiry, spam or not a fit",
+            },
+          },
+        },
+        {
+          id: "log_crm",
+          type: "airtable",
+          config: {
+            fields: {
+              Name: "{{trigger.name}}",
+              Email: "{{trigger.email}}",
+              Project: "{{trigger.company}}",
+              Budget: "{{trigger.budget}}",
+              Priority: "{{steps.qualify.output.label}}",
+              Brief: "{{trigger.brief}}",
+            },
+          },
+        },
+        {
+          id: "route_priority",
+          type: "switch",
+          config: {
+            value: "{{steps.qualify.output.label}}",
+            cases: [
+              { label: "hot", equals: "hot" },
+              { label: "warm", equals: "warm" },
+            ],
+          },
+        },
+        {
+          id: "alert_hot",
+          type: "email",
+          config: {
+            to: "owner@example.com",
+            subject: "Hot lead: {{trigger.name}} ({{trigger.company}})",
+            text: "High-priority lead from {{trigger.name}} ({{trigger.email}}).\nProject: {{trigger.company}}\nBudget: {{trigger.budget}} pesos\n\n{{trigger.brief}}",
+          },
+        },
+        {
+          id: "tell_warm",
+          type: "email",
+          config: {
+            to: "owner@example.com",
+            subject: "Warm lead: {{trigger.name}}",
+            text: "New lead from {{trigger.name}} ({{trigger.email}}) for {{trigger.company}} (budget {{trigger.budget}} pesos). Saved to Airtable.",
+          },
+        },
+        {
+          id: "tell_other",
+          type: "email",
+          config: {
+            to: "owner@example.com",
+            subject: "Low-priority inquiry: {{trigger.name}}",
+            text: "Logged inquiry from {{trigger.name}} ({{trigger.email}}) as other in Airtable.",
+          },
+        },
+      ],
+      edges: [
+        { from: "send_receipt", to: "qualify" },
+        { from: "qualify", to: "log_crm" },
+        { from: "log_crm", to: "route_priority" },
+        { from: "route_priority", to: "alert_hot", on: "hot" },
+        { from: "route_priority", to: "tell_warm", on: "warm" },
+        { from: "route_priority", to: "tell_other", on: "default" },
+      ],
+    },
+  },
+  {
+    slug: "freelancer-client-onboarding",
+    name: "Onboard a new client to Notion and Drive",
+    description: "When a new client submits their onboarding form and files, save the uploads to Google Drive, create a client page in Notion, email a receipt and notify you. Needs Google Drive and Notion.",
+    category: "Freelancers",
+    definition: {
+      trigger: {
+        type: "form",
+        config: {
+          fields: [
+            { name: "name", label: "Client name", type: "text", required: true },
+            { name: "email", label: "Client email", type: "email", required: true },
+            { name: "project", label: "Project name", type: "text", required: true },
+            { name: "goals", label: "Goals and deliverables", type: "textarea", required: true },
+            { name: "files", label: "Brand assets or brief", type: "file", required: false },
+          ],
+        },
+      },
+      steps: [
+        { id: "save_files", type: "drive", config: {} },
+        {
+          id: "create_page",
+          type: "notion",
+          config: {
+            title: "{{trigger.project}} - {{trigger.name}}",
+            fields: {
+              Client: "{{trigger.name}}",
+              Email: "{{trigger.email}}",
+              Goals: "{{trigger.goals}}",
+            },
+          },
+        },
+        {
+          id: "send_welcome",
+          type: "email",
+          config: {
+            to: "{{trigger.email}}",
+            subject: "Welcome on board",
+            text: "Thanks for sending your onboarding details. We have set up your project space and will follow up shortly with next steps.",
+          },
+        },
+        {
+          id: "tell_owner",
+          type: "email",
+          config: {
+            to: "owner@example.com",
+            subject: "Client onboarded: {{trigger.project}}",
+            text: "{{trigger.name}} ({{trigger.email}}) completed onboarding for {{trigger.project}}.\n\nGoals:\n{{trigger.goals}}\n\nFiles were saved to Google Drive and a page was created in Notion.",
+          },
+        },
+      ],
+      edges: [
+        { from: "save_files", to: "create_page" },
+        { from: "create_page", to: "send_welcome" },
+        { from: "send_welcome", to: "tell_owner" },
+      ],
+    },
+  },
+  {
+    slug: "client-brief-to-trello",
+    name: "Turn a client brief into a Trello card",
+    description: "Collect a new task or revision request on a form, let AI summarize the brief into clear action items, create a Trello card and send the client a confirmation email. Needs Trello and an AI model.",
+    category: "Freelancers",
+    definition: {
+      trigger: {
+        type: "form",
+        config: {
+          fields: [
+            { name: "name", label: "Client name", type: "text", required: true },
+            { name: "email", label: "Client email", type: "email", required: true },
+            { name: "title", label: "Task or revision title", type: "text", required: true },
+            { name: "details", label: "What needs to be done?", type: "textarea", required: true },
+          ],
+        },
+      },
+      steps: [
+        {
+          id: "summarize",
+          type: "ai",
+          config: {
+            task: "summarize",
+            input: "Title: {{trigger.title}}\nClient: {{trigger.name}}\nDetails: {{trigger.details}}",
+            instructions: "Write a crisp task brief with 3 to 5 bullet action items so a freelancer can start immediately.",
+          },
+        },
+        {
+          id: "add_card",
+          type: "trello",
+          config: {
+            name: "{{trigger.title}} ({{trigger.name}})",
+            desc: "{{steps.summarize.output.summary}}\n\nOriginal request:\n{{trigger.details}}",
+          },
+        },
+        {
+          id: "send_receipt",
+          type: "email",
+          config: {
+            to: "{{trigger.email}}",
+            subject: "Task received",
+            text: "Thanks for sending your request. We have added it to our task board and will update you once work starts.",
+          },
+        },
+      ],
+      edges: [
+        { from: "summarize", to: "add_card" },
+        { from: "add_card", to: "send_receipt" },
+      ],
+    },
+  },
+  {
+    slug: "meeting-prep-telegram",
+    name: "Meeting reminder and prep on Telegram",
+    description: "An hour before any event on your Google Calendar, send yourself a Telegram prep note with the meeting title, time, location and link. Needs Google Calendar and Telegram.",
+    category: "Freelancers",
+    definition: {
+      trigger: { type: "calendar_event", config: { on: "starting", minutesBefore: 60 } },
+      steps: [
+        {
+          id: "notify_telegram",
+          type: "telegram",
+          config: {
+            text: "Upcoming meeting in 1 hour:\n{{trigger.title}}\nStart: {{trigger.start}}\nLocation: {{trigger.location}}\nLink: {{trigger.link}}\n\nNotes: {{trigger.description}}",
+          },
+        },
+      ],
+      edges: [],
+    },
+  },
+  {
+    slug: "drive-doc-to-notion-summary",
+    name: "Summarize Drive PDFs into Notion",
+    description: "When you drop a client brief, contract or meeting PDF into your watched Google Drive folder, AI extracts the summary and action items, saves a Notion page and emails you a copy. Needs Google Drive, Notion and an AI model.",
+    category: "Freelancers",
+    definition: {
+      trigger: { type: "drive_file", config: { requireFile: true } },
+      steps: [
+        {
+          id: "read_doc",
+          type: "ai",
+          config: {
+            task: "extract",
+            input: "File name: {{trigger.name}}",
+            files: ["file"],
+            fields: {
+              summary: "Short 3-sentence summary of the document",
+              action_items: "Key next steps, deliverables or deadlines as plain text",
+              client_or_sender: "Person or company named in the document",
+            },
+          },
+        },
+        {
+          id: "save_notion",
+          type: "notion",
+          config: {
+            title: "{{trigger.name}}",
+            fields: {
+              Summary: "{{steps.read_doc.output.summary}}",
+              Actions: "{{steps.read_doc.output.action_items}}",
+              Source: "{{steps.read_doc.output.client_or_sender}}",
+              Link: "{{trigger.link}}",
+            },
+          },
+        },
+        {
+          id: "email_owner",
+          type: "email",
+          config: {
+            to: "owner@example.com",
+            subject: "Summary ready: {{trigger.name}}",
+            text: "File: {{trigger.name}}\nLink: {{trigger.link}}\n\nSummary:\n{{steps.read_doc.output.summary}}\n\nAction items:\n{{steps.read_doc.output.action_items}}",
+          },
+        },
+      ],
+      edges: [
+        { from: "read_doc", to: "save_notion" },
+        { from: "save_notion", to: "email_owner" },
+      ],
+    },
+  },
+  {
+    slug: "daily-morning-briefing",
+    name: "Daily morning business briefing",
+    description: "Every weekday at 8:00 AM, read today's Google Calendar events, bookings, unpaid payments and recent runs, let AI write a short morning summary and send it to your Telegram. Needs Telegram and an AI model.",
+    category: "Office",
+    definition: {
+      trigger: { type: "schedule", config: { cron: "0 8 * * 1-5" } },
+      steps: [
+        {
+          id: "read_today",
+          type: "assistant_read",
+          config: { what: "all", timezone: "Asia/Manila" },
+        },
+        {
+          id: "write_brief",
+          type: "ai",
+          config: {
+            task: "draft",
+            input: "Date ({{steps.read_today.output.timezone}}): {{steps.read_today.output.date}}\nWorkspace summary:\n{{steps.read_today.output.summaryText}}",
+            instructions: "Write a short, friendly morning briefing for a business owner using only the workspace summary. Highlight today's schedule, bookings, unpaid dues and any failed runs. Keep it under 1,500 characters.",
+          },
+        },
+        {
+          id: "send_brief",
+          type: "telegram",
+          config: { text: "Good morning! Here is your daily briefing:\n\n{{steps.write_brief.output.draft}}" },
+        },
+      ],
+      edges: [
+        { from: "read_today", to: "write_brief" },
+        { from: "write_brief", to: "send_brief" },
+      ],
+    },
+  },
+  {
+    slug: "email-ai-triage-draft",
+    name: "Email triage with AI draft reply",
+    description: "When a message arrives in your kymavo inbox, AI classifies whether it is urgent, sales or general, writes a polite draft reply, and emails the draft to you to review before sending. Needs an AI model.",
+    category: "Inquiries",
+    definition: {
+      trigger: { type: "email", config: {} },
+      steps: [
+        {
+          id: "classify",
+          type: "ai",
+          config: {
+            task: "classify",
+            input: "From: {{trigger.from}}\nSubject: {{trigger.subject}}\n\n{{trigger.text}}",
+            labels: {
+              urgent: "Complaint, billing problem, outage or time-sensitive issue",
+              sales: "Pricing question, quote request or new customer inquiry",
+              general: "Routine question or follow-up",
+            },
+          },
+        },
+        {
+          id: "draft_reply",
+          type: "ai",
+          config: {
+            task: "draft",
+            input: "Category: {{steps.classify.output.label}}\nFrom: {{trigger.from}}\nSubject: {{trigger.subject}}\nMessage:\n{{trigger.text}}",
+            instructions: "Write a clear, warm reply draft that a small business owner can review and send. Do not invent prices, dates or promises.",
+          },
+        },
+        {
+          id: "route_type",
+          type: "switch",
+          config: {
+            value: "{{steps.classify.output.label}}",
+            cases: [
+              { label: "urgent", equals: "urgent" },
+              { label: "sales", equals: "sales" },
+            ],
+          },
+        },
+        {
+          id: "alert_urgent",
+          type: "email",
+          config: {
+            to: "owner@example.com",
+            subject: "[Urgent] Draft reply for {{trigger.subject}}",
+            text: "From: {{trigger.from}}\n\nSuggested reply:\n{{steps.draft_reply.output.draft}}\n\nOriginal message:\n{{trigger.text}}",
+          },
+        },
+        {
+          id: "send_sales",
+          type: "email",
+          config: {
+            to: "owner@example.com",
+            subject: "[Sales] Draft reply for {{trigger.subject}}",
+            text: "From: {{trigger.from}}\n\nSuggested reply:\n{{steps.draft_reply.output.draft}}\n\nOriginal message:\n{{trigger.text}}",
+          },
+        },
+        {
+          id: "send_general",
+          type: "email",
+          config: {
+            to: "owner@example.com",
+            subject: "Draft reply for {{trigger.subject}}",
+            text: "From: {{trigger.from}}\n\nSuggested reply:\n{{steps.draft_reply.output.draft}}\n\nOriginal message:\n{{trigger.text}}",
+          },
+        },
+      ],
+      edges: [
+        { from: "classify", to: "draft_reply" },
+        { from: "draft_reply", to: "route_type" },
+        { from: "route_type", to: "alert_urgent", on: "urgent" },
+        { from: "route_type", to: "send_sales", on: "sales" },
+        { from: "route_type", to: "send_general", on: "default" },
+      ],
+    },
+  },
+  {
+    slug: "whatsapp-inquiry-to-sheets",
+    name: "WhatsApp inquiry auto-reply and log",
+    description: "When a customer messages your WhatsApp Business number, log the inquiry in Google Sheets, send a quick reply inside Meta's 24-hour window, and notify your team on Slack. Needs WhatsApp Cloud API, Google Sheets and Slack.",
+    category: "Inquiries",
+    definition: {
+      trigger: { type: "whatsapp_message", config: { requireImage: false } },
+      steps: [
+        {
+          id: "log_lead",
+          type: "sheets",
+          config: { columns: ["{{trigger.senderName}}", "{{trigger.senderId}}", "{{trigger.text}}"] },
+        },
+        {
+          id: "reply_customer",
+          type: "whatsapp_reply",
+          config: {
+            mode: "text",
+            to: "{{trigger.senderId}}",
+            text: "Thanks for messaging us! We received your inquiry and a team member will reply shortly.",
+          },
+        },
+        {
+          id: "notify_team",
+          type: "slack",
+          config: { text: "New WhatsApp inquiry from {{trigger.senderName}}. Logged to Google Sheets for follow-up." },
+        },
+      ],
+      edges: [
+        { from: "log_lead", to: "reply_customer" },
+        { from: "reply_customer", to: "notify_team" },
+      ],
+    },
+  },
+  {
+    slug: "customer-feedback-triage",
+    name: "Customer feedback and review triage",
+    description: "Collect customer feedback on a form, log every response to Google Sheets, and let AI separate praise from complaints so negative reviews trigger an urgent owner alert right away. Needs Google Sheets and an AI model.",
+    category: "Inquiries",
+    definition: {
+      trigger: {
+        type: "form",
+        config: {
+          fields: [
+            { name: "name", label: "Your name", type: "text", required: true },
+            { name: "email", label: "Email", type: "email", required: true },
+            { name: "rating", label: "Rating (1 to 5)", type: "number", required: true, min: 1, max: 5, integer: true },
+            { name: "feedback", label: "How did we do?", type: "textarea", required: true },
+          ],
+        },
+      },
+      steps: [
+        {
+          id: "send_thanks",
+          type: "email",
+          config: {
+            to: "{{trigger.email}}",
+            subject: "Thanks for your feedback",
+            text: "Thank you for taking a moment to share your feedback. We read every response carefully.",
+          },
+        },
+        {
+          id: "log_sheet",
+          type: "sheets",
+          config: { columns: ["{{trigger.name}}", "{{trigger.email}}", "{{trigger.rating}}", "{{trigger.feedback}}"] },
+        },
+        {
+          id: "classify_tone",
+          type: "ai",
+          config: {
+            task: "classify",
+            input: "Rating: {{trigger.rating}}/5\nFeedback: {{trigger.feedback}}",
+            labels: {
+              positive: "Happy customer, praise or recommendation",
+              issue: "Complaint, problem, refund request or low rating",
+            },
+          },
+        },
+        {
+          id: "is_issue",
+          type: "condition",
+          config: { condition: { left: "{{steps.classify_tone.output.label}}", op: "eq", right: "issue" } },
+        },
+        {
+          id: "alert_owner",
+          type: "email",
+          config: {
+            to: "owner@example.com",
+            subject: "Needs follow-up: feedback from {{trigger.name}} ({{trigger.rating}}/5)",
+            text: "{{trigger.name}} ({{trigger.email}}) left a {{trigger.rating}}/5 rating:\n\n{{trigger.feedback}}\n\nFollow up personally to make it right.",
+          },
+        },
+        {
+          id: "share_win",
+          type: "slack",
+          config: { text: "New positive customer feedback ({{trigger.rating}}/5) logged to Google Sheets!" },
+        },
+      ],
+      edges: [
+        { from: "send_thanks", to: "log_sheet" },
+        { from: "log_sheet", to: "classify_tone" },
+        { from: "classify_tone", to: "is_issue" },
+        { from: "is_issue", to: "alert_owner", on: "true" },
+        { from: "is_issue", to: "share_win", on: "false" },
+      ],
+    },
+  },
+  {
+    slug: "competitor-price-watch",
+    name: "Supplier or competitor price change alert",
+    description: "Watch a public supplier or competitor web page for changes. When the page updates, AI summarizes what changed and sends an alert to your email and Slack. Needs Slack and an AI model.",
+    category: "Orders",
+    definition: {
+      trigger: { type: "page_changed", config: { url: "https://example.com/prices", mode: "page", maxChars: 4000 } },
+      steps: [
+        {
+          id: "summarize_change",
+          type: "ai",
+          config: {
+            task: "summarize",
+            input: "Page: {{trigger.title}} ({{trigger.url}})\nPrevious:\n{{trigger.previous}}\n\nCurrent:\n{{trigger.value}}",
+            instructions: "Summarize what changed between the previous and current page content in 2 to 3 concise sentences, highlighting any price or stock changes.",
+          },
+        },
+        {
+          id: "email_owner",
+          type: "email",
+          config: {
+            to: "owner@example.com",
+            subject: "Page changed: {{trigger.title}}",
+            text: "The watched page changed: {{trigger.url}}\n\nWhat changed:\n{{steps.summarize_change.output.summary}}",
+          },
+        },
+        {
+          id: "notify_slack",
+          type: "slack",
+          config: { text: "Watched page changed ({{trigger.title}}): {{steps.summarize_change.output.summary}}" },
+        },
+      ],
+      edges: [
+        { from: "summarize_change", to: "email_owner" },
+        { from: "email_owner", to: "notify_slack" },
+      ],
+    },
+  },
+  {
+    slug: "rss-news-to-discord",
+    name: "RSS news digest to Discord",
+    description: "Watch a blog, industry news feed or changelog RSS URL. When a new post publishes, AI writes a two-sentence takeaway and posts it with the link to Discord. Needs Discord and an AI model.",
+    category: "Office",
+    definition: {
+      trigger: { type: "page_changed", config: { url: "https://example.com/feed.xml", mode: "feed", maxChars: 4000 } },
+      steps: [
+        {
+          id: "summarize_post",
+          type: "ai",
+          config: {
+            task: "summarize",
+            input: "Title: {{trigger.title}}\nPublished: {{trigger.published}}\nSummary: {{trigger.summary}}",
+            instructions: "Summarize this article in two short sentences for a business owner or freelancer.",
+          },
+        },
+        {
+          id: "post_discord",
+          type: "discord",
+          config: { text: "**{{trigger.title}}**\n{{steps.summarize_post.output.summary}}\n{{trigger.link}}" },
+        },
+      ],
+      edges: [
+        { from: "summarize_post", to: "post_discord" },
+      ],
+    },
+  },
+  {
+    slug: "trello-status-to-teams",
+    name: "Notify team when a Trello card moves",
+    description: "When a task card moves to a new list on your Trello board, post an update to Microsoft Teams so everyone sees progress without checking the board. Needs Trello and Microsoft Teams.",
+    category: "Office",
+    definition: {
+      trigger: { type: "trello_card", config: { on: "moved_to_list" } },
+      steps: [
+        {
+          id: "post_teams",
+          type: "teams",
+          config: { text: "Trello card moved: {{trigger.name}}\nFrom: {{trigger.previousListName}} -> To: {{trigger.listName}}\nLink: {{trigger.url}}" },
+        },
+      ],
+      edges: [],
     },
   },
 ] as const;
