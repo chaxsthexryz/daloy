@@ -73,13 +73,18 @@ main.page.wk { display: flex; flex-direction: column; gap: 16px; width: 100%; ma
 /* Invite form and notices. */
 .wk-invite { display: grid; gap: 12px; }
 .wk-invite-row { display: grid; grid-template-columns: minmax(0, 1fr) 200px auto; gap: 10px; align-items: center; }
+.wk-role-guide { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; font-size: 13px; line-height: 18px; color: var(--w-muted); }
+.wk-role-guide b { color: var(--w-ink); font-weight: 600; }
 .wk input[type="email"], .wk input[type="password"], .wk input[type="text"], .wk select { box-sizing: border-box; width: 100%; height: 38px; min-height: 0; padding: 0 12px; border: 1px solid var(--w-field); border-radius: 8px; background: var(--w-bg); color: var(--w-ink); font: inherit; line-height: 1.25; vertical-align: middle; }
 .wk input::placeholder { color: var(--w-muted); opacity: .8; }
-.wk-note { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 10px 12px; border-radius: 8px; background: var(--w-canvas); box-shadow: inset 3px 0 var(--w-green); font-size: 13px; }
-.wk-note p { flex: 1; min-width: 0; }
-.wk-note code { font: 12px/18px ui-monospace, SFMono-Regular, Menlo, monospace; }
+.wk-note { display: flex; flex-direction: column; align-items: stretch; gap: 8px; padding: 10px 12px; border-radius: 8px; background: var(--w-canvas); box-shadow: inset 3px 0 var(--w-green); font-size: 13px; }
+.wk-note p { margin: 0; min-width: 0; }
+.wk-note-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; min-width: 0; }
+.wk-note code { flex: 1 1 240px; min-width: 0; word-break: break-all; font: 12px/18px ui-monospace, SFMono-Regular, Menlo, monospace; }
 .wk-note.bad { box-shadow: inset 3px 0 var(--w-red); color: var(--w-red); font-weight: 600; }
 .wk-note[hidden] { display: none; }
+.wk-pending-banner { padding-bottom: 4px; }
+.wk-pending-actions { display: inline-flex; flex-wrap: wrap; gap: 8px; justify-self: end; }
 
 /* Team rows: email, joined date, actions. */
 .wk-rows { margin: 0; padding: 0; list-style: none; }

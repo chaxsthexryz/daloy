@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { api } from "./api";
+import { FieldBadge } from "./ConnectPanel";
 import { GuidedStep, GuidedSteps, type StepCheck } from "./GuidedSteps";
 import { useLanguage } from "./Language";
 import type { Connection } from "./Connections";
@@ -80,7 +81,10 @@ export function TelegramSetup({ conn, onChange, onClose }: Props) {
       </GuidedStep>
       <GuidedStep title="Paste the bot token" check={tokenStep.check}>
         <div className="field">
-          <label htmlFor="tg-token">{t("Bot token")}</label>
+          <div className="field-label-row">
+            <label htmlFor="tg-token">{t("Bot token")}</label>
+            <FieldBadge />
+          </div>
           <input id="tg-token" type="password" value={token} onChange={(e) => setToken(e.target.value)} placeholder="123456789:AA…" autoComplete="off" />
         </div>
         <div className="actions">
@@ -110,7 +114,10 @@ export function TelegramSetup({ conn, onChange, onClose }: Props) {
       </GuidedStep>
       <GuidedStep title="Connect" check={saveStep.check}>
         <div className="field">
-          <label htmlFor="tg-chat">{t("Chat id")}</label>
+          <div className="field-label-row">
+            <label htmlFor="tg-chat">{t("Chat id")}</label>
+            <FieldBadge />
+          </div>
           <input id="tg-chat" value={chatId} onChange={(e) => setChatId(e.target.value)} placeholder="-1001234567890 or @channelname" autoComplete="off" />
           <p className="muted">{t("Tapping a chat above fills this in. You can also type the chat id.")}</p>
         </div>
@@ -175,11 +182,17 @@ export function DiscordSetup({ conn, onChange, onClose }: Props) {
       </GuidedStep>
       <GuidedStep title="Paste the link and send a test message" check={step.check}>
         <div className="field">
-          <label htmlFor="dc-url">{t("Webhook link")}</label>
+          <div className="field-label-row">
+            <label htmlFor="dc-url">{t("Webhook link")}</label>
+            <FieldBadge />
+          </div>
           <input id="dc-url" type="password" value={url} onChange={(e) => setUrl(e.target.value)} autoComplete="off" placeholder="https://discord.com/api/webhooks/…" />
         </div>
         <div className="field">
-          <label htmlFor="dc-channel">{t("Discord channel name, to show in kymavo")}</label>
+          <div className="field-label-row">
+            <label htmlFor="dc-channel">{t("Discord channel name, to show in kymavo")}</label>
+            <FieldBadge />
+          </div>
           <input id="dc-channel" value={channelName} onChange={(e) => setChannelName(e.target.value)} maxLength={100} placeholder={t("orders")} />
         </div>
         <div className="actions">
@@ -223,11 +236,17 @@ export function TeamsSetup({ conn, onChange, onClose }: Props) {
       </GuidedStep>
       <GuidedStep title="Paste the link and send a test message" check={step.check}>
         <div className="field">
-          <label htmlFor="tm-url">{t("Workflow link")}</label>
+          <div className="field-label-row">
+            <label htmlFor="tm-url">{t("Workflow link")}</label>
+            <FieldBadge />
+          </div>
           <input id="tm-url" type="password" value={url} onChange={(e) => setUrl(e.target.value)} autoComplete="off" placeholder="https://…logic.azure.com/…" />
         </div>
         <div className="field">
-          <label htmlFor="tm-channel">{t("Teams channel name, to show in kymavo")}</label>
+          <div className="field-label-row">
+            <label htmlFor="tm-channel">{t("Teams channel name, to show in kymavo")}</label>
+            <FieldBadge />
+          </div>
           <input id="tm-channel" value={channelName} onChange={(e) => setChannelName(e.target.value)} maxLength={100} placeholder={t("Purchasing")} />
         </div>
         <div className="actions">
@@ -266,7 +285,10 @@ export function PaymongoSetup({ conn, webhookBase, onChange, onClose }: Props & 
       </GuidedStep>
       <GuidedStep title="Copy the secret key and save it" check={keyCheck}>
         <div className="field">
-          <label htmlFor="pm-key">{t("Secret key")}</label>
+          <div className="field-label-row">
+            <label htmlFor="pm-key">{t("Secret key")}</label>
+            <FieldBadge />
+          </div>
           <input id="pm-key" type="password" value={secretKey} onChange={(e) => { setSecretKey(e.target.value); keyStep.setCheck({ state: "idle" }); }} placeholder="sk_test_…" autoComplete="off" />
         </div>
         <div className="actions">
@@ -303,7 +325,10 @@ export function PaymongoSetup({ conn, webhookBase, onChange, onClose }: Props & 
       </GuidedStep>
       <GuidedStep title="Paste the webhook secret" check={hookStep.check}>
         <div className="field">
-          <label htmlFor="pm-whsk">{t("Webhook secret")}</label>
+          <div className="field-label-row">
+            <label htmlFor="pm-whsk">{t("Webhook secret")}</label>
+            <FieldBadge />
+          </div>
           <input id="pm-whsk" type="password" value={webhookSecret} onChange={(e) => setWebhookSecret(e.target.value)} placeholder="whsk_…" autoComplete="off" />
         </div>
         <div className="actions">

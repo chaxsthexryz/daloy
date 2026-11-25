@@ -41,7 +41,7 @@ test("an invited approver answers a named approval; the owner and a signed-out v
   await page.getByRole("textbox", { name: "Message", exact: true }).fill("Buy a printer for 300 EUR?");
   await page.getByRole("button", { name: "Publish" }).click();
   await page.getByRole("button", { name: "Turn on", exact: true }).click();
-  await expect(page.getByRole("status")).toHaveText(/Version 1 is live/);
+  await expect(page.getByText(/Version 1 is live/)).toBeVisible();
   await openTestSettings(page);
   await page.getByRole("button", { name: "Run live version" }).click();
   const result = page.locator(".run");

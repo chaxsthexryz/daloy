@@ -44,6 +44,12 @@ type Shown = Pick<Connection, "account" | "lastError"> & { status: string };
  */
 export const SharedGrants = createContext<readonly string[]>([]);
 
+/** Consistent Required / Optional badge rendered beside form labels without changing input accessible names. */
+export function FieldBadge({ optional = false }: { optional?: boolean }) {
+  const { t } = useLanguage();
+  return <span className={`field-badge${optional ? " optional" : " required"}`}>{t(optional ? "Optional" : "Required")}</span>;
+}
+
 export function Status({ conn, label }: { conn: Shown; label: string }) {
   const { t } = useLanguage();
   return (

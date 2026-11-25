@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canChangeRole, canInvite, canRemove, groupMembers, memberRoles, type Member } from "./team";
+import { canChangeRole, canInvite, canRemove, groupMembers, inviteLinkForOrigin, memberRoles, type Member } from "./team";
 
 const m = (userId: string, role: Member["role"], createdAt = "2026-03-01T00:00:00Z"): Member => ({ userId, email: `${userId}@x.ph`, role, createdAt });
 
@@ -35,5 +35,11 @@ describe("role restrictions", () => {
   });
   it("offers the three member roles and never owner", () => {
     expect(memberRoles).toEqual(["operator", "approver", "requester"]);
+  });
+
+  it("builds invite links using the active workspace origin", () => {
+    expect(inviteLinkForOrigin("abc123", "http://localhost:3000")).toBe("http://localhost:3000/#/invite/abc123");
+    expect(inviteLinkForOrigin("https://tunnel.trycloudflare.com/#/invite/abc123", "http://localhost:3000/")).toBe("http://localhost:3000/#/invite/abc123");
+    expect(inviteLinkForOrigin("https://other.example/#/invite/xyz-99", "https://app.daloy.ph")).toBe("https://app.daloy.ph/#/invite/xyz-99");
   });
 });
