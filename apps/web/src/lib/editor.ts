@@ -121,7 +121,9 @@ export function insertables(draft: Draft, id: string): string[] {
                   ? ["title", "checkIn", "guests", "subtotal", "extraGuests", "extraGuestFee", "total", "deposit", "knowledgeVersion"].map((k) => `steps.${s.id}.output.${k}`)
                   : s.type === "read_page"
                     ? ["title", "text", "value", "previous", "changed"].map((k) => `steps.${s.id}.output.${k}`)
-                    : s.type === "google_docs"
+                    : s.type === "invoice_pdf"
+                      ? ["file", "total", "totalText", "invoiceNumber"].map((k) => `steps.${s.id}.output.${k}`)
+                      : s.type === "google_docs"
                       ? ["url", "documentId", "name"].map((k) => `steps.${s.id}.output.${k}`)
                       : s.type === "call_workflow"
                         ? ["runId", "workflowId", "workflowSlug", "duplicate"].map((k) => `steps.${s.id}.output.${k}`)

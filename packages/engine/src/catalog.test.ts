@@ -107,6 +107,7 @@ describe("destination line", () => {
       trello: { name: "n" },
       booking: { action: "cancel", booking: "{{trigger.reference}}" },
       paymongo_link: { amount: "100", description: "d", reference: "r" },
+      invoice_pdf: { businessName: "Ana Design", clientName: "{{trigger.name}}", invoiceNumber: "INV-7", items: [{ description: "Logo", quantity: "1", unitPrice: "1500" }], currency: "PHP" },
       payment_due: { reference: "D-1042", amount: "350" },
       payment_expire: { due: "ask_deposit" },
       payment_status: { link: "pay_1" },

@@ -7,6 +7,8 @@ import type { StepExecutor, StepResult } from "../advance";
 import { runAi, runAnswer } from "./ai";
 import { browserService, browserStep, type BrowserInput, type BrowserService } from "./browser";
 import { loadAiFiles } from "./ai-files";
+import { loadAttachments } from "./attachments";
+import { invoicePdfStep, type InvoiceInput } from "./invoice-pdf";
 import { googleDocsStep, type DocsInput } from "./google-docs";
 import { httpRequest } from "./http";
 import { expireCheckout, paymongoLink } from "./paymongo";
@@ -59,7 +61,7 @@ const originOf = (url: string) => {
 };
 
 type HttpInput = { method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE"; url: string; headers: Record<string, string>; body?: string; idempotent?: boolean };
-type EmailInput = { to: string; subject: string; text: string };
+type EmailInput = { to: string; subject: string; text: string; attachments?: unknown[] };
 type AiInput = { input: string };
 type ApprovalInput = { to?: string; approver?: string; subject: string; message: string; timeoutSeconds: number };
 type SheetsInput = { columns?: string[]; rows?: string[][]; header?: string[] };
@@ -149,9 +151,25 @@ function resolveInput(step: Step, ctx: ExpressionContext): Record<string, unknow
     case "outlook": {
       const { to, subject, text: body, menu } = step.config;
       // The menu goes below the message as 1, 2, 3; email-in reads a reply of just a number back as that choice (decision 0118).
-      return { to: text(to, ctx), subject: text(subject, ctx), text: menu ? `${text(body, ctx)}
+      const mail: EmailInput = { to: text(to, ctx), subject: text(subject, ctx), text: menu ? `${text(body, ctx)}
 
-${numberedMenu(menu)}` : text(body, ctx) } satisfies EmailInput;
+${numberedMenu(menu)}` : text(body, ctx) };
+      // Resolved to FileRefs here, so run history shows which files; runStep checks each one is this run's (decision 0140).
+      if (step.type === "email" && step.config.attachments?.length) mail.attachments = step.config.attachments.map((a) => resolveTemplate(a, ctx) ?? null);
+      return mail;
+    }
+    case "invoice_pdf": {
+      const c = step.config;
+      return {
+        businessName: text(c.businessName, ctx),
+        clientName: text(c.clientName, ctx),
+        ...(c.clientEmail !== undefined ? { clientEmail: text(c.clientEmail, ctx) } : {}),
+        invoiceNumber: text(c.invoiceNumber, ctx),
+        items: c.items.map((i) => ({ description: text(i.description, ctx), quantity: text(i.quantity, ctx), unitPrice: text(i.unitPrice, ctx) })),
+        currency: c.currency,
+        ...(c.dueDate !== undefined ? { dueDate: text(c.dueDate, ctx) } : {}),
+        ...(c.notes !== undefined ? { notes: text(c.notes, ctx) } : {}),
+      } satisfies InvoiceInput;
     }
     case "ai":
       // Only input is a template; labels, fields and instructions are literals (decision 0010).
@@ -471,9 +489,12 @@ async function runStep(deps: FullDeps, step: Step, input: unknown, ctx: Expressi
       return { output: await browserStep(deps.db, deps.browser, { userId, runId, stepId: step.id }, cfg, claimSend) };
     }
     case "email": {
-      const mail = input as EmailInput;
-      if (mock) return { output: { mocked: true, to: mail.to, subject: mail.subject } };
+      const { attachments, ...mail } = input as EmailInput;
+      const counted = attachments ? { attachments: attachments.flat().length } : {};
+      if (mock) return { output: { mocked: true, to: mail.to, subject: mail.subject, ...counted } };
       const recipients = checkRecipients(mail.to);
+      // Before the claim, so a refused file costs nothing and sends nothing.
+      const files = attachments ? await loadAttachments(deps.db, { userId, runId, values: attachments }) : undefined;
       await claim("email", recipients.length);
       // C6 (decision 0121): thread only direct replies to the conversation's own email address, never staff alerts or
       // multi-recipient messages, so guest thread headers cannot leak to another recipient.
@@ -483,12 +504,14 @@ async function runStep(deps: FullDeps, step: Step, input: unknown, ctx: Expressi
       const thread = isGuestReply ? await emailThreadFor(deps.db, convo!.id) : undefined;
       // The Message-ID stays per attempt; the step key is the same on every attempt.
       // An email may not be sent twice on its own: sendAs claims the send once the sender is known.
-      const sent = await sendAs(deps.db, deps.secretsKey, deps.mail, userId, mail, `${idempotencyKey}:${attempt}`, { claim: claimSend, capKey: idempotencyKey, thread });
+      const sent = await sendAs(deps.db, deps.secretsKey, deps.mail, userId, { ...mail, files }, `${idempotencyKey}:${attempt}`, { claim: claimSend, capKey: idempotencyKey, thread });
       if (isGuestReply) {
         await recordOutboundEmail(deps.db, { conversationId: convo!.id, runId, text: mail.text, messageId: sent.messageId, references: thread?.references });
       }
-      return { output: { messageId: sent.messageId, to: sent.to, from: sent.from } };
+      return { output: { messageId: sent.messageId, to: sent.to, from: sent.from, ...counted } };
     }
+    case "invoice_pdf":
+      return { output: await invoicePdfStep(deps.db, { userId, runId, stepId: step.id }, input as InvoiceInput, mock) };
     case "ai": {
       if (mock && choice && "label" in choice) return { output: { label: choice.label } };
       if (mock && !aiLive) return { output: mockAiOutput(step.config) };

@@ -7,7 +7,7 @@ import { templatesForLanguage } from "./template-language";
 import { TEMPLATES, TEMPLATE_CATEGORIES } from "./templates";
 import { websiteInquiryDefinition } from "./website-inquiry";
 
-const SLUGS = ["inquiry-triage", "invoice-follow-up", "no-show-follow-up", "appointment-reminder", "request-to-sheets", "lead-to-booking", "order-to-sheets", "order-paid", "invoice-paymongo", "quote-deposit", "renewal-reminders", "store-orders", "shopify-orders", "receipt-expense", "meta-receipt-intake", "telegram-gcash-receipts", "booking-deposit-review", "order-gcash-checkout", "resort-concierge-dm", "resort-concierge-email", "resort-deposit-and-stay", "telegram-assistant"];
+const SLUGS = ["inquiry-triage", "invoice-follow-up", "no-show-follow-up", "appointment-reminder", "request-to-sheets", "lead-to-booking", "order-to-sheets", "order-paid", "invoice-paymongo", "invoice-pdf", "quote-deposit", "deposit-first", "renewal-reminders", "store-orders", "shopify-orders", "receipt-expense", "meta-receipt-intake", "telegram-gcash-receipts", "booking-deposit-review", "order-gcash-checkout", "resort-concierge-dm", "resort-concierge-email", "resort-deposit-and-stay", "telegram-assistant"];
 const parse = (slug: string) => definitionSchema.parse(TEMPLATES.find((t) => t.slug === slug)!.definition);
 
 describe("starter templates", () => {
@@ -145,6 +145,38 @@ describe("starter templates", () => {
     const checks = def.steps.filter((s) => s.type === "payment_status");
     expect(checks).toHaveLength(2);
     for (const c of def.steps.filter((s) => s.type === "condition")) expect(c.config).toMatchObject({ condition: { op: "eq", right: "pending" } });
+  });
+
+  it("invoice-pdf draws the PDF, bills its total and attaches it to the first email only", () => {
+    const def = parse("invoice-pdf");
+    expect(def.trigger.type).toBe("form");
+    expect(def.steps.slice(0, 4).map((s) => s.type)).toEqual(["approval", "invoice_pdf", "paymongo_link", "email"]);
+    expect(def.edges).toContainEqual({ from: "decide", to: "make_invoice", on: "approved" });
+    expect(def.steps.find((s) => s.id === "pay_link")!.config).toMatchObject({ amount: "{{steps.make_invoice.output.total}}" });
+    const emails = def.steps.filter((s) => s.type === "email");
+    expect(emails.map((s) => s.type === "email" && s.config.attachments)).toEqual([["{{steps.make_invoice.output.file}}"], undefined, undefined, undefined, undefined]);
+  });
+
+  it("invoice-pdf reuses the invoice-paymongo reminder loop: only while pending, twice at most", () => {
+    const loop = (slug: string) => {
+      const def = parse(slug);
+      const from = def.steps.findIndex((s) => s.id === "wait_a_week");
+      const to = def.steps.findIndex((s) => s.id === "tell_owner") + 1;
+      const loop = def.steps.slice(from, to);
+      const ids = new Set(loop.map((s) => s.id));
+      return { steps: loop.map((s) => (s.type === "email" ? [s.id, s.type] : [s.id, s.type, s.config])), edges: def.edges.filter((e) => ids.has(e.from)) };
+    };
+    expect(loop("invoice-pdf")).toEqual(loop("invoice-paymongo"));
+  });
+
+  it("deposit-first emails the client only once the deposit is paid, and tells the owner if it never is", () => {
+    const def = parse("deposit-first");
+    expect(def.steps.slice(0, 2)).toMatchObject([{ type: "approval" }, { type: "paymongo_link", config: { amount: "{{trigger.deposit}}" } }]);
+    expect(def.edges).toContainEqual({ from: "decide", to: "deposit_link", on: "approved" });
+    for (const c of def.steps.filter((s) => s.type === "condition")) expect(c.config).toMatchObject({ condition: { op: "eq", right: "paid" } });
+    expect(def.edges).toContainEqual({ from: "is_paid", to: "tell_paid", on: "true" });
+    expect(def.edges).toContainEqual({ from: "paid_later", to: "tell_paid_later", on: "true" });
+    expect(def.edges).toContainEqual({ from: "paid_later", to: "tell_owner", on: "false" });
   });
 
   it("renewal-reminders logs the item, waits until 30 days before it expires, then emails", () => {

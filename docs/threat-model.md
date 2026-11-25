@@ -552,3 +552,11 @@ Entry points: `GET /privacy/customer` and `POST /privacy/customer/delete` (owner
 
 - A send that may have gone through is skipped past or sent again: a step whose outcome is unknown (decision 0030) goes to `needs_review` before its "If this step fails" choice is read, so neither skip nor the failed path can replay or hide it. `apps/worker/src/e4-worker.test.ts` checks both choices with a mocked `fail: "unknown"`.
 - A run carries on as if a booking or payment request existed: only steps in `OUTSIDE_STEPS` may set `onError`, and `definitionSchema` refuses it on booking, payment, stay quote, transform and the other steps inside kymavo.
+
+## Invoice PDF and email attachments (N23, decision 0140)
+
+- Oversized generated files: the invoice has at most 30 line items and every text field has a length cap in the schema; the drawer cuts text to fit one A4 page, and the step refuses a PDF over 5 MB before storing it (the `uploads` table also checks the size). A test run stores nothing.
+- Attaching a file the run does not own: the email step takes only the id from each resolved ref and loads it with `readUpload`, which requires the workspace, the run and the id to match. A file of another run or workspace, a guessed id or a value typed into a form is refused before the email is counted or sent; the file name and type come from the stored row, not the ref.
+- Large or many attachments: at most 3 files per email, each at most 5 MB, counted after a form field's list is spread out.
+- Spam through a public form: both new templates begin with an approval to the owner, so nothing reaches the address typed into the form until the owner approves.
+- Malformed money values: amounts are parsed into integer centavos with fixed caps, and a value that does not parse fails the step with a plain message. No floating-point total reaches the PDF or the PayMongo link.

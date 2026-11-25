@@ -107,6 +107,41 @@ export const emailConfigSchema = z.object({
   menu: menuSchema.optional().describe("Choices listed under the message as 1, 2, 3. A reply with just the number picks that choice."),
 });
 
+// The email step alone: Outlook shares emailConfigSchema and sends no files. Each entry resolves to a file stored by this
+// run (a form file field or an earlier step's file); the worker refuses anything else before it sends (decision 0140).
+export const EMAIL_MAX_ATTACHMENTS = 3;
+export const emailStepConfigSchema = emailConfigSchema.extend({
+  attachments: z
+    .array(template(500).min(1))
+    .max(EMAIL_MAX_ATTACHMENTS)
+    .optional()
+    .describe("Up to 3 files from this run, such as {{steps.<id>.output.file}} from an invoice_pdf step or {{trigger.<file field>}}."),
+});
+
+// N23 (decision 0140): a one-page invoice PDF. Every text is a template; amounts are pesos such as 1,500 or 1500.50.
+export const INVOICE_MAX_ITEMS = 30;
+export const invoicePdfConfigSchema = z.object({
+  businessName: template(200).min(1).describe("Your business name, at the top of the invoice."),
+  clientName: template(200).min(1),
+  clientEmail: template(320).optional(),
+  invoiceNumber: template(100).min(1),
+  items: z
+    .array(
+      z.object({
+        description: template(300).min(1),
+        quantity: template(50).min(1).default("1"),
+        unitPrice: template(50).min(1).describe("Pesos, such as 1500 or 1,500.50."),
+      }),
+    )
+    .min(1)
+    .max(INVOICE_MAX_ITEMS)
+    .describe("Line items. A row whose description comes out empty is left off."),
+  currency: z.literal("PHP").default("PHP"),
+  dueDate: template(100).optional(),
+  notes: template(2000).optional(),
+});
+export type InvoicePdfConfig = z.infer<typeof invoicePdfConfigSchema>;
+
 // A fixed wait, or until a time from the run (a datetime field) moved by offsetSeconds. A wake-up time that has
 // passed takes the "late" edge, or ends the run when there is none (decision 0031).
 export const delayConfigSchema = z
@@ -452,7 +487,7 @@ const stepSchema = z.discriminatedUnion("type", [
   z.object({ id: stepId, disabled, note, onError, type: z.literal("switch"), config: switchConfigSchema }),
   z.object({ id: stepId, disabled, note, onError, type: z.literal("transform"), config: transformConfigSchema }),
   z.object({ id: stepId, disabled, note, onError, type: z.literal("http"), config: httpConfigSchema }),
-  z.object({ id: stepId, disabled, note, onError, type: z.literal("email"), config: emailConfigSchema }),
+  z.object({ id: stepId, disabled, note, onError, type: z.literal("email"), config: emailStepConfigSchema }),
   z.object({ id: stepId, disabled, note, onError, type: z.literal("delay"), config: delayConfigSchema }),
   z.object({ id: stepId, disabled, note, onError, type: z.literal("ai"), config: aiConfigSchema }),
   z.object({ id: stepId, disabled, note, onError, type: z.literal("approval"), config: approvalConfigSchema }),
@@ -480,6 +515,7 @@ const stepSchema = z.discriminatedUnion("type", [
   z.object({ id: stepId, disabled, note, onError, type: z.literal("discord"), config: discordConfigSchema }),
   z.object({ id: stepId, disabled, note, onError, type: z.literal("google_docs"), config: googleDocsConfigSchema }),
   z.object({ id: stepId, disabled, note, onError, type: z.literal("read_page"), config: readPageConfigSchema }),
+  z.object({ id: stepId, disabled, note, onError, type: z.literal("invoice_pdf"), config: invoicePdfConfigSchema }),
   z.object({ id: stepId, disabled, note, onError, type: z.literal("shopify_create_product"), config: shopifyCreateProductConfigSchema }),
   z.object({ id: stepId, disabled, note, onError, type: z.literal("shopify_update_product"), config: shopifyUpdateProductConfigSchema }),
   // Phase B2 (decision 0108): a page opened in the browser service, with a list of actions.
