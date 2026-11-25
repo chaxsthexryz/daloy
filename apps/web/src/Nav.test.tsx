@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { Usage } from "./api";
-import { AiMeter, Shell } from "./Nav";
+import { AiMeter, section, Shell } from "./Nav";
 import type { User } from "./Team";
 
 const user: User = { id: "staff", workspaceId: "workspace", email: "staff@example.test", role: "owner" };
@@ -12,17 +12,34 @@ const render = (hash: string, role: User["role"] = "owner") => renderToStaticMar
 describe("staff navigation", () => {
   it.each([
     ["#/", "#/"], ["#/new", "#/new"], ["#/ai", "#/ai"],
-    ["#/activity", "#/activity"], ["#/runs/run-id", "#/activity"], ["#/runs/run-id/ask", "#/activity"],
+    ["#/activity", "#/activity"], ["#/activity/ask", "#/activity"],
+    ["#/runs/run-id", "#/activity"], ["#/runs/run-id/ask", "#/activity"],
     ["#/w/workflow-id", "#/"], ["#/w/workflow-id/versions", "#/"], ["#/w/workflow-id/runs", "#/"],
     ["#/a/workflow-id", "#/"], ["#/bookings", "#/bookings"], ["#/conversations", "#/conversations"],
+    ["#/receipts", "#/receipts"], ["#/knowledge", "#/knowledge"],
     ["#/settings", "#/settings"], ["#/account", "#/account"],
     ["#/settings/ai", "#/settings"], ["#/secrets", "#/settings"], ["#/tokens", "#/settings"], ["#/resources", "#/settings"], ["#/advanced", "#/settings"],
+    ["#/apps", "#/apps"], ["#/apps/gmail-connected", "#/apps"],
     ["#/settings/business", "#/settings/business"], ["#/settings/business/outlook-connected", "#/apps"],
     ["#/verify-sender/token", "#/apps"], ["#/team", "#/team"],
   ])("marks the parent of %s", (hash, target) => {
     const selected = [...render(hash).matchAll(/<a [^>]*?href="([^"]*)"[^>]*aria-current="page"/g)].map((match) => match[1]);
     expect(selected.length).toBeGreaterThan(0);
     expect(new Set(selected)).toEqual(new Set([target]));
+  });
+
+  it("matches sub-routes and query/trailing-slash variants via section()", () => {
+    expect(section("#/apps")).toBe("Apps");
+    expect(section("#/apps/")).toBe("Apps");
+    expect(section("#/apps/gmail-connected?ok=1")).toBe("Apps");
+    expect(section("#/settings/business")).toBe("Business");
+    expect(section("#/settings/business/")).toBe("Business");
+    expect(section("#/activity/ask")).toBe("Activity");
+    expect(section("#/activity/ask?ref=REQ-1")).toBe("Activity");
+    expect(section("#/runs/1234-5678")).toBe("Activity");
+    expect(section("#/runs/1234-5678/ask")).toBe("Activity");
+    expect(section("#/account")).toBe("Account");
+    expect(section("#/account/")).toBe("Account");
   });
 
   it("keeps the same groups on child pages", () => {

@@ -113,7 +113,7 @@ function Route({ hash, user }: { hash: string; user: User }) {
   if (hash === "#/advanced" && user.role === "owner" && user.admin === true) return <AdvancedPage />;
   if (hash === "#/new" && user.role === "owner") return <NewAutomationPage email={user.email} />;
   if (hash === "#/ai" && user.role === "owner") return <BuildWithAiPage email={user.email} />;
-  if (hash === "#/secrets" && user.role === "owner" && user.admin === true) return <SecretsPage />;
+  if (hash === "#/secrets" && user.role === "owner") return <SecretsPage admin={user.admin === true} />;
   if (hash === "#/tokens" && user.admin === true) return <TokensPage />;
   if (hash === "#/settings") return <SettingsPage user={user} />;
   if (hash === "#/account") return <AccountPage />;

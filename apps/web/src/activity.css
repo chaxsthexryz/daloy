@@ -191,8 +191,12 @@ main.page.act { max-width: none; width: 100%; margin: 0; padding: 0; min-height:
 .act-ask { display: grid; grid-template-columns: minmax(0, 422px) minmax(0, 1fr); gap: 22px; align-items: start; }
 .act-ask-find { display: flex; flex-direction: column; gap: 8px; }
 .act-ask-find label { font-size: 13px; font-weight: 600; }
-.act-picks { display: flex; flex-direction: column; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.act-picks { display: flex; flex-direction: column; gap: 6px; margin: 0; padding: 0; list-style: none; max-height: 280px; overflow-y: auto; }
 .act-picks .act-link { font-weight: 500; text-align: left; white-space: normal; }
+.act-card button.act-pick-btn { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; width: 100%; min-height: 40px; padding: 8px 10px; border: 1px solid var(--a-line); border-radius: 8px; background: var(--a-canvas); color: var(--a-ink); font: 500 13px/18px inherit; text-align: left; cursor: pointer; }
+.act-card button.act-pick-btn:hover { border-color: var(--a-accent); background: var(--a-select); }
+.act-card button.act-pick-btn .act-mono { font-weight: 700; color: var(--a-accent); }
+.act-card button.act-pick-btn .act-pill { margin-left: auto; }
 .act-questions { display: flex; flex-direction: column; gap: 8px; }
 .act-questions button { width: 100%; min-height: 50px; padding: 0 12px; border: 1px solid var(--a-line); border-radius: 6px; background: var(--a-bg); color: var(--a-ink); font: 600 15px/20px inherit; text-align: left; box-shadow: none; }
 .act-questions button:hover:not(:disabled) { background: var(--a-canvas); color: var(--a-ink); }

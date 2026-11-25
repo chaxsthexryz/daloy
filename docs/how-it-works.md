@@ -1730,3 +1730,16 @@ How it works (`packages/db/src/lalamove.ts`, `apps/worker/src/steps/lalamove.ts`
 Limits: no geocoding (coordinates come from the shop), one drop-off, no cancel or status tracking. It was tested against a fake Lalamove server, not the real sandbox.
 
 Tests: `packages/db/src/lalamove.test.ts` (signature, quote then order, error handling), `packages/engine/src/lalamove.test.ts` (sandbox default, trigger and AI rules, template), `apps/worker/src/steps/lalamove.test.ts` (booking, fake for sample and test runs, live guard, checks before any request).
+
+## Navigation, discoverability and daily operations (phase F3)
+
+What it does: fixes sidebar route highlighting, links daily-operations surfaces together, and guides non-technical owners through request lookups, Secrets, SMS limits, Messenger alert linking, and receipt review.
+
+How it works (`apps/web/src/Nav.tsx`, `apps/web/src/console-shell.css`, `apps/web/src/Bookings.tsx`, `apps/web/src/Resources.tsx`, `apps/web/src/AskRequest.tsx`, `apps/web/src/lib/ask.ts`, `apps/web/src/Apps.tsx`, `apps/web/src/Secrets.tsx`, `apps/web/src/App.tsx`, `apps/web/src/Conversations.tsx`, `apps/web/src/Receipts.tsx`):
+- `section(hash)` strips query parameters and trailing slashes and maps `#/apps*`, `#/activity*`, `#/runs/*`, and `#/account*` to their matching sidebar links, while route changes and container blur clear the hover pill so a previous item never stays highlighted.
+- `#/bookings` links directly to `#/resources` ("Manage rooms and resources"), and `#/resources` uses a balanced 3-column add row with plain booking copy instead of schema jargon.
+- `#/activity/ask` loads up to 50 recent runs via `recentRequests()` and `filterRequests()`, shows a searchable list of recent request references with an example placeholder (`e.g. REQ-2026-0001`), and explains reference lookup.
+- Workspace owners can open `#/secrets` directly from `#/apps`, Lalamove steps in the editor, and the variable picker (non-admin owners see an `Apps > Secrets` breadcrumb); `#/apps` also notes that SMS (UniSMS) is managed by the operator and links to plan usage in `#/settings`.
+- `#/conversations` replaces the raw "Staff Messenger PSID" label with a 3-step linking guide and Telegram/email fallback note, and `#/receipts` shows a 3-step empty-state walkthrough before the first receipt arrives.
+
+Tests: `apps/web/src/Nav.test.tsx`, `apps/web/src/lib/ask.test.ts`, `apps/web/src/lib/locale-coverage.test.ts`, and Playwright specs `e2e/navigation.spec.ts`, `e2e/rail.spec.ts`, `e2e/bookings.spec.ts`, `e2e/workspace-resources.spec.ts`, `e2e/ask-request.spec.ts`, `e2e/workspace-secrets.spec.ts`, `e2e/conversations.spec.ts`, `e2e/payments.spec.ts`.

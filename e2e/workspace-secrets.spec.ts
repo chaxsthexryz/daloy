@@ -7,10 +7,13 @@ const VALUE = "sk-synthetic-secret-value-9021";
 // returns or in the dialogs. Replace says what it will do, and Delete asks in a dialog that names the secret.
 test("Secrets: add, replace, delete, and the value never shows", async ({ page }) => {
   await registerOwner(page);
-  await page.goto("/#/secrets");
+  await page.goto("/#/apps");
+  await expect(page.getByText("SMS (UniSMS) is managed by the kymavo operator")).toBeVisible();
+  await page.getByRole("link", { name: "Open Secrets" }).click();
+  await expect(page).toHaveURL(/#\/secrets$/);
   await page.reload();
   await expect(page.getByRole("heading", { name: "Secrets", level: 1 })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Advanced", exact: true }).first()).toHaveAttribute("href", "#/advanced");
+  await expect(page.getByRole("link", { name: "Apps", exact: true }).first()).toHaveAttribute("href", "#/apps");
   await expect(page.getByText("None yet.")).toBeVisible();
 
   for (const name of ["shop_hook", "paymongo_webhook"]) {
