@@ -10,6 +10,7 @@ import { loadAiFiles } from "./ai-files";
 import { googleDocsStep, type DocsInput } from "./google-docs";
 import { httpRequest } from "./http";
 import { expireCheckout, paymongoLink } from "./paymongo";
+import { bookLalamove, SAMPLE_LALAMOVE, type LalamoveInput } from "./lalamove";
 import { previousValue, readPage, SAMPLE_PAGE, type ReadPageInput } from "./read-page";
 import { shopifyPayload, type ShopifyCreateInput, type ShopifyUpdateInput } from "./shopify";
 import { defaultGuard, type SsrfGuard } from "./ssrf";
@@ -249,6 +250,10 @@ ${numberedMenu(menu)}` : text(body, ctx) } satisfies EmailInput;
       const c = step.config;
       const opt = (v: string | undefined) => (v === undefined ? "" : text(v, ctx));
       return { by: c.by, product: text(c.product, ctx), title: opt(c.title), description: opt(c.description), price: opt(c.price), sku: opt(c.sku), imageUrl: opt(c.imageUrl), ...(c.status ? { status: c.status } : {}) } satisfies ShopifyUpdateInput;
+    }
+    case "lalamove": {
+      const { serviceType, live, remarks, ...fields } = step.config;
+      return { serviceType, live, ...Object.fromEntries(Object.entries(fields).map(([k, v]) => [k, text(v, ctx).trim()])), ...(remarks === undefined ? {} : { remarks: text(remarks, ctx) }) } as LalamoveInput;
     }
     case "browser":
       // Addresses and typed values are templates; selectors, texts and names are the owner's literals.
@@ -890,6 +895,12 @@ async function runStep(deps: FullDeps, step: Step, input: unknown, ctx: Expressi
       if (mock) return { output: { mocked: true, reference, ...payload } };
       const d = await queueDelivery(deps.db, { userId, runId, stepId: step.id, provider: "shopify", reference, payload });
       return { output: { deliveryId: d.id, reference, state: d.state } };
+    }
+    case "lalamove": {
+      const cfg = input as LalamoveInput;
+      // A sample run and a test run never book a rider, in the sandbox or live, and read no keys (decision 0141).
+      if (mock || test) return { output: { mocked: true, ...SAMPLE_LALAMOVE, live: cfg.live } };
+      return { output: await bookLalamove(deps, { userId, runId, stepId: step.id }, cfg, () => claim("http"), claimSend) };
     }
     case "payment_status": {
       const cfg = input as { link: string };

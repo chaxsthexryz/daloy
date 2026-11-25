@@ -38,6 +38,7 @@ export * from "./whatsapp";
 export * from "./shopify";
 export * from "./telegram";
 export * from "./oauth";
+export * from "./lalamove";
 export * from "./paymongo";
 export * from "./providers";
 export * from "./retired-secrets";

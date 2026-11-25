@@ -41,6 +41,8 @@ export type ProviderUrls = {
   meta?: string;
   whatsapp?: string;
   metaCdn?: string;
+  /** Test-only base for the Lalamove API. Unset: the sandbox, or production for a live step (decision 0141). */
+  lalamove?: string;
   /** Test-only base for the Shopify Admin API. Unset: requests go to https://<shop>.myshopify.com (decision 0105). */
   shopify?: string;
   airtable: string;
@@ -85,6 +87,7 @@ export const providerUrls = (env: NodeJS.ProcessEnv = process.env): ProviderUrls
   whatsapp: env.WHATSAPP_GRAPH_URL ? trim(env.WHATSAPP_GRAPH_URL) : undefined,
   metaCdn: env.META_CDN_URL ? trim(env.META_CDN_URL) : undefined,
   shopify: env.SHOPIFY_API_URL ? trim(env.SHOPIFY_API_URL) : undefined,
+  lalamove: env.LALAMOVE_API_URL ? trim(env.LALAMOVE_API_URL) : undefined,
   airtable: trim(env.AIRTABLE_API_URL ?? "https://api.airtable.com"),
   notion: trim(env.NOTION_API_URL ?? "https://api.notion.com"),
   trello: trim(env.TRELLO_API_URL ?? "https://api.trello.com"),

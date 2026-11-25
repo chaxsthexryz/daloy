@@ -829,6 +829,55 @@ export const TEMPLATES = [
       ],
     },
   },
+  // L1 (decision 0141): the shop's server says an order is confirmed and paid; kymavo books a Lalamove rider and texts
+  // the customer the tracking link. It stays in Lalamove's sandbox until the owner turns on live in the step.
+  {
+    slug: "lalamove-confirmed-order",
+    name: "Book a Lalamove rider when an order is confirmed",
+    description: "Your shop sends a signed webhook when an order is confirmed. kymavo gets a Lalamove quotation, books the rider with your own Lalamove key and texts the customer the tracking link. Save lalamove_api_key and lalamove_api_secret in Secrets and set your pick-up address first. It uses Lalamove's sandbox until you turn on live in the step, and live bookings are paid from your Lalamove Wallet.",
+    category: "Orders",
+    definition: {
+      trigger: {
+        type: "webhook",
+        config: {
+          hmacSecret: "order_webhook_secret",
+          requireTimestamp: true,
+          eventKey: "{{trigger.order_id}}",
+          fields: [
+            { name: "order_id", label: "Order number", type: "text", required: true },
+            { name: "customer_name", label: "Customer name", type: "text", required: true },
+            { name: "phone", label: "Mobile number", type: "text", required: true },
+            { name: "address", label: "Delivery address", type: "text", required: true },
+            { name: "lat", label: "Delivery latitude", type: "text", required: true },
+            { name: "lng", label: "Delivery longitude", type: "text", required: true },
+          ],
+        },
+      },
+      steps: [
+        {
+          id: "book_rider",
+          type: "lalamove",
+          config: {
+            serviceType: "MOTORCYCLE",
+            pickupAddress: "Your shop address",
+            pickupLat: "14.5794",
+            pickupLng: "121.0359",
+            senderName: "Your shop",
+            senderPhone: "09171234567",
+            dropoffAddress: "{{trigger.address}}",
+            dropoffLat: "{{trigger.lat}}",
+            dropoffLng: "{{trigger.lng}}",
+            recipientName: "{{trigger.customer_name}}",
+            recipientPhone: "{{trigger.phone}}",
+            remarks: "Order {{trigger.order_id}}",
+            live: false,
+          },
+        },
+        { id: "send_tracking", type: "sms", config: { to: "{{trigger.phone}}", message: "Hi {{trigger.customer_name}}, a Lalamove rider is booked for order {{trigger.order_id}}. Track it here: {{steps.book_rider.output.shareLink}}" } },
+      ],
+      edges: [{ from: "book_rider", to: "send_tracking" }],
+    },
+  },
   // C8 (decision 0126): Resort concierge and stay templates.
   {
     slug: "resort-concierge-dm",

@@ -111,6 +111,9 @@ export function localizeGeneratedDefinition(definition: WorkflowDefinition, lang
       remind: { message: "Paalala: hindi pa bayad ang order {{trigger.order_id}}. Magbayad dito: {{steps.ask_payment.output.checkoutUrl}}" },
       tell_cancelled: { message: "Hi {{trigger.customer_name}}, kinansela ang order {{trigger.order_id}} dahil hindi nabayaran sa oras. Mag-reply kung nakabayad ka na." },
     },
+    "lalamove-confirmed-order": {
+      send_tracking: { message: "Hi {{trigger.customer_name}}, may Lalamove rider na para sa order {{trigger.order_id}}. I-track dito: {{steps.book_rider.output.shareLink}}" },
+    },
     "meta-receipt-intake": {
       approve: {
         subject: "Suriin ang resibo {{steps.read_receipt.output.reference}} ({{steps.read_receipt.output.amount}})",

@@ -1732,7 +1732,7 @@ function TriggerPanel({ trigger, wf, onChange }: { trigger: Trigger; wf: Loaded;
   );
 }
 
-const OUTSIDE = new Set(["http", "email", "approval", "sheets", "drive", "slack", "outlook", "teams", "telegram", "sms", "calendar", "airtable", "notion", "trello", "meta_reply", "whatsapp_reply", "shopify_create_product", "shopify_update_product", "discord", "google_docs", "browser", "read_page"]);
+const OUTSIDE = new Set(["http", "email", "approval", "sheets", "drive", "slack", "outlook", "teams", "telegram", "sms", "calendar", "airtable", "notion", "trello", "meta_reply", "whatsapp_reply", "shopify_create_product", "shopify_update_product", "lalamove", "discord", "google_docs", "browser", "read_page"]);
 
 /** Per-step outcomes for a mocked or AI-only test run: a classify label, an approval decision, or a failure. */
 function TestChoices({ steps, choices, onChange }: { steps: Step[]; choices: Record<string, string>; onChange: (c: Record<string, string>) => void }) {

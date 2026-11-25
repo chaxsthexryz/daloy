@@ -89,6 +89,7 @@ const superseded = (stepId: string, why: "booking" | "conversation" | false) =>
 /** A send that must not be repeated without a person deciding: an email, an HTTP call that is not idempotent, or a browser step that clicks or types. */
 const unsafeToRepeat = (step: Step) =>
   step.type === "email" ||
+  step.type === "lalamove" ||
   (step.type === "http" && !isIdempotent(step.config)) ||
   (step.type === "browser" && step.config.actions.some((a) => a.action === "click" || a.action === "fill"));
 

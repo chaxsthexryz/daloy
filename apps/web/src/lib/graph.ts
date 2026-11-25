@@ -11,7 +11,7 @@ export type Draft = WorkflowDefinition;
 export type Edge = Draft["edges"][number];
 
 /** Step types the builder can add. */
-export const ADDABLE = ["condition", "switch", "transform", "http", "email", "delay", "ai", "approval", "sheets", "drive", "slack", "outlook", "teams", "telegram", "sms", "calendar", "airtable", "notion", "trello", "booking", "meta_reply", "whatsapp_reply", "shopify_create_product", "shopify_update_product", "discord", "google_docs", "browser", "read_page", "call_workflow", "assistant_read"] as const;
+export const ADDABLE = ["condition", "switch", "transform", "http", "email", "delay", "ai", "approval", "sheets", "drive", "slack", "outlook", "teams", "telegram", "sms", "calendar", "airtable", "notion", "trello", "booking", "meta_reply", "whatsapp_reply", "shopify_create_product", "shopify_update_product", "lalamove", "discord", "google_docs", "browser", "read_page", "call_workflow", "assistant_read"] as const;
 export type AddableType = (typeof ADDABLE)[number];
 
 export const blankDraft = (): Draft => ({ trigger: { type: "manual", config: {} }, steps: [], edges: [] });
@@ -79,6 +79,9 @@ export function defaultConfig(type: AddableType, language: Language = "en"): Ste
       return { workflowSlug: "", payload: {} };
     case "assistant_read":
       return { what: "all", timezone: "Asia/Manila" };
+    // Sandbox until the owner turns on live. The pick-up is the owner's shop; the drop-off comes from the trigger.
+    case "lalamove":
+      return { serviceType: "MOTORCYCLE", pickupAddress: "", pickupLat: "", pickupLng: "", senderName: "", senderPhone: "", dropoffAddress: "{{trigger.address}}", dropoffLat: "{{trigger.lat}}", dropoffLng: "{{trigger.lng}}", recipientName: "{{trigger.name}}", recipientPhone: "{{trigger.phone}}", live: false };
   }
 }
 

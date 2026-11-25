@@ -127,6 +127,8 @@ export function insertables(draft: Draft, id: string): string[] {
                         ? ["runId", "workflowId", "workflowSlug", "duplicate"].map((k) => `steps.${s.id}.output.${k}`)
                         : s.type === "assistant_read"
                           ? ["date", "timezone", "what", "summaryText", "calendar.events", "bookings.items", "payments.items", "runs"].map((k) => `steps.${s.id}.output.${k}`)
+                          : s.type === "lalamove"
+                            ? ["orderId", "status", "shareLink", "total", "currency", "quotationId", "live"].map((k) => `steps.${s.id}.output.${k}`)
                           : s.type === "browser"
                             ? [...s.config.actions.flatMap((a) => (a.action === "extract" ? [a.name] : [])), "url"].map((k) => `steps.${s.id}.output.${k}`)
                             : [`steps.${s.id}.output`];
