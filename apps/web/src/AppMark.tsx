@@ -1,7 +1,7 @@
 import { useState } from "react";
 
-/** Marks that have a picture in public/logos. Everything else (UniSMS, PayMongo, GCash, Messenger, Instagram, kymavo actions) is an icon or a letter tile. Reasons: public/logos/README.md. */
-export const LOGOS = ["gmail", "outlook", "google-sheets", "google-drive", "google-docs", "google-calendar", "slack", "teams", "telegram", "airtable", "notion", "trello", "shopify", "discord"] as const;
+/** Marks that have a picture in public/logos. Everything else (UniSMS, GCash, Instagram, kymavo actions) is an icon or a letter tile. Reasons: public/logos/README.md. */
+export const LOGOS = ["gmail", "outlook", "google-sheets", "google-drive", "google-docs", "google-calendar", "slack", "teams", "telegram", "airtable", "notion", "trello", "shopify", "discord", "paymongo", "messenger", "whatsapp", "lalamove"] as const;
 const hasLogo = (mark: string): boolean => (LOGOS as readonly string[]).includes(mark);
 
 /** The app keys the Apps page and the catalog use mapped to a logo file name. */
@@ -19,6 +19,10 @@ export const APP_LOGO: Record<string, string> = {
   trello: "trello",
   discord: "discord",
   shopify: "shopify",
+  paymongo: "paymongo",
+  meta_messenger: "messenger",
+  whatsapp: "whatsapp",
+  lalamove: "lalamove",
 };
 
 // kymavo's own line icons for built-in actions: 24px grid, 1.8 stroke, currentColor.
@@ -36,7 +40,7 @@ const ICONS: Record<string, string> = {
 };
 
 /** Marks drawn as a letter tile because no usable logo exists (public/logos/README.md says why). */
-export const LETTER_TILES = ["unisms", "paymongo", "gcash", "messenger", "instagram", "whatsapp"] as const;
+export const LETTER_TILES = ["unisms", "gcash", "instagram"] as const;
 export const ICON_KEYS = Object.keys(ICONS);
 
 /**

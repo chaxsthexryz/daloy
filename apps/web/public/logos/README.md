@@ -24,6 +24,10 @@ Public-domain files are copies hosted on Wikimedia Commons. Commons marks each o
 | google-docs.svg | https://cdn.jsdelivr.net/npm/simple-icons@16.38.0/icons/googledocs.svg | Simple Icons, CC0 (trademark of Google) | fill set to Google Docs' colour #4285F4 from the Simple Icons data |
 | trello.svg | https://cdn.jsdelivr.net/npm/simple-icons@16.38.0/icons/trello.svg | Simple Icons, CC0 (trademark of Atlassian) | fill set to Trello's colour #0052CC from the Simple Icons data |
 | shopify.svg | https://cdn.jsdelivr.net/npm/simple-icons@16.38.0/icons/shopify.svg | Simple Icons, CC0 (trademark of Shopify). Added on 22 November 2026 | fill set to Shopify's colour #7AB55C from the Simple Icons data. Shopify's brand assets page is https://www.shopify.com/brand-assets; the owner should read its current rules before a public launch |
+| lalamove.svg | https://cdn.worldvectorlogo.com/logos/lalamove.svg | Vector mark of Lalamove. Added on 25 November 2026 | icon subpath isolated on square viewBox, `#ff671d` preserved |
+| messenger.svg | https://cdn.jsdelivr.net/npm/simple-icons@16.38.0/icons/meta.svg | Simple Icons, CC0 (trademark of Meta Platforms). Added on 25 November 2026 | blue gradient `#0064E0` -> `#0082FB` applied to Meta infinity mark |
+| whatsapp.svg | https://cdn.jsdelivr.net/npm/simple-icons@16.38.0/icons/whatsapp.svg | Simple Icons, CC0 (trademark of Meta / WhatsApp). Added on 25 November 2026 | WhatsApp green `#25D366` fill applied |
+| paymongo.svg | Owner-provided brand mark uploaded on 25 November 2026 | Trademark of PayMongo | traced cleanly to vector SVG with `#223f37` fill on square viewBox |
 
 Why Simple Icons for two (Airtable and Trello; Shopify was added the same way because Commons has no copy that was checked): the Commons copy of the Airtable logo could not be downloaded (HTTP 429 from Wikimedia during the session) and the Commons Trello file is the full wordmark with a gradient, not the icon. Simple Icons draws the icon as one colour, so these two are single-colour versions.
 
@@ -34,9 +38,8 @@ Discord and Google Docs were added on 2026-11-22 (phase I1) from the same Simple
 | Brand | Why |
 |---|---|
 | GCash | Not in Simple Icons. Mynt publishes no public brand kit that could be fetched here, and no Commons copy was checked. |
-| PayMongo | Not in Simple Icons and no public brand kit was found (https://www.paymongo.com/brand returns 404). |
 | UniSMS | Not in Simple Icons and no logo was found. |
-| Facebook Messenger, Instagram, WhatsApp | Meta's guidelines say to use only the logos from its Brand Resource Center after accepting its terms (https://about.instagram.com/brand/ and https://www.whatsapp.com/brand/). That download needs the owner's acceptance, and a copy from Commons or Simple Icons is not that file, so no copy is used. To switch: download the pack as the owner, add `messenger.svg`, `instagram.svg` and `whatsapp.svg` here, add the names to `LOGOS` in `AppMark.tsx` and remove them from `LETTER_TILES`. |
+| Instagram | Instagram icon mark not yet supplied in the workspace bundle; stays a letter tile until provided. |
 
 ## What was not checked
 
