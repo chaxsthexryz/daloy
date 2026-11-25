@@ -242,6 +242,11 @@ export const googleDocsConfigSchema = z.object({
 // Reads one public web page (phase B1, decision 0107): its title, its main text and, with a selector, one value such as
 // a price. previous and changed come from this step's last successful run. A GET through the same guard as the http step.
 export const READ_PAGE_MAX_CHARS = 20_000;
+// Reads a .csv, .xlsx or Google Sheets file from Google Drive into rows (M1, decision 0139), such as a Shopee, Lazada or
+// TikTok Shop order export dropped into the folder a drive_file trigger watches. Uses the Google Drive connection.
+export const readSpreadsheetConfigSchema = z.object({
+  fileId: template(200).min(1).default("{{trigger.fileId}}").describe("The Drive file to read. The file from the Drive trigger by default."),
+});
 export const readPageConfigSchema = z.object({
   url: template(2000).min(1).describe("The page to read, such as https://example.com/rice. Only public web pages are read."),
   selector: z.string().min(1).max(500).optional().describe("A CSS selector for one value, such as .price. Leave empty to use the whole page text."),
@@ -473,6 +478,7 @@ const stepSchema = z.discriminatedUnion("type", [
   z.object({ id: stepId, disabled, note, onError, type: z.literal("assistant_read"), config: assistantReadConfigSchema }),
   z.object({ id: stepId, disabled, note, onError, type: z.literal("discord"), config: discordConfigSchema }),
   z.object({ id: stepId, disabled, note, onError, type: z.literal("google_docs"), config: googleDocsConfigSchema }),
+  z.object({ id: stepId, disabled, note, onError, type: z.literal("read_spreadsheet"), config: readSpreadsheetConfigSchema }),
   z.object({ id: stepId, disabled, note, onError, type: z.literal("read_page"), config: readPageConfigSchema }),
   z.object({ id: stepId, disabled, note, onError, type: z.literal("shopify_create_product"), config: shopifyCreateProductConfigSchema }),
   z.object({ id: stepId, disabled, note, onError, type: z.literal("shopify_update_product"), config: shopifyUpdateProductConfigSchema }),

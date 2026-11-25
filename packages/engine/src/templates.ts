@@ -495,6 +495,52 @@ export const TEMPLATES = [
       ],
     },
   },
+  // M1 (decision 0139): an order export from Shopee, Lazada or TikTok Shop, dropped into the watched Drive folder.
+  {
+    slug: "marketplace-orders-to-sheets",
+    name: "Marketplace orders to Sheets",
+    description: "Download your order export from Shopee, Lazada or TikTok Shop (CSV or Excel) and put it in the Google Drive folder picked in Apps. kymavo reads each order and adds it to your Google Sheet, up to 100 orders a file, then tells the team on Slack how many it added. Each column is a header from the export in lower case with _ for spaces, so Order ID is {{item.order_id}}: change the columns to match your export. An order that appears in two exports is added twice.",
+    category: "Orders",
+    definition: {
+      trigger: { type: "drive_file", config: { requireFile: false } },
+      steps: [
+        { id: "read_orders", type: "read_spreadsheet", config: { fileId: "{{trigger.fileId}}" } },
+        { id: "add_orders", type: "sheets", config: { rows: "{{steps.read_orders.output.rows}}", columns: ["{{item.order_id}}", "{{item.order_status}}", "{{item.product_name}}", "{{item.quantity}}", "{{item.total_amount}}"] } },
+        { id: "tell_team", type: "slack", config: { text: "Added {{steps.read_orders.output.count}} orders from {{trigger.name}} to your sheet." } },
+      ],
+      edges: [
+        { from: "read_orders", to: "add_orders" },
+        { from: "add_orders", to: "tell_team" },
+      ],
+    },
+  },
+  // M1: a stock count typed as a new row in the watched tab. The row's headers are item, in_stock and reorder_at.
+  {
+    slug: "low-stock-alert",
+    name: "Low-stock alert",
+    description: "Log stock counts as new rows in the Stock tab of your Google Sheet, with the headers Item, In stock and Reorder at. When a count is at or below its reorder level, the owner gets an email.",
+    category: "Orders",
+    definition: {
+      trigger: { type: "sheets_row", config: { tab: "Stock" } },
+      steps: [
+        { id: "is_low", type: "condition", config: { condition: { left: "{{trigger.cells.in_stock}}", op: "lte", right: "{{trigger.cells.reorder_at}}" } } },
+        {
+          id: "tell_owner",
+          type: "email",
+          config: { to: "owner@example.com", subject: "Low stock: {{trigger.cells.item}}", text: "{{trigger.cells.item}} is down to {{trigger.cells.in_stock}}, at or below its reorder level of {{trigger.cells.reorder_at}}. Time to restock." },
+        },
+        {
+          id: "tell_bad_row",
+          type: "email",
+          config: { to: "owner@example.com", subject: "Stock row {{trigger.rowNumber}} needs a number", text: "Row {{trigger.rowNumber}} in the Stock tab ({{trigger.cells.item}}) has no number in In stock or Reorder at, so kymavo could not check it. Fix the row, then add the count again." },
+        },
+      ],
+      edges: [
+        { from: "is_low", to: "tell_owner", on: "true" },
+        { from: "is_low", to: "tell_bad_row", on: "invalid" },
+      ],
+    },
+  },
   // N22: the AI step reads the receipt photo. The photo stays in the run page; the sheet row holds only the text the model read.
   {
     slug: "receipt-expense",

@@ -191,6 +191,8 @@ export async function startFakeProviders(port = 0) {
   const driveFiles: { id: string; name: string; parent: string; mimeType: string; size: number; sha256: string }[] = [];
   // G2 (decision 0127): when each file was created and its bytes, for files.list by folder and alt=media downloads.
   const driveMeta = new Map<string, { createdTime: string; data: Buffer }>();
+  // M1 (decision 0139): Google Sheets copies kymavo made of an Excel file in My Drive, by id, until it deletes them.
+  const sheetCopies = new Map<string, { name: string; data: Buffer; owner: string }>();
   // keys: Idempotency-Key -> stored response. busy: session ids whose expire answers 400 (a payment in progress).
   const paymongo = { sessions: [] as { id: string; amount: number; status?: "active" | "expired" }[], keys: new Map<string, unknown>(), busy: new Set<string>() };
   // Discord incoming webhooks (phase I1): id -> token for the webhooks that exist, and what was posted. A deleted webhook answers 404.
@@ -566,6 +568,37 @@ export async function startFakeProviders(port = 0) {
       discord.posts.push({ id: hook[1]!, content: m.content, allowedMentions: m.allowed_mentions });
       const id = String(1_100_000_000_000_000_000n + BigInt(discord.posts.length));
       return url.searchParams.get("wait") === "true" ? answer(200, { id, content: m.content, webhook_id: hook[1] }) : answer(204, {});
+    }
+
+    // read_spreadsheet (M1): a file's metadata, a Google Sheet exported as CSV, and an Excel file copied as a Google Sheet
+    // into My Drive, then deleted. The fake parses no Excel: a test's "Excel" file holds CSV text, which the copy keeps.
+    const drivePath = /^\/drive\/v3\/files\/([^/]+)(\/copy|\/export)?$/.exec(path);
+    const inFolderFile = drivePath ? driveFiles.find((f) => f.id === drivePath[1]) : undefined;
+    const copied = drivePath ? sheetCopies.get(drivePath[1]!) : undefined;
+    const sheetCall = drivePath && (drivePath[2] === "/export" || (drivePath[2] === "/copy" && inFolderFile) || (!drivePath[2] && copied && req.method === "DELETE") || (!drivePath[2] && inFolderFile && req.method === "GET" && url.searchParams.get("alt") !== "media"));
+    if (sheetCall) {
+      const caller = googleCaller(req);
+      if (!caller) return googleError(res, 401, "UNAUTHENTICATED", "Invalid Credentials");
+      const reachable = inFolderFile ? driveFolders.get(inFolderFile.parent)?.editors.has(caller.email) : copied?.owner === caller.email;
+      if (!reachable) return googleError(res, 404, "NOT_FOUND", `File not found: ${drivePath[1]}.`);
+      if (req.method === "DELETE") {
+        sheetCopies.delete(drivePath[1]!);
+        return void res.writeHead(204).end();
+      }
+      if (drivePath[2] === "/copy") {
+        const meta = JSON.parse(raw || "{}") as { name?: string; mimeType?: string; parents?: string[] };
+        if (meta.mimeType !== "application/vnd.google-apps.spreadsheet" || meta.parents?.[0] !== "root") return googleError(res, 400, "INVALID_ARGUMENT", "Only a Google Sheets copy into My Drive here.");
+        const id = `sheetcopy${String(++seq).padStart(10, "0")}`;
+        sheetCopies.set(id, { name: meta.name ?? "", data: driveMeta.get(inFolderFile!.id)!.data, owner: caller.email });
+        return answer(200, { id });
+      }
+      if (drivePath[2] === "/export") {
+        const data = copied?.data ?? (inFolderFile?.mimeType === "application/vnd.google-apps.spreadsheet" ? driveMeta.get(inFolderFile.id)?.data : undefined);
+        if (!data || url.searchParams.get("mimeType") !== "text/csv") return googleError(res, 400, "INVALID_ARGUMENT", "Export only supports Docs Editors files.");
+        return void res.writeHead(200, { "content-type": "text/csv", "content-length": String(data.length) }).end(data);
+      }
+      const f = inFolderFile!;
+      return answer(200, { id: f.id, name: f.name, mimeType: f.mimeType, trashed: false, ...(f.mimeType.startsWith("application/vnd.google-apps.") ? {} : { size: String(f.size) }) });
     }
 
     // Google Docs through Drive (copy, lookup by appProperties) and the Docs API (batchUpdate), with drive.file rules.
@@ -1212,6 +1245,7 @@ export async function startFakeProviders(port = 0) {
       driveFolders.set(id, { name, editors: new Set(editors), sharedDriveId });
     },
     driveFiles,
+    sheetCopies,
     /** A file someone else put in the folder, created now. Returns its id. */
     addDriveFile: (folderId: string, f: { name: string; mimeType: string; data: Buffer }) => {
       const id = `drivefile${String(++seq).padStart(8, "0")}`;

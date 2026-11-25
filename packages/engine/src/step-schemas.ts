@@ -1,7 +1,7 @@
 import * as z from "zod";
 import { aiConfigSchema } from "./ai";
 import { browserConfigSchema } from "./browser";
-import { approvalConfigSchema, assistantReadConfigSchema, callWorkflowConfigSchema, discordConfigSchema, googleDocsConfigSchema, readPageConfigSchema, bookingConfigSchema, calendarConfigSchema, conditionSchema, delayConfigSchema, driveConfigSchema, emailConfigSchema, httpConfigSchema, metaReplyConfigSchema, whatsappReplyConfigSchema, conversationUpdateConfigSchema, stayQuoteConfigSchema, outlookConfigSchema, paymentDueConfigSchema, paymentExpireConfigSchema, paymentStatusConfigSchema, paymongoLinkConfigSchema, shopifyCreateProductConfigSchema, shopifyUpdateProductConfigSchema, airtableConfigSchema, notionConfigSchema, trelloConfigSchema, sheetsConfigSchema, slackConfigSchema, smsConfigSchema, switchConfigSchema, teamsConfigSchema, telegramConfigSchema, transformConfigSchema, type Step } from "./definition";
+import { approvalConfigSchema, assistantReadConfigSchema, callWorkflowConfigSchema, discordConfigSchema, googleDocsConfigSchema, readPageConfigSchema, readSpreadsheetConfigSchema, bookingConfigSchema, calendarConfigSchema, conditionSchema, delayConfigSchema, driveConfigSchema, emailConfigSchema, httpConfigSchema, metaReplyConfigSchema, whatsappReplyConfigSchema, conversationUpdateConfigSchema, stayQuoteConfigSchema, outlookConfigSchema, paymentDueConfigSchema, paymentExpireConfigSchema, paymentStatusConfigSchema, paymongoLinkConfigSchema, shopifyCreateProductConfigSchema, shopifyUpdateProductConfigSchema, airtableConfigSchema, notionConfigSchema, trelloConfigSchema, sheetsConfigSchema, slackConfigSchema, smsConfigSchema, switchConfigSchema, teamsConfigSchema, telegramConfigSchema, transformConfigSchema, type Step } from "./definition";
 
 /**
  * JSON Schema for each step type's config, which the builder turns into a form.
@@ -42,6 +42,7 @@ export function stepJsonSchemas(): Record<Step["type"], unknown> {
     assistant_read: json(assistantReadConfigSchema),
     discord: json(discordConfigSchema),
     google_docs: json(googleDocsConfigSchema),
+    read_spreadsheet: json(readSpreadsheetConfigSchema),
     read_page: json(readPageConfigSchema),
     shopify_create_product: json(shopifyCreateProductConfigSchema),
     shopify_update_product: json(shopifyUpdateProductConfigSchema),

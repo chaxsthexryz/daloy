@@ -84,6 +84,13 @@ export function localizeGeneratedDefinition(definition: WorkflowDefinition, lang
       send_receipt: { subject: "Natanggap namin ang order mo {{trigger.order_id}}", text: "Hi {{trigger.customer_name}}, salamat sa order mo {{trigger.order_id}} ({{trigger.total}} piso). Mag-e-email kami kapag naipadala na ito." },
       tell_owner: { text: "Bagong order {{trigger.order_id}}: {{trigger.total}} piso. Nasa sheet mo ang mga detalye." },
     },
+    "marketplace-orders-to-sheets": {
+      tell_team: { text: "Naidagdag ang {{steps.read_orders.output.count}} order mula sa {{trigger.name}} sa sheet mo." },
+    },
+    "low-stock-alert": {
+      tell_owner: { subject: "Paubos na: {{trigger.cells.item}}", text: "{{trigger.cells.in_stock}} na lang ang {{trigger.cells.item}}, nasa o mas mababa sa reorder level nitong {{trigger.cells.reorder_at}}. Oras na para mag-restock." },
+      tell_bad_row: { subject: "Kailangan ng numero sa stock row {{trigger.rowNumber}}", text: "Walang numero sa In stock o Reorder at ang row {{trigger.rowNumber}} sa Stock tab ({{trigger.cells.item}}), kaya hindi ito nasuri ng kymavo. Ayusin ang row, saka idagdag ulit ang bilang." },
+    },
     "receipt-expense": {
       approve: { subject: "Gastos mula kay {{trigger.name}}", message: "Nagpadala ng resibo si {{trigger.name}}.\nTindahan: {{steps.read_receipt.output.shop}}\nHalaga: {{steps.read_receipt.output.amount}}\nNasa run page sa kymavo ang litrato." },
       tell_approved: { subject: "Na-approve ang gastos mo", text: "Hi {{trigger.name}}, na-approve ang resibo mo mula sa {{steps.read_receipt.output.shop}} ({{steps.read_receipt.output.amount}}) at naidagdag na sa listahan ng gastos." },

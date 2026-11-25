@@ -547,3 +547,13 @@ Entry points: `GET /privacy/customer` and `POST /privacy/customer/delete` (owner
 - WhatsApp media download SSRF and spoofed uploads: `downloadWhatsAppMedia` resolves temporary media URLs only via Meta Graph `/v21.0/:mediaId` with Bearer auth, then passes the returned CDN URL through `downloadMetaImage` (HTTPS port 443, Meta CDN host allowlist, private-IP DNS refusal, no redirects, 5 MB cap, JPEG/PNG/WebP magic-byte check).
 - Credential disclosure in history or error logs: `whatsapp` JSON secrets (`accessToken`, `appSecret`, `verifyToken`) are encrypted in `connections` and extracted by both `secretValuesToHide` and `extractRetiredSecretValues` in `packages/db/src/crypto.ts`.
 - Arbitrary recipients, late service replies, and unapproved templates: service replies (`mode: "text"`) require `to` to match the triggering sender, enforce staff takeover (`paused`) and the 24-hour customer window (`outside_window`), while `templateName` and `templateLanguage` are validated against strict identifier regexes. Under L7, `whatsapp_message` remains an untrusted public trigger so webhook inputs cannot feed `payment_due` amounts or Shopify product prices.
+
+## Read a spreadsheet step (M1, decision 0139)
+
+- Assets: the workspace's Google Drive grant, the files it can reach, and worker memory and run history size.
+- Entry points: no new endpoint. The step runs in the worker with the workspace's own Google Drive connection. The file id comes from the trigger or a template, so it can come from run data.
+- Reading more than the owner granted: no new scope. The step uses `drive.file`, so a forged or templated file id reaches only files in folders the owner picked or files kymavo made; anything else answers 404 and the step fails with a plain message. The id must match the Google file id pattern before any request.
+- Large or hostile files: the file must report at most 2 MB, the download or export stops at 2 MB, and the parsed rows stop at 2,000. The CSV parser is a single linear pass with no regex backtracking. Excel is parsed by Google, not the worker. Cell text reaches later steps as data, and the template resolver never resolves `{{...}}` found inside it.
+- Writes to the owner's Drive: only the temporary Google Sheets copy of an Excel file, made in My Drive and deleted in a `finally`. A failed delete leaves one copy the owner can remove.
+- Duplicates: the step does not dedupe, so overlapping exports append the same order twice (a data quality issue, not a security one).
+- Error text: Google's answers are mapped to fixed messages; file contents are never logged.

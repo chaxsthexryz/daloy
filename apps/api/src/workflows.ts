@@ -41,7 +41,7 @@ const versionNumber = new ZodPipe(z.coerce.number().int().min(1).max(1_000_000))
 /** Step types whose connection must be working before the workflow is turned on. */
 const CHECKED_PROVIDERS: Partial<Record<string, Provider>> = { sheets: "google_sheets", slack: "slack", outlook: "outlook", teams: "teams", discord: "discord", telegram: "telegram", calendar: "google_calendar", airtable: "airtable", notion: "notion", trello: "trello", meta_reply: "meta_messenger", whatsapp_reply: "whatsapp", shopify_create_product: "shopify", shopify_update_product: "shopify" };
 /** Every step type that uses an app, for the overview's apps list. Drive and PayMongo steps are not checked at publish, so they are not in CHECKED_PROVIDERS. */
-const APP_PROVIDERS: Partial<Record<string, Provider>> = { ...CHECKED_PROVIDERS, drive: "google_drive", google_docs: "google_drive", paymongo_link: "paymongo", payment_status: "paymongo" };
+const APP_PROVIDERS: Partial<Record<string, Provider>> = { ...CHECKED_PROVIDERS, drive: "google_drive", google_docs: "google_drive", read_spreadsheet: "google_drive", paymongo_link: "paymongo", payment_status: "paymongo" };
 /** The viewer's time zone, so "today" and the day bars follow their calendar. ICU checks the name; the database receives it as a bound parameter. */
 const timeZone = new ZodPipe(
   z

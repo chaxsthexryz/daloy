@@ -324,6 +324,7 @@ DeepSeek's review is in `docs/roadmap-review-2026-11-18.md`. Claude's second opi
 - [x] R5. Morning digest (email, opt-in), payments CSV export, Taglish templates, receipt compression on the phone. Branch `claude/r5-digest-csv`, migration 0044, decision 0093.
 - [x] R6. Privacy under RA 10173: form notice, receipt image retention, per-customer export and delete. Branch `claude/r6-privacy`, migration 0045, decision 0094.
 - [ ] R7. Demand-led: public-page reading, new templates, integration candidates after an API, cost and terms check.
+- [x] M1. Marketplace order export to rows: a `read_spreadsheet` step reads a Shopee, Lazada or TikTok Shop export (.csv, .xlsx or a Google Sheet) from the watched Drive folder into rows, up to 2,000 rows and 2 MB, with the "Marketplace orders to Sheets" and "Low-stock alert" templates. Branch `claude/m1-marketplace-import`, decision 0139, no migration.
 
 ## Integrations requested on 22 November 2026
 
@@ -339,7 +340,7 @@ DeepSeek's review is in `docs/roadmap-review-2026-11-18.md`. Claude's second opi
 
 - [x] T1. Test this step in the step's own panel with its last result, and "Try this step for real" for one step while the rest stay faked. Decision 0110, no migration.
 - [x] T2. "Test with this data" on a run page: open the editor with that run's trigger data as the sample. No decision record, no migration.
-- [ ] T3. "If this step fails": stop, skip and carry on, or take a "failed" path.
+- [x] T3. "If this step fails": stop, skip and carry on, or take a "failed" path. Shipped by E4 as the per-step `onError` policy (decision 0131).
 - [x] T4. Notes on steps, shown on the canvas card and read by Explain this flow. Plain text up to 300 characters, never a template. No decision record, no migration.
 - [x] T5. One Share panel: form link and embed code, MCP tool name, webhook URL with its signing rule and a curl example. API tokens work on `/mcp` only, so the API example is the webhook call. No decision record, no migration.
 - [x] T6. `docker compose --profile local-ai up` runs Ollama with a small model. `ollama` and a one-shot `ollama-pull` (llama3.2) under the `local-ai` profile; set `LLM_BASE_URL=http://ollama:11434`. Compose and docs only, no code change.
