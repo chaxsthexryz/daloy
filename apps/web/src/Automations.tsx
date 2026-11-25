@@ -313,14 +313,14 @@ export function Automations({ user }: { user: User }) {
                   <button type="button" className="ops-kpi-cell is-btn needs" aria-pressed={filter === "needs_you"} onClick={() => setFilter(filter === "needs_you" ? "all" : "needs_you")}>
                     <span className="ops-klabel">{t("Needs you")}</span>
                     <div className="ops-kval tnum">
-                      <strong className="amber"><AnimatedCounter value={needsYou} /></strong>
+                      <strong className={needsYouNum === 0 ? "ok" : "amber"}><AnimatedCounter value={needsYou} /></strong>
                       <small>{needsYouNum === 0 ? t("all clear") : t("approvals waiting")}</small>
                     </div>
                   </button>
                   <button type="button" className="ops-kpi-cell is-btn problems" aria-pressed={filter === "problem"} onClick={() => setFilter(filter === "problem" ? "all" : "problem")}>
                     <span className="ops-klabel">{t("Problems")}</span>
                     <div className="ops-kval tnum">
-                      <strong className="red"><AnimatedCounter value={total.problem} /></strong>
+                      <strong className={total.problem === 0 ? "ok" : "red"}><AnimatedCounter value={total.problem} /></strong>
                       <small>{total.problem === 0 ? t("all healthy") : t("needs attention")}</small>
                     </div>
                   </button>

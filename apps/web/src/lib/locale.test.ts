@@ -26,3 +26,11 @@ it("translates the pause, cancel and webhook timestamp text (N11b)", () => {
   expect(translate("tl", "A call signed without a timestamp was accepted on {date}. Update the caller, then turn this on.", { date: "18/11/2026" })).toContain("18/11/2026");
   expect(translate("en", "Nothing was sent. Choose what to do.")).toBe("Nothing was sent. Choose what to do.");
 });
+
+it("translates remaining sidebar and app-back labels in Taglish (F5)", () => {
+  expect(translate("tl", "Library")).toBe("Aklatan");
+  expect(translate("tl", "Team")).toBe("Koponan");
+  expect(translate("tl", "Settings")).toBe("Mga setting");
+  expect(translate("tl", "Account")).toBe("Account ko");
+  expect(translate("tl", "Back to Apps")).toBe("Bumalik sa Mga app");
+});

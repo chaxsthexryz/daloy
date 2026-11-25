@@ -254,8 +254,8 @@ export function connectSteps(draft: Draft, from: string, on: string | undefined,
   return { draft: { ...draft, edges: edges.sort((a, b) => order.get(a.from)! - order.get(b.from)!) } };
 }
 
-export const NODE_W = 220;
-const COL = 260;
+export const NODE_W = 256;
+const COL = 292;
 const DEFAULT_H = 88;
 const ROW_GAP = 82; // DEFAULT_H + ROW_GAP = 170px default spacing with room for exit add stubs and branch pills
 

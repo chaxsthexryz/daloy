@@ -79,7 +79,7 @@ function connectReason(e: ConnectError, t: (source: string, values?: Record<stri
   return t("Pick one of this step's branches.");
 }
 
-const PANEL_STEPS_FIT = { maxZoom: 1, padding: { top: "16px", right: "16px", bottom: "64px", left: "16px" } } as const;
+const PANEL_STEPS_FIT = { maxZoom: 1, minZoom: 0.25, padding: { top: "20px", right: "20px", bottom: "64px", left: "20px" } } as const;
 
 type Catalog = { schemas: Record<string, JsonSchema>; branches: Record<string, string[]>; sms?: boolean };
 type Loaded = Workflow & { trigger: { id: string; type: string; webhookPath: string | null; legacySignatureAt?: string | null } | null; live: Version | null; latest: Version | null };
@@ -207,6 +207,7 @@ export function Editor({ id, from }: { id: string; from?: string }) {
   const [showExplain, setShowExplain] = useState(false);
   const [showShare, setShowShare] = useState(false);
   const [showTurnOn, setShowTurnOn] = useState(false);
+  const [showMoreActions, setShowMoreActions] = useState(false);
   const [explained, setExplained] = useState(() => wasExplained(id));
   const [messagesChecked, setMessagesChecked] = useState(() => wereMessagesChecked(id));
   const markMessagesChecked = () => {
@@ -690,7 +691,19 @@ export function Editor({ id, from }: { id: string; from?: string }) {
     else copyStep(step);
     return true;
   };
-  const actions = (
+  const actions = phone ? (
+    <div className="a7-actions" role="group" aria-label={t("Automation actions")}>
+      <button type="button" onClick={() => save(false)} disabled={busy || draft.steps.length === 0}>
+        {t("Save")}
+      </button>
+      <button type="button" className="primary" onClick={() => setShowTurnOn(true)} disabled={busy || draft.steps.length === 0}>
+        {t("Publish")}
+      </button>
+      <button type="button" aria-expanded={showMoreActions} aria-haspopup="dialog" onClick={() => setShowMoreActions(true)}>
+        {t("More")}
+      </button>
+    </div>
+  ) : (
     <div className="a7-actions" role="group" aria-label={t("Automation actions")}>
       {/* The result shows in the panel's overview, so the selected step is closed first. */}
       <button
@@ -848,7 +861,7 @@ export function Editor({ id, from }: { id: string; from?: string }) {
   );
 
   return (
-    <div className="a7-editor">
+    <main className="a7-editor">
       <header className="a7-head">
         <div className="a7-head-main">
           <Breadcrumb items={[{ label: t("Automations"), href: "#/" }, { label: wf.name }]} />
@@ -1009,6 +1022,7 @@ export function Editor({ id, from }: { id: string; from?: string }) {
                 deleteKeyCode="Delete"
                 colorMode={document.documentElement.dataset.theme === "dark" ? "dark" : "light"}
                 proOptions={{ hideAttribution: true }}
+                minZoom={0.25}
                 fitView
                 fitViewOptions={PANEL_STEPS_FIT}
               >
@@ -1172,6 +1186,45 @@ export function Editor({ id, from }: { id: string; from?: string }) {
           onClose={() => setShowShare(false)}
         />
       )}
+      {phone && showMoreActions && (
+        <Sheet title={t("More")} onClose={() => setShowMoreActions(false)}>
+          <div className="a7-more-actions">
+            <button
+              type="button"
+              onClick={() => {
+                setShowMoreActions(false);
+                select(null);
+                void testRun().then(showRun);
+              }}
+              disabled={busy || draft.steps.length === 0}
+            >
+              {t("Test run")}
+            </button>
+            <button
+              type="button"
+              aria-label={t("Explain this flow")}
+              onClick={() => {
+                setShowMoreActions(false);
+                setShowExplain(true);
+              }}
+              disabled={draft.steps.length === 0}
+            >
+              {t("Explain")}
+            </button>
+            {shareable(draft.trigger.type) && (
+              <button
+                type="button"
+                onClick={() => {
+                  setShowMoreActions(false);
+                  void reload().then(() => setShowShare(true), () => setShowShare(true));
+                }}
+              >
+                {t("Share")}
+              </button>
+            )}
+          </div>
+        </Sheet>
+      )}
       {showTurnOn && (
         <TurnOnSheet
           draft={draft}
@@ -1186,7 +1239,7 @@ export function Editor({ id, from }: { id: string; from?: string }) {
           onClose={() => setShowTurnOn(false)}
         />
       )}
-    </div>
+    </main>
   );
 }
 

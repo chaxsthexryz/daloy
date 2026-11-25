@@ -5,7 +5,7 @@
   --a7-line: #b8beca; --a7-dot: #cdd2dc; --a7-label: #3a3f4b; --a7-chip: #0052d9; --a7-progress: #4d7bff;
   --a7-warn-line: #eab308; --a7-warn: #685500;
   --a7-ok: var(--green, #15803d); --a7-ok-bg: var(--green-soft, #ecfdf3); --a7-bad: var(--red, #c92a2a); --a7-bad-bg: var(--red-soft, #fff1f1); --a7-grey-bg: #f4f5f7;
-  --a7-bar: #0f131a; --a7-bar-text: #ffffff; --a7-bar-muted: #b8beca; --a7-bar-off: #3a3f4b;
+  --a7-bar: #0f131a; --a7-bar-text: #ffffff; --a7-bar-muted: #b8beca; --a7-bar-off: #6b7280;
   display: flex; flex-direction: column; min-height: 100dvh;
   background: var(--surface); color: var(--text); font-family: var(--font-sans, Inter, system-ui, sans-serif); font-size: 14px;
 }
@@ -16,7 +16,7 @@
   --a7-line: #52525b; --a7-dot: #2e313d; --a7-label: #d4d4d8; --a7-chip: #96bcff; --a7-progress: #5c9cff;
   --a7-warn-line: #eab308; --a7-warn: #fde047;
   --a7-ok: #6ee7b7; --a7-ok-bg: #132c21; --a7-bad: #fca5a5; --a7-bad-bg: #3a1718; --a7-grey-bg: #181a20;
-  --a7-bar: #181a20; --a7-bar-text: #fafafa; --a7-bar-muted: #a1a1aa; --a7-bar-off: #3f3f46;
+  --a7-bar: #181a20; --a7-bar-text: #fafafa; --a7-bar-muted: #a1a1aa; --a7-bar-off: #7e8290;
 }
 /* The shared Sheet and its buttons read the workspace tokens (workspace.css), which only `.wk` pages define; without these the step sheet, Explain and Turn on drew with no background. */
 .a7-editor { --w-bg: var(--surface); --w-ink: var(--text); --w-muted: var(--muted); --w-line: var(--border-soft); --w-field: var(--border); --w-canvas: var(--sunken); --w-accent: var(--accent); --w-on-accent: var(--on-accent); --w-red: var(--a7-bad); }
@@ -25,6 +25,7 @@
 .a7-editor button:hover:not(:disabled) { background: var(--sunken); color: var(--text); }
 .a7-editor button.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
 .a7-editor button.primary:hover:not(:disabled) { background: var(--accent-hover); border-color: var(--accent-hover); color: var(--on-accent); }
+.a7-editor button:disabled, .a7-editor button.primary:disabled { background: var(--disabled-bg, var(--sunken)); border-color: var(--disabled-border, var(--border-soft)); color: var(--disabled-fg, var(--muted)); opacity: 1; cursor: not-allowed; }
 .a7-editor :is(input, select) { min-height: 38px; border-color: var(--border); font-size: 13px; }
 .a7-editor textarea { border-color: var(--border); font-size: 13px; }
 .a7-editor .field label, .a7-editor legend { color: var(--a7-label); font-size: 12px; font-weight: 600; }
@@ -61,7 +62,7 @@
 .a7-setup p { margin: 0; }
 .a7-setup-count { font-weight: 600; }
 .a7-setup-bars { display: flex; gap: 4px; }
-.a7-setup-bars span { width: 22px; height: 4px; border-radius: 2px; background: var(--a7-bar-off); }
+.a7-setup-bars span { width: 22px; height: 6px; border-radius: 3px; background: var(--a7-bar-off); }
 .a7-setup-bars [data-done] { background: var(--a7-progress); }
 .a7-setup-left { flex: 1 1 12rem; color: var(--a7-bar-muted); }
 .a7-setup-action { padding: 6px 12px; border-radius: 7px; background: var(--surface); color: var(--text); font-weight: 600; text-decoration: none; }
@@ -89,9 +90,9 @@
 .a7-node.run-needs_you, .a7-node.run-waiting { border-color: var(--a7-warn-line); background: var(--waiting, #fffbe6); }
 .a7-node.run-problem { border-color: var(--a7-bad); background: var(--a7-bad-bg); }
 .a7-node .node-title { font-size: 14px; font-weight: 600; line-height: 18px; }
-.a7-node .node-summary { color: var(--muted); }
-.a7-node-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.a7-node-row .a7-node-kicker { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.a7-node .node-summary { color: var(--muted); display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; white-space: normal; overflow: hidden; overflow-wrap: anywhere; }
+.a7-node-row { display: flex; align-items: center; justify-content: space-between; gap: 6px; flex-wrap: wrap; }
+.a7-node-row .a7-node-kicker { flex: 1 1 auto; min-width: 0; overflow: visible; white-space: nowrap; }
 .a7-node-note { flex: none; color: var(--muted); font-size: 12px; line-height: 14px; white-space: nowrap; }
 .a7-when { color: var(--accent); }
 .a7-warn { color: var(--a7-warn); font-weight: 600; }
@@ -118,10 +119,11 @@
 
 /* Accessible list */
 .a7-list { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; list-style: none; }
-.a7-editor .a7-list button { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; width: 100%; min-height: 44px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); box-shadow: none; font-size: 14px; text-align: left; }
+.a7-editor .a7-list button { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; width: 100%; min-height: 44px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); box-shadow: none; font-size: 14px; text-align: left; white-space: normal; overflow-wrap: anywhere; overflow: hidden; }
 .a7-editor .a7-list button[aria-pressed="true"] { border: 2px solid var(--accent); padding: 9px 11px; box-shadow: 0 0 0 4px var(--accent-tint); }
-.a7-list .a7-branch { position: static; margin-left: auto; }
-.a7-list .a7-list-kicker { order: -1; }
+.a7-list .a7-branch { position: static; margin-left: auto; min-width: 0; max-width: 100%; overflow-wrap: anywhere; white-space: normal; }
+.a7-list .a7-list-kicker { order: -1; min-width: 0; max-width: 100%; overflow-wrap: anywhere; white-space: normal; }
+.a7-list .a7-list-id { min-width: 0; max-width: 100%; overflow-wrap: anywhere; white-space: normal; }
 
 /* Panel */
 .a7-panel { display: flex; flex-direction: column; gap: 20px; padding: 22px 24px; border-top: 1px solid var(--border-soft); background: var(--surface); }
@@ -263,14 +265,16 @@
 }
 
 /* Under a step's title: where it acts, in words. */
-.a7-list .a7-list-where { order: 1; flex-basis: 100%; color: var(--muted); font-size: 12px; font-weight: 400; }
+.a7-list .a7-list-where { order: 1; flex-basis: 100%; min-width: 0; max-width: 100%; overflow-wrap: anywhere; white-space: normal; color: var(--muted); font-size: 12px; font-weight: 400; }
 /* T4: the owner's note, clipped to two lines like .node-note on the card. */
 .a7-list .a7-list-note { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; color: var(--muted); font-size: 12px; font-style: italic; font-weight: 400; }
 .a7-list .a7-list-note { order: 1; flex-basis: 100%; }
 .a7-list button .app-mark { order: -2; align-self: center; }
 .a7-describe { margin: 4px 0 12px; }
-.a7-node-row .node-id { flex: 0 1 88px; max-width: 88px; text-align: right; font-family: var(--font-mono); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.a7-node-row .node-id { flex: 0 1 76px; max-width: 76px; text-align: right; font-family: var(--font-mono); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .a7-node > .node-id { font-family: var(--font-mono); font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.a7-more-actions { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
+.a7-more-actions button { min-height: 44px; width: 100%; justify-content: flex-start; }
 
 /* R2b: setup guide, sample test and the two dialogs reuse the editor's tokens and the shared sheet. */
 .r2b-guide, .r2b-sample { display: grid; gap: 6px; padding: 12px 14px; border: 1px solid var(--a7-line); border-radius: 10px; font-size: 13px; line-height: 18px; }

@@ -23,6 +23,9 @@
   --border-soft: #e6e8ee;
   --accent-hover: #0052d9;
   --accent-tint: #eef4ff;
+  --disabled-bg: #f4f5f7;
+  --disabled-fg: #4b5563;
+  --disabled-border: #d1d5df;
 
   /* Status fills with Sunny Yellow for waiting/needs-you. */
   --done: #ecfdf3;
@@ -145,6 +148,9 @@
   --border-soft: #27272a;
   --accent-hover: #8cb9ff;
   --accent-tint: #17233b;
+  --disabled-bg: #1f222a;
+  --disabled-fg: #c4c7d1;
+  --disabled-border: #3f3f46;
 
   --done: #132c21;
   --on-done: #6ee7b7;
@@ -214,7 +220,7 @@ textarea { font-size: var(--text-sm); }
 textarea#payload { font-family: var(--font-mono); }
 button { min-height: 36px; padding: 0 14px; background: var(--surface); color: var(--text); border: var(--border-width) solid var(--border); border-radius: var(--radius-md); font-weight: 550; font-size: 13px; white-space: nowrap; cursor: pointer; transition: background-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease); }
 button:hover:not(:disabled) { background: var(--sunken); color: var(--text); border-color: var(--muted); }
-button:disabled, button.primary:disabled { background: var(--sunken); border-color: var(--border-soft); color: var(--muted); opacity: 0.65; cursor: not-allowed; }
+button:disabled, button.primary:disabled { background: var(--disabled-bg); border-color: var(--disabled-border); color: var(--disabled-fg); opacity: 1; cursor: not-allowed; }
 button.primary, a.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 600; }
 button.primary:hover:not(:disabled), a.primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); color: var(--on-accent); }
 a.primary { display: inline-flex; align-items: center; min-height: 36px; padding: 0 14px; border: var(--border-width) solid var(--accent); border-radius: var(--radius-md); font-weight: 600; font-size: 13px; text-decoration: none; white-space: nowrap; }
@@ -253,9 +259,9 @@ fieldset { border: var(--border-width) solid var(--border-soft); border-radius: 
 .top-new { margin-left: auto; }
 /* Phone: a fixed bar at the bottom; the menu opens as a sheet just above it. */
 .bottom-bar { position: fixed; z-index: 21; left: 0; right: 0; bottom: 0; display: grid; grid-auto-columns: 1fr; grid-auto-flow: column; padding: var(--space-1) var(--space-2) calc(var(--space-1) + env(safe-area-inset-bottom)); background: var(--surface); border-top: var(--border-width) solid var(--border-soft); }
-.bottom-bar a, .bottom-bar button { display: flex; align-items: center; justify-content: center; min-height: var(--target); padding: 0 var(--space-2); border: 0; border-radius: var(--radius-md); color: var(--text); text-decoration: none; font-weight: var(--weight-medium); }
+.bottom-bar a, .bottom-bar button { display: flex; align-items: center; justify-content: center; min-height: var(--target); padding: 0 var(--space-2); border: 0; border-radius: var(--radius-md); color: var(--text); text-decoration: none; font-size: 13px; line-height: 1.2; font-weight: var(--weight-medium); }
 .bottom-bar a[aria-current="page"] { background: var(--accent-tint); color: var(--accent); }
-.shell-main { padding-bottom: calc(var(--target) + var(--space-4) + env(safe-area-inset-bottom)); }
+.shell-main { padding-bottom: calc(var(--target) + var(--space-5) + env(safe-area-inset-bottom)); }
 .sidebar nav.open { position: fixed; z-index: 20; left: 0; right: 0; bottom: calc(var(--target) + var(--space-2) + env(safe-area-inset-bottom)); max-height: 75vh; overflow-y: auto; padding: var(--space-3) var(--space-4); background: var(--surface); border-top: var(--border-width) solid var(--border-soft); box-shadow: var(--shadow-overlay); }
 .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 ul.apps { list-style: none; margin: var(--space-3) 0 var(--space-5); padding: 0; display: grid; gap: var(--space-3); }
@@ -330,7 +336,7 @@ details summary::-webkit-details-marker { display: none; }
 
 /* Diagram: editor canvas and "Path it took". Class names are the ones FlowCanvas.tsx sets. */
 .run-canvas { position: relative; height: 600px; background-color: var(--surface); background-image: radial-gradient(var(--border-soft) 1px, transparent 1px); background-size: 20px 20px; border: var(--border-width) solid var(--border-soft); border-radius: var(--radius-md); overflow: hidden; }
-.node { width: 220px; min-height: 76px; display: flex; flex-direction: column; padding: var(--space-2) var(--space-3); background: var(--surface); color: var(--text); border: var(--border-width) solid var(--border); border-radius: var(--radius-md); font-size: var(--text-xs); line-height: var(--leading-snug); }
+.node { width: 256px; min-height: 76px; display: flex; flex-direction: column; padding: var(--space-2) var(--space-3); background: var(--surface); color: var(--text); border: var(--border-width) solid var(--border); border-radius: var(--radius-md); font-size: var(--text-xs); line-height: var(--leading-snug); }
 .trigger-node { min-height: 56px; }
 .node-type { color: var(--text); }
 .node-title { font-size: var(--text-sm); font-weight: var(--weight-bold); }
@@ -529,6 +535,7 @@ fieldset .check { min-height: var(--target); font-size: var(--text-md); }
 /* App and action marks (AppMark.tsx). The padding around a logo is its clear space. */
 .app-mark { flex: none; display: inline-grid; place-items: center; box-sizing: border-box; border: 1px solid var(--border-soft); border-radius: 8px; background: var(--sunken, var(--surface)); color: var(--muted); font-size: 12px; font-weight: 700; line-height: 1; vertical-align: middle; }
 .app-mark[data-kind="logo"] { background: #fff; }
+:root[data-theme="dark"] .app-mark[data-kind="logo"] { background: #e2e6f0; border-color: var(--border-strong, #3f3f46); }
 .app-mark img { display: block; max-width: 100%; max-height: 100%; }
 .node-app { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
 .node-id { color: var(--muted); font-size: 12px; font-weight: 400; letter-spacing: 0; text-transform: none; }

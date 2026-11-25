@@ -272,7 +272,7 @@ export function ZoomBar() {
         type="button"
         className="a7-fit"
         onClick={() =>
-          void fitView({ maxZoom: 1, padding: { top: "16px", right: "16px", bottom: "64px", left: "16px" } })
+          void fitView({ maxZoom: 1, minZoom: 0.25, padding: { top: "20px", right: "20px", bottom: "64px", left: "20px" } })
         }
       >
         {t("Fit")}
