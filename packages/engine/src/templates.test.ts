@@ -8,7 +8,7 @@ import { templatesForLanguage } from "./template-language";
 import { TEMPLATES, TEMPLATE_CATEGORIES } from "./templates";
 import { websiteInquiryDefinition } from "./website-inquiry";
 
-const SLUGS = ["inquiry-triage", "invoice-follow-up", "no-show-follow-up", "appointment-reminder", "request-to-sheets", "lead-to-booking", "order-to-sheets", "order-paid", "invoice-paymongo", "invoice-pdf", "quote-deposit", "deposit-first", "renewal-reminders", "store-orders", "shopify-orders", "marketplace-orders-to-sheets", "low-stock-alert", "receipt-expense", "meta-receipt-intake", "telegram-gcash-receipts", "booking-deposit-review", "order-gcash-checkout", "resort-concierge-dm", "resort-concierge-email", "resort-deposit-and-stay", "telegram-assistant"];
+const SLUGS = ["inquiry-triage", "invoice-follow-up", "no-show-follow-up", "appointment-reminder", "request-to-sheets", "lead-to-booking", "order-to-sheets", "order-paid", "invoice-paymongo", "invoice-pdf", "quote-deposit", "deposit-first", "renewal-reminders", "store-orders", "shopify-orders", "marketplace-orders-to-sheets", "low-stock-alert", "receipt-expense", "meta-receipt-intake", "telegram-gcash-receipts", "booking-deposit-review", "order-gcash-checkout", "lalamove-confirmed-order", "resort-concierge-dm", "resort-concierge-email", "resort-deposit-and-stay", "telegram-assistant"];
 const parse = (slug: string) => definitionSchema.parse(TEMPLATES.find((t) => t.slug === slug)!.definition);
 
 describe("starter templates", () => {

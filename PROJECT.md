@@ -325,6 +325,7 @@ DeepSeek's review is in `docs/roadmap-review-2026-11-18.md`. Claude's second opi
 - [x] R6. Privacy under RA 10173: form notice, receipt image retention, per-customer export and delete. Branch `claude/r6-privacy`, migration 0045, decision 0094.
 - [ ] R7. Demand-led: public-page reading, new templates, integration candidates after an API, cost and terms check.
 - [x] M1. Marketplace order export to rows: a `read_spreadsheet` step reads a Shopee, Lazada or TikTok Shop export (.csv, .xlsx or a Google Sheet) from the watched Drive folder into rows, up to 2,000 rows and 2 MB, with the "Marketplace orders to Sheets" and "Low-stock alert" templates. Branch `claude/m1-marketplace-import`, decision 0143, no migration.
+- [x] L1. Lalamove delivery booking. A `lalamove` step (quotation, then order) with the seller's own key from Secrets, sandbox unless live, and a template. Branch `claude/l1-lalamove`, decision 0141, no migration.
 
 ## Integrations requested on 22 November 2026
 

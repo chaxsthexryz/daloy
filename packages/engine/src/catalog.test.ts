@@ -120,6 +120,7 @@ describe("destination line", () => {
       sheets: { columns: ["a"] },
       shopify_create_product: { title: "Tote bag" },
       shopify_update_product: { product: "TOTE-1" },
+      lalamove: { dropoffAddress: "{{trigger.address}}" },
       read_page: { url: "https://example.com/rice", maxChars: 4000 },
       browser: { url: "https://supplier.example.com/price", actions: [] },
       call_workflow: { workflowSlug: "notify-staff", payload: {} },

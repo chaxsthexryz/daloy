@@ -1713,3 +1713,20 @@ Known limits: the same order in two overlapping exports is added twice; the Shee
 Templates: "Marketplace orders to Sheets" (Drive file, read it, append to Sheets, Slack note with the count) and "Low-stock alert" (a new row on the Stock tab, compare In stock with Reorder at, email the owner, or email about a row with no number).
 
 Tests: `packages/engine/src/csv.test.ts` (parser, keys, row cap), `apps/worker/src/steps/read-spreadsheet.test.ts` (CSV, Excel through a copy, Google Sheet export, a templated file id, rows into a batched Sheets append, size and row caps, wrong type, unpicked folder, connection problems, rate limit with the copy deleted, faked run), and `packages/engine/src/templates.test.ts` (both templates, including the low-stock comparison).
+
+## Lalamove delivery booking (L1, decision 0141)
+
+What it does: the `lalamove` step books a Lalamove rider for one pick-up and one drop-off. It gets a quotation, then places the order right away, and returns the order id, status, tracking link (`shareLink`) and price for later steps. The template "Book a Lalamove rider when an order is confirmed" runs it from the shop's signed order webhook and texts the customer the tracking link.
+
+How it works (`packages/db/src/lalamove.ts`, `apps/worker/src/steps/lalamove.ts`, `apps/worker/src/steps/index.ts`, `packages/engine/src/definition.ts`):
+- The seller saves their own key and secret on the Secrets page as `lalamove_api_key` and `lalamove_api_secret`. The step reads them only when it really books, and they are in the run history redaction list like every secret.
+- Each request is signed with HMAC-SHA256 over the time, method, path and body, as Lalamove's docs describe, and sent with `Market: PH`.
+- The step uses Lalamove's sandbox (no rider, no charge) until `live` is on. A production key on a step that is not live, or a sandbox key on a live step, is refused before any request.
+- A sample run and a test run return a fake booking and never call Lalamove.
+- Placing the order is marked unsafe to repeat. If the worker stops after the order was sent, the step goes to review instead of booking a second rider. The quotation alone is safe to retry.
+- Edge cases: Philippine mobiles are turned into `+63...`, a bad coordinate or number stops the step before any request, a 402 says to top up the Lalamove Wallet, and a 5xx on the order is treated as "may have been booked" and goes to review.
+- Only triggers a stranger cannot fill in may start the step (manual, schedule, PayMongo payment, Shopify order, signed webhook), and its fields cannot come from an AI step.
+
+Limits: no geocoding (coordinates come from the shop), one drop-off, no cancel or status tracking. It was tested against a fake Lalamove server, not the real sandbox.
+
+Tests: `packages/db/src/lalamove.test.ts` (signature, quote then order, error handling), `packages/engine/src/lalamove.test.ts` (sandbox default, trigger and AI rules, template), `apps/worker/src/steps/lalamove.test.ts` (booking, fake for sample and test runs, live guard, checks before any request).

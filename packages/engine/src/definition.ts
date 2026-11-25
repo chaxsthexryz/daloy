@@ -235,6 +235,26 @@ const fieldMap = z.record(fieldName, template(2000)).refine((f) => Object.keys(f
 export const airtableConfigSchema = z.object({ fields: fieldMap.refine((f) => Object.keys(f).length >= 1, "add at least one field") });
 export const notionConfigSchema = z.object({ title: template(2000).min(1), fields: fieldMap.default({}) });
 export const trelloConfigSchema = z.object({ name: template(500).min(1), desc: template(10_000).optional() });
+// L1 (decision 0141): a Lalamove rider, booked with the seller's own key and secret from Secrets. Gets a quotation, then
+// places the order. Off live, it uses Lalamove's sandbox (no rider, no charge); live books a real rider and charges the
+// seller's Lalamove Wallet. Coordinates are decimal degrees; phones are Philippine mobiles.
+const coordinate = (what: string) => template(40).min(1).describe(`${what}, in decimal degrees, like 14.5794.`);
+export const lalamoveConfigSchema = z.object({
+  serviceType: z.string().regex(/^[A-Z0-9_]{2,40}$/, "use the Lalamove service type, like MOTORCYCLE").default("MOTORCYCLE").describe("The Lalamove vehicle, like MOTORCYCLE, SEDAN or MPV. The types differ by city."),
+  pickupAddress: template(500).min(1),
+  pickupLat: coordinate("Pick-up latitude"),
+  pickupLng: coordinate("Pick-up longitude"),
+  senderName: template(100).min(1).describe("Shown to the rider."),
+  senderPhone: template(30).min(1).describe("A Philippine mobile, like 09171234567. Shown to the rider."),
+  dropoffAddress: template(500).min(1),
+  dropoffLat: coordinate("Drop-off latitude"),
+  dropoffLng: coordinate("Drop-off longitude"),
+  recipientName: template(100).min(1),
+  recipientPhone: template(30).min(1).describe("A Philippine mobile, like 09171234567."),
+  remarks: template(1000).optional().describe("For the rider, like the order number or the gate to use."),
+  live: z.boolean().default(false).describe("Off: Lalamove's sandbox, with no rider and no charge. On: books a real rider, paid from your Lalamove Wallet."),
+});
+
 // link is the id of the paymongo_link step to check. The current status of its payment in this run: pending, paid, needs_review or refunded. Read-only, never calls PayMongo.
 export const paymentStatusConfigSchema = z.object({ link: stepId.describe("Id of a paymongo_link or payment_due step of this workflow.") });
 // R3 (decision 0088): what a customer owes on one order or booking. The customer pays the QR Ph code or GCash number
@@ -481,7 +501,7 @@ const note = stepNoteSchema;
  * they may set onError (T3). A step inside kymavo (a booking, a payment due, a transform) fails on its data, and
  * skipping it would let the run carry on as if a booking or payment request existed.
  */
-export const OUTSIDE_STEPS: ReadonlySet<string> = new Set(["http", "email", "approval", "sheets", "drive", "slack", "outlook", "teams", "telegram", "sms", "calendar", "airtable", "notion", "trello", "meta_reply", "whatsapp_reply", "shopify_create_product", "shopify_update_product", "discord", "google_docs", "read_spreadsheet", "read_page", "browser", "assistant_read"]);
+export const OUTSIDE_STEPS: ReadonlySet<string> = new Set(["http", "email", "approval", "sheets", "drive", "slack", "outlook", "teams", "telegram", "sms", "calendar", "airtable", "notion", "trello", "meta_reply", "whatsapp_reply", "shopify_create_product", "shopify_update_product", "lalamove", "discord", "google_docs", "read_spreadsheet", "read_page", "browser", "assistant_read"]);
 // T3 (decisions 0131 and 0142): what happens when a non-branching outside step is out of attempts.
 export const stepErrorPolicySchema = z.enum(["stop", "skip", "failed_edge"]).optional();
 export type StepErrorPolicy = NonNullable<z.infer<typeof stepErrorPolicySchema>>;
@@ -524,6 +544,7 @@ const stepSchema = z.discriminatedUnion("type", [
   z.object({ id: stepId, disabled, note, onError, type: z.literal("invoice_pdf"), config: invoicePdfConfigSchema }),
   z.object({ id: stepId, disabled, note, onError, type: z.literal("shopify_create_product"), config: shopifyCreateProductConfigSchema }),
   z.object({ id: stepId, disabled, note, onError, type: z.literal("shopify_update_product"), config: shopifyUpdateProductConfigSchema }),
+  z.object({ id: stepId, disabled, note, onError, type: z.literal("lalamove"), config: lalamoveConfigSchema }),
   // Phase B2 (decision 0108): a page opened in the browser service, with a list of actions.
   z.object({ id: stepId, disabled, note, onError, type: z.literal("browser"), config: browserConfigSchema }),
   // G1 (decision 0123): start another published sub_workflow in the same workspace.
@@ -937,6 +958,8 @@ export const definitionSchema = z
       if ((s.type === "shopify_create_product" || s.type === "shopify_update_product") && !priceTrusted(def.trigger) && Object.values(s.config).some((v) => typeof v === "string" && /\{\{\s*trigger\./.test(v))) {
         fail(`${s.type} step "${s.id}" cannot take its fields from a ${def.trigger.type} trigger, which anyone can fill in. Use fixed values, a signed webhook, a Shopify order or a manual run.`);
       }
+      // Every run of a lalamove step can book and pay for a rider, so a stranger must not be able to start one (decision 0141).
+      if (s.type === "lalamove" && !priceTrusted(def.trigger)) fail(`lalamove step "${s.id}" can only run from a manual run, a schedule, a PayMongo payment, a Shopify order or a signed webhook, because a ${def.trigger.type} trigger lets anyone book a rider at your cost`);
       if (s.type === "conversation_update" && def.trigger.type !== "meta_dm" && def.trigger.type !== "whatsapp_message" && def.trigger.type !== "email") fail(`conversation_update step "${s.id}" needs a meta_dm, whatsapp_message or email trigger, which starts a conversation`);
       if (s.type !== "booking") continue;
       if (s.config.start !== undefined && !bookingStartField(def.trigger, s.config)) fail(`booking step "${s.id}" needs start to be {{trigger.<field>}} for a datetime field of the trigger`);
@@ -955,6 +978,10 @@ export const definitionSchema = z
     if (new Set(emailMenus).size > 1) fail("every email menu in a workflow must list the same choices in the same order, so a reply's number means one thing");
 
     for (const s of def.steps) {
+      if (s.type === "lalamove") {
+        const source = untrustedSource(Object.values(s.config).filter((v): v is string => typeof v === "string").join(" "), byId, def.trigger);
+        if (source) fail(`lalamove step "${s.id}" cannot take its fields from ${source}. Use fixed values, a signed webhook, a Shopify order or a manual run.`);
+      }
       if (s.type === "shopify_create_product" || s.type === "shopify_update_product") {
         // S5: a product step also refuses values that reach it through other steps (model output, or a step that reads a public visitor's text).
         const source = untrustedSource(Object.values(s.config).filter((v): v is string => typeof v === "string").join(" "), byId, def.trigger);

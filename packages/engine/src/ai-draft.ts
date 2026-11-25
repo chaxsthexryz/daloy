@@ -67,11 +67,7 @@ const spec = (full: boolean) => [
 
 // Left out of a small local model's prompt to keep it inside that model's context; a hosted model gets all of them.
 // The stress test (apps/api/scripts/ai-stress.ts) showed a hosted model without them builds http or telegram steps instead.
-<<<<<<< HEAD
-const HOSTED_ONLY = ["airtable", "notion", "trello", "payment_status", "payment_due", "payment_expire", "sms", "meta_reply", "whatsapp_reply", "conversation_update", "stay_quote", "assistant_read", "discord", "google_docs", "read_page", "invoice_pdf", "shopify_create_product", "shopify_update_product", "browser", "call_workflow", "switch", "transform"];
-=======
-const HOSTED_ONLY = ["airtable", "notion", "trello", "payment_status", "payment_due", "payment_expire", "sms", "meta_reply", "whatsapp_reply", "conversation_update", "stay_quote", "assistant_read", "discord", "google_docs", "read_spreadsheet", "read_page", "shopify_create_product", "shopify_update_product", "browser", "call_workflow", "switch", "transform"];
->>>>>>> claude/m1-marketplace-import
+const HOSTED_ONLY = ["airtable", "notion", "trello", "payment_status", "payment_due", "payment_expire", "sms", "meta_reply", "whatsapp_reply", "conversation_update", "stay_quote", "assistant_read", "discord", "google_docs", "read_spreadsheet", "read_page", "invoice_pdf", "shopify_create_product", "shopify_update_product", "lalamove", "browser", "call_workflow", "switch", "transform"];
 const FULL_TRIGGERS =
   'More triggers: {"type":"meta_dm","config":{"channel":"both"}} for a Facebook Messenger or Instagram DM to the connected Page (channel messenger, instagram or both; fields {{trigger.text}}, {{trigger.senderId}}, {{trigger.channel}}); ' +
   '{"type":"whatsapp_message","config":{"requireImage":false}} for an inbound WhatsApp Cloud API message (fields {{trigger.text}}, {{trigger.senderId}}, {{trigger.senderName}}; use whatsapp_reply mode "text" inside 24h or mode "template" outside 24h); ' +

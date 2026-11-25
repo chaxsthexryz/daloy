@@ -570,3 +570,12 @@ Entry points: `GET /privacy/customer` and `POST /privacy/customer/delete` (owner
 - Writes to the owner's Drive: only the temporary Google Sheets copy of an Excel file, made in My Drive and deleted in a `finally`. A failed delete leaves one copy the owner can remove.
 - Duplicates: the step does not dedupe, so overlapping exports append the same order twice (a data quality issue, not a security one).
 - Error text: Google's answers are mapped to fixed messages; file contents are never logged.
+
+## Lalamove delivery booking (L1, decision 0141)
+
+- Asset: the seller's Lalamove API key and secret, and the money in their Lalamove Wallet. A live order books a real rider and is charged to that wallet.
+- Key leakage: the key and secret live in the encrypted Secrets store and are in the history redaction list. They are sent only in the `Authorization` header to Lalamove's sandbox or production host (or `LALAMOVE_API_URL`, env only, for tests). No error echoes a header, the key or the request body. Only the `lalamove` step reads them, so other steps cannot put them in an email or prompt.
+- Spending by accident: sandbox is the default, and live needs `live: true` in the step. A production key on a step that is not live is refused before any request, and sample and test runs never call Lalamove.
+- Spending by a stranger: the step only runs from a manual run, a schedule, a PayMongo payment, a Shopify order or a signed webhook, and refuses fields from AI steps or from steps that read a public trigger. A public form cannot book riders at the seller's cost.
+- Double booking: Lalamove documents no idempotency key for orders. The order goes through the same dispatch mark as other unsafe sends, so an attempt that died after sending goes to review, never to an automatic retry. The run and step ids are sent as order metadata so the seller can match orders in Lalamove.
+- Remaining risk: a leaked key lets someone book riders until the seller rotates it in the Lalamove Partner Portal and saves the new one. A signed-webhook secret that leaks lets someone trigger bookings, so the shop's signing secret needs the same care.
