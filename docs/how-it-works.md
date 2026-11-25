@@ -1605,6 +1605,18 @@ Why this way: keeping transforms deterministic, `switch` acyclic, error policies
 
 Tests: `packages/engine/src/transform.test.ts`, `packages/engine/src/e4.test.ts` (`switch`, `onError`, `transform`, `sheets` caps, `lintDefinition`), `apps/web/src/lib/e4-editor.test.ts` (dynamic `switch` layout/exits/handles, `failed_edge` routing/runFlow, `transform` insertables, `SwitchCases`, `SchemaForm`), `apps/web/src/lib/locale-coverage.test.ts`, and `apps/worker/src/e4-worker.test.ts` (real worker runs for `switch`, `transform`, `onError` `skip` and `failed_edge`, and batched Sheets with once-per-tab header and marker reconciliation on simulated timeout).
 
+## If this step fails (T3, decision 0142)
+
+What it does: a step that reaches outside kymavo (email, HTTP, Sheets, Slack, SMS and the rest of `OUTSIDE_STEPS` in `packages/engine/src/definition.ts`) has an "If this step fails" select in its panel. "Stop the run" is the default and does what every step has always done: the run ends as failed. "Skip it and carry on" records the step as skipped, keeps the error on its output (`{{steps.<id>.output.error}}`) and follows its normal edge. "Take the failed path" follows the step's `failed` edge, which the canvas draws with a "failed" label.
+
+When it applies: only once the step is out of attempts, or on an error that retrying cannot fix. A retryable failure is still retried first. A send whose outcome is unknown (decision 0030) never takes either choice: the run goes to `needs_review`, so an email or request that may have gone through is never skipped past or sent again without the owner deciding.
+
+Why this way: the choice sits on outside steps only, because those fail for reasons outside the owner's data (an app is down, a token expired). A booking, payment or transform step fails on its own data, and skipping it would let the run carry on as if the booking or payment request existed. The stored values stay E4's `skip` and `failed_edge` (decision 0131), so saved drafts keep working.
+
+Edge cases: "Take the failed path" with no failed edge drawn warns in the editor (`failed_path_no_edge`) and stops the run on failure. A failed edge on a step not set to take it is refused when saving. A branching step cannot set the choice. Explain this flow says what each set step does on failure. The run page shows "This step failed, so the run skipped it and carried on." or "...took its failed path." next to the error, and the failure explainer does not name a handled failure as the reason a run stopped.
+
+Tests: `packages/engine/src/e4.test.ts` (outside-only rule, failed edge rules, lint warning), `packages/engine/src/flow-guide.test.ts` (Explain lines in English and Tagalog), `apps/worker/src/e4-worker.test.ts` (mocked `fail: "permanent"` and `"retryable"` with skip and the failed path, and `fail: "unknown"` going to `needs_review` under both), `apps/api/src/explain.test.ts`, `apps/web/src/lib/run-flow.test.ts` (`handledFailure`) and `e2e/on-error.spec.ts` (set the select, run a mocked failing test, the next step runs).
+
 ## Connected mailbox triggers (phase G3, decision 0132)
 
 What it does: `gmail_message` and `outlook_message` triggers start a workflow when matching emails arrive in the workspace's connected Gmail (`mail_senders`) or Outlook (`connections`) OAuth mailbox, with optional `from`, `subjectContains`, and `label` / `folder` filters.

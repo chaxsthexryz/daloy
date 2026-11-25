@@ -169,54 +169,58 @@ describe("E4 worker execution", () => {
     });
   });
 
-  it("applies onError skip: stores error info on step output and follows the default edge", async () => {
-    const def = {
-      trigger: { type: "manual", config: {} },
-      steps: [
-        { id: "bad_phone", type: "transform", onError: "skip", config: { op: "normalize_phone", value: "{{trigger.phone}}" } },
-        { id: "after", type: "transform", config: { op: "pick", fields: { err: "{{steps.bad_phone.output.error}}", skipped: "{{steps.bad_phone.output.skipped}}" } } },
-      ],
-      edges: [{ from: "bad_phone", to: "after" }],
-    };
-    const res = await runFlowToEnd(def, { phone: "not-a-phone" });
+  // T3: mock-mode fail choices on outside steps drive the three policies. Mock runs send nothing.
+  const slack = (id: string, extra: object = {}) => ({ id, type: "slack", config: { text: id }, ...extra });
+  const pick = (id: string) => ({ id, type: "transform", config: { op: "pick", fields: { err: "{{steps.post.output.error}}", skipped: "{{steps.post.output.skipped}}" } } });
+  const mock = (choices: Record<string, object>) => ({ test: true, testChoices: choices });
+
+  it("applies onError skip: a permanently failing step is recorded skipped with its error and the run follows its edge", async () => {
+    const def = { trigger: { type: "manual", config: {} }, steps: [slack("post", { onError: "skip" }), pick("after")], edges: [{ from: "post", to: "after" }] };
+    const res = await runFlowToEnd(def, {}, mock({ post: { fail: "permanent" } }));
     expect(res.run.state).toBe("succeeded");
-    expect(res.steps[0]!.state).toBe("skipped");
-    expect(res.steps[0]!.output).toMatchObject({ skipped: true, error: expect.stringMatching(/Philippine mobile/) });
-    expect(res.steps[1]!.output).toEqual({ err: expect.stringMatching(/Philippine mobile/), skipped: true });
+    expect(res.steps.map((s) => [s.stepId, s.state])).toEqual([["post", "skipped"], ["after", "succeeded"]]);
+    expect(res.steps[0]!.error).toMatch(/set to fail \(permanent\)/);
+    expect(res.steps[1]!.output).toEqual({ err: expect.stringMatching(/set to fail/), skipped: true });
   });
 
-  it("applies onError failed_edge: routes to on=failed edge, and fails normally when no failed edge is wired", async () => {
+  it("applies onError skip after the last retry of a retryable failure", async () => {
+    const def = { trigger: { type: "manual", config: {} }, steps: [slack("post", { onError: "skip" }), slack("next")], edges: [{ from: "post", to: "next" }] };
+    const res = await runFlowToEnd(def, {}, mock({ post: { fail: "retryable" } }));
+    expect(res.run.state).toBe("succeeded");
+    expect(res.steps.map((s) => [s.stepId, s.attempt, s.state])).toEqual([["post", 1, "failed"], ["post", 2, "skipped"], ["next", 1, "succeeded"]]);
+    expect(res.steps[1]!.deadLetter).toBe(true);
+  });
+
+  it("applies onError failed_edge: routes to the failed edge, takes the normal edge on success, and fails with no failed edge", async () => {
     const def = {
       trigger: { type: "manual", config: {} },
-      steps: [
-        { id: "bad_peso", type: "transform", onError: "failed_edge", config: { op: "format_peso", value: "{{trigger.amount}}" } },
-        { id: "ok_next", type: "transform", config: { op: "uppercase", value: "ok" } },
-        { id: "recover", type: "transform", config: { op: "pick", fields: { reason: "{{steps.bad_peso.output.error}}" } } },
-      ],
-      edges: [
-        { from: "bad_peso", to: "ok_next" },
-        { from: "bad_peso", to: "recover", on: "failed" },
-      ],
+      steps: [slack("post", { onError: "failed_edge" }), slack("ok_next"), pick("recover")],
+      edges: [{ from: "post", to: "ok_next" }, { from: "post", to: "recover", on: "failed" }],
     };
-    const failedRes = await runFlowToEnd(def, { amount: "nope" });
+    const failedRes = await runFlowToEnd(def, {}, mock({ post: { fail: "permanent" } }));
     expect(failedRes.run.state).toBe("succeeded");
-    expect(failedRes.steps.map((s) => [s.stepId, s.state, s.branch])).toEqual([
-      ["bad_peso", "failed", "failed"],
-      ["recover", "succeeded", null],
-    ]);
-    expect(failedRes.steps[1]!.output).toEqual({ reason: expect.stringMatching(/peso/) });
+    expect(failedRes.steps.map((s) => [s.stepId, s.state, s.branch])).toEqual([["post", "failed", "failed"], ["recover", "succeeded", null]]);
+    expect(failedRes.steps[1]!.output).toMatchObject({ err: expect.stringMatching(/set to fail/) });
 
-    const okRes = await runFlowToEnd(def, { amount: "500" });
-    expect(okRes.run.state).toBe("succeeded");
-    expect(okRes.steps.map((s) => s.stepId)).toEqual(["bad_peso", "ok_next"]);
+    const okRes = await runFlowToEnd(def, {}, mock({}));
+    expect(okRes.steps.map((s) => s.stepId)).toEqual(["post", "ok_next"]);
 
-    const unwired = {
-      trigger: { type: "manual", config: {} },
-      steps: [{ id: "bad_peso", type: "transform", onError: "failed_edge", config: { op: "format_peso", value: "nope" } }],
-      edges: [],
-    };
-    const unwiredRes = await runFlowToEnd(unwired);
+    const unwired = { trigger: { type: "manual", config: {} }, steps: [slack("post", { onError: "failed_edge" })], edges: [] };
+    const unwiredRes = await runFlowToEnd(unwired, {}, mock({ post: { fail: "permanent" } }));
     expect(unwiredRes.run.state).toBe("failed");
+  });
+
+  it("never skips or reroutes a send whose outcome is unknown: the run goes to needs_review", async () => {
+    for (const onError of ["skip", "failed_edge"]) {
+      const def = {
+        trigger: { type: "manual", config: {} },
+        steps: [{ id: "mail", type: "email", onError, config: { to: "a@example.com", subject: "s", text: "t" } }, slack("next"), ...(onError === "failed_edge" ? [slack("recover")] : [])],
+        edges: [{ from: "mail", to: "next" }, ...(onError === "failed_edge" ? [{ from: "mail", to: "recover", on: "failed" }] : [])],
+      };
+      const res = await runFlowToEnd(def, {}, mock({ mail: { fail: "unknown" } }));
+      expect(res.run.state, onError).toBe("needs_review");
+      expect(res.steps.map((s) => [s.stepId, s.state, s.outcome, s.branch]), onError).toEqual([["mail", "failed", "unknown", null]]);
+    }
   });
 
   it("batches Sheets for_each rows in one batchUpdate, writes header once per tab, enforces 100-row cap, and reconciles marker on retry", async () => {

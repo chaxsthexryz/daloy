@@ -22,7 +22,7 @@ export type AskFacts = Facts & {
 export type Explanation = { headline: string; lines: string[]; fix: { href: string; label: string } | null };
 type FactsInput = {
   run: { state: string; test: boolean; error?: string | null };
-  steps: { stepId: string; attempt: number; state: string; error?: string | null; deadLetter: boolean; outcome: string | null; createdAt?: Date | string | null }[];
+  steps: { stepId: string; attempt: number; state: string; error?: string | null; deadLetter: boolean; outcome: string | null; branch?: string | null; createdAt?: Date | string | null }[];
   deliveries: { provider: string; state: string; errorKind: string | null; attempts: number }[];
   definition: unknown;
 };
@@ -42,7 +42,8 @@ const stuck = (state: string) => state === "failed" || state === "needs_review";
 
 export function failureFacts({ run, steps, deliveries, definition }: FactsInput): Facts {
   const def = definition as Partial<WorkflowDefinition> | null;
-  const failed = steps.filter((s) => s.state === "failed" || s.state === "needs_review").sort((a, b) => time(b) - time(a) || b.attempt - a.attempt)[0];
+  // A failure that took its failed path (T3) is handled, so it is not why the run stopped.
+  const failed = steps.filter((s) => (s.state === "failed" && s.branch !== "failed") || s.state === "needs_review").sort((a, b) => time(b) - time(a) || b.attempt - a.attempt)[0];
   const text = failed?.error ?? run.error ?? "";
   const reason = REASONS.find(([, re]) => re.test(text))?.[0] ?? null;
   let lint: Facts["lint"] = [];
@@ -97,6 +98,7 @@ const LINT_LINES: Record<LintRule, string> = {
   test_switch: "This automation has a switch that looks like a test setting. Check that it is set the way you want.",
   number_no_invalid: "A number check in this automation has no path for a value that is not a number, so the automation ends there.",
   unreachable_step: "Part of this automation can never be reached, so it will not run.",
+  failed_path_no_edge: "A step in this automation is set to take a failed path, but none is drawn, so a failure stops the automation.",
 };
 const PERMISSION: Record<string, string> = {
   google_calendar: "Share the calendar with the Google service account you connected, choose Make changes to events, then press Retry.",

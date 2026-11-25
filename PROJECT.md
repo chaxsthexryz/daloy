@@ -339,7 +339,7 @@ DeepSeek's review is in `docs/roadmap-review-2026-11-18.md`. Claude's second opi
 
 - [x] T1. Test this step in the step's own panel with its last result, and "Try this step for real" for one step while the rest stay faked. Decision 0110, no migration.
 - [x] T2. "Test with this data" on a run page: open the editor with that run's trigger data as the sample. No decision record, no migration.
-- [ ] T3. "If this step fails": stop, skip and carry on, or take a "failed" path.
+- [x] T3. "If this step fails": stop, skip and carry on, or take a "failed" path. Only on steps that reach outside kymavo; an unknown outcome still goes to review. Built on E4's `onError` values. Decision 0142, no migration. (claimed: claude, branch claude/t3-on-error)
 - [x] T4. Notes on steps, shown on the canvas card and read by Explain this flow. Plain text up to 300 characters, never a template. No decision record, no migration.
 - [x] T5. One Share panel: form link and embed code, MCP tool name, webhook URL with its signing rule and a curl example. API tokens work on `/mcp` only, so the API example is the webhook call. No decision record, no migration.
 - [x] T6. `docker compose --profile local-ai up` runs Ollama with a small model. `ollama` and a one-shot `ollama-pull` (llama3.2) under the `local-ai` profile; set `LLM_BASE_URL=http://ollama:11434`. Compose and docs only, no code change.

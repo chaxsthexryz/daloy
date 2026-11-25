@@ -41,6 +41,20 @@ describe("explainFlow", () => {
     expect(explainFlow(noted, "tl")[2]).toMatch(/ Tala mo: "Only for paid orders"$/);
     expect(explainFlow(receipt, "en")[2]).not.toContain("note");
   });
+  it("says what happens when a step fails, and says nothing when it stops the run as before (T3)", () => {
+    const flow = (onError?: string) =>
+      parse({
+        trigger: { type: "manual", config: {} },
+        steps: [{ id: "mail", type: "email", onError, config: { to: "a@example.com", subject: "s", text: "t" } }, { id: "tell", type: "slack", config: { text: "x" } }],
+        edges: [{ from: "mail", to: "tell", ...(onError === "failed_edge" ? { on: "failed" } : {}) }],
+      });
+    expect(explainFlow(flow("skip"), "en")[1]).toMatch(/ If it fails, the automation skips it and carries on\.$/);
+    expect(explainFlow(flow("skip"), "tl")[1]).toMatch(/ Kapag pumalya ito, lalaktawan ito at magpapatuloy ang automation\.$/);
+    const path = explainFlow(flow("failed_edge"), "en");
+    expect(path[1]).toMatch(/ If it fails, the automation takes the failed path\.$/);
+    expect(path[2]).toMatch(/^2\. If the step before fails: Slack/);
+    expect(explainFlow(flow(), "en")[1]).not.toMatch(/fails/);
+  });
   it("uses the destination the owner picked in Apps", () => {
     const lines = stepLines(receipt, "en", { slack: "#orders" });
     expect(lines.find((l) => l.id === "slack")!.where).toContain("#orders");

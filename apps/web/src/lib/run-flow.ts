@@ -54,3 +54,13 @@ export function runFlow(draft: Draft, run: FlowRun | null): { nodes: Record<stri
   for (const e of draft.edges) edges[edgeId(e)] = edgeState(e.from, e.to, e.on);
   return { nodes, edges };
 }
+
+/**
+ * T3: why a failed step did not stop the run, in English for t(). A skip keeps `skipped: true` on its output; a failed
+ * path keeps branch "failed". A turned-off step or a late delay says why in a string and is not a failure.
+ */
+export function handledFailure(row: { state: string; branch: string | null; output: unknown }): string | null {
+  if (row.state === "skipped" && (row.output as { skipped?: unknown } | null)?.skipped === true) return "This step failed, so the run skipped it and carried on.";
+  if (row.state === "failed" && row.branch === "failed") return "This step failed, so the run took its failed path.";
+  return null;
+}

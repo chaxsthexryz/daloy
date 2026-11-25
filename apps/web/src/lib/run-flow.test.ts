@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import type { Draft } from "./graph";
-import { runFlow, STATUS, type FlowRun } from "./run-flow";
+import { handledFailure, runFlow, STATUS, type FlowRun } from "./run-flow";
 
 // trigger -> check -(true)-> send -> done_step ; check -(false)-> other
 const draft: Draft = {
@@ -130,5 +130,14 @@ describe.each(Object.entries(schemes))("state colours in %s mode", (_name, tk) =
   });
   it.each(colours)("%s lines are at least 3:1 on the canvas", (c) => {
     expect(contrast(tk[c]!, tk.bg!)).toBeGreaterThanOrEqual(3);
+  });
+});
+
+describe("handledFailure (T3)", () => {
+  it("names a failed step the run skipped past or routed around, and nothing else", () => {
+    expect(handledFailure({ state: "skipped", branch: null, output: { skipped: true, error: "x" } })).toMatch(/skipped it and carried on/);
+    expect(handledFailure({ state: "failed", branch: "failed", output: { failed: true } })).toMatch(/took its failed path/);
+    expect(handledFailure({ state: "skipped", branch: null, output: { skipped: "This step is turned off in the editor." } })).toBeNull();
+    expect(handledFailure({ state: "failed", branch: null, output: null })).toBeNull();
   });
 });

@@ -547,3 +547,8 @@ Entry points: `GET /privacy/customer` and `POST /privacy/customer/delete` (owner
 - WhatsApp media download SSRF and spoofed uploads: `downloadWhatsAppMedia` resolves temporary media URLs only via Meta Graph `/v21.0/:mediaId` with Bearer auth, then passes the returned CDN URL through `downloadMetaImage` (HTTPS port 443, Meta CDN host allowlist, private-IP DNS refusal, no redirects, 5 MB cap, JPEG/PNG/WebP magic-byte check).
 - Credential disclosure in history or error logs: `whatsapp` JSON secrets (`accessToken`, `appSecret`, `verifyToken`) are encrypted in `connections` and extracted by both `secretValuesToHide` and `extractRetiredSecretValues` in `packages/db/src/crypto.ts`.
 - Arbitrary recipients, late service replies, and unapproved templates: service replies (`mode: "text"`) require `to` to match the triggering sender, enforce staff takeover (`paused`) and the 24-hour customer window (`outside_window`), while `templateName` and `templateLanguage` are validated against strict identifier regexes. Under L7, `whatsapp_message` remains an untrusted public trigger so webhook inputs cannot feed `payment_due` amounts or Shopify product prices.
+
+## If this step fails (T3, decision 0142)
+
+- A send that may have gone through is skipped past or sent again: a step whose outcome is unknown (decision 0030) goes to `needs_review` before its "If this step fails" choice is read, so neither skip nor the failed path can replay or hide it. `apps/worker/src/e4-worker.test.ts` checks both choices with a mocked `fail: "unknown"`.
+- A run carries on as if a booking or payment request existed: only steps in `OUTSIDE_STEPS` may set `onError`, and `definitionSchema` refuses it on booking, payment, stay quote, transform and the other steps inside kymavo.
