@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { definitionSchema, triggerFields, type WorkflowDefinition } from "./definition";
+import { definitionSchema, triggerFields, type Condition, type WorkflowDefinition } from "./definition";
+import { conditionBranch } from "./expressions";
 import { lintDefinition } from "./lint";
 import { defaultAnswers, officeRequestDefinition } from "./office-request";
 import { defaultPurchaseAnswers, purchaseRequestDefinition } from "./purchase-request";
@@ -7,7 +8,7 @@ import { templatesForLanguage } from "./template-language";
 import { TEMPLATES, TEMPLATE_CATEGORIES } from "./templates";
 import { websiteInquiryDefinition } from "./website-inquiry";
 
-const SLUGS = ["inquiry-triage", "invoice-follow-up", "no-show-follow-up", "appointment-reminder", "request-to-sheets", "lead-to-booking", "order-to-sheets", "order-paid", "invoice-paymongo", "invoice-pdf", "quote-deposit", "deposit-first", "renewal-reminders", "store-orders", "shopify-orders", "receipt-expense", "meta-receipt-intake", "telegram-gcash-receipts", "booking-deposit-review", "order-gcash-checkout", "resort-concierge-dm", "resort-concierge-email", "resort-deposit-and-stay", "telegram-assistant"];
+const SLUGS = ["inquiry-triage", "invoice-follow-up", "no-show-follow-up", "appointment-reminder", "request-to-sheets", "lead-to-booking", "order-to-sheets", "order-paid", "invoice-paymongo", "invoice-pdf", "quote-deposit", "deposit-first", "renewal-reminders", "store-orders", "shopify-orders", "marketplace-orders-to-sheets", "low-stock-alert", "receipt-expense", "meta-receipt-intake", "telegram-gcash-receipts", "booking-deposit-review", "order-gcash-checkout", "resort-concierge-dm", "resort-concierge-email", "resort-deposit-and-stay", "telegram-assistant"];
 const parse = (slug: string) => definitionSchema.parse(TEMPLATES.find((t) => t.slug === slug)!.definition);
 
 describe("starter templates", () => {
@@ -265,5 +266,26 @@ describe("starter templates", () => {
     expect(def.steps.find((s) => s.id === "read_data")).toMatchObject({ type: "assistant_read", config: { what: "{{steps.pick_intent.output.label}}" } });
     expect(def.steps.find((s) => s.id === "reply")).toMatchObject({ type: "telegram", config: { chatId: "{{trigger.chatId}}" } });
     expect(JSON.stringify(def)).not.toMatch(/[\u2013\u2014]/);
+  });
+  it("marketplace-orders-to-sheets reads the dropped export, appends its rows in one batch and tells the team the count", () => {
+    const def = parse("marketplace-orders-to-sheets");
+    expect(def.trigger).toEqual({ type: "drive_file", config: { requireFile: false } });
+    expect(def.steps.map((s) => s.type)).toEqual(["read_spreadsheet", "sheets", "slack"]);
+    expect(def.steps[0]).toMatchObject({ config: { fileId: "{{trigger.fileId}}" } });
+    expect(def.steps[1]).toMatchObject({ config: { rows: "{{steps.read_orders.output.rows}}" } });
+    for (const c of (def.steps[1]!.config as { columns: string[] }).columns) expect(c).toMatch(/^{{item.[a-z0-9_]+}}$/);
+    expect(def.steps[2]).toMatchObject({ config: { text: expect.stringContaining("{{steps.read_orders.output.count}}") } });
+    expect(JSON.stringify(def)).not.toMatch(/[–—]/);
+  });
+
+  it("low-stock-alert emails the owner only when the counted stock is at or below its reorder level", () => {
+    const def = parse("low-stock-alert");
+    expect(def.trigger).toEqual({ type: "sheets_row", config: { tab: "Stock" } });
+    const cond = (def.steps[0]!.config as { condition: Condition }).condition;
+    const at = (in_stock: string, reorder_at: string) => conditionBranch(cond, { trigger: { cells: { item: "Tote", in_stock, reorder_at } }, steps: {} });
+    expect([at("3", "5"), at("5", "5"), at("12", "5")]).toEqual(["true", "true", "false"]);
+    expect(def.edges).toEqual([{ from: "is_low", to: "tell_owner", on: "true" }, { from: "is_low", to: "tell_bad_row", on: "invalid" }]);
+    expect(at("", "5")).toBe("invalid");
+    expect(def.steps[1]).toMatchObject({ type: "email" });
   });
 });

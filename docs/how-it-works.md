@@ -1699,3 +1699,17 @@ How it works (`apps/worker/src/steps/invoice-pdf.ts`, `apps/worker/src/steps/att
 Edge cases: commas in prices, rows left empty by an optional form field, a quantity of 0, more than 2 decimals, a price over 9,999,999.99, emoji and non-Latin names, very long descriptions and notes, a form field holding several files (counted toward the 3), and a retried attempt (it stores a new PDF).
 
 Tests: `apps/worker/src/steps/invoice-pdf.test.ts` (centavo totals, the PDF read back with pdfjs-dist, the upload, the email with the PDF attached, refusing another run's file, a non-file value and more than 3 files), `packages/engine/src/templates.test.ts` (both templates, and the reminder loop matching `invoice-paymongo`), `packages/engine/src/catalog.test.ts` and `packages/engine/src/step-schemas.test.ts`.
+
+## Read a spreadsheet step and marketplace templates (M1, decision 0143)
+
+What it does: the `read_spreadsheet` step turns one Google Drive file into rows. A seller downloads an order export from Shopee, Lazada or TikTok Shop and puts it in the Drive folder picked in Apps. The `drive_file` trigger starts a run, and the step reads the file named by `fileId` (by default `{{trigger.fileId}}`). A `.csv` is downloaded, a Google Sheet is exported as CSV, and an `.xlsx` or `.xls` is copied as a Google Sheet into My Drive, exported as CSV, and the copy deleted (`packages/db/src/drive-sheet.ts`). The CSV parser in `packages/engine/src/csv.ts` keys each row by its header, so `Order ID` becomes `order_id`. The output is `{ name, rows, count, columns }`, and a Sheets step appends the rows with `rows: {{steps.<id>.output.rows}}` and columns such as `{{item.order_id}}`.
+
+Why this way: Google converts Excel to CSV, so the worker parses no zip or XML and has no new dependency. The copy goes to My Drive, so it never starts the Drive trigger again. Header keys use the same rule as the Sheets row trigger (`cellKeys`), so `{{item.order_id}}` and `{{trigger.cells.order_id}}` mean the same thing.
+
+Edge cases: quoted cells with commas, line breaks and `""`; a UTF-8 BOM; CRLF or LF; blank rows; duplicate headers (`qty`, `qty_2`) and empty headers (named by column letter); rows longer than the header; a file over 2 MB or over 2,000 rows (fails with a plain message and no retry); a file that is not CSV, Excel or Google Sheets; a file in a folder the Google account never picked; a service account connection (asks for a Google sign-in); Google rate limits (retried after the wait Google gave); a failed export still deletes the copy. A faked test run returns two sample orders and reads nothing.
+
+Known limits: the same order in two overlapping exports is added twice; the Sheets batch takes 100 rows; only a Google Sheet's first tab is read; semicolon-separated files read as one column.
+
+Templates: "Marketplace orders to Sheets" (Drive file, read it, append to Sheets, Slack note with the count) and "Low-stock alert" (a new row on the Stock tab, compare In stock with Reorder at, email the owner, or email about a row with no number).
+
+Tests: `packages/engine/src/csv.test.ts` (parser, keys, row cap), `apps/worker/src/steps/read-spreadsheet.test.ts` (CSV, Excel through a copy, Google Sheet export, a templated file id, rows into a batched Sheets append, size and row caps, wrong type, unpicked folder, connection problems, rate limit with the copy deleted, faked run), and `packages/engine/src/templates.test.ts` (both templates, including the low-stock comparison).

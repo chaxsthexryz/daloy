@@ -277,6 +277,11 @@ export const googleDocsConfigSchema = z.object({
 // Reads one public web page (phase B1, decision 0107): its title, its main text and, with a selector, one value such as
 // a price. previous and changed come from this step's last successful run. A GET through the same guard as the http step.
 export const READ_PAGE_MAX_CHARS = 20_000;
+// Reads a .csv, .xlsx or Google Sheets file from Google Drive into rows (M1, decision 0139), such as a Shopee, Lazada or
+// TikTok Shop order export dropped into the folder a drive_file trigger watches. Uses the Google Drive connection.
+export const readSpreadsheetConfigSchema = z.object({
+  fileId: template(200).min(1).default("{{trigger.fileId}}").describe("The Drive file to read. The file from the Drive trigger by default."),
+});
 export const readPageConfigSchema = z.object({
   url: template(2000).min(1).describe("The page to read, such as https://example.com/rice. Only public web pages are read."),
   selector: z.string().min(1).max(500).optional().describe("A CSS selector for one value, such as .price. Leave empty to use the whole page text."),
@@ -476,7 +481,7 @@ const note = stepNoteSchema;
  * they may set onError (T3). A step inside kymavo (a booking, a payment due, a transform) fails on its data, and
  * skipping it would let the run carry on as if a booking or payment request existed.
  */
-export const OUTSIDE_STEPS: ReadonlySet<string> = new Set(["http", "email", "approval", "sheets", "drive", "slack", "outlook", "teams", "telegram", "sms", "calendar", "airtable", "notion", "trello", "meta_reply", "whatsapp_reply", "shopify_create_product", "shopify_update_product", "discord", "google_docs", "read_page", "browser", "assistant_read"]);
+export const OUTSIDE_STEPS: ReadonlySet<string> = new Set(["http", "email", "approval", "sheets", "drive", "slack", "outlook", "teams", "telegram", "sms", "calendar", "airtable", "notion", "trello", "meta_reply", "whatsapp_reply", "shopify_create_product", "shopify_update_product", "discord", "google_docs", "read_spreadsheet", "read_page", "browser", "assistant_read"]);
 // T3 (decisions 0131 and 0142): what happens when a non-branching outside step is out of attempts.
 export const stepErrorPolicySchema = z.enum(["stop", "skip", "failed_edge"]).optional();
 export type StepErrorPolicy = NonNullable<z.infer<typeof stepErrorPolicySchema>>;
@@ -514,6 +519,7 @@ const stepSchema = z.discriminatedUnion("type", [
   z.object({ id: stepId, disabled, note, onError, type: z.literal("assistant_read"), config: assistantReadConfigSchema }),
   z.object({ id: stepId, disabled, note, onError, type: z.literal("discord"), config: discordConfigSchema }),
   z.object({ id: stepId, disabled, note, onError, type: z.literal("google_docs"), config: googleDocsConfigSchema }),
+  z.object({ id: stepId, disabled, note, onError, type: z.literal("read_spreadsheet"), config: readSpreadsheetConfigSchema }),
   z.object({ id: stepId, disabled, note, onError, type: z.literal("read_page"), config: readPageConfigSchema }),
   z.object({ id: stepId, disabled, note, onError, type: z.literal("invoice_pdf"), config: invoicePdfConfigSchema }),
   z.object({ id: stepId, disabled, note, onError, type: z.literal("shopify_create_product"), config: shopifyCreateProductConfigSchema }),

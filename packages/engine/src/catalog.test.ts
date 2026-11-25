@@ -123,6 +123,7 @@ describe("destination line", () => {
       read_page: { url: "https://example.com/rice", maxChars: 4000 },
       browser: { url: "https://supplier.example.com/price", actions: [] },
       call_workflow: { workflowSlug: "notify-staff", payload: {} },
+      read_spreadsheet: { fileId: "{{trigger.fileId}}" },
     };
     for (const type of STEP_TYPES) {
       const config = configs[type] ?? { to: "a@b.co", subject: "s", text: "t", message: "m" };

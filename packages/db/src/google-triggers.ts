@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { definitionSchema, FILE_MAX_BYTES, fileType, safeFileName, type FileRef, type Trigger, type WorkflowDefinition } from "@daloy/engine";
+import { cellKeys, definitionSchema, FILE_MAX_BYTES, fileType, safeFileName, type FileRef, type Trigger, type WorkflowDefinition } from "@daloy/engine";
 import { and, eq, sql } from "drizzle-orm";
 import { connectionCredential, PROVIDER_NAMES } from "./connections";
 import { withGoogle } from "./google-access";
@@ -78,19 +78,10 @@ export function newRows(cursor: RowCursor | null, values: string[][], max = 50):
 export const rowKey = (spreadsheetId: string, tab: string, row: SheetRow) =>
   `sheets:${spreadsheetId}:${tab}:${row.rowNumber}:${createHash("sha256").update(JSON.stringify(row.values)).digest("hex").slice(0, 16)}`;
 
-const column = (i: number): string => (i < 26 ? String.fromCharCode(97 + i) : column(Math.floor(i / 26) - 1) + column(i % 26));
-
 /** Cells named after the header row as template-safe keys: "Customer Name" is {{trigger.cells.customer_name}}. */
 export function rowCells(header: string[], values: string[]): Record<string, string> {
-  const cells: Record<string, string> = {};
-  values.forEach((value, i) => {
-    let name = (header[i] ?? "").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 60) || column(i);
-    if (!/^[a-z]/.test(name)) name = `col_${name}`;
-    let unique = name;
-    for (let n = 2; unique in cells; n++) unique = `${name}_${n}`;
-    cells[unique] = value;
-  });
-  return cells;
+  const keys = cellKeys(header, values.length);
+  return Object.fromEntries(values.map((v, i) => [keys[i]!, v]));
 }
 
 export type TimeCursor = { since: string };

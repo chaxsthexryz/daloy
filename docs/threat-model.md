@@ -560,3 +560,13 @@ Entry points: `GET /privacy/customer` and `POST /privacy/customer/delete` (owner
 - Large or many attachments: at most 3 files per email, each at most 5 MB, counted after a form field's list is spread out.
 - Spam through a public form: both new templates begin with an approval to the owner, so nothing reaches the address typed into the form until the owner approves.
 - Malformed money values: amounts are parsed into integer centavos with fixed caps, and a value that does not parse fails the step with a plain message. No floating-point total reaches the PDF or the PayMongo link.
+
+## Read a spreadsheet step (M1, decision 0143)
+
+- Assets: the workspace's Google Drive grant, the files it can reach, and worker memory and run history size.
+- Entry points: no new endpoint. The step runs in the worker with the workspace's own Google Drive connection. The file id comes from the trigger or a template, so it can come from run data.
+- Reading more than the owner granted: no new scope. The step uses `drive.file`, so a forged or templated file id reaches only files in folders the owner picked or files kymavo made; anything else answers 404 and the step fails with a plain message. The id must match the Google file id pattern before any request.
+- Large or hostile files: the file must report at most 2 MB, the download or export stops at 2 MB, and the parsed rows stop at 2,000. The CSV parser is a single linear pass with no regex backtracking. Excel is parsed by Google, not the worker. Cell text reaches later steps as data, and the template resolver never resolves `{{...}}` found inside it.
+- Writes to the owner's Drive: only the temporary Google Sheets copy of an Excel file, made in My Drive and deleted in a `finally`. A failed delete leaves one copy the owner can remove.
+- Duplicates: the step does not dedupe, so overlapping exports append the same order twice (a data quality issue, not a security one).
+- Error text: Google's answers are mapped to fixed messages; file contents are never logged.

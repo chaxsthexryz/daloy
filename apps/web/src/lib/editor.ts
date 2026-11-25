@@ -125,6 +125,8 @@ export function insertables(draft: Draft, id: string): string[] {
                       ? ["file", "total", "totalText", "invoiceNumber"].map((k) => `steps.${s.id}.output.${k}`)
                       : s.type === "google_docs"
                       ? ["url", "documentId", "name"].map((k) => `steps.${s.id}.output.${k}`)
+                      : s.type === "read_spreadsheet"
+                      ? ["rows", "count", "columns", "name"].map((k) => `steps.${s.id}.output.${k}`)
                       : s.type === "call_workflow"
                         ? ["runId", "workflowId", "workflowSlug", "duplicate"].map((k) => `steps.${s.id}.output.${k}`)
                         : s.type === "assistant_read"
@@ -152,6 +154,7 @@ const NEEDS: Record<string, { provider: string; label: string }> = {
   trello: { provider: "trello", label: "Trello" },
   discord: { provider: "discord", label: "Discord" },
   google_docs: { provider: "google_drive", label: "Google Drive" },
+  read_spreadsheet: { provider: "google_drive", label: "Google Drive" },
   paymongo_link: { provider: "paymongo", label: "PayMongo" },
   payment_status: { provider: "paymongo", label: "PayMongo" },
   meta_reply: { provider: "meta_messenger", label: "Facebook Messenger & Instagram" },

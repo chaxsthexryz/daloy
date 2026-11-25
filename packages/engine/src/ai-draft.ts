@@ -67,7 +67,11 @@ const spec = (full: boolean) => [
 
 // Left out of a small local model's prompt to keep it inside that model's context; a hosted model gets all of them.
 // The stress test (apps/api/scripts/ai-stress.ts) showed a hosted model without them builds http or telegram steps instead.
+<<<<<<< HEAD
 const HOSTED_ONLY = ["airtable", "notion", "trello", "payment_status", "payment_due", "payment_expire", "sms", "meta_reply", "whatsapp_reply", "conversation_update", "stay_quote", "assistant_read", "discord", "google_docs", "read_page", "invoice_pdf", "shopify_create_product", "shopify_update_product", "browser", "call_workflow", "switch", "transform"];
+=======
+const HOSTED_ONLY = ["airtable", "notion", "trello", "payment_status", "payment_due", "payment_expire", "sms", "meta_reply", "whatsapp_reply", "conversation_update", "stay_quote", "assistant_read", "discord", "google_docs", "read_spreadsheet", "read_page", "shopify_create_product", "shopify_update_product", "browser", "call_workflow", "switch", "transform"];
+>>>>>>> claude/m1-marketplace-import
 const FULL_TRIGGERS =
   'More triggers: {"type":"meta_dm","config":{"channel":"both"}} for a Facebook Messenger or Instagram DM to the connected Page (channel messenger, instagram or both; fields {{trigger.text}}, {{trigger.senderId}}, {{trigger.channel}}); ' +
   '{"type":"whatsapp_message","config":{"requireImage":false}} for an inbound WhatsApp Cloud API message (fields {{trigger.text}}, {{trigger.senderId}}, {{trigger.senderName}}; use whatsapp_reply mode "text" inside 24h or mode "template" outside 24h); ' +
@@ -97,6 +101,7 @@ const FULL_RULES = [
   "An order, booking or inquiry with no source named comes in through a kymavo form, and a payment with no source named is a PayMongo payment. Use shopify_order only when the person says Shopify, and the email trigger only when they say emails come in.",
   "To watch a public page, such as a supplier's price, use a read_page step with a selector for the value. {{steps.<id>.output.changed}} is true when the value differs from the last run, so a condition with left {{steps.<id>.output.changed}}, op eq and right true can send the alert. read_page only reads public pages: it cannot log in or click.",
   'To bill a client, an invoice_pdf step draws the invoice and outputs {{steps.<id>.output.file}}, {{steps.<id>.output.total}} (pesos such as 1500.00, the amount a paymongo_link step takes) and {{steps.<id>.output.totalText}}. An email step sends the PDF with "attachments": ["{{steps.<id>.output.file}}"].',
+  "For a Shopee, Lazada or TikTok Shop order export (CSV or Excel) put in Google Drive, use the drive_file trigger then a read_spreadsheet step. It outputs {{steps.<id>.output.rows}} (each row keyed by its header in lower case with _ for spaces, such as order_id), count and columns. A sheets step appends them with rows {{steps.<id>.output.rows}} and columns such as {{item.order_id}}, at most 100 rows.",
   "shopify_create_product and shopify_update_product never take values from a form trigger, because anyone can fill in a form. When the person asks for that, do not ask about it: draft a manual trigger with example values in the step that they change before each run, and say so in the summary.",
   'A switch step compares "value" against up to 10 literal "cases" ({label, equals}) and uses "on": "<label>" or "on": "default" on outgoing edges. A transform step formats dates, pesos, PH mobile numbers, text case, splits or picks objects deterministically. A non-branching step that reaches an outside app may set "onError": "skip" (carry on) or "failed_edge" (follow its "on": "failed" edge); other steps may not.',
 ];

@@ -324,6 +324,7 @@ DeepSeek's review is in `docs/roadmap-review-2026-11-18.md`. Claude's second opi
 - [x] R5. Morning digest (email, opt-in), payments CSV export, Taglish templates, receipt compression on the phone. Branch `claude/r5-digest-csv`, migration 0044, decision 0093.
 - [x] R6. Privacy under RA 10173: form notice, receipt image retention, per-customer export and delete. Branch `claude/r6-privacy`, migration 0045, decision 0094.
 - [ ] R7. Demand-led: public-page reading, new templates, integration candidates after an API, cost and terms check.
+- [x] M1. Marketplace order export to rows: a `read_spreadsheet` step reads a Shopee, Lazada or TikTok Shop export (.csv, .xlsx or a Google Sheet) from the watched Drive folder into rows, up to 2,000 rows and 2 MB, with the "Marketplace orders to Sheets" and "Low-stock alert" templates. Branch `claude/m1-marketplace-import`, decision 0143, no migration.
 
 ## Integrations requested on 22 November 2026
 

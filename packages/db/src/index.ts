@@ -20,6 +20,7 @@ export * from "./deliveries";
 export * from "./discord";
 export * from "./google-access";
 export * from "./google-docs";
+export * from "./drive-sheet";
 export * from "./google-calendar";
 export * from "./google-triggers";
 export * from "./mailbox-triggers";
