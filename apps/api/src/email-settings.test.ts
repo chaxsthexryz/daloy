@@ -175,6 +175,27 @@ describe("email settings", () => {
     expect(installationLocal(smtpMailer({ SMTP_HOST: "smtp.example.com" }))).toBe(false);
   });
 
+  it("does not expose an external operator or blocked default sender email in /settings/email", async () => {
+    const prev = mail.installation;
+    mail.installation = smtpMailer({ SMTP_HOST: "smtp.gmail.com", SMTP_USER: "operator@gmail.com", SMTP_FROM: "Operator <operator@gmail.com>" });
+    try {
+      const { agent } = await signedIn();
+      const body = (await agent.get("/settings/email").expect(200)).body;
+      expect(body.installationFrom).toBeNull();
+      expect(JSON.stringify(body)).not.toContain("operator@gmail.com");
+    } finally {
+      mail.installation = prev;
+    }
+
+    mail.sharedMail = "approved";
+    try {
+      const { agent } = await signedIn();
+      expect((await agent.get("/settings/email").expect(200)).body.installationFrom).toBeNull();
+    } finally {
+      mail.sharedMail = "open";
+    }
+  });
+
   it("with an approved-only shared server, a fresh sign-up's test email sends nothing and the page says so", async () => {
     mail.sharedMail = "approved";
     try {

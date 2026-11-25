@@ -4,6 +4,15 @@ export type Member = { userId: string; email: string; role: Role; createdAt: str
 /** Roles an owner can give. The owner row is never created or changed from the console. */
 export const memberRoles = ["operator", "approver", "requester"] as const;
 export type MemberRole = (typeof memberRoles)[number];
+export type PendingInvite = { id: string; email: string; role: MemberRole; createdAt: string; expiresAt: string };
+
+/** Uses the active workspace origin in invite links even when the API config names a different host. */
+export function inviteLinkForOrigin(tokenOrLink: string, origin: string): string {
+  const base = origin.replace(/\/+$/, "");
+  const match = /\/#\/invite\/([^/?#]+)/.exec(tokenOrLink);
+  const token = match ? match[1] : tokenOrLink.replace(/^\/+/, "");
+  return `${base}/#/invite/${token}`;
+}
 
 const ORDER: Role[] = ["owner", "operator", "approver", "requester"];
 

@@ -102,6 +102,16 @@ export function AppsPage({ outcome }: { outcome?: { app: string; code: string } 
   const selected = APPS.find((a) => a.key === open);
   const checked = (key: Key) => key === "gmail" ? mail.sender?.lastTestedAt : conn(key)?.lastTestedAt;
   const date = (stamp: string) => new Intl.DateTimeFormat(language === "tl" ? "fil-PH" : "en-PH", { dateStyle: "medium", timeStyle: "short" }).format(new Date(stamp));
+  const renderMarks = (key: string, name: string, size: number) =>
+    key === "meta_messenger" ? (
+      <span className="app-mark-pair" data-size={size}>
+        <AppMark mark="messenger" name="Facebook Messenger" size={size} />
+        <AppMark mark="instagram" name="Instagram" size={size} />
+      </span>
+    ) : (
+      <AppMark mark={APP_LOGO[key] ?? key} name={name} size={size} />
+    );
+
   const card = (a: (typeof APPS)[number]) => {
     const status = state(a.key);
     const c = a.key === "gmail" ? null : conn(a.key);
@@ -110,7 +120,7 @@ export function AppsPage({ outcome }: { outcome?: { app: string; code: string } 
     const stamp = checked(a.key);
     return (
       <li key={a.key} className="directory-row" data-selected={open === a.key} data-saved={!!status}>
-        <AppMark mark={APP_LOGO[a.key] ?? a.key} name={a.name} size={36} />
+        {renderMarks(a.key, a.name, 36)}
         <div className="app-text"><h3>{a.name}</h3><p>{t(a.line)}</p></div>
         {status && !open && <>
           <div className="directory-detail">{c?.account || (a.key === "gmail" && mail.sender?.address)}{label && <small>{label}</small>}</div>
@@ -179,7 +189,7 @@ export function AppsPage({ outcome }: { outcome?: { app: string; code: string } 
         </div>
         {open && selected && <section key={open} id="app-setup" className="setup-pane motion-page" aria-label={t("{app} setup", { app: selected.name })}>
           <button className="panel-back" onClick={() => { trigger.current = open; setOpen(null); }}>{t("Back to Apps")}</button>
-          <header className="panel-head"><AppMark mark={APP_LOGO[open] ?? open} name={selected.name} size={44} />
+          <header className="panel-head">{renderMarks(open, selected.name, 44)}
             <div><h2 id="panel-title" tabIndex={-1}>{selected.name}</h2><p>{t(selected.line)}</p></div>
           </header>
           <SharedGrants.Provider value={conns.shared}>{setup[open]()}</SharedGrants.Provider>

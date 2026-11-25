@@ -32,8 +32,23 @@ test("the owner invites, changes a role and removes a member from the grouped Te
   await page.goto("/#/team");
   await expect(page.getByRole("heading", { name: "Team", exact: true })).toBeVisible();
   await expect(page.getByText("1 member", { exact: true })).toBeVisible();
+  await expect(page.getByRole("list", { name: "Role descriptions" })).toContainText("Operator:");
   const owner = page.locator(".wk-group", { hasText: "Runs the workspace" });
   await expect(owner.getByRole("button")).toHaveCount(0);
+
+  // Pending invites show active origin URL and can copy or revoke links.
+  const pendingEmail = `revoke-${Date.now()}@test.local`;
+  await page.getByLabel("Email").fill(pendingEmail);
+  await page.getByLabel("Role", { exact: true }).selectOption({ label: "Operator" });
+  await page.getByRole("button", { name: "Create invite link" }).click();
+  const createdLink = (await page.getByLabel("Invite link").textContent())!.trim();
+  expect(createdLink.startsWith(new URL(page.url()).origin)).toBe(true);
+  const pendingSection = page.getByRole("region", { name: /Pending invites/ });
+  await expect(pendingSection.getByText(pendingEmail)).toBeVisible();
+  await pendingSection.getByRole("button", { name: `Copy link for ${pendingEmail}` }).click();
+  await expect(pendingSection.getByLabel("Copied invite link")).toContainText(new URL(page.url()).origin);
+  await pendingSection.getByRole("button", { name: `Revoke invite for ${pendingEmail}` }).click();
+  await expect(pendingSection).toHaveCount(0);
 
   const email = `member-${Date.now()}@test.local`;
   const joined = await addMember(browser, page, email, "Approver");

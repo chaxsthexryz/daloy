@@ -2,13 +2,13 @@ import "./request-access.css";
 import "./workspace-admin.css";
 import "./workspace.css";
 import { Text, useLanguage } from "./Language";
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { api } from "./api";
 import { AuthLayout, AuthNote, Brand } from "./AuthLayout";
 import { Sheet, usePhone } from "./Sheet";
 import { checkNewPassword } from "./lib/password";
 import { requestStatus, sentOn } from "./lib/my-requests";
-import { canChangeRole, canInvite, canRemove, groupMembers, memberRoles, type Member, type MemberRole, type Role } from "./lib/team";
+import { canChangeRole, canInvite, canRemove, groupMembers, inviteLinkForOrigin, memberRoles, type Member, type MemberRole, type PendingInvite, type Role } from "./lib/team";
 
 export type { Role };
 export type User = { id: string; email: string; workspaceId: string; role: Role; language?: "en" | "tl"; ask?: boolean; admin?: boolean };
@@ -23,10 +23,10 @@ const ROLE_HELP: Record<Role, string> = {
 };
 const joined = (iso: string) => new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
 
-type Invite = { email: string; link: string };
+type Invite = { id?: string; email: string; link: string };
 
 /** The invite form and, once a link exists, the link to send. Nothing is emailed (decision 0022). */
-function InviteForm({ onDone }: { onDone?: () => void }) {
+function InviteForm({ onCreated, onDone }: { onCreated?: (invite: PendingInvite, link: string) => void; onDone?: () => void }) {
   const { t } = useLanguage();
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<MemberRole>("approver");
@@ -38,8 +38,11 @@ function InviteForm({ onDone }: { onDone?: () => void }) {
     setError("");
     setCopied(false);
     try {
-      setInvite(await api<Invite>("POST", "/workspace/invites", { email, role }));
+      const created = await api<PendingInvite & { link: string }>("POST", "/workspace/invites", { email, role });
+      const activeLink = inviteLinkForOrigin(created.link, window.location.origin);
+      setInvite({ id: created.id, email: created.email, link: activeLink });
       setEmail("");
+      onCreated?.(created, activeLink);
     } catch (err) {
       setError((err as Error).message);
     }
@@ -59,13 +62,20 @@ function InviteForm({ onDone }: { onDone?: () => void }) {
         </select>
         <button className="wk-button blue">{t("Create invite link")}</button>
       </div>
+      <ul className="wk-role-guide" aria-label={t("Role descriptions")}>
+        {memberRoles.map((r) => (
+          <li key={r}><b>{t(ROLE_LABEL[r])}:</b> {t(ROLE_HELP[r])}</li>
+        ))}
+      </ul>
       {invite && (
         <div role="status" className="wk-note ok">
           <p>
             <b>{t("Send this link to {email}.", { email: invite.email })}</b> {t("It works once and expires in seven days.")}
           </p>
-          <code aria-label={t("Invite link")}>{invite.link}</code>
-          <button type="button" className="wk-button" onClick={copy}>{copied ? t("Copied") : t("Copy link")}</button>
+          <div className="wk-note-actions">
+            <code aria-label={t("Invite link")}>{invite.link}</code>
+            <button type="button" className="wk-button" onClick={copy}>{copied ? t("Copied") : t("Copy link")}</button>
+          </div>
         </div>
       )}
       <p role="alert" className="wk-note bad" hidden={!error}>{error}</p>
@@ -80,13 +90,27 @@ type Dialog = { kind: "invite" } | { kind: "role"; member: Member } | { kind: "r
 export function TeamPage({ user }: { user: User }) {
   const { t } = useLanguage();
   const phone = usePhone();
+  const actor = user.role;
+  const ownerAccess = canInvite(actor);
   const [list, setList] = useState<Member[] | null>(null);
+  const [pending, setPending] = useState<PendingInvite[]>([]);
   const [dialog, setDialog] = useState<Dialog | null>(null);
   const [error, setError] = useState("");
-  const load = () => api<Member[]>("GET", "/workspace/members").then(setList, (e: Error) => setError(e.message));
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [copiedBanner, setCopiedBanner] = useState<{ id: string; email: string; link: string } | null>(null);
+  const linkCache = useRef<Record<string, string>>({});
+
+  const load = async () => {
+    const membersPromise = api<Member[]>("GET", "/workspace/members").then(setList, (e: Error) => setError(e.message));
+    const invitesPromise = ownerAccess
+      ? api<PendingInvite[]>("GET", "/workspace/invites").then(setPending, () => setPending([]))
+      : Promise.resolve();
+    await Promise.all([membersPromise, invitesPromise]);
+  };
   useEffect(() => {
-    load();
-  }, []);
+    void load();
+  }, [ownerAccess]);
+
   const run = async (action: () => Promise<unknown>) => {
     setError("");
     try {
@@ -97,7 +121,34 @@ export function TeamPage({ user }: { user: User }) {
     }
     setDialog(null);
   };
-  const actor = user.role;
+
+  const copyPending = async (inv: PendingInvite) => {
+    setError("");
+    try {
+      let link = linkCache.current[inv.id];
+      if (!link) {
+        const next = await api<PendingInvite & { link: string }>("POST", `/workspace/invites/${inv.id}/reissue`);
+        link = inviteLinkForOrigin(next.link, window.location.origin);
+        linkCache.current[inv.id] = link;
+        setPending((prev) => prev.map((p) => (p.id === inv.id ? { ...p, expiresAt: next.expiresAt } : p)));
+      } else {
+        link = inviteLinkForOrigin(link, window.location.origin);
+      }
+      void navigator.clipboard?.writeText(link);
+      setCopiedId(inv.id);
+      setCopiedBanner({ id: inv.id, email: inv.email, link });
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  };
+
+  const revokePending = async (inv: PendingInvite) => {
+    await run(() => api("DELETE", `/workspace/invites/${inv.id}`));
+    delete linkCache.current[inv.id];
+    if (copiedId === inv.id) setCopiedId(null);
+    if (copiedBanner?.id === inv.id) setCopiedBanner(null);
+  };
+
   const groups = groupMembers(list ?? []);
 
   return (
@@ -109,14 +160,66 @@ export function TeamPage({ user }: { user: User }) {
             {list && <span className="wk-sub">{list.length === 1 ? t("1 member") : t("{count} members", { count: list.length })}</span>}
           </div>
         </div>
-        {phone && canInvite(actor) && <button type="button" className="wk-button blue wk-head-action" onClick={() => setDialog({ kind: "invite" })}>{t("Invite")}</button>}
+        {phone && ownerAccess && <button type="button" className="wk-button blue wk-head-action" onClick={() => setDialog({ kind: "invite" })}>{t("Invite")}</button>}
       </header>
-      {!phone && canInvite(actor) && (
+      {!phone && ownerAccess && (
         <section className="wk-card" aria-labelledby="invite-heading">
           <div className="wk-body">
             <h2 id="invite-heading" className="wk-card-title">{t("Invite someone")}</h2>
-            <InviteForm />
+            <InviteForm
+              onCreated={(created, link) => {
+                linkCache.current[created.id] = link;
+                setPending((prev) => [created, ...prev.filter((p) => p.id !== created.id)]);
+              }}
+            />
           </div>
+        </section>
+      )}
+      {ownerAccess && pending.length > 0 && (
+        <section className="wk-card" aria-labelledby="pending-invites-heading">
+          <h2 className="wk-card-head" id="pending-invites-heading">
+            <b>{t("Pending invites")} · {pending.length}</b>
+            <span>{t("Links expire after seven days or once accepted.")}</span>
+          </h2>
+          {copiedBanner && (
+            <div className="wk-body wk-pending-banner">
+              <div role="status" className="wk-note ok">
+                <p>
+                  <b>{t("Send this link to {email}.", { email: copiedBanner.email })}</b> {t("It works once and expires in seven days.")}
+                </p>
+                <div className="wk-note-actions">
+                  <code aria-label={t("Copied invite link")}>{copiedBanner.link}</code>
+                </div>
+              </div>
+            </div>
+          )}
+          <ul className="wk-rows">
+            {pending.map((inv) => (
+              <li key={inv.id} className="wk-row wk-invite-pending-row">
+                <span className="wk-email">{inv.email}</span>
+                <small>{t("Expires {date}", { date: joined(inv.expiresAt) })}</small>
+                <span className="wk-chip">{t(ROLE_LABEL[inv.role])}</span>
+                <div className="wk-pending-actions">
+                  <button
+                    type="button"
+                    className="wk-button"
+                    aria-label={t("Copy link for {email}", { email: inv.email })}
+                    onClick={() => void copyPending(inv)}
+                  >
+                    {copiedId === inv.id ? t("Copied") : t("Copy link")}
+                  </button>
+                  <button
+                    type="button"
+                    className="wk-button danger-quiet"
+                    aria-label={t("Revoke invite for {email}", { email: inv.email })}
+                    onClick={() => void revokePending(inv)}
+                  >
+                    {t("Revoke")}
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
         </section>
       )}
       <p role="alert" className="wk-note bad" hidden={!error}>{error}</p>
@@ -156,7 +259,13 @@ export function TeamPage({ user }: { user: User }) {
       )}
       {dialog?.kind === "invite" && (
         <Sheet title={t("Invite someone")} onClose={() => setDialog(null)}>
-          <InviteForm onDone={() => setDialog(null)} />
+          <InviteForm
+            onCreated={(created, link) => {
+              linkCache.current[created.id] = link;
+              setPending((prev) => [created, ...prev.filter((p) => p.id !== created.id)]);
+            }}
+            onDone={() => setDialog(null)}
+          />
         </Sheet>
       )}
       {dialog?.kind === "role" && <RoleSheet member={dialog.member} phone={phone} onClose={() => setDialog(null)} onSave={(role) => run(() => api("PATCH", `/workspace/members/${dialog.member.userId}`, { role }))} onRemove={() => setDialog({ kind: "remove", member: dialog.member })} />}

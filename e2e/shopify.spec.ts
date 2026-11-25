@@ -15,9 +15,13 @@ test("an owner connects Shopify, a signed order starts a run that creates and up
   await page.getByRole("button", { name: "Create account" }).click();
 
   await page.getByRole("link", { name: "Apps" }).first().click();
+  await expect(page.locator("li.directory-row", { hasText: "Facebook Messenger & Instagram" }).locator(".app-mark")).toHaveCount(2);
   await page.getByRole("button", { name: "Connect Shopify" }).click();
   await page.getByLabel("Shop domain").fill(process.env.E2E_SHOPIFY_SHOP!);
-  await page.getByLabel("In the Dev Dashboard").check();
+  const devRadio = page.getByLabel("In the Dev Dashboard");
+  await devRadio.check();
+  expect(await devRadio.evaluate((el) => el.getBoundingClientRect().width)).toBeLessThan(30);
+  await expect(page.locator(".setup-pane .field-badge").first()).toHaveText("Required");
   await page.getByLabel("Client ID").fill(process.env.E2E_SHOPIFY_CLIENT_ID!);
   await page.getByLabel("Client secret").fill(process.env.E2E_SHOPIFY_SECRET!);
   await page.getByRole("button", { name: "Connect Shopify" }).click();

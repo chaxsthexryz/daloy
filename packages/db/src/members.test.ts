@@ -3,7 +3,7 @@ import type { Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { freshDatabase } from "../../../test/db";
 import { hashToken } from "./approvals";
-import { claimInvite, createInvite, findApprover, joinWorkspace, listMembers, membershipOf, removeMember, setMemberRole } from "./members";
+import { claimInvite, createInvite, findApprover, joinWorkspace, listMembers, listPendingInvites, membershipOf, reissueInvite, removeMember, revokeInvite, setMemberRole } from "./members";
 import { invites, sessions, users, workspaceMembers } from "./schema";
 import type { Db } from "./index";
 
@@ -66,6 +66,33 @@ describe("invites", () => {
 
   it("can't invite an owner", async () => {
     await expect(createInvite(db, ownerId, "boss@test.local", "owner")).rejects.toThrow();
+  });
+
+  it("lists pending invites without hashes, reissues tokens cleanly, and revokes by workspace", async () => {
+    const other = await account();
+    await joinWorkspace(db, other.id, other.id, "owner");
+
+    const oldToken = await createInvite(db, ownerId, "pending@test.local", "operator");
+    await createInvite(db, ownerId, "expired-pending@test.local", "requester", -1000);
+    await createInvite(db, other.id, "other-ws@test.local", "approver");
+
+    const pending = await listPendingInvites(db, ownerId);
+    expect(pending.map((p) => p.email)).toContain("pending@test.local");
+    expect(pending.map((p) => p.email)).not.toContain("expired-pending@test.local");
+    expect(pending.map((p) => p.email)).not.toContain("other-ws@test.local");
+    const target = pending.find((p) => p.email === "pending@test.local")!;
+    expect("tokenHash" in target).toBe(false);
+
+    expect(await reissueInvite(db, other.id, target.id)).toBeNull();
+    const reissued = await reissueInvite(db, ownerId, target.id);
+    expect(reissued).not.toBeNull();
+    expect(reissued!.token).not.toBe(oldToken);
+    expect(await claimInvite(db, oldToken)).toBeNull();
+
+    expect(await revokeInvite(db, other.id, target.id)).toBe(false);
+    expect(await revokeInvite(db, ownerId, target.id)).toBe(true);
+    expect(await claimInvite(db, reissued!.token)).toBeNull();
+    expect((await listPendingInvites(db, ownerId)).some((p) => p.id === target.id)).toBe(false);
   });
 });
 

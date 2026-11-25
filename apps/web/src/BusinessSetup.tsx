@@ -5,12 +5,12 @@ import { useLanguage } from "./Language";
 import { inkFor, WEBSITE_INQUIRY_SLUG, websiteInquiryDefinition } from "@daloy/engine";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { api, ApiError, type Workflow } from "./api";
-import { ConnectPanel, useAction } from "./ConnectPanel";
+import { ConnectPanel, FieldBadge, useAction } from "./ConnectPanel";
 import { FormEmbed } from "./FormEmbed";
 
 type Profile = { businessName: string | null; website: string | null; inquiryEmail: string | null; replyTo: string | null };
 type Sender = { address: string; status: "unverified" | "active" | "failed" | "disconnected"; lastError: string | null; verifiedAt: string | null; lastTestedAt: string | null; authMethod?: "app_password" | "oauth" };
-export type Settings = { profile: Profile | null; sender: Sender | null; installationFrom: string; installationAllowed: boolean; installationLocal: boolean; signInEmail: string };
+export type Settings = { profile: Profile | null; sender: Sender | null; installationFrom: string | null; installationAllowed: boolean; installationLocal: boolean; signInEmail: string };
 type TestResult = { ok: true; to: string; from: string; replyTo?: string; gmail: boolean; needsConfirmation: boolean } | { ok: false; error: string };
 
 const APP_PASSWORD_HELP = "https://support.google.com/accounts/answer/185833";
@@ -58,24 +58,38 @@ function BrandKit({ name }: { name?: string | null }) {
   const [brand, setBrand] = useState<Brand | null>(null);
   const [colour, setColour] = useState("#1a73e8");
   const [preview, setPreview] = useState("");
-  const [status, setStatus] = useState("");
-  const [error, setError] = useState("");
+  const [fileName, setFileName] = useState("");
+  const [logoStatus, setLogoStatus] = useState("");
+  const [logoError, setLogoError] = useState("");
+  const [colourStatus, setColourStatus] = useState("");
+  const [colourError, setColourError] = useState("");
   const file = useRef<HTMLInputElement>(null);
-  const load = () => api<Brand>("GET", "/settings/brand").then((b) => { setBrand(b); setColour(b.accent ?? "#1a73e8"); }, (e: Error) => setError(e.message));
+  const load = () => api<Brand>("GET", "/settings/brand").then((b) => { setBrand(b); setColour(b.accent ?? "#1a73e8"); }, (e: Error) => setLogoError(e.message));
   useEffect(() => void load(), []);
-  const run = async (done: string, fn: () => Promise<unknown>) => {
-    setError("");
-    setStatus("");
+  const runLogo = async (done: string, fn: () => Promise<unknown>) => {
+    setLogoError("");
+    setLogoStatus("");
     try {
       await fn();
       await load();
-      setStatus(done);
+      setLogoStatus(done);
     } catch (err) {
-      setError((err as Error).message);
+      setLogoError((err as Error).message);
+    }
+  };
+  const runColour = async (done: string, fn: () => Promise<unknown>) => {
+    setColourError("");
+    setColourStatus("");
+    try {
+      await fn();
+      await load();
+      setColourStatus(done);
+    } catch (err) {
+      setColourError((err as Error).message);
     }
   };
   const upload = () =>
-    run("Logo saved.", async () => {
+    runLogo("Logo saved.", async () => {
       const chosen = file.current?.files?.[0];
       if (!chosen) throw new Error(t("Choose a file first."));
       const url = await new Promise<string>((resolve, reject) => {
@@ -93,23 +107,38 @@ function BrandKit({ name }: { name?: string | null }) {
       <p className="muted"><Text>Shown on your public forms and in the emails kymavo sends for you. Leave both empty to keep the default look.</Text></p>
       <div className="field">
         <label htmlFor="b-logo"><Text>Logo (PNG, JPEG or WebP, up to 100 KB)</Text></label>
-        <input id="b-logo" ref={file} className="file-input" type="file" accept="image/png,image/jpeg,image/webp" />
+        <div className="file-picker">
+          <input
+            id="b-logo"
+            ref={file}
+            className="file-input-native"
+            type="file"
+            accept="image/png,image/jpeg,image/webp"
+            onChange={(e) => setFileName(e.target.files?.[0]?.name ?? "")}
+          />
+          <span className="file-picker-btn" aria-hidden="true">{t("Choose file")}</span>
+          <span className="file-picker-name" aria-hidden="true">{fileName || t("No file selected")}</span>
+        </div>
         {preview && <img src={preview} alt="" style={{ maxHeight: 64, maxWidth: 240 }} />}
         <span className="muted">{brand?.logo ? <Text>A logo is saved.</Text> : <Text>No logo yet.</Text>}</span>
       </div>
       <div className="actions">
         <button type="button" onClick={() => void upload()}><Text>Upload logo</Text></button>
-        {brand?.logo && <button type="button" onClick={() => void run("Logo removed.", async () => { await api("DELETE", "/settings/brand/logo"); setPreview(""); })}><Text>Remove logo</Text></button>}
+        {brand?.logo && <button type="button" onClick={() => void runLogo("Logo removed.", async () => { await api("DELETE", "/settings/brand/logo"); setPreview(""); setFileName(""); })}><Text>Remove logo</Text></button>}
       </div>
+      <p role="status" className="inline-feedback" hidden={!logoStatus}>{t(logoStatus)}</p>
+      <p role="alert" className="message error" hidden={!logoError}>{logoError}</p>
       <div className="field">
         <label htmlFor="b-accent"><Text>Accent colour</Text></label>
         <input id="b-accent" type="color" value={colour} onChange={(e) => setColour(e.target.value.toLowerCase())} aria-describedby="b-accent-note" />
         <span id="b-accent-note" className="muted"><Text>Text on this colour is chosen to stay readable.</Text></span>
       </div>
       <div className="actions">
-        <button type="button" onClick={() => void run("Colour saved.", () => api("PUT", "/settings/brand", { accent: colour }))}><Text>Save colour</Text></button>
-        {brand?.accent && <button type="button" onClick={() => void run("Colour cleared.", () => api("PUT", "/settings/brand", { accent: null }))}><Text>Clear colour</Text></button>}
+        <button type="button" onClick={() => void runColour("Colour saved.", () => api("PUT", "/settings/brand", { accent: colour }))}><Text>Save colour</Text></button>
+        {brand?.accent && <button type="button" onClick={() => void runColour("Colour cleared.", () => api("PUT", "/settings/brand", { accent: null }))}><Text>Clear colour</Text></button>}
       </div>
+      <p role="status" className="inline-feedback" hidden={!colourStatus}>{t(colourStatus)}</p>
+      <p role="alert" className="message error" hidden={!colourError}>{colourError}</p>
       <div className="brand-preview">
         <h3>{t("How your public form will look")}</h3>
         {brand?.logo && <img src={preview || brand.logoUrl} alt="" />}
@@ -117,8 +146,6 @@ function BrandKit({ name }: { name?: string | null }) {
         <p>{t("Your email")}</p><div className="example-field">you@example.com</div>
         <span className="preview-send" style={{ background: colour, color: inkFor(colour) }}>{t("Send")}</span>
       </div>
-      <p role="status">{t(status)}</p>
-      <p role="alert" className="message error" hidden={!error}>{error}</p>
     </section>
   );
 }
@@ -257,11 +284,13 @@ export function SenderSection({ data, onChange }: { data: Settings; onChange: ()
 function InstallationNote({ data }: { data: Settings }) {
   return !data.installationAllowed ? (
     <p className="message error"><Text>This installation's mail server does not send for your account. Connect Gmail below to send email from your own address.</Text></p>
-  ) : (
+  ) : data.installationFrom ? (
     <p>
       Your automations send from <code>{data.installationFrom}</code>, this installation's mail server. On a local install that is Mailpit, which keeps every message on this
       computer (open <a href="http://localhost:8025">localhost:8025</a> to read them).
     </p>
+  ) : (
+    <p><Text>This installation uses a shared mail server by default. Connect Gmail to send customer email from your own business address.</Text></p>
   );
 }
 
@@ -398,11 +427,17 @@ function GmailForm({ address: initial, title, onSaved, onCancel }: { address: st
         <li><Text>Enter your Gmail address and the app password below, then save.</Text></li>
       </ol>
       <div className="field">
-        <label htmlFor="g-address"><Text>Gmail address</Text></label>
+        <div className="field-label-row">
+          <label htmlFor="g-address"><Text>Gmail address</Text></label>
+          <FieldBadge />
+        </div>
         <input id="g-address" type="email" value={address} onChange={(e) => setAddress(e.target.value)} required autoComplete="email" />
       </div>
       <div className="field">
-        <label htmlFor="g-password"><Text>App password</Text></label>
+        <div className="field-label-row">
+          <label htmlFor="g-password"><Text>App password</Text></label>
+          <FieldBadge />
+        </div>
         <input id="g-password" type="password" value={appPassword} onChange={(e) => setAppPassword(e.target.value)} required autoComplete="off" />
       </div>
       <div className="actions">
@@ -477,15 +512,16 @@ function InquiryForm({ data }: { data: Settings }) {
       ) : (
         <>
           <ul>
-            <li>
-              {t("Replies to customers are sent from")} <code>{from}</code>
-              {profile.replyTo && (
-                <>
-                  {t(", and their answers go to")} <code>{profile.replyTo}</code>
-                </>
-              )}
-              .
-            </li>
+            {from ? (
+              <li>
+                {t("Replies to customers are sent from")} <code>{from}</code>
+                {profile.replyTo ? <>{t(", and their answers go to")} <code>{profile.replyTo}</code></> : null}.
+              </li>
+            ) : (
+              <li>
+                {t("Connect Gmail in Apps so customer replies come from your own address.")}{profile.replyTo ? <> {t("Replies from customers go to")} <code>{profile.replyTo}</code>.</> : ""}
+              </li>
+            )}
             <li>
               {t("New inquiries go to")} <code>{profile.inquiryEmail}</code>.
             </li>

@@ -18,6 +18,8 @@ export const setupTranslations: Record<string, string> = {
   "Start with a blank workflow": "Magsimula sa blangkong workflow",
   "Choose a trigger, then add and connect the steps in the editor.": "Pumili ng trigger, saka idagdag at ikonekta ang mga hakbang sa editor.",
   "Create and open editor": "Gumawa at buksan ang editor",
+  "Sample message": "Halimbawang mensahe",
+  "No templates match your search.": "Walang template na tugma sa hinanap mo.",
   "Preview a template": "Silipin ang template",
   "Office requests": "Mga office request",
   "Try the sample form before setting up a workflow for your team.": "Subukan ang sample form bago mag-set up ng workflow para sa team mo.",

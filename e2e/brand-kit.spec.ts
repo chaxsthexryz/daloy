@@ -21,10 +21,13 @@ test("the owner saves a logo and colour in Business settings, and a script-carry
   await page.getByRole("button", { name: "Upload logo" }).click();
   await expect(page.getByText("Logo saved.")).toBeVisible();
   await expect(page.getByText("A logo is saved.")).toBeVisible();
+  const previewTop = (await page.locator(".brand-preview").boundingBox())!.y;
+  expect((await page.getByText("Logo saved.").boundingBox())!.y).toBeLessThan(previewTop);
 
   await page.getByLabel("Accent colour").fill("#0b3d91");
   await page.getByRole("button", { name: "Save colour" }).click();
   await expect(page.getByText("Colour saved.")).toBeVisible();
+  expect((await page.getByText("Colour saved.").boundingBox())!.y).toBeLessThan(previewTop);
   await page.reload();
   await expect(page.getByLabel("Accent colour")).toHaveValue("#0b3d91");
 

@@ -1,4 +1,4 @@
-import { createInvite, listMembers, removeMember, requests, ROLES, runs, setMemberRole, users, workflows, workspaceMembers, type Db } from "@daloy/db";
+import { createInviteRecord, listMembers, listPendingInvites, reissueInvite, removeMember, requests, revokeInvite, ROLES, runs, setMemberRole, users, workflows, workspaceMembers, type Db } from "@daloy/db";
 import { Body, ConflictException, Controller, Delete, Get, HttpCode, Inject, NotFoundException, Param, Patch, Post, UseGuards } from "@nestjs/common";
 import { and, desc, eq } from "drizzle-orm";
 import * as z from "zod";
@@ -26,6 +26,12 @@ export class MembersController {
     return listMembers(this.db, user.workspaceId);
   }
 
+  @Get("invites")
+  @UseGuards(Allow(MANAGE))
+  pendingInvites(@CurrentUser() user: SessionUser) {
+    return listPendingInvites(this.db, user.workspaceId);
+  }
+
   /** Returns a one-time link for the owner to send; nothing is emailed. It expires after seven days. */
   @Post("invites")
   @UseGuards(Allow(MANAGE), RateLimit(20))
@@ -36,8 +42,39 @@ export class MembersController {
       .innerJoin(users, eq(users.id, workspaceMembers.userId))
       .where(and(eq(workspaceMembers.workspaceId, user.workspaceId), eq(users.email, body.email)));
     if (already) throw new ConflictException("this person is already a member");
-    const token = await createInvite(this.db, user.workspaceId, body.email, body.role);
-    return { email: body.email, role: body.role, link: `${this.config.publicUrl}/#/invite/${token}` };
+    const created = await createInviteRecord(this.db, user.workspaceId, body.email, body.role);
+    return {
+      id: created.id,
+      email: created.email,
+      role: created.role,
+      link: `${this.config.publicUrl}/#/invite/${created.token}`,
+      createdAt: created.createdAt,
+      expiresAt: created.expiresAt,
+    };
+  }
+
+  /** Rotates the token for a pending invite so the owner can copy a fresh one-time link. */
+  @Post("invites/:id/reissue")
+  @HttpCode(200)
+  @UseGuards(Allow(MANAGE), RateLimit(20))
+  async reissue(@CurrentUser() user: SessionUser, @Param("id", userId) id: string) {
+    const next = await reissueInvite(this.db, user.workspaceId, id);
+    if (!next) throw new NotFoundException();
+    return {
+      id: next.id,
+      email: next.email,
+      role: next.role,
+      link: `${this.config.publicUrl}/#/invite/${next.token}`,
+      createdAt: next.createdAt,
+      expiresAt: next.expiresAt,
+    };
+  }
+
+  @Delete("invites/:id")
+  @HttpCode(204)
+  @UseGuards(Allow(MANAGE))
+  async revoke(@CurrentUser() user: SessionUser, @Param("id", userId) id: string) {
+    if (!(await revokeInvite(this.db, user.workspaceId, id))) throw new NotFoundException();
   }
 
   @Patch("members/:userId")

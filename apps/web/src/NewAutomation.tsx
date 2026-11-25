@@ -25,6 +25,7 @@ import { RunFlow } from "./FlowCanvas";
 import { startOfficeSetup, startPurchaseSetup } from "./OfficeRequests";
 import { Sheet, usePhone } from "./Sheet";
 import { pushToast } from "./Toast";
+import { taglishSampleFor } from "./lib/library";
 import type { Language } from "./lib/locale";
 
 const slugify = (s: string) =>
@@ -57,7 +58,8 @@ export function NewAutomationPage({ email }: { email: string }) {
   const [error, setError] = useState("");
   // One start or create at a time: a repeated click must not make a second draft.
   const [busy, setBusy] = useState(false);
-  const panel = useRef<HTMLElement>(null);
+  const dialog = useRef<HTMLDivElement>(null);
+  const lastTriggerKey = useRef<string | null>(null);
 
   const start = (go: (email: string, language: Language) => Promise<void>) => {
     if (busy) return;
@@ -159,12 +161,33 @@ export function NewAutomationPage({ email }: { email: string }) {
 
   function open(key: string, defaultName?: string) {
     const c = cards.find((c) => c.key === key);
+    lastTriggerKey.current = key;
     setSelected(key);
     setPreviewName(defaultName ?? c?.name ?? "");
   }
   const close = () => setSelected(null);
   useEffect(() => {
-    if (card && !phone) panel.current?.scrollIntoView({ block: "nearest", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+    if (card && !phone) {
+      const frame = requestAnimationFrame(() => dialog.current?.focus());
+      const onKey = (e: KeyboardEvent) => {
+        if (e.key === "Escape") {
+          e.preventDefault();
+          close();
+        }
+      };
+      window.addEventListener("keydown", onKey);
+      return () => {
+        cancelAnimationFrame(frame);
+        window.removeEventListener("keydown", onKey);
+      };
+    }
+    if (!card && !phone && lastTriggerKey.current) {
+      const key = lastTriggerKey.current;
+      lastTriggerKey.current = null;
+      requestAnimationFrame(() => {
+        document.querySelector<HTMLButtonElement>(`button.lib-open[data-preview-key="${CSS.escape(key)}"]`)?.focus();
+      });
+    }
   }, [card?.key, phone]);
 
   const [drawn, setDrawn] = useState(false);
@@ -174,8 +197,9 @@ export function NewAutomationPage({ email }: { email: string }) {
     return () => cancelAnimationFrame(frame);
   }, [card?.key, phone]);
 
+  const previewSample = card && style === "taglish" ? taglishSampleFor(card.definition) : null;
   const preview = card && (
-    <section ref={panel} className="lib-preview" aria-labelledby="lib-preview-title">
+    <section className="lib-preview" aria-labelledby={phone ? undefined : "lib-preview-title"}>
       <header>
         <div>
           <p className="gp-eyebrow">{t(card.category)}</p>
@@ -184,6 +208,13 @@ export function NewAutomationPage({ email }: { email: string }) {
         {!phone && <button type="button" className="ops-button" onClick={close}><Text>Close</Text></button>}
       </header>
       <p className="gp-lead">{card.description}</p>
+      {previewSample && (
+        <div className="lib-sample">
+          <h3><Text>Sample message</Text></h3>
+          {previewSample.subject && <p className="lib-sample-subject">{previewSample.subject}</p>}
+          <p>{previewSample.body}</p>
+        </div>
+      )}
       <div className="lib-preview-body">
         <div className="lib-diagram" role="group" aria-label={t("Diagram of {name}", { name: card.name })}>
           {/* Keyed so each card fits its own diagram; held one frame so a sheet is open (and has a size) before the diagram fits itself to it. */}
@@ -231,7 +262,14 @@ export function NewAutomationPage({ email }: { email: string }) {
         <p className="lib-line"><span><Text>Starts with</Text></span> {triggerEntry(def.trigger.type).action[language]}</p>
         <p className="lib-line lib-apps">
           <span><Text>Needs</Text></span>
-          {apps.length ? apps.map((a) => <AppMark key={a.mark} mark={a.mark} name={a.name} size={26} />) : <em><Text>No apps needed</Text></em>}
+          {apps.length
+            ? apps.map((a) => (
+                <span key={a.mark} className="lib-app-chip" title={a.name}>
+                  <AppMark mark={a.mark} name={a.name} size={18} decorative />
+                  <span>{a.name}</span>
+                </span>
+              ))
+            : <em><Text>No apps needed</Text></em>}
         </p>
       </>
     );
@@ -268,7 +306,6 @@ export function NewAutomationPage({ email }: { email: string }) {
           </div>
           {style === "taglish" && <p className="gp-hint"><Text>Taglish mixes Tagalog and English in the messages sent to your customers: payment links, reminders and receipts.</Text></p>}
         </div>
-        {!phone && preview}
         {!card && <p role="alert" className="gp-error" hidden={!error}>{error}</p>}
 
         <ul className="lib-grid">
@@ -292,27 +329,62 @@ export function NewAutomationPage({ email }: { email: string }) {
               <div className="lib-foot"><a className="ops-button" href="#/ai">{aiName}</a></div>
             </li>
           )}
-          {shown.map((c, idx) => (
-            <li
-              key={c.key}
-              className="lib-card"
-              style={{ "--card-index": Math.min(idx + (showStarts ? 2 : 0), 12) } as CSSProperties}
-              data-selected={selected === c.key || undefined}
-            >
-              <h3 className="gp-name">
-                <button type="button" className="lib-open" aria-pressed={selected === c.key} aria-label={t("Preview: {name}", { name: c.name })} onClick={() => open(c.key)}>{c.name}</button>
-              </h3>
-              <p className="gp-sub">{c.description}</p>
-              {meta(c.definition)}
-              <div className="lib-foot">
-                {useButton(c)}
-                {c.sample && <a className="ops-link" href={c.sample}><Text>Try the preview</Text></a>}
-              </div>
-            </li>
-          ))}
+          {shown.map((c, idx) => {
+            const sample = style === "taglish" ? taglishSampleFor(c.definition) : null;
+            return (
+              <li
+                key={c.key}
+                className="lib-card"
+                style={{ "--card-index": Math.min(idx + (showStarts ? 2 : 0), 12) } as CSSProperties}
+                data-selected={selected === c.key || undefined}
+              >
+                <h3 className="gp-name">
+                  <button
+                    type="button"
+                    className="lib-open"
+                    data-preview-key={c.key}
+                    aria-pressed={selected === c.key}
+                    aria-label={t("Preview: {name}", { name: c.name })}
+                    onClick={() => open(c.key)}
+                  >
+                    {c.name}
+                  </button>
+                </h3>
+                <p className="gp-sub">{c.description}</p>
+                {meta(c.definition)}
+                {sample && (
+                  <div className="lib-card-sample">
+                    <span><Text>Sample message</Text></span>
+                    <p>{sample.subject ? `${sample.subject}: ${sample.body}` : sample.body}</p>
+                  </div>
+                )}
+                <div className="lib-foot">
+                  {useButton(c)}
+                  {c.sample && <a className="ops-link" href={c.sample}><Text>Try the preview</Text></a>}
+                </div>
+              </li>
+            );
+          })}
         </ul>
-        {!shown.length && !(showStarts && (matches(blankName, blankText) || matches(aiName, aiText))) && <p className="gp-hint"><Text>None match.</Text></p>}
+        {!shown.length && !(showStarts && (matches(blankName, blankText) || matches(aiName, aiText))) && (
+          <div className="lib-empty" role="status">
+            <p className="gp-hint"><Text>No templates match your search.</Text></p>
+            <div className="gp-actions">
+              <button type="button" className="ops-button" onClick={() => { setQuery(""); setCategory("All"); }}>
+                <Text>Clear search</Text>
+              </button>
+              <a className="ops-button blue" href="#/ai">{aiName}</a>
+            </div>
+          </div>
+        )}
       </div>
+      {!phone && card && (
+        <div className="lib-modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }}>
+          <div ref={dialog} role="dialog" aria-modal="true" aria-labelledby="lib-preview-title" tabIndex={-1} className="lib-dialog">
+            {preview}
+          </div>
+        </div>
+      )}
       {phone && card && (
         <Sheet title={card.name} onClose={close}>
           {preview}

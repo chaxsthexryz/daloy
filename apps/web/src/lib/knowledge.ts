@@ -61,13 +61,28 @@ export function toInput(form: EntryForm): KnowledgeEntryInput {
 
 const pesos = (n: number) => `PHP ${n.toLocaleString("en-PH")}`;
 
+/** Formats HH:MM 24-hour stay times in 12-hour clock for owner readability. */
+export function formatStayTime(value: string): string {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(value.trim());
+  if (!m) return value;
+  const h24 = Number(m[1]);
+  const mins = m[2];
+  if (h24 < 0 || h24 > 23) return value;
+  const suffix = h24 >= 12 ? "PM" : "AM";
+  const h12 = h24 % 12 || 12;
+  return `${h12}:${mins} ${suffix}`;
+}
+
+export const entryCountKey = (count: number) => (count === 1 ? "1 entry" : "{count} entries");
+export const publishedEntryCountKey = (count: number) => (count === 1 ? "Published {date}, 1 entry." : "Published {date}, {count} entries.");
+
 /** One line for the list: the base price, how many named rules sit on it, check-in/out times, or the start of the text. Words come from the caller so they can be translated. */
 export function summaryOf(e: KnowledgeEntry, words: { per: (unit: PriceUnit) => string; rules: (n: number) => string }): string {
   const f = e.fields;
   const parts: string[] = [];
   if (f.price !== undefined) parts.push(`${pesos(f.price)}${f.unit ? ` ${words.per(f.unit)}` : ""}`);
   if (f.rules?.length) parts.push(words.rules(f.rules.length));
-  if (f.checkInTime || f.checkOutTime) parts.push(`${f.checkInTime ?? "14:00"} / ${f.checkOutTime ?? "12:00"}`);
+  if (f.checkInTime || f.checkOutTime) parts.push(`${formatStayTime(f.checkInTime ?? "14:00")} / ${formatStayTime(f.checkOutTime ?? "12:00")}`);
   if (!parts.length) parts.push(e.body.length > 110 ? `${e.body.slice(0, 107)}...` : e.body || (f.url ?? ""));
   return parts.join(", ");
 }

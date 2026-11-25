@@ -17,7 +17,9 @@
 .lib-filters { gap: 12px; }
 /* The guided page styles every input as a bordered 40px box; the search and wording boxes already have their own frame. */
 .lib.gp .ops-search input[type="search"] { min-height: 32px; padding: 0; border: 0; border-radius: 0; background: transparent; }
+.lib.gp .ops-search input[type="search"]:focus-visible { outline: none; }
 .lib.gp label.ops-select select { width: auto; min-height: 0; padding: 0 2px; border: 0; border-radius: 0; background: transparent; line-height: 1.25; vertical-align: middle; }
+.lib.gp label.ops-select select:focus-visible { outline: none; }
 .lib .ops-button { box-shadow: none; }
 
 .lib-chips { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -65,10 +67,74 @@
 .lib-line > span { min-width: 76px; font-size: 12px; font-weight: 600; color: var(--o-muted); }
 .lib-line em { font-style: normal; color: var(--o-muted); }
 .lib-apps { min-height: 28px; }
+.lib-app-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 24px;
+  padding: 2px 8px 2px 4px;
+  border: 1px solid var(--o-line);
+  border-radius: 99px;
+  background: var(--o-canvas);
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 550;
+  color: var(--o-ink);
+}
+.lib-card-sample {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border: 1px solid var(--o-line);
+  border-radius: 8px;
+  background: var(--o-canvas);
+  font-size: 12px;
+  line-height: 17px;
+}
+.lib-card-sample > span { font-size: 11px; font-weight: 700; color: var(--o-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.lib-card-sample p {
+  margin: 0;
+  color: var(--o-ink);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
 .lib-foot { position: relative; display: flex; align-items: center; gap: 14px; margin-top: 6px; }
 .lib-foot > .ops-button, .lib-blank .ops-button { position: relative; box-shadow: none; }
 .lib-blank { position: relative; display: flex; flex-direction: column; gap: 10px; margin-top: 6px; }
+.lib-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 20px 22px;
+  border: 1px solid var(--o-line);
+  border-radius: 12px;
+  background: var(--o-bg);
+}
 
+.lib-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgb(15 19 26 / 0.45);
+}
+.lib-dialog {
+  width: min(960px, calc(100vw - 32px));
+  max-height: calc(100vh - 40px);
+  overflow-y: auto;
+  border-radius: 14px;
+  background: var(--o-bg);
+  box-shadow: 0 20px 56px rgb(10 11 15 / 0.28);
+}
+.lib-dialog:focus { outline: none; }
 .lib-preview {
   display: flex;
   flex-direction: column;
@@ -80,6 +146,15 @@
   scroll-margin-block: 12px;
   animation: libPreviewIn 240ms var(--ease-spring, cubic-bezier(0.22, 1, 0.36, 1)) both;
 }
+.lib-dialog .lib-preview { border: 1px solid var(--o-line); border-radius: 14px; }
+.lib-sample {
+  padding: 12px 14px;
+  border: 1px solid var(--o-line);
+  border-radius: 10px;
+  background: var(--o-canvas);
+}
+.lib-sample p { margin: 0; font-size: 13px; line-height: 19px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.lib-sample-subject { font-weight: 650; margin-bottom: 4px !important; }
 .lib-preview > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .lib-preview h2 { font-size: 20px; line-height: 26px; letter-spacing: -0.02em; }
 .lib-preview h3 { margin: 0 0 6px; font-size: 13px; line-height: 16px; font-weight: 700; color: var(--o-muted); }

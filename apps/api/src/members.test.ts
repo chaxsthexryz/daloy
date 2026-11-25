@@ -1,5 +1,5 @@
 import { randomBytes, randomUUID } from "node:crypto";
-import { createInvite, joinWorkspace, queueDelivery, sessions, users, type Db } from "@daloy/db";
+import { claimInvite, createInvite, joinWorkspace, queueDelivery, sessions, users, type Db } from "@daloy/db";
 import { defaultAnswers, officeRequestDefinition } from "@daloy/engine";
 import type { INestApplication } from "@nestjs/common";
 import type { Pool } from "pg";
@@ -163,6 +163,32 @@ describe("invites", () => {
     await agent.post(`/auth/invites/${tokenOf(invite.body.link)}/accept`).send({ password: PASSWORD }).expect(200);
     expect((await agent.get("/auth/me").expect(200)).body).toMatchObject({ id: m.id, role: "requester", workspaceId: o.id });
   });
+
+  it("lists pending invites, reissues links, and revokes invites only for the workspace", async () => {
+    const o = await owner();
+    const other = await owner();
+    const created = await o.agent.post("/workspace/invites").send({ email: "Pending.One@Test.local", role: "approver" }).expect(201);
+    expect(created.body).toMatchObject({ email: "pending.one@test.local", role: "approver" });
+    const oldToken = tokenOf(created.body.link);
+
+    const listRes = await o.agent.get("/workspace/invites").expect(200);
+    expect(listRes.body).toHaveLength(1);
+    expect(listRes.body[0]).toMatchObject({ id: created.body.id, email: "pending.one@test.local", role: "approver" });
+    expect("tokenHash" in listRes.body[0]).toBe(false);
+
+    await other.agent.post(`/workspace/invites/${created.body.id}/reissue`).expect(404);
+    await other.agent.delete(`/workspace/invites/${created.body.id}`).expect(404);
+
+    const reissued = await o.agent.post(`/workspace/invites/${created.body.id}/reissue`).expect(200);
+    const newToken = tokenOf(reissued.body.link);
+    expect(newToken).not.toBe(oldToken);
+    expect(await claimInvite(db, oldToken)).toBeNull();
+
+    await o.agent.delete(`/workspace/invites/${created.body.id}`).expect(204);
+    await o.agent.delete(`/workspace/invites/${created.body.id}`).expect(404);
+    expect((await o.agent.get("/workspace/invites").expect(200)).body).toEqual([]);
+    expect(await claimInvite(db, newToken)).toBeNull();
+  });
 });
 
 describe("changing and removing members", () => {
@@ -251,7 +277,10 @@ describe("role permissions", () => {
       ["post", "/settings/connections/telegram/chats", only, {}],
       ["post", "/ai/draft", only, { description: "x" }],
       ["get", "/workspace/members", only],
+      ["get", "/workspace/invites", only],
       ["post", "/workspace/invites", only, { email: "x@test.local", role: "operator" }],
+      ["post", `/workspace/invites/${randomUUID()}/reissue`, only],
+      ["delete", `/workspace/invites/${randomUUID()}`, only],
       ["patch", `/workspace/members/${randomUUID()}`, only, { role: "operator" }],
       ["delete", `/workspace/members/${randomUUID()}`, only],
       ["post", `/deliveries/${randomUUID()}/retry`, operate, {}],

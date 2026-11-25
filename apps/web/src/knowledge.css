@@ -8,6 +8,10 @@
 .kn-main { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; min-width: 0; flex: 1 1 260px; }
 .kn-summary { flex-basis: 100%; overflow-wrap: anywhere; }
 .kn-form textarea, .kn-form select, .kn-form input[type="text"], .kn-form input[type="number"], .kn-form input[type="url"] { width: 100%; box-sizing: border-box; }
+.kn-form select, .kn-form input[type="text"], .kn-form input[type="number"], .kn-form input[type="url"] { height: 38px; min-height: 38px; }
+.kn-label-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.kn-label-row label { margin: 0; }
+.kn-required-badge { font-size: 11px; font-weight: 600; color: var(--w-red); text-transform: uppercase; letter-spacing: 0.04em; }
 .kn-form fieldset { min-width: 0; margin: 0; padding: 12px; border: 1px solid var(--w-line); border-radius: 8px; display: grid; gap: 12px; }
 .kn-form legend { padding: 0 6px; font-size: 13px; font-weight: 700; }
 .kn-sub { margin: 4px 0 0; font-size: 14px; }
