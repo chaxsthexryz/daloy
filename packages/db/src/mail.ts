@@ -25,6 +25,11 @@ export type MailDeps = {
   urls?: ProviderUrls;
 };
 
+/** A file sent with an email (decision 0140). The worker reads it from this run's uploads. */
+export type MailFile = { filename: string; content: Buffer; contentType: string };
+/** What is sent: the email step's resolved fields, plus any files. */
+export type OutgoingMail = Pick<EmailConfig, "to" | "subject" | "text"> & { files?: MailFile[] };
+
 export type EmailThread = { inReplyTo?: string | null; references?: string[] | string | null };
 
 const MAX_RECIPIENTS = 10;
@@ -183,7 +188,7 @@ const loginRefused = (err: unknown) => {
  * claim, for a send that is not safe to repeat, is called once the sender is known and nothing but the network is left,
  * so its database lock never waits on another query; it is released when the message body starts (decision 0030).
  */
-export async function sendAs(db: Db, key: Buffer, deps: MailDeps, userId: string, cfg: EmailConfig, idempotencyKey: string, opts: { allowUnconfirmed?: boolean; claim?: () => Promise<() => void>; capKey?: string; thread?: EmailThread | null } = {}) {
+export async function sendAs(db: Db, key: Buffer, deps: MailDeps, userId: string, cfg: OutgoingMail, idempotencyKey: string, opts: { allowUnconfirmed?: boolean; claim?: () => Promise<() => void>; capKey?: string; thread?: EmailThread | null } = {}) {
   const sender = await resolveSender(db, key, userId, opts);
   const mailer = mailerFor(sender, deps);
   // Before the claim below: the send lock must never wait on a query (decision 0030).
@@ -216,7 +221,7 @@ export async function sendAs(db: Db, key: Buffer, deps: MailDeps, userId: string
  * once and sends again (Gmail did not take the first). A refused grant marks the sender failed: nothing falls back to
  * another sender (decision 0020). A 5xx or a timeout after the request left is unknown and never resent on its own.
  */
-async function sendWithGmailApi(db: Db, key: Buffer, deps: MailDeps, userId: string, sender: Extract<ResolvedSender, { kind: "gmail_api" }>, mailer: Mailer, cfg: EmailConfig, messageKey: string, brand: Brand | null, claim?: () => Promise<() => void>, thread?: EmailThread | null) {
+async function sendWithGmailApi(db: Db, key: Buffer, deps: MailDeps, userId: string, sender: Extract<ResolvedSender, { kind: "gmail_api" }>, mailer: Mailer, cfg: OutgoingMail, messageKey: string, brand: Brand | null, claim?: () => Promise<() => void>, thread?: EmailThread | null) {
   const { to, messageId, raw } = await rawMessage(mailer, cfg, messageKey, brand, thread);
   const urls = deps.urls;
   if (!urls || !gmail.client(urls) || !urls.gmail) throw new StepError("Gmail sign-in is not set up on this installation any more. Connect Gmail again in Apps.", false, { outcome: "not_sent" });
@@ -299,7 +304,7 @@ const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)
  * The owner's brand as an HTML part: a header band in the accent colour (text colour chosen for contrast) with the logo
  * attached inline by cid, so no mail client fetches anything from a website. The text part stays and gets a name line.
  */
-function brandedParts(cfg: EmailConfig, brand: Brand) {
+function brandedParts(cfg: OutgoingMail, brand: Brand) {
   const name = brand.name ?? "";
   const band = `background:${brand.accent ?? "#f3f4f6"};color:${brand.ink ?? "#111111"}`;
   const logo = brand.logo ? `<img src="cid:brand-logo" alt="${esc(name)}" height="40" style="vertical-align:middle;margin-right:10px">` : "";
@@ -312,12 +317,14 @@ function brandedParts(cfg: EmailConfig, brand: Brand) {
  * What nodemailer is given for one email, plain text unless a brand is given. Recipients come from a resolved template,
  * so they are checked here, after resolution. SMTP and the Gmail API both send this, so their headers are the same.
  */
-function message(mailer: Mailer, cfg: EmailConfig, messageKey: string, brand?: Brand | null, thread?: EmailThread | null) {
+function message(mailer: Mailer, cfg: OutgoingMail, messageKey: string, brand?: Brand | null, thread?: EmailThread | null) {
   const to = checkRecipients(cfg.to);
   // messageKey is per attempt (run:step:attempt), so each attempt has its own Message-ID, and a re-delivered
   // attempt keeps it, so receivers can drop the duplicate.
   const messageId = `<${messageKey.replaceAll(":", ".")}@daloy>`;
   const headers = buildThreadHeaders(thread);
+  const { attachments: logo, ...parts } = brand ? brandedParts(cfg, brand) : { text: cfg.text, attachments: [] };
+  const attachments = [...logo, ...(cfg.files ?? [])];
   return {
     to,
     messageId,
@@ -326,7 +333,8 @@ function message(mailer: Mailer, cfg: EmailConfig, messageKey: string, brand?: B
       replyTo: mailer.replyTo,
       to,
       subject: cfg.subject,
-      ...(brand ? brandedParts(cfg, brand) : { text: cfg.text }),
+      ...parts,
+      ...(attachments.length ? { attachments } : {}),
       messageId,
       ...(headers.inReplyTo ? { inReplyTo: headers.inReplyTo } : {}),
       ...(headers.references?.length ? { references: headers.references.join(" ") } : {}),
@@ -338,14 +346,14 @@ function message(mailer: Mailer, cfg: EmailConfig, messageKey: string, brand?: B
 const rawBuilder = nodemailer.createTransport({ streamTransport: true, buffer: true });
 
 /** The RFC 822 bytes of an email, as SMTP would send them, for the Gmail API (decision 0063). */
-export async function rawMessage(mailer: Mailer, cfg: EmailConfig, messageKey: string, brand?: Brand | null, thread?: EmailThread | null) {
+export async function rawMessage(mailer: Mailer, cfg: OutgoingMail, messageKey: string, brand?: Brand | null, thread?: EmailThread | null) {
   const { to, messageId, mail } = message(mailer, cfg, messageKey, brand, thread);
   const info = await rawBuilder.sendMail(mail);
   return { to, messageId, raw: info.message as Buffer };
 }
 
 /** Sends one email, plain text unless a brand is given. */
-export async function sendEmail(mailer: Mailer, cfg: EmailConfig, messageKey: string, onBodyStart?: () => void, brand?: Brand | null, thread?: EmailThread | null) {
+export async function sendEmail(mailer: Mailer, cfg: OutgoingMail, messageKey: string, onBodyStart?: () => void, brand?: Brand | null, thread?: EmailThread | null) {
   const { to, messageId, mail } = message(mailer, cfg, messageKey, brand, thread);
   const daloySend: SendState = { bodyStarted: false, onBodyStart };
   watchBody(mailer.transport);

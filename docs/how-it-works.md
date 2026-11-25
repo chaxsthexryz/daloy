@@ -1656,3 +1656,18 @@ How it works (`packages/db/src/whatsapp.ts`, `packages/db/src/deliveries.ts`, `a
 - `whatsapp_reply` delivers service messages inside the 24-hour window (up to 3 interactive buttons, or numbered fallback for 4+, with RA 10173 notice once) and sends approved Meta utility templates with ordered body parameters anytime.
 
 Tests: `packages/engine/src/definition.test.ts`, `packages/db/src/whatsapp.test.ts`, `apps/api/src/whatsapp.test.ts`, and `apps/web/src/WhatsAppConnection.test.tsx`.
+
+## Invoice PDF step and email attachments (N23, decision 0140)
+
+What it does: the `invoice_pdf` step draws a one-page invoice in pesos (business, client, invoice number, up to 30 line items, total, due date and notes) and stores it as a file of the run. An email step can attach up to 3 files of the same run, such as that PDF or a form's uploads. Two templates use them: "Invoice with PDF and reminders" and "Deposit before work starts".
+
+How it works (`apps/worker/src/steps/invoice-pdf.ts`, `apps/worker/src/steps/attachments.ts`, `packages/db/src/mail.ts`, `packages/engine/src/definition.ts`):
+- Amounts are parsed into integer centavos, never floats. A line is quantity (up to 2 decimals) times unit price, rounded half up to the centavo. 3 x 0.10 is exactly 30 centavos.
+- `pdf-lib` draws the page with the standard Helvetica fonts. Text the font cannot draw becomes "?", and long text is cut to fit, so the invoice always fits one A4 page.
+- The PDF goes into the `uploads` table under the run, like a form file, and the step returns it as `output.file` along with `total` (for a PayMongo link) and `totalText`. A test run draws it but stores nothing.
+- For attachments, the worker takes only each ref's id and loads the file with the workspace and the run as part of the lookup. A file from another run, a made-up id or a non-file value stops the step before the email is counted or sent. The file name and type come from the stored row.
+- Both templates start with an approval to the owner, because a form link is public. The invoice reminders do not attach the PDF, because files are deleted after 7 days.
+
+Edge cases: commas in prices, rows left empty by an optional form field, a quantity of 0, more than 2 decimals, a price over 9,999,999.99, emoji and non-Latin names, very long descriptions and notes, a form field holding several files (counted toward the 3), and a retried attempt (it stores a new PDF).
+
+Tests: `apps/worker/src/steps/invoice-pdf.test.ts` (centavo totals, the PDF read back with pdfjs-dist, the upload, the email with the PDF attached, refusing another run's file, a non-file value and more than 3 files), `packages/engine/src/templates.test.ts` (both templates, and the reminder loop matching `invoice-paymongo`), `packages/engine/src/catalog.test.ts` and `packages/engine/src/step-schemas.test.ts`.
