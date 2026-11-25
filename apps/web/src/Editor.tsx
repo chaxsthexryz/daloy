@@ -771,6 +771,12 @@ export function Editor({ id, from }: { id: string; from?: string }) {
             <DocTemplatePicker key={`${step.id}-template`} templateId={step.config.templateId} templateName={step.config.templateName} onPick={(templateId, templateName) => editStep({ ...step.config, templateId, templateName })} />
           )}
           <SchemaForm key={step.id} schema={step.type === "ai" ? withoutFiles(catalog.schemas.ai!) : step.type === "google_docs" ? withoutTemplate(catalog.schemas.google_docs!) : step.type === "browser" ? withoutActions(catalog.schemas.browser!) : step.type === "switch" ? withoutCases(catalog.schemas.switch!) : step.type === "transform" ? transformSchema(catalog.schemas.transform!, step.config.op) : catalog.schemas[step.type]!} value={step.config as Record<string, unknown>} onChange={editStep} />
+          {step.type === "lalamove" && (
+            <p className="muted hint">
+              {t("Lalamove uses lalamove_api_key and lalamove_api_secret saved in Secrets. Sandbox mode is used until Live is turned on.")}{" "}
+              <a href="#/secrets">{t("Open Secrets")}</a>
+            </p>
+          )}
           {step.type === "whatsapp_reply" && (
             <p className="muted hint">
               {t("Meta bills WhatsApp Cloud API per delivered message to your Meta Business payment method. Free-form text works within 24 hours of the guest's last message; reminders outside 24 hours must use an approved Meta utility template.")}

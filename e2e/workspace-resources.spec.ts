@@ -9,7 +9,8 @@ test("Resources: add, rename, archive and restore with counts", async ({ page })
   await page.goto("/#/resources");
   await page.reload();
   await expect(page.getByRole("heading", { name: "Resources", level: 1 })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Advanced", exact: true }).first()).toHaveAttribute("href", "#/advanced");
+  await expect(page.getByRole("link", { name: "Settings", exact: true }).first()).toHaveAttribute("href", "#/settings");
+  await expect(page.getByLabel("Room type or label (optional)")).toHaveAttribute("placeholder", "Garden room, Beach villa");
   await expect(page.getByText("No resources yet.")).toBeVisible();
 
   for (const name of ["Function room", "Table 3 (under repair)"]) {

@@ -255,8 +255,13 @@ export function ConversationsPage({ user }: { user: User }) {
           <form className="cv-settings" onSubmit={saveSettings}>
             <div className="cv-settings-grid">
               <div className="field">
-                <label htmlFor="cv-psid">{t("Staff Messenger PSID")}</label>
-                <input id="cv-psid" value={settingsForm.staffAlertPsid} onChange={(e) => setSettingsForm({ ...settingsForm, staffAlertPsid: e.target.value })} placeholder={t("Optional")} />
+                <label htmlFor="cv-psid">{t("Staff Messenger recipient ID (optional)")}</label>
+                <input id="cv-psid" value={settingsForm.staffAlertPsid} onChange={(e) => setSettingsForm({ ...settingsForm, staffAlertPsid: e.target.value })} placeholder={t("Optional")} aria-describedby="cv-psid-help" />
+                <ol id="cv-psid-help" className="act-muted cv-psid-help">
+                  <li>{t("Message your own Facebook Page from your staff Messenger account.")}</li>
+                  <li>{t("Open that test thread in Conversations or Meta Business Suite to copy your Page-scoped ID, then paste it here.")}</li>
+                  <li>{t("Leave this blank to send staff alerts through Telegram or email instead.")}</li>
+                </ol>
               </div>
               <div className="field">
                 <label htmlFor="cv-quiet">{t("Staff pause hours")}</label>

@@ -116,7 +116,12 @@ export function BookingsPage() {
         crumbs={[]}
         title={t("Bookings")}
         sub={longDate(Date.now(), language)}
-        actions={<a className="act-button" href="/bookings/export.csv" download>{t("Download CSV")}</a>}
+        actions={
+          <div className="act-actions">
+            <a className="act-button" href="#/resources">{t("Manage rooms and resources")}</a>
+            <a className="act-button" href="/bookings/export.csv" download>{t("Download CSV")}</a>
+          </div>
+        }
       />
       <div className="act-body act-bookings motion-page">
         <p role="status" className="act-alert ok" hidden={!note}>{note}</p>
@@ -200,7 +205,10 @@ export function BookingsPage() {
           {list === null ? (
             <p className="act-muted" role="status">{t("Loading…")}</p>
           ) : list.length === 0 ? (
-            <p className="act-muted"><Text>No bookings yet. They appear when an automation's booking step books a resource.</Text></p>
+            <p className="act-muted">
+              <Text>No bookings yet. They appear when an automation's booking step books a resource.</Text>{" "}
+              <a href="#/resources">{t("Manage rooms and resources")}</a>
+            </p>
           ) : (
             days.map(({ day, items }) => (
               <div key={day} className="act-day">

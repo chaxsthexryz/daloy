@@ -108,7 +108,15 @@ export function ReceiptsPage({ user }: { user: User }) {
         {rows === null ? (
           <p className="act-muted" role="status">{t("Loading…")}</p>
         ) : rows.length === 0 ? (
-          <p className="act-card rc-empty">{t("Nothing to review. New receipts and payment problems appear here.")}</p>
+          <section className="act-card rc-empty" aria-label={t("How receipt review works")}>
+            <h2>{t("Nothing to review.")}</h2>
+            <p className="act-muted">{t("New receipts and payment problems appear here. Here is how they flow in:")}</p>
+            <ol className="rc-steps">
+              <li>{t("A customer pays by QR Ph or GCash and sends their receipt through your pay page, Messenger, Instagram or WhatsApp.")}</li>
+              <li>{t("The receipt appears here with the amount due, reference number and any warning flags.")}</li>
+              <li>{t("Check your own GCash or bank history, then choose Confirm payment, Ask the customer or Reject.")}</li>
+            </ol>
+          </section>
         ) : (
           <ul className="rc-list" aria-label={t("Receipts to review")}>
             {rows.map((r) => (

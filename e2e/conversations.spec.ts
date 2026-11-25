@@ -66,6 +66,10 @@ test("conversations page manages handoff, guest fields, stay confirmation, mobil
   // Open Conversations from the fixed sidebar.
   await page.getByRole("link", { name: "Conversations" }).click();
   await expect(page.getByRole("heading", { name: "Conversations", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Alert settings" }).click();
+  await expect(page.getByLabel("Staff Messenger recipient ID (optional)")).toBeVisible();
+  await expect(page.getByText("Message your own Facebook Page from your staff Messenger account.")).toBeVisible();
+  await page.getByRole("button", { name: "Hide alert settings" }).click();
   await expect(page.getByRole("region", { name: "Message history" }).getByText("Do you have rooms for 2 guests on Dec 15?")).toBeVisible();
 
   // Take over, verify Needs staff status, edit guest fields, and hand back.

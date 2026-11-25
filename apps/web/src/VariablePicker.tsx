@@ -53,7 +53,8 @@ export function VariablePicker({ groups, stale }: { groups: VariableGroup[]; sta
     <section ref={root} className="a7-group a7-vars" aria-labelledby="insert-heading">
       <h3 id="insert-heading">{t("Insert data from earlier steps")}</h3>
       <p className="muted hint">
-        {t("Click a text field, then pick data to insert it at the cursor. With no field chosen, it is copied. Type {secret} for a saved secret; its value is never shown.", { secret: "{{secrets.name}}" })}
+        {t("Click a text field, then pick data to insert it at the cursor. With no field chosen, it is copied. Type {secret} for a saved secret; its value is never shown.", { secret: "{{secrets.name}}" })}{" "}
+        <a href="#/secrets">{t("Open Secrets")}</a>
       </p>
       {stale && <p className="muted hint">{t("Previews are from before your last change. Test again to refresh them.")}</p>}
       {groups.length === 0 && <p className="muted hint">{t("Nothing comes before this step yet.")}</p>}

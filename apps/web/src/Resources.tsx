@@ -61,7 +61,7 @@ export function ResourcesPage() {
           </div>
         </div>
       </header>
-      <p className="wk-lead">{t("People, rooms or tables a form can be booked for. Add a field of type resource to a form to let people choose one.")}</p>
+      <p className="wk-lead">{t("Rooms, people or tables that customers can book. Booking forms and stay confirmations list the active items below.")}</p>
       <form onSubmit={add} className="wk-card wk-body wk-add" aria-labelledby="add-resource">
         <h2 id="add-resource" className="wk-card-title">{t("Add a resource")}</h2>
         <div className="wk-add-row">
@@ -70,8 +70,8 @@ export function ResourcesPage() {
             <input id="resource-name" type="text" value={name} onChange={(e) => setName(e.target.value)} required maxLength={100} placeholder={t("Chair 3, Table 12, Marco")} />
           </div>
           <div className="wk-fields">
-            <label htmlFor="resource-label">{t("Room type or label")}</label>
-            <input id="resource-label" type="text" value={label} onChange={(e) => setLabel(e.target.value)} maxLength={80} placeholder={t("Garden room, Beach villa (optional)")} />
+            <label htmlFor="resource-label">{t("Room type or label")} <span className="wk-muted">{t("(optional)")}</span></label>
+            <input id="resource-label" type="text" value={label} onChange={(e) => setLabel(e.target.value)} maxLength={80} placeholder={t("Garden room, Beach villa")} />
           </div>
           <button className="wk-button blue">{t("Add resource")}</button>
         </div>

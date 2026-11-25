@@ -137,7 +137,18 @@ export function AppsPage({ outcome }: { outcome?: { app: string; code: string } 
       <header className="apps-head">
         <div>
           <Header title={t("Apps")} action={<span className="muted">{t("{count} of {total} connected", { count: activeTotal, total: APPS.length })}</span>} />
-          {!open && <p className="muted apps-lede">{t("Everything here is optional. Each app is used only by the automations you turn on, and the demo works without any of them.")}</p>}
+          {!open && (
+            <>
+              <p className="muted apps-lede">{t("Everything here is optional. Each app is used only by the automations you turn on, and the demo works without any of them.")}</p>
+              <p className="muted apps-lede">
+                {t("Need to save a Lalamove API key, webhook signing secret or HTTP step key?")}{" "}
+                <a href="#/secrets">{t("Open Secrets")}</a>
+                {" · "}
+                {t("SMS (UniSMS) is managed by the kymavo operator, so there is no key to connect here.")}{" "}
+                <a href="#/settings">{t("View plan and usage")}</a>
+              </p>
+            </>
+          )}
         </div>
       </header>
       <div className="apps-body" data-panel={!!open}>

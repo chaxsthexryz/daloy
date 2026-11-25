@@ -135,14 +135,21 @@
     display: inline-flex;
     align-items: center;
     min-height: 24px;
-    padding: 0 4px;
-    border: 0;
-    border-radius: 5px;
+    padding: 0 6px;
+    border: 1px solid transparent;
+    border-radius: 6px;
     background: transparent;
     color: var(--fg-muted, var(--muted));
     font-size: 12px;
+    box-shadow: none;
   }
   .console-shell .rail-account a:hover, .console-shell .rail-account button:hover { background: var(--subtle, var(--sunken)); color: var(--fg, var(--text)); }
+  .console-shell .rail-account a[aria-current="page"] {
+    background: var(--blue-soft, #eef4ff);
+    color: var(--blue, var(--accent));
+    border-color: color-mix(in srgb, var(--blue, #0b66ff) 18%, transparent);
+    box-shadow: none;
+  }
   .rail-account .rail-avatar { position: absolute; left: 4px; bottom: 4px; }
   .console-shell .shell-main { background: var(--bg); }
 }

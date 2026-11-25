@@ -11,6 +11,7 @@
   background: var(--a-bg);
 }
 .cv-settings-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
+.cv-psid-help { margin: 4px 0 0; padding-left: 18px; font-size: 12.5px; line-height: 1.45; display: grid; gap: 3px; }
 .cv-shell { display: grid; grid-template-columns: minmax(270px, 336px) minmax(0, 1fr); gap: 16px; align-items: start; }
 
 .cv-list-col {

@@ -40,20 +40,21 @@ export function AiMeter({ usage, className }: { usage: Usage | null; className?:
 }
 
 /** Which menu entry a hash route belongs to, so the same menu shows on every page and marks where you are. */
-function section(hash: string) {
-  if (hash === "#/settings") return "Settings";
-  if (hash === "#/account") return "Account";
-  if (hash === "#/new") return "Library";
-  if (hash === "#/activity" || hash.startsWith("#/runs/")) return "Activity";
-  if (hash === "#/ai") return "Build with AI";
-  if (hash.startsWith("#/bookings")) return "Bookings";
-  if (hash.startsWith("#/conversations")) return "Conversations";
-  if (hash === "#/receipts") return "Receipts to review";
-  if (hash === "#/knowledge") return "Knowledge";
-  if (hash.startsWith("#/team")) return "Team";
-  if (hash.startsWith("#/settings/business/outlook-") || hash === "#/apps" || hash.startsWith("#/apps/") || hash.startsWith("#/verify-sender")) return "Apps";
-  if (hash === "#/settings/business") return "Business";
-  if (/^#\/(advanced|tokens|secrets|settings|resources)/.test(hash)) return "Settings";
+export function section(hash: string) {
+  const path = (hash.split("?")[0] ?? "").replace(/\/+$/, "") || "#/";
+  if (path === "#/settings") return "Settings";
+  if (path === "#/account" || path.startsWith("#/account/")) return "Account";
+  if (path === "#/new") return "Library";
+  if (path === "#/activity" || path.startsWith("#/activity/") || path.startsWith("#/runs/")) return "Activity";
+  if (path === "#/ai") return "Build with AI";
+  if (path.startsWith("#/bookings")) return "Bookings";
+  if (path.startsWith("#/conversations")) return "Conversations";
+  if (path === "#/receipts" || path.startsWith("#/receipts/")) return "Receipts to review";
+  if (path === "#/knowledge" || path.startsWith("#/knowledge/")) return "Knowledge";
+  if (path.startsWith("#/team")) return "Team";
+  if (path.startsWith("#/settings/business/outlook-") || path === "#/apps" || path.startsWith("#/apps/") || path.startsWith("#/verify-sender")) return "Apps";
+  if (path === "#/settings/business") return "Business";
+  if (/^#\/(advanced|tokens|secrets|settings|resources)/.test(path)) return "Settings";
   return "Automations";
 }
 
@@ -113,8 +114,9 @@ export function Shell({ user, hash, onSignOut, children }: { user: User; hash: s
     };
   }, [canWatchRuns]);
 
-  // The phone menu and Quick jump close on any page change, the browser's Back button included.
-  useEffect(() => { setOpen(false); setClosing(false); setPaletteOpen(false); }, [hash]);
+  const pillLeave = pill.onContainerLeave;
+  // The phone menu, Quick jump and hover pill reset on any page change, the browser's Back button included.
+  useEffect(() => { setOpen(false); setClosing(false); setPaletteOpen(false); pillLeave(); }, [hash, pillLeave]);
   useEffect(() => {
     if (open && !closing) menu.current?.querySelector<HTMLAnchorElement>("a")?.focus();
   }, [open, closing, menu]);
@@ -160,7 +162,7 @@ export function Shell({ user, hash, onSignOut, children }: { user: User; hash: s
         aria-current={here === name ? "page" : undefined}
         onPointerEnter={icon ? (event) => pill.onItemEnter(event.currentTarget) : undefined}
         onFocus={icon ? (event) => pill.onItemEnter(event.currentTarget) : undefined}
-        onClick={() => setOpen(false)}
+        onClick={() => { setOpen(false); pill.onContainerLeave(); }}
       >
         {icon && <svg className="rail-icon" aria-hidden="true"><use href={`/navigation.svg#${icon}`} /></svg>}
         <span className={icon ? "rail-label" : undefined}>{t(text)}</span>
@@ -185,7 +187,16 @@ export function Shell({ user, hash, onSignOut, children }: { user: User; hash: s
             ? <button type="button" className="quiet phone-close" onClick={closePhone}>{t("Close")}</button>
             : owner && <a href="#/new" className="primary top-new">{t("New")}</a>}
         </div>
-        <nav ref={menu} id="main-menu" aria-label={t("Main")} className={open ? "open" : undefined} onPointerLeave={pill.onContainerLeave}>
+        <nav
+          ref={menu}
+          id="main-menu"
+          aria-label={t("Main")}
+          className={open ? "open" : undefined}
+          onPointerLeave={pill.onContainerLeave}
+          onBlur={(event) => {
+            if (!event.currentTarget.contains(event.relatedTarget as Node | null)) pill.onContainerLeave();
+          }}
+        >
           <span
             className="rail-hover-pill motion-pill"
             aria-hidden="true"
@@ -226,7 +237,7 @@ export function Shell({ user, hash, onSignOut, children }: { user: User; hash: s
               aria-current={here === "Account" ? "page" : undefined}
               onPointerEnter={(event) => pill.onItemEnter(event.currentTarget)}
               onFocus={(event) => pill.onItemEnter(event.currentTarget)}
-              onClick={() => setOpen(false)}
+              onClick={() => { setOpen(false); pill.onContainerLeave(); }}
             >
               <span className="rail-avatar" aria-hidden="true">{user.email.slice(0, 1).toUpperCase()}</span>
               <span className="rail-label">{t("Account")}</span>
