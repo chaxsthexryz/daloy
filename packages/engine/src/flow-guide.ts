@@ -37,13 +37,25 @@ export function stepLines(def: WorkflowDefinition, language: Language, chosen: R
 const STARTS = { en: "Starts when", tl: "Nagsisimula kapag" };
 const AFTER = { en: "After", tl: "Pagkatapos ng" };
 const NOTE = { en: "Your note", tl: "Tala mo" };
+// T3: what a step's onError does. Unset or "stop" says nothing, since stopping is what every step has always done.
+const ON_ERROR = {
+  skip: { en: "If it fails, the automation skips it and carries on.", tl: "Kapag pumalya ito, lalaktawan ito at magpapatuloy ang automation." },
+  failed_edge: { en: "If it fails, the automation takes the failed path.", tl: "Kapag pumalya ito, dadaan ang automation sa failed na daan." },
+};
+const AFTER_FAILED = { en: "If the step before fails", tl: "Kapag pumalya ang naunang hakbang" };
 
-/** The "Explain this flow" lines: how it starts, then one numbered line per step with who or where it acts on, and the owner's note quoted as typed. */
+/** The "Explain this flow" lines: how it starts, then one numbered line per step with who or where it acts on, what a failure does, and the owner's note quoted as typed. */
 export function explainFlow(def: WorkflowDefinition, language: Language, chosen: Record<string, string> = {}): string[] {
   const t = triggerEntry(def.trigger.type);
+  const policy = (id: string) => {
+    const s = def.steps.find((x) => x.id === id);
+    const p = s && "onError" in s ? s.onError : undefined;
+    return p === "skip" || p === "failed_edge" ? ` ${ON_ERROR[p][language]}` : "";
+  };
+  const after = (on?: string) => (on === "failed" ? `${AFTER_FAILED[language]}: ` : on ? `${AFTER[language]} ${on}: ` : "");
   return [
     `${STARTS[language]}: ${pick(t.action, language)}. ${pick(t.description, language)}`,
-    ...stepLines(def, language, chosen).map((l, i) => `${i + 1}. ${l.after ? `${AFTER[language]} ${l.after}: ` : ""}${l.label}. ${l.where}${l.note ? ` ${NOTE[language]}: "${l.note}"` : ""}`),
+    ...stepLines(def, language, chosen).map((l, i) => `${i + 1}. ${after(l.after)}${l.label}. ${l.where}${policy(l.id)}${l.note ? ` ${NOTE[language]}: "${l.note}"` : ""}`),
   ];
 }
 

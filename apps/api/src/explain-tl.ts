@@ -7,6 +7,7 @@ const lint: Record<LintRule, string> = {
   test_switch: "May switch sa automation na mukhang pang-preview. Tingnan kung tama ang pagkaka-set nito.",
   number_no_invalid: "May number check na walang kasunod na hakbang kapag hindi numero ang halaga, kaya doon matatapos ang automation.",
   unreachable_step: "May bahagi ng automation na hindi maaabot, kaya hindi ito tatakbo.",
+  failed_path_no_edge: "May hakbang na nakatakdang dumaan sa failed na daan pero walang failed na daan na nakaguhit, kaya hihinto ang automation kapag pumalya ito.",
 };
 const apps: Record<string, string> = { google_sheets: "Google Sheets", slack: "Slack", outlook: "Outlook", teams: "Microsoft Teams", discord: "Discord", telegram: "Telegram", unisms: "UniSMS", google_calendar: "Google Calendar", google_drive: "Google Drive", airtable: "Airtable", notion: "Notion", trello: "Trello", meta_messenger: "Facebook Messenger & Instagram", shopify: "Shopify" };
 const appsFix = { href: "#/apps", label: "Tingnan ang koneksyon" };

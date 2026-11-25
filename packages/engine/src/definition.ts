@@ -436,7 +436,13 @@ const disabled = z.literal(true).optional();
 export const STEP_NOTE_MAX = 300;
 export const stepNoteSchema = z.string().max(STEP_NOTE_MAX).optional();
 const note = stepNoteSchema;
-// T3 (decision 0131): per-step error policy on non-branching action steps.
+/**
+ * Steps that reach outside kymavo: a mocked run fakes them, so a tester can make them fail (decision 0028), and only
+ * they may set onError (T3). A step inside kymavo (a booking, a payment due, a transform) fails on its data, and
+ * skipping it would let the run carry on as if a booking or payment request existed.
+ */
+export const OUTSIDE_STEPS: ReadonlySet<string> = new Set(["http", "email", "approval", "sheets", "drive", "slack", "outlook", "teams", "telegram", "sms", "calendar", "airtable", "notion", "trello", "meta_reply", "whatsapp_reply", "shopify_create_product", "shopify_update_product", "discord", "google_docs", "read_page", "browser", "assistant_read"]);
+// T3 (decisions 0131 and 0142): what happens when a non-branching outside step is out of attempts.
 export const stepErrorPolicySchema = z.enum(["stop", "skip", "failed_edge"]).optional();
 export type StepErrorPolicy = NonNullable<z.infer<typeof stepErrorPolicySchema>>;
 const onError = stepErrorPolicySchema;
@@ -924,6 +930,7 @@ export const definitionSchema = z
 
     for (const s of def.steps) if (s.disabled && stepBranches(s)) fail(`${s.type} step "${s.id}" branches, so it cannot be turned off`);
     for (const s of def.steps) if ("onError" in s && s.onError !== undefined && stepBranches(s)) fail(`${s.type} step "${s.id}" branches, so it cannot set onError`);
+    for (const s of def.steps) if ("onError" in s && s.onError !== undefined && !OUTSIDE_STEPS.has(s.type)) fail(`${s.type} step "${s.id}" cannot set onError: only a step that reaches outside kymavo can`);
 
     for (const e of def.edges) {
       for (const id of [e.from, e.to]) if (!byId.has(id)) fail(`edge refers to unknown step "${id}"`);

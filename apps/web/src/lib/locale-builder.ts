@@ -382,6 +382,7 @@ export const builderTranslations: Record<string, string> = {
   "\"{field}\" looks like a switch for testing. Mock test runs already send nothing, but a Live run or a real event follows the branch and can send, so remove it and its branch and test with Mock mode.": "Mukhang pang-test na switch ang \"{field}\". Walang ipinapadala ang Mock test runs, pero sumusunod sa sanga ang Live run o totoong event at puwedeng magpadala. Alisin ito at ang sanga nito, at subukan sa Mock mode.",
   "Condition \"{step}\" compares numbers but has no \"invalid\" edge, so a missing or non-number value fails the run.": "Naghahambing ng mga numero ang kondisyon na \"{step}\" pero walang \"invalid\" na linya, kaya mabibigo ang run kung kulang ang value o hindi ito numero.",
   "Step \"{step}\" can never run: only an \"invalid\" edge that cannot be taken leads to it.": "Hindi mapapatakbo ang hakbang na \"{step}\": ang tanging linya papunta rito ay isang \"invalid\" na hindi madadaanan.",
+  "Step \"{step}\" is set to take its failed path, but it has no \"failed\" edge, so a failure stops the run.": "Nakatakdang dumaan sa failed na daan ang hakbang na \"{step}\", pero wala itong \"failed\" na linya, kaya hihinto ang takbo kapag pumalya ito.",
   "Share": "I-share",
   "Copy {what}": "Kopyahin ang {what}",
   "Copied.": "Nakopya na.",

@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { definitionSchema, stepBranches } from "./definition";
+import { definitionSchema, OUTSIDE_STEPS, stepBranches } from "./definition";
 import { switchBranch } from "./expressions";
 import { nextStep } from "./graph";
-import { lintDefinition } from "./lint";
+import { lintDefinition, lintFindings } from "./lint";
 
 const manual = { type: "manual", config: {} };
 const mail = (id: string, extra: object = {}) => ({ id, type: "email", config: { to: "a@example.com", subject: "s", text: "t" }, ...extra });
@@ -81,6 +81,21 @@ describe("onError (T3)", () => {
     expect(issues(base("failed_edge", edges))).toEqual([]);
     expect(issues(base("skip", edges)).join()).toMatch(/failed_edge/);
     expect(issues(base(undefined, edges)).join()).toMatch(/failed_edge/);
+  });
+
+  it("is refused on a step that does not reach outside kymavo", () => {
+    const fmt = { id: "fmt", type: "transform", onError: "skip", config: { op: "uppercase", value: "x" } };
+    expect(issues({ trigger: manual, steps: [fmt], edges: [] }).join()).toMatch(/only a step that reaches outside kymavo/);
+    expect(issues({ trigger: manual, steps: [{ ...fmt, onError: undefined }], edges: [] })).toEqual([]);
+    expect(OUTSIDE_STEPS.has("email") && !OUTSIDE_STEPS.has("transform")).toBe(true);
+  });
+
+  it("warns when failed_edge has no failed edge drawn, and not once it has one", () => {
+    const lone = definitionSchema.parse(base("failed_edge", [{ from: "a", to: "b" }, { from: "b", to: "c" }]));
+    expect(lintFindings(lone).map((f) => f.rule)).toEqual(["failed_path_no_edge"]);
+    const wired = definitionSchema.parse(base("failed_edge", [{ from: "a", to: "b" }, { from: "a", to: "c", on: "failed" }]));
+    expect(lintFindings(wired)).toEqual([]);
+    expect(lintFindings(definitionSchema.parse(base("skip", [{ from: "a", to: "b" }, { from: "b", to: "c" }])))).toEqual([]);
   });
 
   it("is refused on a branching step", () => {

@@ -20,6 +20,12 @@ describe("failureFacts", () => {
     const f = failureFacts({ ...run(), steps: [failed("HTTP 500 from a.test", { attempt: 1 }), failed("HTTP 404 from a.test", { attempt: 2, deadLetter: true })] });
     expect(f.step).toEqual({ type: "http", outcome: null, attempts: 2, deadLetter: true, statusCode: 404, reason: null });
   });
+  it("leaves out a failure the run handled by taking its failed path (T3)", () => {
+    const handled = failed("Slack refused", { attempt: 1, branch: "failed", createdAt: "2026-11-25T00:00:01Z" });
+    expect(failureFacts({ ...run({ state: "succeeded" }), steps: [handled] }).step).toBeNull();
+    const later = failed("HTTP 500 from a.test", { stepId: "ask", createdAt: "2026-11-25T00:00:02Z" });
+    expect(failureFacts({ ...run(), steps: [handled, later] }).step?.type).toBe("approval");
+  });
   it("says unknown for a step the definition does not have", () => {
     expect(failureFacts({ ...run(), steps: [failed("x", { stepId: "gone" })] }).step?.type).toBe("unknown");
   });
@@ -152,9 +158,9 @@ describe("explainFailure", () => {
     expect(explainFailure(stepFacts({ outcome: "throttled" })).headline).toMatch(/slow down/);
   });
   it("adds a line for each lint rule", () => {
-    const rules = ["approval_no_edge", "classify_dead_end", "test_switch", "number_no_invalid", "unreachable_step"] as const;
+    const rules = ["approval_no_edge", "classify_dead_end", "test_switch", "number_no_invalid", "unreachable_step", "failed_path_no_edge"] as const;
     const e = explainFailure(facts({ lint: rules.map((rule) => ({ rule, count: 1 })) }));
-    expect(e.lines.slice(1)).toHaveLength(5);
+    expect(e.lines.slice(1)).toHaveLength(6);
     expect(e.lines[1]).toBe("An approval in this automation has no path for one of its answers, so the automation ends there.");
   });
   it("falls back when nothing matches", () => {
@@ -163,7 +169,7 @@ describe("explainFailure", () => {
     expect(e.lines[0]).toBe("The details for a technician below have the full record.");
   });
   it("uses plain words everywhere", () => {
-    const all: Facts[] = [stepFacts(), facts({ lint: ["approval_no_edge", "classify_dead_end", "test_switch", "number_no_invalid", "unreachable_step"].map((rule) => ({ rule: rule as never, count: 1 })) })];
+    const all: Facts[] = [stepFacts(), facts({ lint: ["approval_no_edge", "classify_dead_end", "test_switch", "number_no_invalid", "unreachable_step", "failed_path_no_edge"].map((rule) => ({ rule: rule as never, count: 1 })) })];
     for (const p of ["google_sheets", "slack", "outlook", "teams"])
       for (const k of ["auth", "reconnect", "not_connected", "permission", "no_destination", "quota", "unavailable", "ambiguous", "review", "destination_changed", "queued_before_pin", "invalid", "booking_changed"]) all.push(delivery(p, k));
     for (const reason of ["mail_sender", "ai_model", "quota", "booking_changed", "worker_stopped", "preview_choice"] as const) all.push(stepFacts({ reason }));

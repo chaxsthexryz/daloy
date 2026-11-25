@@ -171,6 +171,7 @@ export function warningForLanguage(warning: string, language: Language): string 
     [/^"([^"]+)" looks like a switch for testing\. Mock test runs already send nothing, but a Live run or a real event follows the branch and can send, so remove it and its branch and test with Mock mode\.$/, '"{field}" looks like a switch for testing. Mock test runs already send nothing, but a Live run or a real event follows the branch and can send, so remove it and its branch and test with Mock mode.', ["field"]],
     [/^Condition "([^"]+)" compares numbers but has no "invalid" edge, so a missing or non-number value fails the run\.$/, 'Condition "{step}" compares numbers but has no "invalid" edge, so a missing or non-number value fails the run.', ["step"]],
     [/^Step "([^"]+)" can never run: only an "invalid" edge that cannot be taken leads to it\.$/, 'Step "{step}" can never run: only an "invalid" edge that cannot be taken leads to it.', ["step"]],
+    [/^Step "([^"]+)" is set to take its failed path, but it has no "failed" edge, so a failure stops the run\.$/, 'Step "{step}" is set to take its failed path, but it has no "failed" edge, so a failure stops the run.', ["step"]],
   ];
   for (const [pattern, source, keys] of patterns) {
     const match = pattern.exec(warning);

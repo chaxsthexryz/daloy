@@ -1,6 +1,7 @@
 import "./editor.css";
 import { useLanguage } from "./Language";
 import { canSendAlone, configProblems, definitionSchema, destination, lintDefinition, markText, stepBranches, stepEntry, stepLabel, STEP_NOTE_MAX, triggerEntry, triggerLabel, type FormField, type Step, type StepErrorPolicy, type Trigger } from "@daloy/engine";
+import { OUTSIDE_STEPS } from "@daloy/engine";
 import { AppMark } from "./AppMark";
 import { Breadcrumb } from "./Breadcrumb";
 import { Background, ReactFlow, type NodeChange } from "@xyflow/react";
@@ -698,14 +699,15 @@ export function Editor({ id, from }: { id: string; from?: string }) {
           )}
           {step.type === "browser" && <BrowserActions key={`${step.id}-actions`} actions={step.config.actions} onChange={(actions) => editStep({ ...step.config, actions })} />}
           {step.type === "switch" && <SwitchCases key={`${step.id}-cases`} cases={step.config.cases} onChange={(cases) => editStep({ ...step.config, cases })} />}
-          {!stepBranches(step) && (
+          {!stepBranches(step) && OUTSIDE_STEPS.has(step.type) && (
             <div className="field">
               <label htmlFor="step-on-error">{t("If this step fails")}</label>
               <select id="step-on-error" value={("onError" in step ? step.onError : undefined) ?? "stop"} onChange={(e) => editOnError(e.target.value as StepErrorPolicy)}>
-                <option value="stop">{t("Stop the automation (default)")}</option>
-                <option value="skip">{t("Skip and continue to the next step")}</option>
-                <option value="failed_edge">{t("Follow the failed branch")}</option>
+                <option value="stop">{t("Stop the run")}</option>
+                <option value="skip">{t("Skip it and carry on")}</option>
+                <option value="failed_edge">{t("Take the failed path")}</option>
               </select>
+              <p className="muted hint">{t("Used once the retries run out. A send that may have gone through still waits for you to check.")}</p>
             </div>
           )}
           {step.type === "ai" &&

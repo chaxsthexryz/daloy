@@ -13,7 +13,7 @@ const PLACEHOLDER = /\{\{\s*([^{}]*?)\s*\}\}/g;
 const TRIGGER_REF = /^\{\{\s*trigger\.([a-z][a-z0-9_]*)\s*\}\}$/;
 const LABEL_REF = /^\{\{\s*steps\.([a-z][a-z0-9_]*)\.output\.label\s*\}\}$/;
 
-export type LintRule = "approval_no_edge" | "classify_dead_end" | "test_switch" | "number_no_invalid" | "unreachable_step";
+export type LintRule = "approval_no_edge" | "classify_dead_end" | "test_switch" | "number_no_invalid" | "unreachable_step" | "failed_path_no_edge";
 
 export const lintDefinition = (def: WorkflowDefinition): string[] => [...lintFindings(def).map((f) => f.message), ...aiFileWarnings(def), ...browserWarnings(def)];
 
@@ -45,6 +45,13 @@ export function lintFindings(def: WorkflowDefinition): { rule: LintRule; message
     if (s.type !== "approval") continue;
     for (const branch of ["rejected", "timeout"]) {
       if (!edgeTo(s.id, branch)) warn("approval_no_edge", `Approval step "${s.id}" has no "${branch}" edge, so the run ends there and nobody is told.`);
+    }
+  }
+
+  // T3: a step set to take its failed path with no failed edge drawn stops the run when it fails, as if onError were unset.
+  for (const s of def.steps) {
+    if ("onError" in s && s.onError === "failed_edge" && !def.edges.some((e) => e.from === s.id && e.on === "failed")) {
+      warn("failed_path_no_edge", `Step "${s.id}" is set to take its failed path, but it has no "failed" edge, so a failure stops the run.`);
     }
   }
 

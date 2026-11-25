@@ -6,7 +6,7 @@ import { AutomationTabs } from "./Nav";
 import { Breadcrumb } from "./Breadcrumb";
 import { stepLabel } from "@daloy/engine";
 import { RunFlow } from "./FlowCanvas";
-import { runFlow, STATUS } from "./lib/run-flow";
+import { handledFailure, runFlow, STATUS } from "./lib/run-flow";
 import "./operations.css";
 import "./activity.css";
 import { clock, longDate, startedAt } from "./lib/activity";
@@ -85,6 +85,7 @@ export function StepAttempt({ s }: { s: StepRun }) {
       {s.error && <p className="message error">{s.error}</p>}
       {decided(s.output, t) && <p className="muted">{decided(s.output, t)}</p>}
       {skipped(s.output, t) && <p className="muted">{skipped(s.output, t)}</p>}
+      {handledFailure(s) && <p className="muted">{t(handledFailure(s)!)}</p>}
       {s.outcome && <p className="muted">{t("Outcome: {outcome}", { outcome: s.outcome.replace("_", " ") })}</p>}
       {s.resolvedBy && s.resolvedAt && (
         <p className="muted">
@@ -462,6 +463,7 @@ function RunTimeline({ run }: { run: Run }) {
           s.branch ? `→ ${s.branch}` : "",
           decided(s.output, t) ?? "",
           skipped(s.output, t) ?? "",
+          handledFailure(s) ? t(handledFailure(s)!) : "",
           s.outcome ? t("Outcome: {outcome}", { outcome: s.outcome.replace("_", " ") }) : "",
           s.resolvedBy && s.resolvedAt ? t("Answered by {name} at {time}", { name: s.resolvedBy, time: new Date(s.resolvedAt).toLocaleString() }) : "",
         ].filter(Boolean);
