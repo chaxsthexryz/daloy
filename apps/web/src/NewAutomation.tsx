@@ -18,12 +18,13 @@ import {
   type WorkflowDefinition,
 } from "@daloy/engine";
 import { Text, useLanguage } from "./Language";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { api, ApiError, type Workflow } from "./api";
 import { AppMark } from "./AppMark";
 import { RunFlow } from "./FlowCanvas";
 import { startOfficeSetup, startPurchaseSetup } from "./OfficeRequests";
 import { Sheet, usePhone } from "./Sheet";
+import { pushToast } from "./Toast";
 import type { Language } from "./lib/locale";
 
 const slugify = (s: string) =>
@@ -92,6 +93,10 @@ export function NewAutomationPage({ email }: { email: string }) {
           : item.definition;
         await api("POST", `/workflows/${wf.id}/versions`, { definition, publish: false });
       }
+      pushToast({
+        message: t(slug ? "Created draft from template." : "Created blank workflow."),
+        tone: "success",
+      });
       location.hash = `#/w/${wf.id}`;
     } catch (err) {
       const taken = err instanceof ApiError && err.status === 409;
@@ -236,38 +241,39 @@ export function NewAutomationPage({ email }: { email: string }) {
     <main className="page ops gp lib motion-page">
       <header className="ops-head">
         <div className="gp-title">
-          <p className="gp-crumb"><a href="#/"><Text>Automations</Text></a></p>
           <h1><Text>Library</Text></h1>
         </div>
       </header>
       <div className="lib-main">
-        <p className="gp-lead"><Text>Choose the workflow closest to the way your team works.</Text></p>
-        <div className="ops-filters lib-filters">
-          <label className="ops-search">
-            <span className="ops-sr"><Text>Search the library</Text></span>
-            <svg width="13" height="13" viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="5" fill="none" stroke="currentColor" strokeWidth="1.6" /><path d="m11 11 3.5 3.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" /></svg>
-            <input type="search" value={query} placeholder={t("Search")} onChange={(e) => setQuery(e.target.value)} />
-          </label>
-          <label className="ops-select">
-            <span><Text>Wording</Text>:</span>
-            <select value={style} onChange={(e) => setStyle(e.target.value as TemplateStyle)}>
-              <option value="default">{t("Workspace language")}</option>
-              <option value="taglish">{t("Taglish")}</option>
-            </select>
-          </label>
+        <div className="lib-controls-box">
+          <p className="gp-lead"><Text>Choose the workflow closest to the way your team works.</Text></p>
+          <div className="ops-filters lib-filters">
+            <label className="ops-search">
+              <span className="ops-sr"><Text>Search the library</Text></span>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M10 10m-7 0a7 7 0 1 0 14 0a7 7 0 1 0 -14 0" /><path d="M21 21l-6 -6" /></svg>
+              <input type="search" value={query} placeholder={t("Search")} onChange={(e) => setQuery(e.target.value)} />
+            </label>
+            <label className="ops-select">
+              <span><Text>Wording</Text>:</span>
+              <select value={style} onChange={(e) => setStyle(e.target.value as TemplateStyle)}>
+                <option value="default">{t("Workspace language")}</option>
+                <option value="taglish">{t("Taglish")}</option>
+              </select>
+            </label>
+          </div>
+          <div className="lib-chips" role="group" aria-label={t("Category")}>
+            {(["All", ...TEMPLATE_CATEGORIES] as const).map((c) => (
+              <button key={c} type="button" className="lib-chip" aria-pressed={category === c} onClick={() => setCategory(c)}>{t(c)}</button>
+            ))}
+          </div>
+          {style === "taglish" && <p className="gp-hint"><Text>Taglish mixes Tagalog and English in the messages sent to your customers: payment links, reminders and receipts.</Text></p>}
         </div>
-        <div className="lib-chips" role="group" aria-label={t("Category")}>
-          {(["All", ...TEMPLATE_CATEGORIES] as const).map((c) => (
-            <button key={c} type="button" className="lib-chip" aria-pressed={category === c} onClick={() => setCategory(c)}>{t(c)}</button>
-          ))}
-        </div>
-        {style === "taglish" && <p className="gp-hint"><Text>Taglish mixes Tagalog and English in the messages sent to your customers: payment links, reminders and receipts.</Text></p>}
         {!phone && preview}
         {!card && <p role="alert" className="gp-error" hidden={!error}>{error}</p>}
 
         <ul className="lib-grid">
           {showStarts && matches(blankName, blankText) && (
-            <li className="lib-card">
+            <li className="lib-card" style={{ "--card-index": 0 } as CSSProperties}>
               <h3 className="gp-name">{blankName}</h3>
               <p className="gp-sub">{blankText}</p>
               <form className="lib-blank" onSubmit={createBlank}>
@@ -280,14 +286,19 @@ export function NewAutomationPage({ email }: { email: string }) {
             </li>
           )}
           {showStarts && matches(aiName, aiText) && (
-            <li className="lib-card">
+            <li className="lib-card" style={{ "--card-index": 1 } as CSSProperties}>
               <h3 className="gp-name">{aiName}</h3>
               <p className="gp-sub">{aiText}</p>
               <div className="lib-foot"><a className="ops-button" href="#/ai">{aiName}</a></div>
             </li>
           )}
-          {shown.map((c) => (
-            <li key={c.key} className="lib-card" data-selected={selected === c.key || undefined}>
+          {shown.map((c, idx) => (
+            <li
+              key={c.key}
+              className="lib-card"
+              style={{ "--card-index": Math.min(idx + (showStarts ? 2 : 0), 12) } as CSSProperties}
+              data-selected={selected === c.key || undefined}
+            >
               <h3 className="gp-name">
                 <button type="button" className="lib-open" aria-pressed={selected === c.key} aria-label={t("Preview: {name}", { name: c.name })} onClick={() => open(c.key)}>{c.name}</button>
               </h3>

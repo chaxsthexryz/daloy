@@ -17,7 +17,7 @@
   --a-red-bg: var(--red-soft, color-mix(in srgb, var(--danger) 18%, transparent));
   --a-green: var(--green, var(--ok));
   --a-green-bg: var(--green-soft, color-mix(in srgb, var(--ok) 18%, transparent));
-  --a-amber: var(--amber, var(--warn));
+  --a-amber: var(--yellow, var(--warn));
   --a-grey-bg: color-mix(in srgb, var(--muted) 16%, transparent);
   --a-focus: var(--focus);
   --a-sheet-shadow: var(--shadow-overlay);
@@ -36,7 +36,7 @@
   --a-red-bg: #fff1f1;
   --a-green: #15803d;
   --a-green-bg: #ecfdf3;
-  --a-amber: #8a5300;
+  --a-amber: #685500;
   --a-grey-bg: #f4f5f7;
   --a-focus: #0b66ff;
   --a-sheet-shadow: 0 -8px 24px rgb(15 19 26 / 0.16);
@@ -49,17 +49,13 @@ main.page.act { max-width: none; width: 100%; margin: 0; padding: 0; min-height:
 .act-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .act-muted { color: var(--a-muted); }
 
-/* Page head: breadcrumb, title, subtitle, actions on a white strip. */
-.act-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 8px 16px; padding: 24px 42px 30px; background: var(--a-bg); border-bottom: 1px solid var(--a-line); }
+/* Page head: locked to Automations header alignment and spacing on a white strip. */
+.act-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 6px 16px; padding: 20px 24px 20px; background: var(--a-bg); border-bottom: 1px solid var(--a-line); }
 .act-head.tabbed { padding-bottom: 0; }
 .act-crumbs { grid-column: 1 / -1; font-size: 13px; line-height: 18px; color: var(--a-muted); }
-.act-crumbs ol { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; }
-.act-crumbs li + li::before { content: "/"; margin-right: 6px; }
-.act-crumbs a { color: var(--a-muted); text-decoration: none; }
-.act-crumbs a:hover { color: var(--a-ink); text-decoration: underline; }
-.act-head h1 { font-size: 34px; line-height: 40px; font-weight: 800; letter-spacing: -0.035em; }
-.act-head.tabbed h1 { font-size: 26px; line-height: 32px; }
-.act-sub { margin-top: 6px !important; font-size: 15px; line-height: 20px; color: var(--a-muted); }
+.act-head h1 { font-size: clamp(24px, 2.2vw, 28px); line-height: 1.15; font-weight: 650; letter-spacing: -0.03em; }
+.act-head.tabbed h1 { font-size: clamp(24px, 2.2vw, 28px); line-height: 1.15; }
+.act-sub { margin-top: 2px !important; font-size: 13px; line-height: 1.45; color: var(--a-muted); }
 .act-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
 .act-tabs { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 22px; }
 .act-head .tabs { margin: 8px 0 0; border: 0; gap: 22px; flex-wrap: nowrap; }
@@ -75,7 +71,7 @@ main.page.act { max-width: none; width: 100%; margin: 0; padding: 0; min-height:
 .act-link:hover:not(:disabled) { background: transparent; color: var(--a-accent); }
 
 /* Body: cards on the grey canvas. */
-.act-body { display: grid; gap: 22px; padding: 32px 42px 48px; align-items: start; }
+.act-body { display: grid; gap: 18px; padding: 20px 24px 48px; align-items: start; }
 .act-card { display: flex; flex-direction: column; gap: 16px; min-width: 0; padding: 26px 24px; background: var(--a-bg); border: 1px solid var(--a-line); border-radius: 12px; }
 .act-card h2 { font-size: 22px; line-height: 28px; font-weight: 800; letter-spacing: -0.03em; }
 .act-alert { font-size: 14px; line-height: 20px; }

@@ -5,11 +5,12 @@ import { describe, expect, it } from "vitest";
 import { LanguageContext } from "./Language";
 import { ToastHost } from "./Toast";
 
-describe("ToastHost upper-right layout", () => {
-  it("positions the toast stack on the upper side in toast.css", () => {
+describe("ToastHost middle-top layout", () => {
+  it("positions the toast stack at the middle-top in toast.css", () => {
     const css = readFileSync(resolve(__dirname, "toast.css"), "utf8");
-    expect(css).toContain("top: 20px;");
-    expect(css).toContain("right: 24px;");
+    expect(css).toContain("top: 16px;");
+    expect(css).toContain("left: 50%;");
+    expect(css).toContain("transform: translateX(-50%);");
     expect(css).not.toContain("bottom: 24px;");
   });
 

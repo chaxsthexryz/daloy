@@ -55,10 +55,12 @@ test("Home shows each automation's state and last event, and a Needs you strip",
   await orderRow.getByRole("button", { name: "Orders" }).click();
   await expect(page.getByRole("complementary", { name: "Orders" })).toContainText("No activity yet");
 
-  // Developer pages are behind Advanced, and the strip opens the run.
-  await page.getByRole("link", { name: "Advanced" }).click();
-  await expect(page.getByRole("heading", { name: "Advanced", exact: true })).toBeVisible();
-  for (const name of ["AI model", "API tokens", "Resources"]) await expect(page.getByRole("link", { name })).toBeVisible();
+  // Settings keeps workspace directory tools for owners (Advanced stays admin-only), and the strip opens the run.
+  await page.getByRole("link", { name: "Settings", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Settings", exact: true })).toBeVisible();
+  for (const name of ["Apps", "Business", "Team", "Resources"]) await expect(page.getByRole("main").getByRole("link", { name })).toBeVisible();
+  await expect(page.getByRole("link", { name: "AI model" })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "API tokens" })).toHaveCount(0);
   await page.getByRole("link", { name: "Automations" }).click();
   await page.getByRole("link", { name: "Open the oldest" }).click();
   await expect(page.getByRole("region", { name: "Needs you" })).toBeVisible({ timeout: 30_000 });
@@ -69,10 +71,10 @@ test("on a phone the menu collapses, nothing scrolls sideways, and the activity 
   await signUp(page, "phone");
   const menu = page.getByRole("button", { name: "Menu" });
   await expect(menu).toBeVisible();
-  await expect(page.getByRole("link", { name: "Advanced" })).toBeHidden();
+  await expect(page.getByRole("link", { name: "Settings" })).toBeHidden();
   expect((await menu.boundingBox())!.height).toBeGreaterThanOrEqual(44);
   await menu.click();
-  await expect(page.getByRole("link", { name: "Advanced" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Settings" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Team" })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 
@@ -166,13 +168,14 @@ test("inline pause switch shows an undo toast, inspector matches Problem status,
   expect(nameBox.y + nameBox.height).toBeLessThanOrEqual(longRowBox.y + longRowBox.height + 1);
   expect(longRowBox.y).toBeGreaterThanOrEqual(failingBox.y + failingBox.height - 1);
 
-  // Inline switch pauses and shows the Undo toast; Undo resumes it.
-  const toggle = longRow.getByRole("switch", { name: `Pause ${longName}` });
-  await expect(toggle).toHaveAttribute("aria-checked", "true");
-  await toggle.click();
+  // Open action link opens the workflow, and Pause in the inspector shows a white Undo toast.
+  await expect(longRow.getByRole("link", { name: "Open", exact: true })).toHaveAttribute("href", `#/w/${healthy.id}`);
+  await longRow.getByRole("button", { name: longName }).click();
+  const longPanel = page.getByRole("complementary", { name: longName });
+  await longPanel.getByRole("button", { name: "Pause", exact: true }).click();
   const toast = page.locator(".ops-toast");
   await expect(toast).toContainText(`Paused ${longName}.`);
-  await expect(longRow.getByRole("switch")).toHaveAttribute("aria-checked", "false");
+  await expect(longPanel.getByRole("button", { name: "Resume", exact: true })).toBeVisible();
   await toast.getByRole("button", { name: "Undo" }).click();
-  await expect(longRow.getByRole("switch")).toHaveAttribute("aria-checked", "true");
+  await expect(longPanel.getByRole("button", { name: "Pause", exact: true })).toBeVisible();
 });

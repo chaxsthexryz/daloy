@@ -32,4 +32,8 @@ export const workspaceTranslations: Record<string, string> = {
   "Quick jump": "Mabilis na lipat",
   "Jump to a page...": "Lumipat sa pahina...",
   "No matching pages.": "Walang tugmang pahina.",
+  "Collapse sidebar": "Itiklop ang sidebar",
+  "Expand sidebar": "Buksan ang sidebar",
+  "Collapse sidebar (Ctrl+B)": "Itiklop ang sidebar (Ctrl+B)",
+  "Expand sidebar (Ctrl+B)": "Buksan ang sidebar (Ctrl+B)",
 };

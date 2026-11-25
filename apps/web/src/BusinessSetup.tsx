@@ -22,8 +22,6 @@ const STATUS: Record<Sender["status"], string> = {
   disconnected: "Disconnected",
 };
 
-const back = <a href="#/settings"><Text>Settings</Text></a>;
-
 /** #/settings/business: the business details and the website inquiry form that uses them (roadmap phase 2). Gmail and the other apps are on Apps. */
 export function BusinessSetupPage() {
   const [data, setData] = useState<Settings | null>(null);
@@ -33,8 +31,7 @@ export function BusinessSetupPage() {
 
   return (
     <main className="page workspace-admin admin-business motion-page">
-      <header className="toolbar plain">
-        {back}
+      <header className="toolbar plain admin-head">
         <h1><Text>Business</Text></h1>
       </header>
       <p role="alert" className="message error" hidden={!error}>

@@ -16,7 +16,7 @@ describe("staff navigation", () => {
     ["#/w/workflow-id", "#/"], ["#/w/workflow-id/versions", "#/"], ["#/w/workflow-id/runs", "#/"],
     ["#/a/workflow-id", "#/"], ["#/bookings", "#/bookings"], ["#/conversations", "#/conversations"],
     ["#/settings", "#/settings"], ["#/account", "#/account"],
-    ["#/settings/ai", "#/advanced"], ["#/secrets", "#/advanced"], ["#/tokens", "#/advanced"], ["#/resources", "#/advanced"],
+    ["#/settings/ai", "#/settings"], ["#/secrets", "#/settings"], ["#/tokens", "#/settings"], ["#/resources", "#/settings"], ["#/advanced", "#/settings"],
     ["#/settings/business", "#/settings/business"], ["#/settings/business/outlook-connected", "#/apps"],
     ["#/verify-sender/token", "#/apps"], ["#/team", "#/team"],
   ])("marks the parent of %s", (hash, target) => {
@@ -55,11 +55,15 @@ describe("staff navigation", () => {
     expect(render("#/", "operator")).not.toContain("ai-meter");
   });
 
-  it("renders a fixed non-collapsible sidebar with hover pill and Quick jump button", () => {
+  it("renders a permanent 228px non-collapsible sidebar with hover pill and no Ctrl K button", () => {
     const html = render("#/");
     expect(html).not.toContain("data-expanded");
+    expect(html).not.toContain("rail-collapse-btn");
+    expect(html).not.toContain('aria-label="Collapse sidebar"');
     expect(html).toContain("rail-hover-pill");
-    expect(html).toContain('aria-keyshortcuts="Control+K Meta+K"');
+    expect(html).not.toContain("rail-quick-jump");
+    expect(html).not.toContain("Ctrl K");
+    expect(html).toContain(">kymavo</span>");
   });
 });
 

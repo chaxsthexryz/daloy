@@ -1,40 +1,64 @@
-/* Workspace administration extends the approved light console. No public form rules. */
+/* Workspace administration unified onto Daylight Minimal + Studio Cobalt Dark + Sunny Yellow. */
 main.page.workspace-admin {
   color-scheme: light;
-  --bg: #f1f1ef;
+  --bg: #fafafa;
   --surface: #ffffff;
-  --text: #201916;
-  --muted: #635c58;
-  --border: #8b8580;
-  --border-soft: #e2e0dd;
-  --sunken: #f5f4f2;
-  --accent: #244f7a;
-  --accent-hover: #143852;
-  --accent-tint: #e3eef8;
+  --text: #0f131a;
+  --muted: #5b6372;
+  --border: #d1d5df;
+  --border-soft: #e6e8ee;
+  --sunken: #f4f5f7;
+  --accent: #0b66ff;
+  --accent-hover: #0052d9;
+  --accent-tint: #eef4ff;
   --on-accent: #ffffff;
-  --focus: #244f7a;
-  --danger: #a3261c;
-  --ok: #17643a;
-  --warn: #7a4b00;
-  --done: #dff1e6;
-  --on-done: #17643a;
-  --waiting: #fbefc9;
-  --on-waiting: #7a4b00;
-  --problem: #fbe3e0;
-  --on-problem: #a3261c;
+  --focus: #0b66ff;
+  --danger: #c92a2a;
+  --ok: #15803d;
+  --warn: #685500;
+  --done: #ecfdf3;
+  --on-done: #15803d;
+  --waiting: #fffbe6;
+  --on-waiting: #685500;
+  --problem: #fff1f1;
+  --on-problem: #c92a2a;
   --radius-md: 12px;
   width: 100%;
   max-width: 100%;
   min-width: 0;
   min-height: 100%;
   margin: 0;
-  padding: 32px;
+  padding: 0 0 48px;
   box-sizing: border-box;
   background: var(--bg);
   color: var(--text);
   overflow-wrap: anywhere;
   font-variant-numeric: tabular-nums;
   scrollbar-color: var(--border) var(--bg);
+}
+:root[data-theme="dark"] main.page.workspace-admin {
+  color-scheme: dark;
+  --bg: #09090b;
+  --surface: #111216;
+  --text: #fafafa;
+  --muted: #a1a1aa;
+  --border: #3f3f46;
+  --border-soft: #27272a;
+  --sunken: #181a20;
+  --accent: #5c9cff;
+  --accent-hover: #8cb9ff;
+  --accent-tint: #17233b;
+  --on-accent: #091020;
+  --focus: #5c9cff;
+  --danger: #fca5a5;
+  --ok: #6ee7b7;
+  --warn: #fde047;
+  --done: #132c21;
+  --on-done: #6ee7b7;
+  --waiting: #332c0a;
+  --on-waiting: #fde047;
+  --problem: #3a1718;
+  --on-problem: #fca5a5;
 }
 .workspace-admin ::selection { background: var(--accent-tint); color: var(--text); }
 /* Settings previews the saved device theme; the homepage keeps its light scope. */
@@ -65,16 +89,16 @@ main.page.workspace-admin {
 .workspace-admin :is(input, textarea) { caret-color: var(--accent); }
 .workspace-admin a { text-underline-offset: .2em; }
 .workspace-admin :focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
-.workspace-admin > .toolbar { padding: 0; margin: 0 0 24px; border: 0; gap: 8px 20px; }
-.workspace-admin > .toolbar:has(> a) { align-items: start; flex-direction: column; gap: 4px; }
-.workspace-admin h1 { font-size: 2rem; font-weight: 500; letter-spacing: -.04em; line-height: 1.2; }
-.workspace-admin h2 { font-size: 1.125rem; font-weight: 500; letter-spacing: -.02em; margin: 28px 0 12px; }
-.workspace-admin h3 { font-size: 1rem; font-weight: 500; }
-.workspace-admin > p { max-width: 72ch; }
-.workspace-admin :is(button, input, select, summary) { min-height: 44px; }
+.workspace-admin > .toolbar { padding: 20px 24px 20px; margin: 0 0 20px; border: 0; border-bottom: 1px solid var(--border-soft); background: var(--surface); gap: 4px 20px; }
+.workspace-admin > .toolbar:has(> a, > nav) { align-items: flex-start; flex-direction: column; gap: 4px; }
+.workspace-admin h1 { font-size: clamp(24px, 2.2vw, 28px); font-weight: 650; letter-spacing: -0.03em; line-height: 1.15; margin: 0; }
+.workspace-admin h2 { font-size: 1.125rem; font-weight: 650; letter-spacing: -0.02em; margin: 24px 0 12px; }
+.workspace-admin h3 { font-size: 1rem; font-weight: 600; }
+.workspace-admin > p { max-width: 72ch; margin-inline: 24px; }
+.workspace-admin :is(button, input, select, summary) { min-height: 36px; }
 .workspace-admin :is(input, select, textarea) { max-width: 100%; box-sizing: border-box; font-size: .9375rem; }
-.workspace-admin :is(button, .actions a) { font-size: .875rem; }
-.workspace-admin button { white-space: normal; }
+.workspace-admin :is(button, .actions a) { font-size: 13px; }
+.workspace-admin button { white-space: nowrap; border-radius: 8px; padding: 0 14px; font-weight: 550; }
 .workspace-admin button:disabled { color: var(--muted); border-color: var(--border-soft); background: var(--sunken); }
 .workspace-admin .actions { gap: 8px; flex-wrap: wrap; }
 .workspace-admin .field { min-width: 0; margin-bottom: 18px; }
@@ -83,16 +107,25 @@ main.page.workspace-admin {
 .workspace-admin .message, .workspace-admin .notice { border: 1px solid var(--border-soft); border-radius: 12px; }
 .workspace-admin .message.error { border-color: #d4aaa4; }
 .workspace-admin .message.ok { border-color: #a6c7b3; }
-.workspace-admin .notice { border-color: #d2bb7d; }
+.workspace-admin .notice { border-color: var(--yellow-border, #fde047); }
+@media (max-width: 799px) {
+  .workspace-admin :is(button, input, select, summary) { min-height: 44px; }
+  .workspace-admin button { white-space: normal; }
+}
 .workspace-admin :is(.tag, .badge) { white-space: normal; line-height: 1.35; }
 .workspace-admin > :is(form, section, fieldset),
+.workspace-admin .create,
+.workspace-admin > .business-grid {
+  max-width: 1120px;
+  margin-inline: 24px;
+}
+.workspace-admin > :is(form, section, fieldset),
 .workspace-admin .create {
-  max-width: 960px;
-  padding: 24px;
-  margin: 0 0 24px;
+  padding: 22px 24px;
+  margin-bottom: 18px;
   background: var(--surface);
   border: 1px solid var(--border-soft);
-  border-radius: 16px;
+  border-radius: 12px;
   min-width: 0;
 }
 .workspace-admin > :is(form, section) > :is(h2, h3):first-child,
@@ -143,7 +176,10 @@ main.page.workspace-admin {
 .workspace-admin .app-text p { max-width: 64ch; }
 .workspace-admin .app-card button[aria-expanded="true"] { background: var(--accent-tint); }
 .workspace-admin .app-setup { scroll-margin-top: 24px; }
-.workspace-admin #b-accent { width: 88px; padding: 4px; }
+.workspace-admin #b-accent { width: 88px; height: 38px; padding: 3px; border-radius: 8px; }
+.workspace-admin .file-input { padding: 6px 10px; border: 1px dashed var(--border); border-radius: 8px; background: var(--sunken); color: var(--muted); font-size: 13px; }
+.workspace-admin .file-input::file-selector-button { height: 28px; margin-right: 10px; padding: 0 11px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); font-weight: 550; font-size: 12.5px; cursor: pointer; }
+.workspace-admin .file-input::file-selector-button:hover { background: var(--sunken); }
 @media (max-width: 799px) {
   main.page.workspace-admin { padding: 24px 16px; }
   .workspace-admin h1 { font-size: 1.75rem; }

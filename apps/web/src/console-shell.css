@@ -1,5 +1,5 @@
-/* Shared staff navigation: fixed 228 px Daylight Minimal sidebar on desktop and bottom bar + sheet on phone. */
-.console-shell .sidebar, .console-shell .bottom-bar { font-family: var(--font-sans, Inter, system-ui, sans-serif); }
+/* Shared staff navigation: permanent 228 px Daylight Minimal sidebar on desktop and bottom bar + sheet on phone. */
+.console-shell .sidebar, .console-shell .bottom-bar { font-family: var(--font-sans, "Inter", system-ui, sans-serif); }
 .rail-brand { display: block; width: 28px; height: 28px; flex: none; color: var(--blue, #0b66ff); }
 .rail-icon { width: 17px; height: 17px; flex: none; }
 .console-shell .shell-nav-label { text-transform: uppercase; font-size: 11px; font-weight: 600; letter-spacing: .06em; }
@@ -11,25 +11,6 @@
 .ai-meter:not(.rail-usage) { margin: 4px 0 8px; }
 .ai-meter:not(.rail-usage) .ai-meter-text { display: block; margin-top: 6px; color: var(--muted); font-size: 13px; }
 .console-shell .rail-avatar { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; background: var(--blue-soft, #eef4ff); color: var(--blue, #0b66ff); font-weight: 700; font-size: 13px; }
-.rail-quick-jump {
-  margin-left: auto;
-  min-height: 26px;
-  padding: 0 7px;
-  border: 1px solid var(--border-hairline, var(--border-soft));
-  border-radius: 6px;
-  background: var(--daylight-bg, var(--surface));
-  color: var(--fg-muted, var(--muted));
-  font-family: var(--font-mono);
-  font-size: 11px;
-  font-weight: 500;
-  line-height: 1;
-}
-.rail-quick-jump:hover:not(:disabled) {
-  background: var(--daylight-bg, var(--surface));
-  border-color: var(--border-strong, var(--border));
-  color: var(--fg, var(--text));
-}
-.rail-quick-jump kbd { font: inherit; }
 
 /* Quick Jump modal */
 .cmd-backdrop {
@@ -39,7 +20,7 @@
   display: grid;
   place-items: start center;
   padding: 12vh 16px 16px;
-  background: rgb(15 19 26 / 0.35);
+  background: rgb(10 11 14 / 0.35);
 }
 .cmd-dialog {
   width: min(32rem, 100%);
@@ -97,14 +78,16 @@
     flex-direction: column;
     border: 0;
     border-right: 1px solid var(--border-hairline, var(--border-soft));
-    background: var(--sidebar-bg, #fafafa);
+    background: var(--sidebar-bg, #ffffff);
     color: var(--fg, var(--text));
+    z-index: 30;
   }
-  .console-shell .sidebar-top { min-height: 40px; gap: 9px; padding: 2px 6px 12px; }
+  .console-shell .sidebar-top { min-height: 40px; gap: 7px; padding: 2px 6px 12px; }
   .console-shell .sidebar nav { position: relative; display: flex; flex: 1; height: auto; gap: 2px; padding: 0; }
   .rail-hover-pill { background: var(--subtle, #f4f5f7); }
   .console-shell .sidebar .shell-nav-label { position: relative; z-index: 1; color: var(--fg-muted, var(--muted)); height: 30px; padding: 10px 10px 4px; }
   .console-shell .sidebar nav > a {
+    position: relative;
     display: flex;
     align-items: center;
     gap: 10px;
@@ -120,10 +103,10 @@
   }
   .console-shell .sidebar nav > a:hover, .console-shell .sidebar nav > a:focus-visible { background: transparent; color: var(--fg, var(--text)); }
   .console-shell .sidebar nav > a[aria-current="page"] {
-    background: var(--daylight-bg, var(--surface));
+    background: var(--blue-soft, #eef4ff);
     color: var(--blue, var(--accent));
-    border-color: var(--border-hairline, var(--border-soft));
-    box-shadow: 0 1px 2px rgb(15 19 26 / 0.06);
+    border-color: color-mix(in srgb, var(--blue, #0b66ff) 18%, transparent);
+    box-shadow: none;
   }
   .console-shell .sidebar :focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
   .rail-label { opacity: 1; white-space: nowrap; }
@@ -165,7 +148,7 @@
 }
 
 @media (max-width: 799.98px) {
-  .console-shell .rail-icon, .console-shell .rail-avatar, .console-shell .rail-account .who, .rail-quick-jump, .rail-hover-pill { display: none; }
+  .console-shell .rail-icon, .console-shell .rail-avatar, .console-shell .rail-account .who, .rail-hover-pill { display: none; }
   .rail-usage { padding: 12px 8px 0; }
   .rail-usage .ai-meter-text { display: block; margin-top: 6px; color: var(--muted); font-size: 12px; }
   .console-shell .sidebar { background: var(--surface); color: var(--text); }

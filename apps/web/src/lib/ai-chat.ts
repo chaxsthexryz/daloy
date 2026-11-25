@@ -36,7 +36,8 @@ export type ChatEvent =
   | { type: "turnOn" }
   | { type: "turnedOn" }
   | { type: "failed"; message: string }
-  | { type: "reset" };
+  | { type: "reset" }
+  | { type: "restore"; turns: Turn[]; draft: Draft | null };
 
 /** Nothing here turns an automation on by itself: a draft always lands in "summary", and only turnOn leaves it. */
 export function chatStep(s: ChatState, e: ChatEvent): ChatState {
@@ -57,5 +58,12 @@ export function chatStep(s: ChatState, e: ChatEvent): ChatState {
       return s.phase === "thinking" ? { ...s, phase: "error", error: e.message } : s;
     case "reset":
       return { phase: "idle", turns: [], draft: null, error: "" };
+    case "restore":
+      return {
+        phase: e.draft ? "summary" : e.turns.at(-1)?.role === "assistant" ? "asking" : "idle",
+        turns: e.turns,
+        draft: e.draft,
+        error: "",
+      };
   }
 }

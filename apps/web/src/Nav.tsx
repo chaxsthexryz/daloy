@@ -53,12 +53,12 @@ function section(hash: string) {
   if (hash.startsWith("#/team")) return "Team";
   if (hash.startsWith("#/settings/business/outlook-") || hash === "#/apps" || hash.startsWith("#/apps/") || hash.startsWith("#/verify-sender")) return "Apps";
   if (hash === "#/settings/business") return "Business";
-  if (/^#\/(advanced|tokens|secrets|settings|resources)/.test(hash)) return "Advanced";
+  if (/^#\/(advanced|tokens|secrets|settings|resources)/.test(hash)) return "Settings";
   return "Automations";
 }
 
 /**
- * The console frame: a collapsible 228 px / 62 px sidebar on desktop (a bar with a Menu button under 800 px),
+ * The console frame: a permanent 228 px sidebar on desktop (a bar with a Menu button under 800 px),
  * so the links, Quick jump, the account and Sign out stay in one steady place across pages.
  */
 export function Shell({ user, hash, onSignOut, children }: { user: User; hash: string; onSignOut: () => void; children: ReactNode }) {
@@ -66,13 +66,6 @@ export function Shell({ user, hash, onSignOut, children }: { user: User; hash: s
   const [open, setOpen] = useState(false);
   const [closing, setClosing] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
-  const [collapsed, setCollapsed] = useState(() => {
-    try {
-      return typeof localStorage !== "undefined" && localStorage.getItem("kymavo.sidebar.collapsed") === "true";
-    } catch {
-      return false;
-    }
-  });
   const menuButton = useRef<HTMLButtonElement>(null);
   const pill = useSlidingPill<HTMLElement>();
   const menu = pill.containerRef;
@@ -98,7 +91,7 @@ export function Shell({ user, hash, onSignOut, children }: { user: User; hash: s
         const { next, changes } = diffLiveRuns(prev, rows);
         prev = next;
         for (const change of changes) {
-          pushToast(liveRunToast(change, tRef.current));
+          if (change.kind === "finished") pushToast(liveRunToast(change, tRef.current));
           window.dispatchEvent(new CustomEvent(LIVE_RUN_EVENT, { detail: change }));
           if (change.kind === "finished") window.dispatchEvent(new Event("daloy:usage"));
         }
@@ -119,18 +112,6 @@ export function Shell({ user, hash, onSignOut, children }: { user: User; hash: s
       document.removeEventListener("visibilitychange", onVisible);
     };
   }, [canWatchRuns]);
-
-  const toggleCollapsed = () => {
-    setCollapsed((was) => {
-      const next = !was;
-      try {
-        localStorage.setItem("kymavo.sidebar.collapsed", String(next));
-      } catch {
-        // Ignore storage errors in restricted browsing contexts.
-      }
-      return next;
-    });
-  };
 
   // The phone menu and Quick jump close on any page change, the browser's Back button included.
   useEffect(() => { setOpen(false); setClosing(false); setPaletteOpen(false); }, [hash]);
@@ -159,13 +140,6 @@ export function Shell({ user, hash, onSignOut, children }: { user: User; hash: s
       if (isQuickJumpShortcut(event)) {
         event.preventDefault();
         setPaletteOpen((was) => !was);
-        return;
-      }
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "b") {
-        const target = event.target as HTMLElement | null;
-        if (target?.closest("input, textarea, select, [contenteditable='true']")) return;
-        event.preventDefault();
-        toggleCollapsed();
       }
     };
     window.addEventListener("keydown", onKeyDown);
@@ -200,7 +174,6 @@ export function Shell({ user, hash, onSignOut, children }: { user: User; hash: s
       if (open) closePhone();
     }}>
       <aside className="sidebar console-header"
-        data-collapsed={collapsed || undefined}
         data-closing={closing || undefined} inert={closing}
         onAnimationEnd={event => {
           if (event.animationName === "rail-sheet-out") { setOpen(false); setClosing(false); }
@@ -208,19 +181,6 @@ export function Shell({ user, hash, onSignOut, children }: { user: User; hash: s
         <div className="sidebar-top">
           <svg className="rail-brand" aria-label="kymavo" role="img"><use href="/navigation.svg#mark" /></svg>
           <span className="sidebar-name rail-label">kymavo</span>
-          <button
-            type="button"
-            className="quiet rail-collapse-btn"
-            aria-expanded={!collapsed}
-            aria-keyshortcuts="Control+B Meta+B"
-            aria-label={t(collapsed ? "Expand sidebar" : "Collapse sidebar")}
-            title={t(collapsed ? "Expand sidebar (Ctrl+B)" : "Collapse sidebar (Ctrl+B)")}
-            onClick={toggleCollapsed}
-          >
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true">
-              <path d="M10 3L5 8l5 5" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </button>
           {open
             ? <button type="button" className="quiet phone-close" onClick={closePhone}>{t("Close")}</button>
             : owner && <a href="#/new" className="primary top-new">{t("New")}</a>}
@@ -253,7 +213,6 @@ export function Shell({ user, hash, onSignOut, children }: { user: User; hash: s
             {link("#/team", "Team", "team")}
             {link("#/apps", "Apps", "apps")}
             {link("#/settings/business", "Business", "business")}
-            {link("#/advanced", "Advanced", "advanced")}
           </>}
           {link("#/settings", "Settings", "settings")}
           {owner && <AiMeter usage={usage} className="ai-meter rail-usage" />}
@@ -286,7 +245,7 @@ export function Shell({ user, hash, onSignOut, children }: { user: User; hash: s
         </button>
       </nav>
       <div className="shell-main" inert={open}>{children}</div>
-      <CommandPalette open={paletteOpen} role={user.role} currentHash={hash} onClose={() => setPaletteOpen(false)} />
+      <CommandPalette open={paletteOpen} role={user.role} admin={user.admin === true} currentHash={hash} onClose={() => setPaletteOpen(false)} />
       <ToastHost />
     </div>
   );

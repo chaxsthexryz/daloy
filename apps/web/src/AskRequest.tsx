@@ -172,7 +172,7 @@ export function AskRequest({ reference, run }: { reference?: string; run?: Asked
 
 const askHead = (t: ReturnType<typeof useLanguage>["t"], last: string, sub?: string) => (
   <PageHead
-    crumbs={[{ label: "kymavo", href: "#/" }, { label: t("Activity"), href: "#/activity" }, { label: last }]}
+    crumbs={[{ label: t("Activity"), href: "#/activity" }, { label: last }]}
     title={t("Ask about a request")}
     sub={sub}
     actions={<a className="act-button" href="#/activity">{t("Workspace activity")}</a>}

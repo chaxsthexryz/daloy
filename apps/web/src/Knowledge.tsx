@@ -64,9 +64,11 @@ export function KnowledgePage() {
   return (
     <main className="page wk kn">
       <header className="wk-head">
-        <div className="wk-title-row">
-          <h1>{t("Knowledge")}</h1>
-          {state && <span className="wk-sub">{t("{count} entries", { count: state.entries.length })}</span>}
+        <div>
+          <div className="wk-title-row">
+            <h1>{t("Knowledge")}</h1>
+            {state && <span className="wk-sub">{t("{count} entries", { count: state.entries.length })}</span>}
+          </div>
         </div>
       </header>
       <p className="wk-lead">{t("Write what guests ask about: rooms, rates, policies, questions and links. The concierge answers only from the published version, so check prices before you publish.")}</p>

@@ -1,4 +1,5 @@
 import "./workspace.css";
+import { Breadcrumb } from "./Breadcrumb";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { api } from "./api";
 import { useLanguage } from "./Language";
@@ -52,10 +53,12 @@ export function ResourcesPage() {
   return (
     <main className="page wk wk-resources">
       <header className="wk-head">
-        <div className="wk-title-row">
-          <a className="wk-back wk-back-quiet" href="#/advanced">{t("Advanced")}</a>
-          <h1>{t("Resources")}</h1>
-          {counts && <span className="wk-sub">{t("{active} active, {archived} archived", counts)}</span>}
+        <div>
+          <Breadcrumb items={[{ label: t("Settings"), href: "#/settings" }, { label: t("Resources") }]} />
+          <div className="wk-title-row">
+            <h1>{t("Resources")}</h1>
+            {counts && <span className="wk-sub">{t("{active} active, {archived} archived", counts)}</span>}
+          </div>
         </div>
       </header>
       <p className="wk-lead">{t("People, rooms or tables a form can be booked for. Add a field of type resource to a form to let people choose one.")}</p>

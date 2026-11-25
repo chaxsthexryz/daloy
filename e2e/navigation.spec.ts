@@ -88,12 +88,14 @@ test("Settings in the menu sets light or dark on this device, and System follows
   const surface = page.getByRole("main");
   const background = () => surface.evaluate((el) => getComputedStyle(el).backgroundColor);
   expect(await theme()).toBe("light");
-  await expect(page.locator(".shell-main")).toHaveCSS("background-color", "rgb(242, 245, 252)");
+  await expect(page.locator(".shell-main")).toHaveCSS("background-color", "rgb(250, 250, 250)");
 
   await page.getByRole("link", { name: "Settings", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Settings", level: 1 })).toBeVisible();
   await expect(page.getByText(/Signed in as nav-\d+@test\.local, Owner\./)).toBeVisible();
-  await expect(page.getByRole("link", { name: "AI model" })).toHaveAttribute("href", "#/settings/ai");
+  await expect(page.getByRole("link", { name: "Resources" })).toHaveAttribute("href", "#/resources");
+  await expect(page.getByRole("link", { name: "AI model" })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "API tokens" })).toHaveCount(0);
   const light = await background();
   await page.getByLabel("Dark").check();
   expect(await theme()).toBe("dark");
@@ -110,8 +112,8 @@ test("Settings in the menu sets light or dark on this device, and System follows
   await page.getByRole("link", { name: "Automations", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Automations", exact: true })).toBeVisible();
   expect(await theme()).toBe("dark");
-  await expect(page.locator(".shell-main")).toHaveCSS("background-color", "rgb(11, 16, 32)");
-  await expect(page.locator("main.ops")).toHaveCSS("background-color", "rgb(19, 26, 48)");
+  await expect(page.locator(".shell-main")).toHaveCSS("background-color", "rgb(9, 9, 11)");
+  await expect(page.locator("main.ops")).toHaveCSS("background-color", "rgb(9, 9, 11)");
   await page.getByRole("link", { name: "Settings", exact: true }).click();
   await expect(page.getByLabel("Dark")).toBeChecked();
   await expect.poll(background).not.toBe(light);
@@ -128,10 +130,10 @@ test("Settings in the menu sets light or dark on this device, and System follows
 test("Apps lists each app as a card, and Connect opens that app's own setup", async ({ page }) => {
   await signUp(page);
   await page.getByRole("link", { name: "Apps" }).first().click();
-  await expect(page.getByRole("button", { name: "All 15" })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("button", { name: "All 16" })).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByRole("button", { name: "Connected 0" })).toBeVisible();
   const more = page.getByRole("region", { name: "More" });
-  for (const name of ["Gmail", "Outlook", "Google Sheets", "Slack", "Microsoft Teams", "Discord", "Telegram", "Facebook Messenger & Instagram", "Google Calendar", "Google Drive", "PayMongo", "Airtable", "Notion", "Trello", "Shopify"]) await expect(more.getByRole("heading", { name, exact: true })).toBeVisible();
+  for (const name of ["Gmail", "Outlook", "Google Sheets", "Slack", "Microsoft Teams", "Discord", "Telegram", "Facebook Messenger & Instagram", "WhatsApp Cloud API", "Google Calendar", "Google Drive", "PayMongo", "Airtable", "Notion", "Trello", "Shopify"]) await expect(more.getByRole("heading", { name, exact: true })).toBeVisible();
 
   await page.getByLabel("Find an app").fill("sla");
   await expect(more.getByRole("listitem")).toHaveCount(1);

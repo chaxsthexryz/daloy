@@ -58,7 +58,29 @@ export function counts(list: Listed[]) {
   return c;
 }
 
-const TRIGGERS: Record<string, string> = { form: "Form", email: "Email in", schedule: "Schedule", webhook: "Webhook", manual: "Manual", payment: "Payment" };
+const TRIGGERS: Record<string, string> = {
+  form: "Form",
+  email: "Email in",
+  schedule: "Schedule",
+  webhook: "Webhook",
+  manual: "Manual",
+  payment: "Payment",
+  telegram_message: "Telegram",
+  meta_dm: "Messenger",
+  whatsapp_message: "WhatsApp",
+  shopify_order: "Shopify",
+  sheets_row: "Google Sheets",
+  calendar_event: "Google Calendar",
+  drive_file: "Google Drive",
+  gmail_message: "Gmail",
+  outlook_message: "Outlook",
+  slack_message: "Slack",
+  discord_message: "Discord",
+  airtable_record: "Airtable",
+  notion_page: "Notion",
+  trello_card: "Trello",
+  page_changed: "Web page",
+};
 
 /** A trigger type in a word or two for the Trigger column. An unknown type shows as it is, no type shows nothing. */
 export const triggerLabel = (type: string | undefined) => (type === undefined ? "" : (TRIGGERS[type] ?? type));

@@ -11,7 +11,7 @@ import { requestStatus, sentOn } from "./lib/my-requests";
 import { canChangeRole, canInvite, canRemove, groupMembers, memberRoles, type Member, type MemberRole, type Role } from "./lib/team";
 
 export type { Role };
-export type User = { id: string; email: string; workspaceId: string; role: Role; language?: "en" | "tl"; ask?: boolean };
+export type User = { id: string; email: string; workspaceId: string; role: Role; language?: "en" | "tl"; ask?: boolean; admin?: boolean };
 
 const ROLE_LABEL: Record<Role, string> = { owner: "Owner", operator: "Operator", approver: "Approver", requester: "Requester" };
 const GROUP_LABEL: Record<Role, string> = { owner: "Owner", operator: "Operators", approver: "Approvers", requester: "Requesters" };
@@ -104,7 +104,6 @@ export function TeamPage({ user }: { user: User }) {
     <main className="page wk wk-team">
       <header className="wk-head">
         <div>
-          {phone && <p className="wk-eyebrow"><Text>Workspace</Text></p>}
           <div className="wk-title-row">
             <h1>{t("Team")}</h1>
             {list && <span className="wk-sub">{list.length === 1 ? t("1 member") : t("{count} members", { count: list.length })}</span>}

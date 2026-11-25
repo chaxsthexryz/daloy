@@ -1,8 +1,8 @@
 import "./automations-ops.css";
 import "./guided-pages.css";
 import "./request-access.css";
-import { Text } from "./Language";
-import { useLanguage } from "./Language";
+import { Text, useLanguage } from "./Language";
+import { Breadcrumb } from "./Breadcrumb";
 import type { Language } from "./lib/locale";
 import {
   defaultAnswers,
@@ -93,9 +93,7 @@ export function TryOfficeRequest({ email }: { email: string }) {
     <main className="page ops gp motion-page">
       <header className="ops-head">
         <div className="gp-title">
-          <p className="gp-crumb">
-            <a href="#/"><Text>Automations</Text></a> / <a href="#/new"><Text>New automation</Text></a>
-          </p>
+          <Breadcrumb items={[{ label: t("Library"), href: "#/new" }, { label: t("Preview an office request") }]} />
           <h1><Text>Preview an office request</Text></h1>
         </div>
         <span className="gp-tag"><Text>Preview only</Text></span>
@@ -318,9 +316,7 @@ function useWizard<S extends string, A extends { name: string }>(wf: Detail, ste
       <main className="page ops gp motion-page">
         <header className="ops-head">
           <div className="gp-title">
-            <p className="gp-crumb">
-              <a href="#/"><Text>Automations</Text></a> / <Text>Guided setup</Text>
-            </p>
+            <Breadcrumb items={[{ label: t("Automations"), href: "#/" }, { label: wf.name }]} />
             <h1>{wf.name}</h1>
           </div>
           <span className="gp-tag"><Text>Draft</Text></span>
@@ -652,9 +648,7 @@ function LivePage({ wf, formId }: { wf: Detail; formId: string }) {
     <main className="page ops gp gp-live motion-page">
       <header className="ops-head">
         <div className="gp-title">
-          <p className="gp-crumb">
-            <a href="#/"><Text>Automations</Text></a> / {wf.name}
-          </p>
+          <Breadcrumb items={[{ label: t("Automations"), href: "#/" }, { label: wf.name }]} />
           <h1>{wf.name}</h1>
         </div>
         <p role="status" className="gp-status">

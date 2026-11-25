@@ -74,7 +74,7 @@ export function startLlmFake(port: number) {
       const change = body.messages.some((m) => m.content.startsWith("Change this workflow"));
       const payload = body.messages.some((m) => m.content.includes("boss approval")) ? warned : body.messages.some((m) => m.content.includes("semester schedule")) ? scheduled : change ? changed : built;
       // The chat (#/ai, decision 0048) asks for a question or a draft: the first message alone gets the question.
-      if (body.messages[0]?.content.startsWith("You help someone build an automation")) {
+      if (body.messages[0]?.content.startsWith("You help someone build a kymavo automation")) {
         const said = body.messages.filter((m) => m.role === "user" && !m.content.startsWith("The current draft is:"));
         const hasCurrent = body.messages.some((m) => m.content.startsWith("The current draft is:"));
         const reply =

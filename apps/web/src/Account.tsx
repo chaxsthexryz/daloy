@@ -1,5 +1,6 @@
 import "./workspace-admin.css";
 import "./workspace.css";
+import { Breadcrumb } from "./Breadcrumb";
 import { useState, type FormEvent } from "react";
 import { api } from "./api";
 import { useLanguage } from "./Language";
@@ -120,7 +121,13 @@ export function AccountPage({ backToRequests }: { backToRequests?: boolean }) {
     <main className="page wk wk-account">
       <header className="wk-head">
         <div>
-          {backToRequests && <a className="wk-back" href="#/">{t("My requests")}</a>}
+          <Breadcrumb
+            items={
+              backToRequests
+                ? [{ label: t("My requests"), href: "#/" }, { label: t("Account") }]
+                : [{ label: t("Settings"), href: "#/settings" }, { label: t("Account") }]
+            }
+          />
           <div className="wk-title-row"><h1>{t("Account")}</h1></div>
         </div>
       </header>

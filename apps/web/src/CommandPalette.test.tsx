@@ -11,7 +11,7 @@ import {
 const id = (text: string) => text;
 
 describe("quickJumpItems", () => {
-  it("lists all 14 console pages for owners", () => {
+  it("lists 13 console pages for regular owners and adds Advanced for admins", () => {
     const items = quickJumpItems("owner", id);
     expect(items.map((item) => item.href)).toEqual([
       "#/",
@@ -25,10 +25,11 @@ describe("quickJumpItems", () => {
       "#/team",
       "#/apps",
       "#/settings/business",
-      "#/advanced",
       "#/settings",
       "#/account",
     ]);
+    const adminItems = quickJumpItems("owner", id, true);
+    expect(adminItems.map((item) => item.href)).toContain("#/advanced");
   });
 
   it("limits operators to their allowed 8 pages including conversations, receipts and knowledge", () => {

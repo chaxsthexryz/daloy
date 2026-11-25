@@ -60,8 +60,9 @@ const OFFICE: [href: string, name: string, note: string][] = [
   ["#/settings/business", "Business", "your business details and the website inquiry form"],
   ["#/team", "Team", "who can use kymavo and what each person may do"],
   ["#/resources", "Resources", "rooms, people and tables that bookings reserve"],
-  ["#/settings/ai", "AI model", "which model drafts and classifies, and its key"],
-  ["#/tokens", "API tokens", "for MCP clients and scripts"],
+];
+const ADMIN_OFFICE: [href: string, name: string, note: string][] = [
+  ["#/advanced", "Advanced", "AI model, API tokens and secrets"],
 ];
 
 /** #/settings: how the console looks on this device, the account, the plan, and (for owners) the office's settings in one list. */
@@ -91,7 +92,6 @@ export function SettingsPage({ user }: { user: User }) {
     <main className="page wk wk-settings">
       <header className="wk-head">
         <div>
-          {phone && <p className="wk-eyebrow"><Text>Workspace</Text></p>}
           <div className="wk-title-row">
             <h1>{t("Settings")}</h1>
             <span className="wk-sub">{phone ? `${user.email}, ${t(ROLES[user.role])}` : t("Signed in as {role}", { role: t(user.role) })}</span>
@@ -139,7 +139,7 @@ export function SettingsPage({ user }: { user: User }) {
       {owner && (
         <Card title={t("Your office")} id="office-card">
           <ul className="wk-office">
-            {OFFICE.map(([href, name, note]) => (
+            {(user.admin ? [...OFFICE, ...ADMIN_OFFICE] : OFFICE).map(([href, name, note]) => (
               <li key={href}>
                 <a href={href}><Text>{name}</Text></a>
                 <span><Text>{note}</Text></span>

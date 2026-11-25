@@ -1,4 +1,5 @@
 import "./workspace.css";
+import { Breadcrumb } from "./Breadcrumb";
 import { useLanguage } from "./Language";
 import { useEffect, useState, type FormEvent } from "react";
 import { api } from "./api";
@@ -131,9 +132,11 @@ export function AiModelPage() {
   return (
     <main className="page wk wk-ai">
       <header className="wk-head">
-        <div className="wk-title-row">
-          <a className="wk-back wk-back-quiet" href="#/settings">{t("Settings")}</a>
-          <h1>{t("AI model")}</h1>
+        <div>
+          <Breadcrumb items={[{ label: t("Settings"), href: "#/settings" }, { label: t("Advanced"), href: "#/advanced" }, { label: t("AI model") }]} />
+          <div className="wk-title-row">
+            <h1>{t("AI model")}</h1>
+          </div>
         </div>
       </header>
       <p className="wk-lead">{t("Every AI step in your workflows, and Build with AI, uses the model you pick here. You can switch at any time; saved keys are kept for each provider.")}</p>

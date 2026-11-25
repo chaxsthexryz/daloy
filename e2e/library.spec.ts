@@ -22,7 +22,7 @@ test("search and category chips narrow the cards, and a card previews before it 
   // Blank workflow and Build with AI come first, then the templates.
   await expect(page.getByRole("heading", { level: 3 }).first()).toHaveText("Blank workflow");
   await expect(page.getByRole("heading", { level: 3 }).nth(1)).toHaveText("Build with AI");
-  await expect(page.getByRole("button", { name: /^Preview: / })).toHaveCount(21);
+  await expect(page.getByRole("button", { name: /^Preview: / })).toHaveCount(25);
 
   await page.getByLabel("Search the library").fill("invoice");
   await expect(card("Invoice follow-up")).toBeVisible();

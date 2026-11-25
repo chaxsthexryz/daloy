@@ -18,7 +18,7 @@ export interface ShortcutEventLike {
 }
 
 /** Returns the Quick Jump entries visible to the signed-in role. */
-export function quickJumpItems(role: Role, t: (text: string) => string): QuickJumpItem[] {
+export function quickJumpItems(role: Role, t: (text: string) => string, admin = false): QuickJumpItem[] {
   const work = t("Work");
   const build = t("Build");
   const workspace = t("Workspace");
@@ -45,8 +45,10 @@ export function quickJumpItems(role: Role, t: (text: string) => string): QuickJu
       { href: "#/team", label: t("Team"), group: workspace, icon: "team" },
       { href: "#/apps", label: t("Apps"), group: workspace, icon: "apps" },
       { href: "#/settings/business", label: t("Business"), group: workspace, icon: "business" },
-      { href: "#/advanced", label: t("Advanced"), group: workspace, icon: "advanced" },
     );
+    if (admin) {
+      items.push({ href: "#/advanced", label: t("Advanced"), group: workspace, icon: "advanced" });
+    }
   }
 
   items.push(
@@ -81,11 +83,13 @@ export function isQuickJumpShortcut(event: ShortcutEventLike): boolean {
 export function CommandPalette({
   open,
   role,
+  admin = false,
   currentHash,
   onClose,
 }: {
   open: boolean;
   role: Role;
+  admin?: boolean;
   currentHash: string;
   onClose: () => void;
 }) {
@@ -103,7 +107,7 @@ export function CommandPalette({
 
   if (!open) return null;
 
-  const filtered = filterQuickJump(quickJumpItems(role, t), query);
+  const filtered = filterQuickJump(quickJumpItems(role, t, admin), query);
   const safeIndex = filtered.length > 0 ? Math.min(activeIndex, filtered.length - 1) : 0;
 
   function onInputKeyDown(event: KeyboardEvent<HTMLInputElement>) {

@@ -113,7 +113,7 @@ export function BookingsPage() {
   return (
     <main className="page act">
       <PageHead
-        crumbs={[{ label: "kymavo", href: "#/" }, { label: t("Bookings") }]}
+        crumbs={[]}
         title={t("Bookings")}
         sub={longDate(Date.now(), language)}
         actions={<a className="act-button" href="/bookings/export.csv" download>{t("Download CSV")}</a>}

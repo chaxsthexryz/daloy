@@ -1,4 +1,5 @@
 import "./workspace.css";
+import { Breadcrumb } from "./Breadcrumb";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { api } from "./api";
 import { useLanguage } from "./Language";
@@ -67,7 +68,7 @@ export function TokensPage() {
     <main className="page wk wk-tokens">
       <header className="wk-head">
         <div>
-          <a className="wk-back" href="#/advanced">{t("Advanced")}</a>
+          <Breadcrumb items={[{ label: t("Settings"), href: "#/settings" }, { label: t("Advanced"), href: "#/advanced" }, { label: t("API tokens") }]} />
           <div className="wk-title-row">
             <h1>{t("API tokens")}</h1>
             {active !== null && <span className="wk-sub">{t("{count} active", { count: active })}</span>}

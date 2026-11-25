@@ -3,7 +3,7 @@
   --text: var(--fg, #0f131a); --muted: var(--fg-muted, #5b6372); --surface: var(--daylight-bg, #ffffff); --sunken: var(--subtle, #fafafa); --bg: var(--daylight-bg, #ffffff);
   --border: var(--border-strong, #d1d5df); --border-soft: var(--border-hairline, #e6e8ee); --accent: var(--blue, #0b66ff); --accent-hover: var(--blue-deep, #0052d9); --accent-tint: var(--blue-soft, #eef4ff); --on-accent: #ffffff;
   --a7-line: #b8beca; --a7-dot: #cdd2dc; --a7-label: #3a3f4b; --a7-chip: #0052d9; --a7-progress: #4d7bff;
-  --a7-warn-line: #e5a93b; --a7-warn: #a3650a;
+  --a7-warn-line: #eab308; --a7-warn: #685500;
   --a7-ok: var(--green, #15803d); --a7-ok-bg: var(--green-soft, #ecfdf3); --a7-bad: var(--red, #c92a2a); --a7-bad-bg: var(--red-soft, #fff1f1); --a7-grey-bg: #f4f5f7;
   --a7-bar: #0f131a; --a7-bar-text: #ffffff; --a7-bar-muted: #b8beca; --a7-bar-off: #3a3f4b;
   display: flex; flex-direction: column; min-height: 100dvh;
@@ -11,12 +11,12 @@
 }
 :root[data-theme="dark"] .a7-editor {
   color-scheme: dark;
-  --text: var(--fg, #eef2ff); --muted: var(--fg-muted, #a3aecb); --surface: var(--daylight-bg, #131a30); --sunken: var(--subtle, #18213c); --bg: var(--daylight-bg, #131a30);
-  --border: var(--border-strong, #374672); --border-soft: var(--border-hairline, #243052); --accent: var(--blue, #8fb0ff); --accent-hover: var(--blue-deep, #b3c8ff); --accent-tint: var(--blue-soft, #1c2a55); --on-accent: #0b1020;
-  --a7-line: #5d6475; --a7-dot: #2c313d; --a7-label: #c9cfdb; --a7-chip: #c9d6ff; --a7-progress: #7496ff;
-  --a7-warn-line: #c98a1e; --a7-warn: #f0b552;
-  --a7-ok: var(--green, #7fcfa3); --a7-ok-bg: var(--green-soft, #173323); --a7-bad: var(--red, #f0a199); --a7-bad-bg: var(--red-soft, #401c18); --a7-grey-bg: #2a2f3b;
-  --a7-bar: #262a35; --a7-bar-text: #f4f6fa; --a7-bar-muted: #aeb7c8; --a7-bar-off: #4a5060;
+  --text: #fafafa; --muted: #a1a1aa; --surface: #111216; --sunken: #09090b; --bg: #09090b;
+  --border: #3f3f46; --border-soft: #27272a; --accent: #5c9cff; --accent-hover: #8cb9ff; --accent-tint: #17233b; --on-accent: #091020;
+  --a7-line: #52525b; --a7-dot: #2e313d; --a7-label: #d4d4d8; --a7-chip: #96bcff; --a7-progress: #5c9cff;
+  --a7-warn-line: #eab308; --a7-warn: #fde047;
+  --a7-ok: #6ee7b7; --a7-ok-bg: #132c21; --a7-bad: #fca5a5; --a7-bad-bg: #3a1718; --a7-grey-bg: #181a20;
+  --a7-bar: #181a20; --a7-bar-text: #fafafa; --a7-bar-muted: #a1a1aa; --a7-bar-off: #3f3f46;
 }
 /* The shared Sheet and its buttons read the workspace tokens (workspace.css), which only `.wk` pages define; without these the step sheet, Explain and Turn on drew with no background. */
 .a7-editor { --w-bg: var(--surface); --w-ink: var(--text); --w-muted: var(--muted); --w-line: var(--border-soft); --w-field: var(--border); --w-canvas: var(--sunken); --w-accent: var(--accent); --w-on-accent: var(--on-accent); --w-red: var(--a7-bad); }

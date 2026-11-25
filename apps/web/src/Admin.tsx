@@ -1,6 +1,7 @@
 import "./workspace.css";
 import "./admin.css";
 import { useEffect, useState } from "react";
+import { Breadcrumb } from "./Breadcrumb";
 import { api, ApiError } from "./api";
 import { useLanguage } from "./Language";
 import { shortDate, shortDateTime } from "./lib/advanced";
@@ -54,7 +55,10 @@ export function AdminPage() {
   return (
     <main className="page wk ad">
       <header className="wk-head">
-        <div className="wk-title-row"><h1>{t("Platform admin")}</h1></div>
+        <div>
+          <Breadcrumb items={[{ label: t("Settings"), href: "#/settings" }, { label: t("Platform admin") }]} />
+          <div className="wk-title-row"><h1>{t("Platform admin")}</h1></div>
+        </div>
       </header>
       <p className="wk-lead wk-narrow-text">{t("This page reads across every workspace. It never shows run data, step data, error text or secrets.")}</p>
       <p role="alert" className="wk-note bad" hidden={!error}>{error}</p>

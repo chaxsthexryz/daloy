@@ -288,7 +288,11 @@ ${this.config.publicUrl}/#/reset-password/${token}` });
 
   /** The user plus whether Ask about a request is on (AI_ASK, decision 0041), so the console knows without a reload. */
   private signedIn(user: SessionUser) {
-    return { ...user, ask: this.config.ask === true };
+    return {
+      ...user,
+      ask: this.config.ask === true,
+      admin: isPlatformAdmin(this.config.platformAdmins, user.email),
+    };
   }
 
   /** The cookie holds 32 random bytes; the database holds only their SHA-256. */

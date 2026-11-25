@@ -110,14 +110,14 @@ function Route({ hash, user }: { hash: string; user: User }) {
   // Platform admin (A1): any signed-in role may open it; the API decides who sees anything (PLATFORM_ADMINS).
   if (hash === "#/admin") return <AdminPage />;
   if (hash === "#/try/office-request") return <TryOfficeRequest email={user.email} />;
-  if (hash === "#/advanced" && user.role === "owner") return <AdvancedPage />;
+  if (hash === "#/advanced" && user.role === "owner" && user.admin === true) return <AdvancedPage />;
   if (hash === "#/new" && user.role === "owner") return <NewAutomationPage email={user.email} />;
   if (hash === "#/ai" && user.role === "owner") return <BuildWithAiPage email={user.email} />;
-  if (hash === "#/secrets" && user.role === "owner") return <SecretsPage />;
-  if (hash === "#/tokens") return <TokensPage />;
+  if (hash === "#/secrets" && user.role === "owner" && user.admin === true) return <SecretsPage />;
+  if (hash === "#/tokens" && user.admin === true) return <TokensPage />;
   if (hash === "#/settings") return <SettingsPage user={user} />;
   if (hash === "#/account") return <AccountPage />;
-  if (hash === "#/settings/ai") return <AiModelPage />;
+  if (hash === "#/settings/ai" && user.admin === true) return <AiModelPage />;
   if (hash === "#/apps") return <AppsPage />;
   // #/apps/<slug>-<outcome> is where the OAuth consent callback lands (decision 0058). Outlook's callback from decision
   // 0023 still lands on #/settings/business/outlook-<outcome>.

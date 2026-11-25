@@ -32,26 +32,28 @@
   --w-focus: #0b66ff;
 }
 
-main.page.wk { display: flex; flex-direction: column; gap: 16px; width: 100%; max-width: none; min-height: 100%; margin: 0; padding: 22px 28px; box-sizing: border-box; background: var(--w-bg); color: var(--w-ink); font-family: "Inter", var(--font-sans); font-size: 14px; line-height: 20px; overflow-wrap: anywhere; }
+main.page.wk { display: flex; flex-direction: column; gap: 16px; width: 100%; max-width: none; min-height: 100%; margin: 0; padding: 0 0 36px; box-sizing: border-box; background: var(--w-canvas); color: var(--w-ink); font-family: "Inter", var(--font-sans); font-size: 14px; line-height: 20px; overflow-wrap: anywhere; }
+:root[data-theme="dark"] main.page.wk { background: var(--bg, #09090b); }
 .wk :focus-visible { outline: 2px solid var(--w-focus); outline-offset: 2px; }
 .wk h1, .wk h2, .wk p { margin: 0; }
 .wk a { color: var(--w-accent); text-underline-offset: 3px; }
 .wk-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 
-/* Page head: title with a count or a role beside it. */
-.wk > * { width: 100%; max-width: 1004px; box-sizing: border-box; }
+/* Page head: white strip locked to Automations header spacing, floating white cards below on #fafafa canvas. */
+.wk > *:not(.wk-head, dialog) { width: calc(100% - 48px); max-width: 1080px; margin-inline: 24px; box-sizing: border-box; }
 .wk-head, .wk-title-row { display: flex; align-items: baseline; gap: 2px 14px; }
 .wk-title-row { flex-wrap: wrap; }
 .wk-title-row h1 { flex: none; }
-.wk-head { align-items: center; justify-content: space-between; }
-.wk-head h1 { font-size: 24px; line-height: 30px; font-weight: 700; letter-spacing: -0.02em; }
+.wk-head { align-items: flex-end; justify-content: space-between; width: 100%; padding: 20px 24px 20px; background: var(--w-bg); border-bottom: 1px solid var(--w-line); }
+.wk-head > div:first-child { display: flex; flex-direction: column; gap: 4px; }
+.wk-head h1 { font-size: clamp(24px, 2.2vw, 28px); line-height: 1.15; font-weight: 650; letter-spacing: -0.03em; }
 .wk-sub { color: var(--w-muted); font-size: 14px; }
 .wk-eyebrow { color: var(--w-muted); font-size: 14px; }
 .wk-back { font-size: 14px; font-weight: 600; text-decoration: none; }
 .wk-head-action { margin-left: auto; align-self: center; }
 
-/* Cards: a pale header strip over a bordered body. */
-.wk-card { min-width: 0; border: 1px solid var(--w-line); border-radius: 10px; overflow: hidden; background: var(--w-bg); }
+/* Cards: rounded 12px white blocks over #fafafa canvas. */
+.wk-card { min-width: 0; border: 1px solid var(--w-line); border-radius: 12px; overflow: hidden; background: var(--w-bg); }
 .wk-card-head { display: flex; align-items: baseline; gap: 10px; padding: 12px 16px; background: var(--w-canvas); border-bottom: 1px solid var(--w-line); font-size: 14px; font-weight: 400; }
 .wk-card-head b { font-weight: 700; }
 .wk-card-head span { color: var(--w-muted); font-size: 13px; }

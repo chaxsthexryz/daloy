@@ -7,42 +7,41 @@
 :root {
   color-scheme: light dark;
 
-  /* Colour: surfaces and text. The first eleven names already exist in styles.css. */
-  --bg: #f2f5fc;
+  /* Daylight Minimal Light tokens + Sunny Yellow (zero amber). */
+  --bg: #fafafa;
   --surface: #ffffff;
-  --text: #0f1e45;
-  --muted: #4a5878;
-  --border: #7c88a6;
-  --accent: #1b45c9;
+  --text: #0f131a;
+  --muted: #5b6372;
+  --border: #d1d5df;
+  --accent: #0b66ff;
   --on-accent: #ffffff;
-  --danger: #a3261c;
-  --ok: #17643a;
-  --warn: #7a4b00;
-  --focus: #1b45c9;
-  /* New names. */
-  --sunken: #e6ebf8;
-  --border-soft: #c9d3ee;
-  --accent-hover: #14349a;
-  --accent-tint: #dbe4ff;
+  --danger: #c92a2a;
+  --ok: #15803d;
+  --warn: #685500;
+  --focus: #0b66ff;
+  --sunken: #f4f5f7;
+  --border-soft: #e6e8ee;
+  --accent-hover: #0052d9;
+  --accent-tint: #eef4ff;
 
-  /* Colour: the plain states. Soft fills with darker text of the same hue; only Needs you is solid, in the main blue. */
-  --done: #dff1e6;
-  --on-done: #17643a;
-  --waiting: #fbefc9;
-  --on-waiting: #7a4b00;
-  --needs-you: #1b45c9;
+  /* Status fills with Sunny Yellow for waiting/needs-you. */
+  --done: #ecfdf3;
+  --on-done: #15803d;
+  --waiting: #fffbe6;
+  --on-waiting: #685500;
+  --needs-you: #0b66ff;
   --on-needs-you: #ffffff;
-  --problem: #fbe3e0;
-  --on-problem: #a3261c;
-  --working: #e6ebf8;
-  --on-working: #0f1e45;
+  --problem: #fff1f1;
+  --on-problem: #c92a2a;
+  --working: #eef4ff;
+  --on-working: #0f131a;
 
-  /* Colour: lines for the run animation, node borders and the state edge on cards. Each meets 3:1 on --surface and --bg. */
-  --run-path: #2f8a57;
-  --run-failed: #c2483e;
-  --run-wait: #b0791f;
-  --run-working: #1b45c9;
-  --run-idle: #7c88a6;
+  /* Run lines & edges (contrast >= 3:1). */
+  --run-path: #15803d;
+  --run-failed: #c92a2a;
+  --run-wait: #ca8a04;
+  --run-working: #0b66ff;
+  --run-idle: #9ca3af;
 
   /* Type */
   --font-sans: "Inter", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
@@ -101,9 +100,10 @@
   --reveal-blur: 8px;
 
   /* Daylight Minimal tokens */
-  --sidebar-bg: #fafafa;
+  --sidebar-bg: #ffffff;
   --daylight-bg: #ffffff;
   --subtle: #f4f5f7;
+  --subtle-2: #e6e8ee;
   --border-hairline: #e6e8ee;
   --border-strong: #d1d5df;
   --fg: #0f131a;
@@ -115,70 +115,78 @@
   --red-soft: #fff1f1;
   --green: #15803d;
   --green-soft: #ecfdf3;
-  --amber: #8a5300;
-  --amber-soft: #fef6e7;
+  --yellow: #685500;
+  --yellow-soft: #fffbe6;
+  --yellow-dot: #eab308;
+  --yellow-border: #fde047;
+  --amber: #685500;
+  --amber-soft: #fffbe6;
   --sb-w: 228px;
   --ease-spring: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-snappy: cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
-/* The theme is an attribute set before the first paint by public/theme.js: System follows the device, and Settings can
-   fix Light or Dark (lib/theme.ts). */
+/* Studio Cobalt Dark theme + Sunny Yellow waiting states. */
 :root[data-theme="light"] { color-scheme: only light; }
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --bg: #0b1020;
-  --surface: #131a30;
-  --text: #eef2ff;
-  --muted: #a3aecb;
-  --border: #6b7799;
-  --accent: #8fb0ff;
-  --on-accent: #0b1020;
-  --danger: #f0a199;
-  --ok: #7fcfa3;
-  --warn: #e6c26a;
-  --focus: #8fb0ff;
-  --sunken: #0b1020;
-  --border-soft: #2a3558;
-  --accent-hover: #b3c8ff;
-  --accent-tint: #1c2a55;
+  --bg: #09090b;
+  --surface: #111216;
+  --text: #fafafa;
+  --muted: #a1a1aa;
+  --border: #3f3f46;
+  --accent: #5c9cff;
+  --on-accent: #091020;
+  --danger: #fca5a5;
+  --ok: #6ee7b7;
+  --warn: #fde047;
+  --focus: #5c9cff;
+  --sunken: #181a20;
+  --border-soft: #27272a;
+  --accent-hover: #8cb9ff;
+  --accent-tint: #17233b;
 
-  --done: #173323;
-  --on-done: #7fcfa3;
-  --waiting: #3a2f10;
-  --on-waiting: #e6c26a;
-  --needs-you: #8fb0ff;
-  --on-needs-you: #0b1020;
-  --problem: #401c18;
-  --on-problem: #f0a199;
-  --working: #232c4a;
-  --on-working: #eef2ff;
+  --done: #132c21;
+  --on-done: #6ee7b7;
+  --waiting: #332c0a;
+  --on-waiting: #fde047;
+  --needs-you: #5c9cff;
+  --on-needs-you: #091020;
+  --problem: #3a1718;
+  --on-problem: #fca5a5;
+  --working: #17233b;
+  --on-working: #fafafa;
 
-  --run-path: #5fb98a;
-  --run-failed: #e08379;
-  --run-wait: #d1ab4f;
-  --run-working: #8fb0ff;
-  --run-idle: #6b7799;
+  --run-path: #6ee7b7;
+  --run-failed: #fca5a5;
+  --run-wait: #facc15;
+  --run-working: #5c9cff;
+  --run-idle: #71717a;
 
-  --shadow-overlay: 0 8px 24px rgb(0 0 0 / 0.5);
+  --shadow-overlay: 0 8px 24px rgb(0 0 0 / 0.55);
 
-  /* Daylight Minimal dark counterparts */
-  --sidebar-bg: #0e1424;
-  --daylight-bg: #131a30;
-  --subtle: #18213c;
-  --border-hairline: #243052;
-  --border-strong: #374672;
-  --fg: #eef2ff;
-  --fg-muted: #a3aecb;
-  --blue: #8fb0ff;
-  --blue-deep: #b3c8ff;
-  --blue-soft: #1c2a55;
-  --red: #f0a199;
-  --red-soft: #401c18;
-  --green: #7fcfa3;
-  --green-soft: #173323;
-  --amber: #e6c26a;
-  --amber-soft: #3a2f10;
+  /* Studio Cobalt Dark counterparts */
+  --sidebar-bg: #0d0e12;
+  --daylight-bg: #111216;
+  --subtle: #181a20;
+  --subtle-2: #22252e;
+  --border-hairline: #27272a;
+  --border-strong: #3f3f46;
+  --fg: #fafafa;
+  --fg-muted: #a1a1aa;
+  --blue: #5c9cff;
+  --blue-deep: #8cb9ff;
+  --blue-soft: #17233b;
+  --red: #fca5a5;
+  --red-soft: #3a1718;
+  --green: #6ee7b7;
+  --green-soft: #132c21;
+  --yellow: #fde047;
+  --yellow-soft: #332c0a;
+  --yellow-dot: #facc15;
+  --yellow-border: #66550f;
+  --amber: #fde047;
+  --amber-soft: #332c0a;
 }
 
 * { box-sizing: border-box; }
@@ -204,12 +212,12 @@ textarea { min-height: 9rem; resize: vertical; line-height: var(--leading-body);
 input, textarea { font-variant-numeric: tabular-nums; }
 textarea { font-size: var(--text-sm); }
 textarea#payload { font-family: var(--font-mono); }
-button { min-height: var(--target); padding: 0 var(--space-4); background: var(--surface); color: var(--accent); border: var(--border-width) solid var(--accent); border-radius: var(--radius-md); font-weight: var(--weight-medium); white-space: nowrap; cursor: pointer; transition: background-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease); }
-button:hover:not(:disabled) { background: var(--accent-tint); color: var(--accent); }
+button { min-height: 36px; padding: 0 14px; background: var(--surface); color: var(--text); border: var(--border-width) solid var(--border); border-radius: var(--radius-md); font-weight: 550; font-size: 13px; white-space: nowrap; cursor: pointer; transition: background-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease); }
+button:hover:not(:disabled) { background: var(--sunken); color: var(--text); border-color: var(--muted); }
 button:disabled, button.primary:disabled { background: var(--sunken); border-color: var(--border-soft); color: var(--muted); opacity: 0.65; cursor: not-allowed; }
-button.primary, a.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+button.primary, a.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 600; }
 button.primary:hover:not(:disabled), a.primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); color: var(--on-accent); }
-a.primary { display: inline-flex; align-items: center; min-height: var(--target); padding: 0 var(--space-4); border: var(--border-width) solid var(--accent); border-radius: var(--radius-md); font-weight: var(--weight-medium); text-decoration: none; white-space: nowrap; }
+a.primary { display: inline-flex; align-items: center; min-height: 36px; padding: 0 14px; border: var(--border-width) solid var(--accent); border-radius: var(--radius-md); font-weight: 600; font-size: 13px; text-decoration: none; white-space: nowrap; }
 .sidebar nav a.primary { margin-bottom: var(--space-2); background: var(--accent); color: var(--on-accent); }
 .sidebar nav a.primary:hover { background: var(--accent-hover); color: var(--on-accent); }
 .filters { display: flex; flex-wrap: wrap; align-items: end; gap: var(--space-2) var(--space-3); margin: 0 0 var(--space-4); }

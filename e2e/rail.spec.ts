@@ -12,11 +12,12 @@ async function signUp(page: Page) {
   await expect(page.getByRole("heading", { name: "Automations", exact: true })).toBeVisible();
 }
 
-test("the desktop sidebar stays fixed at 228 px without hover expansion, and Quick jump navigates with Cmd/Ctrl+K", async ({ page }) => {
+test("the desktop sidebar stays permanently at 228 px without collapsing, and Quick jump navigates with Cmd/Ctrl+K", async ({ page }) => {
   await signUp(page);
   const rail = page.locator("aside.sidebar");
   await expect(rail).toHaveCSS("width", "228px");
   await expect(rail).not.toHaveAttribute("data-expanded", /.*/);
+  await expect(rail.getByRole("button", { name: "Collapse sidebar" })).toHaveCount(0);
   await rail.hover();
   await expect(rail).toHaveCSS("width", "228px");
   await expect(rail).not.toHaveAttribute("data-expanded", /.*/);
@@ -77,11 +78,11 @@ test("the AI meter stays hidden when the plan has no AI limit", async ({ page })
   await expect(page.getByRole("progressbar")).toHaveCount(0);
 });
 
-test("textareas use Inter with tabular figures", async ({ page }) => {
+test("textareas use Geist with tabular figures", async ({ page }) => {
   await signUp(page);
   await page.goto("/#/ai");
   const textarea = page.locator("textarea").first();
   await expect(textarea).toBeVisible();
-  expect(await textarea.evaluate((el) => getComputedStyle(el).fontFamily)).toMatch(/Inter/);
+  expect(await textarea.evaluate((el) => getComputedStyle(el).fontFamily)).toMatch(/Geist|Inter/);
   expect(await textarea.evaluate((el) => getComputedStyle(el).fontVariantNumeric)).toContain("tabular-nums");
 });

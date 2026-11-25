@@ -134,51 +134,57 @@ export function AppsPage({ outcome }: { outcome?: { app: string; code: string } 
   const usage = open ? conns.usage?.[open] : undefined;
   return (
     <main className="page workspace-admin admin-apps" data-panel={!!open}>
-      <div className="apps-directory">
-        <Header title={t("Apps")} action={<span className="muted">{t("{count} of {total} connected", { count: activeTotal, total: APPS.length })}</span>} />
-        {!open && <p className="muted">{t("Everything here is optional. Each app is used only by the automations you turn on, and the demo works without any of them.")}</p>}
-        {outcome && !landed && <p role="alert" className="message error">{t("That sign-in took too long or was started by someone else. Start again from the app's Connect button.")}</p>}
-        <div className="directory-filters">
-          <div className="app-tabs" role="group" aria-label={t("Show")}>
-            <button type="button" aria-pressed={!onlyConnected} onClick={() => setOnlyConnected(false)}>{t("All {count}", {count: APPS.length})}</button>
-            <button type="button" aria-pressed={onlyConnected} onClick={() => setOnlyConnected(true)}>{t("Connected {count}", {count: total})}</button>
-          </div>
-          <input id="app-find" type="search" aria-label={t("Find an app")} placeholder={t("Find an app")} value={query} onChange={(e) => setQuery(e.target.value)} />
+      <header className="apps-head">
+        <div>
+          <Header title={t("Apps")} action={<span className="muted">{t("{count} of {total} connected", { count: activeTotal, total: APPS.length })}</span>} />
+          {!open && <p className="muted apps-lede">{t("Everything here is optional. Each app is used only by the automations you turn on, and the demo works without any of them.")}</p>}
         </div>
-        {!open && failed.length > 0 && <div className="app-warnings">
-          {failed.map(a => <button key={a.key} type="button" onClick={() => choose(a.key)}>{t("{app} needs attention", { app: a.name })}</button>)}
-        </div>}
-        {connected.length > 0 && group("Connected", connected)}
-        {!onlyConnected && more.length > 0 && group("More", more)}
-        {(onlyConnected ? connected : found).length === 0 && <div className="app-empty">
-          <p role="status">{onlyConnected && total === 0 ? t("Nothing is connected yet.") : t("No app matches.")}</p>
-          {query && <button onClick={() => setQuery("")}>{t("Clear search")}</button>}
-          {onlyConnected && more.length > 0 && query && group("In All apps", more)}
-        </div>}
-        {!open && <section className="email-intake" aria-labelledby="email-in-setup">
-          <h2 id="email-in-setup"><Text>Receive website form emails</Text></h2>
-          <p>{t("Connect a dedicated IMAP mailbox in an automation's Steps tab. Under Starts when, choose An email arrives, then connect the mailbox. Each automation has its own inbox settings.")}</p>
-          <a href="#/"><Text>Choose an automation</Text></a>
+      </header>
+      <div className="apps-body" data-panel={!!open}>
+        <div className="apps-directory">
+          {outcome && !landed && <p role="alert" className="message error">{t("That sign-in took too long or was started by someone else. Start again from the app's Connect button.")}</p>}
+          <div className="directory-filters">
+            <div className="app-tabs" role="group" aria-label={t("Show")}>
+              <button type="button" aria-pressed={!onlyConnected} onClick={() => setOnlyConnected(false)}>{t("All {count}", {count: APPS.length})}</button>
+              <button type="button" aria-pressed={onlyConnected} onClick={() => setOnlyConnected(true)}>{t("Connected {count}", {count: total})}</button>
+            </div>
+            <input id="app-find" type="search" aria-label={t("Find an app")} placeholder={t("Find an app")} value={query} onChange={(e) => setQuery(e.target.value)} />
+          </div>
+          {!open && failed.length > 0 && <div className="app-warnings">
+            {failed.map(a => <button key={a.key} type="button" onClick={() => choose(a.key)}>{t("{app} needs attention", { app: a.name })}</button>)}
+          </div>}
+          {connected.length > 0 && group("Connected", connected)}
+          {!onlyConnected && more.length > 0 && group("More", more)}
+          {(onlyConnected ? connected : found).length === 0 && <div className="app-empty">
+            <p role="status">{onlyConnected && total === 0 ? t("Nothing is connected yet.") : t("No app matches.")}</p>
+            {query && <button onClick={() => setQuery("")}>{t("Clear search")}</button>}
+            {onlyConnected && more.length > 0 && query && group("In All apps", more)}
+          </div>}
+          {!open && <section className="email-intake" aria-labelledby="email-in-setup">
+            <h2 id="email-in-setup"><Text>Receive website form emails</Text></h2>
+            <p>{t("Connect a dedicated IMAP mailbox in an automation's Steps tab. Under Starts when, choose An email arrives, then connect the mailbox. Each automation has its own inbox settings.")}</p>
+            <a href="#/"><Text>Choose an automation</Text></a>
+          </section>}
+        </div>
+        {open && selected && <section key={open} id="app-setup" className="setup-pane motion-page" aria-label={t("{app} setup", { app: selected.name })}>
+          <button className="panel-back" onClick={() => { trigger.current = open; setOpen(null); }}>{t("Back to Apps")}</button>
+          <header className="panel-head"><AppMark mark={APP_LOGO[open] ?? open} name={selected.name} size={44} />
+            <div><h2 id="panel-title" tabIndex={-1}>{selected.name}</h2><p>{t(selected.line)}</p></div>
+          </header>
+          <SharedGrants.Provider value={conns.shared}>{setup[open]()}</SharedGrants.Provider>
+          {siblings?.length ? <section className="panel-detail"><h3>{t("Apps sharing this Google sign-in")}</h3><ul>{siblings.map(key => <li key={key}>
+              <button type="button" className="quiet" onClick={() => choose(key)}>{APPS.find(a => a.key === key)?.name}</button>
+              <small>{key === "gmail" ? mail.sender?.address : conn(key)?.account}</small>
+            </li>)}</ul></section> : null}
+          {open === "paymongo" && conn("paymongo") && <section className="panel-detail"><h3>{t("Payment status")}</h3>
+            {conns.latestPayment ? <p>{t(conns.latestPayment.live ? "Live mode" : "Test mode")} · {t(conns.latestPayment.status)} · {date(conns.latestPayment.updatedAt)}</p> : <p>{t("No payments recorded yet.")}</p>}
+          </section>}
+          {state(open) && <section className="panel-detail"><h3>{t("Used by")}</h3>
+            {usage?.length ? <ul>{usage.map(w => <li key={w.id}><a href={`#/w/${w.id}`}>{w.name}</a></li>)}</ul> : <p>{t("No published automations use this app.")}</p>}
+            <small>{t("Last checked")} · {checked(open) ? date(checked(open)!) : t("Not checked yet")}</small>
+          </section>}
         </section>}
       </div>
-      {open && selected && <section key={open} id="app-setup" className="setup-pane motion-page" aria-label={t("{app} setup", { app: selected.name })}>
-        <button className="panel-back" onClick={() => { trigger.current = open; setOpen(null); }}>{t("Back to Apps")}</button>
-        <header className="panel-head"><AppMark mark={APP_LOGO[open] ?? open} name={selected.name} size={44} />
-          <div><h2 id="panel-title" tabIndex={-1}>{selected.name}</h2><p>{t(selected.line)}</p></div>
-        </header>
-        <SharedGrants.Provider value={conns.shared}>{setup[open]()}</SharedGrants.Provider>
-        {siblings?.length ? <section className="panel-detail"><h3>{t("Apps sharing this Google sign-in")}</h3><ul>{siblings.map(key => <li key={key}>
-            <button type="button" className="quiet" onClick={() => choose(key)}>{APPS.find(a => a.key === key)?.name}</button>
-            <small>{key === "gmail" ? mail.sender?.address : conn(key)?.account}</small>
-          </li>)}</ul></section> : null}
-        {open === "paymongo" && conn("paymongo") && <section className="panel-detail"><h3>{t("Payment status")}</h3>
-          {conns.latestPayment ? <p>{t(conns.latestPayment.live ? "Live mode" : "Test mode")} · {t(conns.latestPayment.status)} · {date(conns.latestPayment.updatedAt)}</p> : <p>{t("No payments recorded yet.")}</p>}
-        </section>}
-        {state(open) && <section className="panel-detail"><h3>{t("Used by")}</h3>
-          {usage?.length ? <ul>{usage.map(w => <li key={w.id}><a href={`#/w/${w.id}`}>{w.name}</a></li>)}</ul> : <p>{t("No published automations use this app.")}</p>}
-          <small>{t("Last checked")} · {checked(open) ? date(checked(open)!) : t("Not checked yet")}</small>
-        </section>}
-      </section>}
     </main>
   );
 }

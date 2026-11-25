@@ -61,9 +61,11 @@ export function Automations({ user }: { user: User }) {
   const [filter, setFilter] = useState<Filter>("all");
   const [trigger, setTrigger] = useState("any");
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [closingPanel, setClosingPanel] = useState(false);
   const [sheet, setSheet] = useState(false);
   const opener = useRef<HTMLElement | null>(null);
   const closeButton = useRef<HTMLButtonElement>(null);
+  const closeTimer = useRef<number | null>(null);
   const segPill = useSlidingPill<HTMLDivElement>();
 
   const load = () => {
@@ -177,17 +179,39 @@ export function Automations({ user }: { user: User }) {
   };
 
   const pick = (w: Workflow, from: HTMLElement | null) => {
+    if (closeTimer.current) {
+      window.clearTimeout(closeTimer.current);
+      closeTimer.current = null;
+    }
+    setClosingPanel(false);
     setSelectedId(w.id);
-    // On a phone the details open as a sheet over the list; on a desktop they are always beside it.
+    // On a phone the details open as a sheet over the list; on a desktop they slide in beside it.
     if (matchMedia("(max-width: 799.98px)").matches) {
       opener.current = from;
       setSheet(true);
     }
   };
-  const closeSheet = () => {
+  const finishClose = () => {
+    if (closeTimer.current) {
+      window.clearTimeout(closeTimer.current);
+      closeTimer.current = null;
+    }
+    setClosingPanel(false);
     setSheet(false);
     setSelectedId(null);
   };
+  const closeSheet = () => {
+    if (sheet || matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      finishClose();
+      return;
+    }
+    setClosingPanel(true);
+    if (closeTimer.current) window.clearTimeout(closeTimer.current);
+    closeTimer.current = window.setTimeout(finishClose, 250);
+  };
+  useEffect(() => () => {
+    if (closeTimer.current) window.clearTimeout(closeTimer.current);
+  }, []);
   // The list is inert while the sheet is open, so focus goes back to the row only after that has rendered.
   const wasOpen = useRef(false);
   useEffect(() => {
@@ -226,8 +250,8 @@ export function Automations({ user }: { user: User }) {
         <div className="ops-actions">
           <a className="ops-button secondary" href="#/new">{t("New automation")}</a>
           <a className="ops-button primary" href="#/ai">
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-              <path d="M8 1l1.7 4.3L14 7l-4.3 1.7L8 13l-1.7-4.3L2 7l4.3-1.7z" />
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M16 18a2 2 0 0 1 2 2a2 2 0 0 1 2 -2a2 2 0 0 1 -2 -2a2 2 0 0 1 -2 2zm0 -12a2 2 0 0 1 2 2a2 2 0 0 1 2 -2a2 2 0 0 1 -2 -2a2 2 0 0 1 -2 2zm-7 12a6 6 0 0 1 6 -6a6 6 0 0 1 -6 -6a6 6 0 0 1 -6 6a6 6 0 0 1 6 6z" />
             </svg>
             {t("Build with AI")}
           </a>
@@ -254,153 +278,157 @@ export function Automations({ user }: { user: User }) {
         <div className="ops-layout" data-panel={selected ? "open" : "closed"}>
           <div className="ops-main" inert={sheet}>
             {head}
-            <section className="ops-kpi-band" aria-label={t("Overview")}>
-              <div className="ops-kpi-live">
-                <div className="ops-kpi-label"><i className="ops-pulse" aria-hidden="true" /> {t("Live automations")}</div>
-                <div className="ops-big">
-                  <strong className="tnum"><AnimatedCounter value={liveRaw} /></strong>
-                  <span>{t("of {total} running now", { total: all.length })}</span>
-                </div>
-                <div className="ops-live-dots" aria-hidden="true">
-                  {liveDots.map((tone, i) => <i key={i} className={`ops-ldot ${tone}`} />)}
-                </div>
-                <div className="ops-legend">
-                  <span><i className="l-on" aria-hidden="true" /> {t("Live")}</span>
-                  <span><i className="l-prob" aria-hidden="true" /> {t("Problem")}</span>
-                  <span><i className="l-off" aria-hidden="true" /> {t("Off or draft")}</span>
-                </div>
-              </div>
-              <div className="ops-kpi-grid">
-                <div className="ops-kpi-cell">
-                  <span className="ops-klabel">{t("Runs today")}</span>
-                  <div className="ops-kval lg tnum">
-                    <strong>{stats ? <AnimatedCounter value={stats.today} /> : t("n/a")}</strong>
-                    <small>{stats ? t("{count} runs in 7d", { count: weekRuns.toLocaleString() }) : ""}</small>
+            <div className="ops-body">
+              <section className="ops-kpi-band" aria-label={t("Overview")}>
+                <div className="ops-kpi-live">
+                  <div className="ops-kpi-label"><i className="ops-pulse" aria-hidden="true" /> {t("Live automations")}</div>
+                  <div className="ops-big">
+                    <strong className="tnum"><AnimatedCounter value={liveRaw} /></strong>
+                    <span>{t("of {total} running now", { total: all.length })}</span>
+                  </div>
+                  <div className="ops-live-dots" aria-hidden="true">
+                    {liveDots.map((tone, i) => <i key={i} className={`ops-ldot ${tone}`} />)}
+                  </div>
+                  <div className="ops-legend">
+                    <span><i className="l-on" aria-hidden="true" /> {t("Live")}</span>
+                    <span><i className="l-prob" aria-hidden="true" /> {t("Problem")}</span>
+                    <span><i className="l-off" aria-hidden="true" /> {t("Off or draft")}</span>
                   </div>
                 </div>
-                <div className="ops-kpi-cell">
-                  <span className="ops-klabel">{t("Success, 7 days")}</span>
-                  <div className="ops-kval tnum">
-                    <strong>{stats ? (stats.rate === null ? t("n/a") : <AnimatedCounter value={percent(stats.rate)} />) : t("n/a")}</strong>
-                    <small>{stats ? t("{count} runs", { count: weekRuns.toLocaleString() }) : ""}</small>
+                <div className="ops-kpi-grid">
+                  <div className="ops-kpi-cell">
+                    <span className="ops-klabel">{t("Runs today")}</span>
+                    <div className="ops-kval lg tnum">
+                      <strong>{stats ? <AnimatedCounter value={stats.today} /> : t("n/a")}</strong>
+                      <small>{stats ? t("{count} runs in 7d", { count: weekRuns.toLocaleString() }) : ""}</small>
+                    </div>
                   </div>
+                  <div className="ops-kpi-cell">
+                    <span className="ops-klabel">{t("Success, 7 days")}</span>
+                    <div className="ops-kval tnum">
+                      <strong>{stats ? (stats.rate === null ? t("n/a") : <AnimatedCounter value={percent(stats.rate)} />) : t("n/a")}</strong>
+                      <small>{stats ? t("{count} runs", { count: weekRuns.toLocaleString() }) : ""}</small>
+                    </div>
+                  </div>
+                  <button type="button" className="ops-kpi-cell is-btn needs" aria-pressed={filter === "needs_you"} onClick={() => setFilter(filter === "needs_you" ? "all" : "needs_you")}>
+                    <span className="ops-klabel">{t("Needs you")}</span>
+                    <div className="ops-kval tnum">
+                      <strong className="amber"><AnimatedCounter value={needsYou} /></strong>
+                      <small>{needsYouNum === 0 ? t("all clear") : t("approvals waiting")}</small>
+                    </div>
+                  </button>
+                  <button type="button" className="ops-kpi-cell is-btn problems" aria-pressed={filter === "problem"} onClick={() => setFilter(filter === "problem" ? "all" : "problem")}>
+                    <span className="ops-klabel">{t("Problems")}</span>
+                    <div className="ops-kval tnum">
+                      <strong className="red"><AnimatedCounter value={total.problem} /></strong>
+                      <small>{total.problem === 0 ? t("all healthy") : t("needs attention")}</small>
+                    </div>
+                  </button>
                 </div>
-                <button type="button" className="ops-kpi-cell is-btn needs" aria-pressed={filter === "needs_you"} onClick={() => setFilter(filter === "needs_you" ? "all" : "needs_you")}>
-                  <span className="ops-klabel">{t("Needs you")}</span>
-                  <div className="ops-kval tnum">
-                    <strong className="amber"><AnimatedCounter value={needsYou} /></strong>
-                    <small>{needsYouNum === 0 ? t("all clear") : t("approvals waiting")}</small>
-                  </div>
-                </button>
-                <button type="button" className="ops-kpi-cell is-btn problems" aria-pressed={filter === "problem"} onClick={() => setFilter(filter === "problem" ? "all" : "problem")}>
-                  <span className="ops-klabel">{t("Problems")}</span>
-                  <div className="ops-kval tnum">
-                    <strong className="red"><AnimatedCounter value={total.problem} /></strong>
-                    <small>{total.problem === 0 ? t("all healthy") : t("needs attention")}</small>
-                  </div>
-                </button>
-              </div>
-            </section>
+              </section>
 
-            {review && review.length > 0 && (
-              <p role="status" className="ops-alert attn">
-                <strong>{review.length >= RUN_LIMIT ? t("50 or more") : review.length}</strong> {t(review.length === 1 ? "request needs you." : "requests need you.")}{" "}
-                <a href={`#/runs/${review[review.length - 1]!.id}`}>{t("Open the oldest")}</a>
-              </p>
-            )}
-            <p role="status" className="ops-muted" hidden={!copied}>{copied}</p>
-            <p role="alert" className="ops-alert error" hidden={!error}>{error}</p>
+              {review && review.length > 0 && (
+                <p role="status" className="ops-alert attn">
+                  <strong>{review.length >= RUN_LIMIT ? t("50 or more") : review.length}</strong> {t(review.length === 1 ? "request needs you." : "requests need you.")}{" "}
+                  <a href={`#/runs/${review[review.length - 1]!.id}`}>{t("Open the oldest")}</a>
+                </p>
+              )}
+              <p role="status" className="ops-muted" hidden={!copied}>{copied}</p>
+              <p role="alert" className="ops-alert error" hidden={!error}>{error}</p>
 
-            <div className="ops-toolbar">
-              <div className="ops-toolbar-main">
-                <div
-                  ref={segPill.containerRef}
-                  className="ops-seg"
-                  role="group"
-                  aria-label={t("Filter by status")}
-                  onPointerLeave={segPill.onContainerLeave}
-                >
-                  <span
-                    className="ops-seg-pill motion-pill"
-                    aria-hidden="true"
-                    style={{
-                      transform: `translate3d(${segPill.pillStyle.left}px, ${segPill.pillStyle.top}px, 0)`,
-                      width: `${segPill.pillStyle.width}px`,
-                      height: `${segPill.pillStyle.height}px`,
-                      opacity: segPill.pillStyle.opacity,
-                    }}
-                  />
-                  {SEG_FILTERS.map(([key, label]) => (
-                    <button
-                      key={key}
-                      type="button"
-                      className="ops-seg-btn"
-                      aria-pressed={filter === key}
-                      onPointerEnter={(e) => segPill.onItemEnter(e.currentTarget)}
-                      onFocus={(e) => segPill.onItemEnter(e.currentTarget)}
-                      onClick={() => setFilter(key)}
+              <section className="ops-card" aria-label={t("Automations")}>
+                <div className="ops-toolbar">
+                  <div className="ops-toolbar-main">
+                    <div
+                      ref={segPill.containerRef}
+                      className="ops-seg"
+                      role="group"
+                      aria-label={t("Filter by status")}
+                      onPointerLeave={segPill.onContainerLeave}
                     >
-                      {t(label)}
-                    </button>
-                  ))}
-                </div>
-                <label className="ops-search" data-active={query.trim() ? "true" : undefined}>
-                  <span className="ops-sr">{t("Find an automation")}</span>
-                  <svg width="13" height="13" viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="5" fill="none" stroke="currentColor" strokeWidth="1.6" /><path d="m11 11 3.5 3.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" /></svg>
-                  <input type="search" value={query} placeholder={t("Find an automation")} onChange={(e) => setQuery(e.target.value)} />
-                </label>
-              </div>
-              <div className="ops-filters">
-                <label className="ops-select">
-                  <span>{t("Status:")}</span>
-                  <select value={filter} onChange={(e) => setFilter(e.target.value as Filter)}>
-                    {STATUS_FILTERS.map(([key, label]) => <option key={key} value={key}>{t(label)}</option>)}
-                  </select>
-                </label>
-                <label className="ops-select">
-                  <span>{t("Trigger:")}</span>
-                  <select value={trigger} onChange={(e) => setTrigger(e.target.value)}>
-                    <option value="any">{t("Any")}</option>
-                    {triggerTypes.map((type) => <option key={type} value={type}>{t(triggerLabel(type))}</option>)}
-                    {trigger !== "any" && !triggerTypes.includes(trigger) && <option value={trigger}>{t(triggerLabel(trigger))}</option>}
-                  </select>
-                </label>
-                {filtered && <button type="button" className="ops-link" onClick={clear}>{t("Clear filters")}</button>}
-              </div>
-            </div>
-
-            <div className="ops-table-wrap">
-              <table className="ops-table">
-                <thead>
-                  <tr>
-                    <th scope="col">{t("Name")}</th>
-                    <th scope="col" className="c-status">{t("Status")}</th>
-                    <th scope="col" className="c-trigger">{t("Trigger")}</th>
-                    <th scope="col" className="c-bars">{t("7 days")}</th>
-                    <th scope="col" className="c-last">{t("Last run")}</th>
-                    <th scope="col" className="c-action"><span className="ops-sr">{t("Open")}</span></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {shown.length === 0 ? (
-                    <tr><td colSpan={6} className="ops-empty">{t("None match.")}</td></tr>
-                  ) : (
-                    shown.map((w, index) => (
-                      <Row
-                        key={w.id}
-                        w={w}
-                        index={index}
-                        selected={selected?.id === w.id}
-                        reviewCount={reviewOf(w.id).length}
-                        entry={overview?.[w.id]}
-                        loading={overview === undefined}
-                        now={now}
-                        onPick={pick}
+                      <span
+                        className="ops-seg-pill motion-pill"
+                        aria-hidden="true"
+                        style={{
+                          transform: `translate3d(${segPill.pillStyle.left}px, ${segPill.pillStyle.top}px, 0)`,
+                          width: `${segPill.pillStyle.width}px`,
+                          height: `${segPill.pillStyle.height}px`,
+                          opacity: segPill.pillStyle.opacity,
+                        }}
                       />
-                    ))
-                  )}
-                </tbody>
-              </table>
+                      {SEG_FILTERS.map(([key, label]) => (
+                        <button
+                          key={key}
+                          type="button"
+                          className="ops-seg-btn"
+                          aria-pressed={filter === key}
+                          onPointerEnter={(e) => segPill.onItemEnter(e.currentTarget)}
+                          onFocus={(e) => segPill.onItemEnter(e.currentTarget)}
+                          onClick={() => setFilter(key)}
+                        >
+                          {t(label)}
+                        </button>
+                      ))}
+                    </div>
+                    <label className="ops-search" data-active={query.trim() ? "true" : undefined}>
+                      <span className="ops-sr">{t("Find an automation")}</span>
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M10 10m-7 0a7 7 0 1 0 14 0a7 7 0 1 0 -14 0" /><path d="M21 21l-6 -6" /></svg>
+                      <input type="search" value={query} placeholder={t("Find an automation")} onChange={(e) => setQuery(e.target.value)} />
+                    </label>
+                  </div>
+                  <div className="ops-filters">
+                    <label className="ops-select">
+                      <span>{t("Status:")}</span>
+                      <select value={filter} onChange={(e) => setFilter(e.target.value as Filter)}>
+                        {STATUS_FILTERS.map(([key, label]) => <option key={key} value={key}>{t(label)}</option>)}
+                      </select>
+                    </label>
+                    <label className="ops-select">
+                      <span>{t("Trigger:")}</span>
+                      <select value={trigger} onChange={(e) => setTrigger(e.target.value)}>
+                        <option value="any">{t("Any")}</option>
+                        {triggerTypes.map((type) => <option key={type} value={type}>{t(triggerLabel(type))}</option>)}
+                        {trigger !== "any" && !triggerTypes.includes(trigger) && <option value={trigger}>{t(triggerLabel(trigger))}</option>}
+                      </select>
+                    </label>
+                    {filtered && <button type="button" className="ops-link" onClick={clear}>{t("Clear filters")}</button>}
+                  </div>
+                </div>
+
+                <div className="ops-table-wrap">
+                  <table className="ops-table">
+                    <thead>
+                      <tr>
+                        <th scope="col">{t("Name")}</th>
+                        <th scope="col" className="c-status">{t("Status")}</th>
+                        <th scope="col" className="c-trigger">{t("Trigger")}</th>
+                        <th scope="col" className="c-bars">{t("7 days")}</th>
+                        <th scope="col" className="c-last">{t("Last run")}</th>
+                        <th scope="col" className="c-action"><span className="ops-sr">{t("Open")}</span></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {shown.length === 0 ? (
+                        <tr><td colSpan={6} className="ops-empty">{t("None match.")}</td></tr>
+                      ) : (
+                        shown.map((w, index) => (
+                          <Row
+                            key={w.id}
+                            w={w}
+                            index={index}
+                            selected={selected?.id === w.id}
+                            reviewCount={reviewOf(w.id).length}
+                            entry={overview?.[w.id]}
+                            loading={overview === undefined}
+                            now={now}
+                            onPick={pick}
+                          />
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
             </div>
           </div>
 
@@ -417,8 +445,10 @@ export function Automations({ user }: { user: User }) {
                 review={reviewOf(selected.id)}
                 now={now}
                 sheet={sheet}
+                closing={closingPanel}
                 closeRef={closeButton}
                 onClose={closeSheet}
+                onClosed={finishClose}
                 onCopy={copy}
                 onPause={(target, paused) => void setPaused(target, paused, true)}
                 onDelete={remove}
@@ -522,7 +552,7 @@ function Row({ w, index, selected, reviewCount, entry, loading, now, onPick }: {
   );
 }
 
-function Panel({ w, owner, detail, entry, runs, review, now, sheet, closeRef, onClose, onCopy, onPause, onDelete }: {
+function Panel({ w, owner, detail, entry, runs, review, now, sheet, closing, closeRef, onClose, onClosed, onCopy, onPause, onDelete }: {
   w: Workflow;
   owner: boolean;
   detail: Detail | null | undefined;
@@ -531,8 +561,10 @@ function Panel({ w, owner, detail, entry, runs, review, now, sheet, closeRef, on
   review: RunSummary[];
   now: number;
   sheet: boolean;
+  closing: boolean;
   closeRef: RefObject<HTMLButtonElement | null>;
   onClose: () => void;
+  onClosed: () => void;
   onCopy: (id: string, formId: string) => void;
   onPause: (w: Workflow, paused: boolean) => void;
   onDelete: (w: Workflow) => void;
@@ -563,7 +595,17 @@ function Panel({ w, owner, detail, entry, runs, review, now, sheet, closeRef, on
   const mine = runs ?? [];
 
   return (
-    <aside className="ops-panel motion-sheet" aria-labelledby="ops-panel-title" data-sheet={sheet || undefined} role={sheet ? "dialog" : undefined} aria-modal={sheet || undefined}>
+    <aside
+      className="ops-panel"
+      aria-labelledby="ops-panel-title"
+      data-sheet={sheet || undefined}
+      data-closing={closing || undefined}
+      role={sheet ? "dialog" : undefined}
+      aria-modal={sheet || undefined}
+      onAnimationEnd={(e) => {
+        if (closing && e.animationName === "ops-panel-out") onClosed();
+      }}
+    >
       <div className="panel-top">
         <span className={`panel-status ${badge.tone}`}><i className="dot" aria-hidden="true" />{t(badge.label)}</span>
         <span className="panel-version">

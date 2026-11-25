@@ -1,4 +1,5 @@
 import "./workspace.css";
+import { Breadcrumb } from "./Breadcrumb";
 import { useEffect, useState } from "react";
 import { api, type Workflow } from "./api";
 import { useLanguage } from "./Language";
@@ -31,9 +32,11 @@ export function AdvancedPage() {
   return (
     <main className="page wk wk-advanced">
       <header className="wk-head">
-        <div className={phone ? undefined : "wk-title-row"}>
-          <a className="wk-back wk-back-quiet" href="#/settings">{t("Menu")}</a>
-          <h1>{t("Advanced")}</h1>
+        <div>
+          <Breadcrumb items={[{ label: t("Settings"), href: "#/settings" }, { label: t("Advanced") }]} />
+          <div className={phone ? undefined : "wk-title-row"}>
+            <h1>{t("Advanced")}</h1>
+          </div>
         </div>
       </header>
       <p className="wk-sub">{t("For the person who runs this installation. Owners do not need this page to run their automations.")}</p>

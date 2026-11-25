@@ -3,6 +3,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { api, ApiError, type Run, type RunSummary, type StepRun, type Version, type Workflow } from "./api";
 import { DeliveryList, type Delivery } from "./Connections";
 import { AutomationTabs } from "./Nav";
+import { Breadcrumb } from "./Breadcrumb";
 import { stepLabel } from "@daloy/engine";
 import { RunFlow } from "./FlowCanvas";
 import { runFlow, STATUS } from "./lib/run-flow";
@@ -138,16 +139,13 @@ export function StatePill({ run, note }: { run: { state: string; createdAt: stri
 
 /** The white title strip of the Activity, run, Ask, Bookings and Versions pages: breadcrumb, title, subtitle, actions, tabs. */
 export function PageHead({ crumbs, title, sub, actions, tabs }: { crumbs: { label: string; href?: string }[]; title: string; sub?: ReactNode; actions?: ReactNode; tabs?: ReactNode }) {
-  const { t } = useLanguage();
   return (
     <header className={tabs ? "act-head tabbed" : "act-head"}>
-      <nav className="act-crumbs" aria-label={t("Breadcrumb")}>
-        <ol>
-          {crumbs.map((c, i) => (
-            <li key={i}>{c.href ? <a href={c.href}>{c.label}</a> : <span aria-current="page">{c.label}</span>}</li>
-          ))}
-        </ol>
-      </nav>
+      {crumbs.length > 0 && (
+        <div className="act-crumbs">
+          <Breadcrumb items={crumbs} />
+        </div>
+      )}
       <div>
         <h1>{title}</h1>
         {sub && <p className="act-sub">{sub}</p>}
@@ -226,7 +224,7 @@ export function RunsPage({ workflowId, ask }: { workflowId?: string; ask?: boole
     return (
       <main className="page act">
         <PageHead
-          crumbs={[{ label: "kymavo", href: "#/" }, { label: t("Activity") }]}
+          crumbs={[]}
           title={t("Workspace activity")}
           sub={longDate(Date.now(), language)}
           actions={ask && <a className="act-button" href="#/activity/ask">{t("Ask about a request")}</a>}
@@ -370,7 +368,7 @@ export function RunPage({ runId, owner, ask }: { runId: string; owner: boolean; 
   if (!run) {
     return (
       <main className="page act">
-        <PageHead crumbs={[{ label: "kymavo", href: "#/" }, { label: t("Activity"), href: "#/activity" }]} title={t("Activity")} />
+        <PageHead crumbs={[{ label: t("Activity"), href: "#/activity" }]} title={t("Activity")} />
         <div className="act-body">
           {error ? (
             <p role="alert" className="act-alert error">
@@ -391,7 +389,7 @@ export function RunPage({ runId, owner, ask }: { runId: string; owner: boolean; 
   return (
     <main className="page act run-detail">
       <PageHead
-        crumbs={[{ label: "kymavo", href: "#/" }, { label: t("Activity"), href: "#/activity" }, { label: run.reference ?? t(runKind(run)) }]}
+        crumbs={[{ label: t("Activity"), href: "#/activity" }, { label: run.reference ?? t(runKind(run)) }]}
         title={run.workflowName}
         sub={[run.reference && t("Run {reference}", { reference: run.reference }), t(runKind(run))].filter(Boolean).join(" · ")}
         actions={

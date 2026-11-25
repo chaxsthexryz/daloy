@@ -1,4 +1,5 @@
 import "./workspace.css";
+import { Breadcrumb } from "./Breadcrumb";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { api } from "./api";
 import { useLanguage } from "./Language";
@@ -91,7 +92,7 @@ export function SecretsPage() {
     <main className="page wk wk-secrets">
       <header className="wk-head">
         <div>
-          <a className="wk-back" href="#/advanced">{t("Advanced")}</a>
+          <Breadcrumb items={[{ label: t("Settings"), href: "#/settings" }, { label: t("Advanced"), href: "#/advanced" }, { label: t("Secrets") }]} />
           <div className="wk-title-row">
             <h1>{t("Secrets")}</h1>
             {list && <span className="wk-sub">{t("{count} saved", { count: list.length })}</span>}
