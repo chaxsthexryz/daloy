@@ -30,7 +30,7 @@ test("try a sample, see it go out of date, then turn on from the summary", async
   await expect(sample.locator(".badge").first()).toBeVisible();
 
   // Adding a step changes the draft, so the old result is out of date.
-  await page.getByRole("button", { name: /^approval_1 / }).click();
+  await page.getByRole("button", { name: /Approval.*approval_1/ }).click();
   await addStep(page, "email", { after: "approval_1", branch: "approved" });
   await close.click();
   await expect(sample).toContainText("Out of date");
@@ -68,16 +68,23 @@ test("Booking with a GCash or QR Ph deposit omits PayMongo, adds a resource inli
   await page.getByRole("button", { name: "Use this: Booking with a GCash or QR Ph deposit" }).click();
   await expect(page).toHaveURL(/#\/w\/[^/]+$/);
 
+  const checkMessagesRow = page.getByRole("region", { name: "Setup guide" }).locator("li", { hasText: "Check the messages" });
+  await expect(checkMessagesRow).toContainText("To do");
+  await checkMessagesRow.getByRole("button").click();
+  await expect(page.getByRole("heading", { name: "Approval", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Close", exact: true }).click();
+
   await expect(page.getByText(/Left: connect PayMongo/)).toHaveCount(0);
   const sample = page.getByRole("region", { name: "Try a sample" });
   await expect(sample).toContainText("Add at least one room or resource");
   await expect(sample).not.toContainText("Every step has what it needs.");
   await expect(sample.getByRole("button", { name: "Try a sample" })).toBeDisabled();
 
-  // Create a room inline and verify Try a sample becomes enabled and passes.
+  // Create a room inline and verify Try a sample and Check the messages both clear.
   await sample.getByLabel("Add a room or resource").fill("Deluxe Room");
   await sample.getByRole("button", { name: "Add", exact: true }).click();
   await expect(sample).toContainText("Every step has what it needs.", { timeout: 15_000 });
+  await expect(checkMessagesRow).toContainText("Done");
   await sample.getByRole("button", { name: "Try a sample" }).click();
   await expect(sample).toContainText("The last sample test passed.", { timeout: 30_000 });
 

@@ -6,7 +6,7 @@ import { lintFindings, type LintRule } from "@daloy/engine";
  * Plain-language explanations of failed runs (phase N10a). failureFacts keeps only closed-set or numeric fields, so the
  * facts can go to a model without any error text, step id, label, URL, address or payload.
  */
-export type Reason = "mail_sender" | "ai_model" | "quota" | "booking_changed" | "worker_stopped" | "preview_choice";
+export type Reason = "mail_sender" | "ai_model" | "quota" | "booking_changed" | "worker_stopped" | "preview_choice" | "knowledge_unpublished" | "missing_resource" | "sms_not_set_up";
 export type Facts = {
   runState: string;
   preview: boolean;
@@ -19,7 +19,7 @@ export type AskFacts = Facts & {
   plainState: "needs you" | "problem" | "waiting" | "done" | "in progress";
   steps: { type: string; state: string; outcome: string | null; attempts: number }[];
 };
-export type Explanation = { headline: string; lines: string[]; fix: { href: string; label: string } | null };
+export type Explanation = { headline: string; lines: string[]; fix: { href: string; label: string } | null; aiExplain?: boolean };
 type FactsInput = {
   run: { state: string; test: boolean; error?: string | null };
   steps: { stepId: string; attempt: number; state: string; error?: string | null; deadLetter: boolean; outcome: string | null; branch?: string | null; createdAt?: Date | string | null }[];
@@ -31,7 +31,10 @@ type FactsInput = {
 const REASONS: [Reason, RegExp][] = [
   ["mail_sender", /gmail|mail server/i],
   ["ai_model", /api key|ai model/i],
-  ["quota", /AI actions for this month|SMS messages for this month|SMS sending is not included|limit of \d+ (email recipients|web requests)/i],
+  ["knowledge_unpublished", /publish at least one Q&A|Knowledge page.*publish|on the Knowledge page/i],
+  ["missing_resource", /add at least one (?:room or )?resource|no rooms or resources|booking resource/i],
+  ["sms_not_set_up", /SMS sending is not included|UniSMS.*not configured|SMS.*not set up/i],
+  ["quota", /AI actions for this month|SMS messages for this month|limit of \d+ (email recipients|web requests)/i],
   ["booking_changed", /booking was rescheduled or cancelled/i],
   ["worker_stopped", /worker stopped while sending/i],
   ["preview_choice", /^Test run: this step was set to fail/],
@@ -166,6 +169,12 @@ function ofStep(s: NonNullable<Facts["step"]>): Explanation | null {
       return { headline: "kymavo stopped while sending.", lines: ["This may have gone through. Check with the receiver, then choose It went through, Send again or Stop."], fix: ACTIVITY_FIX };
     case "preview_choice":
       return { headline: "This preview was set to fail on purpose.", lines: ["Nothing was sent. Change the preview choice to see the automation go on."], fix: null };
+    case "knowledge_unpublished":
+      return { headline: "The Knowledge Base is not published yet.", lines: ["Add and publish at least one Q&A on the Knowledge page, then press Retry."], fix: { href: "#/knowledge", label: "Open Knowledge" }, aiExplain: false };
+    case "missing_resource":
+      return { headline: "No rooms or resources exist yet.", lines: ["Add at least one room or resource on the Resources page, then press Retry."], fix: { href: "#/resources", label: "Add a resource" }, aiExplain: false };
+    case "sms_not_set_up":
+      return { headline: "SMS sending is not set up for this workspace.", lines: ["This workspace cannot send SMS right now. Check your plan or SMS setup in Settings."], fix: { href: "#/settings", label: "See plan and usage" }, aiExplain: false };
   }
   const code = s.statusCode;
   const http = code === 401 || code === 403 ? "the other service refused kymavo's access" : code === 404 ? "the address was not found" : code === 429 ? "the other service asked kymavo to slow down" : code && code >= 500 ? "the other service had a problem" : null;

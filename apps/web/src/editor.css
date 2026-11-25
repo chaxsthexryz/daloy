@@ -270,6 +270,7 @@
 .a7-list button .app-mark { order: -2; align-self: center; }
 .a7-describe { margin: 4px 0 12px; }
 .a7-node-row .node-id { flex: 0 1 88px; max-width: 88px; text-align: right; font-family: var(--font-mono); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.a7-node > .node-id { font-family: var(--font-mono); font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* R2b: setup guide, sample test and the two dialogs reuse the editor's tokens and the shared sheet. */
 .r2b-guide, .r2b-sample { display: grid; gap: 6px; padding: 12px 14px; border: 1px solid var(--a7-line); border-radius: 10px; font-size: 13px; line-height: 18px; }
@@ -278,9 +279,10 @@
 .r2b-sample p, .r2b-sample ul, .r2b-lines p { margin: 0; }
 .r2b-sample ul { padding-left: 18px; }
 .r2b-guide ol { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
-.r2b-guide li { display: flex; align-items: center; gap: 8px; }
-.r2b-guide li > span:first-child { flex: 1; }
-.r2b-state { color: var(--a7-label); font-weight: 600; }
+.r2b-guide li { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.r2b-guide li > span:first-child { flex: 1 1 130px; min-width: 0; }
+.r2b-state { color: var(--a7-label); font-weight: 600; white-space: nowrap; flex-shrink: 0; }
+.r2b-guide button { white-space: nowrap; flex-shrink: 0; }
 .r2b-guide li[data-done] .r2b-state { color: var(--a7-ok); }
 .r2b-example { padding: 8px 10px; border: 1px dashed var(--a7-line); border-radius: 8px; }
 .r2b-inline-resource { display: grid; gap: 6px; padding: 8px 10px; border: 1px solid var(--a7-line); border-radius: 8px; }

@@ -19,8 +19,8 @@ test("search and category chips narrow the cards, and a card previews before it 
   await signUp(page, 1280, 800);
   const card = (name: string) => page.getByRole("button", { name: `Preview: ${name}` });
 
-  // Blank workflow and Build with AI come first, then the templates.
-  await expect(page.getByRole("heading", { level: 3 }).first()).toHaveText("Blank workflow");
+  // Blank automation and Build with AI come first, then the templates.
+  await expect(page.getByRole("heading", { level: 3 }).first()).toHaveText("Blank automation");
   await expect(page.getByRole("heading", { level: 3 }).nth(1)).toHaveText("Build with AI");
   await expect(page.getByRole("button", { name: /^Preview: / })).toHaveCount(42);
 
@@ -34,7 +34,7 @@ test("search and category chips narrow the cards, and a card previews before it 
   await expect(card("Appointment reminder")).toBeVisible();
   await expect(card("Lead to booking")).toBeVisible();
   await expect(card("Inquiry triage")).toHaveCount(0);
-  await expect(page.getByRole("heading", { name: "Blank workflow" })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Blank automation" })).toHaveCount(0);
   await page.getByRole("button", { name: "Office", exact: true }).click();
   await expect(card("Track an office request")).toBeVisible();
   await expect(card("Purchase request with approval")).toBeVisible();
@@ -44,6 +44,7 @@ test("search and category chips narrow the cards, and a card previews before it 
   await card("Appointment reminder").press("Enter");
   const preview = page.getByRole("region", { name: "Appointment reminder" });
   await expect(preview.locator(".react-flow")).toBeVisible();
+  await expect(preview).not.toContainText("React Flow");
   await expect(preview.getByText(/^Starts when:/)).toBeVisible();
   await expect(preview.getByText(/^1\. /)).toBeVisible();
   expect(await noSideScroll(page)).toBe(true);

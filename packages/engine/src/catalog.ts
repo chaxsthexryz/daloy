@@ -143,11 +143,42 @@ export function entryLabel(e: CatalogEntry, language: Language): string {
 export const stepLabel = (type: Step["type"], language: Language = "en") => entryLabel(STEP_CATALOG[type], language);
 export const triggerLabel = (type: Trigger["type"], language: Language = "en") => entryLabel(TRIGGER_CATALOG[type], language);
 
+const CONDITION_OPS: Record<string, Text> = {
+  eq: tx("is", "ay"),
+  neq: tx("is not", "ay hindi"),
+  gt: tx("is greater than", "ay higit sa"),
+  gte: tx("is at least", "ay hindi bababa sa"),
+  lt: tx("is less than", "ay mas maliit sa"),
+  lte: tx("is at most", "ay hindi hihigit sa"),
+  contains: tx("contains", "may laman na"),
+  starts_with: tx("starts with", "nagsisimula sa"),
+  exists: tx("has a value", "may halaga"),
+};
+
+/** Plain condition operator label for diagrams, lists, diffs, and inspect forms. */
+export function conditionOpLabel(op: string, language: Language): string {
+  return op in CONDITION_OPS ? pick(CONDITION_OPS[op]!, language) : op;
+}
+
+/** Plain duration text for wait and timeout settings (exact days/hours/minutes, else seconds). */
+export function formatDuration(seconds: number, language: Language): string {
+  const s = Math.round(Math.abs(seconds));
+  const unit = (n: number, enOne: string, enMany: string, tl: string) =>
+    language === "tl" ? `${n} ${tl}` : `${n} ${n === 1 ? enOne : enMany}`;
+  if (s === 0) return unit(0, "second", "seconds", "segundo");
+  if (s % 86_400 === 0) return unit(s / 86_400, "day", "days", "araw");
+  if (s % 3600 === 0) return unit(s / 3600, "hour", "hours", "oras");
+  if (s % 60 === 0) return unit(s / 60, "minute", "minutes", "minuto");
+  return unit(s, "second", "seconds", "segundo");
+}
+
 export type DestinationContext = {
   language: Language;
   trigger?: Trigger;
   /** The name of the destination the owner picked in Apps (a channel, a sheet, a list), when the app is connected and has one. */
   chosen?: string;
+  /** Draft steps so step references can resolve human step labels ahead of internal IDs. */
+  steps?: readonly Step[];
 };
 
 const TRIGGER_NOUN: Record<Trigger["type"], Text> = {
@@ -178,12 +209,11 @@ const TRIGGER_NOUN: Record<Trigger["type"], Text> = {
   manual: tx("the sample data", "sample data"),
 };
 const FROM = tx("{what} from {where}", "{what} mula sa {where}");
-const STEP_FROM = tx("{what} from step {id}", "{what} mula sa step {id}");
 const fill = (t: Text, language: Language, values: Record<string, string>) => pick(t, language).replace(/\{(\w+)\}/g, (_, k: string) => values[k] ?? "");
 
 const REF = /\{\{\s*([^}]+?)\s*\}\}/g;
 /** A template as words: {{trigger.email}} becomes "Customer email from the form". A literal stays as typed. */
-function human(value: string, { language, trigger }: DestinationContext): string {
+function human(value: string, { language, trigger, steps }: DestinationContext): string {
   return value.replace(REF, (_, ref: string) => {
     const [root, ...path] = ref.split(".");
     if (root === "trigger" && path.length) {
@@ -192,8 +222,12 @@ function human(value: string, { language, trigger }: DestinationContext): string
       const label = fields.find((f) => f.name === name)?.label ?? name;
       return fill(FROM, language, { what: label, where: trigger ? pick(TRIGGER_NOUN[trigger.type], language) : pick(tx("the trigger", "trigger"), language) });
     }
-    if (root === "steps" && path.length >= 3 && path[1] === "output") return fill(STEP_FROM, language, { what: path.slice(2).join("."), id: path[0]! });
-    if (root === "steps") return fill(STEP_FROM, language, { what: pick(tx("result", "resulta"), language), id: path[0] ?? "" });
+    if (root === "steps") {
+      const target = steps?.find((s) => s.id === path[0]);
+      const where = target ? stepLabel(target.type, language) : fill(tx("step {id}", "step {id}"), language, { id: path[0] ?? "" });
+      const what = path.length >= 3 && path[1] === "output" ? path.slice(2).join(".") : pick(tx("result", "resulta"), language);
+      return fill(FROM, language, { what, where });
+    }
     if (root === "secrets") return pick(tx("a saved secret", "isang naka-save na secret"), language);
     return ref;
   });
@@ -275,25 +309,39 @@ export function destination(step: Step, ctx: DestinationContext): string {
       try { host = new URL(step.config.url).host || host; } catch { /* a template in the address: show it as typed */ }
       return line(label("Calls", "Tatawag sa"), `${step.config.method} ${short(host)}`);
     }
-    case "condition":
-      return line(label("If", "Kung"), short(`${human(step.config.condition.left, ctx)} ${step.config.condition.op} ${human(String(step.config.condition.right ?? ""), ctx)}`.trim()));
+    case "condition": {
+      const op = conditionOpLabel(step.config.condition.op, language);
+      const right = step.config.condition.op === "exists" ? "" : ` ${human(String(step.config.condition.right ?? ""), ctx)}`;
+      return line(label("If", "Kung"), short(`${human(step.config.condition.left, ctx)} ${op}${right}`.trim()));
+    }
     case "switch":
       return line(label("Match", "Itugma"), short(`${human(step.config.value ?? "", ctx)} (${step.config.cases?.length ?? 0})`));
     case "transform":
       return line(label("Transform", "I-format"), step.config.op === "pick" ? Object.keys(step.config.fields ?? {}).join(", ") : short(`${step.config.op}: ${human(step.config.value ?? "", ctx)}`));
-    case "delay":
-      return step.config.until === undefined ? line(label("Wait", "Hintay"), `${step.config.seconds} s`) : line(label("Until", "Hanggang"), short(human(step.config.until, ctx)));
+    case "delay": {
+      if (step.config.until === undefined) return line(label("Wait", "Hintay"), formatDuration(step.config.seconds ?? 0, language));
+      const target = human(step.config.until, ctx);
+      const off = step.config.offsetSeconds ?? 0;
+      if (off === 0) return line(label("Until", "Hanggang"), short(target));
+      const dur = formatDuration(Math.abs(off), language);
+      const rel = off < 0 ? pick(tx("{dur} before {target}", "{dur} bago ang {target}"), language) : pick(tx("{dur} after {target}", "{dur} pagkatapos ng {target}"), language);
+      return line(label("Until", "Hanggang"), short(rel.replace("{dur}", dur).replace("{target}", target)));
+    }
     case "ai":
       return line(label("Task", "Gawain"), step.config.task);
     case "booking":
       return step.config.action === "create" ? line(label("Resource", "Resource"), short(human(String(step.config.resource ?? ""), ctx))) : line(label("Booking", "Booking"), short(human(String(step.config.booking ?? ""), ctx)));
-    case "payment_expire":
-      return line(label("Payment request", "Kahilingan sa bayad"), step.config.due);
+    case "payment_expire": {
+      const dueStep = ctx.steps?.find((s) => s.id === step.config.due);
+      return line(label("Payment request", "Kahilingan sa bayad"), dueStep ? stepLabel(dueStep.type, language) : step.config.due);
+    }
     case "payment_due":
     case "paymongo_link":
       return line(label("Amount", "Halaga"), `${human(String(step.config.amount), ctx)} ${pick(tx("pesos", "piso"), language)}`);
-    case "payment_status":
-      return line(label("Payment", "Bayad"), pick(tx("from step {id}", "mula sa step {id}"), language).replace("{id}", step.config.link));
+    case "payment_status": {
+      const linked = ctx.steps?.find((s) => s.id === step.config.link);
+      return line(label("Payment", "Bayad"), linked ? stepLabel(linked.type, language) : pick(tx("from step {id}", "mula sa step {id}"), language).replace("{id}", step.config.link));
+    }
     case "call_workflow":
       return line(label("Runs", "Patatakbuhin"), short(step.config.workflowSlug));
   }

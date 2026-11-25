@@ -18,12 +18,14 @@ const LABELS: Record<GuideKey, string> = {
 };
 
 /** The five setup steps with a word for each state, and a way to do the step. */
-export function SetupGuide({ facts, onExplain, onTry, onTurnOn }: { facts: Parameters<typeof guideSteps>[0]; onExplain: () => void; onTry: () => void; onTurnOn: () => void }) {
+export function SetupGuide({ facts, onCheckMessages, onExplain, onTry, onTurnOn }: { facts: Parameters<typeof guideSteps>[0]; onCheckMessages?: () => void; onExplain: () => void; onTry: () => void; onTurnOn: () => void }) {
   const { t } = useLanguage();
   const act = (key: GuideKey) => {
     if (key === "connect") location.hash = "#/apps";
-    else if (key === "message") document.getElementById("sample-checks")?.scrollIntoView({ block: "start" });
-    else if (key === "explain") onExplain();
+    else if (key === "message") {
+      if (onCheckMessages) onCheckMessages();
+      else document.getElementById("sample-checks")?.scrollIntoView({ block: "start" });
+    } else if (key === "explain") onExplain();
     else if (key === "try") onTry();
     else onTurnOn();
   };

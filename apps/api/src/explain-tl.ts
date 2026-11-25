@@ -55,6 +55,9 @@ function step(s: NonNullable<Facts["step"]>): Explanation | null {
     case "booking_changed": return booking;
     case "worker_stopped": return { headline: "Huminto ang kymavo habang nagpapadala.", lines: ["Maaaring natuloy ito. Tanungin ang tatanggap, saka piliin ang Nakarating na, Ipadala ulit o Ihinto."], fix: null };
     case "preview_choice": return { headline: "Sadyang pinatigil ang preview na ito.", lines: ["Walang ipinadala. Baguhin ang pinili sa preview para makitang magpatuloy ang automation."], fix: null };
+    case "knowledge_unpublished": return { headline: "Hindi pa naka-publish ang Knowledge Base.", lines: ["Magdagdag at mag-publish ng kahit isang Q&A sa Knowledge page, saka pindutin ang Subukan ulit."], fix: { href: "#/knowledge", label: "Buksan ang Knowledge" }, aiExplain: false };
+    case "missing_resource": return { headline: "Wala pang kuwarto o resource.", lines: ["Magdagdag ng kahit isang kuwarto o resource sa Resources page, saka pindutin ang Subukan ulit."], fix: { href: "#/resources", label: "Magdagdag ng resource" }, aiExplain: false };
+    case "sms_not_set_up": return { headline: "Hindi pa naka-set up ang pagpapadala ng SMS.", lines: ["Hindi pa makakapagpadala ng SMS ang workspace na ito. Tingnan ang plan o setup ng SMS sa Settings."], fix: { href: "#/settings", label: "Tingnan ang plan at nagamit" }, aiExplain: false };
   }
   const code = s.statusCode;
   const http = code === 401 || code === 403 ? "tinanggihan ng kabilang serbisyo ang access ng kymavo" : code === 404 ? "hindi makita ang address" : code === 429 ? "pinapabagal ng kabilang serbisyo ang kymavo" : code && code >= 500 ? "nagkaproblema ang kabilang serbisyo" : null;

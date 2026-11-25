@@ -32,7 +32,7 @@ import { MailboxTriggerSettings } from "./MailboxTriggerSettings";
 import { RecordTriggerSettings } from "./RecordTriggerSettings";
 import { ExplainSheet, SampleTest, SetupGuide, TurnOnSheet } from "./Guide";
 import { MonitorTriggerSettings } from "./MonitorTriggerSettings";
-import { testState, type SampleResult } from "./lib/guide";
+import { firstMessageStep, MESSAGE_STEP_TYPES, testState, type SampleResult } from "./lib/guide";
 import { parseSample, variableGroups } from "./lib/variables";
 import { VariablePicker } from "./VariablePicker";
 
@@ -42,6 +42,14 @@ const wasExplained = (id: string) => {
     return localStorage.getItem(explainedKey(id)) === "1";
   } catch {
     return false; // storage can be blocked; the dialog then shows again, which is harmless
+  }
+};
+const checkedMessagesKey = (id: string) => `daloy.checkedMessages.${id}`;
+const wereMessagesChecked = (id: string) => {
+  try {
+    return localStorage.getItem(checkedMessagesKey(id)) === "1";
+  } catch {
+    return false;
   }
 };
 
@@ -200,6 +208,15 @@ export function Editor({ id, from }: { id: string; from?: string }) {
   const [showShare, setShowShare] = useState(false);
   const [showTurnOn, setShowTurnOn] = useState(false);
   const [explained, setExplained] = useState(() => wasExplained(id));
+  const [messagesChecked, setMessagesChecked] = useState(() => wereMessagesChecked(id));
+  const markMessagesChecked = () => {
+    setMessagesChecked(true);
+    try {
+      localStorage.setItem(checkedMessagesKey(id), "1");
+    } catch {
+      // ignore storage failure
+    }
+  };
 
   const reload = async () => {
     const w = await api<Loaded>("GET", `/workflows/${id}`);
@@ -230,6 +247,7 @@ export function Editor({ id, from }: { id: string; from?: string }) {
           );
         }
         setCatalog(c);
+        if (w.live) markMessagesChecked();
         // After guided setup, show the explanation once for a draft that is not live yet.
         if (w.setup && !w.live && d.steps.length > 0 && !wasExplained(id)) setShowExplain(true);
       })
@@ -506,6 +524,7 @@ export function Editor({ id, from }: { id: string; from?: string }) {
       if (op !== "pick" && c.value === undefined) c.value = "{{trigger.text}}";
       nextConfig = c;
     }
+    if (step && MESSAGE_STEP_TYPES.has(step.type)) markMessagesChecked();
     update({ ...draft, steps: draft.steps.map((s) => (s.id === step!.id ? ({ ...s, config: nextConfig } as Step) : s)) }, `config:${step!.id}`);
   };
   const editOnError = (policy: StepErrorPolicy) => {
@@ -672,7 +691,7 @@ export function Editor({ id, from }: { id: string; from?: string }) {
     return true;
   };
   const actions = (
-    <div className="a7-actions" role="group" aria-label={t("Workflow actions")}>
+    <div className="a7-actions" role="group" aria-label={t("Automation actions")}>
       {/* The result shows in the panel's overview, so the selected step is closed first. */}
       <button
         type="button"
@@ -727,7 +746,7 @@ export function Editor({ id, from }: { id: string; from?: string }) {
       {step && (
         <section className="a7-inspector" aria-labelledby="step-heading">
           <div className="a7-kicker-row">
-            <p className="a7-kicker">{t("Step {number} · {type}", { number: draft.steps.indexOf(step) + 1, type: stepLabel(step.type, language) })}</p>
+            <p className="a7-kicker">{t("Step {number}", { number: draft.steps.indexOf(step) + 1 })} · <span className="muted">{step.id}</span></p>
             <button
               type="button"
               className="a7-delete"
@@ -740,8 +759,8 @@ export function Editor({ id, from }: { id: string; from?: string }) {
             </button>
             {closeButton}
           </div>
-          <h2 id="step-heading">{step.id}</h2>
-          <p className="a7-lead">{destination(step, { language, trigger: draft.trigger, chosen: chosen.get(step.id) })}</p>
+          <h2 id="step-heading">{stepLabel(step.type, language)}</h2>
+          <p className="a7-lead">{destination(step, { language, trigger: draft.trigger, steps: draft.steps, chosen: chosen.get(step.id) })}</p>
           <p className="muted a7-describe">{stepEntry(step.type).description[language]}</p>
           {missingApp.get(step.id) && (
             <p className="a7-warn-note">
@@ -846,7 +865,7 @@ export function Editor({ id, from }: { id: string; from?: string }) {
         {wide && actions}
       </header>
       <div className="a7-body">
-        <section className="a7-canvas" aria-label={t("Workflow diagram. Tab to a step and press Enter to select it, Delete to remove it.")}>
+        <section className="a7-canvas" aria-label={t("Automation diagram. Tab to a step and press Enter to select it, Delete to remove it.")}>
           {!wide && actions}
           {missing.length > 0 && (
             <div className="a7-setup">
@@ -1018,7 +1037,26 @@ export function Editor({ id, from }: { id: string; from?: string }) {
                 inspector
               ) : (
                 <>
-                  <SetupGuide facts={{ missingApps: missing.length, problems: problems.length, explained, test, live: isLive }} onExplain={() => setShowExplain(true)} onTry={() => void testRun("mock")} onTurnOn={() => setShowTurnOn(true)} />
+                  <SetupGuide
+                    facts={{
+                      missingApps: missing.length,
+                      problems: problems.length,
+                      hasMessageStep: firstMessageStep(draft) !== null,
+                      messagesChecked,
+                      explained,
+                      test,
+                      live: isLive,
+                    }}
+                    onCheckMessages={() => {
+                      markMessagesChecked();
+                      const first = firstMessageStep(draft);
+                      if (first) select(first);
+                      else document.getElementById("sample-checks")?.scrollIntoView({ block: "start" });
+                    }}
+                    onExplain={() => setShowExplain(true)}
+                    onTry={() => void testRun("mock")}
+                    onTurnOn={() => setShowTurnOn(true)}
+                  />
                   {warnings.length > 0 && (
                     <section className="a7-checks" aria-labelledby="checks-heading">
                       <h2 id="checks-heading">{t("Check before publishing")}</h2>
@@ -1201,19 +1239,21 @@ function StepList({ draft, selected, onSelect, onMove, chosen }: { draft: Draft;
         return (
           <li key={s.id}>
             <button type="button" aria-pressed={selected === s.id} onClick={() => onSelect(s.id)}>
-              {/* The id comes first so the button's name starts with it; CSS puts the kicker before it. */}
               <AppMark decorative mark={stepEntry(s.type).mark} name={markText(stepEntry(s.type), language)} size={24} />
-              <span className="a7-list-id">{s.id}</span>{" "}
               <span className="a7-list-kicker">
                 {i + 1} · {stepLabel(s.type, language)}
               </span>
-              <span className="a7-list-where">{destination(s, { language, trigger: draft.trigger, chosen: chosen.get(s.id) })}</span>
+              <span className="a7-list-where">{destination(s, { language, trigger: draft.trigger, steps: draft.steps, chosen: chosen.get(s.id) })}</span>
+              <span className="a7-list-id">{s.id}</span>
               {s.note && <span className="a7-list-note">{s.note}</span>}
-              {into.map((e) => (
-                <span key={e.from} className="a7-branch" data-branch={e.on}>
-                  {t("{from} on {branch}", { from: e.from, branch: t(e.on!) })}
-                </span>
-              ))}
+              {into.map((e) => {
+                const fromStep = draft.steps.find((x) => x.id === e.from);
+                return (
+                  <span key={e.from} className="a7-branch" data-branch={e.on}>
+                    {t("{from} on {branch}", { from: fromStep ? stepLabel(fromStep.type, language) : e.from, branch: t(e.on!) })}
+                  </span>
+                );
+              })}
             </button>
             <span className="a7-move">
               {(["up", "down"] as const).map((dir) => (

@@ -7,6 +7,7 @@ export const editorTranslations: Record<string, string> = {
   "Show steps as": "Ipakita ang mga hakbang bilang",
   Diagram: "Diagram",
   "Add step": "Magdagdag ng hakbang",
+  "Step {number}": "Hakbang {number}",
   "Step {number} · {type}": "Hakbang {number} · {type}",
   "{app} is not connected yet.": "Hindi pa nakakonekta ang {app}.",
   "Insert data from earlier steps": "Gamitin ang data mula sa naunang hakbang",
@@ -79,7 +80,8 @@ export const editorTranslations: Record<string, string> = {
   "{step} would have no way in. Connect it from another step first, or delete it.": "Mawawalan ng daan papasok ang {step}. Ikonekta muna ito mula sa ibang hakbang, o burahin ito.",
   "Pick one of this step's branches.": "Pumili ng isa sa mga sangay ng hakbang na ito.",
   // U2: the side panel, connection dots and the right-click menu.
-  "Workflow actions": "Mga aksyon ng workflow",
+  "Workflow actions": "Mga aksyon ng automation",
+  "Automation actions": "Mga aksyon ng automation",
   Explain: "Ipaliwanag",
   "Side panel": "Side panel",
   "Hide the side panel": "Itago ang side panel",

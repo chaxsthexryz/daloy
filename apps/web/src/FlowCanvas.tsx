@@ -9,7 +9,7 @@ import { runFlow, STATUS, type FlowRun } from "./lib/run-flow";
 
 /** What a node shows under its title: who or where the step acts on, from the catalog. */
 function whereLine(step: Step, data: StepNodeData, language: Language): string {
-  return destination(step, { language, trigger: data.context, chosen: data.chosen });
+  return destination(step, { language, trigger: data.context, chosen: data.chosen, steps: data.steps });
 }
 
 /** The state in words and a symbol under the title, shown whenever a run is drawn. Colour only adds to it. */
@@ -149,11 +149,11 @@ function EditorStepNode({ data }: NodeProps<Node<EditorNodeData, "step">>) {
           <AppMark decorative mark={entry.mark} name={markText(entry, language)} size={24} />
           {data.index} · {entry.app ? entry.app[language] : t("kymavo")}
         </span>
-        <span className="a7-node-note node-id">{step.id}</span>
       </span>
       <span className="node-title">{entry.action[language]}</span>
       {step.note && <span className="node-note">{step.note}</span>}
       <span className="node-summary">{whereLine(step, data, language)}</span>
+      <span className="a7-node-note node-id">{step.id}</span>
       {step.disabled && <span className="a7-node-note node-off-tag">{t("Turned off")}</span>}
       {data.needsApp && <span className="a7-node-note a7-warn">{t("Connect {app}", { app: t(data.needsApp) })}</span>}
       <Status status={data.status} />
@@ -324,6 +324,7 @@ export function RunFlow({ draft, run, colorMode }: { draft: Draft; run: FlowRun 
         colorMode={colorMode ?? (document.documentElement.dataset.theme === "dark" ? "dark" : "light")}
         fitView
         fitViewOptions={{ maxZoom: 1 }}
+        proOptions={{ hideAttribution: true }}
       >
         <Background />
         <Controls showInteractive={false} />

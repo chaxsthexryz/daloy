@@ -94,7 +94,7 @@ export function NewAutomationPage({ email }: { email: string }) {
         await api("POST", `/workflows/${wf.id}/versions`, { definition, publish: false });
       }
       pushToast({
-        message: t(slug ? "Created draft from template." : "Created blank workflow."),
+        message: t(slug ? "Created draft from template." : "Created blank automation."),
         tone: "success",
       });
       location.hash = `#/w/${wf.id}`;
@@ -150,7 +150,7 @@ export function NewAutomationPage({ email }: { email: string }) {
   const q = query.trim().toLowerCase();
   const matches = (...text: string[]) => !q || text.some((x) => x.toLowerCase().includes(q));
   const shown = cards.filter((c) => (category === "All" || c.category === category) && matches(c.name, c.description, t(c.category)));
-  const blankName = t("Blank workflow");
+  const blankName = t("Blank automation");
   const blankText = t("Choose a trigger, then add and connect the steps in the editor.");
   const aiName = t("Build with AI");
   const aiText = t("Say what should happen in your own words, answer a few questions, and check the draft before anything is saved.");

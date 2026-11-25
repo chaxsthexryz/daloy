@@ -4,19 +4,19 @@ import { api, type Version, type VersionSummary, type Workflow } from "./api";
 import { WorkflowHead } from "./Runs";
 import "./activity.css";
 import { startedAt } from "./lib/activity";
-import { jsonDiff, type Change } from "./lib/diff";
+import { canRollbackVersion, describeChange, jsonDiff, type Change } from "./lib/diff";
 
 type Opened = Workflow & { live: Version | null };
-const show = (v: unknown) => JSON.stringify(v);
 
-function ChangeLine({ c }: { c: Change }) {
-  const { t } = useLanguage();
+function ChangeLine({ c, before, after }: { c: Change; before: unknown; after: unknown }) {
+  const { t, language } = useLanguage();
+  const d = describeChange(c, before, after, language);
   return (
-    <li className={`change ${c.kind}`}>
-      <code>{c.path || t("(whole definition)")}</code> {t(c.kind)}
-      {c.kind !== "added" && <span className="before"> {show(c.before)}</span>}
+    <li className={`change ${c.kind}`} title={d.detailPath}>
+      <strong>{d.headline}</strong> {t(c.kind)}
+      {c.kind !== "added" && d.beforeText && <span className="before"> {d.beforeText}</span>}
       {c.kind === "changed" && " →"}
-      {c.kind !== "removed" && <span className="after"> {show(c.after)}</span>}
+      {c.kind !== "removed" && d.afterText && <span className="after"> {d.afterText}</span>}
     </li>
   );
 }
@@ -30,7 +30,7 @@ export function VersionsPage({ workflowId }: { workflowId: string }) {
   const [wf, setWf] = useState<Opened | null>(null);
   const [list, setList] = useState<VersionSummary[] | null>(null);
   const [selected, setSelected] = useState<number | null>(null);
-  const [diff, setDiff] = useState<{ version: Version; changes: Change[] } | null>(null);
+  const [diff, setDiff] = useState<{ version: Version; previous: Version | null; changes: Change[] } | null>(null);
   const [message, setMessage] = useState({ text: "", error: false });
 
   const load = async () => {
@@ -50,7 +50,7 @@ export function VersionsPage({ workflowId }: { workflowId: string }) {
     void (async () => {
       const version = await get(selected);
       const previous = selected > 1 ? await get(selected - 1).catch(() => null) : null;
-      setDiff({ version, changes: previous ? jsonDiff(previous.definition, version.definition) : [] });
+      setDiff({ version, previous, changes: previous ? jsonDiff(previous.definition, version.definition) : [] });
     })().catch((e: Error) => setMessage({ text: e.message, error: true }));
   }, [workflowId, selected]);
 
@@ -146,13 +146,24 @@ export function VersionsPage({ workflowId }: { workflowId: string }) {
                   {diff.changes.length > 0 && (
                     <ul className="act-changes" aria-label={t("Changes")}>
                       {diff.changes.map((c) => (
-                        <ChangeLine key={`${c.kind}:${c.path}`} c={c} />
+                        <ChangeLine key={`${c.kind}:${c.path}`} c={c} before={diff.previous?.definition} after={diff.version.definition} />
                       ))}
                     </ul>
                   )}
-                  {selected !== liveVersion && (
-                    <button type="button" className="act-button blue" onClick={rollback}>{t("Roll back to v{version}", { version: selected })}</button>
-                  )}
+                  {selected !== liveVersion && (() => {
+                    const latestVersion = list?.[0]?.version;
+                    const allowRollback = canRollbackVersion({ version: selected, latestVersion, liveVersion, published: diff.version.published });
+                    return (
+                      <>
+                        <button type="button" className="act-button blue" disabled={!allowRollback} onClick={rollback}>{t("Roll back to v{version}", { version: selected })}</button>
+                        {!allowRollback && (
+                          <p className="act-muted">
+                            {t(!diff.version.published ? "Draft versions have not been published yet. Open the editor and turn it on to publish." : "This is already the latest version.")}
+                          </p>
+                        )}
+                      </>
+                    );
+                  })()}
                   <p className="act-muted">{t("Rolling back publishes that definition as a new version. The earlier history stays as it is.")}</p>
                 </>
               )}

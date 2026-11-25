@@ -20,7 +20,7 @@ export function stepLines(def: WorkflowDefinition, language: Language, chosen: R
   const visit = (step: Step, after?: string) => {
     if (seen.has(step.id)) return;
     seen.add(step.id);
-    out.push({ id: step.id, label: entryLabel(stepEntry(step.type), language), where: destination(step, { language, trigger: def.trigger, chosen: chosen[step.id] }), after, ...(step.note?.trim() && { note: step.note.trim() }) });
+    out.push({ id: step.id, label: entryLabel(stepEntry(step.type), language), where: destination(step, { language, trigger: def.trigger, chosen: chosen[step.id], steps: def.steps }), after, ...(step.note?.trim() && { note: step.note.trim() }) });
     for (const e of def.edges.filter((x) => x.from === step.id)) {
       const next = def.steps.find((s) => s.id === e.to);
       if (next) queue.push({ step: next, after: e.on });
