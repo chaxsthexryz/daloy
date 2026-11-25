@@ -1731,8 +1731,6 @@ Limits: no geocoding (coordinates come from the shop), one drop-off, no cancel o
 
 Tests: `packages/db/src/lalamove.test.ts` (signature, quote then order, error handling), `packages/engine/src/lalamove.test.ts` (sandbox default, trigger and AI rules, template), `apps/worker/src/steps/lalamove.test.ts` (booking, fake for sample and test runs, live guard, checks before any request).
 
-<<<<<<< HEAD
-<<<<<<< HEAD
 ## AI quota guard, preflight checks, and safe routes (F1, decision 0144)
 
 What it does: failed or unconfigured AI calls (settings connection test, Build with AI, Reword run error, and worker `answer` / `ai` steps) refund any claimed monthly `ai` usage via `refundUsage`, and check Knowledge publication before claiming in `answer` steps. Outages show plain owner copy (`explainForOwner`) instead of raw upstream status codes. `Chat as your customer` pre-checks `GET /knowledge` with a direct `#/knowledge` link and sends `POST /runs/:id/cancel` only when the run is `pending` or `waiting`. `#/ai` logs failed turn-1 builds as `"failed"`, hides `Build it now` / `Start over` until an assistant reply or draft exists, matches keyword-scored fallback templates, and omits `#/settings/ai` links for non-admins (whose direct visits render `NotFoundPage`). Manual QR Ph / GCash `payment_status` steps no longer require PayMongo, and editor preflight checks (`preflightProblems`) surface Booking Resources (with inline creation in the sample tester), server SMS availability, Preview `sms: 0` plan, SMS quota, and published Knowledge, disabling `Turn on` when hard publish blockers remain.

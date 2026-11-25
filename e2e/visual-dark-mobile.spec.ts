@@ -318,7 +318,7 @@ test("390x844 mobile has zero overflow, clear drawer links, consistent Menu typo
   expect(cardBox.x + cardBox.width).toBeLessThanOrEqual(upBox.x + 1);
 
   // Mobile toolbar collapses Test run / Explain into More sheet, while Save / Publish / More stay >= 44px.
-  const toolbar = page.getByRole("group", { name: "Workflow actions" });
+  const toolbar = page.getByRole("group", { name: "Automation actions" });
   await expect(toolbar.getByRole("button")).toHaveText(["Save", "Publish", "More"]);
   await expect(toolbar.getByRole("button", { name: "Test run" })).toHaveCount(0);
   await toolbar.getByRole("button", { name: "More", exact: true }).click();

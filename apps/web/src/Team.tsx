@@ -26,15 +26,19 @@ const joined = (iso: string) => new Date(iso).toLocaleDateString("en-GB", { day:
 type Invite = { id?: string; email: string; link: string };
 
 /** The invite form and, once a link exists, the link to send. Nothing is emailed (decision 0022). */
-function InviteForm({ onCreated, onDone }: { onCreated?: (invite: PendingInvite, link: string) => void; onDone?: () => void }) {
+function InviteForm({ revokedId, onCreated, onDone }: { revokedId?: string | null; onCreated?: (invite: PendingInvite, link: string) => void; onDone?: () => void }) {
   const { t } = useLanguage();
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<MemberRole>("approver");
   const [invite, setInvite] = useState<Invite | null>(null);
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState("");
+  useEffect(() => {
+    if (revokedId && invite?.id === revokedId) setInvite(null);
+  }, [revokedId, invite?.id]);
   const send = async (e: FormEvent) => {
     e.preventDefault();
+    setInvite(null);
     setError("");
     setCopied(false);
     try {
@@ -98,6 +102,7 @@ export function TeamPage({ user }: { user: User }) {
   const [error, setError] = useState("");
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [copiedBanner, setCopiedBanner] = useState<{ id: string; email: string; link: string } | null>(null);
+  const [revokedId, setRevokedId] = useState<string | null>(null);
   const linkCache = useRef<Record<string, string>>({});
 
   const load = async () => {
@@ -145,6 +150,7 @@ export function TeamPage({ user }: { user: User }) {
   const revokePending = async (inv: PendingInvite) => {
     await run(() => api("DELETE", `/workspace/invites/${inv.id}`));
     delete linkCache.current[inv.id];
+    setRevokedId(inv.id);
     if (copiedId === inv.id) setCopiedId(null);
     if (copiedBanner?.id === inv.id) setCopiedBanner(null);
   };
@@ -167,6 +173,7 @@ export function TeamPage({ user }: { user: User }) {
           <div className="wk-body">
             <h2 id="invite-heading" className="wk-card-title">{t("Invite someone")}</h2>
             <InviteForm
+              revokedId={revokedId}
               onCreated={(created, link) => {
                 linkCache.current[created.id] = link;
                 setPending((prev) => [created, ...prev.filter((p) => p.id !== created.id)]);
