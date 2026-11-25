@@ -45,6 +45,11 @@ async function registerSeller(page: Page) {
 
 test("booking D-1042: a transfer receipt goes to review, a verified checkout confirms it, and the booking shows one payment history", async ({ page }) => {
   await registerSeller(page);
+  await page.getByRole("link", { name: "Receipts to review" }).click();
+  const emptyWalkthrough = page.getByRole("region", { name: "How receipt review works" });
+  await expect(emptyWalkthrough).toBeVisible();
+  await expect(emptyWalkthrough.getByRole("listitem")).toHaveCount(3);
+  await page.getByRole("link", { name: "Automations" }).first().click();
 
   expect((await page.request.put("/settings/connections/paymongo", { data: { secretKey: process.env.E2E_PAYMONGO_KEY, webhookSecret: process.env.E2E_PAYMONGO_WEBHOOK_SECRET } })).status()).toBe(200);
   const conns = (await (await page.request.get("/settings/connections")).json()) as { connections: { provider: string; destination: { webhookPath?: string } }[] };

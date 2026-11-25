@@ -1,6 +1,6 @@
 import "./editor.css";
 import { useLanguage } from "./Language";
-import { canSendAlone, configProblems, definitionSchema, destination, lintDefinition, markText, stepBranches, stepEntry, stepLabel, STEP_NOTE_MAX, triggerEntry, triggerLabel, type FormField, type Step, type StepErrorPolicy, type Trigger } from "@daloy/engine";
+import { canSendAlone, definitionSchema, destination, lintDefinition, markText, preflightProblems, stepBranches, stepEntry, stepLabel, STEP_NOTE_MAX, triggerEntry, triggerLabel, type FormField, type Step, type StepErrorPolicy, type Trigger } from "@daloy/engine";
 import { OUTSIDE_STEPS } from "@daloy/engine";
 import { AppMark } from "./AppMark";
 import { Breadcrumb } from "./Breadcrumb";
@@ -10,7 +10,7 @@ import { AskAi } from "./AiDraft";
 import { ChatTest } from "./ChatTest";
 import { FormEmbed } from "./FormEmbed";
 import { shareable, ShareSheet } from "./SharePanel";
-import { api, FINISHED, type Run, type RunSummary, type Version, type Workflow } from "./api";
+import { api, FINISHED, getUsage, type Run, type RunSummary, type Version, type Workflow } from "./api";
 import { DropLine, editorEdgeTypes, editorNodeTypes, flowAriaLabels, ZoomBar } from "./FlowCanvas";
 import { RunResult, StatePill, StepAttempt, useRun } from "./Runs";
 import { ADDABLE, addStep, blankDraft, canMove, connectSteps, duplicateStep, moveStep, readCopiedStep, removeStep, setDisabled, toFlow, type AddableType, type ConnectError, type Draft } from "./lib/graph";
@@ -32,7 +32,7 @@ import { MailboxTriggerSettings } from "./MailboxTriggerSettings";
 import { RecordTriggerSettings } from "./RecordTriggerSettings";
 import { ExplainSheet, SampleTest, SetupGuide, TurnOnSheet } from "./Guide";
 import { MonitorTriggerSettings } from "./MonitorTriggerSettings";
-import { testState, type SampleResult } from "./lib/guide";
+import { firstMessageStep, MESSAGE_STEP_TYPES, testState, type SampleResult } from "./lib/guide";
 import { parseSample, variableGroups } from "./lib/variables";
 import { VariablePicker } from "./VariablePicker";
 
@@ -42,6 +42,14 @@ const wasExplained = (id: string) => {
     return localStorage.getItem(explainedKey(id)) === "1";
   } catch {
     return false; // storage can be blocked; the dialog then shows again, which is harmless
+  }
+};
+const checkedMessagesKey = (id: string) => `daloy.checkedMessages.${id}`;
+const wereMessagesChecked = (id: string) => {
+  try {
+    return localStorage.getItem(checkedMessagesKey(id)) === "1";
+  } catch {
+    return false;
   }
 };
 
@@ -71,9 +79,9 @@ function connectReason(e: ConnectError, t: (source: string, values?: Record<stri
   return t("Pick one of this step's branches.");
 }
 
-const PANEL_STEPS_FIT = { maxZoom: 1, padding: { top: "16px", right: "16px", bottom: "64px", left: "16px" } } as const;
+const PANEL_STEPS_FIT = { maxZoom: 1, minZoom: 0.25, padding: { top: "20px", right: "20px", bottom: "64px", left: "20px" } } as const;
 
-type Catalog = { schemas: Record<string, JsonSchema>; branches: Record<string, string[]> };
+type Catalog = { schemas: Record<string, JsonSchema>; branches: Record<string, string[]>; sms?: boolean };
 type Loaded = Workflow & { trigger: { id: string; type: string; webhookPath: string | null; legacySignatureAt?: string | null } | null; live: Version | null; latest: Version | null };
 
 // Tomorrow at 10:00 in the field's own zone, which is on any slot grid that divides the hours evenly.
@@ -107,7 +115,20 @@ function samplePayload(trigger: Trigger, resourceId = "a resource id from the Re
   if (!fields || fields.length === 0) return "{}";
   // File fields are left out: a test run takes no files, and the server drops a value sent for one.
   const sample = Object.fromEntries(
-    fields.filter((f) => f.type !== "file").map((f) => [f.name, f.type === "number" ? 1 : f.type === "email" ? "ana@example.com" : f.type === "datetime" ? tomorrowAtTen() : f.type === "resource" ? resourceId : `Sample ${f.label.toLowerCase()}`]),
+    fields.filter((f) => f.type !== "file").map((f) => [
+      f.name,
+      f.type === "number"
+        ? 1
+        : f.type === "email"
+          ? "ana@example.com"
+          : f.type === "datetime"
+            ? tomorrowAtTen()
+            : f.type === "resource"
+              ? resourceId
+              : /(phone|mobile|whatsapp)/i.test(`${f.name} ${f.label}`)
+                ? "+639171234567"
+                : `Sample ${f.label.toLowerCase()}`,
+    ]),
   );
   return JSON.stringify(sample, null, 2);
 }
@@ -158,6 +179,9 @@ export function Editor({ id, from }: { id: string; from?: string }) {
   const wide = useMedia("(min-width: 1000px)");
   const [selected, setSelected] = useState<string | null>(null);
   const [firstResource, setFirstResource] = useState<string | undefined>();
+  const [activeResourceCount, setActiveResourceCount] = useState<number | undefined>();
+  const [smsMeter, setSmsMeter] = useState<{ limit: number | null; used: number } | undefined>();
+  const [knowledgePublished, setKnowledgePublished] = useState<boolean | undefined>();
   const [measured, setMeasured] = useState<Record<string, { width: number; height: number }>>({});
   const [message, setMessage] = useState<{ kind: "error" | "ok"; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -183,7 +207,17 @@ export function Editor({ id, from }: { id: string; from?: string }) {
   const [showExplain, setShowExplain] = useState(false);
   const [showShare, setShowShare] = useState(false);
   const [showTurnOn, setShowTurnOn] = useState(false);
+  const [showMoreActions, setShowMoreActions] = useState(false);
   const [explained, setExplained] = useState(() => wasExplained(id));
+  const [messagesChecked, setMessagesChecked] = useState(() => wereMessagesChecked(id));
+  const markMessagesChecked = () => {
+    setMessagesChecked(true);
+    try {
+      localStorage.setItem(checkedMessagesKey(id), "1");
+    } catch {
+      // ignore storage failure
+    }
+  };
 
   const reload = async () => {
     const w = await api<Loaded>("GET", `/workflows/${id}`);
@@ -191,12 +225,18 @@ export function Editor({ id, from }: { id: string; from?: string }) {
     return w;
   };
   useEffect(() => {
-    void Promise.all([reload(), api<Catalog>("GET", "/step-schemas"), api<{ id: string; active: boolean }[]>("GET", "/resources").catch(() => [])])
+    void Promise.all([
+      reload(),
+      api<Catalog>("GET", "/step-schemas"),
+      api<{ id: string; active: boolean }[]>("GET", "/resources").catch(() => null),
+    ])
       .then(([w, c, r]) => {
         const d = (w.latest?.definition as Draft | undefined) ?? blankDraft();
         setDraft(d);
-        setFirstResource(r.find((x) => x.active)?.id);
-        setPayload(samplePayload(d.trigger, r.find((x) => x.active)?.id));
+        const active = r ? r.filter((x) => x.active) : [];
+        setFirstResource(active[0]?.id);
+        setActiveResourceCount(r ? active.length : undefined);
+        setPayload(samplePayload(d.trigger, active[0]?.id));
         if (from) {
           void api<Run>("GET", `/runs/${from}`).then(
             (x) => {
@@ -208,10 +248,19 @@ export function Editor({ id, from }: { id: string; from?: string }) {
           );
         }
         setCatalog(c);
+        if (w.live) markMessagesChecked();
         // After guided setup, show the explanation once for a draft that is not live yet.
         if (w.setup && !w.live && d.steps.length > 0 && !wasExplained(id)) setShowExplain(true);
       })
       .catch((e: Error) => setMessage({ kind: "error", text: e.message }));
+    getUsage().then(
+      (u) => setSmsMeter(u.sms ? { limit: u.sms.limit, used: u.sms.used } : undefined),
+      () => undefined,
+    );
+    api<{ published: { entryCount: number } | null }>("GET", "/knowledge").then(
+      (k) => setKnowledgePublished(Boolean(k.published && k.published.entryCount > 0)),
+      () => undefined,
+    );
     api<{ connections: ConnInfo[] }>("GET", "/settings/connections").then(
       (r) => {
         setConns(r.connections);
@@ -403,7 +452,37 @@ export function Editor({ id, from }: { id: string; from?: string }) {
   if (!wf || !catalog) return <main className="page a7-loading">{message ? <p role="alert">{message.text}</p> : <p>{t("Loading…")}</p>}</main>;
 
   const step = draft.steps.find((s) => s.id === selected);
-  const problems = configProblems(draft, language);
+  const problems = preflightProblems(
+    draft,
+    {
+      smsConfigured: catalog.sms,
+      smsLimit: smsMeter?.limit,
+      smsUsed: smsMeter?.used,
+      resourceCount: activeResourceCount,
+      knowledgePublished,
+    },
+    language,
+  );
+  const addInlineResource = async (name: string) => {
+    const created = await api<{ id: string; active: boolean }>("POST", "/resources", { name });
+    setActiveResourceCount((c) => (c ?? 0) + 1);
+    setFirstResource((prev) => prev ?? created.id);
+    if (draft.trigger.type === "form" || draft.trigger.type === "sub_workflow") {
+      const resourceFields = (draft.trigger.config.fields ?? []).filter((f) => f.type === "resource").map((f) => f.name);
+      if (resourceFields.length > 0) {
+        try {
+          const parsed = JSON.parse(payload) as Record<string, unknown>;
+          for (const field of resourceFields) {
+            const cur = parsed[field];
+            if (!cur || cur === "a resource id from the Resources page") parsed[field] = created.id;
+          }
+          setPayload(JSON.stringify(parsed, null, 2));
+        } catch {
+          setPayload(samplePayload(draft.trigger, created.id));
+        }
+      }
+    }
+  };
   const test = testState(JSON.stringify(draft), sample, sample ? (sampleRun?.id === sample.runId ? sampleRun.state : null) : null);
   const closeExplain = () => {
     setShowExplain(false);
@@ -446,6 +525,7 @@ export function Editor({ id, from }: { id: string; from?: string }) {
       if (op !== "pick" && c.value === undefined) c.value = "{{trigger.text}}";
       nextConfig = c;
     }
+    if (step && MESSAGE_STEP_TYPES.has(step.type)) markMessagesChecked();
     update({ ...draft, steps: draft.steps.map((s) => (s.id === step!.id ? ({ ...s, config: nextConfig } as Step) : s)) }, `config:${step!.id}`);
   };
   const editOnError = (policy: StepErrorPolicy) => {
@@ -611,8 +691,20 @@ export function Editor({ id, from }: { id: string; from?: string }) {
     else copyStep(step);
     return true;
   };
-  const actions = (
-    <div className="a7-actions" role="group" aria-label={t("Workflow actions")}>
+  const actions = phone ? (
+    <div className="a7-actions" role="group" aria-label={t("Automation actions")}>
+      <button type="button" onClick={() => save(false)} disabled={busy || draft.steps.length === 0}>
+        {t("Save")}
+      </button>
+      <button type="button" className="primary" onClick={() => setShowTurnOn(true)} disabled={busy || draft.steps.length === 0}>
+        {t("Publish")}
+      </button>
+      <button type="button" aria-expanded={showMoreActions} aria-haspopup="dialog" onClick={() => setShowMoreActions(true)}>
+        {t("More")}
+      </button>
+    </div>
+  ) : (
+    <div className="a7-actions" role="group" aria-label={t("Automation actions")}>
       {/* The result shows in the panel's overview, so the selected step is closed first. */}
       <button
         type="button"
@@ -667,7 +759,7 @@ export function Editor({ id, from }: { id: string; from?: string }) {
       {step && (
         <section className="a7-inspector" aria-labelledby="step-heading">
           <div className="a7-kicker-row">
-            <p className="a7-kicker">{t("Step {number} · {type}", { number: draft.steps.indexOf(step) + 1, type: stepLabel(step.type, language) })}</p>
+            <p className="a7-kicker">{t("Step {number}", { number: draft.steps.indexOf(step) + 1 })} · <span className="muted">{step.id}</span></p>
             <button
               type="button"
               className="a7-delete"
@@ -680,8 +772,8 @@ export function Editor({ id, from }: { id: string; from?: string }) {
             </button>
             {closeButton}
           </div>
-          <h2 id="step-heading">{step.id}</h2>
-          <p className="a7-lead">{destination(step, { language, trigger: draft.trigger, chosen: chosen.get(step.id) })}</p>
+          <h2 id="step-heading">{stepLabel(step.type, language)}</h2>
+          <p className="a7-lead">{destination(step, { language, trigger: draft.trigger, steps: draft.steps, chosen: chosen.get(step.id) })}</p>
           <p className="muted a7-describe">{stepEntry(step.type).description[language]}</p>
           {missingApp.get(step.id) && (
             <p className="a7-warn-note">
@@ -692,6 +784,12 @@ export function Editor({ id, from }: { id: string; from?: string }) {
             <DocTemplatePicker key={`${step.id}-template`} templateId={step.config.templateId} templateName={step.config.templateName} onPick={(templateId, templateName) => editStep({ ...step.config, templateId, templateName })} />
           )}
           <SchemaForm key={step.id} schema={step.type === "ai" ? withoutFiles(catalog.schemas.ai!) : step.type === "google_docs" ? withoutTemplate(catalog.schemas.google_docs!) : step.type === "browser" ? withoutActions(catalog.schemas.browser!) : step.type === "switch" ? withoutCases(catalog.schemas.switch!) : step.type === "transform" ? transformSchema(catalog.schemas.transform!, step.config.op) : catalog.schemas[step.type]!} value={step.config as Record<string, unknown>} onChange={editStep} />
+          {step.type === "lalamove" && (
+            <p className="muted hint">
+              {t("Lalamove uses lalamove_api_key and lalamove_api_secret saved in Secrets. Sandbox mode is used until Live is turned on.")}{" "}
+              <a href="#/secrets">{t("Open Secrets")}</a>
+            </p>
+          )}
           {step.type === "whatsapp_reply" && (
             <p className="muted hint">
               {t("Meta bills WhatsApp Cloud API per delivered message to your Meta Business payment method. Free-form text works within 24 hours of the guest's last message; reminders outside 24 hours must use an approved Meta utility template.")}
@@ -763,7 +861,7 @@ export function Editor({ id, from }: { id: string; from?: string }) {
   );
 
   return (
-    <div className="a7-editor">
+    <main className="a7-editor">
       <header className="a7-head">
         <div className="a7-head-main">
           <Breadcrumb items={[{ label: t("Automations"), href: "#/" }, { label: wf.name }]} />
@@ -786,7 +884,7 @@ export function Editor({ id, from }: { id: string; from?: string }) {
         {wide && actions}
       </header>
       <div className="a7-body">
-        <section className="a7-canvas" aria-label={t("Workflow diagram. Tab to a step and press Enter to select it, Delete to remove it.")}>
+        <section className="a7-canvas" aria-label={t("Automation diagram. Tab to a step and press Enter to select it, Delete to remove it.")}>
           {!wide && actions}
           {missing.length > 0 && (
             <div className="a7-setup">
@@ -924,6 +1022,7 @@ export function Editor({ id, from }: { id: string; from?: string }) {
                 deleteKeyCode="Delete"
                 colorMode={document.documentElement.dataset.theme === "dark" ? "dark" : "light"}
                 proOptions={{ hideAttribution: true }}
+                minZoom={0.25}
                 fitView
                 fitViewOptions={PANEL_STEPS_FIT}
               >
@@ -958,7 +1057,26 @@ export function Editor({ id, from }: { id: string; from?: string }) {
                 inspector
               ) : (
                 <>
-                  <SetupGuide facts={{ missingApps: missing.length, problems: problems.length, explained, test, live: isLive }} onExplain={() => setShowExplain(true)} onTry={() => void testRun("mock")} onTurnOn={() => setShowTurnOn(true)} />
+                  <SetupGuide
+                    facts={{
+                      missingApps: missing.length,
+                      problems: problems.length,
+                      hasMessageStep: firstMessageStep(draft) !== null,
+                      messagesChecked,
+                      explained,
+                      test,
+                      live: isLive,
+                    }}
+                    onCheckMessages={() => {
+                      markMessagesChecked();
+                      const first = firstMessageStep(draft);
+                      if (first) select(first);
+                      else document.getElementById("sample-checks")?.scrollIntoView({ block: "start" });
+                    }}
+                    onExplain={() => setShowExplain(true)}
+                    onTry={() => void testRun("mock")}
+                    onTurnOn={() => setShowTurnOn(true)}
+                  />
                   {warnings.length > 0 && (
                     <section className="a7-checks" aria-labelledby="checks-heading">
                       <h2 id="checks-heading">{t("Check before publishing")}</h2>
@@ -969,7 +1087,7 @@ export function Editor({ id, from }: { id: string; from?: string }) {
                       </ul>
                     </section>
                   )}
-                  <SampleTest draft={draft} apps={apps} test={test} run={sampleRun} busy={busy} onTry={() => void testRun("mock")} />
+                  <SampleTest draft={draft} apps={apps} problems={problems} test={test} run={sampleRun} busy={busy} onTry={() => void testRun("mock")} onAddResource={addInlineResource} />
                   <ChatTest workflowId={id} draft={draft} onRun={(r) => { setRunId(r); setDirty(false); void reload(); }} />
                   <div className="a7-ai">
                     <AskAi
@@ -1068,13 +1186,52 @@ export function Editor({ id, from }: { id: string; from?: string }) {
           onClose={() => setShowShare(false)}
         />
       )}
+      {phone && showMoreActions && (
+        <Sheet title={t("More")} onClose={() => setShowMoreActions(false)}>
+          <div className="a7-more-actions">
+            <button
+              type="button"
+              onClick={() => {
+                setShowMoreActions(false);
+                select(null);
+                void testRun().then(showRun);
+              }}
+              disabled={busy || draft.steps.length === 0}
+            >
+              {t("Test run")}
+            </button>
+            <button
+              type="button"
+              aria-label={t("Explain this flow")}
+              onClick={() => {
+                setShowMoreActions(false);
+                setShowExplain(true);
+              }}
+              disabled={draft.steps.length === 0}
+            >
+              {t("Explain")}
+            </button>
+            {shareable(draft.trigger.type) && (
+              <button
+                type="button"
+                onClick={() => {
+                  setShowMoreActions(false);
+                  void reload().then(() => setShowShare(true), () => setShowShare(true));
+                }}
+              >
+                {t("Share")}
+              </button>
+            )}
+          </div>
+        </Sheet>
+      )}
       {showTurnOn && (
         <TurnOnSheet
           draft={draft}
           apps={apps}
           chosen={chosen}
           test={test}
-          problems={problems.length}
+          problems={problems}
           onConfirm={() => {
             setShowTurnOn(false);
             void save(true);
@@ -1082,7 +1239,7 @@ export function Editor({ id, from }: { id: string; from?: string }) {
           onClose={() => setShowTurnOn(false)}
         />
       )}
-    </div>
+    </main>
   );
 }
 
@@ -1141,19 +1298,21 @@ function StepList({ draft, selected, onSelect, onMove, chosen }: { draft: Draft;
         return (
           <li key={s.id}>
             <button type="button" aria-pressed={selected === s.id} onClick={() => onSelect(s.id)}>
-              {/* The id comes first so the button's name starts with it; CSS puts the kicker before it. */}
               <AppMark decorative mark={stepEntry(s.type).mark} name={markText(stepEntry(s.type), language)} size={24} />
-              <span className="a7-list-id">{s.id}</span>{" "}
               <span className="a7-list-kicker">
                 {i + 1} · {stepLabel(s.type, language)}
               </span>
-              <span className="a7-list-where">{destination(s, { language, trigger: draft.trigger, chosen: chosen.get(s.id) })}</span>
+              <span className="a7-list-where">{destination(s, { language, trigger: draft.trigger, steps: draft.steps, chosen: chosen.get(s.id) })}</span>
+              <span className="a7-list-id">{s.id}</span>
               {s.note && <span className="a7-list-note">{s.note}</span>}
-              {into.map((e) => (
-                <span key={e.from} className="a7-branch" data-branch={e.on}>
-                  {t("{from} on {branch}", { from: e.from, branch: t(e.on!) })}
-                </span>
-              ))}
+              {into.map((e) => {
+                const fromStep = draft.steps.find((x) => x.id === e.from);
+                return (
+                  <span key={e.from} className="a7-branch" data-branch={e.on}>
+                    {t("{from} on {branch}", { from: fromStep ? stepLabel(fromStep.type, language) : e.from, branch: t(e.on!) })}
+                  </span>
+                );
+              })}
             </button>
             <span className="a7-move">
               {(["up", "down"] as const).map((dir) => (

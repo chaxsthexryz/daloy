@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { definitionSchema, type Step, type Trigger } from "./definition";
 import { stepJsonSchemas } from "./step-schemas";
-import { destination, stepEntry, stepLabel, STEP_CATALOG, TRIGGER_CATALOG, triggerEntry, triggerLabel, type Text } from "./catalog";
+import { conditionOpLabel, destination, formatDuration, stepEntry, stepLabel, STEP_CATALOG, TRIGGER_CATALOG, triggerEntry, triggerLabel, type Text } from "./catalog";
 
 // Every step and trigger type the definition accepts, read from the schema itself so a new type fails here until it has an entry.
 const STEP_TYPES = Object.keys(stepJsonSchemas()) as Step["type"][];
@@ -140,5 +140,52 @@ describe("destination line", () => {
     expect(triggerEntry("slack_message").mark).toBe("slack");
     expect(triggerEntry("teams_message").mark).toBe("teams");
     expect(triggerEntry("discord_message").mark).toBe("discord");
+  });
+});
+
+describe("formatDuration and conditionOpLabel", () => {
+  it("formats durations into plain units in English and Tagalog", () => {
+    expect(formatDuration(0, "en")).toBe("0 seconds");
+    expect(formatDuration(45, "en")).toBe("45 seconds");
+    expect(formatDuration(60, "en")).toBe("1 minute");
+    expect(formatDuration(300, "en")).toBe("5 minutes");
+    expect(formatDuration(3600, "en")).toBe("1 hour");
+    expect(formatDuration(21_600, "en")).toBe("6 hours");
+    expect(formatDuration(64_800, "en")).toBe("18 hours");
+    expect(formatDuration(86_400, "en")).toBe("1 day");
+    expect(formatDuration(604_800, "en")).toBe("7 days");
+    expect(formatDuration(21_600, "tl")).toBe("6 oras");
+    expect(formatDuration(604_800, "tl")).toBe("7 araw");
+    expect(formatDuration(300, "tl")).toBe("5 minuto");
+    expect(formatDuration(45, "tl")).toBe("45 segundo");
+  });
+
+  it("maps all 9 condition operators in English and Tagalog", () => {
+    const ops = ["eq", "neq", "gt", "gte", "lt", "lte", "contains", "starts_with", "exists"] as const;
+    for (const op of ops) {
+      if (op !== "contains") expect(conditionOpLabel(op, "en")).not.toBe(op);
+      expect(conditionOpLabel(op, "tl").length).toBeGreaterThan(0);
+    }
+    expect(conditionOpLabel("contains", "en")).toBe("contains");
+    expect(conditionOpLabel("eq", "en")).toBe("is");
+    expect(conditionOpLabel("neq", "en")).toBe("is not");
+    expect(conditionOpLabel("gt", "en")).toBe("is greater than");
+  });
+
+  it("uses human durations, operators, and step labels in destination lines", () => {
+    const cond: Step = { id: "c1", type: "condition", config: { condition: { left: "{{trigger.amount}}", op: "gt", right: 500 } } };
+    expect(destination(cond, { language: "en" })).toBe("If: amount from the trigger is greater than 500");
+    const ex: Step = { id: "c2", type: "condition", config: { condition: { left: "{{trigger.email}}", op: "exists" } } };
+    expect(destination(ex, { language: "en" })).toBe("If: email from the trigger has a value");
+
+    const wait: Step = { id: "w1", type: "delay", config: { seconds: 21_600 } };
+    expect(destination(wait, { language: "en" })).toBe("Wait: 6 hours");
+    const before: Step = { id: "w2", type: "delay", config: { seconds: 0, until: "{{trigger.appointment_at}}", offsetSeconds: -86_400 } };
+    expect(destination(before, { language: "en" })).toBe("Until: 1 day before appointment_at from the trigger");
+
+    const askDeposit: Step = { id: "ask_deposit", type: "payment_due", config: { reference: "R-1", kind: "deposit", amount: "350", checkout: false } };
+    const status: Step = { id: "check_paid", type: "payment_status", config: { link: "ask_deposit" } };
+    expect(destination(status, { language: "en", steps: [askDeposit, status] })).toBe("Payment: Ask for payment");
+    expect(destination({ id: "s1", type: "sms", config: { to: "{{steps.ask_deposit.output.payUrl}}", message: "hi" } }, { language: "en", steps: [askDeposit] })).toBe("To: payUrl from Ask for payment");
   });
 });

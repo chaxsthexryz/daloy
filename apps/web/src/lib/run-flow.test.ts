@@ -108,7 +108,7 @@ describe("status text", () => {
 
 // WCAG 2.x contrast of the state colours in styles.css, light and dark.
 const css = readFileSync(new URL("../styles.css", import.meta.url), "utf8");
-const tokens = (block: string) => Object.fromEntries([...block.matchAll(/--([a-z-]+):\s*(#[0-9a-f]{6})/gi)].map((m) => [m[1]!, m[2]!]));
+const tokens = (block: string) => Object.fromEntries([...block.matchAll(/--([a-z0-9-]+):\s*(#[0-9a-f]{6})/gi)].map((m) => [m[1]!, m[2]!]));
 const schemes = {
   light: tokens(/^:root \{([^}]*)\}/m.exec(css)![1]!),
   dark: { ...tokens(/^:root \{([^}]*)\}/m.exec(css)![1]!), ...tokens(/^:root\[data-theme="dark"\] \{([^}]*)\}/m.exec(css)![1]!) },
@@ -130,6 +130,22 @@ describe.each(Object.entries(schemes))("state colours in %s mode", (_name, tk) =
   });
   it.each(colours)("%s lines are at least 3:1 on the canvas", (c) => {
     expect(contrast(tk[c]!, tk.bg!)).toBeGreaterThanOrEqual(3);
+  });
+  it("disabled button text is at least 4.5:1 on disabled background", () => {
+    expect(contrast(tk["disabled-fg"]!, tk["disabled-bg"]!)).toBeGreaterThanOrEqual(4.5);
+  });
+});
+
+describe("editor connection progress track contrast", () => {
+  const editorCss = readFileSync(new URL("../editor.css", import.meta.url), "utf8");
+  const lightEditor = tokens(/^\.a7-editor \{([^}]*)\}/m.exec(editorCss)![1]!);
+  const darkEditor = tokens(/^:root\[data-theme="dark"\] \.a7-editor \{([^}]*)\}/m.exec(editorCss)![1]!);
+
+  it.each([
+    ["light", lightEditor],
+    ["dark", darkEditor],
+  ])("track segment meets 3:1 against banner background in %s mode", (_mode, tk) => {
+    expect(contrast(tk["a7-bar-off"]!, tk["a7-bar"]!)).toBeGreaterThanOrEqual(3);
   });
 });
 

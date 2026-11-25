@@ -1,3 +1,4 @@
+import { conditionOpLabel, formatDuration } from "@daloy/engine";
 import { useLanguage } from "./Language";
 import { useId } from "react";
 
@@ -49,7 +50,7 @@ export function SchemaForm({ schema, value, onChange }: { schema: JsonSchema; va
 }
 
 function Field({ name, schema, required, value, onChange }: { name: string; schema: JsonSchema; required: boolean; value: unknown; onChange: (v: unknown) => void }) {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const id = useId();
   const text = (v: string) => onChange(v === "" && !required ? undefined : v);
 
@@ -69,12 +70,16 @@ function Field({ name, schema, required, value, onChange }: { name: string; sche
   }
 
   let input;
+  const durationHint =
+    (name === "seconds" || name === "timeoutSeconds" || name === "offsetSeconds") && typeof value === "number" && Number.isFinite(value)
+      ? formatDuration(Math.abs(value), language)
+      : null;
   if (schema.enum) {
     input = (
       <select id={id} value={String(value ?? "")} onChange={(e) => onChange(e.target.value === "" && !required ? undefined : e.target.value)}>
         {!required && <option value="">{t("(default)")}</option>}
         {schema.enum.map((o) => (
-          <option key={o} value={o}>{t(o)}</option>
+          <option key={o} value={o}>{name === "op" ? conditionOpLabel(o, language) : t(o)}</option>
         ))}
       </select>
     );
@@ -119,6 +124,7 @@ function Field({ name, schema, required, value, onChange }: { name: string; sche
         {!required && <span className="muted">{t(" (optional)")}</span>}
       </label>
       {input}
+      {durationHint && <p className="muted">{durationHint}</p>}
       {schema.description && <p className="muted">{t(schema.description)}</p>}
     </div>
   );

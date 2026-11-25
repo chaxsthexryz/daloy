@@ -89,8 +89,8 @@ const tagalog: Record<string, string> = {
   "which model drafts and classifies, and its key": "model na gumagawa ng draft at nag-uuri, at ang key nito",
   "for MCP clients and scripts": "para sa MCP clients at scripts",
 
-  "Settings": "Settings", "New": "Bago", "New automation": "Bagong automation", "Automations": "Mga automation",
-  "Activity": "Aktibidad", "Build with AI": "Bumuo gamit ang AI", "Bookings": "Mga booking", "Download CSV": "I-download ang CSV", "Team": "Team",
+  "Settings": "Mga setting", "New": "Bago", "New automation": "Bagong automation", "Automations": "Mga automation",
+  "Activity": "Aktibidad", "Build with AI": "Bumuo gamit ang AI", "Bookings": "Mga booking", "Download CSV": "I-download ang CSV", "Team": "Koponan",
   "Apps": "Mga app", "Business": "Negosyo", "Advanced": "Advanced", "Sign out": "Mag-sign out", "Menu": "Menu",
   "Main": "Pangunahing menu", "Quick": "Mabilis na menu", "This automation": "Automation na ito", "Overview": "Buod", "Steps": "Mga hakbang",
   "Appearance": "Itsura", "System (follows this device)": "System (ayon sa device na ito)", "Light": "Light", "Dark": "Dark",
@@ -99,9 +99,13 @@ const tagalog: Record<string, string> = {
   "Signed in as {email}, {role}.": "Naka-sign in bilang {email}, {role}.", "Language": "Wika",
   "Language applies to this workspace.": "Ang wika ay para sa workspace na ito.", "Could not save language. Try again.": "Hindi na-save ang wika. Subukan ulit.",
   "Plan and usage": "Plan at paggamit", "No plan limits are set. The operator sets the plan.": "Walang limit na nakatakda. Ang operator ang nagtatakda ng plan.",
-  "Loading…": "Naglo-load…", "Retry": "Subukan ulit", "Cancel": "Kanselahin", "Save": "I-save", "Back": "Bumalik", "Next": "Susunod", "Close": "Isara", "Delete": "Burahin", "Edit": "Baguhin", "Done": "Tapos na", "Continue": "Magpatuloy", "Connect": "Ikonekta", "Disconnect": "Idiskonekta", "Connected": "Nakakonekta", "More": "Iba pa", "All": "Lahat", "Name": "Pangalan", "Email": "Email", "Status": "Status", "Actions": "Mga aksyon", "Reference": "Reference", "Resource": "Resource", "Time": "Oras", "Move": "Ilipat", "No bookings yet. They appear when a workflow's booking step books a resource.": "Wala pang booking. Lalabas dito ang booking kapag may nareserbang resource ang automation.",
+  "Loading…": "Naglo-load…", "Retry": "Subukan ulit", "Cancel": "Kanselahin", "Save": "I-save", "Back": "Bumalik", "Next": "Susunod", "Close": "Isara", "Delete": "Burahin", "Edit": "Baguhin", "Done": "Tapos na", "Continue": "Magpatuloy", "Connect": "Ikonekta", "Disconnect": "Idiskonekta", "Connected": "Nakakonekta", "More": "Iba pa", "All": "Lahat", "Name": "Pangalan", "Email": "Email", "Status": "Status", "Actions": "Mga aksyon", "Reference": "Reference", "Resource": "Resource", "Time": "Oras", "Move": "Ilipat", "No bookings yet. They appear when an automation's booking step books a resource.": "Wala pang booking. Lalabas dito kapag may nareserbang resource ang automation.", "Manage rooms and resources": "Pamahalaan ang mga kuwarto at resource",
   "Find an app": "Maghanap ng app", "Choose an automation": "Pumili ng automation", "Receive website form emails": "Tumanggap ng email mula sa website form", "Your business": "Ang negosyo mo", "Business name": "Pangalan ng negosyo", "Website": "Website", "Inbox for new inquiries": "Inbox para sa mga bagong inquiry", "Reply address (optional)": "Reply address (opsyonal)",
   "Resources": "Mga resource", "AI model": "AI model", "API tokens": "API tokens",
+  "Page not found": "Hindi makita ang page",
+  "AI model settings are managed by the kymavo operator for this workspace.": "Ang mga setting ng AI model ay pinamamahalaan ng kymavo operator para sa workspace na ito.",
+  "This page does not exist, or your account cannot open it.": "Hindi umiiral ang page na ito, o walang access dito ang account mo.",
+  "Back to Automations": "Bumalik sa Mga automation",
 };
 
 /** True when the Tagalog dictionary has an entry for `source`, even one that keeps the English word. */

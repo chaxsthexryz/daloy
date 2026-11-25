@@ -11,13 +11,18 @@ test("Settings shows the cards for each role and keeps the theme after a reload"
     await expect(page.getByRole("region", { name: card })).toBeVisible();
   }
   const office = page.getByRole("region", { name: "Your office" });
-  for (const [name, href] of [["Apps", "#/apps"], ["Business", "#/settings/business"], ["Team", "#/team"], ["Resources", "#/resources"], ["AI model", "#/settings/ai"], ["API tokens", "#/tokens"]]) {
+  for (const [name, href] of [["Apps", "#/apps"], ["Business", "#/settings/business"], ["Team", "#/team"], ["Resources", "#/resources"]]) {
     await expect(office.getByRole("link", { name, exact: true })).toHaveAttribute("href", href!);
   }
+  await expect(office.getByRole("link", { name: "Advanced", exact: true })).toHaveCount(0);
   await page.getByLabel("Dark").check();
   await page.reload();
   await expect(page.getByLabel("Dark")).toBeChecked();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+
+  await page.goto("/#/settings/ai");
+  await expect(page.getByRole("heading", { name: "Page not found" })).toBeVisible();
+  await expect(page.getByText(/AI model settings are managed/)).toBeVisible();
 
   const operator = await joinAs(browser, page, "Operator", { width: 1280, height: 720 });
   await operator.goto("/#/settings");

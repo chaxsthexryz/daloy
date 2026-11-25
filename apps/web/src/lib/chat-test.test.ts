@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { aiFailure, chatPayload, chatReply, isChatTrigger, type ChatRun, type ChatTrigger } from "./chat-test";
+import { aiFailure, canCancelChatRun, chatPayload, chatReply, isChatTrigger, needsPublishedKnowledge, type ChatRun, type ChatTrigger } from "./chat-test";
 import type { Draft } from "./graph";
 
 const dm: ChatTrigger = { type: "meta_dm", config: { channel: "both", requireImage: false } };
@@ -86,5 +86,36 @@ describe("chat as your customer", () => {
     expect(aiFailure(draft, run("pending", [row("answer", "failed", { error: "connect ECONNREFUSED" })]))).toBe("connect ECONNREFUSED");
     expect(aiFailure(draft, run("succeeded", [row("answer", "succeeded")]))).toBeNull();
     expect(aiFailure(draft, null)).toBeNull();
+  });
+
+  it("detects when a chat draft requires published knowledge", () => {
+    expect(needsPublishedKnowledge(draft)).toBe(true);
+    const stay: Draft = {
+      trigger: dm,
+      steps: [{ id: "q", type: "stay_quote", config: { room: "Deluxe", checkIn: "2026-12-01", nights: "2", guests: "2" } }],
+      edges: [],
+    };
+    expect(needsPublishedKnowledge(stay)).toBe(true);
+    const disabled: Draft = {
+      trigger: dm,
+      steps: [{ id: "answer", type: "ai", disabled: true, config: { task: "answer", input: "{{trigger.text}}" } }],
+      edges: [],
+    };
+    expect(needsPublishedKnowledge(disabled)).toBe(false);
+    const classify: Draft = {
+      trigger: dm,
+      steps: [{ id: "c", type: "ai", config: { task: "classify", input: "{{trigger.text}}", labels: { a: "A", b: "B" } } }],
+      edges: [],
+    };
+    expect(needsPublishedKnowledge(classify)).toBe(false);
+  });
+
+  it("cancels only pending or waiting chat runs to avoid 409 on failed runs", () => {
+    expect(canCancelChatRun(null)).toBe(false);
+    expect(canCancelChatRun({ state: "pending" })).toBe(true);
+    expect(canCancelChatRun({ state: "waiting" })).toBe(true);
+    for (const state of ["failed", "succeeded", "cancelled", "running", "needs_review"]) {
+      expect(canCancelChatRun({ state })).toBe(false);
+    }
   });
 });

@@ -34,6 +34,7 @@ for (const [viewport, size] of [["390 px", { width: 390, height: 844 }], ["deskt
       await page.locator("#kn-price").fill("3500");
       await page.locator("#kn-capacity").fill("4");
       await page.locator("#kn-deposit").selectOption("percent");
+      await expect(page.locator(".kn-required-badge")).toBeVisible();
       await page.locator("#kn-deposit-value").fill("30");
       await page.locator("#kn-form-title ~ fieldset").getByRole("button").last().click(); // Add a rule
       await page.locator("#kn-rule-name-0").fill("Peak season");
@@ -44,6 +45,8 @@ for (const [viewport, size] of [["390 px", { width: 390, height: 844 }], ["deskt
       await page.getByRole("button", { name: w.save }).click();
 
       const row = page.getByRole("listitem").filter({ hasText: "Garden room" });
+      await expect(page.locator(".wk-title-row .wk-sub")).toHaveText("1 entry");
+      await expect(page.getByRole("button", { name: w.add })).not.toHaveClass(/\bblue\b/);
       await expect(row).toContainText(`PHP 3,500`);
       await expect(row).toContainText(w.rules);
       await expect(page.getByText(w.unpublished)).toBeVisible();
@@ -51,6 +54,18 @@ for (const [viewport, size] of [["390 px", { width: 390, height: 844 }], ["deskt
       await page.getByRole("button", { name: w.publish, exact: true }).click();
       await expect(page.getByRole("heading", { name: w.live })).toBeVisible();
       await expect(page.getByRole("button", { name: w.publish, exact: true })).toBeDisabled();
+
+      if (lang === "en") {
+        await page.getByRole("button", { name: w.add }).click();
+        await page.locator("#kn-kind").selectOption("arrival");
+        await page.locator("#kn-title").fill("Check-in hours");
+        await page.locator("#kn-check-in").fill("15:00");
+        await page.locator("#kn-check-out").fill("11:00");
+        await page.getByRole("button", { name: w.save }).click();
+        await expect(page.getByRole("listitem").filter({ hasText: "Check-in hours" })).toContainText("3:00 PM / 11:00 AM");
+        await page.getByRole("listitem").filter({ hasText: "Check-in hours" }).getByRole("button", { name: "Delete Check-in hours" }).click();
+        await expect(page.getByRole("listitem").filter({ hasText: "Check-in hours" })).toHaveCount(0);
+      }
 
       // An edit after publish is only a draft: version 1 stays live and Publish wakes up.
       await row.getByRole("button").first().click();

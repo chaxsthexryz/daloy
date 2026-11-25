@@ -68,3 +68,39 @@ test("a run with no reply step shows the path it took", async ({ page }) => {
   await say(page, "Hello po");
   await expect(page.getByRole("log", { name: "Test chat" }).locator(".is-bot")).toContainText("No reply step ran. The run went: is_receipt (false).", { timeout: 30_000 });
 });
+
+test("pre-checks unpublished knowledge with a direct link, avoids 409 cancel, and spends 0 AI quota on failure", async ({ page }) => {
+  const definition = {
+    trigger: dm,
+    steps: [
+      { id: "answer", type: "ai", config: { task: "answer", input: "{{trigger.text}}" } },
+      { id: "reply", type: "meta_reply", config: { recipientId: "{{trigger.senderId}}", channel: "{{trigger.channel}}", text: "{{steps.answer.output.reply}}" } },
+    ],
+    edges: [{ from: "answer", to: "reply" }],
+  };
+  const id = await signUp(page, "noknowledge", definition);
+  await page.goto(`/#/w/${id}`);
+  const chat = page.getByRole("region", { name: "Chat as your customer" });
+  await expect(chat.getByRole("alert")).toContainText("Publish your knowledge sheet first");
+  await expect(chat.getByRole("link", { name: "Open Knowledge" })).toHaveAttribute("href", "#/knowledge");
+  await expect(chat.getByRole("button", { name: "Send", exact: true })).toBeDisabled();
+
+  // Publish knowledge, break the model name so the AI step fails, and confirm 0 /cancel 409s and 0 AI quota spent.
+  expect((await page.request.post("/knowledge/entries", { data: { kind: "fee", title: "Day tour", fields: { price: 350, unit: "day" } } })).ok()).toBe(true);
+  expect((await page.request.post("/knowledge/publish")).ok()).toBe(true);
+  expect((await page.request.put("/settings/ai", { data: { preset: "local", model: "fake-broken" } })).status()).toBe(204);
+
+  const cancelStatuses: number[] = [];
+  page.on("response", (res) => {
+    if (res.url().includes("/cancel") && res.request().method() === "POST") cancelStatuses.push(res.status());
+  });
+
+  await page.reload();
+  await say(page, "Magkano po ang day tour?");
+  const log = page.getByRole("log", { name: "Test chat" });
+  await expect(log.locator(".is-bot")).toContainText("Mock reply", { timeout: 30_000 });
+  await expect(log.locator(".t8-note")).toContainText("Mock reply (no AI action used)");
+  expect(cancelStatuses).toEqual([]);
+  const usage = (await (await page.request.get("/usage")).json()) as { ai: { used: number } };
+  expect(usage.ai.used).toBe(0);
+});

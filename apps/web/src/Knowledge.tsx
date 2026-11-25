@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import type { KnowledgeEntry, KnowledgeKind, PriceUnit } from "@daloy/engine";
 import { api } from "./api";
 import { useLanguage } from "./Language";
-import { emptyForm, emptyRule, hasStayTimes, isPriced, KNOWLEDGE_KINDS, PRICE_UNITS, summaryOf, toForm, toInput, WEEKDAYS, type EntryForm, type RuleForm } from "./lib/knowledge";
+import { emptyForm, emptyRule, entryCountKey, hasStayTimes, isPriced, KNOWLEDGE_KINDS, PRICE_UNITS, publishedEntryCountKey, summaryOf, toForm, toInput, WEEKDAYS, type EntryForm, type RuleForm } from "./lib/knowledge";
 
 type State = {
   entries: KnowledgeEntry[];
@@ -67,7 +67,7 @@ export function KnowledgePage() {
         <div>
           <div className="wk-title-row">
             <h1>{t("Knowledge")}</h1>
-            {state && <span className="wk-sub">{t("{count} entries", { count: state.entries.length })}</span>}
+            {state && <span className="wk-sub">{t(entryCountKey(state.entries.length), { count: state.entries.length })}</span>}
           </div>
         </div>
       </header>
@@ -80,7 +80,7 @@ export function KnowledgePage() {
             </h2>
             <p className="wk-sub">
               {state.published
-                ? t("Published {date}, {count} entries.", { date: new Date(state.published.createdAt).toLocaleString(), count: state.published.entryCount })
+                ? t(publishedEntryCountKey(state.published.entryCount), { date: new Date(state.published.createdAt).toLocaleString(), count: state.published.entryCount })
                 : t("The concierge has nothing to answer from until you publish.")}
               {" "}
               {state.changed ? <strong>{t("You have changes that are not published.")}</strong> : state.published ? t("No changes since then.") : ""}
@@ -106,7 +106,7 @@ export function KnowledgePage() {
           }}
         />
       ) : (
-        <p><button type="button" className="wk-button blue" onClick={() => setEditing("new")}>{t("Add an entry")}</button></p>
+        <p><button type="button" className={state?.changed ? "wk-button" : "wk-button blue"} onClick={() => setEditing("new")}>{t("Add an entry")}</button></p>
       )}
       {state === null ? (
         <p className="wk-sub" role="status">{t("Loading…")}</p>
@@ -201,7 +201,10 @@ function EntryForm({ initial, onSave, onCancel }: { initial: EntryForm; onSave: 
             </div>
             {form.deposit && (
               <div>
-                <label htmlFor="kn-deposit-value">{form.deposit === "percent" ? t("Deposit percent") : t("Deposit amount (PHP)")}</label>
+                <div className="kn-label-row">
+                  <label htmlFor="kn-deposit-value">{form.deposit === "percent" ? t("Deposit percent") : t("Deposit amount (PHP)")}</label>
+                  <span className="kn-required-badge">{t("Required")}</span>
+                </div>
                 <input id="kn-deposit-value" type="number" inputMode="numeric" min={form.deposit === "percent" ? 1 : 0} max={form.deposit === "percent" ? 100 : undefined} step={1} value={form.depositValue} onChange={(e) => set("depositValue", e.target.value)} required />
               </div>
             )}

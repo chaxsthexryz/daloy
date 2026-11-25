@@ -59,9 +59,9 @@ export const sentAlone = (r: { testChoices?: Record<string, object> | null }) =>
 export const ownerError = (error: string) => error.replace(/^step [^:]+: /, "");
 
 /** The page that fixes a failed run, read from the error text the steps and providers write (null when it cannot tell). */
-export function fixFor(error: string): { href: string; label: string } | null {
+export function fixFor(error: string, admin = false): { href: string; label: string } | null {
   if (/gmail|mail server/i.test(error)) return { href: "#/apps", label: "Connect Gmail" };
   if (/google sheets|service account|google calendar|slack|outlook|teams|discord|telegram|unisms|airtable|notion|trello|microsoft|meta|messenger|instagram/i.test(error)) return { href: "#/apps", label: "Check the connection" };
-  if (/api key|ai model/i.test(error)) return { href: "#/settings/ai", label: "Check the AI model" };
+  if (/api key|ai model/i.test(error)) return admin ? { href: "#/settings/ai", label: "Check the AI model" } : { href: "#/settings", label: "See plan and usage" };
   return null;
 }

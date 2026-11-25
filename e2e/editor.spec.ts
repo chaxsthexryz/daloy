@@ -25,25 +25,26 @@ test("edit trigger, steps and branches, then test, save and publish", async ({ p
 
   // An approval with a step on two of its branches, added from the list's "+ Add a step at the end" and the step's own panel.
   await addStep(page, "approval");
-  await expect(page.getByText("Step 1 · Approval")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Approval", exact: true })).toBeVisible();
+  await expect(page.getByText(/Step 1 · approval_1/)).toBeVisible();
   await addStep(page, "email", { after: "approval_1", branch: "rejected" });
-  await page.getByRole("button", { name: /^approval_1 / }).click();
+  await page.getByRole("button", { name: /Approval.*approval_1/ }).click();
   await addStep(page, "sheets", { after: "approval_1", branch: "approved" });
 
   // The sheet needs Google Sheets, which this new workspace has not connected.
   await expect(page.getByText("0 of 1 apps connected")).toBeVisible();
   await expect(page.getByRole("link", { name: "Connect Google Sheet" })).toHaveAttribute("href", "#/apps");
-  await expect(page.getByRole("button", { name: /^sheets_1 .*approval_1 on approved/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Add a row.*sheets_1.*Approval on approved/ })).toBeVisible();
 
-  await page.getByRole("button", { name: /^approval_1 / }).click();
+  await page.getByRole("button", { name: /Approval.*approval_1/ }).click();
   const next = page.getByRole("region", { name: "What happens next" });
   await expect(next).toContainText("approvedsheets_1");
   await expect(next).toContainText("rejectedemail_1");
 
   // With no text field chosen yet, a reference to earlier data copies to the clipboard (E3).
-  await page.getByRole("button", { name: /^email_1 / }).click();
+  await page.getByRole("button", { name: /Send email.*email_1/ }).click();
   await page.getByRole("button", { name: "Insert {{trigger.email}}" }).click();
-  await expect(page.getByRole("status")).toHaveText("Copied {{trigger.email}}");
+  await expect(page.locator(".a7-copied")).toHaveText("Copied {{trigger.email}}");
 
   // The diagram draws every step; the zoom bar changes the zoom.
   await page.getByRole("button", { name: "Diagram", exact: true }).click();
@@ -71,7 +72,7 @@ test("edit trigger, steps and branches, then test, save and publish", async ({ p
 
   // Publishing needs every app connected, so drop the sheet first.
   await page.getByRole("button", { name: "List", exact: true }).click();
-  await page.getByRole("button", { name: /^sheets_1 / }).click();
+  await page.getByRole("button", { name: /Add a row.*sheets_1/ }).click();
   await page.getByRole("button", { name: "Delete step" }).click();
   await expect(page.getByText("0 of 1 apps connected")).toBeHidden();
   await page.getByRole("button", { name: "Publish" }).click();
@@ -152,10 +153,10 @@ test("the plus on each branch of a condition and an approval adds the step on th
 test("the panel: actions stay pinned in the header, AI box with nothing selected, close, Escape, and folding kept per viewer", async ({ page }) => {
   await branchedFlow(page);
   const panel = page.locator(".a7-panel");
-  const headActions = page.locator(".a7-head").getByRole("group", { name: "Workflow actions" });
+  const headActions = page.locator(".a7-head").getByRole("group", { name: "Automation actions" });
   const node = (id: string) => page.locator(`.react-flow__node[data-id="${id}"]`);
   await expect(headActions.getByRole("button")).toHaveText(["Test run", "Explain", "Save", "Publish"]);
-  await expect(panel.getByRole("group", { name: "Workflow actions" })).toHaveCount(0);
+  await expect(panel.getByRole("group", { name: "Automation actions" })).toHaveCount(0);
   await expect(panel.getByRole("region", { name: "Ask the AI" })).toBeVisible();
   await expect(panel.locator("summary", { hasText: "Test settings" })).toBeVisible();
   await expect(page.locator("#add-step-type")).toHaveCount(0);
@@ -163,7 +164,8 @@ test("the panel: actions stay pinned in the header, AI box with nothing selected
 
   // A selected step shows its dots; other steps keep theirs hidden.
   await node("ok_mail").click();
-  await expect(panel.getByRole("heading", { name: "ok_mail" })).toBeVisible();
+  await expect(panel.getByRole("heading", { name: "Send email" })).toBeVisible();
+  await expect(panel.locator(".a7-kicker")).toContainText("ok_mail");
   await expect(node("ok_mail").locator(".react-flow__handle").first()).toBeVisible();
   await expect(node("bad_mail").locator(".react-flow__handle").first()).toBeHidden();
   await expect(headActions).toBeVisible();
@@ -171,7 +173,7 @@ test("the panel: actions stay pinned in the header, AI box with nothing selected
   await expect(panel.getByRole("region", { name: "Ask the AI" })).toBeVisible();
   await node("ok_mail").click();
   await page.keyboard.press("Escape");
-  await expect(panel.getByRole("heading", { name: "ok_mail" })).toHaveCount(0);
+  await expect(panel.getByRole("heading", { name: "Send email" })).toHaveCount(0);
 
   // Double click opens the step and focuses its first field.
   await node("ok_mail").dblclick();
@@ -186,7 +188,8 @@ test("the panel: actions stay pinned in the header, AI box with nothing selected
   await page.reload();
   await expect(page.getByRole("button", { name: "Show the side panel" })).toHaveAttribute("aria-expanded", "false");
   await node("check").click();
-  await expect(panel.getByRole("heading", { name: "check" })).toBeVisible();
+  await expect(panel.getByRole("heading", { name: "Condition" })).toBeVisible();
+  await expect(panel.locator(".a7-kicker")).toContainText("check");
   await expect(headActions.getByRole("button", { name: "Publish" })).toBeVisible();
   await page.getByRole("button", { name: "Hide the side panel" }).click();
   await page.getByRole("button", { name: "Show the side panel" }).click();

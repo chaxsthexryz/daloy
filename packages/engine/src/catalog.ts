@@ -78,7 +78,7 @@ export const STEP_CATALOG: Record<Step["type"], CatalogEntry> = {
     outcomes: [tx("Expired", "Napaso"), tx("Kept", "Nanatili")],
   },
   paymongo_link: { app: PAYMONGO, mark: "paymongo", provider: "paymongo", action: tx("Create a payment link", "Gumawa ng payment link"), description: tx("Create a checkout link for the amount in pesos. A later step sends it to the customer.", "Gumawa ng checkout link para sa halaga sa piso. Ipapadala ito ng susunod na step sa customer."), required: ["amount", "description", "reference"], input: tx("The amount in pesos, a description and the order reference.", "Ang halaga sa piso, paglalarawan at reference ng order."), output: tx("The checkout link.", "Ang checkout link."), outcomes: [tx("Link created", "Nagawa ang link"), tx("Failed, with the reason", "Nabigo, may dahilan")] },
-  payment_status: { app: PAYMONGO, mark: "paymongo", provider: "paymongo", action: tx("Check a payment", "Tingnan ang bayad"), description: tx("Read the current status of a payment link made earlier in this run. It never calls PayMongo.", "Basahin ang kasalukuyang status ng payment link na ginawa kanina sa run na ito. Hindi ito tumatawag sa PayMongo."), required: ["link"], input: tx("The id of the payment link step.", "Ang id ng step ng payment link."), output: tx("Pending, paid, needs review or refunded.", "Pending, bayad na, kailangang suriin o na-refund."), outcomes: [tx("Pending", "Pending"), tx("Paid", "Bayad na"), tx("Needs review", "Kailangang suriin"), tx("Refunded", "Na-refund")] },
+  payment_status: { app: null, mark: "form", action: tx("Check a payment", "Tingnan ang bayad"), description: tx("Read the current status of a payment request or checkout link made earlier in this run.", "Basahin ang kasalukuyang status ng kahilingan sa bayad o checkout link na ginawa kanina sa run na ito."), required: ["link"], input: tx("The id of the payment request or link step.", "Ang id ng step ng kahilingan sa bayad o link."), output: tx("Pending, paid, needs review or refunded.", "Pending, bayad na, kailangang suriin o na-refund."), outcomes: [tx("Pending", "Pending"), tx("Paid", "Bayad na"), tx("Needs review", "Kailangang suriin"), tx("Refunded", "Na-refund")] },
   meta_reply: { app: META, mark: "messenger", provider: "meta_messenger", action: tx("Reply to a message", "Sumagot sa mensahe"), description: tx("Reply to the customer in the same conversation, within Meta's 24-hour window.", "Sumagot sa customer sa parehong usapan, sa loob ng 24 oras na window ng Meta."), required: ["text"], input: tx("The reply text. The customer and channel come from the message.", "Ang text ng sagot. Ang customer at channel ay mula sa mensahe."), output: tx("Whether the reply was sent.", "Kung naipadala ang sagot."), outcomes: queued },
   whatsapp_reply: { app: WHATSAPP, mark: "whatsapp", provider: "whatsapp", action: tx("Send a WhatsApp message", "Magpadala ng mensahe sa WhatsApp"), description: tx("Send a service reply within 24 hours, or an approved utility template anytime. Meta bills each delivered message directly to your WhatsApp Business account.", "Magpadala ng service reply sa loob ng 24 oras, o aprubadong utility template anumang oras. Direktang sinisingil ng Meta ang bawat naipadalang mensahe sa iyong WhatsApp Business account."), required: [], input: tx("Recipient phone number and either reply text or an approved template name.", "Numero ng tatanggap at teksto ng sagot o pangalan ng aprubadong template."), output: tx("Whether the WhatsApp message was delivered.", "Kung naipadala ang mensahe sa WhatsApp."), outcomes: queued },
   stay_quote: { app: null, mark: "form", action: tx("Quote a stay", "Kuwentahin ang stay"), description: tx("Work out the price and deposit of a stay from the published knowledge sheet: nights across seasons, weekday rates and extra guests.", "Kuwentahin ang presyo at deposit ng stay mula sa na-publish na knowledge sheet: mga gabi sa iba't ibang season, presyo kada araw ng linggo at sobrang guest."), required: ["room", "checkIn", "nights", "guests"], input: tx("A room from the knowledge sheet, the check-in date, nights and guests.", "Isang room mula sa knowledge sheet, petsa ng check-in, bilang ng gabi at guests."), output: tx("Each night's price, the total and the deposit in pesos.", "Presyo ng bawat gabi, kabuuan at deposit sa piso."), outcomes: [tx("Quoted", "Nakuwenta"), tx("Failed, with the reason", "Nabigo, may dahilan")] },
@@ -143,11 +143,42 @@ export function entryLabel(e: CatalogEntry, language: Language): string {
 export const stepLabel = (type: Step["type"], language: Language = "en") => entryLabel(STEP_CATALOG[type], language);
 export const triggerLabel = (type: Trigger["type"], language: Language = "en") => entryLabel(TRIGGER_CATALOG[type], language);
 
+const CONDITION_OPS: Record<string, Text> = {
+  eq: tx("is", "ay"),
+  neq: tx("is not", "ay hindi"),
+  gt: tx("is greater than", "ay higit sa"),
+  gte: tx("is at least", "ay hindi bababa sa"),
+  lt: tx("is less than", "ay mas maliit sa"),
+  lte: tx("is at most", "ay hindi hihigit sa"),
+  contains: tx("contains", "may laman na"),
+  starts_with: tx("starts with", "nagsisimula sa"),
+  exists: tx("has a value", "may halaga"),
+};
+
+/** Plain condition operator label for diagrams, lists, diffs, and inspect forms. */
+export function conditionOpLabel(op: string, language: Language): string {
+  return op in CONDITION_OPS ? pick(CONDITION_OPS[op]!, language) : op;
+}
+
+/** Plain duration text for wait and timeout settings (exact days/hours/minutes, else seconds). */
+export function formatDuration(seconds: number, language: Language): string {
+  const s = Math.round(Math.abs(seconds));
+  const unit = (n: number, enOne: string, enMany: string, tl: string) =>
+    language === "tl" ? `${n} ${tl}` : `${n} ${n === 1 ? enOne : enMany}`;
+  if (s === 0) return unit(0, "second", "seconds", "segundo");
+  if (s % 86_400 === 0) return unit(s / 86_400, "day", "days", "araw");
+  if (s % 3600 === 0) return unit(s / 3600, "hour", "hours", "oras");
+  if (s % 60 === 0) return unit(s / 60, "minute", "minutes", "minuto");
+  return unit(s, "second", "seconds", "segundo");
+}
+
 export type DestinationContext = {
   language: Language;
   trigger?: Trigger;
   /** The name of the destination the owner picked in Apps (a channel, a sheet, a list), when the app is connected and has one. */
   chosen?: string;
+  /** Draft steps so step references can resolve human step labels ahead of internal IDs. */
+  steps?: readonly Step[];
 };
 
 const TRIGGER_NOUN: Record<Trigger["type"], Text> = {
@@ -178,12 +209,11 @@ const TRIGGER_NOUN: Record<Trigger["type"], Text> = {
   manual: tx("the sample data", "sample data"),
 };
 const FROM = tx("{what} from {where}", "{what} mula sa {where}");
-const STEP_FROM = tx("{what} from step {id}", "{what} mula sa step {id}");
 const fill = (t: Text, language: Language, values: Record<string, string>) => pick(t, language).replace(/\{(\w+)\}/g, (_, k: string) => values[k] ?? "");
 
 const REF = /\{\{\s*([^}]+?)\s*\}\}/g;
 /** A template as words: {{trigger.email}} becomes "Customer email from the form". A literal stays as typed. */
-function human(value: string, { language, trigger }: DestinationContext): string {
+function human(value: string, { language, trigger, steps }: DestinationContext): string {
   return value.replace(REF, (_, ref: string) => {
     const [root, ...path] = ref.split(".");
     if (root === "trigger" && path.length) {
@@ -192,8 +222,12 @@ function human(value: string, { language, trigger }: DestinationContext): string
       const label = fields.find((f) => f.name === name)?.label ?? name;
       return fill(FROM, language, { what: label, where: trigger ? pick(TRIGGER_NOUN[trigger.type], language) : pick(tx("the trigger", "trigger"), language) });
     }
-    if (root === "steps" && path.length >= 3 && path[1] === "output") return fill(STEP_FROM, language, { what: path.slice(2).join("."), id: path[0]! });
-    if (root === "steps") return fill(STEP_FROM, language, { what: pick(tx("result", "resulta"), language), id: path[0] ?? "" });
+    if (root === "steps") {
+      const target = steps?.find((s) => s.id === path[0]);
+      const where = target ? stepLabel(target.type, language) : fill(tx("step {id}", "step {id}"), language, { id: path[0] ?? "" });
+      const what = path.length >= 3 && path[1] === "output" ? path.slice(2).join(".") : pick(tx("result", "resulta"), language);
+      return fill(FROM, language, { what, where });
+    }
     if (root === "secrets") return pick(tx("a saved secret", "isang naka-save na secret"), language);
     return ref;
   });
@@ -275,25 +309,39 @@ export function destination(step: Step, ctx: DestinationContext): string {
       try { host = new URL(step.config.url).host || host; } catch { /* a template in the address: show it as typed */ }
       return line(label("Calls", "Tatawag sa"), `${step.config.method} ${short(host)}`);
     }
-    case "condition":
-      return line(label("If", "Kung"), short(`${human(step.config.condition.left, ctx)} ${step.config.condition.op} ${human(String(step.config.condition.right ?? ""), ctx)}`.trim()));
+    case "condition": {
+      const op = conditionOpLabel(step.config.condition.op, language);
+      const right = step.config.condition.op === "exists" ? "" : ` ${human(String(step.config.condition.right ?? ""), ctx)}`;
+      return line(label("If", "Kung"), short(`${human(step.config.condition.left, ctx)} ${op}${right}`.trim()));
+    }
     case "switch":
       return line(label("Match", "Itugma"), short(`${human(step.config.value ?? "", ctx)} (${step.config.cases?.length ?? 0})`));
     case "transform":
       return line(label("Transform", "I-format"), step.config.op === "pick" ? Object.keys(step.config.fields ?? {}).join(", ") : short(`${step.config.op}: ${human(step.config.value ?? "", ctx)}`));
-    case "delay":
-      return step.config.until === undefined ? line(label("Wait", "Hintay"), `${step.config.seconds} s`) : line(label("Until", "Hanggang"), short(human(step.config.until, ctx)));
+    case "delay": {
+      if (step.config.until === undefined) return line(label("Wait", "Hintay"), formatDuration(step.config.seconds ?? 0, language));
+      const target = human(step.config.until, ctx);
+      const off = step.config.offsetSeconds ?? 0;
+      if (off === 0) return line(label("Until", "Hanggang"), short(target));
+      const dur = formatDuration(Math.abs(off), language);
+      const rel = off < 0 ? pick(tx("{dur} before {target}", "{dur} bago ang {target}"), language) : pick(tx("{dur} after {target}", "{dur} pagkatapos ng {target}"), language);
+      return line(label("Until", "Hanggang"), short(rel.replace("{dur}", dur).replace("{target}", target)));
+    }
     case "ai":
       return line(label("Task", "Gawain"), step.config.task);
     case "booking":
       return step.config.action === "create" ? line(label("Resource", "Resource"), short(human(String(step.config.resource ?? ""), ctx))) : line(label("Booking", "Booking"), short(human(String(step.config.booking ?? ""), ctx)));
-    case "payment_expire":
-      return line(label("Payment request", "Kahilingan sa bayad"), step.config.due);
+    case "payment_expire": {
+      const dueStep = ctx.steps?.find((s) => s.id === step.config.due);
+      return line(label("Payment request", "Kahilingan sa bayad"), dueStep ? stepLabel(dueStep.type, language) : step.config.due);
+    }
     case "payment_due":
     case "paymongo_link":
       return line(label("Amount", "Halaga"), `${human(String(step.config.amount), ctx)} ${pick(tx("pesos", "piso"), language)}`);
-    case "payment_status":
-      return line(label("Payment", "Bayad"), pick(tx("from step {id}", "mula sa step {id}"), language).replace("{id}", step.config.link));
+    case "payment_status": {
+      const linked = ctx.steps?.find((s) => s.id === step.config.link);
+      return line(label("Payment", "Bayad"), linked ? stepLabel(linked.type, language) : pick(tx("from step {id}", "mula sa step {id}"), language).replace("{id}", step.config.link));
+    }
     case "call_workflow":
       return line(label("Runs", "Patatakbuhin"), short(step.config.workflowSlug));
   }

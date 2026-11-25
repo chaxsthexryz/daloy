@@ -81,4 +81,11 @@ describe("chatStep", () => {
     expect(chatStep(chatStep(start, { type: "send", text: "x" }), { type: "failed", message: "down" }).phase).toBe("error");
     expect(chatStep(s, { type: "reset" })).toEqual(start);
   });
+
+  it("restores failed logs in error phase and replaces a turn-1 failure on retry", () => {
+    const restored = chatStep(start, { type: "restore", turns: [turn("user", "Resort concierge")], draft: null, status: "failed", error: "Service unavailable" });
+    expect(restored).toEqual({ phase: "error", turns: [turn("user", "Resort concierge")], draft: null, error: "Service unavailable" });
+    const retried = chatStep(restored, { type: "send", text: "New prompt" });
+    expect(retried).toEqual({ phase: "thinking", turns: [turn("user", "New prompt")], draft: null, error: "" });
+  });
 });

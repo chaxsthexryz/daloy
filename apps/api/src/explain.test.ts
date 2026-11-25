@@ -48,6 +48,9 @@ describe("failureFacts", () => {
     ["booking_changed", "The booking was rescheduled or cancelled, so this was not sent."],
     ["worker_stopped", "The worker stopped while sending, so this may have gone through. Check with the receiver, then choose."],
     ["preview_choice", "Test run: this step was set to fail (retryable)."],
+    ["knowledge_unpublished", "No published answers yet. Add and publish Q&As on the Knowledge page first."],
+    ["missing_resource", "Add at least one room or resource on the Resources page before booking."],
+    ["sms_not_set_up", "UniSMS is not configured yet for SMS messages."],
   ])("names the reason %s from real text", (reason, error) => {
     expect(failureFacts({ ...run(), steps: [failed(error)] }).step?.reason).toBe(reason);
   });
@@ -130,8 +133,18 @@ describe("explainFailure", () => {
     ["mail_sender", "Connect Gmail", "#/apps"],
     ["ai_model", "Check the AI model", "#/settings/ai"],
     ["quota", "See usage", "#/settings"],
+    ["knowledge_unpublished", "Open Knowledge", "#/knowledge"],
+    ["missing_resource", "Add a resource", "#/resources"],
+    ["sms_not_set_up", "See plan and usage", "#/settings"],
   ])("step reason %s", (reason, label, href) => {
     expect(explainFailure(stepFacts({ reason })).fix).toEqual({ href, label });
+  });
+  it("omits paid AI rewording for local prerequisite failures but keeps it for other failures", () => {
+    for (const reason of ["knowledge_unpublished", "missing_resource", "sms_not_set_up"] as const) {
+      expect(explainFailure(stepFacts({ reason })).aiExplain).toBe(false);
+    }
+    expect(explainFailure(stepFacts({ reason: "preview_choice" })).aiExplain).not.toBe(false);
+    expect(explainFailure(stepFacts({ statusCode: 500 })).aiExplain).not.toBe(false);
   });
   it("step reason booking_changed, preview_choice and worker_stopped", () => {
     expect(explainFailure(stepFacts({ reason: "booking_changed" })).lines[0]).toMatch(/nothing more is sent/);
@@ -172,7 +185,7 @@ describe("explainFailure", () => {
     const all: Facts[] = [stepFacts(), facts({ lint: ["approval_no_edge", "classify_dead_end", "test_switch", "number_no_invalid", "unreachable_step", "failed_path_no_edge"].map((rule) => ({ rule: rule as never, count: 1 })) })];
     for (const p of ["google_sheets", "slack", "outlook", "teams"])
       for (const k of ["auth", "reconnect", "not_connected", "permission", "no_destination", "quota", "unavailable", "ambiguous", "review", "destination_changed", "queued_before_pin", "invalid", "booking_changed"]) all.push(delivery(p, k));
-    for (const reason of ["mail_sender", "ai_model", "quota", "booking_changed", "worker_stopped", "preview_choice"] as const) all.push(stepFacts({ reason }));
+    for (const reason of ["mail_sender", "ai_model", "quota", "booking_changed", "worker_stopped", "preview_choice", "knowledge_unpublished", "missing_resource", "sms_not_set_up"] as const) all.push(stepFacts({ reason }));
     for (const statusCode of [401, 404, 429, 500]) all.push(stepFacts({ statusCode, deadLetter: true }));
     for (const outcome of ["unknown", "not_sent", "rejected", "throttled"]) all.push(stepFacts({ outcome }));
     for (const f of all) {

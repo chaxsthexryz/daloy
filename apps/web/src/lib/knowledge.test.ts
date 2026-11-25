@@ -1,6 +1,6 @@
 import { knowledgeEntryInput, type KnowledgeEntry } from "@daloy/engine";
 import { describe, expect, it } from "vitest";
-import { emptyForm, emptyRule, summaryOf, toForm, toInput } from "./knowledge";
+import { emptyForm, emptyRule, entryCountKey, formatStayTime, publishedEntryCountKey, summaryOf, toForm, toInput } from "./knowledge";
 
 const words = { per: (u: string) => `per ${u}`, rules: (n: number) => `${n} rules` };
 
@@ -24,7 +24,7 @@ describe("knowledge form", () => {
 
   it("summarises price, rules or text", () => {
     expect(summaryOf({ id: "x", kind: "room", title: "R", body: "", fields: { price: 3500, unit: "night", rules: [{ name: "a", price: 1 }] } }, words)).toBe("PHP 3,500 per night, 1 rules");
-    expect(summaryOf({ id: "x", kind: "arrival", title: "Hours", body: "", fields: { checkInTime: "15:00", checkOutTime: "11:00" } }, words)).toBe("15:00 / 11:00");
+    expect(summaryOf({ id: "x", kind: "arrival", title: "Hours", body: "", fields: { checkInTime: "15:00", checkOutTime: "11:00" } }, words)).toBe("3:00 PM / 11:00 AM");
     expect(summaryOf({ id: "x", kind: "faq", title: "Pets", body: "No pets.", fields: {} }, words)).toBe("No pets.");
     expect(summaryOf({ id: "x", kind: "faq", title: "Long", body: "a".repeat(200), fields: {} }, words)).toHaveLength(110);
   });
@@ -33,5 +33,22 @@ describe("knowledge form", () => {
     const entry: KnowledgeEntry = { id: "a", kind: "arrival", title: "Check-in hours", body: "", fields: { checkInTime: "15:00", checkOutTime: "11:00" } };
     expect(toInput(toForm(entry))).toEqual({ kind: "arrival", title: "Check-in hours", body: "", fields: { checkInTime: "15:00", checkOutTime: "11:00" } });
     expect(toInput({ ...emptyForm("faq"), title: "Hours", body: "2 PM", checkInTime: "14:00" }).fields).toEqual({});
+  });
+
+  it("formats 24-hour check-in and check-out times in 12-hour format", () => {
+    expect(formatStayTime("14:00")).toBe("2:00 PM");
+    expect(formatStayTime("12:00")).toBe("12:00 PM");
+    expect(formatStayTime("00:00")).toBe("12:00 AM");
+    expect(formatStayTime("09:30")).toBe("9:30 AM");
+    expect(formatStayTime("23:45")).toBe("11:45 PM");
+    expect(formatStayTime("custom")).toBe("custom");
+  });
+
+  it("chooses singular and plural keys for entry counts", () => {
+    expect(entryCountKey(1)).toBe("1 entry");
+    expect(entryCountKey(0)).toBe("{count} entries");
+    expect(entryCountKey(3)).toBe("{count} entries");
+    expect(publishedEntryCountKey(1)).toBe("Published {date}, 1 entry.");
+    expect(publishedEntryCountKey(2)).toBe("Published {date}, {count} entries.");
   });
 });

@@ -45,14 +45,16 @@ export class EmailSettingsController {
   async get(@CurrentUser() user: SessionUser) {
     const hide = await historyHider(this.db, this.config.secretsKey, user.workspaceId);
     const sender = await readSender(this.db, user.workspaceId);
+    const local = installationLocal(this.config.mail.installation);
+    const allowed = await sharedMailAllowed(this.db, this.config.mail, user.workspaceId);
     return {
       profile: await readProfile(this.db, user.workspaceId),
       sender: sender ? { ...sender, lastError: hide(sender.lastError) as string | null } : null,
-      // Shown when no Gmail is connected, so the owner knows which address their mail comes from.
-      installationFrom: addressOf(this.config.mail.installation.from),
+      // Only shown for local development mailers when permitted; never expose an operator's email address.
+      installationFrom: local && allowed ? addressOf(this.config.mail.installation.from) : null,
       // False when the shared server only sends for approved owners and this one is not approved (decision 0024).
-      installationAllowed: await sharedMailAllowed(this.db, this.config.mail, user.workspaceId),
-      installationLocal: installationLocal(this.config.mail.installation),
+      installationAllowed: allowed,
+      installationLocal: local,
       signInEmail: user.email,
     };
   }

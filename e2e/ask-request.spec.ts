@@ -68,10 +68,21 @@ test("an owner asks why a request stopped and only reads, nothing in the card ch
     await expect(answer.locator(".act-headline")).not.toHaveText("");
     await expect(card.getByRole("button", { name: /^(Retry|Approve|Send again|Post again|Mark as posted)/ })).toHaveCount(0);
 
-    // From Workspace activity's head button: type the reference, then read the same answers.
+    // From Workspace activity's head button: pick a recent request or type the reference, and check sidebar highlights.
+    await page.goto("/#/apps");
+    await expect(page.locator('#main-menu a[aria-current="page"]')).toHaveAttribute("href", "#/apps");
+    await page.goto("/#/account");
+    await expect(page.locator('#main-menu a[aria-current="page"]')).toHaveAttribute("href", "#/account");
+    await page.goto(`/#/runs/${runAskUrl.split("/runs/")[1]!.replace("/ask", "")}`);
+    await expect(page.locator('#main-menu a[aria-current="page"]')).toHaveAttribute("href", "#/activity");
+
     await page.goto("/#/activity");
     await page.getByRole("link", { name: "Ask about a request" }).click();
     await expect(page).toHaveURL(/#\/activity\/ask$/);
+    await expect(page.locator('#main-menu a[aria-current="page"]')).toHaveAttribute("href", "#/activity");
+    await expect(page.getByLabel("Request reference")).toHaveAttribute("placeholder", "e.g. REQ-2026-0001");
+    await page.getByRole("list", { name: "Recent requests" }).getByRole("button", { name: new RegExp(reference) }).click();
+    await expect(answer.locator(".act-headline")).not.toHaveText("");
     await page.getByLabel("Request reference").fill(reference);
     await page.getByRole("button", { name: "Ask", exact: true }).click();
     await expect(answer.locator(".act-headline")).not.toHaveText("");

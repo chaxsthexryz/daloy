@@ -47,7 +47,7 @@ test("open the run history, diff two versions and roll back", async ({ page }) =
   // Version 2 changes the operator.
   await page.getByRole("navigation", { name: "This automation" }).getByRole("link", { name: "Steps" }).click();
   await page.getByRole("button", { name: "List", exact: true }).click();
-  await page.getByRole("button", { name: "condition_1" }).first().click();
+  await page.getByRole("button", { name: /Condition.*condition_1/ }).first().click();
   await page.getByLabel("Operator").selectOption("lt");
   await page.getByRole("button", { name: "Publish" }).click();
   await page.getByRole("button", { name: "Turn on", exact: true }).click();
@@ -56,7 +56,7 @@ test("open the run history, diff two versions and roll back", async ({ page }) =
   // The versions page diffs v2 against v1, and a rollback publishes v1's definition as v3.
   await page.getByRole("link", { name: "Versions" }).click();
   await expect(page.getByRole("heading", { name: "Version 2" })).toBeVisible();
-  await expect(page.getByLabel("Changes")).toContainText('steps[condition_1].config.condition.op changed "gt" → "lt"');
+  await expect(page.getByLabel("Changes")).toContainText(/Condition · Operator changed\s*is greater than → is less than/);
   await expect(page.getByRole("button", { name: /^Version 2 Live/ })).toHaveAttribute("aria-pressed", "true");
   await page.getByRole("button", { name: /^Version 1/ }).click();
   await expect(page.getByText("Version 1 compared with")).toBeHidden();
@@ -64,5 +64,14 @@ test("open the run history, diff two versions and roll back", async ({ page }) =
   await expect(page.getByRole("status").filter({ hasText: "is live" })).toHaveText("Version 3 is live, with the definition of version 1.");
   await expect(page.getByRole("button", { name: /^Version 3 Live/ })).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByText("Version 3 compared with version 2")).toBeVisible();
-  await expect(page.getByLabel("Changes")).toContainText('op changed "lt" → "gt"');
+  await expect(page.getByLabel("Changes")).toContainText(/Condition · Operator changed\s*is less than → is greater than/);
+
+  // An unpublished draft or latest non-live version cannot be rolled back to directly.
+  const wfId = /#\/w\/([^/]+)\/versions/.exec(page.url())![1]!;
+  const v3 = await (await page.request.get(`/workflows/${wfId}/versions/3`)).json();
+  await page.request.post(`/workflows/${wfId}/versions`, { data: { definition: v3.definition, publish: false } });
+  await page.reload();
+  await page.getByText(/Show draft versions/).click();
+  await page.getByRole("button", { name: /^Version 4/ }).click();
+  await expect(page.getByRole("button", { name: "Roll back to v4" })).toBeDisabled();
 });

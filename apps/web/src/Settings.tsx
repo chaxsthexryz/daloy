@@ -104,7 +104,7 @@ export function AiModelPage() {
       await api("PUT", "/settings/ai", { preset, model, apiKey: apiKey || undefined });
       setApiKey("");
       await load();
-      const saved = t("Saved. Your workflows now use {provider}, model {model}.", { provider: presets?.[preset]?.label ?? "", model });
+      const saved = t("Saved. Your automations now use {provider}, model {model}.", { provider: presets?.[preset]?.label ?? "", model });
       if (alsoTest) {
         setStatus(t("{saved} Testing it now…", { saved }));
         await runTest();
@@ -139,7 +139,7 @@ export function AiModelPage() {
           </div>
         </div>
       </header>
-      <p className="wk-lead">{t("Every AI step in your workflows, and Build with AI, uses the model you pick here. You can switch at any time; saved keys are kept for each provider.")}</p>
+      <p className="wk-lead">{t("Every AI step in your automations, and Build with AI, uses the model you pick here. You can switch at any time; saved keys are kept for each provider.")}</p>
       {!presets || !current ? (
         <p className="wk-sub" role="status">{t("Loading…")}</p>
       ) : (
@@ -250,7 +250,7 @@ export function AiModelPage() {
                   ) : (
                     <>
                       <p className="wk-bad">{t("Not working with {model}: {error}", { model: test.model, error: test.error ?? "" })}</p>
-                      <p className="wk-muted">{needsKey ? t("Paste a current key above and choose Save and test. Your workflows keep using this setting until it works, so AI steps will fail in the meantime.") : t("Check that the local server is running and the model name is right, then choose Save and test. Your workflows keep using this setting until it works, so AI steps will fail in the meantime.")}</p>
+                      <p className="wk-muted">{needsKey ? t("Paste a current key above and choose Save and test. Your automations keep using this setting until it works, so AI steps will fail in the meantime.") : t("Check that the local server is running and the model name is right, then choose Save and test. Your automations keep using this setting until it works, so AI steps will fail in the meantime.")}</p>
                     </>
                   )}
                 </div>

@@ -20,6 +20,7 @@ let port: number;
 const sent: string[] = [];
 let loseNextAck = false;
 let modelCalls = 0;
+let forceModelStatus: number | null = null;
 let httpCalls = 0;
 
 const mail: MailDeps = {
@@ -50,6 +51,10 @@ beforeAll(async () => {
     req.resume();
     req.on("end", () => {
       if (req.url!.startsWith("/api/chat")) {
+        if (forceModelStatus !== null) {
+          res.writeHead(forceModelStatus, { "content-type": "application/json" });
+          return res.end(JSON.stringify({ error: "forced failure" }));
+        }
         const first = ++modelCalls % 2 === 1;
         res.writeHead(200, { "content-type": "application/json" });
         return res.end(JSON.stringify({ message: { role: "assistant", content: first ? '{"label":"admin"}' : '{"label":"billing"}' }, prompt_eval_count: 1, eval_count: 1 }));
@@ -160,6 +165,26 @@ describe("plan quotas at the outside call", () => {
     expect((await drive(runId)).state).toBe("succeeded");
     expect((await attempts(runId)).map((r) => [r.attempt, r.state])).toEqual([[1, "failed"], [2, "succeeded"]]);
     expect(await usedOf(userId, "ai")).toBe(1);
+  });
+
+  it("spends 0 AI quota when an answer step has no published knowledge or the model fails", async () => {
+    const userId = await newUser();
+    const answerFlow = flow({ id: "answer", type: "ai", config: { task: "answer", input: "Hi" } } as { id: string });
+    const noKnowledgeRun = await newRun(userId, answerFlow, { test: true, aiLive: true });
+    const stopped = await drive(noKnowledgeRun);
+    expect(stopped.state).toBe("failed");
+    expect(stopped.error).toContain("Knowledge page");
+    expect(stopped.error).not.toContain("Business, Knowledge");
+    expect(await usedOf(userId, "ai")).toBe(0);
+
+    forceModelStatus = 401;
+    try {
+      const failedRun = await newRun(userId, flow(aiStep()), { test: true, aiLive: true });
+      expect((await drive(failedRun)).state).toBe("failed");
+      expect(await usedOf(userId, "ai")).toBe(0);
+    } finally {
+      forceModelStatus = null;
+    }
   });
 
   it("counts a retried approval link email once, and an approval at the limit asks nobody", async () => {

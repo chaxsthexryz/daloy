@@ -13,7 +13,7 @@ type Secret = { name: string; createdAt: string };
  * #/secrets: named secrets for webhook signing and HTTP steps (Doop row W9). Write-only: the API never returns a value,
  * the field is cleared after every save, and nothing in this file reads one back.
  */
-export function SecretsPage() {
+export function SecretsPage({ admin = true }: { admin?: boolean } = {}) {
   const { t } = useLanguage();
   const phone = usePhone();
   const [list, setList] = useState<Secret[] | null>(null);
@@ -92,7 +92,13 @@ export function SecretsPage() {
     <main className="page wk wk-secrets">
       <header className="wk-head">
         <div>
-          <Breadcrumb items={[{ label: t("Settings"), href: "#/settings" }, { label: t("Advanced"), href: "#/advanced" }, { label: t("Secrets") }]} />
+          <Breadcrumb
+            items={
+              admin
+                ? [{ label: t("Settings"), href: "#/settings" }, { label: t("Advanced"), href: "#/advanced" }, { label: t("Secrets") }]
+                : [{ label: t("Apps"), href: "#/apps" }, { label: t("Secrets") }]
+            }
+          />
           <div className="wk-title-row">
             <h1>{t("Secrets")}</h1>
             {list && <span className="wk-sub">{t("{count} saved", { count: list.length })}</span>}

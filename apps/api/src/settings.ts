@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { aiConnection, claimUsage, localConnection, presetConnection, PRESET_IDS, PRESETS, QuotaError, readAiSettings, saveAiSettings, type AiConnection, type Db } from "@daloy/db";
+import { aiConnection, claimUsage, localConnection, presetConnection, PRESET_IDS, PRESETS, QuotaError, readAiSettings, refundUsage, saveAiSettings, type AiConnection, type Db } from "@daloy/db";
 import { aiConfigSchema, aiOutputSchema, buildPrompt, TEMPLATES } from "@daloy/engine";
 import { generate, listModels, LlmError } from "@daloy/llm-ts";
 import { BadRequestException, Body, Controller, Get, HttpCode, HttpException, HttpStatus, Inject, Post, Put, UseGuards } from "@nestjs/common";
@@ -50,6 +50,21 @@ export function explain(err: unknown, models: string[] = []): string {
   if (status === 429) return "The provider's rate limit or free quota was reached. Wait a minute and try again.";
   if (status >= 500) return `The provider is busy or down right now (HTTP ${status}). Try again in a minute.`;
   return `The provider answered with HTTP ${status}.`;
+}
+
+/**
+ * Plain outage wording for non-admin workspace owners on Build with AI and Run explanations. Never exposes API key
+ * internals or local .env instructions.
+ */
+export function explainForOwner(err: unknown): string {
+  const unavailable = "The AI service is temporarily unavailable. Try again in a few minutes, or start from a ready-made template below.";
+  if (!(err instanceof LlmError)) return unavailable;
+  if (err.message.includes("token limit")) return "The model spent its whole token limit thinking and gave no answer. Pick a smaller or non-thinking model.";
+  if (err.invalidOutput) return "The model answered, but not in the expected format. A larger model usually fixes this.";
+  if (err.message.endsWith("TimeoutError")) return "The model took too long to answer. A hosted model may be overloaded; try again in a minute.";
+  const status = Number(/HTTP (\d+)/.exec(err.message)?.[1]);
+  if (status === 429) return "The provider's rate limit or free quota was reached. Wait a minute and try again.";
+  return unavailable;
 }
 
 /**
@@ -145,7 +160,8 @@ export class SettingsController {
   @UseGuards(RateLimit(10))
   async test(@CurrentUser() user: SessionUser) {
     const { model, ...connection } = await aiConnection(this.db, this.config.secretsKey, user.workspaceId);
-    await claimUsage(this.db, user.workspaceId, "ai").catch((err: unknown) => {
+    const now = new Date();
+    await claimUsage(this.db, user.workspaceId, "ai", { now }).catch((err: unknown) => {
       throw err instanceof QuotaError ? new HttpException({ message: err.message }, HttpStatus.TOO_MANY_REQUESTS) : err;
     });
     const started = Date.now();
@@ -153,6 +169,7 @@ export class SettingsController {
       const { data, usage } = await generate({ ...buildPrompt(classify, SAMPLE), schema: aiOutputSchema(classify), model, connection, temperature: 0, maxTokens: 256, timeoutMs: 30_000 });
       return { ok: true, model, sample: SAMPLE, label: (data as { label: string }).label, ms: Date.now() - started, ...usage };
     } catch (err) {
+      await refundUsage(this.db, user.workspaceId, "ai", { now }).catch(() => undefined);
       // Only on a name the provider may not serve: one extra request to say which names it does.
       const status = Number(/HTTP (\d+)/.exec((err as Error).message)?.[1]);
       const offered = status === 400 || status === 404 ? await providerModels({ ...connection, model }).catch(() => []) : [];

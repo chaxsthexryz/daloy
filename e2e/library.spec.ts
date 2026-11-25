@@ -19,8 +19,8 @@ test("search and category chips narrow the cards, and a card previews before it 
   await signUp(page, 1280, 800);
   const card = (name: string) => page.getByRole("button", { name: `Preview: ${name}` });
 
-  // Blank workflow and Build with AI come first, then the templates.
-  await expect(page.getByRole("heading", { level: 3 }).first()).toHaveText("Blank workflow");
+  // Blank automation and Build with AI come first, then the templates.
+  await expect(page.getByRole("heading", { level: 3 }).first()).toHaveText("Blank automation");
   await expect(page.getByRole("heading", { level: 3 }).nth(1)).toHaveText("Build with AI");
   await expect(page.getByRole("button", { name: /^Preview: / })).toHaveCount(42);
 
@@ -28,25 +28,43 @@ test("search and category chips narrow the cards, and a card previews before it 
   await expect(card("Invoice follow-up")).toBeVisible();
   await expect(card("Invoice with payment link and reminders")).toBeVisible();
   await expect(card("Inquiry triage")).toHaveCount(0);
-  await page.getByLabel("Search the library").fill("");
+
+  // Empty search offers Clear search and Build with AI.
+  await page.getByLabel("Search the library").fill("no-template-matches-this");
+  await expect(page.getByText("No templates match your search.")).toBeVisible();
+  await expect(page.locator(".lib-empty").getByRole("link", { name: "Build with AI" })).toBeVisible();
+  await page.getByRole("button", { name: "Clear search" }).click();
+  await expect(card("Inquiry triage")).toBeVisible();
+
+  // Taglish wording shows a customer message sample on cards.
+  await page.getByLabel("Wording:").selectOption("taglish");
+  await expect(page.getByText("Sample message").first()).toBeVisible();
+  await page.getByLabel("Wording:").selectOption("default");
 
   await page.getByRole("button", { name: "Bookings", exact: true }).click();
   await expect(card("Appointment reminder")).toBeVisible();
   await expect(card("Lead to booking")).toBeVisible();
   await expect(card("Inquiry triage")).toHaveCount(0);
-  await expect(page.getByRole("heading", { name: "Blank workflow" })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Blank automation" })).toHaveCount(0);
   await page.getByRole("button", { name: "Office", exact: true }).click();
   await expect(card("Track an office request")).toBeVisible();
   await expect(card("Purchase request with approval")).toBeVisible();
   await page.getByRole("button", { name: "All", exact: true }).click();
 
-  // Enter on a card opens the preview: a read-only diagram and the steps in words.
+  // Enter on a card opens the preview dialog with labeled Needs chips; Escape closes it.
+  await expect(page.locator(".lib-app-chip").first()).toBeVisible();
   await card("Appointment reminder").press("Enter");
-  const preview = page.getByRole("region", { name: "Appointment reminder" });
+  const preview = page.getByRole("dialog", { name: "Appointment reminder" });
   await expect(preview.locator(".react-flow")).toBeVisible();
+  await expect(preview).not.toContainText("React Flow");
   await expect(preview.getByText(/^Starts when:/)).toBeVisible();
   await expect(preview.getByText(/^1\. /)).toBeVisible();
   expect(await noSideScroll(page)).toBe(true);
+
+  await page.keyboard.press("Escape");
+  await expect(preview).toHaveCount(0);
+  await card("Appointment reminder").click();
+  await expect(preview).toBeVisible();
 
   // Use this keeps the name box, makes a draft and opens it.
   await preview.getByLabel("Name").fill("Reminders for clients");
@@ -63,7 +81,7 @@ test("a card's own Use this makes the draft, and a taken name opens the preview 
   await page.goto("/#/new");
   await page.getByRole("button", { name: "Use this: Invoice follow-up" }).click();
   await expect(page.getByRole("alert").filter({ hasText: "An automation with that name already exists." })).toBeVisible();
-  const preview = page.getByRole("region", { name: "Invoice follow-up" });
+  const preview = page.getByRole("dialog", { name: "Invoice follow-up" });
   await preview.getByLabel("Name").fill("Invoice follow-up 2");
   await preview.getByRole("button", { name: "Use this", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Invoice follow-up 2", level: 1 })).toBeVisible();

@@ -153,10 +153,74 @@ export function plainDraft(def: WorkflowDefinition, language: Language = "en") {
   return { when, steps: rows.map(row => row.action) };
 }
 
-export type TemplateChoice = { slug: string; label: string; href?: string; action?: "office" | "purchase" };
+export type TemplateChoice = { slug: string; label: string; reason?: string; href?: string; action?: "office" | "purchase" };
 
 export function closestTemplate(answers: { approve?: string }, description: string): TemplateChoice {
+  const d = description.toLowerCase();
   if (answers.approve === "yes") return { slug: "purchase-request", label: "Purchase request with a named approver", action: "purchase" };
+  if (/resort|hotel|concierge|villa|stay|room/.test(d)) {
+    if (/email|gmail|outlook/.test(d) && !/messenger|instagram|dm|facebook/.test(d)) {
+      return {
+        slug: "resort-concierge-email",
+        label: "Resort concierge by email",
+        reason: "Replies to guest emails from your Knowledge sheet and notifies staff when a human needs to step in.",
+      };
+    }
+    return {
+      slug: "resort-concierge-dm",
+      label: "Resort concierge for Messenger & Instagram",
+      reason: "Answers guest DMs from your Knowledge sheet, quotes stays, and alerts staff when needed.",
+    };
+  }
+  if (/receipt|proof of payment|screenshot/.test(d) && /messenger|instagram|dm|facebook/.test(d)) {
+    return {
+      slug: "meta-receipt-intake",
+      label: "GCash receipt intake on Messenger & Instagram",
+      reason: "Reads payment screenshots sent in DMs and logs them for your team to confirm.",
+    };
+  }
+  if (/book|appointment|slot|reserv/.test(d) && /gcash|qr\s*ph|deposit|bayad|pay/.test(d)) {
+    return {
+      slug: "booking-deposit-review",
+      label: "Booking with a GCash or QR Ph deposit",
+      reason: "Holds a booking, collects a GCash or QR Ph deposit reference for review, and sends SMS reminders.",
+    };
+  }
+  if (/order/.test(d) && /gcash|paymongo|checkout/.test(d)) {
+    return {
+      slug: "order-gcash-checkout",
+      label: "Order with GCash checkout",
+      reason: "Creates a PayMongo checkout link for orders and sends SMS updates when paid or unpaid.",
+    };
+  }
+  if (/lalamove|rider|courier|deliver/.test(d)) {
+    return {
+      slug: "lalamove-confirmed-order",
+      label: "Book a Lalamove rider when an order is confirmed",
+      reason: "Books a Lalamove rider automatically once an order is confirmed.",
+    };
+  }
+  if (/shopify/.test(d)) {
+    return {
+      slug: "shopify-orders",
+      label: "Shopify orders",
+      reason: "Logs incoming Shopify orders and notifies your team.",
+    };
+  }
+  if (/invoice|billing|unpaid/.test(d)) {
+    return {
+      slug: "invoice-pdf",
+      label: "Invoice with PDF and reminders",
+      reason: "Generates a PDF invoice, emails it, and reminds clients while unpaid.",
+    };
+  }
+  if (/book|appointment|remind/.test(d)) {
+    return {
+      slug: "lead-to-booking",
+      label: "Lead to booking",
+      reason: "Turns incoming inquiries into scheduled bookings with reminders.",
+    };
+  }
   if (/website|inquiry/i.test(description)) return { slug: "website-inquiry", label: "Reply to a website inquiry", href: "#/settings/business" };
   return { slug: "office-request", label: "Track an office request", action: "office" };
 }

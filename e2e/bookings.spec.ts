@@ -31,6 +31,7 @@ test("staff reschedule and cancel a booking on the Bookings page", async ({ page
   // The worker books it in the background.
   await expect.poll(async () => (await (await page.request.get("/bookings")).json()).length, { timeout: 20_000 }).toBe(1);
   await page.getByRole("link", { name: "Bookings" }).click();
+  await expect(page.getByRole("link", { name: "Manage rooms and resources" })).toHaveAttribute("href", "#/resources");
   // O4 day agenda: the booking is listed under its day, and the selected booking card holds its actions.
   const item = page.getByRole("region", { name: "Day agenda" }).getByRole("button", { name: /Ana/ });
   await expect(item).toContainText("2:00 PM");
@@ -60,4 +61,10 @@ test("staff reschedule and cancel a booking on the Bookings page", async ({ page
   await page.keyboard.press("Escape");
   await expect(card).toBeHidden();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.getByRole("link", { name: "Manage rooms and resources" }).click();
+  await expect(page).toHaveURL(/#\/resources$/);
+  await expect(page.getByRole("heading", { name: "Resources", level: 1 })).toBeVisible();
+  await expect(page.getByText("Add a field of type resource")).toHaveCount(0);
 });

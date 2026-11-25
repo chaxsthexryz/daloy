@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { workspaceLanguage, readKnowledge, aiConnection, bookFromStep, bookingEventPayload, bookingOfStep, bookingReference, centavosToPesos, createDue, dispatchInternalTrigger, dueConversationId, dueForStep, DueTakenError, expireDue, findReviewer, mockAssistantSnapshot, parseAssistantScope, paymentEventPayload, pendingCheckout, pesosToCentavos, readAssistantSnapshot, checkReceiptReference, checkRecipients, claimTimeout, claimUsage, createApproval, findPaymentForStep, findApprover, queueCalendarEvent, queueDelivery, readSecrets, redactSecrets, secretForms, sendAs, startSubWorkflow, type BookingTriggerEvent, type Db, type MailDeps, type Provider, type StepBookingResult } from "@daloy/db";
+import { workspaceLanguage, readKnowledge, aiConnection, bookFromStep, bookingEventPayload, bookingOfStep, bookingReference, centavosToPesos, createDue, dispatchInternalTrigger, dueConversationId, dueForStep, DueTakenError, expireDue, findReviewer, mockAssistantSnapshot, parseAssistantScope, paymentEventPayload, pendingCheckout, pesosToCentavos, readAssistantSnapshot, checkReceiptReference, checkRecipients, claimTimeout, claimUsage, createApproval, findPaymentForStep, findApprover, queueCalendarEvent, queueDelivery, readSecrets, redactSecrets, refundUsage, secretForms, sendAs, startSubWorkflow, type BookingTriggerEvent, type Db, type MailDeps, type Provider, type StepBookingResult } from "@daloy/db";
 import { conversationMessages, deliveries, emailThreadFor, isPaused, normalizeWhatsAppPhone, PAST_WINDOW, prepareReply, providerUrls, recordOutboundEmail, recordOutboundReply, runConversation, runs, saveConversationFields, sendStaffAlert, takeOverConversation, windowOpen, type ProviderUrls } from "@daloy/db";
 import { and, eq, gt, ne } from "drizzle-orm";
 import { approvalEmailBody, checkDiscordContent, DEFAULT_STAY_TIMEZONE, ExpressionError, numberedMenu, type Menu, wouldDo, type FileRef, bookingStartField, conditionBranch, normalizePhMobile, parseZoned, runTransform, SHEETS_MAX_COLS, SHEETS_MAX_ROWS, SMS_MAX_CHARS, stayRange, stayTimesFromKnowledge, switchBranch, TransformError, type TestChoice, type Trigger, declaresJson, parseInstant, isRetryable, mockAiOutput, parseJsonTemplate, resolveJsonTemplate, resolveTemplate, StepError, usesSecrets, type ExpressionContext, type HistoryItem, type Language, quoteStay, QuoteError, type Step } from "@daloy/engine";
@@ -523,57 +523,66 @@ async function runStep(deps: FullDeps, step: Step, input: unknown, ctx: Expressi
     case "ai": {
       if (mock && choice && "label" in choice) return { output: { label: choice.label } };
       if (mock && !aiLive) return { output: mockAiOutput(step.config) };
+      // Check knowledge before claiming AI quota so an unpublished sheet costs nothing.
+      const published = step.config.task === "answer" ? await readKnowledge(deps.db, userId) : null;
+      if (step.config.task === "answer" && !published) {
+        throw new StepError("Publish the knowledge sheet on the Knowledge page before the concierge can answer.", false);
+      }
       // The model the workflow owner picked in the console, or the env vars if they picked none.
       const { model, imageTypes, ...connection } = await aiConnection(deps.db, deps.secretsKey, userId);
       const trigger = (ctx.trigger ?? {}) as Record<string, unknown>;
       const refs = (fileFields ?? []).flatMap((name) => (Array.isArray(trigger[name]) ? (trigger[name] as FileRef[]) : []));
       const files = refs.length ? await loadAiFiles(deps.db, { userId, runId, refs, imageTypes }) : undefined;
       // Each file is one more AI action. The claim key is the step key, so a retry is not counted twice; the checks
-      // and the PDF reading happen before, so a refused file costs nothing.
-      await claim("ai", 1 + refs.length);
-      if (step.config.task === "answer") {
-        const published = await readKnowledge(deps.db, userId);
-        if (!published) throw new StepError("Publish the knowledge sheet (Business, Knowledge) before the concierge can answer.", false);
-        const convo = trigger.conversation as { history?: unknown } | undefined;
-        const history = Array.isArray(convo?.history) ? (convo.history as HistoryItem[]).filter((h) => typeof h?.text === "string") : [];
-        const language = (await workspaceLanguage(deps.db, userId)) as Language;
-        const ans = await runAnswer(step.config, (input as AiInput).input, { connection, model, attempt, entries: published.entries, version: published.version, history, language });
-        if (!mock && !test && !booking?.test && (ans.output as { needsHuman?: boolean })?.needsHuman && UUID.test(runId)) {
-          const [linked] = await deps.db.select({ conversationId: runs.conversationId }).from(runs).where(eq(runs.id, runId));
-          if (linked?.conversationId) {
-            await takeOverConversation(deps.db, userId, linked.conversationId);
-            await sendStaffAlert(
-              { db: deps.db, secretsKey: deps.secretsKey, mail: deps.mail, urls: deps.urls, publicUrl: deps.publicUrl },
-              { workspaceId: userId, conversationId: linked.conversationId, reason: "Needs staff reply" },
-            ).catch((err: unknown) => console.error("staff alert failed", err));
+      // and the PDF reading happen before, so a refused file costs nothing. Failed calls refund the claim below.
+      const units = 1 + refs.length;
+      await claim("ai", units);
+      try {
+        if (step.config.task === "answer") {
+          const convo = trigger.conversation as { history?: unknown } | undefined;
+          const history = Array.isArray(convo?.history) ? (convo.history as HistoryItem[]).filter((h) => typeof h?.text === "string") : [];
+          const language = (await workspaceLanguage(deps.db, userId)) as Language;
+          const ans = await runAnswer(step.config, (input as AiInput).input, { connection, model, attempt, entries: published!.entries, version: published!.version, history, language });
+          if (!mock && !test && !booking?.test && (ans.output as { needsHuman?: boolean })?.needsHuman && UUID.test(runId)) {
+            const [linked] = await deps.db.select({ conversationId: runs.conversationId }).from(runs).where(eq(runs.id, runId));
+            if (linked?.conversationId) {
+              await takeOverConversation(deps.db, userId, linked.conversationId);
+              await sendStaffAlert(
+                { db: deps.db, secretsKey: deps.secretsKey, mail: deps.mail, urls: deps.urls, publicUrl: deps.publicUrl },
+                { workspaceId: userId, conversationId: linked.conversationId, reason: "Needs staff reply" },
+              ).catch((err: unknown) => console.error("staff alert failed", err));
+            }
+          }
+          return ans;
+        }
+        const aiRes = await runAi(step.config, (input as AiInput).input, { connection, model, attempt, files });
+        if (step.config.task === "extract" && refs.length > 0 && aiRes.output && typeof aiRes.output === "object") {
+          const out = aiRes.output as Record<string, unknown>;
+          const hasIsReceiptField = "is_receipt" in (step.config.fields ?? {}) || "is_receipt" in ((step.config as { schema?: Record<string, unknown> }).schema ?? {});
+          if (typeof out.reference === "string" && (out.is_receipt === "yes" || (hasIsReceiptField && out.is_receipt !== "no"))) {
+            const flag = await checkReceiptReference(deps.db, {
+              userId,
+              runId,
+              provider: typeof out.provider === "string" ? out.provider : null,
+              reference: out.reference,
+              test: test || mock || booking?.test,
+            });
+            return {
+              ...aiRes,
+              output: {
+                ...out,
+                duplicate_reference: flag.duplicate ? "yes" : "no",
+                duplicate_warning: flag.warning,
+                ...(flag.duplicate && flag.firstRunId ? { previous_run_id: flag.firstRunId } : {}),
+              },
+            };
           }
         }
-        return ans;
+        return aiRes;
+      } catch (err) {
+        await refundUsage(deps.db, userId, "ai", { n: units, key: idempotencyKey }).catch(() => undefined);
+        throw err;
       }
-      const aiRes = await runAi(step.config, (input as AiInput).input, { connection, model, attempt, files });
-      if (step.config.task === "extract" && refs.length > 0 && aiRes.output && typeof aiRes.output === "object") {
-        const out = aiRes.output as Record<string, unknown>;
-        const hasIsReceiptField = "is_receipt" in (step.config.fields ?? {}) || "is_receipt" in ((step.config as { schema?: Record<string, unknown> }).schema ?? {});
-        if (typeof out.reference === "string" && (out.is_receipt === "yes" || (hasIsReceiptField && out.is_receipt !== "no"))) {
-          const flag = await checkReceiptReference(deps.db, {
-            userId,
-            runId,
-            provider: typeof out.provider === "string" ? out.provider : null,
-            reference: out.reference,
-            test: test || mock || booking?.test,
-          });
-          return {
-            ...aiRes,
-            output: {
-              ...out,
-              duplicate_reference: flag.duplicate ? "yes" : "no",
-              duplicate_warning: flag.warning,
-              ...(flag.duplicate && flag.firstRunId ? { previous_run_id: flag.firstRunId } : {}),
-            },
-          };
-        }
-      }
-      return aiRes;
     }
     case "approval": {
       // A mocked test run decides straight away (approved unless the tester chose otherwise), without an email.
@@ -895,7 +904,7 @@ async function runStep(deps: FullDeps, step: Step, input: unknown, ctx: Expressi
       // Read-only, so a test run quotes for real. The prices are the published version's; the run only picks the room and counts.
       const cfg = input as { room: string; checkIn: string; nights: string; guests: string };
       const published = await readKnowledge(deps.db, userId);
-      if (!published) throw new StepError("Publish the knowledge sheet (Business, Knowledge) before quoting a stay.", false);
+      if (!published) throw new StepError("Publish the knowledge sheet on the Knowledge page before quoting a stay.", false);
       const wanted = cfg.room.toLowerCase();
       const entry = published.entries.find((e) => e.id === cfg.room) ?? published.entries.find((e) => e.title.toLowerCase() === wanted);
       if (!entry) throw new StepError(`No entry "${cfg.room.slice(0, 100)}" in knowledge version ${published.version}.`, false);

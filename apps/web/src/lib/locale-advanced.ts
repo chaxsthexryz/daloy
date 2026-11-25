@@ -12,6 +12,8 @@ export const advancedTranslations: Record<string, string> = {
   "Chair 3, Table 12, Marco": "Upuan 3, Mesa 12, Marco",
   "Room type or label": "Uri ng kuwarto o label",
   "Garden room, Beach villa (optional)": "Garden room, Beach villa (opsyonal)",
+  "Garden room, Beach villa": "Garden room, Beach villa",
+  "Rooms, people or tables that customers can book. Booking forms and stay confirmations list the active items below.": "Mga kuwarto, tao o mesa na puwedeng i-book ng mga customer. Makikita sa mga booking form at stay confirmation ang mga aktibong item sa ibaba.",
   "Label": "Label",
   "Rename {name}": "Palitan ang pangalan ng {name}",
   "New name": "Bagong pangalan",

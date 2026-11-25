@@ -1,7 +1,7 @@
 import { useLanguage } from "./Language";
 import { useEffect, useState, type FormEvent } from "react";
 import { api } from "./api";
-import { ConnectPanel, Status, useAction } from "./ConnectPanel";
+import { ConnectPanel, FieldBadge, Status, useAction } from "./ConnectPanel";
 import { RecordTargetPicker } from "./RecordTargetPicker";
 import { DiscordSetup, PaymongoSetup, TeamsSetup, TelegramSetup } from "./PasteSetups";
 
@@ -86,18 +86,27 @@ export function SheetsConnection({ conn, onChange, embedded }: { conn: Connectio
             <a href={SERVICE_ACCOUNT_HELP} target="_blank" rel="noreferrer">{t("How to create a service account")}</a>
           </p>
           <div className="field">
-            <label htmlFor="s-key">{t("Service account key file (JSON)")}{conn ? t(", leave empty to keep the current key") : ""}</label>
+            <div className="field-label-row">
+              <label htmlFor="s-key">{t("Service account key file (JSON)")}{conn ? t(", leave empty to keep the current key") : ""}</label>
+              <FieldBadge optional={!!conn} />
+            </div>
             <textarea id="s-key" rows={4} value={form.serviceAccount} onChange={(e) => setForm({ ...form, serviceAccount: e.target.value })} required={!conn} autoComplete="off" spellCheck={false} />
           </div>
           {shareWith && (
             <p className="muted">{t("Share the sheet with ")}<code>{shareWith}</code>{t(" as an Editor.")}</p>
           )}
           <div className="field">
-            <label htmlFor="s-sheet">{t("Sheet link")}</label>
+            <div className="field-label-row">
+              <label htmlFor="s-sheet">{t("Sheet link")}</label>
+              <FieldBadge />
+            </div>
             <input id="s-sheet" value={form.sheet} onChange={(e) => setForm({ ...form, sheet: e.target.value })} required placeholder="https://docs.google.com/spreadsheets/d/…" />
           </div>
           <div className="field">
-            <label htmlFor="s-tab">{t("Tab name")}</label>
+            <div className="field-label-row">
+              <label htmlFor="s-tab">{t("Tab name")}</label>
+              <FieldBadge />
+            </div>
             <input id="s-tab" value={form.tab} onChange={(e) => setForm({ ...form, tab: e.target.value })} required maxLength={100} />
           </div>
           <div className="actions">
@@ -170,7 +179,10 @@ export function DriveConnection({ conn, onChange, embedded }: { conn: Connection
             </a>
           </p>
           <div className="field">
-            <label htmlFor="d-key">{t("Service account key file (JSON)")}</label>
+            <div className="field-label-row">
+              <label htmlFor="d-key">{t("Service account key file (JSON)")}</label>
+              <FieldBadge />
+            </div>
             <textarea id="d-key" rows={4} value={form.serviceAccount} onChange={(e) => setForm({ ...form, serviceAccount: e.target.value })} required autoComplete="off" spellCheck={false} />
           </div>
           {shareWith && (
@@ -179,7 +191,10 @@ export function DriveConnection({ conn, onChange, embedded }: { conn: Connection
             </p>
           )}
           <div className="field">
-            <label htmlFor="d-folder">{t("Folder link")}</label>
+            <div className="field-label-row">
+              <label htmlFor="d-folder">{t("Folder link")}</label>
+              <FieldBadge />
+            </div>
             <input id="d-folder" value={form.folder} onChange={(e) => setForm({ ...form, folder: e.target.value })} required placeholder="https://drive.google.com/drive/folders/..." />
           </div>
           <div className="actions">
@@ -260,7 +275,10 @@ export function CalendarConnection({ conn, onChange, embedded }: { conn: Connect
             </a>
           </p>
           <div className="field">
-            <label htmlFor="c-key">{t("Service account key file (JSON)")}</label>
+            <div className="field-label-row">
+              <label htmlFor="c-key">{t("Service account key file (JSON)")}</label>
+              <FieldBadge />
+            </div>
             <textarea id="c-key" rows={4} value={form.serviceAccount} onChange={(e) => setForm({ ...form, serviceAccount: e.target.value })} required autoComplete="off" spellCheck={false} />
           </div>
           {shareWith && (
@@ -269,7 +287,10 @@ export function CalendarConnection({ conn, onChange, embedded }: { conn: Connect
             </p>
           )}
           <div className="field">
-            <label htmlFor="c-id">{t("Calendar id")}</label>
+            <div className="field-label-row">
+              <label htmlFor="c-id">{t("Calendar id")}</label>
+              <FieldBadge />
+            </div>
             <input id="c-id" value={form.calendar} onChange={(e) => setForm({ ...form, calendar: e.target.value })} required placeholder="abc123@group.calendar.google.com" />
           </div>
           <div className="actions">
@@ -336,7 +357,10 @@ export function SlackConnection({ conn, configured, outcome, onChange }: { conn:
       }}
     >
       <div className="field">
-        <label htmlFor="sl-channel">{t("Channel")}</label>
+        <div className="field-label-row">
+          <label htmlFor="sl-channel">{t("Channel")}</label>
+          <FieldBadge />
+        </div>
         <select id="sl-channel" value={channelId} onChange={(e) => setChannelId(e.target.value)} required>
           <option value="">{t("Choose a public channel")}</option>
           {channels.map((c) => (
@@ -358,7 +382,10 @@ export function SlackConnection({ conn, configured, outcome, onChange }: { conn:
         <a href={SLACK_APP_HELP} target="_blank" rel="noreferrer">{t("How to create a Slack app")}</a>
       </p>
       <div className="field">
-        <label htmlFor="sl-token">{t("Bot token")}</label>
+        <div className="field-label-row">
+          <label htmlFor="sl-token">{t("Bot token")}</label>
+          <FieldBadge />
+        </div>
         <input id="sl-token" type="password" value={token} onChange={(e) => setToken(e.target.value)} required placeholder="xoxb-…" autoComplete="off" />
       </div>
       <div className="actions">
@@ -716,31 +743,44 @@ export function MetaMessengerConnection({ conn, webhookBase, onChange }: { conn:
       {(!conn || editing) && (
         <form onSubmit={save}>
           <div className="field">
-            <label htmlFor="meta-page-id">{t("Facebook Page ID")}</label>
+            <div className="field-label-row">
+              <label htmlFor="meta-page-id">{t("Facebook Page ID")}</label>
+              <FieldBadge />
+            </div>
             <input id="meta-page-id" value={form.pageId} onChange={(e) => setForm({ ...form, pageId: e.target.value })} required placeholder="100200300400" autoComplete="off" />
           </div>
           <div className="field">
-            <label htmlFor="meta-ig-id">
-              {t("Instagram Business Account ID")} <span className="muted">{t("(optional)")}</span>
-            </label>
+            <div className="field-label-row">
+              <label htmlFor="meta-ig-id">{t("Instagram Business Account ID")}</label>
+              <FieldBadge optional />
+            </div>
             <input id="meta-ig-id" value={form.instagramAccountId} onChange={(e) => setForm({ ...form, instagramAccountId: e.target.value })} placeholder="900800700600" autoComplete="off" />
           </div>
           <div className="field">
-            <label htmlFor="meta-page-token">{t("Page Access Token")}</label>
+            <div className="field-label-row">
+              <label htmlFor="meta-page-token">{t("Page Access Token")}</label>
+              <FieldBadge />
+            </div>
             <input id="meta-page-token" type="password" value={form.pageAccessToken} onChange={(e) => setForm({ ...form, pageAccessToken: e.target.value })} required autoComplete="off" />
           </div>
           <div className="field">
-            <label htmlFor="meta-app-secret">
-              {t("App Secret")}
-              {conn ? t(", leave empty to keep the current secret") : ""}
-            </label>
+            <div className="field-label-row">
+              <label htmlFor="meta-app-secret">
+                {t("App Secret")}
+                {conn ? t(", leave empty to keep the current secret") : ""}
+              </label>
+              <FieldBadge optional={!!conn} />
+            </div>
             <input id="meta-app-secret" type="password" value={form.appSecret} onChange={(e) => setForm({ ...form, appSecret: e.target.value })} required={!conn} autoComplete="off" />
           </div>
           <div className="field">
-            <label htmlFor="meta-verify-token">
-              {t("Verify Token")}
-              {conn ? t(", leave empty to keep the current token") : ""}
-            </label>
+            <div className="field-label-row">
+              <label htmlFor="meta-verify-token">
+                {t("Verify Token")}
+                {conn ? t(", leave empty to keep the current token") : ""}
+              </label>
+              <FieldBadge optional={!!conn} />
+            </div>
             <input id="meta-verify-token" type="password" value={form.verifyToken} onChange={(e) => setForm({ ...form, verifyToken: e.target.value })} required={!conn} autoComplete="off" />
           </div>
           <div className="actions">
@@ -858,31 +898,44 @@ export function WhatsAppConnection({ conn, webhookBase, onChange }: { conn: Conn
       {(!conn || editing) && (
         <form onSubmit={save}>
           <div className="field">
-            <label htmlFor="wa-phone-id">{t("Phone Number ID")}</label>
+            <div className="field-label-row">
+              <label htmlFor="wa-phone-id">{t("Phone Number ID")}</label>
+              <FieldBadge />
+            </div>
             <input id="wa-phone-id" value={form.phoneNumberId} onChange={(e) => setForm({ ...form, phoneNumberId: e.target.value })} required placeholder="100200300400" autoComplete="off" />
           </div>
           <div className="field">
-            <label htmlFor="wa-waba-id">
-              {t("WhatsApp Business Account ID")} <span className="muted">{t("(optional)")}</span>
-            </label>
+            <div className="field-label-row">
+              <label htmlFor="wa-waba-id">{t("WhatsApp Business Account ID")}</label>
+              <FieldBadge optional />
+            </div>
             <input id="wa-waba-id" value={form.wabaId} onChange={(e) => setForm({ ...form, wabaId: e.target.value })} placeholder="900800700600" autoComplete="off" />
           </div>
           <div className="field">
-            <label htmlFor="wa-access-token">{t("System User Access Token")}</label>
+            <div className="field-label-row">
+              <label htmlFor="wa-access-token">{t("System User Access Token")}</label>
+              <FieldBadge />
+            </div>
             <input id="wa-access-token" type="password" value={form.accessToken} onChange={(e) => setForm({ ...form, accessToken: e.target.value })} required autoComplete="off" />
           </div>
           <div className="field">
-            <label htmlFor="wa-app-secret">
-              {t("App Secret")}
-              {conn ? t(", leave empty to keep the current secret") : ""}
-            </label>
+            <div className="field-label-row">
+              <label htmlFor="wa-app-secret">
+                {t("App Secret")}
+                {conn ? t(", leave empty to keep the current secret") : ""}
+              </label>
+              <FieldBadge optional={!!conn} />
+            </div>
             <input id="wa-app-secret" type="password" value={form.appSecret} onChange={(e) => setForm({ ...form, appSecret: e.target.value })} required={!conn} autoComplete="off" />
           </div>
           <div className="field">
-            <label htmlFor="wa-verify-token">
-              {t("Verify Token")}
-              {conn ? t(", leave empty to keep the current token") : ""}
-            </label>
+            <div className="field-label-row">
+              <label htmlFor="wa-verify-token">
+                {t("Verify Token")}
+                {conn ? t(", leave empty to keep the current token") : ""}
+              </label>
+              <FieldBadge optional={!!conn} />
+            </div>
             <input id="wa-verify-token" type="password" value={form.verifyToken} onChange={(e) => setForm({ ...form, verifyToken: e.target.value })} required={!conn} autoComplete="off" />
           </div>
           <div className="actions">
@@ -982,34 +1035,48 @@ export function ShopifyConnection({ conn, webhookBase, onChange }: { conn: Conne
       {(!conn || editing) && (
         <form onSubmit={save}>
           <div className="field">
-            <label htmlFor="shopify-shop">{t("Shop domain")}</label>
+            <div className="field-label-row">
+              <label htmlFor="shopify-shop">{t("Shop domain")}</label>
+              <FieldBadge />
+            </div>
             <input id="shopify-shop" value={form.shop} onChange={(e) => setForm({ ...form, shop: e.target.value })} required placeholder="your-shop.myshopify.com" autoComplete="off" />
           </div>
-          <fieldset className="field">
+          <fieldset className="field radio-group">
             <legend>{t("Where did you make the app?")}</legend>
-            <label>
-              <input type="radio" name="shopify-kind" checked={form.kind === "dev"} onChange={() => setForm({ ...form, kind: "dev" })} /> {t("In the Dev Dashboard")}
+            <label className="radio-option">
+              <input type="radio" name="shopify-kind" checked={form.kind === "dev"} onChange={() => setForm({ ...form, kind: "dev" })} />
+              <span>{t("In the Dev Dashboard")}</span>
             </label>
-            <label>
-              <input type="radio" name="shopify-kind" checked={form.kind === "admin"} onChange={() => setForm({ ...form, kind: "admin" })} /> {t("In my store admin, before 2026")}
+            <label className="radio-option">
+              <input type="radio" name="shopify-kind" checked={form.kind === "admin"} onChange={() => setForm({ ...form, kind: "admin" })} />
+              <span>{t("In my store admin, before 2026")}</span>
             </label>
           </fieldset>
           {form.kind === "dev" ? (
             <div className="field">
-              <label htmlFor="shopify-client-id">{t("Client ID")}</label>
+              <div className="field-label-row">
+                <label htmlFor="shopify-client-id">{t("Client ID")}</label>
+                <FieldBadge />
+              </div>
               <input id="shopify-client-id" value={form.clientId} onChange={(e) => setForm({ ...form, clientId: e.target.value })} required autoComplete="off" />
             </div>
           ) : (
             <div className="field">
-              <label htmlFor="shopify-token">{t("Admin API access token")}</label>
+              <div className="field-label-row">
+                <label htmlFor="shopify-token">{t("Admin API access token")}</label>
+                <FieldBadge />
+              </div>
               <input id="shopify-token" type="password" value={form.accessToken} onChange={(e) => setForm({ ...form, accessToken: e.target.value })} required autoComplete="off" />
             </div>
           )}
           <div className="field">
-            <label htmlFor="shopify-secret">
-              {t("Client secret")}
-              {conn ? t(", leave empty to keep the current secret") : ""}
-            </label>
+            <div className="field-label-row">
+              <label htmlFor="shopify-secret">
+                {t("Client secret")}
+                {conn ? t(", leave empty to keep the current secret") : ""}
+              </label>
+              <FieldBadge optional={!!conn} />
+            </div>
             <input id="shopify-secret" type="password" value={form.appSecret} onChange={(e) => setForm({ ...form, appSecret: e.target.value })} required={!conn} autoComplete="off" />
           </div>
           <div className="actions">
@@ -1232,7 +1299,10 @@ export function RecordConnection({ app, conn, configured = false, outcome, onCha
           </p>
           {cfg.fields.map((f) => (
             <div className="field" key={f.key}>
-              <label htmlFor={`${app}-${f.key}`}>{t(f.label)}</label>
+              <div className="field-label-row">
+                <label htmlFor={`${app}-${f.key}`}>{t(f.label)}</label>
+                <FieldBadge />
+              </div>
               <input id={`${app}-${f.key}`} type={f.secret ? "password" : "text"} value={form[f.key] ?? ""} onChange={(e) => setForm({ ...form, [f.key]: e.target.value })} required placeholder={f.placeholder} autoComplete="off" />
             </div>
           ))}

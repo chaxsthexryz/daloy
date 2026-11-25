@@ -24,6 +24,8 @@ test("a failed run shows why it stopped, with the raw error only under the techn
   await failedRun(page);
   const why = page.getByRole("region", { name: "Why it stopped" });
   await expect(why.locator(".message.error")).not.toBeEmpty();
+  await expect(page.locator("body")).not.toContainText("React Flow");
+  await expect(page.locator("details.technician")).not.toHaveAttribute("open", "");
   await expect(page.getByLabel("Full error")).toBeHidden();
   await page.getByText("Details for a technician").click();
   await expect(page.getByLabel("Full error")).toBeVisible();

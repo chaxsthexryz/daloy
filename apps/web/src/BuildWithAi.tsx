@@ -1,7 +1,8 @@
 import "./creation.css";
+import { templatesForLanguage } from "@daloy/engine";
 import { useLanguage } from "./Language";
 import { useEffect, useLayoutEffect, useReducer, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
-import { api } from "./api";
+import { api, type Workflow } from "./api";
 import { saveDraft } from "./AiDraft";
 import "./ai-workspace.css";
 import { approvalWanted, chatStep, connectedApps, wire, type ChatReply, type ChatState } from "./lib/ai-chat";
@@ -9,6 +10,13 @@ import { closestTemplate, draftPlan, warningForLanguage, withLabels, withPeople 
 import { createAiLogId, deleteAiLog, loadAiLogs, upsertAiLog, type AiConversationLog, type AiLogStatus } from "./lib/ai-logs";
 import { startOfficeSetup, startPurchaseSetup } from "./OfficeRequests";
 import { pushToast } from "./Toast";
+
+const slugify = (s: string) =>
+  s
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 63);
 
 /** Step types that need a connected app, with the provider name GET /settings/connections uses. */
 const NEEDS: Record<string, { provider: string; label: string }> = {
@@ -25,7 +33,6 @@ const NEEDS: Record<string, { provider: string; label: string }> = {
   discord: { provider: "discord", label: "Discord" },
   google_docs: { provider: "google_drive", label: "Google Drive" },
   paymongo_link: { provider: "paymongo", label: "PayMongo" },
-  payment_status: { provider: "paymongo", label: "PayMongo" },
   meta_reply: { provider: "meta_messenger", label: "Facebook Messenger & Instagram" },
   whatsapp_reply: { provider: "whatsapp", label: "WhatsApp Cloud API" },
   shopify_create_product: { provider: "shopify", label: "Shopify" },
@@ -189,7 +196,7 @@ function formatLogTime(iso: string, locale: string): string {
   }
 }
 
-export function BuildWithAiPage({ email }: { email: string }) {
+export function BuildWithAiPage({ email, admin = false }: { email: string; admin?: boolean }) {
   const { t, language } = useLanguage();
   const [chat, dispatch] = useReducer(chatStep, FRESH);
   const { phase, turns, draft, error } = chat;
@@ -233,9 +240,9 @@ export function BuildWithAiPage({ email }: { email: string }) {
 
   useEffect(() => {
     if (turns.length === 0 && !draft) return;
-    const status: AiLogStatus | undefined = phase === "on" ? "live" : undefined;
-    setLogs(upsertAiLog(email, { id: logId, turns, draft, status }));
-  }, [email, logId, turns, draft, phase]);
+    const status: AiLogStatus | undefined = phase === "on" ? "live" : phase === "error" ? "failed" : undefined;
+    setLogs(upsertAiLog(email, { id: logId, turns, draft, status, error: phase === "error" ? error : undefined }));
+  }, [email, logId, turns, draft, phase, error]);
 
   useEffect(() => {
     if (!closingLogs) return;
@@ -277,6 +284,8 @@ export function BuildWithAiPage({ email }: { email: string }) {
       location.hash = `#/w/${wf.id}`;
     } catch (err) {
       dispatch({ type: "failed", message: (err as Error).message });
+    } finally {
+      window.dispatchEvent(new Event("daloy:usage"));
     }
   }
 
@@ -297,6 +306,8 @@ export function BuildWithAiPage({ email }: { email: string }) {
       dispatch({ type: "reply", reply: reply.kind === "draft" ? { ...reply, definition: withPeople(reply.definition, { owner: email }) } : reply });
     } catch (err) {
       dispatch({ type: "failed", message: (err as Error).message });
+    } finally {
+      window.dispatchEvent(new Event("daloy:usage"));
     }
   }
 
@@ -346,7 +357,7 @@ export function BuildWithAiPage({ email }: { email: string }) {
 
   function openLog(entry: AiConversationLog) {
     setLogId(entry.id);
-    dispatch({ type: "restore", turns: entry.turns, draft: entry.draft });
+    dispatch({ type: "restore", turns: entry.turns, draft: entry.draft, status: entry.status, error: entry.error });
     setInput("");
     setSaveError("");
     setSetupError("");
@@ -370,9 +381,42 @@ export function BuildWithAiPage({ email }: { email: string }) {
     box.current?.focus();
   }
 
+  async function useSuggestedTemplate(slug: string, fallbackName: string) {
+    const item = templatesForLanguage(language).find((x) => x.slug === slug);
+    if (!item) {
+      location.hash = "#/new";
+      return;
+    }
+    setSetupError("");
+    try {
+      const baseName = t(item.name) || fallbackName;
+      const unique = `${slugify(baseName) || slug}-${Date.now().toString(36).slice(-4)}`;
+      const wf = await api<Workflow>("POST", "/workflows", { name: baseName, slug: unique.slice(0, 63) });
+      const ownerEmail = email.trim();
+      const definition = ownerEmail
+        ? {
+            ...item.definition,
+            steps: item.definition.steps.map((s) => {
+              const cfg = s.config as Record<string, unknown>;
+              const nextCfg = { ...cfg };
+              if (nextCfg.to === "owner@example.com") nextCfg.to = ownerEmail;
+              if (nextCfg.approver === "owner@example.com") nextCfg.approver = ownerEmail;
+              return { ...s, config: nextCfg };
+            }),
+          }
+        : item.definition;
+      await api("POST", `/workflows/${wf.id}/versions`, { definition, publish: false });
+      pushToast({ message: t("Created draft from template."), tone: "success" });
+      location.hash = `#/w/${wf.id}`;
+    } catch (e) {
+      setSetupError((e as Error).message);
+    }
+  }
+
   const template = closestTemplate({ approve: approvalWanted(turns) ? "yes" : "" }, turns.find((x) => x.role === "user")?.text ?? "");
   const setup = template.action ?? "link";
   const plan = draft ? draftPlan(draft.definition, language) : null;
+  const hasConversationPlan = draft !== null || turns.some((turn) => turn.role === "assistant");
 
   const firstRequest = turns.find((turn) => turn.role === "user")?.text;
   const visiblePrompts = CATEGORY_PROMPTS.filter((p) => p.category === category);
@@ -394,12 +438,12 @@ export function BuildWithAiPage({ email }: { email: string }) {
       />
       <div className="ai-composer-foot">
         <div className="ai-composer-left">
-          {turns.length > 0 && !draft && (
+          {phase === "asking" && !draft && (
             <button type="button" className="ai-chip-btn" disabled={busy} onClick={() => void talk(t("Build it now with what you have."))}>
               {t("Build it now")}
             </button>
           )}
-          {turns.length > 0 && (
+          {hasConversationPlan && (
             <button type="button" className="ai-chip-btn quiet" disabled={busy} onClick={startOver}>
               {t("Start over")}
             </button>
@@ -618,16 +662,24 @@ export function BuildWithAiPage({ email }: { email: string }) {
                   <section className="demo-card" aria-labelledby="ai-failed">
                     <h2 id="ai-failed">{t("The AI is not set up, or it did not answer.")}</h2>
                     <p>
-                      <a href="#/settings/ai">{t("Check the AI model")}</a>
+                      {admin ? (
+                        <a href="#/settings/ai">{t("Check the AI model")}</a>
+                      ) : (
+                        <a href="#/new">{t("Browse the template library")}</a>
+                      )}
                     </p>
                     <h3>{t("The closest ready-made automation: {name}", { name: t(template.label) })}</h3>
-                    <p>{t(WHY[template.slug] ?? "")}</p>
+                    <p>{t(template.reason ?? WHY[template.slug] ?? "")}</p>
                     <div className="actions">
                       {template.href ? (
                         <a href={template.href}>{t(SETUP_LABEL[setup]!)}</a>
-                      ) : (
+                      ) : template.action ? (
                         <button type="button" className="primary" onClick={() => (template.action === "purchase" ? startPurchaseSetup(email, language) : startOfficeSetup(email, language)).catch((e: Error) => setSetupError(e.message))}>
                           {t(SETUP_LABEL[setup]!)}
+                        </button>
+                      ) : (
+                        <button type="button" className="primary" onClick={() => void useSuggestedTemplate(template.slug, t(template.label))}>
+                          {t("Use this template")}
                         </button>
                       )}
                     </div>
@@ -700,7 +752,13 @@ export function BuildWithAiPage({ email }: { email: string }) {
               <ul className="ai-logs-list">
                 {logs.map((entry) => {
                   const statusLabel =
-                    entry.status === "live" ? t("Live") : entry.status === "saved" ? t("Saved") : t("In progress");
+                    entry.status === "live"
+                      ? t("Live")
+                      : entry.status === "saved"
+                        ? t("Saved")
+                        : entry.status === "failed"
+                          ? t("Failed")
+                          : t("In progress");
                   return (
                     <li key={entry.id} className={`ai-log-item${entry.id === logId ? " is-current" : ""}`}>
                       <button type="button" className="ai-log-open" onClick={() => openLog(entry)}>

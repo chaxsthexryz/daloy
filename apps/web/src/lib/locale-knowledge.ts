@@ -1,11 +1,13 @@
 // Tagalog for the Knowledge page (decision 0116). English is the key. Spread first in locale.ts, so a string another file already translates keeps that wording.
 export const knowledgeTranslations: Record<string, string> = {
   "Knowledge": "Kaalaman",
+  "1 entry": "1 entry",
   "{count} entries": "{count} entry",
   "Write what guests ask about: rooms, rates, policies, questions and links. The concierge answers only from the published version, so check prices before you publish.":
     "Isulat ang mga tinatanong ng mga bisita: kuwarto, rate, patakaran, tanong at link. Sa na-publish na bersyon lang sumasagot ang concierge, kaya tiyakin ang mga presyo bago mag-publish.",
   "Live: version {version}": "Live: bersyon {version}",
   "Not published yet": "Hindi pa na-publish",
+  "Published {date}, 1 entry.": "Na-publish noong {date}, 1 entry.",
   "Published {date}, {count} entries.": "Na-publish noong {date}, {count} entry.",
   "The concierge has nothing to answer from until you publish.": "Walang mapagkukunan ng sagot ang concierge hangga't hindi ka nagpa-publish.",
   "You have changes that are not published.": "May mga pagbabago kang hindi pa na-publish.",

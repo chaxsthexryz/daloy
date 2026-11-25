@@ -4,11 +4,12 @@ import { api, ApiError, type Run } from "./api";
 import type { Delivery } from "./Connections";
 import { PageHead, StatePill } from "./Runs";
 import { startedAt } from "./lib/activity";
+import { filterRequests, recentRequests, type AskRequestItem, type AskRunInput } from "./lib/ask";
+import { plainState } from "./lib/states";
 
 type Answer = { headline: string; lines: string[]; fix: { href: string; label: string } | null };
 type Reply = { runId: string; reference: string; workflowName: string; answers: { happened: Answer; why: Answer | null; next: Answer } };
 type Which = "happened" | "why" | "next";
-type Recent = { id: string; reference: string | null; workflowName: string };
 
 const QUESTIONS: { key: Which; label: string }[] = [
   { key: "happened", label: "What happened?" },
@@ -24,7 +25,7 @@ type AskedRun = Run & { deliveryFailed: boolean };
 
 export function AskRequest({ reference, run }: { reference?: string; run?: AskedRun } = {}) {
   const { t, language: workspaceLanguage } = useLanguage();
-  const [recent, setRecent] = useState<Recent[]>([]);
+  const [recent, setRecent] = useState<AskRequestItem[] | null>(null);
   const [text, setText] = useState("");
   const [reply, setReply] = useState<Reply | null>(null);
   const [which, setWhich] = useState<Which>("happened");
@@ -35,8 +36,8 @@ export function AskRequest({ reference, run }: { reference?: string; run?: Asked
 
   useEffect(() => {
     if (reference) return void load(reference);
-    api<Recent[]>("GET", "/runs?state=problem").then(
-      (list) => setRecent(list.filter((r) => r.reference).slice(0, 5)),
+    api<AskRunInput[]>("GET", "/runs?limit=50").then(
+      (list) => setRecent(recentRequests(list)),
       () => setRecent([]),
     );
   }, [reference]);
@@ -82,6 +83,7 @@ export function AskRequest({ reference, run }: { reference?: string; run?: Asked
   }
 
   const shown = reply ? (reply.answers[which] ?? reply.answers.happened) : null;
+  const matching = recent ? filterRequests(recent, text) : [];
   return (
     <div className="act-ask">
       <section className="act-card" aria-labelledby="ask-questions-h">
@@ -89,23 +91,38 @@ export function AskRequest({ reference, run }: { reference?: string; run?: Asked
         {!reference && (
           <form className="act-ask-find" onSubmit={submit}>
             <label htmlFor="ask-reference">{t("Request reference")}</label>
+            <p className="act-muted">{t("Looks up recorded request references from your workspace activity. Enter a reference or pick one below.")}</p>
             <div className="act-filters">
-              <input id="ask-reference" value={text} maxLength={40} onChange={(e) => setText(e.target.value)} />
+              <input id="ask-reference" value={text} maxLength={40} placeholder={t("e.g. REQ-2026-0001")} onChange={(e) => setText(e.target.value)} />
               <button className="act-button blue" disabled={busy || !text.trim()}>{t("Ask")}</button>
             </div>
-            {recent.length > 0 && (
-              <>
-                <p className="act-muted">{t("Or pick a request that ran into a problem:")}</p>
-                <ul className="act-picks">
-                  {recent.map((r) => (
-                    <li key={r.id}>
-                      <button type="button" className="act-link" onClick={() => void load(r.reference!)}>
-                        {r.reference}, {r.workflowName}
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              </>
+            {recent !== null && (
+              recent.length === 0 ? (
+                <p className="act-muted">
+                  {t("No recorded requests with references yet. Requests appear here after a form or request automation runs.")}{" "}
+                  <a href="#/activity">{t("Workspace activity")}</a>
+                </p>
+              ) : matching.length === 0 ? (
+                <p className="act-muted">{t("No recent request matches that text. You can still submit the exact reference above.")}</p>
+              ) : (
+                <>
+                  <p className="act-muted">{t("Recent requests:")}</p>
+                  <ul className="act-picks" aria-label={t("Recent requests")}>
+                    {matching.slice(0, 10).map((r) => {
+                      const stateInfo = r.state ? plainState({ state: r.state, createdAt: r.createdAt || new Date().toISOString(), needsReview: r.state === "needs_review" }) : null;
+                      return (
+                        <li key={r.id}>
+                          <button type="button" className="act-pick-btn" onClick={() => void load(r.reference)}>
+                            <span className="act-mono">{r.reference}</span>
+                            <span>{r.workflowName}</span>
+                            {stateInfo && <span className={`act-pill ${stateInfo.key}`}>{t(stateInfo.label)}</span>}
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </>
+              )
             )}
           </form>
         )}

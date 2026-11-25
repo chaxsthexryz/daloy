@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { and, asc, eq, gt, inArray, isNull, ne, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, isNull, ne, sql } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import { hashToken } from "./approvals";
 import { invites, sessions, users, workspaceMembers, type Role } from "./schema";
@@ -57,10 +57,44 @@ export async function removeMember(db: AnyDb, workspaceId: string, userId: strin
 }
 
 /** A 32-byte url-safe token; only its SHA-256 is stored. The check constraint refuses an owner invite. */
-export async function createInvite(db: AnyDb, workspaceId: string, email: string, role: Role, ttlMs = INVITE_MS): Promise<string> {
+export async function createInviteRecord(db: AnyDb, workspaceId: string, email: string, role: Role, ttlMs = INVITE_MS) {
   const token = randomBytes(32).toString("base64url");
-  await db.insert(invites).values({ workspaceId, email: email.toLowerCase(), role, tokenHash: hashToken(token), expiresAt: new Date(Date.now() + ttlMs) });
-  return token;
+  const [row] = await db
+    .insert(invites)
+    .values({ workspaceId, email: email.toLowerCase(), role, tokenHash: hashToken(token), expiresAt: new Date(Date.now() + ttlMs) })
+    .returning({ id: invites.id, email: invites.email, role: invites.role, createdAt: invites.createdAt, expiresAt: invites.expiresAt });
+  return { ...row!, token };
+}
+
+/** A 32-byte url-safe token; only its SHA-256 is stored. The check constraint refuses an owner invite. */
+export async function createInvite(db: AnyDb, workspaceId: string, email: string, role: Role, ttlMs = INVITE_MS): Promise<string> {
+  return (await createInviteRecord(db, workspaceId, email, role, ttlMs)).token;
+}
+
+export async function listPendingInvites(db: AnyDb, workspaceId: string) {
+  return db
+    .select({ id: invites.id, email: invites.email, role: invites.role, createdAt: invites.createdAt, expiresAt: invites.expiresAt })
+    .from(invites)
+    .where(and(eq(invites.workspaceId, workspaceId), isNull(invites.usedAt), gt(invites.expiresAt, sql`now()`)))
+    .orderBy(desc(invites.createdAt));
+}
+
+export async function revokeInvite(db: AnyDb, workspaceId: string, id: string): Promise<boolean> {
+  const gone = await db
+    .delete(invites)
+    .where(and(eq(invites.workspaceId, workspaceId), eq(invites.id, id), isNull(invites.usedAt)))
+    .returning({ id: invites.id });
+  return gone.length > 0;
+}
+
+export async function reissueInvite(db: AnyDb, workspaceId: string, id: string, ttlMs = INVITE_MS) {
+  const token = randomBytes(32).toString("base64url");
+  const [row] = await db
+    .update(invites)
+    .set({ tokenHash: hashToken(token), expiresAt: new Date(Date.now() + ttlMs) })
+    .where(and(eq(invites.workspaceId, workspaceId), eq(invites.id, id), isNull(invites.usedAt), gt(invites.expiresAt, sql`now()`)))
+    .returning({ id: invites.id, email: invites.email, role: invites.role, createdAt: invites.createdAt, expiresAt: invites.expiresAt });
+  return row ? { ...row, token } : null;
 }
 
 /** Uses the invite: one guarded UPDATE, so a second use or an expired invite gets null. Run it in the transaction that adds the member. */
