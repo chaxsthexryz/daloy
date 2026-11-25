@@ -68,6 +68,7 @@ main.page.wk { display: flex; flex-direction: column; gap: 16px; width: 100%; ma
 .wk-button.blue:hover:not(:disabled) { background: color-mix(in srgb, var(--w-accent) 88%, black); border-color: transparent; }
 .wk-button.danger { min-height: 44px; border-color: var(--w-red); background: var(--w-red); color: #fff; }
 .wk-button.danger-quiet { border-color: transparent; color: var(--w-red); }
+.wk-button:disabled, .wk-button.blue:disabled { background: var(--disabled-bg, var(--w-canvas)); border-color: var(--disabled-border, var(--w-line)); color: var(--disabled-fg, var(--w-muted)); opacity: 1; cursor: not-allowed; }
 .wk-chip { display: inline-flex; flex: none; white-space: nowrap; align-items: center; min-height: 22px; padding: 0 9px; border-radius: 11px; background: var(--w-select); color: var(--w-accent); font-size: 12px; font-weight: 700; }
 
 /* Invite form and notices. */

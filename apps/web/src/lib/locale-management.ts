@@ -14,7 +14,7 @@ export const managementTranslations: Record<string, string> = {
   "Add a page to a database for every request.": "Magdagdag ng page sa database para sa bawat request.",
   "Add a card to a list for every request.": "Magdagdag ng card sa list para sa bawat request.",
   "Airtable record": "Airtable record", "Notion page": "Notion page", "Trello card": "Trello card",
-  "Account": "Account", "Entries are added to": "Idinadagdag ang mga entry sa", "Replace token or target": "Palitan ang token o ang patutunguhan",
+  "Account": "Account ko", "Entries are added to": "Idinadagdag ang mga entry sa", "Replace token or target": "Palitan ang token o ang patutunguhan",
   "Disconnect {app}? Automations stop adding there until you reconnect.": "Idiskonekta ang {app}? Hihinto ang mga automation sa pagdagdag doon hanggang ikonekta mo ulit.",
   "Connect {app}": "Ikonekta ang {app}",
   "Check the connection": "Suriin ang koneksyon", "Add a test page": "Magdagdag ng test page", "Add a test card": "Magdagdag ng test card",

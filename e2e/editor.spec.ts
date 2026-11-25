@@ -43,7 +43,7 @@ test("edit trigger, steps and branches, then test, save and publish", async ({ p
   // With no text field chosen yet, a reference to earlier data copies to the clipboard (E3).
   await page.getByRole("button", { name: /^email_1 / }).click();
   await page.getByRole("button", { name: "Insert {{trigger.email}}" }).click();
-  await expect(page.getByRole("status")).toHaveText("Copied {{trigger.email}}");
+  await expect(page.locator(".a7-copied")).toHaveText("Copied {{trigger.email}}");
 
   // The diagram draws every step; the zoom bar changes the zoom.
   await page.getByRole("button", { name: "Diagram", exact: true }).click();

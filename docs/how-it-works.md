@@ -1730,3 +1730,16 @@ How it works (`packages/db/src/lalamove.ts`, `apps/worker/src/steps/lalamove.ts`
 Limits: no geocoding (coordinates come from the shop), one drop-off, no cancel or status tracking. It was tested against a fake Lalamove server, not the real sandbox.
 
 Tests: `packages/db/src/lalamove.test.ts` (signature, quote then order, error handling), `packages/engine/src/lalamove.test.ts` (sandbox default, trigger and AI rules, template), `apps/worker/src/steps/lalamove.test.ts` (booking, fake for sample and test runs, live guard, checks before any request).
+
+## Visual polish, dark mode contrast, Taglish parity and mobile layout (phase F5)
+
+What it does: aligns status colours, dark mode contrast, overlay stacking, canvas fitting, landmarks, mobile layout, and Taglish navigation labels across the console without changing backend routes or database tables.
+
+How it works (`apps/web/src`):
+- Summary cards (`Automations.tsx`, `automations-ops.css`): zero counts for `Needs you` (`0 all clear`) and `Problems` (`0 all healthy` / `0 maayos lahat`) render in green (`ok`) instead of amber or red in both Light and Dark modes.
+- Dark mode contrast (`styles.css`, `workspace.css`, `ai-workspace.css`, `editor.css`): explicit `--disabled-bg`, `--disabled-fg`, and `--disabled-border` tokens replace opacity fading so disabled buttons meet WCAG AA (`>= 4.5:1`), `--a7-bar-off` raises the editor connection track contrast (`>= 3:1`), and `.app-mark[data-kind="logo"]` uses a soft `#e2e6f0` tile in Dark mode so dark brand marks stay legible without bright white squares.
+- Overlays, landmarks and Fit zoom (`ai-workspace.css`, `toast.css`, `Editor.tsx`, `FlowCanvas.tsx`, `lib/graph.ts`): `#/ai` shows a visible `<h1>` on the initial stage and opens `Conversation logs` at `z-index: 55` with an opaque drawer and a 32x32 delete icon (`padding: 0`). Global toasts sit at the bottom-right on desktop (and above `.bottom-bar` on mobile) so they never overlap breadcrumbs or titles. `Editor` uses `<main className="a7-editor">`, widens step cards (`NODE_W = 256`, `COL = 292`) to stop kicker clipping, and sets `minZoom={0.25}` so `Fit` keeps the Trigger node inside the viewport.
+- Mobile `390x844` (`editor.css`, `Editor.tsx`, `console-shell.css`, `styles.css`): List cards wrap with `min-width: 0` so text clears the Move Up button, the mobile `Menu` drawer adds bottom padding (`72px`) so `Account` and `Sign out` clear the fixed `Quick` bar, `.bottom-bar` buttons match sibling link typography (`13px`), and the mobile editor toolbar shows `Save`, `Publish`, and `More` (moving `Test run`, `Explain`, and `Share` into a `More` sheet).
+- Taglish parity (`locale.ts`, `locale-guided.ts`, `locale-workspace.ts`, `locale-management.ts`): translates `Library` (`Aklatan`), `Team` (`Koponan`), `Settings` (`Mga setting`), `Account` (`Account ko`), and `Back to Apps` (`Bumalik sa Mga app`).
+
+Tests: `apps/web/src/lib/run-flow.test.ts` (disabled button and editor track contrast), `apps/web/src/lib/locale.test.ts` (Taglish sidebar and app-back labels), `apps/web/src/Toast.test.tsx` (bottom-right toast layout), and `e2e/visual-dark-mobile.spec.ts` (Light, Dark, Taglish, and `390x844` checks).

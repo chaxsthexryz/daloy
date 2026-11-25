@@ -102,6 +102,7 @@ main.page.ops { max-width: none; width: 100%; margin: 0; padding: 0; background:
 .ops-kval.lg strong { font-size: 40px; }
 .ops-kval strong.amber { color: var(--o-amber); }
 .ops-kval strong.red { color: var(--o-red); }
+.ops-kval strong.ok { color: var(--o-green); }
 .ops-kval small { font-size: 12px; color: var(--o-muted); font-weight: 500; }
 
 /* Alerts */

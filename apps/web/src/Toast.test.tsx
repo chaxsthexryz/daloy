@@ -5,13 +5,12 @@ import { describe, expect, it } from "vitest";
 import { LanguageContext } from "./Language";
 import { ToastHost } from "./Toast";
 
-describe("ToastHost middle-top layout", () => {
-  it("positions the toast stack at the middle-top in toast.css", () => {
+describe("ToastHost bottom-right layout", () => {
+  it("positions the toast stack at the bottom-right in toast.css so it never overlaps breadcrumbs or titles", () => {
     const css = readFileSync(resolve(__dirname, "toast.css"), "utf8");
-    expect(css).toContain("top: 16px;");
-    expect(css).toContain("left: 50%;");
-    expect(css).toContain("transform: translateX(-50%);");
-    expect(css).not.toContain("bottom: 24px;");
+    expect(css).toContain("bottom: 20px;");
+    expect(css).toContain("right: 20px;");
+    expect(css).not.toContain("top: 16px;");
   });
 
   it("renders cleanly when empty", () => {
