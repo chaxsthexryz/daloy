@@ -64,7 +64,7 @@ test("on a 390 px phone: add, move, edit and undo steps with 44 px targets, and 
   await page.getByRole("button", { name: "Undo", exact: true }).click();
 
   // Editing opens a sheet over the list; typing in it is one undo step.
-  await page.getByRole("button", { name: /^wait / }).click();
+  await page.getByRole("button", { name: /Delay.*wait/ }).click();
   const sheet = page.getByRole("dialog", { name: "Edit step" });
   await expect(sheet).toBeVisible();
   const seconds = sheet.getByRole("spinbutton").first();
@@ -75,7 +75,7 @@ test("on a 390 px phone: add, move, edit and undo steps with 44 px targets, and 
   await done.click();
   await expect(sheet).toBeHidden();
   await page.getByRole("button", { name: "Undo", exact: true }).click();
-  await page.getByRole("button", { name: /^wait / }).click();
+  await page.getByRole("button", { name: /Delay.*wait/ }).click();
   await expect(page.getByRole("dialog", { name: "Edit step" }).getByRole("spinbutton").first()).toHaveValue("60");
   await page.getByRole("dialog", { name: "Edit step" }).getByRole("button", { name: "Done" }).click();
 
@@ -93,7 +93,7 @@ test("on a 390 px phone: add, move, edit and undo steps with 44 px targets, and 
   expect(await ids(page)).toEqual(before);
 
   // From a step's own sheet, add right after it.
-  await page.getByRole("button", { name: /^wait / }).click();
+  await page.getByRole("button", { name: /Delay.*wait/ }).click();
   await page.getByRole("button", { name: "Add a step after this one" }).click();
   await page.getByRole("dialog", { name: "Add a step after wait" }).getByRole("searchbox", { name: "Search steps" }).fill("delay");
   await page.keyboard.press("Enter");

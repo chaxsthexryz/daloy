@@ -1,4 +1,4 @@
-import { aiConnection, cancelRun, claimUsage, readUpload, deliveries, listDeliveries, QuotaError, requests, resolveRun, runs, supersededSql, stepRuns, workflows, workflowVersions, type Db, type RunAction } from "@daloy/db";
+import { aiConnection, cancelRun, claimUsage, readUpload, deliveries, listDeliveries, QuotaError, refundUsage, requests, resolveRun, runs, supersededSql, stepRuns, workflows, workflowVersions, type Db, type RunAction } from "@daloy/db";
 import { FILE_MIME, safeFileName } from "@daloy/engine";
 import { generate } from "@daloy/llm-ts";
 import { Body, ConflictException, Controller, Get, Header, HttpCode, HttpException, HttpStatus, Inject, NotFoundException, Param, Post, Query, Res, StreamableFile, UseGuards } from "@nestjs/common";
@@ -11,7 +11,7 @@ import { toCsv } from "./csv";
 import { answerAll, askFacts, explainFailure, failureFacts } from "./explain";
 import { Allow, BOSS, CONFIG, CurrentUser, DB, enqueueRun, RateLimit, ZodPipe, type ApiConfig, type SessionUser, MANAGE, OPERATE } from "./http";
 import { historyHider } from "./mask";
-import { explain } from "./settings";
+import { explainForOwner } from "./settings";
 
 const testFlag = new ZodPipe(z.enum(["true", "false"]).optional());
 const resolveInput = z.object({ action: z.enum(["delivered", "again", "stop"]) });
@@ -172,20 +172,26 @@ export class RunsController {
   private async reworded(workspaceId: string, system: string, input: unknown) {
     // The connection first, as in /ai/draft: a missing key costs no AI action.
     const { model, ...connection } = await aiConnection(this.db, this.config.secretsKey, workspaceId).catch((err: unknown) => {
-      throw new HttpException({ message: explain(err) }, HttpStatus.BAD_GATEWAY);
+      throw new HttpException({ message: explainForOwner(err) }, HttpStatus.BAD_GATEWAY);
     });
-    await claimUsage(this.db, workspaceId, "ai").catch((err: unknown) => {
+    const now = new Date();
+    await claimUsage(this.db, workspaceId, "ai", { now }).catch((err: unknown) => {
       throw err instanceof QuotaError ? new HttpException({ message: err.message }, HttpStatus.TOO_MANY_REQUESTS) : err;
     });
-    let text: string;
     try {
-      ({ text } = await generate({ system, messages: [{ role: "user", content: JSON.stringify(input) }], model, connection, temperature: 0.2, maxTokens: 300, timeoutMs: 30_000 }));
+      let text: string;
+      try {
+        ({ text } = await generate({ system, messages: [{ role: "user", content: JSON.stringify(input) }], model, connection, temperature: 0.2, maxTokens: 300, timeoutMs: 30_000 }));
+      } catch (err) {
+        throw new HttpException({ message: explainForOwner(err) }, HttpStatus.BAD_GATEWAY);
+      }
+      text = text.trim().slice(0, 600);
+      if (!text || /https?:\/\/|www\./i.test(text)) throw new HttpException({ message: "The AI model could not answer." }, HttpStatus.BAD_GATEWAY);
+      return { text };
     } catch (err) {
-      throw new HttpException({ message: explain(err) }, HttpStatus.BAD_GATEWAY);
+      await refundUsage(this.db, workspaceId, "ai", { now }).catch(() => undefined);
+      throw err;
     }
-    text = text.trim().slice(0, 600);
-    if (!text || /https?:\/\/|www\./i.test(text)) throw new HttpException({ message: "The AI model could not answer." }, HttpStatus.BAD_GATEWAY);
-    return { text };
   }
 
   /** Everything the explanations read for one run of this workspace. */

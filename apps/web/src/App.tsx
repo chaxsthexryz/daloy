@@ -26,6 +26,7 @@ import { SecretsPage } from "./Secrets";
 import { TokensPage } from "./Tokens";
 import { VersionsPage } from "./Versions";
 import { Shell } from "./Nav";
+import { useLanguage } from "./Language";
 import { AccountPage, ForgotPasswordPage, ResetPasswordPage } from "./Account";
 import { SignIn } from "./SignIn";
 import { AcceptInvitePage, MyRequestsPage, TeamPage, type User } from "./Team";
@@ -102,7 +103,7 @@ function Route({ hash, user }: { hash: string; user: User }) {
   if (page) return <Editor key={page[1]} id={page[1]!} from={page[3]} />;
   const run = /^#\/runs\/([0-9a-f-]{36})(\/ask)?$/.exec(hash);
   if (run?.[2] && canAsk) return <AskRunPage key={run[1]} runId={run[1]!} />;
-  if (run) return <RunPage key={run[1]} runId={run[1]!} owner={user.role === "owner"} ask={canAsk} />;
+  if (run) return <RunPage key={run[1]} runId={run[1]!} owner={user.role === "owner"} ask={canAsk} admin={user.admin === true} />;
   const guided = /^#\/a\/([0-9a-f-]{36})$/.exec(hash);
   if (guided) return <OfficeRequestPage key={guided[1]} id={guided[1]!} />;
   if (hash === "#/activity" && (user.role === "owner" || user.role === "operator")) return <RunsPage ask={canAsk} />;
@@ -112,12 +113,12 @@ function Route({ hash, user }: { hash: string; user: User }) {
   if (hash === "#/try/office-request") return <TryOfficeRequest email={user.email} />;
   if (hash === "#/advanced" && user.role === "owner" && user.admin === true) return <AdvancedPage />;
   if (hash === "#/new" && user.role === "owner") return <NewAutomationPage email={user.email} />;
-  if (hash === "#/ai" && user.role === "owner") return <BuildWithAiPage email={user.email} />;
+  if (hash === "#/ai" && user.role === "owner") return <BuildWithAiPage email={user.email} admin={user.admin === true} />;
   if (hash === "#/secrets" && user.role === "owner" && user.admin === true) return <SecretsPage />;
   if (hash === "#/tokens" && user.admin === true) return <TokensPage />;
   if (hash === "#/settings") return <SettingsPage user={user} />;
   if (hash === "#/account") return <AccountPage />;
-  if (hash === "#/settings/ai" && user.admin === true) return <AiModelPage />;
+  if (hash === "#/settings/ai") return user.admin === true ? <AiModelPage /> : <NotFoundPage aiRestricted />;
   if (hash === "#/apps") return <AppsPage />;
   // #/apps/<slug>-<outcome> is where the OAuth consent callback lands (decision 0058). Outlook's callback from decision
   // 0023 still lands on #/settings/business/outlook-<outcome>.
@@ -133,5 +134,24 @@ function Route({ hash, user }: { hash: string; user: User }) {
   if (hash === "#/receipts" && (user.role === "owner" || user.role === "operator")) return <ReceiptsPage user={user} />;
   const verify = /^#\/verify-sender\/([A-Za-z0-9_-]{43})$/.exec(hash);
   if (verify) return <VerifySenderPage key={verify[1]} token={verify[1]!} />;
-  return <Automations user={user} />;
+  if (hash === "" || hash === "#" || hash === "#/" || /^#\/(advanced|new|ai|secrets|tokens|onboarding|team|resources|bookings|conversations|knowledge|receipts|activity|activity\/ask)$/.test(hash)) {
+    return <Automations user={user} />;
+  }
+  return <NotFoundPage />;
+}
+
+function NotFoundPage({ aiRestricted = false }: { aiRestricted?: boolean }) {
+  const { t } = useLanguage();
+  return (
+    <main className="page">
+      <h1>{t("Page not found")}</h1>
+      <p className="muted">
+        {t(aiRestricted ? "AI model settings are managed by the kymavo operator for this workspace." : "This page does not exist, or your account cannot open it.")}
+      </p>
+      <p className="actions">
+        <a className="button" href="#/">{t("Back to Automations")}</a>
+        {aiRestricted && <a className="button" href="#/settings">{t("Settings")}</a>}
+      </p>
+    </main>
+  );
 }

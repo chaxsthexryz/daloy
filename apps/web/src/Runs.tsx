@@ -361,11 +361,22 @@ function RunPanel({ runId, overview }: { runId: string | null; overview: string 
 const STEP_STATE: Record<string, string> = { succeeded: "Done", failed: "Failed", running: "Working", pending: "Working", waiting: "Waiting", needs_review: "Needs you", cancelled: "Cancelled", skipped: "Skipped" };
 
 /** #/runs/<id> (O2, Doop frame aquI2X-gdg): the run's step timeline beside its outcome and recovery controls. Polls until the run finishes. */
-export function RunPage({ runId, owner, ask }: { runId: string; owner: boolean; ask?: boolean }) {
+export function RunPage({ runId, owner, ask, admin = false }: { runId: string; owner: boolean; ask?: boolean; admin?: boolean }) {
   const { t } = useLanguage();
   const [reload, setReload] = useState(0);
   const [deliveryFailed, setDeliveryFailed] = useState(false);
   const { run, error } = useRun(runId, reload);
+  const [draft, setDraft] = useState<Draft | null>(null);
+  const [draftFailed, setDraftFailed] = useState(false);
+  useEffect(() => {
+    setDraft(null);
+    setDraftFailed(false);
+    if (!run) return;
+    api<Version>("GET", `/workflows/${run.workflowId}/versions/${run.version}`).then(
+      (v) => setDraft(v.definition as Draft),
+      () => setDraftFailed(true),
+    );
+  }, [run?.workflowId, run?.version]);
   if (!run) {
     return (
       <main className="page act">
@@ -407,7 +418,7 @@ export function RunPage({ runId, owner, ask }: { runId: string; owner: boolean; 
         {working && takingLonger(run.createdAt) && <p className="act-alert">{t(TAKING_LONGER)}</p>}
         <section className="act-card" aria-labelledby="timeline-h">
           <h2 id="timeline-h">{t("Run timeline")}</h2>
-          <RunTimeline run={run} />
+          <RunTimeline run={run} draft={draft} />
           <details className="act-fields">
             <summary>{t("Masked request fields")}</summary>
             <pre aria-label={t("Request fields")}>{json(run.triggerPayload)}</pre>
@@ -419,7 +430,7 @@ export function RunPage({ runId, owner, ask }: { runId: string; owner: boolean; 
             <StatePill run={{ ...run, deliveryFailed }} note />
           </p>
           {run.superseded && <p className="act-alert">{t(SUPERSEDED)}</p>}
-          <RunWhy run={run} owner={owner} />
+          <RunWhy run={run} owner={owner} admin={admin} />
           <RunDeliveries runId={runId} onLoad={(l) => setDeliveryFailed(l.some((d) => d.state === "failed"))} />
           <dl className="act-facts">
             <div>
@@ -434,7 +445,7 @@ export function RunPage({ runId, owner, ask }: { runId: string; owner: boolean; 
           <RunActions run={run} onDone={() => setReload((n) => n + 1)} />
         </section>
         <RunFiles runId={runId} payload={run.triggerPayload} />
-        <RunPath run={run} />
+        <RunPath run={run} draft={draft} failed={draftFailed} />
         <details className="act-card technician">
           <summary>{t("Details for a technician")}</summary>
           <p className="act-muted">
@@ -452,12 +463,14 @@ export function RunPage({ runId, owner, ask }: { runId: string; owner: boolean; 
 }
 
 /** O2's numbered step list: each attempt's step, what happened to it, and when it started (hh:mm:ss). */
-function RunTimeline({ run }: { run: Run }) {
-  const { t } = useLanguage();
+function RunTimeline({ run, draft }: { run: Run; draft: Draft | null }) {
+  const { t, language } = useLanguage();
   if (run.steps.length === 0) return <p className="act-muted">{t("No steps have run yet.")}</p>;
   return (
     <ol className="act-timeline">
       {run.steps.map((s, i) => {
+        const defStep = draft?.steps.find((x) => x.id === s.stepId);
+        const title = defStep ? `${stepLabel(defStep.type, language)} (${s.stepId})` : s.stepId;
         const notes = [
           s.attempt > 1 ? t("attempt {count}", { count: s.attempt }) : "",
           s.branch ? `→ ${s.branch}` : "",
@@ -471,7 +484,7 @@ function RunTimeline({ run }: { run: Run }) {
           <li key={s.id}>
             <span className="act-num" aria-hidden="true">{i + 1}</span>
             <div>
-              <p className="title">{s.stepId} <span className={`act-step ${s.state}`}>{t(STEP_STATE[s.state] ?? s.state)}</span></p>
+              <p className="title">{title} <span className={`act-step ${s.state}`}>{t(STEP_STATE[s.state] ?? s.state)}</span></p>
               {notes.length > 0 && <p className="act-muted">{notes.join(" · ")}</p>}
               {s.error && <p className="act-alert error">{ownerError(s.error)}</p>}
             </div>
@@ -505,10 +518,10 @@ function RunFiles({ runId, payload }: { runId: string; payload: unknown }) {
   );
 }
 
-type Explanation = { facts: unknown; fixed: { headline: string; lines: string[]; fix: { href: string; label: string } | null } };
+type Explanation = { facts: unknown; fixed: { headline: string; lines: string[]; fix: { href: string; label: string } | null; aiExplain?: boolean } };
 
 /** Why a stopped run stopped: the server's fixed explanation (fetched once per state change), else the plain error. Owners can ask the AI model to reword it. */
-function RunWhy({ run, owner }: { run: Run; owner: boolean }) {
+function RunWhy({ run, owner, admin }: { run: Run; owner: boolean; admin: boolean }) {
   const { language, t } = useLanguage();
   const key = plainState(run).key;
   const stopped = key === "problem" || key === "needs_you";
@@ -528,7 +541,7 @@ function RunWhy({ run, owner }: { run: Run; owner: boolean }) {
       live = false;
     };
   }, [run.id, stopped, key, language]);
-  if (!fixed) return run.error ? <section aria-label={t("Why it stopped")}><RunError error={run.error} owner={owner} /></section> : null;
+  if (!fixed) return run.error ? <section aria-label={t("Why it stopped")}><RunError error={run.error} owner={owner} admin={admin} /></section> : null;
   const ask = () => {
     setAsking(true);
     api<{ text: string }>("POST", `/runs/${run.id}/explanation/reword`, {})
@@ -536,18 +549,22 @@ function RunWhy({ run, owner }: { run: Run; owner: boolean }) {
       .catch((e) => setReply(e instanceof ApiError && e.status === 429 ? { error: e.message } : { modelFailed: true }))
       .finally(() => setAsking(false));
   };
+  const visibleFix = fixed.fix && fixed.fix.href === "#/settings/ai" && !admin ? { href: "#/settings", label: t("See plan and usage") } : fixed.fix;
+  const fallbackReason =
+    fixed.headline === "kymavo could not tell why this stopped." || fixed.headline === "Hindi matukoy ng kymavo kung bakit ito huminto.";
   return (
     <section aria-label={t("Why it stopped")}>
       <p className={key === "problem" ? "message error" : "message"}>{fixed.headline}</p>
       {fixed.lines.map((l, i) => (
         <p key={i}>{l}</p>
       ))}
-      {owner && fixed.fix && (
+      {fallbackReason && run.error && <RunError error={run.error} owner={owner} admin={admin} />}
+      {owner && visibleFix && (
         <p>
-          <a href={fixed.fix.href}>{fixed.fix.label}</a>
+          <a href={visibleFix.href}>{visibleFix.label}</a>
         </p>
       )}
-      {owner && (
+      {owner && fixed.aiExplain !== false && (
         <button type="button" disabled={asking} onClick={ask}>
           {t(asking ? "Asking the AI model…" : "Explain in simpler words (uses 1 AI action)")}
         </button>
@@ -561,7 +578,13 @@ function RunWhy({ run, owner }: { run: Run; owner: boolean }) {
       {reply?.error && <p role="alert" className="message error">{reply.error}</p>}
       {reply?.modelFailed && (
         <p role="alert" className="message error">
-          {t("The AI model could not answer.")} <a href="#/settings/ai">{t("Check the AI model")}</a>
+          {t("The AI model could not answer.")}
+          {admin && (
+            <>
+              {" "}
+              <a href="#/settings/ai">{t("Check the AI model")}</a>
+            </>
+          )}
         </p>
       )}
     </section>
@@ -569,9 +592,9 @@ function RunWhy({ run, owner }: { run: Run; owner: boolean }) {
 }
 
 /** The run's error in the owner's words, with a link to the page that fixes it when the error says which (owners only). */
-function RunError({ error, owner }: { error: string; owner: boolean }) {
+function RunError({ error, owner, admin }: { error: string; owner: boolean; admin: boolean }) {
   const { t } = useLanguage();
-  const fix = owner ? fixFor(error) : null;
+  const fix = owner ? fixFor(error, admin) : null;
   return (
     <p className="message error">
       {ownerError(error)}
@@ -586,18 +609,8 @@ function RunError({ error, owner }: { error: string; owner: boolean }) {
 }
 
 /** The path this run took: the version's diagram, redrawn on every poll with the state of each step (read only). */
-function RunPath({ run }: { run: Run }) {
+function RunPath({ run, draft, failed }: { run: Run; draft: Draft | null; failed: boolean }) {
   const { t, language } = useLanguage();
-  const [draft, setDraft] = useState<Draft | null>(null);
-  const [failed, setFailed] = useState(false);
-  useEffect(() => {
-    setDraft(null);
-    setFailed(false);
-    api<Version>("GET", `/workflows/${run.workflowId}/versions/${run.version}`).then(
-      (v) => setDraft(v.definition as Draft),
-      () => setFailed(true),
-    );
-  }, [run.workflowId, run.version]);
   if (failed) return <p className="muted">{t("The diagram could not load. The steps are listed under Details for a technician.")}</p>;
   if (!draft) return null;
   const states = runFlow(draft, run).nodes;

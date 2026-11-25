@@ -3,11 +3,12 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { api } from "./api";
 import { useLanguage } from "./Language";
 import { useRun } from "./Runs";
-import { aiFailure, chatPayload, chatReply, isChatTrigger, type ChatTurn } from "./lib/chat-test";
+import { aiFailure, canCancelChatRun, chatPayload, chatReply, isChatTrigger, needsPublishedKnowledge, type ChatTurn } from "./lib/chat-test";
 import type { Draft } from "./lib/graph";
 
 type Bubble = { id: number; from: "customer" | "bot"; text: string; note?: string; pending?: boolean };
 type Sending = { bubble: number; runId: string; payload: unknown; mocked: boolean };
+type KnowledgeState = "ready" | "loading" | "missing";
 
 /**
  * "Chat as your customer" (T8): each message the owner types starts an "ai" test run of the draft. The bot bubble is
@@ -18,8 +19,35 @@ export function ChatTest({ workflowId, draft, onRun }: { workflowId: string; dra
   const [bubbles, setBubbles] = useState<Bubble[]>([]);
   const [text, setText] = useState("");
   const [sending, setSending] = useState<Sending | null>(null);
+  const needsKnowledge = needsPublishedKnowledge(draft);
+  const [knowledge, setKnowledge] = useState<KnowledgeState>(() => (needsKnowledge ? "loading" : "ready"));
   const next = useRef(1);
   const { run } = useRun(sending?.runId ?? null);
+
+  useEffect(() => {
+    if (!needsKnowledge) {
+      setKnowledge("ready");
+      return;
+    }
+    let live = true;
+    const check = () => {
+      api<{ published: { entryCount: number } | null }>("GET", "/knowledge").then(
+        (res) => {
+          if (live) setKnowledge(res.published && res.published.entryCount > 0 ? "ready" : "missing");
+        },
+        () => {
+          if (live) setKnowledge("ready");
+        },
+      );
+    };
+    setKnowledge("loading");
+    check();
+    window.addEventListener("focus", check);
+    return () => {
+      live = false;
+      window.removeEventListener("focus", check);
+    };
+  }, [needsKnowledge]);
 
   const fill = (id: number, b: Partial<Bubble>) => setBubbles((all) => all.map((x) => (x.id === id ? { ...x, ...b, pending: false } : x)));
   const start = async (payload: unknown, mode: "ai" | "mock") => {
@@ -32,10 +60,11 @@ export function ChatTest({ workflowId, draft, onRun }: { workflowId: string; dra
     if (!sending || !run || run.id !== sending.runId) return;
     const failure = sending.mocked ? null : aiFailure(draft, run);
     if (failure) {
-      // No model answered (none set up, no key, the AI limit): stop the retries and show the same message mocked.
-      const note = t("The AI step failed ({error}), so this answer comes from a mocked run.", { error: failure });
+      // No model answered (none set up, no key, the AI limit): stop only if still pending/waiting and fall back to mock.
+      const note = t("Mock reply (no AI action used). The AI step failed: {error}.", { error: failure });
       setSending(null);
-      void api("POST", `/runs/${run.id}/cancel`).catch(() => undefined);
+      window.dispatchEvent(new Event("daloy:usage"));
+      if (canCancelChatRun(run)) void api("POST", `/runs/${run.id}/cancel`).catch(() => undefined);
       start(sending.payload, "mock").then(
         (runId) => {
           setBubbles((all) => all.map((x) => (x.id === sending.bubble ? { ...x, note } : x)));
@@ -48,6 +77,7 @@ export function ChatTest({ workflowId, draft, onRun }: { workflowId: string; dra
     const reply = chatReply(draft, run);
     if (reply.kind === "pending") return;
     setSending(null);
+    window.dispatchEvent(new Event("daloy:usage"));
     if (reply.kind === "reply") return fill(sending.bubble, { text: reply.text });
     const path = t("No reply step ran. The run went: {path}.", { path: reply.steps.join(" → ") || t("no steps") });
     fill(sending.bubble, { text: reply.error ? `${path} ${t("It stopped with: {error}", { error: reply.error })}` : path });
@@ -59,7 +89,7 @@ export function ChatTest({ workflowId, draft, onRun }: { workflowId: string; dra
   const send = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const said = text.trim();
-    if (!said || sending) return;
+    if (!said || sending || knowledge === "missing") return;
     // The chat so far, customer messages and bot replies, as the conversation history the webhook would send.
     const earlier: ChatTurn[] = bubbles.filter((b) => !b.pending).map((b) => ({ direction: b.from === "customer" ? "in" : "out", text: b.text }));
     const n = next.current;
@@ -77,7 +107,13 @@ export function ChatTest({ workflowId, draft, onRun }: { workflowId: string; dra
   return (
     <section className="t8-chat" aria-labelledby="t8-chat-title">
       <h2 id="t8-chat-title">{t("Chat as your customer")}</h2>
-      <p className="muted hint">{t("Type what a customer would send. Each message is a test run with the real AI model and uses one AI action. Replies are not sent to anyone.")}</p>
+      <p className="muted hint">{t("Type what a customer would send. Each message runs the draft with AI (1 AI action when the model answers; failed or mocked replies use 0). Replies are not sent to anyone.")}</p>
+      {knowledge === "missing" && (
+        <p role="alert" className="message error">
+          {t("Publish your knowledge sheet first so the concierge can answer from your prices and rules.")}{" "}
+          <a href="#/knowledge">{t("Open Knowledge")}</a>
+        </p>
+      )}
       {bubbles.length > 0 && (
         <ol className="t8-chat-log" role="log" aria-live="polite" aria-label={t("Test chat")}>
           {bubbles.map((b) => (
@@ -93,8 +129,8 @@ export function ChatTest({ workflowId, draft, onRun }: { workflowId: string; dra
         <label htmlFor="t8-chat-text" className="sr-only">
           {t("Message as your customer")}
         </label>
-        <input id="t8-chat-text" value={text} onChange={(e) => setText(e.target.value)} maxLength={2000} placeholder={t("Message as your customer")} autoComplete="off" />
-        <button type="submit" disabled={!!sending || text.trim() === "" || draft.steps.length === 0}>
+        <input id="t8-chat-text" value={text} onChange={(e) => setText(e.target.value)} maxLength={2000} placeholder={t("Message as your customer")} autoComplete="off" disabled={knowledge === "missing"} />
+        <button type="submit" disabled={!!sending || knowledge !== "ready" || text.trim() === "" || draft.steps.length === 0}>
           {t("Send")}
         </button>
       </form>

@@ -20,7 +20,7 @@ export function stepLines(def: WorkflowDefinition, language: Language, chosen: R
   const visit = (step: Step, after?: string) => {
     if (seen.has(step.id)) return;
     seen.add(step.id);
-    out.push({ id: step.id, label: entryLabel(stepEntry(step.type), language), where: destination(step, { language, trigger: def.trigger, chosen: chosen[step.id] }), after, ...(step.note?.trim() && { note: step.note.trim() }) });
+    out.push({ id: step.id, label: entryLabel(stepEntry(step.type), language), where: destination(step, { language, trigger: def.trigger, chosen: chosen[step.id], steps: def.steps }), after, ...(step.note?.trim() && { note: step.note.trim() }) });
     for (const e of def.edges.filter((x) => x.from === step.id)) {
       const next = def.steps.find((s) => s.id === e.to);
       if (next) queue.push({ step: next, after: e.on });
@@ -61,7 +61,15 @@ export function explainFlow(def: WorkflowDefinition, language: Language, chosen:
 
 const blank = (v: unknown) => v === undefined || v === null || (typeof v === "string" && v.trim() === "") || (Array.isArray(v) && v.length === 0) || (typeof v === "object" && v !== null && !Array.isArray(v) && Object.keys(v).length === 0);
 
-export type ConfigProblem = { stepId: string; message: string };
+export type PreflightKind = "config" | "missing_resource" | "sms_unavailable" | "sms_plan" | "sms_quota" | "knowledge";
+export type ConfigProblem = { stepId: string; message: string; kind?: PreflightKind; blocksPublish?: boolean };
+export type PreflightEnv = {
+  smsConfigured?: boolean;
+  smsLimit?: number | null;
+  smsUsed?: number;
+  resourceCount?: number;
+  knowledgePublished?: boolean;
+};
 
 /** A step whose recipient is a plain `to` field. */
 const hasTo = (s: Step): s is Extract<Step, { type: "email" | "outlook" | "sms" }> => s.type === "email" || s.type === "outlook" || s.type === "sms";
@@ -72,7 +80,7 @@ export function configProblems(def: WorkflowDefinition, language: Language): Con
   const say = (stepId: string, label: string, field: string) => {
     const en = field === "to" ? `${label} has no recipient.` : `${label} needs ${field}.`;
     const tl = field === "to" ? `Walang tatanggap ang ${label}.` : `Kailangan ng ${label} ang ${field}.`;
-    out.push({ stepId, message: language === "tl" ? tl : en });
+    out.push({ stepId, kind: "config", message: language === "tl" ? tl : en });
   };
   const trigger = triggerEntry(def.trigger.type);
   const triggerConfig = def.trigger.config as Record<string, unknown>;
@@ -93,6 +101,73 @@ export function configProblems(def: WorkflowDefinition, language: Language): Con
         say(step.id, entryLabel(entry, language), "text");
       }
     }
+  }
+  return out;
+}
+
+/** Full preflight checks combining step configuration with workspace prerequisites (resources, SMS, knowledge). */
+export function preflightProblems(def: WorkflowDefinition, env: PreflightEnv, language: Language): ConfigProblem[] {
+  const out = configProblems(def, language);
+  const activeSteps = def.steps.filter((s) => !s.disabled);
+  const hasResourceField =
+    (def.trigger.type === "form" || def.trigger.type === "webhook" || def.trigger.type === "sub_workflow") &&
+    (def.trigger.config.fields ?? []).some((f) => f.type === "resource");
+  const bookingCreate = activeSteps.find((s) => s.type === "booking" && s.config.action === "create");
+  if ((hasResourceField || bookingCreate) && env.resourceCount === 0) {
+    out.push({
+      stepId: hasResourceField ? "trigger" : bookingCreate!.id,
+      kind: "missing_resource",
+      message:
+        language === "tl"
+          ? "Magdagdag muna ng kahit isang room o resource sa Resources bago subukan o i-on ito."
+          : "Add at least one room or resource on the Resources page before testing or turning on.",
+    });
+  }
+  const smsStep = activeSteps.find((s) => s.type === "sms" || (s.type === "payment_due" && s.config.channel === "sms"));
+  if (smsStep) {
+    const blocks = activeSteps.some((s) => s.type === "sms");
+    if (env.smsConfigured === false) {
+      out.push({
+        stepId: smsStep.id,
+        kind: "sms_unavailable",
+        blocksPublish: blocks,
+        message:
+          language === "tl"
+            ? "Hindi naka-set up ang SMS sa server na ito, kaya hindi maipapadala ang mga SMS step."
+            : "SMS is not set up on this server, so SMS steps cannot send.",
+      });
+    }
+    if (env.smsLimit === 0) {
+      out.push({
+        stepId: smsStep.id,
+        kind: "sms_plan",
+        blocksPublish: blocks,
+        message:
+          language === "tl"
+            ? "Walang kasamang pagpapadala ng SMS sa Preview plan (0 SMS bawat buwan). Humiling ng paid plan bago i-on."
+            : "SMS sending is not included on the Preview plan (0 SMS per month). Ask kymavo to move you to a paid plan before turning on.",
+      });
+    } else if (env.smsLimit !== undefined && env.smsLimit !== null && env.smsLimit > 0 && (env.smsUsed ?? 0) >= env.smsLimit) {
+      out.push({
+        stepId: smsStep.id,
+        kind: "sms_quota",
+        message:
+          language === "tl"
+            ? "Naubos na ang buwanang SMS limit ng opisinang ito. Hintayin ang pag-reset o humiling ng mas mataas na plan."
+            : "This office used all of its monthly SMS messages. Wait for the reset or ask kymavo for a larger plan.",
+      });
+    }
+  }
+  const knowledgeStep = activeSteps.find((s) => (s.type === "ai" && s.config.task === "answer") || s.type === "stay_quote");
+  if (knowledgeStep && env.knowledgePublished === false) {
+    out.push({
+      stepId: knowledgeStep.id,
+      kind: "knowledge",
+      message:
+        language === "tl"
+          ? "I-publish muna ang knowledge sheet sa Knowledge page bago patakbuhin ang hakbang na ito."
+          : "Publish your knowledge sheet on the Knowledge page before running this step.",
+    });
   }
   return out;
 }

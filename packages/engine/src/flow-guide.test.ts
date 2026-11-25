@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { definitionSchema, type WorkflowDefinition } from "./definition";
-import { configProblems, explainFlow, paymentMode, stepLines, withoutRecipient } from "./flow-guide";
+import { configProblems, explainFlow, paymentMode, preflightProblems, stepLines, withoutRecipient } from "./flow-guide";
 
 const parse = (d: unknown): WorkflowDefinition => definitionSchema.parse(d);
 
@@ -108,4 +108,37 @@ describe("paymentMode", () => {
   it("is manual for a QR Ph transfer", () => expect(paymentMode(due({}))).toBe("manual"));
   it("is checkout when PayMongo checkout is on", () => expect(paymentMode(due({ checkout: true }))).toBe("checkout"));
   it("is later for a balance due", () => expect(paymentMode(due({ kind: "balance" }))).toBe("later"));
+});
+
+describe("preflightProblems", () => {
+  const bookingWithResource = parse({
+    trigger: { type: "form", config: { fields: [{ name: "resource", label: "Room", type: "resource", required: true }, { name: "at", label: "Time", type: "datetime", timezone: "Asia/Manila", required: true }] } },
+    steps: [
+      { id: "book", type: "booking", config: { action: "create", resource: "{{trigger.resource}}", start: "{{trigger.at}}", minutes: 60 } },
+      { id: "tell", type: "sms", config: { to: "+639171234567", message: "Booked" } },
+    ],
+    edges: [{ from: "book", to: "tell", on: "done" }],
+  });
+  const concierge = parse({
+    trigger: { type: "meta_dm", config: { channel: "both", requireImage: false } },
+    steps: [{ id: "ans", type: "ai", config: { task: "answer", input: "{{trigger.text}}" } }],
+    edges: [],
+  });
+
+  it("reports missing resources, server SMS unavailable, Preview plan SMS 0, exhausted SMS quota, and unpublished knowledge", () => {
+    const probs = preflightProblems(bookingWithResource, { resourceCount: 0, smsConfigured: false, smsLimit: 0, smsUsed: 0 }, "en");
+    expect(probs.map((p) => p.kind)).toEqual(["missing_resource", "sms_unavailable", "sms_plan"]);
+    expect(probs.find((p) => p.kind === "sms_unavailable")?.blocksPublish).toBe(true);
+    expect(probs.find((p) => p.kind === "sms_plan")?.blocksPublish).toBe(true);
+
+    const quota = preflightProblems(bookingWithResource, { resourceCount: 1, smsConfigured: true, smsLimit: 50, smsUsed: 50 }, "en");
+    expect(quota.map((p) => p.kind)).toEqual(["sms_quota"]);
+
+    const unlimited = preflightProblems(bookingWithResource, { resourceCount: 1, smsConfigured: true, smsLimit: null, smsUsed: 0 }, "en");
+    expect(unlimited).toEqual([]);
+
+    const noKnowledge = preflightProblems(concierge, { knowledgePublished: false }, "en");
+    expect(noKnowledge.map((p) => p.kind)).toEqual(["knowledge"]);
+    expect(preflightProblems(concierge, { knowledgePublished: true }, "en")).toEqual([]);
+  });
 });

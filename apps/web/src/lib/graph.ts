@@ -385,7 +385,7 @@ export function layout(draft: Draft, measured?: MeasuredSizes): Record<string, {
 }
 
 /** context: the draft's trigger, for a step's destination line. chosen: the destination picked in Apps (a channel, a sheet, a list). */
-export type StepNodeData = { step?: Step; trigger?: Draft["trigger"]; context?: Draft["trigger"]; chosen?: string; branches?: readonly string[]; hasFailedEdge?: boolean; status?: NodeState };
+export type StepNodeData = { step?: Step; trigger?: Draft["trigger"]; context?: Draft["trigger"]; steps?: readonly Step[]; chosen?: string; branches?: readonly string[]; hasFailedEdge?: boolean; status?: NodeState };
 export type RunEdgeData = { state: EdgeState };
 /** What a run says about the diagram (see runFlow). Without it the diagram is drawn plain, as in the editor with no run. */
 export type FlowState = { nodes: Record<string, NodeState>; edges: Record<string, EdgeState> };
@@ -411,7 +411,7 @@ export function toFlow(draft: Draft, selected: string | null, state?: FlowState,
           .map((e) => t(", {branch}goes to {id}", { branch: e.on ? `${t("on {branch}", { branch: t(e.on) })} ` : "", id: e.to }))
           .join("")}${step.disabled ? t(", turned off") : ""}${said(step.id)}`,
         position: at(step.id),
-        data: { step, context: draft.trigger, branches, hasFailedEdge, status: state?.nodes[step.id] },
+        data: { step, context: draft.trigger, steps: draft.steps, branches, hasFailedEdge, status: state?.nodes[step.id] },
         selected: selected === step.id,
       };
     }),

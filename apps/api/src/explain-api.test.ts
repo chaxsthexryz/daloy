@@ -127,13 +127,14 @@ describe("GET /runs/:id/explanation", () => {
     const b = await owner();
     await b.agent.get(`/runs/${await failedRun(a.id)}/explanation`).expect(404);
   });
-  it("still answers with the model down", async () => {
+  it("still answers with the model down and spends 0 AI quota on a 502 reword", async () => {
     const { agent, id } = await owner();
     const runId = await failedRun(id);
     vi.stubEnv("LLM_BASE_URL", "http://127.0.0.1:9");
     expect((await agent.get(`/runs/${runId}/explanation`).expect(200)).body.fixed.headline).toBeTruthy();
     const res = await agent.post(`/runs/${runId}/explanation/reword`).expect(502);
     expect(res.body.message).toBeTruthy();
+    expect(await used(id)).toBe(0);
   });
 });
 

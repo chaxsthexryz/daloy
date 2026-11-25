@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { jsonDiff } from "./diff";
+import { canRollbackVersion, describeChange, jsonDiff } from "./diff";
 
 describe("jsonDiff", () => {
   it("returns nothing for equal values, whatever the key order", () => {
@@ -33,5 +33,52 @@ describe("jsonDiff", () => {
   it("treats a type change as one change", () => {
     expect(jsonDiff({ a: [1] }, { a: { 0: 1 } })).toEqual([{ path: "a", kind: "changed", before: [1], after: { 0: 1 } }]);
     expect(jsonDiff(null, { a: 1 })).toEqual([{ path: "", kind: "changed", before: null, after: { a: 1 } }]);
+  });
+});
+
+describe("describeChange and canRollbackVersion", () => {
+  const baseDef = {
+    trigger: { type: "manual", config: {} },
+    steps: [
+      { id: "condition_1", type: "condition", config: { condition: { left: "250", op: "gt", right: 100 } } },
+      { id: "wait_1", type: "delay", config: { seconds: 3600 } },
+    ],
+    edges: [{ from: "condition_1", to: "wait_1", on: "true" }],
+  };
+
+  it("formats condition operators, durations, onError policies, and step changes cleanly", () => {
+    const afterDef = {
+      ...baseDef,
+      steps: [
+        { id: "condition_1", type: "condition", config: { condition: { left: "250", op: "lt", right: 100 } }, onError: "skip" },
+        { id: "wait_1", type: "delay", config: { seconds: 21_600 } },
+        { id: "sms_1", type: "sms", config: { to: "+639171234567", message: "Hi" } },
+      ],
+    };
+    const opDesc = describeChange({ path: "steps[condition_1].config.condition.op", kind: "changed", before: "gt", after: "lt" }, baseDef, afterDef, "en");
+    expect(opDesc.headline).toContain("Condition");
+    expect(opDesc.beforeText).toBe("is greater than");
+    expect(opDesc.afterText).toBe("is less than");
+    const opTl = describeChange({ path: "steps[condition_1].config.condition.op", kind: "changed", before: "gt", after: "lt" }, baseDef, afterDef, "tl");
+    expect(opTl.beforeText).toBe("ay higit sa");
+    expect(opTl.afterText).toBe("ay mas maliit sa");
+
+    const waitDesc = describeChange({ path: "steps[wait_1].config.seconds", kind: "changed", before: 3600, after: 21_600 }, baseDef, afterDef, "en");
+    expect(waitDesc.beforeText).toBe("1 hour");
+    expect(waitDesc.afterText).toBe("6 hours");
+
+    const errDesc = describeChange({ path: "steps[condition_1].onError", kind: "added", after: "skip" }, baseDef, afterDef, "en");
+    expect(errDesc.afterText).toBe("Skip and carry on");
+
+    const stepAdded = describeChange({ path: "steps[sms_1]", kind: "added", after: afterDef.steps[2] }, baseDef, afterDef, "en");
+    expect(stepAdded.headline).toContain("Send an SMS");
+  });
+
+  it("forbids rolling back to the latest version, the live version, or unpublished drafts", () => {
+    expect(canRollbackVersion({ version: 3, latestVersion: 3, liveVersion: 1, published: true })).toBe(false);
+    expect(canRollbackVersion({ version: 2, latestVersion: 2, liveVersion: 1, published: false })).toBe(false);
+    expect(canRollbackVersion({ version: 2, latestVersion: 3, liveVersion: 2, published: true })).toBe(false);
+    expect(canRollbackVersion({ version: 2, latestVersion: 3, liveVersion: 1, published: false })).toBe(false);
+    expect(canRollbackVersion({ version: 1, latestVersion: 3, liveVersion: 2, published: true })).toBe(true);
   });
 });

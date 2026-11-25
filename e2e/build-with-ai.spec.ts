@@ -113,23 +113,42 @@ test("a photo of a schedule builds a file field and an AI step, and says which b
   expect(await count(page)).toBe(before);
 });
 
-test("with no model the template suggestion appears", async ({ page }) => {
+test("with no model the template suggestion matches by keyword, hides premature buttons, and spends 0 quota", async ({ page }) => {
   await signUp(page);
   const before = await count(page);
-  await page.route("**/ai/chat", (r) => r.fulfill({ status: 502, contentType: "application/json", body: JSON.stringify({ message: "No AI model is set up." }) }));
+  await page.route("**/ai/chat", (r) =>
+    r.fulfill({
+      status: 502,
+      contentType: "application/json",
+      body: JSON.stringify({ message: "The AI service is temporarily unavailable. Try again in a few minutes, or start from a ready-made template below." }),
+    }),
+  );
 
-  await start(page, "Ask for approvals on purchases and tell me.");
+  await start(page, "Resort concierge on Messenger and Instagram with GCash.");
   await expect(page.getByRole("heading", { name: "The AI is not set up, or it did not answer." })).toBeVisible();
-  await expect(page.getByText("No AI model is set up.")).toBeVisible();
-  await expect(page.getByRole("link", { name: "Check the AI model" })).toHaveAttribute("href", "#/settings/ai");
-  await expect(page.getByRole("heading", { name: /Purchase request with a named approver/ })).toBeVisible();
+  await expect(page.getByText(/temporarily unavailable/i)).toBeVisible();
+  await expect(page.getByRole("link", { name: "Check the AI model" })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Browse the template library" })).toHaveAttribute("href", "#/new");
+  await expect(page.getByRole("button", { name: "Build it now" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Start over" })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: /Resort concierge for Messenger & Instagram/ })).toBeVisible();
   expect(await count(page)).toBe(before);
 
-  await page.getByRole("button", { name: "Start over" }).click();
+  await page.getByRole("button", { name: /Conversation logs/ }).click();
+  await expect(page.locator("#ai-logs-drawer .ai-log-badge")).toHaveText("Failed");
+  await page.getByRole("button", { name: "Close logs" }).click();
+
   await page.getByLabel("What should happen?").fill("Track requests from the people in my office.");
   await page.getByRole("button", { name: "Send", exact: true }).click();
   await expect(page.getByRole("heading", { name: /Track an office request/ })).toBeVisible();
   expect(await count(page)).toBe(before);
+
+  const usage = (await (await page.request.get("/usage")).json()) as { ai: { used: number } };
+  expect(usage.ai.used).toBe(0);
+
+  await page.goto("/#/settings/ai");
+  await expect(page.getByRole("heading", { name: "Page not found", level: 1 })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Back to Automations" })).toHaveAttribute("href", "#/");
 });
 
 test("owners see Build with AI in the menu, and an AI link in the phone bottom bar", async ({ page }) => {

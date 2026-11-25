@@ -9,7 +9,7 @@ import { LlmError } from "@daloy/llm-ts";
 import { afterAll, afterEach, beforeAll, expect, it, vi } from "vitest";
 import { freshDatabase } from "../../../test/db";
 import { createApp } from "./app";
-import { explain } from "./settings";
+import { explain, explainForOwner } from "./settings";
 
 let app: INestApplication;
 let boss: PgBoss;
@@ -191,11 +191,28 @@ it("refuses the sample once the monthly AI actions are used up, without calling 
   expect(asked).toHaveLength(before);
 });
 
-it("explains a model it cannot reach", async () => {
+it("explains a model it cannot reach and spends 0 AI quota", async () => {
   vi.stubEnv("LLM_BASE_URL", "http://127.0.0.1:9");
-  const { body } = await (await signedIn()).post("/settings/ai/test").expect(200);
+  const agent = await signedIn();
+  const { body } = await agent.post("/settings/ai/test").expect(200);
   expect(body.ok).toBe(false);
   expect(body.error).toMatch(/Could not connect to the model/);
+  expect((await agent.get("/usage").expect(200)).body.ai.used).toBe(0);
+});
+
+it("explains provider errors to non-admin owners without leaking API key internals", () => {
+  for (const err of [
+    new LlmError("LLM returned HTTP 401", false),
+    new LlmError("LLM returned HTTP 403", false),
+    new LlmError("LLM request failed: TypeError", true),
+    new LlmError("OpenRouter has no saved API key", false),
+  ]) {
+    const msg = explainForOwner(err);
+    expect(msg).not.toMatch(/API key|rejected|\.env|Ollama/i);
+    expect(msg).toMatch(/temporarily unavailable/i);
+  }
+  expect(explainForOwner(new LlmError("LLM request failed: TimeoutError", true))).toMatch(/took too long/i);
+  expect(explainForOwner(new LlmError("LLM returned HTTP 429", true))).toMatch(/rate limit/i);
 });
 
 it.each([

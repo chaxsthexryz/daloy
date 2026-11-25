@@ -79,7 +79,7 @@ export const opsTranslations: Record<string, string> = {
   "Web page": "Web page",
   "Saved draft.": "Na-save ang draft.",
   "Automation turned on.": "Na-on ang automation.",
-  "Created blank workflow.": "Nagawa ang blangkong workflow.",
+  "Created blank automation.": "Nagawa ang blangkong automation.",
   "Created draft from template.": "Nagawa ang draft mula sa template.",
   "Deleted draft {name}.": "Nabura ang draft na {name}.",
   "Breadcrumb": "Breadcrumb",

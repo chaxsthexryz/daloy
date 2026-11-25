@@ -189,7 +189,7 @@ export const builderTranslations: Record<string, string> = {
   "the sample data is not valid JSON": "hindi valid JSON ang sample data",
   "Run the live version now? It sends real email and calls real services.": "Patakbuhin ang naka-on na version ngayon? Magpapadala ito ng totoong email at tatawag sa totoong serbisyo.",
   "Publish this version? It replaces the live version at once.": "I-publish ang version na ito? Papalitan nito agad ang naka-on na version.",
-  "Workflow diagram. Tab to a step and press Enter to select it, Delete to remove it.": "Diagram ng automation. Mag-Tab sa isang hakbang at pindutin ang Enter para piliin, Delete para alisin.",
+  "Automation diagram. Tab to a step and press Enter to select it, Delete to remove it.": "Diagram ng automation. Mag-Tab sa isang hakbang at pindutin ang Enter para piliin, Delete para alisin.",
   "Check before publishing": "Suriin bago i-publish",
   "Steps": "Mga hakbang",
   "Delete step": "Burahin ang hakbang",
@@ -400,5 +400,8 @@ export const builderTranslations: Record<string, string> = {
   "Anyone with this URL can start a run. Add a signing secret in the trigger settings to refuse other callers.": "Kahit sino na may URL na ito ay puwedeng magsimula ng run. Maglagay ng signing secret sa settings ng trigger para tanggihan ang ibang tumatawag.",
   "Try it from a terminal": "Subukan mula sa terminal",
   "curl example": "Halimbawa sa curl",
-  "Set SECRET to the value of {name} first. Never paste the secret into a shared chat.": "Ilagay muna sa SECRET ang value ng {name}. Huwag kailanman i-paste ang secret sa chat na kita ng iba."
+  "Set SECRET to the value of {name} first. Never paste the secret into a shared chat.": "Ilagay muna sa SECRET ang value ng {name}. Huwag kailanman i-paste ang secret sa chat na kita ng iba.",
+  "Browse the template library": "Tingnan ang template library",
+  "Use this template": "Gamitin ang template na ito",
+  "Failed": "Nabigo",
 };

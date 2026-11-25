@@ -158,7 +158,6 @@ const NEEDS: Record<string, { provider: string; label: string }> = {
   google_docs: { provider: "google_drive", label: "Google Drive" },
   read_spreadsheet: { provider: "google_drive", label: "Google Drive" },
   paymongo_link: { provider: "paymongo", label: "PayMongo" },
-  payment_status: { provider: "paymongo", label: "PayMongo" },
   meta_reply: { provider: "meta_messenger", label: "Facebook Messenger & Instagram" },
   whatsapp_reply: { provider: "whatsapp", label: "WhatsApp Cloud API" },
   shopify_create_product: { provider: "shopify", label: "Shopify" },

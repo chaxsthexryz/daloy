@@ -200,7 +200,7 @@ export function BookingsPage() {
           {list === null ? (
             <p className="act-muted" role="status">{t("Loading…")}</p>
           ) : list.length === 0 ? (
-            <p className="act-muted"><Text>No bookings yet. They appear when a workflow's booking step books a resource.</Text></p>
+            <p className="act-muted"><Text>No bookings yet. They appear when an automation's booking step books a resource.</Text></p>
           ) : (
             days.map(({ day, items }) => (
               <div key={day} className="act-day">
