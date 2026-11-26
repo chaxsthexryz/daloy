@@ -42,20 +42,34 @@ export function AiMeter({ usage, className }: { usage: Usage | null; className?:
 /** Which menu entry a hash route belongs to, so the same menu shows on every page and marks where you are. */
 export function section(hash: string) {
   const path = (hash.split("?")[0] ?? "").replace(/\/+$/, "") || "#/";
-  if (path === "#/settings") return "Settings";
+  if (path === "#/" || path === "#") return "Home";
+  if (path.startsWith("#/inbox") || path.startsWith("#/conversations") || path === "#/receipts" || path.startsWith("#/receipts/")) return "Inbox";
+  if (path.startsWith("#/bookings") || path.startsWith("#/resources")) return "Bookings";
+  if (
+    path === "#/automations"
+    || path === "#/new"
+    || path === "#/ai"
+    || path.startsWith("#/w/")
+    || path.startsWith("#/a/")
+    || path === "#/activity"
+    || path.startsWith("#/activity/")
+    || path.startsWith("#/runs/")
+    || path.startsWith("#/try/")
+  ) return "Automations";
+  if (
+    path.startsWith("#/business")
+    || path === "#/knowledge"
+    || path.startsWith("#/knowledge/")
+    || path.startsWith("#/team")
+    || path === "#/settings/business"
+    || path.startsWith("#/settings/business/outlook-")
+    || path === "#/apps"
+    || path.startsWith("#/apps/")
+    || path.startsWith("#/verify-sender")
+  ) return "Business";
   if (path === "#/account" || path.startsWith("#/account/")) return "Account";
-  if (path === "#/new") return "Library";
-  if (path === "#/activity" || path.startsWith("#/activity/") || path.startsWith("#/runs/")) return "Activity";
-  if (path === "#/ai") return "Build with AI";
-  if (path.startsWith("#/bookings")) return "Bookings";
-  if (path.startsWith("#/conversations")) return "Conversations";
-  if (path === "#/receipts" || path.startsWith("#/receipts/")) return "Receipts to review";
-  if (path === "#/knowledge" || path.startsWith("#/knowledge/")) return "Knowledge";
-  if (path.startsWith("#/team")) return "Team";
-  if (path.startsWith("#/settings/business/outlook-") || path === "#/apps" || path.startsWith("#/apps/") || path.startsWith("#/verify-sender")) return "Apps";
-  if (path === "#/settings/business") return "Business";
-  if (/^#\/(advanced|tokens|secrets|settings|resources)/.test(path)) return "Settings";
-  return "Automations";
+  if (/^#\/(advanced|tokens|secrets|settings)/.test(path)) return "Settings";
+  return "Home";
 }
 
 /**
@@ -175,7 +189,7 @@ export function Shell({ user, hash, onSignOut, children }: { user: User; hash: s
     if (matchMedia("(prefers-reduced-motion: reduce)").matches) setOpen(false);
     else setClosing(true);
   }
-  function link(href: string, text: string, icon?: string, name = text) {
+  function link(href: string, text: string, icon?: string, name = text, badge?: number) {
     return (
       <a
         href={href}
@@ -188,6 +202,7 @@ export function Shell({ user, hash, onSignOut, children }: { user: User; hash: s
       >
         {icon && <svg className="rail-icon" aria-hidden="true"><use href={`/navigation.svg#${icon}`} /></svg>}
         <span className={icon ? "rail-label" : undefined}>{t(text)}</span>
+        {badge !== undefined && badge > 0 && <span className="rail-badge">{badge}</span>}
       </a>
     );
   }
@@ -207,9 +222,7 @@ export function Shell({ user, hash, onSignOut, children }: { user: User; hash: s
         <div className="sidebar-top">
           <svg className="rail-brand" aria-label="kymavo" role="img"><use href="/navigation.svg#mark" /></svg>
           <span className="sidebar-name rail-label">kymavo</span>
-          {open
-            ? <button type="button" className="quiet phone-close" onClick={closePhone}>{t("Close")}</button>
-            : owner && <a href="#/new" className="primary top-new">{t("New")}</a>}
+          {open && <button type="button" className="quiet phone-close" onClick={closePhone}>{t("Close")}</button>}
         </div>
         <nav
           ref={menu}
@@ -231,24 +244,11 @@ export function Shell({ user, hash, onSignOut, children }: { user: User; hash: s
               opacity: pill.pillStyle.opacity,
             }}
           />
-          <span className="shell-nav-label rail-label">{t("Work")}</span>
-          {link("#/", "Automations", "automations")}
-          {link("#/activity", "Activity", "activity")}
-          {link("#/bookings", "Bookings", "bookings")}
-          {(owner || user.role === "operator") && link("#/conversations", "Conversations", "conversations")}
-          {(owner || user.role === "operator") && link("#/receipts", "Receipts to review", "receipts")}
-          {(owner || user.role === "operator") && link("#/knowledge", "Knowledge", "knowledge")}
-          {owner && <>
-            <span className="shell-nav-label rail-label">{t("Build")}</span>
-            {link("#/new", "Library", "new")}
-            {link("#/ai", "Build with AI", "ai")}
-          </>}
-          <span className="shell-nav-label rail-label">{t("Workspace")}</span>
-          {owner && <>
-            {link("#/team", "Team", "team")}
-            {link("#/apps", "Apps", "apps")}
-            {link("#/settings/business", "Business", "business")}
-          </>}
+          {link("#/", "Home", "home")}
+          {canWatchRuns && link("#/inbox", "Inbox", "inbox")}
+          {canWatchRuns && link("#/bookings", "Bookings", "bookings")}
+          {owner && link("#/automations", "Automations", "automations")}
+          {owner && link("#/business", "Business", "business")}
           {link("#/settings", "Settings", "settings")}
           {owner && <AiMeter usage={usage} className="ai-meter rail-usage" />}
           <div className="rail-account" ref={helpRef}>
@@ -286,9 +286,6 @@ export function Shell({ user, hash, onSignOut, children }: { user: User; hash: s
             {helpOpen && (
               <div id="rail-help-menu" className="rail-help-menu" role="menu" aria-label={t("Help and support")}>
                 {owner && <a role="menuitem" href="#/onboarding" onClick={closeHelp}>{t("Business setup guide")}</a>}
-                {user.ask === true && canWatchRuns && <a role="menuitem" href="#/activity/ask" onClick={closeHelp}>{t("Ask about a request")}</a>}
-                <a role="menuitem" href="#/settings" onClick={closeHelp}>{t("Plan and usage")}</a>
-                {owner && <a role="menuitem" href="#/apps" onClick={closeHelp}>{t("Connect apps")}</a>}
                 <p className="rail-help-note">{t("Need help? Message your kymavo operator or open Settings for your plan.")}</p>
               </div>
             )}
@@ -296,9 +293,9 @@ export function Shell({ user, hash, onSignOut, children }: { user: User; hash: s
         </nav>
       </aside>
       <nav className="bottom-bar" aria-label={t("Quick")}>
-        {link("#/", "Automations")}
-        {link("#/activity", "Activity")}
-        {owner && link("#/ai", "AI", undefined, "Build with AI")}
+        {link("#/", "Home")}
+        {canWatchRuns && link("#/inbox", "Inbox")}
+        {owner ? link("#/automations", "Automations") : canWatchRuns && link("#/bookings", "Bookings")}
         <button ref={menuButton} type="button" className="quiet menu-button" aria-expanded={open && !closing} aria-controls="main-menu"
           onClick={() => { if (open && !closing) closePhone(); else { setClosing(false); setOpen(true); } }}>
           {t("Menu")}

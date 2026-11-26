@@ -55,14 +55,14 @@ function PlanAndUsage({ phone }: { phone: boolean }) {
   );
 }
 
-const OFFICE: [href: string, name: string, note: string][] = [
-  ["#/apps", "Apps", "Gmail, Outlook, Google Sheets, Slack and Teams"],
-  ["#/settings/business", "Business", "your business details and the website inquiry form"],
-  ["#/team", "Team", "who can use kymavo and what each person may do"],
-  ["#/resources", "Resources", "rooms, people and tables that bookings reserve"],
+const ADVANCED_OWNER: [href: string, name: string, note: string][] = [
+  ["#/secrets", "Secrets", "Named keys and webhook signing secrets for HTTP steps"],
+  ["#/automations", "All automations", "Full status table and advanced tools"],
 ];
-const ADMIN_OFFICE: [href: string, name: string, note: string][] = [
-  ["#/advanced", "Advanced", "AI model, API tokens and secrets"],
+const ADVANCED_ADMIN: [href: string, name: string, note: string][] = [
+  ["#/tokens", "API tokens", "Tokens for scripts and external tools"],
+  ["#/settings/ai", "AI model", "Choose which AI model writes drafts and replies"],
+  ["#/advanced", "Platform tools", "Server checks and advanced controls"],
 ];
 
 /** #/settings: how the console looks on this device, the account, the plan, and (for owners) the office's settings in one list. */
@@ -137,9 +137,9 @@ export function SettingsPage({ user }: { user: User }) {
         {(owner || user.role === "operator") && <PlanAndUsage phone={phone} />}
       </div>
       {owner && (
-        <Card title={t("Your office")} id="office-card">
+        <Card title={t("Advanced")} id="advanced-card">
           <ul className="wk-office">
-            {(user.admin ? [...OFFICE, ...ADMIN_OFFICE] : OFFICE).map(([href, name, note]) => (
+            {(user.admin ? [...ADVANCED_OWNER, ...ADVANCED_ADMIN] : ADVANCED_OWNER).map(([href, name, note]) => (
               <li key={href}>
                 <a href={href}><Text>{name}</Text></a>
                 <span><Text>{note}</Text></span>

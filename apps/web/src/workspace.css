@@ -32,8 +32,8 @@
   --w-focus: #0b66ff;
 }
 
-main.page.wk { display: flex; flex-direction: column; gap: 16px; width: 100%; max-width: none; min-height: 100%; margin: 0; padding: 0 0 36px; box-sizing: border-box; background: var(--w-canvas); color: var(--w-ink); font-family: "Inter", var(--font-sans); font-size: 14px; line-height: 20px; overflow-wrap: anywhere; }
-:root[data-theme="dark"] main.page.wk { background: var(--bg, #09090b); }
+.page.wk { display: flex; flex-direction: column; gap: 16px; width: 100%; max-width: none; min-height: 100%; margin: 0; padding: 0 0 36px; box-sizing: border-box; background: var(--w-canvas); color: var(--w-ink); font-family: "Inter", var(--font-sans); font-size: 14px; line-height: 20px; overflow-wrap: anywhere; }
+:root[data-theme="dark"] .page.wk { background: var(--bg, #09090b); }
 .wk :focus-visible { outline: 2px solid var(--w-focus); outline-offset: 2px; }
 .wk h1, .wk h2, .wk p { margin: 0; }
 .wk a { color: var(--w-accent); text-underline-offset: 3px; }

@@ -3,6 +3,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { api, ApiError, type Run, type RunSummary, type StepRun, type Version, type Workflow } from "./api";
 import { DeliveryList, type Delivery } from "./Connections";
 import { AutomationTabs } from "./Nav";
+import { AskRequest } from "./AskRequest";
 import { Breadcrumb } from "./Breadcrumb";
 import { stepLabel } from "@daloy/engine";
 import { RunFlow } from "./FlowCanvas";
@@ -189,6 +190,7 @@ export function RunsPage({ workflowId, ask }: { workflowId?: string; ask?: boole
   const [list, setList] = useState<RunSummary[] | null>(null);
   const [error, setError] = useState("");
   const [picked, setPicked] = useState<string | null>(null);
+  const [askOpen, setAskOpen] = useState(false);
   useEffect(() => {
     if (workflowId) api<Workflow & { live: unknown }>("GET", `/workflows/${workflowId}`).then(setWf, (e: Error) => setError(e.message));
   }, [workflowId]);
@@ -228,7 +230,6 @@ export function RunsPage({ workflowId, ask }: { workflowId?: string; ask?: boole
           crumbs={[]}
           title={t("Workspace activity")}
           sub={longDate(Date.now(), language)}
-          actions={ask && <a className="act-button" href="#/activity/ask">{t("Ask about a request")}</a>}
         />
         <div className="act-body motion-page">
           <section className="act-card" aria-labelledby="runs-h">
@@ -236,7 +237,13 @@ export function RunsPage({ workflowId, ask }: { workflowId?: string; ask?: boole
             <div className="act-filters">
               <input type="search" aria-label={t("Find a request or automation")} placeholder={t("Search reference or automation")} value={query} maxLength={100} onChange={(e) => setQuery(e.target.value)} />
               {select}
+              {ask && (
+                <button type="button" className="act-button" aria-expanded={askOpen} onClick={() => setAskOpen((was) => !was)}>
+                  {askOpen ? t("Hide question helper") : t("Ask about a request")}
+                </button>
+              )}
             </div>
+            {ask && askOpen && <AskRequest />}
             {alert}
             {empty ?? (
               <table className="act-table">

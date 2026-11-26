@@ -129,7 +129,7 @@ const DESTINATION_HINT: Partial<Record<Provider, { en: string; tl: string }>> = 
 };
 
 function appFix() {
-  return `#/apps`;
+  return `#/business?tab=apps`;
 }
 
 export async function evaluateReadinessWithEnv(
@@ -181,7 +181,7 @@ export async function evaluateReadinessWithEnv(
         text: tl
           ? "Ikonekta muna ang mailbox at hintaying maging active bago i-on ang email trigger."
           : "Connect the mailbox and wait for its status to be active before publishing an email trigger.",
-        fix: opts.workflowId ? `#/w/${opts.workflowId}` : "#/apps",
+        fix: opts.workflowId ? `#/w/${opts.workflowId}` : "#/business?tab=apps",
       });
     }
   }
@@ -291,7 +291,7 @@ export async function evaluateReadinessWithEnv(
       text: tl
         ? "I-save ang Lalamove API key at secret (lalamove_api_key at lalamove_api_secret) bago ito i-on."
         : "Save your Lalamove API key and secret (lalamove_api_key and lalamove_api_secret) before turning this on.",
-      fix: "#/secrets",
+      fix: "#/business?tab=apps&app=lalamove",
     });
   }
 
@@ -310,7 +310,7 @@ export async function evaluateReadinessWithEnv(
       text: tl
         ? "Magdagdag muna ng kahit isang kuwarto o resource sa Resources bago subukan o i-on ito."
         : "Add at least one room or resource on the Resources page before testing or turning on.",
-      fix: "#/resources",
+      fix: "#/bookings?tab=rooms",
     });
   }
 
@@ -326,7 +326,7 @@ export async function evaluateReadinessWithEnv(
       text: tl
         ? "I-publish muna ang knowledge sheet sa Knowledge page bago patakbuhin ang hakbang na ito."
         : "Publish your knowledge sheet on the Knowledge page before running this step.",
-      fix: "#/knowledge",
+      fix: "#/business?tab=knowledge",
     });
   }
 
@@ -414,7 +414,7 @@ export async function evaluateReadinessWithEnv(
       what: secretName,
       stepId: "trigger",
       text: `Add a secret named ${secretName} on the Secrets page first, so calls to this webhook can be checked against it.`,
-      fix: "#/secrets",
+      fix: "#/business?tab=apps&app=lalamove",
     });
   }
 
@@ -429,7 +429,7 @@ export async function evaluateReadinessWithEnv(
         what: step.config.approver,
         stepId: step.id,
         text: `${step.config.approver} can't approve in this workspace. Invite them as an approver on the Team page first.`,
-        fix: "#/team",
+        fix: "#/business?tab=team",
       });
     }
   }

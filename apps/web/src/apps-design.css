@@ -1,5 +1,5 @@
 /* The Apps directory, its selected provider, and Business share the Daylight Minimal palette (Light and Dark). */
-main.page:is(.admin-apps,.admin-business,.verify-sender) {
+.page:is(.admin-apps,.admin-business,.verify-sender) {
   --bg: var(--bg, #fafafa); --surface: var(--daylight-bg, #ffffff); --text: var(--fg, #0f131a); --muted: var(--fg-muted, #5b6372);
   --border: var(--border-strong, #d1d5df); --border-soft: var(--border-hairline, #e6e8ee); --sunken: var(--subtle, #f4f5f7);
   --accent: var(--blue, #0b66ff); --accent-hover: var(--blue-deep, #0052d9); --accent-tint: var(--blue-soft, #eef4ff);
@@ -10,6 +10,8 @@ main.page:is(.admin-apps,.admin-business,.verify-sender) {
   padding: 20px 24px 20px; background: var(--surface); border-bottom: 1px solid var(--border-soft);
 }
 .apps-head > div:first-child { display: flex; flex-direction: column; gap: 4px; width: 100%; min-width: 0; }
+.apps-embedded-bar { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.apps-embedded-bar h2 { margin: 0; font-size: 1.1rem; font-weight: 650; }
 .apps-lede { margin: 2px 0 0; font-size: 13px; line-height: 1.45; }
 .apps-body { padding: 20px 24px 48px; min-width: 0; }
 .admin-apps .apps-directory, .admin-apps .setup-pane { min-width: 0; }
@@ -25,7 +27,7 @@ main.page:is(.admin-apps,.admin-business,.verify-sender) {
   border-bottom: 1px solid var(--border-soft);
 }
 .admin-apps .console-header { justify-content: space-between; gap: 14px; align-items: baseline; padding: 0; margin: 0; border: 0; }
-main.page:is(.admin-apps,.admin-business,.verify-sender) h1, .admin-apps .panel-head h2 {
+.page:is(.admin-apps,.admin-business,.verify-sender) h1, .admin-apps .panel-head h2 {
   font-size: clamp(24px, 2.2vw, 28px); line-height: 1.15; font-weight: 650; margin: 0; letter-spacing: -0.03em;
 }
 .directory-filters, .app-tabs { display: flex; align-items: center; gap: 8px; }
@@ -85,7 +87,7 @@ main.page:is(.admin-apps,.admin-business,.verify-sender) h1, .admin-apps .panel-
 .verify-card { max-width: 490px; margin: clamp(18px,10vh,90px) auto; }
 .verify-card h1 { margin-top: 14px !important; }
 @media (max-width: 799px) {
-  main.page:is(.admin-apps,.admin-business,.verify-sender) { padding: 0 0 32px; }
+  .page:is(.admin-apps,.admin-business,.verify-sender) { padding: 0 0 32px; }
   .apps-head, .admin-business > .admin-head { padding: 16px; }
   .apps-body { padding: 16px; }
   .apps-body[data-panel="true"] { display: block; }

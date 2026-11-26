@@ -11,20 +11,19 @@ import {
 const id = (text: string) => text;
 
 describe("quickJumpItems", () => {
-  it("lists 13 console pages for regular owners and adds Advanced for admins", () => {
+  it("lists consolidated owner destinations and adds Advanced for admins", () => {
     const items = quickJumpItems("owner", id);
     expect(items.map((item) => item.href)).toEqual([
       "#/",
-      "#/activity",
+      "#/inbox",
       "#/bookings",
-      "#/conversations",
-      "#/receipts",
-      "#/knowledge",
+      "#/automations",
       "#/new",
-      "#/ai",
-      "#/team",
-      "#/apps",
-      "#/settings/business",
+      "#/business",
+      "#/business?tab=knowledge",
+      "#/business?tab=apps",
+      "#/business?tab=team",
+      "#/secrets",
       "#/settings",
       "#/account",
     ]);
@@ -32,27 +31,22 @@ describe("quickJumpItems", () => {
     expect(adminItems.map((item) => item.href)).toContain("#/advanced");
   });
 
-  it("limits operators to their allowed 8 pages including conversations, receipts and knowledge", () => {
+  it("limits operators to their allowed 5 pages", () => {
     const items = quickJumpItems("operator", id);
     expect(items.map((item) => item.href)).toEqual([
       "#/",
-      "#/activity",
+      "#/inbox",
       "#/bookings",
-      "#/conversations",
-      "#/receipts",
-      "#/knowledge",
       "#/settings",
       "#/account",
     ]);
   });
 
-  it("limits approvers and requesters to 5 pages without receipts or knowledge", () => {
+  it("limits approvers and requesters to Home, Settings and Account", () => {
     for (const role of ["approver", "requester"] as const) {
       const items = quickJumpItems(role, id);
       expect(items.map((item) => item.href)).toEqual([
         "#/",
-        "#/activity",
-        "#/bookings",
         "#/settings",
         "#/account",
       ]);
@@ -70,7 +64,20 @@ describe("filterQuickJump", () => {
 
   it("matches case-insensitively by label or group", () => {
     expect(filterQuickJump(items, "book").map((i) => i.href)).toEqual(["#/bookings"]);
-    expect(filterQuickJump(items, "BUILD").map((i) => i.href)).toEqual(["#/new", "#/ai"]);
+    expect(filterQuickJump(items, "WORK").map((i) => i.href)).toEqual([
+      "#/",
+      "#/inbox",
+      "#/bookings",
+      "#/automations",
+      "#/new",
+      "#/business",
+      "#/business?tab=knowledge",
+      "#/business?tab=apps",
+      "#/business?tab=team",
+      "#/secrets",
+      "#/settings",
+      "#/account",
+    ]);
     expect(filterQuickJump(items, "nope")).toEqual([]);
   });
 });
@@ -107,14 +114,14 @@ describe("CommandPalette markup", () => {
     );
     expect(ownerHtml).toContain('role="dialog"');
     expect(ownerHtml).toContain('aria-modal="true"');
-    expect(ownerHtml).toContain('href="#/team"');
-    expect(ownerHtml).toContain('href="#/ai"');
+    expect(ownerHtml).toContain('href="#/business?tab=team"');
+    expect(ownerHtml).toContain('href="#/new"');
 
     const operatorHtml = renderToStaticMarkup(
       <CommandPalette open={true} role="operator" currentHash="#/bookings" onClose={() => undefined} />,
     );
     expect(operatorHtml).toContain('href="#/bookings"');
-    expect(operatorHtml).not.toContain('href="#/team"');
-    expect(operatorHtml).not.toContain('href="#/ai"');
+    expect(operatorHtml).not.toContain('href="#/business?tab=team"');
+    expect(operatorHtml).not.toContain('href="#/new"');
   });
 });

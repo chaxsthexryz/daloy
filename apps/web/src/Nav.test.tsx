@@ -11,17 +11,19 @@ const render = (hash: string, role: User["role"] = "owner") => renderToStaticMar
 
 describe("staff navigation", () => {
   it.each([
-    ["#/", "#/"], ["#/new", "#/new"], ["#/ai", "#/ai"],
-    ["#/activity", "#/activity"], ["#/activity/ask", "#/activity"],
-    ["#/runs/run-id", "#/activity"], ["#/runs/run-id/ask", "#/activity"],
-    ["#/w/workflow-id", "#/"], ["#/w/workflow-id/versions", "#/"], ["#/w/workflow-id/runs", "#/"],
-    ["#/a/workflow-id", "#/"], ["#/bookings", "#/bookings"], ["#/conversations", "#/conversations"],
-    ["#/receipts", "#/receipts"], ["#/knowledge", "#/knowledge"],
-    ["#/settings", "#/settings"], ["#/account", "#/account"],
-    ["#/settings/ai", "#/settings"], ["#/secrets", "#/settings"], ["#/tokens", "#/settings"], ["#/resources", "#/settings"], ["#/advanced", "#/settings"],
-    ["#/apps", "#/apps"], ["#/apps/gmail-connected", "#/apps"],
-    ["#/settings/business", "#/settings/business"], ["#/settings/business/outlook-connected", "#/apps"],
-    ["#/verify-sender/token", "#/apps"], ["#/team", "#/team"],
+    ["#/", "#/"],
+    ["#/inbox", "#/inbox"], ["#/conversations", "#/inbox"], ["#/receipts", "#/inbox"],
+    ["#/bookings", "#/bookings"], ["#/bookings?tab=rooms", "#/bookings"], ["#/resources", "#/bookings"],
+    ["#/automations", "#/automations"], ["#/new", "#/automations"], ["#/ai", "#/automations"],
+    ["#/activity", "#/automations"], ["#/activity/ask", "#/automations"],
+    ["#/runs/run-id", "#/automations"], ["#/runs/run-id/ask", "#/automations"],
+    ["#/w/workflow-id", "#/automations"], ["#/w/workflow-id/versions", "#/automations"], ["#/w/workflow-id/runs", "#/automations"],
+    ["#/a/workflow-id", "#/automations"],
+    ["#/business", "#/business"], ["#/business?tab=knowledge", "#/business"], ["#/business?tab=apps", "#/business"], ["#/business?tab=team", "#/business"],
+    ["#/knowledge", "#/business"], ["#/team", "#/business"], ["#/apps", "#/business"], ["#/apps/gmail-connected", "#/business"],
+    ["#/settings/business", "#/business"], ["#/settings/business/outlook-connected", "#/business"], ["#/verify-sender/token", "#/business"],
+    ["#/settings", "#/settings"], ["#/settings/ai", "#/settings"], ["#/secrets", "#/settings"], ["#/tokens", "#/settings"], ["#/advanced", "#/settings"],
+    ["#/account", "#/account"],
   ])("marks the parent of %s", (hash, target) => {
     const selected = [...render(hash).matchAll(/<a [^>]*?href="([^"]*)"[^>]*aria-current="page"/g)].map((match) => match[1]);
     expect(selected.length).toBeGreaterThan(0);
@@ -29,42 +31,48 @@ describe("staff navigation", () => {
   });
 
   it("matches sub-routes and query/trailing-slash variants via section()", () => {
-    expect(section("#/apps")).toBe("Apps");
-    expect(section("#/apps/")).toBe("Apps");
-    expect(section("#/apps/gmail-connected?ok=1")).toBe("Apps");
+    expect(section("#/apps")).toBe("Business");
+    expect(section("#/apps/")).toBe("Business");
+    expect(section("#/apps/gmail-connected?ok=1")).toBe("Business");
     expect(section("#/settings/business")).toBe("Business");
     expect(section("#/settings/business/")).toBe("Business");
-    expect(section("#/activity/ask")).toBe("Activity");
-    expect(section("#/activity/ask?ref=REQ-1")).toBe("Activity");
-    expect(section("#/runs/1234-5678")).toBe("Activity");
-    expect(section("#/runs/1234-5678/ask")).toBe("Activity");
+    expect(section("#/activity/ask")).toBe("Automations");
+    expect(section("#/activity/ask?ref=REQ-1")).toBe("Automations");
+    expect(section("#/runs/1234-5678")).toBe("Automations");
+    expect(section("#/runs/1234-5678/ask")).toBe("Automations");
     expect(section("#/account")).toBe("Account");
     expect(section("#/account/")).toBe("Account");
   });
 
-  it("keeps the same groups on child pages", () => {
+  it("renders six destinations for owners without repeating Work, Build and Workspace labels", () => {
     const html = render("#/secrets");
-    expect(html).toContain(">Work</span>");
-    expect(html).toContain(">Build</span>");
-    expect(html).toContain(">Workspace</span>");
-    expect(html).toContain('href="#/bookings"');
+    for (const href of ["#/", "#/inbox", "#/bookings", "#/automations", "#/business", "#/settings"]) {
+      expect(html).toContain(`href="${href}"`);
+    }
+    expect(html).not.toContain('class="primary top-new"');
     expect(html).toContain('aria-controls="main-menu"');
   });
 
   it("keeps owner actions out of the operator menu", () => {
-    const html = render("#/activity", "operator");
-    for (const href of ["#/new", "#/ai", "#/team", "#/apps", "#/settings/business", "#/advanced"]) {
+    const html = render("#/inbox", "operator");
+    for (const href of ["#/automations", "#/business", "#/new", "#/ai", "#/team", "#/apps", "#/settings/business", "#/advanced"]) {
       expect(html).not.toContain(`href="${href}"`);
     }
-    for (const href of ["#/", "#/activity", "#/bookings", "#/conversations", "#/settings", "#/account"]) {
+    for (const href of ["#/", "#/inbox", "#/bookings", "#/settings", "#/account"]) {
       expect(html).toContain(`href="${href}"`);
     }
   });
 
-  it("calls the #/new entry Library on the rail and the phone menu", () => {
-    const html = render("#/new");
-    expect(html).toContain(">Library</span>");
-    expect(html).not.toContain(">New automation</span>");
+  it("limits approvers and requesters to Home and Settings", () => {
+    for (const role of ["approver", "requester"] as const) {
+      const html = render("#/", role);
+      expect(html).toContain('href="#/"');
+      expect(html).toContain('href="#/settings"');
+      expect(html).not.toContain('href="#/inbox"');
+      expect(html).not.toContain('href="#/bookings"');
+      expect(html).not.toContain('href="#/automations"');
+      expect(html).not.toContain('href="#/business"');
+    }
   });
 
   it("shows the AI meter only to owners, and only once usage has loaded", () => {

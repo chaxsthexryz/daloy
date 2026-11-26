@@ -91,7 +91,7 @@ function InviteForm({ revokedId, onCreated, onDone }: { revokedId?: string | nul
 type Dialog = { kind: "invite" } | { kind: "role"; member: Member } | { kind: "remove"; member: Member };
 
 /** The owner's Team page: who is in the workspace, grouped by role, with invite links (decision 0022). */
-export function TeamPage({ user }: { user: User }) {
+export function TeamPage({ user, embedded = false }: { user: User; embedded?: boolean }) {
   const { t } = useLanguage();
   const phone = usePhone();
   const actor = user.role;
@@ -157,12 +157,13 @@ export function TeamPage({ user }: { user: User }) {
 
   const groups = groupMembers(list ?? []);
 
+  const Wrap = embedded ? "div" : "main";
   return (
-    <main className="page wk wk-team">
+    <Wrap className={embedded ? "wk wk-team" : "page wk wk-team"}>
       <header className="wk-head">
         <div>
           <div className="wk-title-row">
-            <h1>{t("Team")}</h1>
+            {!embedded && <h1>{t("Team")}</h1>}
             {list && <span className="wk-sub">{list.length === 1 ? t("1 member") : t("{count} members", { count: list.length })}</span>}
           </div>
         </div>
@@ -285,7 +286,7 @@ export function TeamPage({ user }: { user: User }) {
           </div>
         </Sheet>
       )}
-    </main>
+    </Wrap>
   );
 }
 

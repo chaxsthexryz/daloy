@@ -108,6 +108,20 @@
     border-color: color-mix(in srgb, var(--blue, #0b66ff) 18%, transparent);
     box-shadow: none;
   }
+  .rail-badge {
+    margin-left: auto;
+    min-width: 20px;
+    height: 20px;
+    padding: 0 6px;
+    border-radius: 999px;
+    background: var(--blue, #0b66ff);
+    color: var(--on-accent, #ffffff);
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 20px;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+  }
   .console-shell .sidebar :focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
   .rail-label { opacity: 1; white-space: nowrap; }
   .rail-usage {
@@ -234,8 +248,22 @@
     background: var(--sunken);
   }
   .rail-help-note { margin: 8px 0 4px; font-size: 12px; line-height: 1.4; color: var(--muted); }
-  .console-shell .sidebar nav a:is([href="#/"], [href="#/activity"], [href="#/new"], [href="#/ai"]) {
+  .console-shell .sidebar nav a:is([href="#/"], [href="#/inbox"], [href="#/bookings"], [href="#/automations"], [href="#/business"], [href="#/settings"]) {
     border: 1px solid var(--border-soft); border-radius: 7px; margin: 2px 0; padding-inline: 12px;
+  }
+  .console-shell .rail-badge {
+    margin-left: auto;
+    min-width: 20px;
+    height: 20px;
+    padding: 0 6px;
+    border-radius: 999px;
+    background: var(--accent, #0b66ff);
+    color: var(--on-accent, #ffffff);
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 20px;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
   }
   .console-shell .sidebar .phone-close { color: var(--accent); }
   .console-shell .sidebar .shell-nav-label:not(:first-child) { margin-top: 20px; }

@@ -24,17 +24,20 @@ const STATUS: Record<Sender["status"], string> = {
 };
 
 /** #/settings/business: the business details and the website inquiry form that uses them (roadmap phase 2). Gmail and the other apps are on Apps. */
-export function BusinessSetupPage() {
+export function BusinessSetupPage({ embedded = false }: { embedded?: boolean } = {}) {
   const [data, setData] = useState<Settings | null>(null);
   const [error, setError] = useState("");
   const load = () => api<Settings>("GET", "/settings/email").then(setData, (e: Error) => setError(e.message));
   useEffect(() => void load(), []);
 
+  const Wrap = embedded ? "div" : "main";
   return (
-    <main className="page workspace-admin admin-business motion-page">
-      <header className="toolbar plain admin-head">
-        <h1><Text>Business</Text></h1>
-      </header>
+    <Wrap className={embedded ? "workspace-admin admin-business motion-page" : "page workspace-admin admin-business motion-page"}>
+      {!embedded && (
+        <header className="toolbar plain admin-head">
+          <h1><Text>Business</Text></h1>
+        </header>
+      )}
       <p role="alert" className="message error" hidden={!error}>
         {error}
       </p>
@@ -47,7 +50,7 @@ export function BusinessSetupPage() {
           <InquiryForm data={data} />
         </>
       )}
-    </main>
+    </Wrap>
   );
 }
 

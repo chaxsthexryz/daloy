@@ -211,3 +211,9 @@
 
 /* The sheet takes its colours from the workspace pages; this page is not one, so it carries them itself. */
 .lib .wk-sheet { --w-bg: var(--o-bg); --w-ink: var(--o-ink); --w-muted: var(--o-muted); --w-line: var(--o-line); }
+.lib .act-head .tabs { margin-top: 10px; }
+.lib-blank-footer { margin-top: 8px; padding: 18px 20px; border: 1px solid var(--o-line); border-radius: 12px; background: var(--o-bg); display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 16px; }
+.lib-blank-footer h2 { margin: 0 0 4px; font-size: 1rem; font-weight: 650; }
+.lib-blank-footer .gp-sub { margin: 0; }
+.lib-blank-footer .lib-blank { flex-direction: row; flex-wrap: wrap; align-items: flex-end; gap: 10px; }
+.lib-blank-footer .lib-blank .gp-field { min-width: 220px; }

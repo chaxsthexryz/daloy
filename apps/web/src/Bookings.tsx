@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "./api";
 import { PageHead } from "./Runs";
 import { BookingPayments } from "./Receipts";
+import { ResourcesPage } from "./Resources";
 import "./activity.css";
 import { longDate } from "./lib/activity";
 import { ampm, byDay } from "./lib/agenda";
@@ -42,7 +43,7 @@ const STATUS = { active: "Active", cancelled: "Cancelled", no_show: "No-show" } 
  * (decision 0032). Each change sends the version shown here, so a change made by someone else in between is refused
  * instead of overwritten. On a phone the selected booking opens as a sheet over the agenda.
  */
-export function BookingsPage() {
+export function BookingsPage({ initialTab = "calendar", canManageRooms = false }: { initialTab?: "calendar" | "rooms"; canManageRooms?: boolean } = {}) {
   const { t, language } = useLanguage();
   const [list, setList] = useState<Booking[] | null>(null);
   const [error, setError] = useState("");
@@ -50,6 +51,7 @@ export function BookingsPage() {
   const [sheet, setSheet] = useState(false);
   const [moving, setMoving] = useState<{ id: string; start: string } | null>(null);
   const [note, setNote] = useState("");
+  const tab = canManageRooms ? initialTab : "calendar";
   // Only the newest list request may set the list (see Resources.tsx).
   const latest = useRef(0);
   const load = () => {
@@ -117,12 +119,24 @@ export function BookingsPage() {
         title={t("Bookings")}
         sub={longDate(Date.now(), language)}
         actions={
-          <div className="act-actions">
-            <a className="act-button" href="#/resources">{t("Manage rooms and resources")}</a>
-            <a className="act-button" href="/bookings/export.csv" download>{t("Download CSV")}</a>
-          </div>
+          tab === "calendar" ? (
+            <div className="act-actions">
+              <a className="act-button" href="/bookings/export.csv" download>{t("Download CSV")}</a>
+            </div>
+          ) : undefined
+        }
+        tabs={
+          canManageRooms ? (
+            <nav className="tabs" aria-label={t("Bookings")}>
+              <a href="#/bookings" aria-current={tab === "calendar" ? "page" : undefined}>{t("Calendar")}</a>
+              <a href="#/bookings?tab=rooms" aria-current={tab === "rooms" ? "page" : undefined}>{t("Rooms and slots")}</a>
+            </nav>
+          ) : undefined
         }
       />
+      {tab === "rooms" ? (
+        <ResourcesPage embedded />
+      ) : (
       <div className="act-body act-bookings motion-page">
         <p role="status" className="act-alert ok" hidden={!note}>{note}</p>
         <p role="alert" className="act-alert error" hidden={!error}>{error}</p>
@@ -207,7 +221,7 @@ export function BookingsPage() {
           ) : list.length === 0 ? (
             <p className="act-muted">
               <Text>No bookings yet. They appear when an automation's booking step books a resource.</Text>{" "}
-              <a href="#/resources">{t("Manage rooms and resources")}</a>
+              {canManageRooms && <a href="#/bookings?tab=rooms">{t("Manage rooms and slots")}</a>}
             </p>
           ) : (
             days.map(({ day, items }) => (
@@ -237,6 +251,7 @@ export function BookingsPage() {
           )}
         </section>
       </div>
+      )}
     </main>
   );
 }

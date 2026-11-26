@@ -1,5 +1,5 @@
 /* Workspace administration unified onto Daylight Minimal + Studio Cobalt Dark + Sunny Yellow. */
-main.page.workspace-admin {
+.page.workspace-admin {
   color-scheme: light;
   --bg: #fafafa;
   --surface: #ffffff;
@@ -36,7 +36,7 @@ main.page.workspace-admin {
   font-variant-numeric: tabular-nums;
   scrollbar-color: var(--border) var(--bg);
 }
-:root[data-theme="dark"] main.page.workspace-admin {
+:root[data-theme="dark"] .page.workspace-admin {
   color-scheme: dark;
   --bg: #09090b;
   --surface: #111216;
@@ -181,7 +181,7 @@ main.page.workspace-admin {
 .workspace-admin .file-input::file-selector-button { height: 28px; margin-right: 10px; padding: 0 11px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); font-weight: 550; font-size: 12.5px; cursor: pointer; }
 .workspace-admin .file-input::file-selector-button:hover { background: var(--sunken); }
 @media (max-width: 799px) {
-  main.page.workspace-admin { padding: 24px 16px; }
+  .page.workspace-admin { padding: 24px 16px; }
   .workspace-admin h1 { font-size: 1.75rem; }
   .workspace-admin > :is(form, section, fieldset), .workspace-admin .create { padding: 20px; }
 }

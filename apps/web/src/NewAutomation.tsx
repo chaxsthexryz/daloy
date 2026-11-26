@@ -22,6 +22,7 @@ import { Text, useLanguage } from "./Language";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { api, ApiError, getTemplatesReadiness, type Workflow } from "./api";
 import { AppMark } from "./AppMark";
+import { BuildWithAiPage } from "./BuildWithAi";
 import { RunFlow } from "./FlowCanvas";
 import { startOfficeSetup, startPurchaseSetup } from "./OfficeRequests";
 import { Sheet, usePhone } from "./Sheet";
@@ -45,9 +46,18 @@ function appsOf(def: WorkflowDefinition, language: Language) {
   return [...new Map(entries.map((e) => [e.mark, markText(e, language)])).entries()].map(([mark, name]) => ({ mark, name }));
 }
 
-/** #/new, the Library: every way to start an automation as a card, with a preview before anything is created (decision 0099). */
-export function NewAutomationPage({ email }: { email: string }) {
+/** #/new and #/ai: unified New automation picker with Templates and Build with AI tabs (decision 0147). */
+export function NewAutomationPage({
+  email,
+  initialMode = "templates",
+  admin = false,
+}: {
+  email: string;
+  initialMode?: "templates" | "ai";
+  admin?: boolean;
+}) {
   const { language, t } = useLanguage();
+  const mode = initialMode;
   const phone = usePhone();
   const [style, setStyle] = useState<TemplateStyle>("default");
   const templates = templatesForLanguage(language, style);
@@ -162,7 +172,7 @@ export function NewAutomationPage({ email }: { email: string }) {
       name: t("Reply to a website inquiry"),
       description: t("Reply to the sender and notify your team."),
       definition: websiteInquiryDefinition({ businessName: t("Your business"), inquiryEmail: email }, language),
-      href: "#/settings/business",
+      href: "#/business",
       label: t("Business setup: set up inquiry replies"),
     },
   ];
@@ -175,9 +185,6 @@ export function NewAutomationPage({ email }: { email: string }) {
   const shown = cards.filter((c) => (category === "All" || c.category === category) && matches(c.name, c.description, t(c.category)));
   const blankName = t("Blank automation");
   const blankText = t("Choose a trigger, then add and connect the steps in the editor.");
-  const aiName = t("Build with AI");
-  const aiText = t("Say what should happen in your own words, answer a few questions, and check the draft before anything is saved.");
-  const showStarts = category === "All";
   const card = selected ? cards.find((c) => c.key === selected) : undefined;
 
   function open(key: string, defaultName?: string) {
@@ -320,12 +327,34 @@ export function NewAutomationPage({ email }: { email: string }) {
     );
   };
 
+  const headerTabs = (
+    <nav className="tabs" aria-label={t("Create automation")}>
+      <a href="#/new" aria-current={mode === "templates" ? "page" : undefined}>{t("Templates")}</a>
+      <a href="#/ai" aria-current={mode === "ai" ? "page" : undefined}>{t("Build with AI")}</a>
+    </nav>
+  );
+
+  if (mode === "ai") {
+    return (
+      <main className="page ops gp lib motion-page">
+        <header className="act-head tabbed">
+          <div>
+            <h1>{t("New automation")}</h1>
+          </div>
+          {headerTabs}
+        </header>
+        <BuildWithAiPage email={email} admin={admin} embedded />
+      </main>
+    );
+  }
+
   return (
     <main className="page ops gp lib motion-page">
-      <header className="ops-head">
-        <div className="gp-title">
-          <h1><Text>Library</Text></h1>
+      <header className="act-head tabbed">
+        <div>
+          <h1>{t("New automation")}</h1>
         </div>
+        {headerTabs}
       </header>
       <div className="lib-main">
         <div className="lib-controls-box">
@@ -354,33 +383,13 @@ export function NewAutomationPage({ email }: { email: string }) {
         {!card && <p role="alert" className="gp-error" hidden={!error}>{error}</p>}
 
         <ul className="lib-grid">
-          {showStarts && matches(blankName, blankText) && (
-            <li className="lib-card" style={{ "--card-index": 0 } as CSSProperties}>
-              <h3 className="gp-name">{blankName}</h3>
-              <p className="gp-sub">{blankText}</p>
-              <form className="lib-blank" onSubmit={createBlank}>
-                <div className="gp-field">
-                  <label htmlFor="wf-name"><Text>Name</Text></label>
-                  <input id="wf-name" value={name} onChange={(e) => setName(e.target.value)} required maxLength={200} />
-                </div>
-                <button className="ops-button" disabled={busy}><Text>Create and open editor</Text></button>
-              </form>
-            </li>
-          )}
-          {showStarts && matches(aiName, aiText) && (
-            <li className="lib-card" style={{ "--card-index": 1 } as CSSProperties}>
-              <h3 className="gp-name">{aiName}</h3>
-              <p className="gp-sub">{aiText}</p>
-              <div className="lib-foot"><a className="ops-button" href="#/ai">{aiName}</a></div>
-            </li>
-          )}
           {shown.map((c, idx) => {
             const sample = style === "taglish" ? taglishSampleFor(c.definition) : null;
             return (
               <li
                 key={c.key}
                 className="lib-card"
-                style={{ "--card-index": Math.min(idx + (showStarts ? 2 : 0), 12) } as CSSProperties}
+                style={{ "--card-index": Math.min(idx, 12) } as CSSProperties}
                 data-selected={selected === c.key || undefined}
               >
                 <h3 className="gp-name">
@@ -411,17 +420,30 @@ export function NewAutomationPage({ email }: { email: string }) {
             );
           })}
         </ul>
-        {!shown.length && !(showStarts && (matches(blankName, blankText) || matches(aiName, aiText))) && (
+        {!shown.length && (
           <div className="lib-empty" role="status">
             <p className="gp-hint"><Text>No templates match your search.</Text></p>
             <div className="gp-actions">
               <button type="button" className="ops-button" onClick={() => { setQuery(""); setCategory("All"); }}>
                 <Text>Clear search</Text>
               </button>
-              <a className="ops-button blue" href="#/ai">{aiName}</a>
+              <a className="ops-button blue" href="#/ai">{t("Build with AI")}</a>
             </div>
           </div>
         )}
+        <section className="lib-blank-footer" aria-label={blankName}>
+          <div>
+            <h2>{blankName}</h2>
+            <p className="gp-sub">{blankText}</p>
+          </div>
+          <form className="lib-blank" onSubmit={createBlank}>
+            <div className="gp-field">
+              <label htmlFor="wf-name"><Text>Name</Text></label>
+              <input id="wf-name" value={name} onChange={(e) => setName(e.target.value)} required maxLength={200} />
+            </div>
+            <button className="ops-button" disabled={busy}><Text>Create and open editor</Text></button>
+          </form>
+        </section>
       </div>
       {!phone && card && (
         <div className="lib-modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }}>

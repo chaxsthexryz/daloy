@@ -25,7 +25,7 @@ const DAY_NAMES: Record<(typeof WEEKDAYS)[number], string> = { mon: "Mon", tue: 
  * The knowledge sheet (decision 0116): what the resort wants the concierge to know. Entries are drafts until Publish
  * saves a numbered copy; guests only ever get answers from the published copy. Owner and operator.
  */
-export function KnowledgePage() {
+export function KnowledgePage({ embedded = false }: { embedded?: boolean } = {}) {
   const { t } = useLanguage();
   const [state, setState] = useState<State | null>(null);
   const [error, setError] = useState("");
@@ -61,16 +61,21 @@ export function KnowledgePage() {
     return run(() => api("DELETE", `/knowledge/entries/${e.id}`));
   };
 
+  const Wrap = embedded ? "div" : "main";
   return (
-    <main className="page wk kn">
-      <header className="wk-head">
-        <div>
-          <div className="wk-title-row">
-            <h1>{t("Knowledge")}</h1>
-            {state && <span className="wk-sub">{t(entryCountKey(state.entries.length), { count: state.entries.length })}</span>}
+    <Wrap className={embedded ? "wk kn" : "page wk kn"}>
+      {!embedded ? (
+        <header className="wk-head">
+          <div>
+            <div className="wk-title-row">
+              <h1>{t("Knowledge")}</h1>
+              {state && <span className="wk-sub">{t(entryCountKey(state.entries.length), { count: state.entries.length })}</span>}
+            </div>
           </div>
-        </div>
-      </header>
+        </header>
+      ) : (
+        state && <p className="wk-sub">{t(entryCountKey(state.entries.length), { count: state.entries.length })}</p>
+      )}
       <p className="wk-lead">{t("Write what guests ask about: rooms, rates, policies, questions and links. The concierge answers only from the published version, so check prices before you publish.")}</p>
       {state && (
         <section className="wk-card wk-body kn-publish" aria-labelledby="kn-status">
@@ -129,7 +134,7 @@ export function KnowledgePage() {
           ))}
         </ul>
       )}
-    </main>
+    </Wrap>
   );
 }
 

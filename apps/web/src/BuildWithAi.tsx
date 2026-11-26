@@ -196,7 +196,7 @@ function formatLogTime(iso: string, locale: string): string {
   }
 }
 
-export function BuildWithAiPage({ email, admin = false }: { email: string; admin?: boolean }) {
+export function BuildWithAiPage({ email, admin = false, embedded = false }: { email: string; admin?: boolean; embedded?: boolean }) {
   const { t, language } = useLanguage();
   const [chat, dispatch] = useReducer(chatStep, FRESH);
   const { phase, turns, draft, error } = chat;
@@ -460,10 +460,11 @@ export function BuildWithAiPage({ email, admin = false }: { email: string; admin
     </form>
   );
 
+  const Wrap = embedded ? "div" : "main";
   const topbar = (
     <header className="ai-topbar">
       <div className="ai-topbar-left">
-        <h1 className="ai-sr-title">{t("Build with AI")}</h1>
+        {embedded ? <h2 className="ai-sr-title">{t("Build with AI")}</h2> : <h1 className="ai-sr-title">{t("Build with AI")}</h1>}
       </div>
       <div className="ai-topbar-right">
         {reviewing && (
@@ -491,7 +492,7 @@ export function BuildWithAiPage({ email, admin = false }: { email: string; admin
   );
 
   return (
-    <main className={`page creation-page creation-chat${empty && phase !== "error" && !showReview ? " is-stage" : ""}`}>
+    <Wrap className={`page creation-page creation-chat${empty && phase !== "error" && !showReview ? " is-stage" : ""}`}>
       {topbar}
 
       {showReview && draft && plan ? (
@@ -793,6 +794,6 @@ export function BuildWithAiPage({ email, admin = false }: { email: string; admin
           </aside>
         </div>
       )}
-    </main>
+    </Wrap>
   );
 }

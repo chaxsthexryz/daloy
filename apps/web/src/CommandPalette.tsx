@@ -20,31 +20,29 @@ export interface ShortcutEventLike {
 /** Returns the Quick Jump entries visible to the signed-in role. */
 export function quickJumpItems(role: Role, t: (text: string) => string, admin = false): QuickJumpItem[] {
   const work = t("Work");
-  const build = t("Build");
   const workspace = t("Workspace");
   const owner = role === "owner";
 
   const items: QuickJumpItem[] = [
-    { href: "#/", label: t("Automations"), group: work, icon: "automations" },
-    { href: "#/activity", label: t("Activity"), group: work, icon: "activity" },
-    { href: "#/bookings", label: t("Bookings"), group: work, icon: "bookings" },
+    { href: "#/", label: t("Home"), group: work, icon: "home" },
   ];
 
   if (owner || role === "operator") {
     items.push(
-      { href: "#/conversations", label: t("Conversations"), group: work, icon: "conversations" },
-      { href: "#/receipts", label: t("Receipts to review"), group: work, icon: "receipts" },
-      { href: "#/knowledge", label: t("Knowledge"), group: work, icon: "knowledge" },
+      { href: "#/inbox", label: t("Inbox"), group: work, icon: "inbox" },
+      { href: "#/bookings", label: t("Bookings"), group: work, icon: "bookings" },
     );
   }
 
   if (owner) {
     items.push(
-      { href: "#/new", label: t("Library"), group: build, icon: "new" },
-      { href: "#/ai", label: t("Build with AI"), group: build, icon: "ai" },
-      { href: "#/team", label: t("Team"), group: workspace, icon: "team" },
-      { href: "#/apps", label: t("Apps"), group: workspace, icon: "apps" },
-      { href: "#/settings/business", label: t("Business"), group: workspace, icon: "business" },
+      { href: "#/automations", label: t("Automations"), group: work, icon: "automations" },
+      { href: "#/new", label: t("New automation"), group: work, icon: "new" },
+      { href: "#/business", label: t("Business"), group: workspace, icon: "business" },
+      { href: "#/business?tab=knowledge", label: t("Knowledge"), group: workspace, icon: "knowledge" },
+      { href: "#/business?tab=apps", label: t("Apps"), group: workspace, icon: "apps" },
+      { href: "#/business?tab=team", label: t("Team"), group: workspace, icon: "team" },
+      { href: "#/secrets", label: t("Secrets"), group: workspace, icon: "advanced" },
     );
     if (admin) {
       items.push({ href: "#/advanced", label: t("Advanced"), group: workspace, icon: "advanced" });

@@ -1,5 +1,5 @@
 /* 1-to-1 Daylight Concept 19 styling inside unified console shell (zero mascots, logos, or model picker). */
-main.page.creation-chat {
+.page.creation-chat {
   --accent: var(--blue, #0b66ff);
   --accent-tint: var(--blue-soft, #eef4ff);
   --text: var(--fg, #0f131a);
@@ -17,7 +17,7 @@ main.page.creation-chat {
   display: flex;
   flex-direction: column;
 }
-main.page.creation-chat.is-stage {
+.page.creation-chat.is-stage {
   background: var(--surface);
 }
 
@@ -29,7 +29,7 @@ main.page.creation-chat.is-stage {
   gap: 16px;
   background: var(--surface);
 }
-main.page.creation-chat:not(.is-stage) .ai-topbar {
+.page.creation-chat:not(.is-stage) .ai-topbar {
   padding-bottom: 18px;
   border-bottom: 1px solid var(--border-soft);
 }
@@ -554,7 +554,7 @@ main.page.creation-chat button.ai-prompt-row:hover .ai-prompt-arrow {
 }
 .ai-log-delete:hover { color: #dc2626; background: rgba(220, 38, 38, 0.08); }
 
-:root[data-theme="dark"] main.page.creation-chat {
+:root[data-theme="dark"] .page.creation-chat {
   color-scheme: dark;
   --text: var(--fg, #eef2ff);
   --muted: var(--fg-muted, #a3aecb);

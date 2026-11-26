@@ -12,7 +12,7 @@ export type Resource = { id: string; name: string; label?: string | null; active
  * The owner's resources: the therapists, rooms or tables a resource field offers (decision 0031). Archived ones leave
  * the forms but keep their id, so past runs still point at them. Doop row W7.
  */
-export function ResourcesPage() {
+export function ResourcesPage({ embedded = false }: { embedded?: boolean } = {}) {
   const { t } = useLanguage();
   const [list, setList] = useState<Resource[] | null>(null);
   const [name, setName] = useState("");
@@ -50,17 +50,21 @@ export function ResourcesPage() {
   };
   const counts = list && countResources(list);
 
+  const Wrap = embedded ? "div" : "main";
   return (
-    <main className="page wk wk-resources">
-      <header className="wk-head">
-        <div>
-          <Breadcrumb items={[{ label: t("Settings"), href: "#/settings" }, { label: t("Resources") }]} />
-          <div className="wk-title-row">
-            <h1>{t("Resources")}</h1>
-            {counts && <span className="wk-sub">{t("{active} active, {archived} archived", counts)}</span>}
+    <Wrap className={embedded ? "wk wk-resources" : "page wk wk-resources"}>
+      {!embedded && (
+        <header className="wk-head">
+          <div>
+            <Breadcrumb items={[{ label: t("Bookings"), href: "#/bookings" }, { label: t("Rooms and slots") }]} />
+            <div className="wk-title-row">
+              <h1>{t("Rooms and slots")}</h1>
+              {counts && <span className="wk-sub">{t("{active} active, {archived} archived", counts)}</span>}
+            </div>
           </div>
-        </div>
-      </header>
+        </header>
+      )}
+      {embedded && counts && <p className="wk-sub">{t("{active} active, {archived} archived", counts)}</p>}
       <p className="wk-lead">{t("Rooms, people or tables that customers can book. Booking forms and stay confirmations list the active items below.")}</p>
       <form onSubmit={add} className="wk-card wk-body wk-add" aria-labelledby="add-resource">
         <h2 id="add-resource" className="wk-card-title">{t("Add a resource")}</h2>
@@ -124,7 +128,7 @@ export function ResourcesPage() {
           }}
         />
       )}
-    </main>
+    </Wrap>
   );
 }
 

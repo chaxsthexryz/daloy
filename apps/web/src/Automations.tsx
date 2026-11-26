@@ -248,13 +248,7 @@ export function Automations({ user }: { user: User }) {
       </div>
       {owner && (
         <div className="ops-actions">
-          <a className="ops-button secondary" href="#/new">{t("New automation")}</a>
-          <a className="ops-button primary" href="#/ai">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M16 18a2 2 0 0 1 2 2a2 2 0 0 1 2 -2a2 2 0 0 1 -2 -2a2 2 0 0 1 -2 2zm0 -12a2 2 0 0 1 2 2a2 2 0 0 1 2 -2a2 2 0 0 1 -2 -2a2 2 0 0 1 -2 2zm-7 12a6 6 0 0 1 6 -6a6 6 0 0 1 -6 -6a6 6 0 0 1 -6 6a6 6 0 0 1 6 6z" />
-            </svg>
-            {t("Build with AI")}
-          </a>
+          <a className="ops-button primary" href="#/new">{t("New")}</a>
         </div>
       )}
     </header>

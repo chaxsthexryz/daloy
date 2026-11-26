@@ -38,7 +38,7 @@
   overflow-wrap: anywhere;
   scrollbar-color: var(--border) var(--bg);
 }
-main.page.creation-page {
+.page.creation-page {
   max-width: none;
   min-height: 100%;
   margin: 0;
