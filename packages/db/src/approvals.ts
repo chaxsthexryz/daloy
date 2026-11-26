@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
-import { and, eq, gt, isNull, or, sql, type SQL } from "drizzle-orm";
+import { and, desc, eq, gt, isNull, or, sql, type SQL } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
-import { approvals, runs, stepRuns, workflows, workflowVersions } from "./schema";
+import { approvals, requests, runs, stepRuns, users, workflows, workflowVersions } from "./schema";
 
 type AnyDb = NodePgDatabase<Record<string, unknown>>;
 type Writer = Pick<AnyDb, "select" | "update">;
@@ -142,4 +142,100 @@ export async function claimTimeout(w: Writer, stepRunId: string): Promise<Approv
   if (first && !first.expired) return { branch: null, pendingUntil: first.expiresAt, decidedBy: null, decidedAt: null };
   await w.update(approvals).set({ usedAt: sql`now()`, decision: "timeout" }).where(and(sameStep(runId, stepId), isNull(approvals.usedAt)));
   return { branch: "timeout", decidedBy: null, decidedAt: null };
+}
+
+export type PendingApprovalItem = {
+  id: string;
+  runId: string;
+  workflowId: string;
+  workflowName: string;
+  reference: string | null;
+  stepId: string;
+  input: unknown;
+  approverId: string | null;
+  approverEmail: string | null;
+  expiresAt: Date;
+  createdAt: Date;
+};
+
+/**
+ * Pending, unexpired, non-test approvals waiting in a workspace, deduplicated to one row per waiting step
+ * (matching the single-decision sibling invariant of decision 0009) and ordered oldest first.
+ */
+export async function listPendingApprovals(db: Pick<AnyDb, "select" | "selectDistinctOn">, workspaceId: string): Promise<PendingApprovalItem[]> {
+  const rows = await db
+    .selectDistinctOn([stepRuns.runId, stepRuns.stepId], {
+      id: approvals.id,
+      runId: stepRuns.runId,
+      workflowId: workflows.id,
+      workflowName: workflows.name,
+      reference: requests.reference,
+      stepId: stepRuns.stepId,
+      input: stepRuns.input,
+      approverId: approvals.approverId,
+      approverEmail: users.email,
+      expiresAt: approvals.expiresAt,
+      createdAt: approvals.createdAt,
+    })
+    .from(approvals)
+    .innerJoin(stepRuns, eq(stepRuns.id, approvals.stepRunId))
+    .innerJoin(runs, eq(runs.id, stepRuns.runId))
+    .innerJoin(workflowVersions, eq(workflowVersions.id, runs.workflowVersionId))
+    .innerJoin(workflows, eq(workflows.id, workflowVersions.workflowId))
+    .leftJoin(requests, eq(requests.runId, runs.id))
+    .leftJoin(users, eq(users.id, approvals.approverId))
+    .where(and(eq(workflows.userId, workspaceId), isNull(approvals.usedAt), gt(approvals.expiresAt, sql`now()`), eq(runs.state, "waiting"), eq(runs.test, false)))
+    .orderBy(stepRuns.runId, stepRuns.stepId, desc(approvals.createdAt));
+
+  return rows.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+}
+
+/**
+ * Records an in-console approval decision by approval id, repeating the atomic decision 0022 named-approver check
+ * and workspace ownership check under the run's lock so concurrent clicks, email links and timeouts settle once.
+ */
+export async function decideApprovalById(
+  db: AnyDb,
+  opts: { workspaceId: string; approvalId: string; decision: ApprovalDecision; actor: Actor },
+): Promise<{ ok: true; runId: string } | { ok: false; reason: "not_found" | "forbidden" | "gone" }> {
+  const { workspaceId, approvalId, decision, actor } = opts;
+  return db.transaction(async (tx) => {
+    const [row] = await tx
+      .select({
+        runId: stepRuns.runId,
+        stepId: stepRuns.stepId,
+        workspaceId: workflows.userId,
+      })
+      .from(approvals)
+      .innerJoin(stepRuns, eq(stepRuns.id, approvals.stepRunId))
+      .innerJoin(runs, eq(runs.id, stepRuns.runId))
+      .innerJoin(workflowVersions, eq(workflowVersions.id, runs.workflowVersionId))
+      .innerJoin(workflows, eq(workflows.id, workflowVersions.workflowId))
+      .where(eq(approvals.id, approvalId));
+    if (!row || row.workspaceId !== workspaceId) return { ok: false, reason: "not_found" };
+
+    await lockRun(tx, row.runId);
+    const [current] = await tx
+      .select({
+        usedAt: approvals.usedAt,
+        expired: sql<boolean>`${approvals.expiresAt} <= now()`,
+      })
+      .from(approvals)
+      .where(eq(approvals.id, approvalId));
+    if (!current || current.usedAt || current.expired) return { ok: false, reason: "gone" };
+
+    const [used] = await tx
+      .update(approvals)
+      .set({ usedAt: sql`now()`, decision, decidedBy: actor.id, decidedByEmail: actor.email })
+      .where(and(eq(approvals.id, approvalId), isNull(approvals.usedAt), gt(approvals.expiresAt, sql`now()`), allowed(actor)))
+      .returning({ usedAt: approvals.usedAt, decidedBy: approvals.decidedBy, decidedByEmail: approvals.decidedByEmail });
+    if (!used) return { ok: false, reason: "forbidden" };
+
+    await tx
+      .update(approvals)
+      .set({ usedAt: used.usedAt, decision, decidedBy: used.decidedBy, decidedByEmail: used.decidedByEmail })
+      .where(and(sameStep(row.runId, row.stepId), isNull(approvals.usedAt)));
+    await tx.update(runs).set({ nextAttemptAt: sql`now()` }).where(and(eq(runs.id, row.runId), eq(runs.state, "waiting")));
+    return { ok: true, runId: row.runId };
+  });
 }

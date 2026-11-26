@@ -14,6 +14,7 @@ import { OfficeRequestPage, TryOfficeRequest } from "./OfficeRequests";
 import { BookingsPage } from "./Bookings";
 import { BusinessPage, type BusinessTab } from "./BusinessPage";
 import { ConversationsPage } from "./Conversations";
+import { InboxPage } from "./Inbox";
 import { ReceiptsPage } from "./Receipts";
 import { AiModelPage } from "./Settings";
 import { SettingsPage } from "./AppSettings";
@@ -152,7 +153,7 @@ function Route({ hash, user }: { hash: string; user: User }) {
   if (path === "#/bookings" && (user.role === "owner" || user.role === "operator")) {
     return <BookingsPage initialTab={query.get("tab") === "rooms" ? "rooms" : "calendar"} canManageRooms={user.role === "owner"} />;
   }
-  if (path === "#/inbox" && (user.role === "owner" || user.role === "operator")) return <ConversationsPage user={user} />;
+  if (path === "#/inbox" && (user.role === "owner" || user.role === "operator")) return <InboxPage user={user} />;
   if (path === "#/conversations" && (user.role === "owner" || user.role === "operator")) return <ConversationsPage user={user} />;
   if (path === "#/knowledge" && (user.role === "owner" || user.role === "operator")) return <BusinessPage user={user} initialTab="knowledge" />;
   if (path === "#/receipts" && (user.role === "owner" || user.role === "operator")) return <ReceiptsPage user={user} />;

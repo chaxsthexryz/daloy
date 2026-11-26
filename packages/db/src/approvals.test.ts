@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 import type { Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { freshDatabase } from "../../../test/db";
-import { claimTimeout, createApproval, findPendingApproval, hashToken, recordDecision } from "./approvals";
+import { claimTimeout, createApproval, decideApprovalById, findPendingApproval, hashToken, listPendingApprovals, recordDecision } from "./approvals";
 import { approvals, runs, stepRuns, users, workflows, workflowVersions, workspaceMembers, type Role } from "./schema";
 import { createDb, type Db } from "./index";
 
@@ -299,5 +299,52 @@ describe("named approvals (decision 0022)", () => {
     const { runId, stepRunId } = await waitingStep();
     const token = (await createApproval(db, stepRunId, inAnHour(), ownerId))!.token;
     expect(await recordDecision(db, token, "rejected", { id: owner.id, email: owner.email })).toBe(runId);
+  });
+
+  it("lists pending non-test approvals once per step and enforces named-approver rules in decideApprovalById", async () => {
+    const owner = (await db.select().from(users).where(eq(users.id, ownerId)))[0]!;
+    const approver = await member("approver", ownerId);
+    const operator = await member("operator", ownerId);
+    const otherOwner = await member("owner");
+
+    const { runId, stepRunId } = await waitingStep();
+    await createApproval(db, stepRunId, inAnHour(), approver.id);
+    // Second link on the same waiting step must still appear once in the Inbox list.
+    await createApproval(db, stepRunId, inAnHour(), approver.id);
+
+    const list = await listPendingApprovals(db, ownerId);
+    const matches = list.filter((item) => item.runId === runId);
+    expect(matches).toHaveLength(1);
+    const item = matches[0]!;
+    expect(item.approverId).toBe(approver.id);
+    expect(item.approverEmail).toBe(approver.email);
+
+    // Other workspace cannot see or decide it.
+    expect(await listPendingApprovals(db, otherOwner.id)).toHaveLength(0);
+    expect(await decideApprovalById(db, { workspaceId: otherOwner.id, approvalId: item.id, decision: "approved", actor: otherOwner })).toEqual({
+      ok: false,
+      reason: "not_found",
+    });
+
+    // Wrong member (even owner or operator when named to a specific approver) is forbidden.
+    expect(await decideApprovalById(db, { workspaceId: ownerId, approvalId: item.id, decision: "approved", actor: { id: owner.id, email: owner.email } })).toEqual({
+      ok: false,
+      reason: "forbidden",
+    });
+    expect(await decideApprovalById(db, { workspaceId: ownerId, approvalId: item.id, decision: "approved", actor: operator })).toEqual({
+      ok: false,
+      reason: "forbidden",
+    });
+
+    // Concurrent clicks by the named approver settle exactly once.
+    const results = await Promise.all([
+      decideApprovalById(db, { workspaceId: ownerId, approvalId: item.id, decision: "approved", actor: approver }),
+      decideApprovalById(db, { workspaceId: ownerId, approvalId: item.id, decision: "rejected", actor: approver }),
+    ]);
+    expect(results.filter((r) => r.ok)).toEqual([{ ok: true, runId }]);
+    expect(results.filter((r) => !r.ok)).toEqual([{ ok: false, reason: "gone" }]);
+
+    // Once decided, neither sibling nor step remains pending.
+    expect((await listPendingApprovals(db, ownerId)).some((x) => x.runId === runId)).toBe(false);
   });
 });

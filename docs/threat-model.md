@@ -579,3 +579,10 @@ Entry points: `GET /privacy/customer` and `POST /privacy/customer/delete` (owner
 - Spending by a stranger: the step only runs from a manual run, a schedule, a PayMongo payment, a Shopify order or a signed webhook, and refuses fields from AI steps or from steps that read a public trigger. A public form cannot book riders at the seller's cost.
 - Double booking: Lalamove documents no idempotency key for orders. The order goes through the same dispatch mark as other unsafe sends, so an attempt that died after sending goes to review, never to an automatic retry. The run and step ids are sent as order metadata so the seller can match orders in Lalamove.
 - Remaining risk: a leaked key lets someone book riders until the seller rotates it in the Lalamove Partner Portal and saves the new one. A signed-webhook secret that leaks lets someone trigger bookings, so the shop's signing secret needs the same care.
+
+## Unified Inbox and in-console approvals (G4, decision 0148)
+
+- Assets: workspace approval decisions, pending workflow runs, customer conversations, payment receipt claims, and workspace secrets inside approval step inputs.
+- Entry points: `GET /inbox` and `POST /inbox/approvals/:id/decide` behind `SessionGuard`, `Allow(OPERATE)` (owner and operator only), and `RateLimit(20)` on decisions.
+- Named approver and replay guards: `decideApprovalById` locks the run row first, verifies the approval belongs to the caller's workspace, rejects used or expired approvals with 409, and repeats the atomic `allowed(actor)` SQL check (requiring `approverId === actor.id` and active `workspace_members` role in `owner`/`approver` for named approvals) in the single `UPDATE` statement alongside sibling-link settlement.
+- Secret redaction: `GET /inbox` passes every pending approval's step input through `historyHider` before returning `message` so encrypted or retired secrets never leave the API.

@@ -90,9 +90,30 @@ export function Shell({ user, hash, onSignOut, children }: { user: User; hash: s
   const owner = user.role === "owner";
   const canWatchRuns = owner || user.role === "operator";
   const usage = useUsage(owner);
+  const [inboxCount, setInboxCount] = useState(0);
   const here = section(hash);
   const tRef = useRef(t);
   tRef.current = t;
+
+  useEffect(() => {
+    if (!canWatchRuns || typeof window === "undefined") return;
+    let cancelled = false;
+    const refresh = () => {
+      api<{ counts?: { total?: number } }>("GET", "/inbox")
+        .then((res) => {
+          if (!cancelled && typeof res.counts?.total === "number") setInboxCount(res.counts.total);
+        })
+        .catch(() => undefined);
+    };
+    refresh();
+    window.addEventListener("daloy:inbox", refresh);
+    window.addEventListener(LIVE_RUN_EVENT, refresh);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("daloy:inbox", refresh);
+      window.removeEventListener(LIVE_RUN_EVENT, refresh);
+    };
+  }, [canWatchRuns]);
 
   useEffect(() => {
     if (!canWatchRuns || typeof window === "undefined") return;
@@ -245,7 +266,7 @@ export function Shell({ user, hash, onSignOut, children }: { user: User; hash: s
             }}
           />
           {link("#/", "Home", "home")}
-          {canWatchRuns && link("#/inbox", "Inbox", "inbox")}
+          {canWatchRuns && link("#/inbox", "Inbox", "inbox", "Inbox", inboxCount)}
           {canWatchRuns && link("#/bookings", "Bookings", "bookings")}
           {owner && link("#/automations", "Automations", "automations")}
           {owner && link("#/business", "Business", "business")}

@@ -397,6 +397,8 @@ describe("role permissions", () => {
       ["post", "/onboarding/finish", only],
       ["post", "/onboarding/dismiss", only],
       ["get", "/conversations", operate],
+      ["get", "/inbox", operate],
+      ["post", `/inbox/approvals/${randomUUID()}/decide`, operate, { decision: "approved" }],
       ["put", "/conversations/settings", only, {}],
       ["get", `/conversations/${randomUUID()}`, operate],
       ["post", `/conversations/${randomUUID()}/take-over`, operate],
