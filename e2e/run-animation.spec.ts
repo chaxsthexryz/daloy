@@ -17,7 +17,7 @@ async function signUp(page: Page, tag: string) {
   await page.getByLabel("Email").fill(`${tag}-${Date.now()}@test.local`);
   await page.getByLabel("Password").fill("e2e test password 1");
   await page.getByRole("button", { name: "Create account" }).click();
-  await expect(page.getByRole("heading", { name: "Automations", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Today", exact: true })).toBeVisible();
   const wf = await (await page.request.post("/workflows", { data: { name: "Orders", slug: `orders-${tag}-${Date.now()}` } })).json();
   await page.request.post(`/workflows/${wf.id}/versions`, { data: { definition, publish: false } });
   return wf.id as string;
@@ -29,6 +29,9 @@ const edge = (page: Page, id: string) => page.locator(`[data-testid="rf__edge-${
 test("the editor and the run page show the trigger and first edge done before the last step", async ({ page }) => {
   const id = await signUp(page, "anim");
   await page.goto(`/#/w/${id}`);
+  const explain = page.getByRole("dialog", { name: "Explain this flow" });
+  if (await explain.isVisible()) await explain.getByRole("button", { name: "Got it" }).click();
+  await page.getByRole("button", { name: "Diagram", exact: true }).click();
   await openTestSettings(page);
   await page.getByRole("button", { name: "Test run draft" }).click();
 

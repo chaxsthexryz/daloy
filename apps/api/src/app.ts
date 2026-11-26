@@ -30,6 +30,7 @@ import { createErrorReporter, parseSentryDsn } from "@daloy/engine";
 import { PausedFilter } from "./paused";
 import { ErrorReportFilter, HealthController } from "./health";
 import { ConversationsController } from "./conversations";
+import { HomeController } from "./home";
 import { InboxController } from "./inbox";
 import { DiscordHooksController, FormsController, HooksController, isFormEmbed, MetaHooksController, PaymongoHooksController, PublicAssetsController, ShopifyHooksController, SlackHooksController, TeamsHooksController, TelegramHooksController, WhatsAppHooksController } from "./public";
 import { RunsController } from "./runs";
@@ -51,6 +52,11 @@ import { CatalogController, WorkflowsController } from "./workflows";
 
 export type AppOptions = ApiConfig & { db: Db; boss: PgBoss };
 
+const GLOBAL_RATE_LIMIT = Number(process.env.GLOBAL_RATE_LIMIT_PER_MINUTE || 120);
+if (!Number.isInteger(GLOBAL_RATE_LIMIT) || GLOBAL_RATE_LIMIT < 1) {
+  throw new Error("GLOBAL_RATE_LIMIT_PER_MINUTE must be a whole number above 0");
+}
+
 /** Builds the Nest app without listening, so tests can drive it with supertest. */
 export async function createApp({ db, boss, ...config }: AppOptions) {
   if (config.secretsKey.length !== 32) throw new Error("SECRETS_KEY must be 32 bytes, base64 encoded");
@@ -61,13 +67,13 @@ export async function createApp({ db, boss, ...config }: AppOptions) {
   const webSentry = parseSentryDsn(config.webSentryDsn);
 
   @Module({
-    controllers: [AuthController, AdminController, HealthController, ConversationsController, InboxController, WorkflowsController, CatalogController, SecretsController, ResourcesController, BookingsController, PaymentsController, PayPageController, PrivacyController, TokensController, RunsController, HooksController, PaymongoHooksController, MetaHooksController, WhatsAppHooksController, ShopifyHooksController, TelegramHooksController, SlackHooksController, TeamsHooksController, DiscordHooksController, FormsController, PublicAssetsController, ApprovalsController, McpController, SettingsController, LanguageController, DigestController, EmailSettingsController, EmailSourceController, ConnectionsController, OAuthStartController, OAuthCallbackController, GoogleController, GoogleTriggersController, MailboxTriggersController, GoogleCalendarController, MonitorTriggersController, AirtableOAuthController, NotionOAuthController, TrelloOAuthController, RecordTriggersController, DeliveriesController, AiDraftController, AiChatController, MembersController, MyRequestsController, UsageController, BrandController, BrandLogoController, OnboardingController, KnowledgeController],
+    controllers: [AuthController, AdminController, HealthController, ConversationsController, HomeController, InboxController, WorkflowsController, CatalogController, SecretsController, ResourcesController, BookingsController, PaymentsController, PayPageController, PrivacyController, TokensController, RunsController, HooksController, PaymongoHooksController, MetaHooksController, WhatsAppHooksController, ShopifyHooksController, TelegramHooksController, SlackHooksController, TeamsHooksController, DiscordHooksController, FormsController, PublicAssetsController, ApprovalsController, McpController, SettingsController, LanguageController, DigestController, EmailSettingsController, EmailSourceController, ConnectionsController, OAuthStartController, OAuthCallbackController, GoogleController, GoogleTriggersController, MailboxTriggersController, GoogleCalendarController, MonitorTriggersController, AirtableOAuthController, NotionOAuthController, TrelloOAuthController, RecordTriggersController, DeliveriesController, AiDraftController, AiChatController, MembersController, MyRequestsController, UsageController, BrandController, BrandLogoController, OnboardingController, KnowledgeController],
     providers: [
       { provide: DB, useValue: db },
       { provide: BOSS, useValue: boss },
       { provide: CONFIG, useValue: { ...config, mail: config.mail ?? mailDeps(), providers: config.providers ?? providerUrls(), oauthProviders: config.oauthProviders ?? OAUTH_PROVIDERS, publicUrl: (config.publicUrl ?? process.env.PUBLIC_URL ?? "http://localhost:3000").replace(/\/+$/, "") } },
       // Default limit for every route; login, forms, webhooks and approvals add stricter ones.
-      { provide: APP_GUARD, useClass: RateLimit(120) },
+      { provide: APP_GUARD, useClass: RateLimit(GLOBAL_RATE_LIMIT) },
       { provide: APP_FILTER, useValue: new ErrorReportFilter(reporter) },
       { provide: APP_FILTER, useClass: PausedFilter },
       SessionGuard,

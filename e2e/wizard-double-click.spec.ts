@@ -8,17 +8,17 @@ test("a double click on Next and Turn on acts once, setup resumes the draft, and
   await page.getByLabel("Email").fill(`dc-${Date.now()}@test.local`);
   await page.getByLabel("Password").fill("e2e test password 1");
   await page.getByRole("button", { name: "Create account" }).click();
-  await expect(page.getByRole("heading", { name: "Automations", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Today", exact: true })).toBeVisible();
 
   // Two clicks on Set up for my office make one workflow; starting again later reopens it.
-  await page.getByRole("link", { name: "Library", exact: true }).first().click();
+  await page.getByRole("link", { name: "Automations", exact: true }).first().click(); await page.getByRole("link", { name: "New", exact: true }).first().click();
   await page.getByRole("link", { name: "Try the preview" }).click();
   const setUp = page.getByRole("button", { name: "Use this template" });
   await setUp.dblclick();
   await expect(page.getByLabel("Automation name")).toBeVisible();
   const workflows = async () => (await (await page.request.get("/workflows")).json()) as { id: string }[];
   expect(await workflows()).toHaveLength(1);
-  await page.getByRole("link", { name: "Library", exact: true }).first().click();
+  await page.getByRole("link", { name: "Automations", exact: true }).first().click(); await page.getByRole("link", { name: "New", exact: true }).first().click();
   await page.getByRole("link", { name: "Try the preview" }).click();
   await setUp.click();
   await expect(page.getByLabel("Automation name")).toBeVisible();

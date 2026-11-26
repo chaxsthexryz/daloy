@@ -7,7 +7,7 @@ async function signUp(page: Page, prefix: string) {
   await page.getByLabel("Email").fill(email);
   await page.getByLabel("Password").fill("e2e test password 1");
   await page.getByRole("button", { name: "Create account" }).click();
-  await expect(page.getByRole("heading", { name: "Automations", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Today", exact: true })).toBeVisible();
   return email;
 }
 
@@ -37,9 +37,10 @@ test("summary card zero states stay green in Light, Dark and Taglish, and Dark m
   await page.emulateMedia({ colorScheme: "light" });
   await signUp(page, "f5-dark");
 
-  // Create one healthy draft so the summary cards render on #/.
+  // Create one healthy draft so the summary cards render on #/automations.
   const wf = await (await page.request.post("/workflows", { data: { name: "Healthy flow", slug: `healthy-${Date.now()}` } })).json();
   expect(wf.id).toBeTruthy();
+  await page.goto("/#/automations");
   await page.reload();
 
   const needsVal = page.locator(".ops-kpi-cell.needs .ops-kval strong");
@@ -60,8 +61,9 @@ test("summary card zero states stay green in Light, Dark and Taglish, and Dark m
   await expect(needsVal).toHaveCSS("color", "rgb(110, 231, 183)");
   await expect(probVal).toHaveCSS("color", "rgb(110, 231, 183)");
 
-  // Dark mode #/apps: softened logo tiles and WCAG AA disabled buttons on PayMongo.
-  await page.getByRole("link", { name: "Apps", exact: true }).click();
+  // Dark mode #/business?tab=apps: softened logo tiles and WCAG AA disabled buttons on PayMongo.
+  await page.getByRole("link", { name: "Business", exact: true }).click();
+  await page.getByRole("navigation", { name: "Business" }).getByRole("link", { name: "Apps", exact: true }).click();
   const logoTile = page.locator('.app-mark[data-kind="logo"]').first();
   await expect(logoTile).toBeVisible();
   const tileBg = await logoTile.evaluate((el) => getComputedStyle(el).backgroundColor);
@@ -77,8 +79,8 @@ test("summary card zero states stay green in Light, Dark and Taglish, and Dark m
   expect(paymongoColors.opacity).toBe("1");
   expect(await contrastRatio(page, paymongoColors.fg, paymongoColors.bg)).toBeGreaterThanOrEqual(4.5);
 
-  // Dark mode #/knowledge: disabled Publish button meets WCAG AA.
-  await page.getByRole("link", { name: "Knowledge", exact: true }).click();
+  // Dark mode #/business?tab=knowledge: disabled Publish button meets WCAG AA.
+  await page.getByRole("navigation", { name: "Business" }).getByRole("link", { name: "Knowledge", exact: true }).click();
   const publishBtn = page.getByRole("button", { name: "Publish", exact: true });
   await expect(publishBtn).toBeDisabled();
   const knColors = await publishBtn.evaluate((el) => {
@@ -114,12 +116,12 @@ test("summary card zero states stay green in Light, Dark and Taglish, and Dark m
   await expect(page.locator("html")).toHaveAttribute("lang", "tl");
 
   const rail = page.locator("#main-menu");
-  await expect(rail.getByRole("link", { name: "Aklatan", exact: true })).toBeVisible();
-  await expect(rail.getByRole("link", { name: "Koponan", exact: true })).toBeVisible();
+  await expect(rail.getByRole("link", { name: "Mga booking", exact: true })).toBeVisible();
+  await expect(rail.getByRole("link", { name: "Negosyo", exact: true })).toBeVisible();
   await expect(rail.getByRole("link", { name: "Mga setting", exact: true })).toBeVisible();
   await expect(rail.getByRole("link", { name: "Account ko", exact: true })).toBeVisible();
-  await expect(rail.getByRole("link", { name: "Library", exact: true })).toHaveCount(0);
-  await expect(rail.getByRole("link", { name: "Team", exact: true })).toHaveCount(0);
+  await expect(rail.getByRole("link", { name: "Bookings", exact: true })).toHaveCount(0);
+  await expect(rail.getByRole("link", { name: "Business", exact: true })).toHaveCount(0);
   await expect(rail.getByRole("link", { name: "Settings", exact: true })).toHaveCount(0);
   await expect(rail.getByRole("link", { name: "Account", exact: true })).toHaveCount(0);
 
@@ -127,7 +129,8 @@ test("summary card zero states stay green in Light, Dark and Taglish, and Dark m
   await expect(page.locator(".ops-kpi-cell.problems")).toContainText("maayos lahat");
   await expect(probVal).toHaveCSS("color", "rgb(110, 231, 183)");
 
-  await rail.getByRole("link", { name: "Mga app", exact: true }).click();
+  await rail.getByRole("link", { name: "Negosyo", exact: true }).click();
+  await page.getByRole("navigation", { name: "Negosyo" }).getByRole("link", { name: "Mga app", exact: true }).click();
   await page.getByRole("button", { name: /PayMongo/ }).click();
   await expect(page.getByRole("button", { name: "Bumalik sa Mga app", exact: true })).toBeVisible();
 });
@@ -137,7 +140,7 @@ test("overlays, landmarks and editor 50% Fit zoom keep content visible and unobs
 
   // #/ai initial state has a visible <h1>, opaque Conversation logs drawer and visible delete button.
   await page.goto("/#/ai");
-  const aiH1 = page.getByRole("heading", { name: "Build with AI", level: 1 });
+  const aiH1 = page.getByRole("heading", { name: "New automation", level: 1 });
   await expect(aiH1).toBeVisible();
   const h1Box = (await aiH1.boundingBox())!;
   expect(h1Box.width).toBeGreaterThan(20);
@@ -232,7 +235,8 @@ test("overlays, landmarks and editor 50% Fit zoom keep content visible and unobs
     headBox.y < toastBox.y + toastBox.height;
   expect(overlapsHeader).toBe(false);
 
-  // Click Fit and verify Trigger node stays visible inside .a7-flow and step kickers do not clip.
+  // Switch from default List view to Diagram, click Fit, and verify Trigger node stays visible without kicker clipping.
+  await page.getByRole("button", { name: "Diagram", exact: true }).click();
   await page.getByRole("button", { name: "Fit", exact: true }).click();
   await page.waitForTimeout(250);
   const flowBox = (await page.locator(".a7-flow").boundingBox())!;

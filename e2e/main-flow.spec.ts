@@ -20,6 +20,7 @@ test("sign up, build, test-run, publish and run a workflow", async ({ page }) =>
   await addStep(page, "condition");
   await expect(page.getByLabel("Operator")).toHaveValue("gt");
   await addStep(page, "http", { after: "condition_1" });
+  await page.getByRole("button", { name: "Diagram", exact: true }).click();
   await expect(page.getByRole("group", { name: "Condition step condition_1, on true goes to http_1" })).toBeVisible();
 
   // Test run with mocked calls: the HTTP step answers without a request.
@@ -33,7 +34,7 @@ test("sign up, build, test-run, publish and run a workflow", async ({ page }) =>
 
   await page.getByRole("button", { name: "Publish" }).click();
   await page.getByRole("button", { name: "Turn on", exact: true }).click();
-  await expect(page.getByRole("status")).toHaveText(/Version \d+ is live/);
+  await expect(page.getByRole("status").filter({ hasText: /Version \d+ is live/ })).toBeVisible();
 
   // A live run that takes the false branch, which has no step, so the test makes no outside call.
   await openTestSettings(page);
@@ -56,10 +57,12 @@ test("the step outline works from the keyboard", async ({ page }) => {
   await preview.getByLabel("Name").fill("Keyboard");
   await preview.getByRole("button", { name: "Use this", exact: true }).click();
 
+  await page.getByRole("link", { name: "Edit steps" }).click();
+  await page.getByRole("dialog", { name: "Explain this flow" }).getByRole("button", { name: "Got it" }).click();
   await page.getByRole("button", { name: "List", exact: true }).click();
-  const step = page.getByRole("button", { name: /^is_billing / });
+  const step = page.getByRole("button", { name: /Condition.*is_billing/ });
   await step.focus();
   await page.keyboard.press("Enter");
   await expect(step).toHaveAttribute("aria-pressed", "true");
-  await expect(page.getByRole("heading", { name: "is_billing" })).toBeVisible();
+  await expect(page.getByText(/Step \d+ · is_billing/)).toBeVisible();
 });

@@ -12,9 +12,9 @@ test("an owner connects Calendar with Google, gets the kymavo bookings calendar,
   await page.getByLabel("Email").fill(`google-calendar-${Date.now()}@test.local`);
   await page.getByLabel("Password").fill("e2e test password 1");
   await page.getByRole("button", { name: "Create account" }).click();
-  await expect(page.getByRole("heading", { name: "Automations", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Today", exact: true })).toBeVisible();
 
-  await page.getByRole("link", { name: "Apps" }).first().click();
+  await page.getByRole("link", { name: "Business" }).first().click(); await page.getByRole("navigation", { name: "Business" }).getByRole("link", { name: "Apps", exact: true }).click();
   await page.getByRole("button", { name: "Connect Google Calendar" }).click();
   await expect(page.getByText("Advanced: use a key or token instead")).toBeVisible();
   await expect(page.getByText("use only the calendar kymavo creates")).toBeVisible();

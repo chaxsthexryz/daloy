@@ -15,7 +15,7 @@ test("an owner copies the snippet and a visitor submits it from a second website
   };
   expect((await page.request.post(`/workflows/${workflow.id}/versions`, { data: { definition, publish: true } })).status()).toBe(201);
   await context.grantPermissions(["clipboard-read", "clipboard-write"], { origin: baseURL });
-  await page.goto("/");
+  await page.goto("/#/automations");
   await page.getByRole("button", { name: "Contact us" }).click();
   await page.getByRole("button", { name: "Copy embed code" }).click();
   await expect(page.getByRole("status").filter({ hasText: "Embed code copied" })).toBeVisible();

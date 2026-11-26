@@ -5,8 +5,8 @@ import { joinAs, registerOwner } from "./workspace";
 // and an edit after that shows "not published" without touching the version in use. Same flow at 390 px and desktop,
 // in English and in Taglish.
 const WORDS = {
-  en: { link: "Knowledge", heading: "Knowledge", add: "Add an entry", save: "Save entry", publish: "Publish", live: "Live: version 1", unpublished: "You have changes that are not published.", rules: "1 named rules", empty: "No entries yet. Start with your rooms and your rates." },
-  tl: { link: "Kaalaman", heading: "Kaalaman", add: "Magdagdag ng entry", save: "I-save ang entry", publish: "I-publish", live: "Live: bersyon 1", unpublished: "May mga pagbabago kang hindi pa na-publish.", rules: "1 pinangalanang patakaran sa presyo", empty: "Wala pang entry. Magsimula sa mga kuwarto at rate mo." },
+  en: { link: "Knowledge", page: "Business", heading: "Knowledge", add: "Add an entry", save: "Save entry", publish: "Publish", live: "Live: version 1", unpublished: "You have changes that are not published.", rules: "1 named rules", empty: "No entries yet. Start with your rooms and your rates." },
+  tl: { link: "Kaalaman", page: "Negosyo", heading: "Kaalaman", add: "Magdagdag ng entry", save: "I-save ang entry", publish: "I-publish", live: "Live: bersyon 1", unpublished: "May mga pagbabago kang hindi pa na-publish.", rules: "1 pinangalanang patakaran sa presyo", empty: "Wala pang entry. Magsimula sa mga kuwarto at rate mo." },
 } as const;
 
 async function noSideScroll(page: Page) {
@@ -23,7 +23,8 @@ for (const [viewport, size] of [["390 px", { width: 390, height: 844 }], ["deskt
       if (lang === "tl") expect((await page.request.put("/settings/language", { data: { language: "tl" } })).ok()).toBe(true);
       await page.goto("/#/knowledge");
       await page.reload();
-      await expect(page.getByRole("heading", { name: w.heading, level: 1 })).toBeVisible();
+      await expect(page.getByRole("heading", { name: w.page, level: 1 })).toBeVisible();
+      await expect(page.getByRole("navigation", { name: w.page }).getByRole("link", { name: w.heading, exact: true })).toHaveAttribute("aria-current", "page");
       await expect(page.getByText(w.empty)).toBeVisible();
       await expect(page.getByRole("button", { name: w.publish, exact: true })).toBeDisabled();
 
@@ -45,7 +46,7 @@ for (const [viewport, size] of [["390 px", { width: 390, height: 844 }], ["deskt
       await page.getByRole("button", { name: w.save }).click();
 
       const row = page.getByRole("listitem").filter({ hasText: "Garden room" });
-      await expect(page.locator(".wk-title-row .wk-sub")).toHaveText("1 entry");
+      await expect(page.getByText("1 entry", { exact: true })).toBeVisible();
       await expect(page.getByRole("button", { name: w.add })).not.toHaveClass(/\bblue\b/);
       await expect(row).toContainText(`PHP 3,500`);
       await expect(row).toContainText(w.rules);
@@ -85,7 +86,7 @@ for (const [viewport, size] of [["390 px", { width: 390, height: 844 }], ["deskt
         const operator = await joinAs(browser, page, "Operator", size);
         await operator.goto("/#/knowledge");
         await operator.reload();
-        await expect(operator.getByRole("heading", { name: "Knowledge", level: 1 })).toBeVisible();
+        await expect(operator.getByRole("heading", { name: "Business", level: 1 })).toBeVisible();
         await expect(operator.getByRole("listitem").filter({ hasText: "Garden room" })).toBeVisible();
         const requester = await joinAs(browser, page, "Requester", size);
         expect((await requester.request.get("/knowledge")).status()).toBe(403);

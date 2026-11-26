@@ -11,7 +11,7 @@ test("an owner adds, replaces and deletes a secret and its value never shows", a
   await page.getByLabel("Password").fill(PASSWORD);
   await page.getByRole("button", { name: "Create account" }).click();
 
-  await page.goto("/#/advanced");
+  await page.getByRole("link", { name: "Settings" }).first().click();
   await page.getByRole("link", { name: "Secrets" }).click();
   await expect(page.getByRole("heading", { name: "Secrets", exact: true })).toBeVisible();
 

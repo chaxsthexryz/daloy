@@ -69,7 +69,7 @@ test("a new owner reaches a draft with a sample order in three screens, and runn
   await expect(page.getByText("Nothing is connected, published or sent yet.")).toBeVisible();
   const open = page.getByRole("link", { name: "Open my draft" });
   const draft = await open.getAttribute("href");
-  expect(draft).toMatch(/^#\/w\/[0-9a-f-]{36}$/);
+  expect(draft).toMatch(/^#\/a\/[0-9a-f-]{36}$/);
 
   // The answers survived a reload. Onboarding again shows the same draft, and Edit my answers goes back to screen 1.
   await page.goto("/#/onboarding");
@@ -117,7 +117,7 @@ test("Not now hides the card and #/onboarding still opens", async ({ page }) => 
   await page.getByRole("button", { name: "Not now" }).click();
   await expect(page.getByRole("link", { name: "Start setup" })).toHaveCount(0);
   await page.reload();
-  await expect(page.getByRole("heading", { name: "Automations" }).first()).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Today" }).first()).toBeVisible();
   await expect(page.getByRole("link", { name: "Start setup" })).toHaveCount(0);
   await page.goto("/#/onboarding");
   await expect(page.getByText("Step 1 of 3: Your business")).toBeVisible();

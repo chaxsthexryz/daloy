@@ -14,7 +14,8 @@ test("a beginner previews, sets up, turns on and receives one office request", a
   await page.getByRole("button", { name: "Create account" }).click();
 
   // Preview: worked out in the browser, so nothing is recorded or sent.
-  await page.getByRole("link", { name: "New automation" }).first().click();
+  await page.getByRole("link", { name: "Automations", exact: true }).first().click();
+  await page.getByRole("link", { name: "New", exact: true }).click();
   await page.getByRole("link", { name: "Try the preview" }).click();
   await expect(page.getByRole("heading", { name: "Preview an office request", level: 1 })).toBeVisible();
   await page.getByRole("button", { name: "Try with sample details" }).click();
@@ -70,15 +71,15 @@ test("a beginner previews, sets up, turns on and receives one office request", a
   await tabs.getByRole("link", { name: "Activity" }).click();
   await expect(tabs.getByRole("link", { name: "Activity" })).toHaveAttribute("aria-current", "page");
   await tabs.getByRole("link", { name: "Steps" }).click();
+  await page.getByRole("button", { name: "Diagram", exact: true }).click();
   await expect(page.locator(".react-flow__node").first()).toBeVisible();
   await tabs.getByRole("link", { name: "Overview" }).click();
-  await expect(page.getByRole("status")).toContainText("Accepting requests");
+  await expect(page.getByRole("status").filter({ hasText: "Accepting requests" })).toBeVisible();
 
-  // On a phone, from Home: the bottom bar's Activity, the reference typed in, and its run (three taps).
+  // On a phone, from Home: recent activity search finds the reference and opens its run.
   await page.setViewportSize({ width: 390, height: 800 });
   await page.goto("/#/");
-  await page.getByRole("navigation", { name: "Quick" }).getByRole("link", { name: "Activity" }).click();
-  await page.getByLabel("Find a request or automation").fill(reference);
+  await page.getByLabel("Search recent runs").fill(reference);
   const found = page.locator("tbody tr");
   await expect(found).toHaveCount(1);
   await expect(found).toContainText(reference);

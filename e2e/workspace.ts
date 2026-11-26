@@ -8,7 +8,15 @@ export async function registerOwner(page: Page) {
   await page.getByLabel("Email").fill(`owner-${Date.now()}@test.local`);
   await page.getByLabel("Password").fill(PASSWORD);
   await page.getByRole("button", { name: "Create account" }).click();
-  await expect(page.getByRole("heading", { name: "Automations", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Today", exact: true })).toBeVisible();
+}
+
+export async function signIn(page: Page, email: string, password = PASSWORD) {
+  await page.goto("/");
+  await page.getByLabel("Email").fill(email);
+  await page.getByLabel("Password").fill(password);
+  await page.getByRole("button", { name: "Sign in" }).click();
+  await expect(page.getByRole("heading", { name: "Today", exact: true })).toBeVisible();
 }
 
 /** Invites someone as `role` from the owner's Team page and returns a page signed in as them. */

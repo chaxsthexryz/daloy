@@ -1,11 +1,11 @@
 import { expect, test } from "@playwright/test";
-import { registerOwner } from "./workspace";
+import { signIn } from "./workspace";
 
 // W8: a scoped, expiring token is shown once with a Copy button, labelled by status, and revoked in a dialog.
 // The value is synthetic (the API makes it) and never comes back from the list.
 test("API tokens: create, copy once, list and revoke", async ({ page, context }) => {
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
-  await registerOwner(page);
+  await signIn(page, "e2e-admin-tokens@test.local");
   await page.goto("/#/tokens");
   await page.reload();
   await expect(page.getByRole("heading", { name: "API tokens", level: 1 })).toBeVisible();

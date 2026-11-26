@@ -15,7 +15,7 @@ test("an owner connects Sheets and Slack, and retries only the Slack note that f
   await page.getByRole("button", { name: "Create account" }).click();
 
   // Connections on the Apps page: each card opens its own setup.
-  await page.getByRole("link", { name: "Apps" }).first().click();
+  await page.getByRole("link", { name: "Business" }).first().click(); await page.getByRole("navigation", { name: "Business" }).getByRole("link", { name: "Apps", exact: true }).click();
   await page.getByRole("button", { name: "Connect Google Sheets" }).click();
   // Google sign-in is the main option in e2e (decision 0060); the service account form is under Advanced.
   await page.getByText("Advanced: use a key or token instead").click();
@@ -43,7 +43,7 @@ test("an owner connects Sheets and Slack, and retries only the Slack note that f
   await expect(page.getByText(/Slack accepted a test message/)).toBeVisible();
 
   // An office request that also goes to both.
-  await page.getByRole("link", { name: "Library", exact: true }).first().click();
+  await page.getByRole("link", { name: "Automations", exact: true }).first().click(); await page.getByRole("link", { name: "New", exact: true }).first().click();
   await page.getByRole("link", { name: "Try the preview" }).click();
   await page.getByRole("button", { name: "Use this template" }).click();
   await page.getByRole("button", { name: "Next" }).click();

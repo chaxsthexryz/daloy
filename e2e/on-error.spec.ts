@@ -8,7 +8,7 @@ test("a step set to skip on failure is skipped in a mocked failing test run and 
   await page.getByLabel("Email").fill(`t3-${Date.now()}@test.local`);
   await page.getByLabel("Password").fill("e2e test password 1");
   await page.getByRole("button", { name: "Create account" }).click();
-  await expect(page.getByRole("heading", { name: "Automations", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Today", exact: true })).toBeVisible();
   const wf = await (await page.request.post("/workflows", { data: { name: "Skip on failure", slug: `t3-${Date.now()}` } })).json();
   const mail = (to: string) => ({ to, subject: "Hello", text: "Hi" });
   const definition = {
@@ -23,6 +23,9 @@ test("a step set to skip on failure is skipped in a mocked failing test run and 
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto(`/#/w/${wf.id}`);
   await expect(page.getByRole("heading", { name: "Skip on failure", level: 1 })).toBeVisible();
+  const explain = page.getByRole("dialog", { name: "Explain this flow" });
+  if (await explain.isVisible()) await explain.getByRole("button", { name: "Got it" }).click();
+  await page.getByRole("button", { name: "Diagram", exact: true }).click();
 
   await page.locator('.react-flow__node[data-id="first_mail"]').click();
   const policy = page.getByLabel("If this step fails");

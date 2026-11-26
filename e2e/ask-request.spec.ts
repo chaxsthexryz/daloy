@@ -11,7 +11,8 @@ test("an owner asks why a request stopped and only reads, nothing in the card ch
   await page.getByLabel("Password").fill("e2e test password 1");
   await page.getByRole("button", { name: "Create account" }).click();
 
-  await page.getByRole("link", { name: "Apps" }).first().click();
+  await page.getByRole("link", { name: "Business" }).first().click();
+  await page.getByRole("navigation", { name: "Business" }).getByRole("link", { name: "Apps", exact: true }).click();
   await page.getByRole("button", { name: "Connect Slack" }).click();
   // This installation has a Slack app (decision 0061), so the pasted token is under Advanced.
   await page.getByText("Advanced: use your own Slack app token").click();
@@ -22,7 +23,8 @@ test("an owner asks why a request stopped and only reads, nothing in the card ch
   await page.getByRole("button", { name: "Save channel" }).click();
   await expect(page.getByText("Notes go to #office-requests.")).toBeVisible();
 
-  await page.getByRole("link", { name: "Library", exact: true }).first().click();
+  await page.getByRole("link", { name: "Automations", exact: true }).first().click();
+  await page.getByRole("link", { name: "New", exact: true }).click();
   await page.getByRole("link", { name: "Try the preview" }).click();
   await page.getByRole("button", { name: "Use this template" }).click();
   await page.getByRole("button", { name: "Next" }).click();
@@ -68,18 +70,17 @@ test("an owner asks why a request stopped and only reads, nothing in the card ch
     await expect(answer.locator(".act-headline")).not.toHaveText("");
     await expect(card.getByRole("button", { name: /^(Retry|Approve|Send again|Post again|Mark as posted)/ })).toHaveCount(0);
 
-    // From Workspace activity's head button: pick a recent request or type the reference, and check sidebar highlights.
+    // From Workspace activity's inline Ask helper: pick a recent request or type the reference, and check sidebar highlights.
     await page.goto("/#/apps");
-    await expect(page.locator('#main-menu a[aria-current="page"]')).toHaveAttribute("href", "#/apps");
+    await expect(page.locator('#main-menu a[aria-current="page"]')).toHaveAttribute("href", "#/business");
     await page.goto("/#/account");
     await expect(page.locator('#main-menu a[aria-current="page"]')).toHaveAttribute("href", "#/account");
     await page.goto(`/#/runs/${runAskUrl.split("/runs/")[1]!.replace("/ask", "")}`);
-    await expect(page.locator('#main-menu a[aria-current="page"]')).toHaveAttribute("href", "#/activity");
+    await expect(page.locator('#main-menu a[aria-current="page"]')).toHaveAttribute("href", "#/automations");
 
     await page.goto("/#/activity");
-    await page.getByRole("link", { name: "Ask about a request" }).click();
-    await expect(page).toHaveURL(/#\/activity\/ask$/);
-    await expect(page.locator('#main-menu a[aria-current="page"]')).toHaveAttribute("href", "#/activity");
+    await page.getByRole("button", { name: "Ask about a request" }).click();
+    await expect(page.locator('#main-menu a[aria-current="page"]')).toHaveAttribute("href", "#/automations");
     await expect(page.getByLabel("Request reference")).toHaveAttribute("placeholder", "e.g. REQ-2026-0001");
     await page.getByRole("list", { name: "Recent requests" }).getByRole("button", { name: new RegExp(reference) }).click();
     await expect(answer.locator(".act-headline")).not.toHaveText("");

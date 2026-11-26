@@ -8,7 +8,7 @@ test("a large photo is resized to 2000 px and re-encoded as a JPEG before upload
   await page.getByLabel("Email").fill(`squeeze-${Date.now()}@test.local`);
   await page.getByLabel("Password").fill("e2e test password 1");
   await page.getByRole("button", { name: "Create account" }).click();
-  await expect(page.getByRole("heading", { name: "Automations", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Today", exact: true })).toBeVisible();
 
   const wf = await (await page.request.post("/workflows", { data: { name: "Photo intake", slug: `photo-${Date.now()}` } })).json();
   const definition = {

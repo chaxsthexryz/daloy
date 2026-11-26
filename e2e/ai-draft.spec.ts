@@ -13,6 +13,8 @@ async function buildDraft(page: Page, prefix: string, description: string, revie
   await page.getByRole("button", { name: "Send", exact: true }).click();
   await expect(page.getByRole("heading", { name: `Check the draft: ${review}` })).toBeVisible();
   await page.getByRole("button", { name: "Save as draft" }).click();
+  await page.getByRole("link", { name: "Edit steps" }).click();
+  await page.getByRole("dialog", { name: "Explain this flow" }).getByRole("button", { name: "Got it" }).click();
 }
 
 test("describe a workflow, save the draft, then ask the AI to change it", async ({ page }) => {
@@ -20,6 +22,7 @@ test("describe a workflow, save the draft, then ask the AI to change it", async 
 
   // The editor opens on the draft: trigger plus one step, nothing published yet.
   await expect(page.getByRole("heading", { name: "Contact thanks" })).toBeVisible();
+  await page.getByRole("button", { name: "Diagram", exact: true }).click();
   await expect(page.locator(".react-flow__node")).toHaveCount(2);
   await expect(page.getByLabel("Conversation with the AI")).toContainText("Thanks everyone who fills the contact form.");
   await expect(page.getByText("Version 1, draft")).toBeVisible();

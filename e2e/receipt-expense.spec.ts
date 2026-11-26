@@ -13,7 +13,7 @@ async function signUp(page: Page, prefix: string) {
   await page.getByLabel("Email").fill(`${prefix}-${Date.now()}@test.local`);
   await page.getByLabel("Password").fill("e2e test password 1");
   await page.getByRole("button", { name: "Create account" }).click();
-  await expect(page.getByRole("heading", { name: "Automations", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Today", exact: true })).toBeVisible();
 }
 
 const formId = async (page: Page, id: string) => ((await (await page.request.get(`/workflows/${id}`)).json()) as { trigger: { id: string } }).trigger.id;
@@ -21,7 +21,7 @@ const formId = async (page: Page, id: string) => ((await (await page.request.get
 test("the receipt template sends the photo to the model, which fills the approval", async ({ page }) => {
   page.on("dialog", (d) => void d.accept());
   await signUp(page, "receipt");
-  await page.getByRole("link", { name: "Apps" }).first().click();
+  await page.getByRole("link", { name: "Business" }).first().click(); await page.getByRole("navigation", { name: "Business" }).getByRole("link", { name: "Apps", exact: true }).click();
   await page.getByRole("button", { name: "Connect Google Drive" }).click();
   // Google sign-in is the main option in e2e (decision 0060); the service account form is under Advanced.
   await page.getByText("Advanced: use a key or token instead").click();
@@ -40,9 +40,11 @@ test("the receipt template sends the photo to the model, which fills the approva
 
   await page.goto("/#/new");
   await page.getByRole("button", { name: "Use this: Receipt to expense row" }).click();
+  await page.getByRole("link", { name: "Edit steps" }).click();
+  await page.getByRole("dialog", { name: "Explain this flow" }).getByRole("button", { name: "Got it" }).click();
   await page.getByRole("button", { name: "Publish" }).click();
   await page.getByRole("button", { name: "Turn on", exact: true }).click();
-  await expect(page.getByRole("status")).toHaveText(/Version \d+ is live/);
+  await expect(page.getByRole("status").filter({ hasText: /Version \d+ is live/ })).toBeVisible();
   const id = page.url().split("#/w/")[1]!.split("/")[0]!;
 
   await page.goto(`/forms/${await formId(page, id)}`);

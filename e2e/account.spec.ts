@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import { expect, test, type Page } from "@playwright/test";
+import { signIn as signInAdmin } from "./workspace";
 
 const OLD = "e2e test password 1";
 const NEW = "e2e brand new password 2";
@@ -25,7 +26,7 @@ async function register(page: Page, email: string) {
   await page.getByLabel("Email").fill(email);
   await page.getByLabel("Password").fill(OLD);
   await page.getByRole("button", { name: "Create account" }).click();
-  await expect(page.getByRole("heading", { name: "Automations", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Today", exact: true })).toBeVisible();
 }
 
 async function signIn(page: Page, email: string, password: string) {
@@ -57,7 +58,7 @@ test("forgot password: the emailed link sets a new password and the old one stop
   await signIn(page, email, OLD);
   await expect(page.getByRole("alert")).not.toBeEmpty();
   await signIn(page, email, NEW);
-  await expect(page.getByRole("heading", { name: "Automations", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Today", exact: true })).toBeVisible();
 });
 
 test("change password from the account page, then sign in with the new one", async ({ page }) => {
@@ -75,7 +76,7 @@ test("change password from the account page, then sign in with the new one", asy
 });
 
 test("a read-only token shows its scope and expiry and only reaches the read tools", async ({ page }) => {
-  await register(page, `scopes-${Date.now()}@test.local`);
+  await signInAdmin(page, "e2e-admin-account@test.local");
   // A published form workflow would be a tool for a token with the "run" scope; this one must not see it.
   const wf = await (await page.request.post("/workflows", { data: { name: "Contact form", slug: `contact-${Date.now()}` } })).json();
   const definition = {

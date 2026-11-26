@@ -20,9 +20,9 @@ test("an owner connects Sheets with Google, creates and picks sheets, adds a tes
   await page.getByLabel("Email").fill(`google-${Date.now()}@test.local`);
   await page.getByLabel("Password").fill("e2e test password 1");
   await page.getByRole("button", { name: "Create account" }).click();
-  await expect(page.getByRole("heading", { name: "Automations", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Today", exact: true })).toBeVisible();
 
-  await page.getByRole("link", { name: "Apps" }).first().click();
+  await page.getByRole("link", { name: "Business" }).first().click(); await page.getByRole("navigation", { name: "Business" }).getByRole("link", { name: "Apps", exact: true }).click();
   await page.getByRole("button", { name: "Connect Google Sheets" }).click();
   await expect(page.getByText("Advanced: use a key or token instead")).toBeVisible();
   // The fake consent page answers at once and sends the browser back through the shared callback.
@@ -67,9 +67,9 @@ test("an owner connects Drive with Google and lets kymavo create its uploads fol
   await page.getByLabel("Email").fill(`google-drive-${Date.now()}@test.local`);
   await page.getByLabel("Password").fill("e2e test password 1");
   await page.getByRole("button", { name: "Create account" }).click();
-  await expect(page.getByRole("heading", { name: "Automations", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Today", exact: true })).toBeVisible();
 
-  await page.getByRole("link", { name: "Apps" }).first().click();
+  await page.getByRole("link", { name: "Business" }).first().click(); await page.getByRole("navigation", { name: "Business" }).getByRole("link", { name: "Apps", exact: true }).click();
   await page.getByRole("button", { name: "Connect Google Drive" }).click();
   await page.getByRole("button", { name: "Connect with Google" }).click();
   await expect(page.getByText("Google Drive is connected.")).toBeVisible();

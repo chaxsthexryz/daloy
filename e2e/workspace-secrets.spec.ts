@@ -9,7 +9,8 @@ test("Secrets: add, replace, delete, and the value never shows", async ({ page }
   await registerOwner(page);
   await page.goto("/#/apps");
   await expect(page.getByText("SMS (UniSMS) is managed by the kymavo operator")).toBeVisible();
-  await page.getByRole("link", { name: "Open Secrets" }).click();
+  await page.getByRole("link", { name: "Settings", exact: true }).click();
+  await page.getByRole("link", { name: "Secrets", exact: true }).click();
   await expect(page).toHaveURL(/#\/secrets$/);
   await page.reload();
   await expect(page.getByRole("heading", { name: "Secrets", level: 1 })).toBeVisible();

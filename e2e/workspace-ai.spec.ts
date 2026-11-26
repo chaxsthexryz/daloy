@@ -1,10 +1,10 @@
 import { expect, test } from "@playwright/test";
-import { registerOwner } from "./workspace";
+import { signIn } from "./workspace";
 
 // W6: Save and test against the fake local model shows Working with the label it returned; a model the fake refuses
 // shows Not working with the error and what to do next. Nothing leaves the machine, and a saved key stays masked.
 test("AI model: a passing test, a failing test and a masked key", async ({ page }) => {
-  await registerOwner(page);
+  await signIn(page, "e2e-admin-ai@test.local");
   await page.goto("/#/settings/ai");
   await page.reload();
   await expect(page.getByRole("heading", { name: "AI model", level: 1 })).toBeVisible();
@@ -13,7 +13,7 @@ test("AI model: a passing test, a failing test and a masked key", async ({ page 
 
   await page.getByLabel("Model name", { exact: true }).selectOption("fake-model");
   await page.getByRole("button", { name: "Save and test" }).click();
-  await expect(page.getByRole("status").filter({ hasText: "Saved. Your workflows now use Local model, model fake-model." })).toBeVisible();
+  await expect(page.getByRole("status").filter({ hasText: "Saved. Your automations now use Local model, model fake-model." })).toBeVisible();
   const result = page.getByRole("region", { name: "Test result" });
   await expect(result.getByText("Working", { exact: true })).toBeVisible();
   await expect(result).toContainText("fake-model classified it as billing");
@@ -25,7 +25,7 @@ test("AI model: a passing test, a failing test and a masked key", async ({ page 
   await page.getByRole("button", { name: "Save and test" }).click();
   await expect(result.getByText("Not working", { exact: true })).toBeVisible();
   await expect(result).toContainText("Not working with fake-broken");
-  await expect(result).toContainText("Your workflows keep using this setting until it works");
+  await expect(result).toContainText("Your automations keep using this setting until it works");
   await expect(page.locator(".in-use")).toContainText("model fake-broken");
 
   // Phone: the provider notes fold away, the actions stack, and the same radios still work.

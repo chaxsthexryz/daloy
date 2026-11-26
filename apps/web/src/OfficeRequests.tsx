@@ -69,7 +69,7 @@ async function createOrResume(slug: string, setup: Start) {
   throw new Error("Rename one of your automations of this kind and try again.");
 }
 
-const back = <a href="#/"><Text>Automations</Text></a>;
+const back = <a href="#/automations"><Text>Automations</Text></a>;
 
 /** The sample run with no side effects: everything below is worked out in the browser (Doop frame TXcO7tiI-c). */
 export function TryOfficeRequest({ email }: { email: string }) {
@@ -322,7 +322,7 @@ function useWizard<S extends string, A extends { name: string }>(wf: Detail, ste
     if (busy) return;
     setBusy(true);
     try {
-      if (await save(step)) location.hash = "#/";
+      if (await save(step)) location.hash = "#/automations";
     } finally {
       setBusy(false);
     }
@@ -338,7 +338,7 @@ function useWizard<S extends string, A extends { name: string }>(wf: Detail, ste
       <main className="page ops gp motion-page">
         <header className="ops-head">
           <div className="gp-title">
-            <Breadcrumb items={[{ label: t("Automations"), href: "#/" }, { label: wf.name }]} />
+            <Breadcrumb items={[{ label: t("Automations"), href: "#/automations" }, { label: wf.name }]} />
             <h1>{wf.name}</h1>
           </div>
           <span className="gp-tag"><Text>Draft</Text></span>
@@ -670,7 +670,7 @@ function LivePage({ wf, formId }: { wf: Detail; formId: string }) {
     <main className="page ops gp gp-live motion-page">
       <header className="ops-head">
         <div className="gp-title">
-          <Breadcrumb items={[{ label: t("Automations"), href: "#/" }, { label: wf.name }]} />
+          <Breadcrumb items={[{ label: t("Automations"), href: "#/automations" }, { label: wf.name }]} />
           <h1>{wf.name}</h1>
         </div>
         <p role="status" className="gp-status">

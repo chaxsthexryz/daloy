@@ -9,7 +9,7 @@ async function signUp(page: Page, label: string) {
   await page.getByLabel("Email").fill(`${label}-${Date.now()}@test.local`);
   await page.getByLabel("Password").fill("e2e test password 1");
   await page.getByRole("button", { name: "Create account" }).click();
-  await expect(page.getByRole("heading", { name: "Automations", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Today", exact: true })).toBeVisible();
 }
 
 test("pausing stops a signed webhook, resuming starts it again, and a waiting run can be cancelled", async ({ page, request }) => {
@@ -35,8 +35,8 @@ test("pausing stops a signed webhook, resuming starts it again, and a waiting ru
   expect(first.status()).toBe(202);
   const runId = (await first.json()).runId as string;
 
-  // Pause from Home.
-  await page.reload();
+  // Pause from Automations.
+  await page.goto("/#/automations");
   await page.getByRole("row", { name: /Nightly sync/ }).getByRole("button", { name: "Nightly sync" }).click();
   const card = page.getByRole("complementary", { name: "Nightly sync" });
   await card.getByRole("button", { name: "Pause" }).click();

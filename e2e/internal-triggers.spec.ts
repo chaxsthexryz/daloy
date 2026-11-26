@@ -7,7 +7,7 @@ test("booking cancellation triggers a booking_event automation and call_workflow
   await page.getByLabel("Email").fill(`g1-${Date.now()}@test.local`);
   await page.getByLabel("Password").fill("e2e test password 1");
   await page.getByRole("button", { name: "Create account" }).click();
-  await expect(page.getByRole("heading", { name: "Automations", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Today", exact: true })).toBeVisible();
 
   const room = await (await page.request.post("/resources", { data: { name: "Cabana 1" } })).json();
   const year = new Date().getUTCFullYear() + 1;

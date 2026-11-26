@@ -17,9 +17,9 @@ test("an owner sets up a new-row trigger on a Google Sheet tab, and only rows ad
   await page.getByLabel("Email").fill(`g2-${Date.now()}@test.local`);
   await page.getByLabel("Password").fill("e2e test password 1");
   await page.getByRole("button", { name: "Create account" }).click();
-  await expect(page.getByRole("heading", { name: "Automations", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Today", exact: true })).toBeVisible();
 
-  await page.getByRole("link", { name: "Apps" }).first().click();
+  await page.getByRole("link", { name: "Business" }).first().click(); await page.getByRole("navigation", { name: "Business" }).getByRole("link", { name: "Apps", exact: true }).click();
   await page.getByRole("button", { name: "Connect Google Sheets" }).click();
   await page.getByRole("button", { name: "Connect with Google" }).click();
   await expect(page.getByText("Google Sheets is connected.")).toBeVisible();

@@ -8,7 +8,7 @@ test("answer a run that needs review with It went through", async ({ page }) => 
   await page.getByLabel("Email").fill(`review-${Date.now()}@test.local`);
   await page.getByLabel("Password").fill("e2e test password 1");
   await page.getByRole("button", { name: "Create account" }).click();
-  await expect(page.getByRole("heading", { name: "Automations", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Today", exact: true })).toBeVisible();
 
   // The builder is covered by main-flow.spec.ts; here the workflow and test run come from the API with the console session.
   const wf = await (await page.request.post("/workflows", { data: { name: "Orders", slug: `orders-${Date.now()}` } })).json();

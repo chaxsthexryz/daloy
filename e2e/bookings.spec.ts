@@ -8,7 +8,7 @@ test("staff reschedule and cancel a booking on the Bookings page", async ({ page
   await page.getByLabel("Email").fill(`desk-${Date.now()}@test.local`);
   await page.getByLabel("Password").fill("e2e test password 1");
   await page.getByRole("button", { name: "Create account" }).click();
-  await expect(page.getByRole("heading", { name: "Automations", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Today", exact: true })).toBeVisible();
 
   const ana = await (await page.request.post("/resources", { data: { name: "Ana" } })).json();
   const wf = await (await page.request.post("/workflows", { data: { name: "Spa", slug: `spa-${Date.now()}` } })).json();
@@ -31,7 +31,7 @@ test("staff reschedule and cancel a booking on the Bookings page", async ({ page
   // The worker books it in the background.
   await expect.poll(async () => (await (await page.request.get("/bookings")).json()).length, { timeout: 20_000 }).toBe(1);
   await page.getByRole("link", { name: "Bookings" }).click();
-  await expect(page.getByRole("link", { name: "Manage rooms and resources" })).toHaveAttribute("href", "#/resources");
+  await expect(page.getByRole("navigation", { name: "Bookings" }).getByRole("link", { name: "Rooms and slots", exact: true })).toHaveAttribute("href", "#/bookings?tab=rooms");
   // O4 day agenda: the booking is listed under its day, and the selected booking card holds its actions.
   const item = page.getByRole("region", { name: "Day agenda" }).getByRole("button", { name: /Ana/ });
   await expect(item).toContainText("2:00 PM");
@@ -63,8 +63,9 @@ test("staff reschedule and cancel a booking on the Bookings page", async ({ page
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 
   await page.setViewportSize({ width: 1280, height: 800 });
-  await page.getByRole("link", { name: "Manage rooms and resources" }).click();
-  await expect(page).toHaveURL(/#\/resources$/);
-  await expect(page.getByRole("heading", { name: "Resources", level: 1 })).toBeVisible();
+  await page.getByRole("navigation", { name: "Bookings" }).getByRole("link", { name: "Rooms and slots", exact: true }).click();
+  await expect(page).toHaveURL(/#\/bookings\?tab=rooms$/);
+  await expect(page.getByRole("heading", { name: "Bookings", level: 1 })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Add a resource" })).toBeVisible();
   await expect(page.getByText("Add a field of type resource")).toHaveCount(0);
 });

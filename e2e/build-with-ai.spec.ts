@@ -8,7 +8,7 @@ async function signUp(page: Page) {
   await page.getByLabel("Email").fill(email);
   await page.getByLabel("Password").fill("e2e test password 1");
   await page.getByRole("button", { name: "Create account" }).click();
-  await expect(page.getByRole("heading", { name: "Automations", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Today", exact: true })).toBeVisible();
   return email;
 }
 
@@ -22,7 +22,7 @@ async function summaryThenTurnOn(page: Page, before: number) {
   await expect(page).toHaveURL(/#\/ai$/);
   expect(await count(page)).toBe(before);
   await page.getByRole("button", { name: "Turn it on", exact: true }).click();
-  await expect(page).toHaveURL(/#\/w\/[^/]+$/);
+  await expect(page).toHaveURL(/#\/a\/[^/]+$/);
 }
 
 /** Opens #/ai, sends the first message, and records every chat call and every workflow write. */
@@ -36,7 +36,8 @@ async function start(page: Page, message: string) {
     if (path === "/workflows") posts.push(path);
   });
   await page.goto("/#/ai");
-  await expect(page.getByRole("heading", { name: "Build with AI", level: 1 })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "New automation", level: 1 })).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "Create automation" }).getByRole("link", { name: "Build with AI" })).toHaveAttribute("aria-current", "page");
   await page.getByLabel("What should happen?").fill(message);
   await page.getByRole("button", { name: "Send", exact: true }).click();
   return { chats, posts };
@@ -54,7 +55,7 @@ test("asks a question with chips, then waits for Turn it on", async ({ page }) =
 
   // A clean draft still waits: the summary card shows, nothing is created, until the owner presses Turn it on.
   await summaryThenTurnOn(page, before);
-  await expect(page.getByText("Version 1 (live)")).toBeVisible();
+  await expect(page.getByText("Running", { exact: true })).toBeVisible();
   expect(await count(page)).toBe(before + 1);
 
   // The first message carries the words and the connected app kinds, and never the real address.
@@ -151,15 +152,15 @@ test("with no model the template suggestion matches by keyword, hides premature 
   await expect(page.getByRole("link", { name: "Back to Automations" })).toHaveAttribute("href", "#/");
 });
 
-test("owners see Build with AI in the menu, and an AI link in the phone bottom bar", async ({ page }) => {
+test("owners see Build with AI inside the New picker on desktop and mobile", async ({ page }) => {
   await signUp(page);
   await page.setViewportSize({ width: 1280, height: 800 });
-  await expect(page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Build with AI" })).toHaveAttribute("href", "#/ai");
+  await page.goto("/#/new");
+  await expect(page.getByRole("link", { name: "Build with AI", exact: true })).toHaveAttribute("href", "#/ai");
   await page.setViewportSize({ width: 375, height: 812 });
-  const ai = page.getByRole("navigation", { name: "Quick" }).getByRole("link", { name: "AI", exact: true });
-  await expect(ai).toHaveAttribute("href", "#/ai");
-  await ai.click();
-  await expect(page.getByRole("heading", { name: "Build with AI", level: 1 })).toBeVisible();
+  await page.getByRole("link", { name: "Build with AI", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "New automation", level: 1 })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Build with AI", exact: true })).toHaveAttribute("aria-current", "page");
 });
 
 test("Enter sends, Shift+Enter is a newline", async ({ page }) => {

@@ -22,7 +22,7 @@ test("a purchase request goes from the form to the named approver, then to purch
   await page.getByRole("button", { name: "Create account" }).click();
 
   // The approver joins the workspace.
-  await page.getByRole("link", { name: "Team" }).click();
+  await page.getByRole("link", { name: "Business" }).first().click(); await page.getByRole("navigation", { name: "Business" }).getByRole("link", { name: "Team", exact: true }).click();
   await page.getByLabel("Email").fill(approver);
   await page.getByRole("button", { name: "Create invite link" }).click();
   const invite = (await page.getByLabel("Invite link").textContent())!.trim();
@@ -36,7 +36,7 @@ test("a purchase request goes from the form to the named approver, then to purch
 
   // Outlook: the administrator requirement is shown before leaving kymavo, and a blocked consent comes back explained.
   await page.getByRole("link", { name: "Automations" }).click();
-  await page.getByRole("link", { name: "Apps" }).first().click();
+  await page.getByRole("link", { name: "Business" }).first().click(); await page.getByRole("navigation", { name: "Business" }).getByRole("link", { name: "Apps", exact: true }).click();
   await page.getByRole("button", { name: "Connect Outlook" }).click();
   const panel = (name: string) => page.locator(".connection").filter({ has: page.getByRole("heading", { name, exact: true }) });
   const outlook = panel("Outlook");
@@ -61,7 +61,7 @@ test("a purchase request goes from the form to the named approver, then to purch
   await expect(page.getByText(/Teams accepted the test message/)).toBeVisible();
 
   // Guided setup: the approver, purchasing, Outlook and Teams.
-  await page.getByRole("link", { name: "Library", exact: true }).first().click();
+  await page.getByRole("link", { name: "Automations", exact: true }).first().click(); await page.getByRole("link", { name: "New", exact: true }).first().click();
   await page.getByRole("button", { name: "Use this: Purchase request with approval" }).click();
   await page.getByRole("button", { name: "Next" }).click();
   await expect(page.getByLabel("Who approves purchases")).toBeVisible();

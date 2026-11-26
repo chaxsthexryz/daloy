@@ -9,6 +9,7 @@ import { AskPage, AskRunPage } from "./AskRequest";
 import { AdvancedPage } from "./Advanced";
 import { AdminPage } from "./Admin";
 import { Automations } from "./Automations";
+import { HomePage } from "./Home";
 import { NewAutomationPage } from "./NewAutomation";
 import { OfficeRequestPage, TryOfficeRequest } from "./OfficeRequests";
 import { BookingsPage } from "./Bookings";
@@ -157,11 +158,12 @@ function Route({ hash, user }: { hash: string; user: User }) {
   if (path === "#/conversations" && (user.role === "owner" || user.role === "operator")) return <ConversationsPage user={user} />;
   if (path === "#/knowledge" && (user.role === "owner" || user.role === "operator")) return <BusinessPage user={user} initialTab="knowledge" />;
   if (path === "#/receipts" && (user.role === "owner" || user.role === "operator")) return <ReceiptsPage user={user} />;
+  if (path === "#/" || path === "#" || path === "") return <HomePage user={user} />;
   if (path === "#/automations" && user.role === "owner") return <Automations user={user} />;
   const verify = /^#\/verify-sender\/([A-Za-z0-9_-]{43})$/.exec(path);
   if (verify) return <VerifySenderPage key={verify[1]} token={verify[1]!} />;
-  if (path === "" || path === "#" || path === "#/" || /^#\/(signup|automations|inbox|business|advanced|new|ai|secrets|tokens|onboarding|team|resources|bookings|conversations|knowledge|receipts|activity|activity\/ask)$/.test(path)) {
-    return <Automations user={user} />;
+  if (/^#\/(signup|automations|inbox|business|advanced|new|ai|secrets|tokens|onboarding|team|resources|bookings|conversations|knowledge|receipts|activity|activity\/ask)$/.test(path)) {
+    return <HomePage user={user} />;
   }
   return <NotFoundPage />;
 }

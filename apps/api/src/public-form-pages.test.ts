@@ -36,15 +36,16 @@ afterAll(async () => {
 
 const HTML = "text/html,application/xhtml+xml,*/*;q=0.8";
 let seq = 0;
-async function owner(fields: unknown[], tracked = false) {
+async function owner(fields: unknown[], tracked = false, withResource = false) {
   const agent = request.agent(server);
   const reg = await agent.post("/auth/register").send({ email: `pub${++seq}@test.local`, password: "correct horse battery" }).expect(201);
+  const room = withResource ? ((await agent.post("/resources").send({ name: "Tasting room" }).expect(201)).body.id as string) : "";
   const wf = await agent.post("/workflows").send({ name: "Requests", slug: `req-${seq}` }).expect(201);
   const definition = { trigger: { type: "form", config: { fields } }, steps: [{ id: "a", type: "delay", config: { seconds: 1 } }], edges: [] };
   await agent.post(`/workflows/${wf.body.id}/versions`).send({ definition, publish: true }).expect(201);
   if (tracked) await db.update(workflows).set({ setup: { template: "office-request" } }).where(eq(workflows.id, wf.body.id));
   const formId = (await agent.get(`/workflows/${wf.body.id}`).expect(200)).body.trigger.id as string;
-  return { agent, formId, workflowId: wf.body.id as string, id: reg.body.id as string };
+  return { agent, formId, workflowId: wf.body.id as string, id: reg.body.id as string, room };
 }
 
 const fields = [
@@ -131,11 +132,11 @@ describe("booking form", () => {
     { name: "at", label: "Date and time", type: "datetime", required: true, timezone: "Asia/Manila", slotMinutes: 60 },
   ];
   async function bookable() {
-    const o = await owner(bookingFields);
-    const room = (await o.agent.post("/resources").send({ name: "Tasting room" }).expect(201)).body.id as string;
+    const o = await owner(bookingFields, false, true);
+    const room = o.room;
     // 10:00 to 11:00 in Manila on 20 January is 02:00 to 03:00 UTC.
     await db.execute(sql`insert into bookings (user_id, test, reference, resource_id, during, timezone) values (${o.id}, false, 'BK-E9TEST', ${room}, tstzrange(${`${year}-01-20T02:00:00Z`}::timestamptz, ${`${year}-01-20T03:00:00Z`}::timestamptz, '[)'), 'Asia/Manila')`);
-    return { ...o, room };
+    return o;
   }
 
   it("adds the open times area and its script only to a form with a resource and a slot grid", async () => {

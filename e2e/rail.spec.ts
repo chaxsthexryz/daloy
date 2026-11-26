@@ -9,7 +9,7 @@ async function signUp(page: Page) {
   await page.getByLabel("Email").fill(`rail-${Date.now()}@test.local`);
   await page.getByLabel("Password").fill("e2e test password 1");
   await page.getByRole("button", { name: "Create account" }).click();
-  await expect(page.getByRole("heading", { name: "Automations", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Today", exact: true })).toBeVisible();
 }
 
 test("the desktop sidebar stays permanently at 228 px without collapsing, and Quick jump navigates with Cmd/Ctrl+K", async ({ page }) => {
@@ -21,8 +21,8 @@ test("the desktop sidebar stays permanently at 228 px without collapsing, and Qu
   await rail.hover();
   await expect(rail).toHaveCSS("width", "228px");
   await expect(rail).not.toHaveAttribute("data-expanded", /.*/);
-  const library = page.getByRole("link", { name: "Library", exact: true });
-  await expect(library).toHaveAttribute("href", "#/new");
+  const business = rail.getByRole("link", { name: "Business", exact: true });
+  await expect(business).toHaveAttribute("href", "#/business");
   await expect(rail.getByRole("button", { name: "Sign out" })).toBeVisible();
   await expect(page.getByRole("link", { name: "New automation", exact: true }).first()).toHaveAttribute("href", "#/new");
 
@@ -41,7 +41,7 @@ test("reduced motion disables transitions on the sidebar hover pill", async ({ p
   const rail = page.locator("aside.sidebar");
   await expect(rail).toHaveCSS("width", "228px");
   await expect(rail.locator(".rail-hover-pill")).toHaveCSS("transition-duration", "0s");
-  await expect(rail.getByRole("link", { name: "Library", exact: true })).toBeVisible();
+  await expect(rail.getByRole("link", { name: "Business", exact: true })).toBeVisible();
 });
 
 const withUsage = (page: Page, limit: number | null) => page.route("**/usage", (route) => route.fulfill({ json: {
@@ -87,7 +87,7 @@ test("textareas use Geist with tabular figures", async ({ page }) => {
   expect(await textarea.evaluate((el) => getComputedStyle(el).fontVariantNumeric)).toContain("tabular-nums");
 });
 
-test("the ? Help and support menu in the sidebar footer opens setup and usage shortcuts and closes on Escape", async ({ page }) => {
+test("the ? Help and support menu in the sidebar footer opens setup shortcut and closes on Escape", async ({ page }) => {
   await signUp(page);
   const rail = page.locator("aside.sidebar");
   const helpBtn = rail.getByRole("button", { name: "Help and support" });
@@ -95,7 +95,6 @@ test("the ? Help and support menu in the sidebar footer opens setup and usage sh
   const menu = page.getByRole("menu", { name: "Help and support" });
   await expect(menu).toBeVisible();
   await expect(menu.getByRole("menuitem", { name: "Business setup guide" })).toHaveAttribute("href", "#/onboarding");
-  await expect(menu.getByRole("menuitem", { name: "Plan and usage" })).toHaveAttribute("href", "#/settings");
   await page.keyboard.press("Escape");
   await expect(menu).toBeHidden();
   await expect(helpBtn).toBeFocused();

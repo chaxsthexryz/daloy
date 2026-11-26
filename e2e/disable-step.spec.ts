@@ -8,7 +8,7 @@ test("disable a step: greyed node, kept on save, skipped in a test run, then ena
   await page.getByLabel("Email").fill(`u3-${Date.now()}@test.local`);
   await page.getByLabel("Password").fill("e2e test password 1");
   await page.getByRole("button", { name: "Create account" }).click();
-  await expect(page.getByRole("heading", { name: "Automations", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Today", exact: true })).toBeVisible();
   const wf = await (await page.request.post("/workflows", { data: { name: "Three emails", slug: `three-${Date.now()}` } })).json();
   const mail = (to: string) => ({ to, subject: "Hello", text: "Hi" });
   const definition = {
@@ -29,6 +29,9 @@ test("disable a step: greyed node, kept on save, skipped in a test run, then ena
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto(`/#/w/${wf.id}`);
   await expect(page.getByRole("heading", { name: "Three emails", level: 1 })).toBeVisible();
+  const explain = page.getByRole("dialog", { name: "Explain this flow" });
+  if (await explain.isVisible()) await explain.getByRole("button", { name: "Got it" }).click();
+  await page.getByRole("button", { name: "Diagram", exact: true }).click();
 
   const node = (id: string) => page.locator(`.react-flow__node[data-id="${id}"]`);
   const menu = (id: string) => page.getByRole("menu", { name: `Actions for ${id}` });
@@ -49,6 +52,7 @@ test("disable a step: greyed node, kept on save, skipped in a test run, then ena
   await page.getByRole("button", { name: "Save", exact: true }).click();
   await expect(page.locator(".a7-chip")).toHaveText("Draft");
   await page.reload();
+  await page.getByRole("button", { name: "Diagram", exact: true }).click();
   await expect(node("second_mail").locator(".node")).toHaveClass(/node-off/);
 
   // The mocked test skips it and sends the step after it.

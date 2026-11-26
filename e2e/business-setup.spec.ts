@@ -30,7 +30,7 @@ test("an owner sets up inquiry replies and a customer's inquiry reaches both inb
   await expect(page.getByText("Saved.")).toBeVisible();
 
   // Connecting Gmail (on Apps) sends nothing; disconnecting pauses mail until the owner picks the local server again.
-  await page.getByRole("link", { name: "Apps" }).first().click();
+  await page.getByRole("link", { name: "Business" }).first().click(); await page.getByRole("navigation", { name: "Business" }).getByRole("link", { name: "Apps", exact: true }).click();
   await page.getByRole("button", { name: "Connect Gmail" }).click();
   // The e2e stack has a Google client, so the app password form is under Advanced (decision 0063).
   await page.getByText("Advanced: use a key or token instead").click();
@@ -40,7 +40,7 @@ test("an owner sets up inquiry replies and a customer's inquiry reaches both inb
   await expect(page.getByText("Waiting for you to confirm the test email")).toBeVisible();
   await page.getByRole("link", { name: "Business", exact: true }).first().click();
   await expect(page.getByText("Customer replies will not be sent until Gmail is confirmed and working.")).toBeVisible();
-  await page.getByRole("link", { name: "Apps" }).first().click();
+  await page.getByRole("link", { name: "Business" }).first().click(); await page.getByRole("navigation", { name: "Business" }).getByRole("link", { name: "Apps", exact: true }).click();
   await page.getByRole("button", { name: "Manage Gmail" }).click();
   await page.getByRole("button", { name: "Disconnect" }).click();
   await expect(page.getByText("Mail from your automations is paused until you reconnect Gmail.")).toBeVisible();

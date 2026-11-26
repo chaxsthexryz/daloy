@@ -9,10 +9,10 @@ test("SMS comes from the server: no UniSMS card in Apps, the catalog says it is 
   await page.getByLabel("Password").fill("e2e test password 1");
   await page.getByRole("button", { name: "Create account" }).click();
 
-  await page.getByRole("link", { name: "Apps" }).first().click();
+  await page.getByRole("link", { name: "Business" }).first().click(); await page.getByRole("navigation", { name: "Business" }).getByRole("link", { name: "Apps", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Apps", exact: true })).toBeVisible();
   await expect(page.getByText("Telegram").first()).toBeVisible();
-  await expect(page.getByText("UniSMS")).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "UniSMS" })).toHaveCount(0);
 
   // The routes that saved a workspace key are gone, and the catalog tells the web app SMS is available.
   expect((await page.request.put("/settings/connections/unisms", { data: { secretKey: "unisms_e2e_workspace_key_1" } })).status()).toBe(404);

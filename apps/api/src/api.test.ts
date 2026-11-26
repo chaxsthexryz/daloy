@@ -1,5 +1,5 @@
 import { createHmac, randomBytes } from "node:crypto";
-import { apiTokens, joinWorkspace, requests, runs, secrets, SCHEDULE_QUEUE, sessions, stepRuns, users, type Db } from "@daloy/db";
+import { apiTokens, connections, joinWorkspace, requests, runs, secrets, SCHEDULE_QUEUE, sessions, stepRuns, users, type Db } from "@daloy/db";
 import { TEMPLATES } from "@daloy/engine";
 import type { INestApplication } from "@nestjs/common";
 import { hash } from "@node-rs/argon2";
@@ -491,6 +491,8 @@ describe("invoice starter webhook (M2)", () => {
   const stamp = (t: number, key: string, body: string) => `sha256=${createHmac("sha256", key).update(`${t}.${body}`).digest("hex")}`;
   async function invoiceHook() {
     const { agent } = await signedIn();
+    const workspaceId = (await agent.get("/auth/me").expect(200)).body.workspaceId as string;
+    await db.insert(connections).values({ userId: workspaceId, provider: "paymongo", status: "active", account: "paymongo", destination: { webhookPath: "p" }, credentialCiphertext: "c", credentialIv: "i", credentialAuthTag: "t", authMethod: "token" });
     await agent.put("/secrets/invoice_webhook_secret").send({ value: "whsec_invoice" }).expect(204);
     const wf = await agent.post("/workflows").send({ name: "Invoice", slug: `inv-${++seq}` }).expect(201);
     const definition = TEMPLATES.find((t) => t.slug === "invoice-paymongo")!.definition;

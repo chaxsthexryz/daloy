@@ -7,7 +7,7 @@ test("click a variable to insert it at the cursor, upstream only, with a preview
   await page.getByLabel("Email").fill(`e3-${Date.now()}@test.local`);
   await page.getByLabel("Password").fill("e2e test password 1");
   await page.getByRole("button", { name: "Create account" }).click();
-  await expect(page.getByRole("heading", { name: "Automations", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Today", exact: true })).toBeVisible();
   const wf = await (await page.request.post("/workflows", { data: { name: "Picker", slug: `picker-${Date.now()}` } })).json();
   const definition = {
     trigger: { type: "form", config: { fields: [{ name: "email", label: "Email", type: "email", required: true }, { name: "note", label: "Note", type: "text", required: true }] } },
@@ -27,6 +27,9 @@ test("click a variable to insert it at the cursor, upstream only, with a preview
   expect(saved.ok(), await saved.text()).toBe(true);
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto(`/#/w/${wf.id}`);
+  const explain = page.getByRole("dialog", { name: "Explain this flow" });
+  if (await explain.isVisible()) await explain.getByRole("button", { name: "Got it" }).click();
+  await page.getByRole("button", { name: "Diagram", exact: true }).click();
   await page.locator('.react-flow__node[data-id="mail"]').click();
 
   const picker = page.getByRole("region", { name: "Insert data from earlier steps" });
@@ -60,7 +63,7 @@ test("click a variable to insert it at the cursor, upstream only, with a preview
   // The phone sheet works the same way.
   await page.setViewportSize({ width: 375, height: 812 });
   await page.reload();
-  await page.getByRole("button", { name: /^mail / }).click();
+  await page.getByRole("button", { name: /Send email.*mail/ }).click();
   const sheet = page.getByRole("dialog", { name: "Edit step" });
   await sheet.getByLabel("Subject").click();
   await sheet.getByRole("button", { name: "Insert {{trigger.note}}" }).click();

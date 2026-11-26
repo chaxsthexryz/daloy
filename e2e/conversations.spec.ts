@@ -10,7 +10,7 @@ test("conversations page manages handoff, guest fields, stay confirmation, mobil
   await page.getByLabel("Email").fill(email);
   await page.getByLabel("Password").fill("e2e test password 1");
   await page.getByRole("button", { name: "Create account" }).click();
-  await expect(page.getByRole("heading", { name: "Automations", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Today", exact: true })).toBeVisible();
 
   await page.request.post("/resources", { data: { name: "Beach Casita" } });
 
@@ -63,8 +63,9 @@ test("conversations page manages handoff, guest fields, stay confirmation, mobil
     ).status(),
   ).toBe(200);
 
-  // Open Conversations from the fixed sidebar.
-  await page.getByRole("link", { name: "Conversations" }).click();
+  // Open Conversations from the Inbox header link.
+  await page.getByRole("link", { name: "Inbox" }).click();
+  await page.getByRole("link", { name: "Conversation settings" }).click();
   await expect(page.getByRole("heading", { name: "Conversations", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Alert settings" }).click();
   await expect(page.getByLabel("Staff Messenger recipient ID (optional)")).toBeVisible();
@@ -74,7 +75,7 @@ test("conversations page manages handoff, guest fields, stay confirmation, mobil
 
   // Take over, verify Needs staff status, edit guest fields, and hand back.
   await page.getByRole("button", { name: "Take over" }).click();
-  await expect(page.getByRole("status")).toContainText("Conversation taken over.");
+  await expect(page.getByRole("status").filter({ hasText: "Conversation taken over." }).first()).toBeVisible();
   await expect(page.locator(".cv-badge-staff")).toContainText("Needs staff");
 
   const nextYear = new Date().getUTCFullYear() + 1;
@@ -83,16 +84,16 @@ test("conversations page manages handoff, guest fields, stay confirmation, mobil
   await page.getByLabel("Check-out", { exact: true }).fill(`${nextYear}-09-12`);
   await page.getByLabel("Guests", { exact: true }).fill("2");
   await page.getByRole("button", { name: "Save details" }).click();
-  await expect(page.getByRole("status")).toContainText("Guest details saved.");
+  await expect(page.getByRole("status").filter({ hasText: "Guest details saved." }).first()).toBeVisible();
   await expect(page.getByRole("heading", { name: "Elena Reyes" })).toBeVisible();
 
   // Confirm stay linked to the conversation.
   await page.getByRole("button", { name: "Confirm stay" }).click();
   await page.getByRole("button", { name: "Save stay" }).click();
-  await expect(page.getByRole("status")).toContainText("confirmed.");
+  await expect(page.getByRole("status").filter({ hasText: "confirmed." }).first()).toBeVisible();
 
   await page.getByRole("button", { name: "Hand back" }).click();
-  await expect(page.getByRole("status")).toContainText("Handed back to bot.");
+  await expect(page.getByRole("status").filter({ hasText: "Handed back to bot." }).first()).toBeVisible();
 
   // Switch to Tagalog and verify Conversations renders Tagalog headings without missing keys.
   expect((await page.request.put("/settings/language", { data: { language: "tl" } })).status()).toBe(200);

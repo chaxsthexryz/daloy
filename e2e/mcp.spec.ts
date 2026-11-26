@@ -10,11 +10,10 @@ const connect = async (token: string) => {
 // An MCP client starts a published form workflow with a token made in the console, and loses access when it is revoked.
 test("create an API token, run a workflow as an MCP tool, then revoke the token", async ({ page }) => {
   await page.goto("/");
-  await page.getByRole("button", { name: "Create an account", exact: true }).click();
-  await page.getByLabel("Email").fill(`mcp-${Date.now()}@test.local`);
+  await page.getByLabel("Email").fill("e2e-admin-mcp@test.local");
   await page.getByLabel("Password").fill("e2e test password 1");
-  await page.getByRole("button", { name: "Create account" }).click();
-  await expect(page.getByRole("heading", { name: "Automations", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Sign in" }).click();
+  await expect(page.getByRole("heading", { name: "Today", exact: true })).toBeVisible();
 
   // The builder is covered by main-flow.spec.ts; here the workflow comes from the API with the console session.
   const slug = `contact-${Date.now()}`;
@@ -26,7 +25,7 @@ test("create an API token, run a workflow as an MCP tool, then revoke the token"
   };
   expect((await page.request.post(`/workflows/${wf.id}/versions`, { data: { definition, publish: true } })).status()).toBe(201);
 
-  await page.getByRole("link", { name: "Advanced" }).click();
+  await page.getByRole("link", { name: "Settings" }).first().click();
   await page.getByRole("link", { name: "API tokens" }).click();
   await expect(page.getByRole("heading", { name: "API tokens" })).toBeVisible();
   await page.getByLabel("Name").fill("e2e client");

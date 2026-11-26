@@ -26,7 +26,7 @@ test("E2: a short password is refused before any request and an existing email i
 
   await page.getByLabel("Password").fill(PASSWORD);
   await page.getByRole("button", { name: "Create account" }).click();
-  await expect(page.getByRole("heading", { name: "Automations", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Today", exact: true })).toBeVisible();
 
   // The same email again, in a fresh browser session.
   const again = await page.context().browser()!.newContext();
@@ -50,7 +50,7 @@ test("E1: a wrong password is named, then the right one signs in", async ({ page
   await page.getByLabel("Email").fill(email);
   await page.getByLabel("Password").fill(PASSWORD);
   await page.getByRole("button", { name: "Create account" }).click();
-  await expect(page.getByRole("heading", { name: "Automations", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Today", exact: true })).toBeVisible();
   await page.context().clearCookies();
   await page.goto("/");
   await page.reload();
@@ -64,7 +64,7 @@ test("E1: a wrong password is named, then the right one signs in", async ({ page
   await expect(page.getByLabel("Password")).toHaveAttribute("aria-invalid", "true");
   await page.getByLabel("Password").fill(PASSWORD);
   await page.getByRole("button", { name: "Sign in" }).click();
-  await expect(page.getByRole("heading", { name: "Automations", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Today", exact: true })).toBeVisible();
 });
 
 test("E1: an approval link keeps its destination through sign in", async ({ page }) => {
@@ -74,7 +74,7 @@ test("E1: an approval link keeps its destination through sign in", async ({ page
   await page.getByLabel("Email").fill(email);
   await page.getByLabel("Password").fill(PASSWORD);
   await page.getByRole("button", { name: "Create account" }).click();
-  await expect(page.getByRole("heading", { name: "Automations", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Today", exact: true })).toBeVisible();
   await page.context().clearCookies();
 
   await page.goto("about:blank");
@@ -109,7 +109,7 @@ test("E3: the same answer for an account that exists and one that does not", asy
   await page.getByLabel("Email").fill(known);
   await page.getByLabel("Password").fill(PASSWORD);
   await page.getByRole("button", { name: "Create account" }).click();
-  await expect(page.getByRole("heading", { name: "Automations", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Today", exact: true })).toBeVisible();
   await page.context().clearCookies();
 
   const answers: string[] = [];
@@ -136,7 +136,7 @@ test("E4: a reset link works once, a short password is refused, and a reused lin
   await page.getByLabel("Email").fill(email);
   await page.getByLabel("Password").fill(PASSWORD);
   await page.getByRole("button", { name: "Create account" }).click();
-  await expect(page.getByRole("heading", { name: "Automations", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Today", exact: true })).toBeVisible();
   await page.context().clearCookies();
   await page.goto("about:blank");
   await page.goto("/#/forgot-password");
@@ -203,7 +203,7 @@ test("E5: a new person joins as the invited role and the link works once", async
   await join.getByLabel(/Password/).fill(PASSWORD);
   await join.getByRole("button", { name: "Join" }).click();
   // An operator gets the console but not the owner's pages.
-  await expect(join.getByRole("heading", { name: "Automations", exact: true })).toBeVisible();
+  await expect(join.getByRole("heading", { name: "Today", exact: true })).toBeVisible();
   await join.goto("/#/team");
   await expect(join.getByRole("heading", { name: "Team", exact: true })).toHaveCount(0);
 

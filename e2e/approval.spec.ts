@@ -12,7 +12,7 @@ test("a live run waits for approval, and the emailed link approves it once", asy
   await page.getByLabel("Email").fill(`approval-${Date.now()}@test.local`);
   await page.getByLabel("Password").fill("e2e test password 1");
   await page.getByRole("button", { name: "Create account" }).click();
-  await expect(page.getByRole("heading", { name: "Automations", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Today", exact: true })).toBeVisible();
   // E10: the approval page carries this workspace's brand, never the kymavo mark.
   expect((await page.request.put("/settings/email/profile", { data: { businessName: "Sampaguita Bakery", website: null, inquiryEmail: null, replyTo: null } })).status()).toBe(204);
   expect((await page.request.put("/settings/brand", { data: { accent: "#1f6b45" } })).status()).toBe(200);
@@ -25,7 +25,7 @@ test("a live run waits for approval, and the emailed link approves it once", asy
   await page.getByRole("textbox", { name: "Message", exact: true }).fill("Refund {{trigger.amount}} EUR to Ana?");
   await page.getByRole("button", { name: "Publish" }).click();
   await page.getByRole("button", { name: "Turn on", exact: true }).click();
-  await expect(page.getByRole("status")).toHaveText(/Version 1 is live/);
+  await expect(page.getByRole("status").filter({ hasText: /Version 1 is live/ })).toBeVisible();
 
   await openTestSettings(page);
   await page.getByLabel("Sample trigger data (JSON)").fill('{ "amount": 40 }');

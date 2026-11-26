@@ -94,18 +94,7 @@ export function ConversationsPage({ user }: { user: User }) {
       .then((d) => {
         if (!live) return;
         setDetail(d);
-        setFieldsForm({
-          name: d.fields.name ?? "",
-          phone: d.fields.phone ?? "",
-          email: d.fields.email ?? "",
-          check_in: d.fields.check_in ?? "",
-          check_out: d.fields.check_out ?? "",
-          guests: d.fields.guests ?? "",
-        });
-        const checkIn = d.fields.check_in || todayIso();
-        const nights = nightsBetween(d.fields.check_in, d.fields.check_out);
-        setStayForm((f) => ({ ...f, checkIn, nights }));
-        setDepositForm((f) => ({ ...f, checkIn, nights, guests: Number(d.fields.guests) || f.guests }));
+        syncForms(d);
       })
       .catch((e: Error) => {
         if (live) setError(e.message);
@@ -114,6 +103,21 @@ export function ConversationsPage({ user }: { user: User }) {
       live = false;
     };
   }, [selectedId]);
+
+  const syncForms = (d: Detail) => {
+    setFieldsForm({
+      name: d.fields.name ?? "",
+      phone: d.fields.phone ?? "",
+      email: d.fields.email ?? "",
+      check_in: d.fields.check_in ?? "",
+      check_out: d.fields.check_out ?? "",
+      guests: d.fields.guests ?? "",
+    });
+    const checkIn = d.fields.check_in || todayIso();
+    const nights = nightsBetween(d.fields.check_in, d.fields.check_out);
+    setStayForm((f) => ({ ...f, checkIn, nights }));
+    setDepositForm((f) => ({ ...f, checkIn, nights, guests: Number(d.fields.guests) || f.guests }));
+  };
 
   const act = async (fn: () => Promise<unknown>, message?: string) => {
     setError("");
@@ -133,6 +137,7 @@ export function ConversationsPage({ user }: { user: User }) {
     await loadList(true);
     const updated = await api<Detail>("GET", `/conversations/${id}`);
     setDetail(updated);
+    syncForms(updated);
   };
 
   const saveFields = (e: FormEvent) => {

@@ -8,9 +8,9 @@ async function signUp(page: Page, width: number, height: number) {
   await page.getByLabel("Email").fill(`library-${Date.now()}@test.local`);
   await page.getByLabel("Password").fill("e2e test password 1");
   await page.getByRole("button", { name: "Create account" }).click();
-  await expect(page.getByRole("heading", { name: "Automations", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Today", exact: true })).toBeVisible();
   await page.goto("/#/new");
-  await expect(page.getByRole("heading", { name: "Library", level: 1 })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "New automation", level: 1 })).toBeVisible();
 }
 
 const noSideScroll = (page: Page) => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth);
@@ -19,9 +19,10 @@ test("search and category chips narrow the cards, and a card previews before it 
   await signUp(page, 1280, 800);
   const card = (name: string) => page.getByRole("button", { name: `Preview: ${name}` });
 
-  // Blank automation and Build with AI come first, then the templates.
-  await expect(page.getByRole("heading", { level: 3 }).first()).toHaveText("Blank automation");
-  await expect(page.getByRole("heading", { level: 3 }).nth(1)).toHaveText("Build with AI");
+  // Templates tab lists templates with Blank automation in the quiet footer and Build with AI as a sibling tab.
+  await expect(page.getByRole("link", { name: "Templates", exact: true })).toHaveAttribute("aria-current", "page");
+  await expect(page.getByRole("link", { name: "Build with AI", exact: true })).toHaveAttribute("href", "#/ai");
+  await expect(page.getByRole("heading", { name: "Blank automation" })).toBeVisible();
   await expect(page.getByRole("button", { name: /^Preview: / })).toHaveCount(42);
 
   await page.getByLabel("Search the library").fill("invoice");
@@ -45,7 +46,6 @@ test("search and category chips narrow the cards, and a card previews before it 
   await expect(card("Appointment reminder")).toBeVisible();
   await expect(card("Lead to booking")).toBeVisible();
   await expect(card("Inquiry triage")).toHaveCount(0);
-  await expect(page.getByRole("heading", { name: "Blank automation" })).toHaveCount(0);
   await page.getByRole("button", { name: "Office", exact: true }).click();
   await expect(card("Track an office request")).toBeVisible();
   await expect(card("Purchase request with approval")).toBeVisible();
@@ -66,11 +66,11 @@ test("search and category chips narrow the cards, and a card previews before it 
   await card("Appointment reminder").click();
   await expect(preview).toBeVisible();
 
-  // Use this keeps the name box, makes a draft and opens it.
+  // Use this keeps the name box, makes a draft and opens its wizard (#/a/:id).
   await preview.getByLabel("Name").fill("Reminders for clients");
   await preview.getByRole("button", { name: "Use this", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Reminders for clients", level: 1 })).toBeVisible();
-  await expect(page.locator(".a7-chip")).toHaveText("Draft");
+  await expect(page.locator(".gp-tag")).toHaveText("Draft");
 });
 
 test("a card's own Use this makes the draft, and a taken name opens the preview to rename it", async ({ page }) => {

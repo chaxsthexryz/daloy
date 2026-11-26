@@ -62,11 +62,14 @@ test("Booking with a GCash or QR Ph deposit omits PayMongo, adds a resource inli
   await page.getByLabel("Email").fill(`preflight-${Date.now()}@test.local`);
   await page.getByLabel("Password").fill("e2e test password 1");
   await page.getByRole("button", { name: "Create account" }).click();
-  await expect(page.getByRole("heading", { name: "Automations", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Today", exact: true })).toBeVisible();
 
   await page.goto("/#/new");
   await page.getByRole("button", { name: "Use this: Booking with a GCash or QR Ph deposit" }).click();
+  await expect(page).toHaveURL(/#\/a\/[^/]+$/);
+  await page.getByRole("link", { name: "Edit steps" }).click();
   await expect(page).toHaveURL(/#\/w\/[^/]+$/);
+  await page.getByRole("dialog", { name: "Explain this flow" }).getByRole("button", { name: "Got it" }).click();
 
   const checkMessagesRow = page.getByRole("region", { name: "Setup guide" }).locator("li", { hasText: "Check the messages" });
   await expect(checkMessagesRow).toContainText("To do");
@@ -88,11 +91,17 @@ test("Booking with a GCash or QR Ph deposit omits PayMongo, adds a resource inli
   await sample.getByRole("button", { name: "Try a sample" }).click();
   await expect(sample).toContainText("The last sample test passed.", { timeout: 30_000 });
 
-  // Simulate Preview plan (0 SMS) on GET /usage and verify Publish > Turn on blocks with a clear reason.
+  // Simulate Preview plan (0 SMS) via server readiness + GET /usage and verify Publish > Turn on blocks with a clear reason.
   await page.route("**/usage", async (route) => {
     const res = await route.fetch();
     const json = (await res.json()) as Record<string, unknown>;
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ...json, plan: "preview", label: "Preview", sms: { used: 0, limit: 0, resetsOn: "2026-12-01" } }) });
+  });
+  await page.route("**/workflows/readiness", async (route) => {
+    const res = await route.fetch();
+    const json = (await res.json()) as { ready: boolean; blockers: { id: string; kind: string; text: string; fix?: string }[]; warnings: unknown[] };
+    const blocker = { id: "sms_not_on_plan", kind: "operator", text: "SMS sending is not included on the Preview plan (0 SMS per month). Ask kymavo to move you to a paid plan before turning on.", fix: "#/settings" };
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ...json, ready: false, blockers: [...json.blockers, blocker] }) });
   });
   await page.reload();
   await expect(sample).toContainText("SMS sending is not included on the Preview plan");

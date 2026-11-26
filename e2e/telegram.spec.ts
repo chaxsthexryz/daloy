@@ -8,7 +8,7 @@ test("an owner connects a Telegram bot and sends a test message", async ({ page 
   await page.getByLabel("Password").fill("e2e test password 1");
   await page.getByRole("button", { name: "Create account" }).click();
 
-  await page.getByRole("link", { name: "Apps" }).first().click();
+  await page.getByRole("link", { name: "Business" }).first().click(); await page.getByRole("navigation", { name: "Business" }).getByRole("link", { name: "Apps", exact: true }).click();
   await page.getByRole("button", { name: "Connect Telegram" }).click();
   await page.getByLabel("Bot token").fill(process.env.E2E_TELEGRAM_TOKEN!);
   await page.getByLabel("Chat id").fill("-1001234567890");

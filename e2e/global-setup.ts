@@ -4,6 +4,7 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import EmbeddedPostgres from "embedded-postgres";
+import { Pool } from "pg";
 import { startFakeProviders } from "../test/fake-providers";
 import { startFakeImap } from "../test/fake-imap";
 import { startLlmFake } from "./llm-fake";
@@ -171,17 +172,41 @@ export default async function setup() {
     GMAIL_API_URL: providers.urls.gmail,
     GOOGLE_PICKER_API_KEY: "e2e-picker-key",
     GOOGLE_PROJECT_NUMBER: "000000000000",
-    // Every spec signs up from 127.0.0.1.
+    // Every spec signs up and polls from 127.0.0.1.
     REGISTER_LIMIT_PER_HOUR: "1000",
     INVITE_ACCEPT_LIMIT_PER_MINUTE: "1000",
+    GLOBAL_RATE_LIMIT_PER_MINUTE: "1000",
     // Specs publish several automations on one account.
     SIGNUP_PLAN: "none",
     AI_ASK: "on",
-    // admin.spec.ts signs up as this account to open #/admin.
-    PLATFORM_ADMINS: "platform-admin@e2e.test",
+    // Dedicated E2E platform admin accounts seeded into Postgres below (decision 0137 S2 prevents /auth/register from claiming PLATFORM_ADMINS).
+    PLATFORM_ADMINS: "platform-admin@e2e.test,e2e-admin-settings@test.local,e2e-admin-mcp@test.local,e2e-admin-tokens@test.local,e2e-admin-advanced@test.local,e2e-admin-account@test.local,e2e-admin-ai@test.local",
   };
   const api = start("api", env);
   await waitFor(`http://localhost:${E2E_PORT}/auth/me`, 60_000);
+  const adminEmails = env.PLATFORM_ADMINS.split(",");
+  const passwordHash = execSync(
+    "pnpm -s --filter @daloy/api exec node --input-type=module -e \"import('@node-rs/argon2').then(async m => process.stdout.write(await m.hash('e2e test password 1')))\"",
+    { cwd: root, encoding: "utf8" },
+  ).trim().split(/\r?\n/).pop()!;
+  const pool = new Pool({ connectionString: url, max: 1 });
+  try {
+    for (const email of adminEmails) {
+      const inserted = await pool.query<{ id: string }>(
+        "insert into users (email, password_hash) values ($1, $2) on conflict (email) do nothing returning id",
+        [email, passwordHash],
+      );
+      const id = inserted.rows[0]?.id;
+      if (id) {
+        await pool.query(
+          "insert into workspace_members (user_id, workspace_id, role) values ($1, $1, 'owner') on conflict do nothing",
+          [id],
+        );
+      }
+    }
+  } finally {
+    await pool.end();
+  }
   // The worker starts after the API has run the migrations.
   const worker = start("worker", { ...env, NODE_ENV: "test", DALOY_TEST_IMAP_ENDPOINT: inbox.url });
 

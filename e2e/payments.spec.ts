@@ -40,12 +40,13 @@ async function registerSeller(page: Page) {
   await page.getByLabel("Email").fill(`seller-${Date.now()}@test.local`);
   await page.getByLabel("Password").fill("e2e test password 1");
   await page.getByRole("button", { name: "Create account" }).click();
-  await expect(page.getByRole("heading", { name: "Automations", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Today", exact: true })).toBeVisible();
 }
 
 test("booking D-1042: a transfer receipt goes to review, a verified checkout confirms it, and the booking shows one payment history", async ({ page }) => {
   await registerSeller(page);
-  await page.getByRole("link", { name: "Receipts to review" }).click();
+  await page.getByRole("link", { name: "Inbox" }).click();
+  await page.getByRole("link", { name: "Payment settings" }).click();
   const emptyWalkthrough = page.getByRole("region", { name: "How receipt review works" });
   await expect(emptyWalkthrough).toBeVisible();
   await expect(emptyWalkthrough.getByRole("listitem")).toHaveCount(3);
@@ -88,7 +89,8 @@ test("booking D-1042: a transfer receipt goes to review, a verified checkout con
   await captureReview(customer, "07", "Reference received", "The transfer stays pending while the seller checks their account.");
 
   // Receipts to review: one row with the order, amounts, reference, channel and the private image.
-  await page.getByRole("link", { name: "Receipts to review" }).click();
+  await page.getByRole("link", { name: "Inbox" }).click();
+  await page.getByRole("link", { name: "Payment settings" }).click();
   const list = page.getByRole("list", { name: "Receipts to review" });
   const row = list.getByRole("listitem").filter({ hasText: "D-1042" });
   await expect(row).toContainText("PHP 350.00");
@@ -172,7 +174,8 @@ test("staff confirm a manual transfer and retry only its failed SMS", async ({ p
   await expect(customer.getByText("Reference received")).toBeVisible();
   await customer.close();
 
-  await page.getByRole("link", { name: "Receipts to review" }).click();
+  await page.getByRole("link", { name: "Inbox" }).click();
+  await page.getByRole("link", { name: "Payment settings" }).click();
   const row = page.getByRole("listitem").filter({ hasText: reference });
   page.once("dialog", d => void d.accept());
   await row.getByRole("button", { name: "Confirm payment" }).click();

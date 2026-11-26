@@ -8,7 +8,7 @@ async function registerOwner(page: Page) {
   await page.getByLabel("Email").fill(`owner-${Date.now()}@test.local`);
   await page.getByLabel("Password").fill(PASSWORD);
   await page.getByRole("button", { name: "Create account" }).click();
-  await expect(page.getByRole("heading", { name: "Automations", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Today", exact: true })).toBeVisible();
 }
 
 /** Invites `email` from the open Team page and joins with the link in another browser context. */
@@ -30,7 +30,8 @@ async function addMember(browser: Browser, page: Page, email: string, role: "Ope
 test("the owner invites, changes a role and removes a member from the grouped Team page", async ({ page, browser }) => {
   await registerOwner(page);
   await page.goto("/#/team");
-  await expect(page.getByRole("heading", { name: "Team", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Business", exact: true })).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "Business" }).getByRole("link", { name: "Team", exact: true })).toHaveAttribute("aria-current", "page");
   await expect(page.getByText("1 member", { exact: true })).toBeVisible();
   await expect(page.getByRole("list", { name: "Role descriptions" })).toContainText("Operator:");
   const owner = page.locator(".wk-group", { hasText: "Runs the workspace" });

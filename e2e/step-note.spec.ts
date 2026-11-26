@@ -7,7 +7,7 @@ test("step note: typed in the panel, shown on the card, kept on save", async ({ 
   await page.getByLabel("Email").fill(`t4-${Date.now()}@test.local`);
   await page.getByLabel("Password").fill("e2e test password 1");
   await page.getByRole("button", { name: "Create account" }).click();
-  await expect(page.getByRole("heading", { name: "Automations", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Today", exact: true })).toBeVisible();
   const wf = await (await page.request.post("/workflows", { data: { name: "Noted flow", slug: `noted-${Date.now()}` } })).json();
   const definition = {
     trigger: { type: "manual", config: {} },
@@ -18,6 +18,9 @@ test("step note: typed in the panel, shown on the card, kept on save", async ({ 
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto(`/#/w/${wf.id}`);
   await expect(page.getByRole("heading", { name: "Noted flow", level: 1 })).toBeVisible();
+  const explain = page.getByRole("dialog", { name: "Explain this flow" });
+  if (await explain.isVisible()) await explain.getByRole("button", { name: "Got it" }).click();
+  await page.getByRole("button", { name: "Diagram", exact: true }).click();
 
   const node = page.locator('.react-flow__node[data-id="thank_you"]');
   await node.click();
@@ -29,5 +32,6 @@ test("step note: typed in the panel, shown on the card, kept on save", async ({ 
   await page.getByRole("button", { name: "Save", exact: true }).click();
   await expect(page.locator(".a7-chip")).toHaveText("Draft");
   await page.reload();
+  await page.getByRole("button", { name: "Diagram", exact: true }).click();
   await expect(node.locator(".node-note")).toHaveText("Only for customers who paid");
 });

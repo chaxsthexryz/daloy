@@ -7,7 +7,7 @@ async function draftFlow(page: Page) {
   await page.getByLabel("Email").fill(`r4-${Date.now()}@test.local`);
   await page.getByLabel("Password").fill("e2e test password 1");
   await page.getByRole("button", { name: "Create account" }).click();
-  await expect(page.getByRole("heading", { name: "Automations", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Today", exact: true })).toBeVisible();
   const wf = await (await page.request.post("/workflows", { data: { name: "Phone editor", slug: `phone-${Date.now()}` } })).json();
   const definition = {
     trigger: { type: "manual", config: {} },
@@ -117,6 +117,9 @@ test("canvas controls: plus on a connection, searchable add menu, Shift+F10 menu
   const id = await draftFlow(page);
   await page.goto(`/#/w/${id}`);
   await expect(page.getByRole("heading", { name: "Phone editor", level: 1 })).toBeVisible();
+  const explain = page.getByRole("dialog", { name: "Explain this flow" });
+  if (await explain.isVisible()) await explain.getByRole("button", { name: "Got it" }).click();
+  await page.getByRole("button", { name: "Diagram", exact: true }).click();
   const node = (step: string) => page.locator(`.react-flow__node[data-id="${step}"]`);
   await expect(node("wait")).toBeVisible();
 

@@ -1,11 +1,11 @@
 import { expect, test } from "@playwright/test";
-import { registerOwner } from "./workspace";
+import { signIn } from "./workspace";
 
 // W5: the owner reaches each tool from the directory and comes back; the phone list keeps the same links. The
 // operator fallback is checked in workspace-settings.spec.ts, which already invites one (invite accepts are limited
 // to 10 a minute per address, and the full run is close to that).
 test("Advanced lists the owner tools and the automations, and keeps the phone list", async ({ page }) => {
-  await registerOwner(page);
+  await signIn(page, "e2e-admin-advanced@test.local");
   const stamp = Date.now();
   const wf = await (await page.request.post("/workflows", { data: { name: "Contact form", slug: `contact-${stamp}` } })).json();
   await page.goto("/#/advanced");
@@ -31,7 +31,7 @@ test("Advanced lists the owner tools and the automations, and keeps the phone li
   await page.goto("/#/secrets");
   await page.getByRole("link", { name: "Advanced", exact: true }).first().click();
   await expect(page.getByRole("heading", { name: "Advanced", level: 1 })).toBeVisible();
-  await page.getByRole("link", { name: "Menu", exact: true }).click();
+  await page.getByRole("link", { name: "Settings", exact: true }).first().click();
   await expect(page).toHaveURL(/#\/settings$/);
 
   // Phone: the same four tools, one per row.

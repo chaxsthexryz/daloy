@@ -8,11 +8,12 @@ async function signUp(page: Page, label: string) {
   await page.getByLabel("Email").fill(`${label}-${Date.now()}@test.local`);
   await page.getByLabel("Password").fill("e2e test password 1");
   await page.getByRole("button", { name: "Create account" }).click();
-  await expect(page.getByRole("heading", { name: "Automations", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Today", exact: true })).toBeVisible();
 }
 
 test("Home shows each automation's state and last event, and a Needs you strip", async ({ page }) => {
   await signUp(page, "automations");
+  await page.goto("/#/automations");
   await expect(page.getByText("No automations yet.")).toBeVisible();
 
   const stamp = Date.now();
@@ -49,19 +50,20 @@ test("Home shows each automation's state and last event, and a Needs you strip",
   await expect(row).toContainText(/ago|just now/);
   await expect(panel.getByRole("button", { name: "Copy form link" })).toBeVisible();
   await expect(panel.getByRole("link", { name: "View all" })).toHaveAttribute("href", `#/w/${form.id}/runs`);
-  await expect(panel.getByRole("link", { name: "Open steps" })).toHaveAttribute("href", `#/w/${form.id}`);
+  await expect(panel.getByRole("link", { name: "Open", exact: true })).toHaveAttribute("href", `#/a/${form.id}`);
+  await expect(panel.getByRole("link", { name: "Edit", exact: true })).toHaveAttribute("href", `#/w/${form.id}`);
   const orderRow = page.getByRole("row", { name: /Orders/ });
   await expect(orderRow).toContainText("Never");
   await orderRow.getByRole("button", { name: "Orders" }).click();
   await expect(page.getByRole("complementary", { name: "Orders" })).toContainText("No activity yet");
 
-  // Settings keeps workspace directory tools for owners (Advanced stays admin-only), and the strip opens the run.
+  // Settings keeps Advanced directory tools for owners (admin-only tools hidden), and the strip opens the run.
   await page.getByRole("link", { name: "Settings", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Settings", exact: true })).toBeVisible();
-  for (const name of ["Apps", "Business", "Team", "Resources"]) await expect(page.getByRole("main").getByRole("link", { name })).toBeVisible();
+  for (const name of ["Secrets", "All automations"]) await expect(page.getByRole("main").getByRole("link", { name })).toBeVisible();
   await expect(page.getByRole("link", { name: "AI model" })).toHaveCount(0);
   await expect(page.getByRole("link", { name: "API tokens" })).toHaveCount(0);
-  await page.getByRole("link", { name: "Automations" }).click();
+  await page.getByRole("link", { name: "Automations", exact: true }).first().click();
   await page.getByRole("link", { name: "Open the oldest" }).click();
   await expect(page.getByRole("region", { name: "Needs you" })).toBeVisible({ timeout: 30_000 });
 });
@@ -75,7 +77,7 @@ test("on a phone the menu collapses, nothing scrolls sideways, and the activity 
   expect((await menu.boundingBox())!.height).toBeGreaterThanOrEqual(44);
   await menu.click();
   await expect(page.getByRole("link", { name: "Settings" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Team" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Business" })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 
   // One preview run so the activity page has a row.
@@ -92,9 +94,10 @@ test("on a phone the menu collapses, nothing scrolls sideways, and the activity 
   expect(await row.evaluate((e) => getComputedStyle(e).display)).toBe("table-row");
 });
 
-test("the panel is closed on load, a click opens it, Close and Escape close it, a double click opens the editor", async ({ page }) => {
+test("the panel is closed on load, a click opens it, Close and Escape close it, a double click opens the overview", async ({ page }) => {
   await signUp(page, "panel");
   const wf = await (await page.request.post("/workflows", { data: { name: "Panel check", slug: `panel-${Date.now()}` } })).json();
+  await page.goto("/#/automations");
   await page.reload();
   const row = page.getByRole("row", { name: /Panel check/ });
   const panel = page.getByRole("complementary", { name: "Panel check" });
@@ -118,13 +121,14 @@ test("the panel is closed on load, a click opens it, Close and Escape close it, 
   await expect(row.getByRole("link", { name: /Steps of Panel check/ })).toHaveAttribute("href", `#/w/${wf.id}`);
 
   await row.dblclick();
-  await expect.poll(() => new URL(page.url()).hash).toBe(`#/w/${wf.id}`);
+  await expect.poll(() => new URL(page.url()).hash).toBe(`#/a/${wf.id}`);
 });
 
 test("on a phone a row opens the panel as a sheet that Close dismisses", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 800 });
   await signUp(page, "sheet");
   await page.request.post("/workflows", { data: { name: "Sheet check", slug: `sheet-${Date.now()}` } });
+  await page.goto("/#/automations");
   await page.reload();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await page.getByRole("button", { name: "Sheet check" }).click();
@@ -136,6 +140,7 @@ test("on a phone a row opens the panel as a sheet that Close dismisses", async (
 
 test("inline pause switch shows an undo toast, inspector matches Problem status, and two-line titles stay clear", async ({ page }) => {
   await signUp(page, "d3ops");
+  await page.goto("/#/automations");
   const stamp = Date.now();
   const longName = "Customer inquiry routing and weekly follow-up reminder for clinic front desk";
   const healthy = await (await page.request.post("/workflows", { data: { name: longName, slug: `long-${stamp}` } })).json();
@@ -168,8 +173,8 @@ test("inline pause switch shows an undo toast, inspector matches Problem status,
   expect(nameBox.y + nameBox.height).toBeLessThanOrEqual(longRowBox.y + longRowBox.height + 1);
   expect(longRowBox.y).toBeGreaterThanOrEqual(failingBox.y + failingBox.height - 1);
 
-  // Open action link opens the workflow, and Pause in the inspector shows a white Undo toast.
-  await expect(longRow.getByRole("link", { name: "Open", exact: true })).toHaveAttribute("href", `#/w/${healthy.id}`);
+  // Open action link opens the overview, and Pause in the inspector shows a white Undo toast.
+  await expect(longRow.getByRole("link", { name: "Open", exact: true })).toHaveAttribute("href", `#/a/${healthy.id}`);
   await longRow.getByRole("button", { name: longName }).click();
   const longPanel = page.getByRole("complementary", { name: longName });
   await longPanel.getByRole("button", { name: "Pause", exact: true }).click();

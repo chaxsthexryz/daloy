@@ -16,7 +16,8 @@ test("add a browser step, edit its actions and see a mocked test run's would-do 
 
   await page.getByRole("button", { name: "List", exact: true }).click();
   await addStep(page, "browser");
-  await expect(page.getByText("Step 1 · Use a web page")).toBeVisible();
+  await expect(page.getByText(/Step 1 · browser_1/)).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Use a web page", exact: true })).toBeVisible();
 
   await page.getByLabel("URL", { exact: true }).fill("https://supplier.example.com/item/42");
   // The new step reads the h1 into "heading"; point it at the price instead.

@@ -14,11 +14,13 @@ test("sign in to the seeded demo and browse its workflows and runs", async ({ pa
   await page.getByLabel("Email").fill("demo@daloy.local");
   await page.getByLabel("Password").fill("daloy-demo-2026");
   await page.getByRole("button", { name: "Sign in" }).click();
+  await page.getByRole("link", { name: "Automations", exact: true }).first().click();
   for (const name of ["Inquiry triage", "Invoice follow-up", "Booking no-show follow-up"]) await expect(page.getByRole("button", { name })).toBeVisible();
   await shot(page, "workflows");
 
   await page.getByRole("button", { name: "Inquiry triage" }).click();
-  await page.getByRole("link", { name: "Open steps" }).click();
+  await page.getByRole("link", { name: "Edit", exact: true }).click();
+  await page.getByRole("button", { name: "Diagram", exact: true }).click();
   // The trigger and five steps.
   await expect(page.locator(".react-flow__node")).toHaveCount(6);
   await shot(page, "editor");

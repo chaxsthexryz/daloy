@@ -10,7 +10,6 @@ import { RUN_LIMIT, totals, type OverviewEntry } from "./lib/ops-stats";
 import { ago, plainState } from "./lib/states";
 import { AnimatedCounter } from "./AnimatedCounter";
 import { FormEmbed } from "./FormEmbed";
-import { OnboardingPrompt } from "./Onboarding";
 import type { User } from "./Team";
 import { pushToast } from "./Toast";
 import "./automations-ops.css";
@@ -256,7 +255,6 @@ export function Automations({ user }: { user: User }) {
 
   return (
     <main className="page ops">
-      {owner && <OnboardingPrompt />}
       {!(list && list.length > 0 && !listError) && head}
 
       {listError && (

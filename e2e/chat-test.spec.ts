@@ -10,7 +10,7 @@ async function signUp(page: Page, tag: string, definition: object) {
   await page.getByLabel("Email").fill(`${tag}-${Date.now()}-${Math.floor(Math.random() * 1e6)}@test.local`);
   await page.getByLabel("Password").fill("e2e test password 1");
   await page.getByRole("button", { name: "Create account" }).click();
-  await expect(page.getByRole("heading", { name: "Automations", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Today", exact: true })).toBeVisible();
   const wf = await (await page.request.post("/workflows", { data: { name: "Resort chat", slug: `chat-${tag}-${Date.now()}` } })).json();
   expect((await page.request.post(`/workflows/${wf.id}/versions`, { data: { definition, publish: false } })).status()).toBe(201);
   return wf.id as string;
@@ -37,6 +37,9 @@ test("an owner types a question as the customer and sees the answer from the pri
   expect((await page.request.post("/knowledge/publish")).ok()).toBe(true);
 
   await page.goto(`/#/w/${id}`);
+  const explain = page.getByRole("dialog", { name: "Explain this flow" });
+  if (await explain.isVisible()) await explain.getByRole("button", { name: "Got it" }).click();
+  await page.getByRole("button", { name: "Diagram", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Chat as your customer" })).toBeVisible();
   const body = await say(page, "Magkano po ang day tour?");
   expect(body.mode).toBe("ai");

@@ -7,7 +7,7 @@ async function failedRun(page: import("@playwright/test").Page) {
   await page.getByLabel("Email").fill(`explain-${Date.now()}-${Math.floor(Math.random() * 1e6)}@test.local`);
   await page.getByLabel("Password").fill("e2e test password 1");
   await page.getByRole("button", { name: "Create account" }).click();
-  await expect(page.getByRole("heading", { name: "Automations", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Today", exact: true })).toBeVisible();
   const wf = await (await page.request.post("/workflows", { data: { name: "Orders", slug: `orders-${Date.now()}` } })).json();
   const definition = {
     trigger: { type: "manual", config: {} },

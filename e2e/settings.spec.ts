@@ -1,14 +1,11 @@
 import { expect, test } from "@playwright/test";
+import { signIn } from "./workspace";
 
 // Picking the AI model: a hosted choice needs a key, the key is kept but never shown again.
 test("pick Gemini with a key, then come back and see the key is saved", async ({ page }) => {
-  await page.goto("/");
-  await page.getByRole("button", { name: "Create an account", exact: true }).click();
-  await page.getByLabel("Email").fill(`settings-${Date.now()}@test.local`);
-  await page.getByLabel("Password").fill("e2e test password 1");
-  await page.getByRole("button", { name: "Create account" }).click();
+  await signIn(page, "e2e-admin-settings@test.local");
 
-  await page.getByRole("link", { name: "Advanced" }).click();
+  await page.getByRole("link", { name: "Settings" }).first().click();
   await page.getByRole("link", { name: "AI model" }).click();
   await expect(page.getByLabel("Local model")).toBeChecked();
   await page.getByLabel("Gemini API").check();
@@ -27,7 +24,7 @@ test("pick Gemini with a key, then come back and see the key is saved", async ({
   await page.getByLabel("API key").fill("AIza-e2e-not-a-real-key");
   // "Save without testing", so the test never calls Google with the fake key.
   await page.getByRole("button", { name: "Save without testing" }).click();
-  await expect(page.getByRole("status")).toHaveText("Saved. Your workflows now use Gemini API, model gemini-3.8-flash.");
+  await expect(page.getByRole("status")).toHaveText("Saved. Your automations now use Gemini API, model gemini-3.8-flash.");
   await expect(page.locator(".in-use")).toContainText("In use: Gemini API, model gemini-3.8-flash");
 
   await page.reload();

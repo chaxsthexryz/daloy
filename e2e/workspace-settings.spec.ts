@@ -7,14 +7,15 @@ test("Settings shows the cards for each role and keeps the theme after a reload"
   await registerOwner(page);
   await page.goto("/#/settings");
   await expect(page.getByText("Signed in as owner", { exact: true })).toBeVisible();
-  for (const card of ["Language", "Appearance", "Your account", "Plan and usage", "Your office"]) {
+  for (const card of ["Language", "Appearance", "Your account", "Plan and usage", "Advanced"]) {
     await expect(page.getByRole("region", { name: card })).toBeVisible();
   }
-  const office = page.getByRole("region", { name: "Your office" });
-  for (const [name, href] of [["Apps", "#/apps"], ["Business", "#/settings/business"], ["Team", "#/team"], ["Resources", "#/resources"]]) {
-    await expect(office.getByRole("link", { name, exact: true })).toHaveAttribute("href", href!);
+  const advanced = page.getByRole("region", { name: "Advanced" });
+  for (const [name, href] of [["Secrets", "#/secrets"], ["All automations", "#/automations"]]) {
+    await expect(advanced.getByRole("link", { name, exact: true })).toHaveAttribute("href", href!);
   }
-  await expect(office.getByRole("link", { name: "Advanced", exact: true })).toHaveCount(0);
+  await expect(advanced.getByRole("link", { name: "API tokens", exact: true })).toHaveCount(0);
+  await expect(advanced.getByRole("link", { name: "AI model", exact: true })).toHaveCount(0);
   await page.getByLabel("Dark").check();
   await page.reload();
   await expect(page.getByLabel("Dark")).toBeChecked();
@@ -31,11 +32,11 @@ test("Settings shows the cards for each role and keeps the theme after a reload"
   await expect(operator.getByRole("region", { name: "Appearance" })).toBeVisible();
   await expect(operator.getByRole("region", { name: "Plan and usage" })).toBeVisible();
   await expect(operator.getByRole("region", { name: "Language" })).toHaveCount(0);
-  await expect(operator.getByRole("region", { name: "Your office" })).toHaveCount(0);
+  await expect(operator.getByRole("region", { name: "Advanced" })).toHaveCount(0);
   await expect(operator.getByText("Language and office settings are managed by the owner.")).toBeVisible();
   // W5: an operator who types #/advanced lands on Automations and sees none of the owner's tools.
   await operator.goto("/#/advanced");
-  await expect(operator.getByRole("heading", { name: "Automations", level: 1 })).toBeVisible();
+  await expect(operator.getByRole("heading", { name: "Today", level: 1 })).toBeVisible();
   await expect(operator.getByRole("heading", { name: "Advanced", level: 1 })).toHaveCount(0);
   await operator.context().close();
 });

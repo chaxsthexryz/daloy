@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
+import { signIn } from "./workspace";
 
-const PASSWORD = "e2e admin password 1";
+const PASSWORD = "e2e test password 1";
 
 async function register(page: Page, email: string) {
   await page.goto("/");
@@ -8,7 +9,7 @@ async function register(page: Page, email: string) {
   await page.getByLabel("Email").fill(email);
   await page.getByLabel("Password").fill(PASSWORD);
   await page.getByRole("button", { name: "Create account" }).click();
-  await expect(page.getByRole("heading", { name: "Automations", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Today", exact: true })).toBeVisible();
 }
 
 test("a platform admin sees every workspace and changes a plan and shared mail; a normal owner sees no admin page", async ({ browser }) => {
@@ -21,7 +22,7 @@ test("a platform admin sees every workspace and changes a plan and shared mail; 
   expect((await owner.request.get("/admin/overview")).status()).toBe(404);
 
   const admin = await (await browser.newContext()).newPage();
-  await register(admin, "platform-admin@e2e.test");
+  await signIn(admin, "platform-admin@e2e.test");
   await admin.goto("/#/admin");
   await expect(admin.getByRole("heading", { name: "Platform admin" })).toBeVisible();
   await expect(admin.getByRole("region", { name: "Totals" })).toContainText("Workspaces");
