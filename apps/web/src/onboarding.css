@@ -3,6 +3,8 @@
  * rules in workspace.css, so light and dark follow the console theme. Everything here is prefixed ob-.
  */
 .wk.ob > * { max-width: 640px; margin-inline: auto; }
+/* Fade-only entrance on onboarding so no transform containing block traps mobile position: fixed .ob-bar. */
+main.page.wk.ob.motion-page { animation-name: motion-fade-in; }
 .ob-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .ob-brand { color: var(--w-muted); font-size: 14px; font-weight: 700; }
 
@@ -22,6 +24,11 @@
 .ob-logo .wk-muted { margin: 4px 0 8px; }
 .ob-mark { display: grid; place-items: center; width: 56px; height: 56px; overflow: hidden; border-radius: 12px; background: var(--w-select); color: var(--w-accent); font-size: 20px; font-weight: 700; }
 .ob-mark img { width: 100%; height: 100%; object-fit: contain; }
+.ob .file-picker { position: relative; display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 6px 10px; border: 1px dashed var(--w-line); border-radius: 8px; background: var(--w-bg); box-sizing: border-box; }
+.ob .file-picker:focus-within { outline: 2px solid var(--w-focus); outline-offset: 2px; }
+.ob .file-input-native { position: absolute; inset: 0; opacity: 0; width: 100%; height: 100%; min-height: 0; padding: 0; margin: 0; border: 0; cursor: pointer; }
+.ob .file-picker-btn { display: inline-flex; align-items: center; min-height: 30px; padding: 0 12px; border: 1px solid var(--w-line); border-radius: 6px; background: var(--w-select); color: var(--w-ink); font-size: 13px; font-weight: 600; flex: none; }
+.ob .file-picker-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; color: var(--w-muted); }
 
 .ob-set { min-width: 0; margin: 0; padding: 0; border: 0; display: grid; gap: 10px; }
 .ob-set legend { padding: 0; margin-bottom: 10px; color: var(--w-ink); font-size: 14px; font-weight: 700; }

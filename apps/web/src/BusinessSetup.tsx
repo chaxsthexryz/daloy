@@ -2,10 +2,11 @@ import "./workspace-admin.css";
 import "./apps-design.css";
 import { Text } from "./Language";
 import { useLanguage } from "./Language";
-import { inkFor, WEBSITE_INQUIRY_SLUG, websiteInquiryDefinition } from "@daloy/engine";
+import { WEBSITE_INQUIRY_SLUG, websiteInquiryDefinition } from "@daloy/engine";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { api, ApiError, type Workflow } from "./api";
 import { ConnectPanel, FieldBadge, useAction } from "./ConnectPanel";
+import { CustomerBrandPreview } from "./CustomerBrandPreview";
 import { FormEmbed } from "./FormEmbed";
 
 type Profile = { businessName: string | null; website: string | null; inquiryEmail: string | null; replyTo: string | null };
@@ -139,13 +140,7 @@ function BrandKit({ name }: { name?: string | null }) {
       </div>
       <p role="status" className="inline-feedback" hidden={!colourStatus}>{t(colourStatus)}</p>
       <p role="alert" className="message error" hidden={!colourError}>{colourError}</p>
-      <div className="brand-preview">
-        <h3>{t("How your public form will look")}</h3>
-        {brand?.logo && <img src={preview || brand.logoUrl} alt="" />}
-        <strong>{name || t("Your business")}</strong>
-        <p>{t("Your email")}</p><div className="example-field">you@example.com</div>
-        <span className="preview-send" style={{ background: colour, color: inkFor(colour) }}>{t("Send")}</span>
-      </div>
+      <CustomerBrandPreview businessName={name ?? ""} logoUrl={brand?.logo ? (preview || brand.logoUrl) : null} accent={colour} />
     </section>
   );
 }

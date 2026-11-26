@@ -92,6 +92,9 @@ describe("onboarding progress", () => {
     await o.agent.put("/onboarding/type").send({ primary: "food_orders", related: ["food_orders"] }).expect(400);
     await o.agent.put("/onboarding/type").send({ primary: "other", related: ["online_retail", "food_orders", "beauty_wellness", "professional_services"] }).expect(400);
     await o.agent.put("/onboarding/type").send(type).expect(200);
+    await o.agent.put("/onboarding/type").send({ primary: "resorts_hotels", related: ["food_orders"] }).expect(200);
+    expect((await o.agent.get("/onboarding").expect(200)).body).toMatchObject({ primary: "resorts_hotels", related: ["food_orders"], suggestedGoal: "bookings" });
+    await o.agent.put("/onboarding/type").send(type).expect(200);
     await o.agent.put("/onboarding/workflow").send({ goal: "receipt_review" }).expect(400);
     await o.agent.put("/onboarding/workflow").send({ goal: "order_follow_up", payment: "card" }).expect(400);
   });

@@ -7,7 +7,7 @@ import { profileInput } from "./website-inquiry";
  * Everything here is pure, so the API and the console share one set of rules.
  */
 
-export const BUSINESS_CATEGORIES = ["online_retail", "food_orders", "beauty_wellness", "professional_services", "other"] as const;
+export const BUSINESS_CATEGORIES = ["online_retail", "food_orders", "beauty_wellness", "professional_services", "resorts_hotels", "other"] as const;
 export type BusinessCategory = (typeof BUSINESS_CATEGORIES)[number];
 export const ONBOARDING_GOALS = ["receipt_review", "bookings", "order_follow_up"] as const;
 export type OnboardingGoal = (typeof ONBOARDING_GOALS)[number];
@@ -37,7 +37,7 @@ export type OnboardingState = { completed: number };
 export const resumeStep = (s: OnboardingState): 1 | 2 | 3 => Math.min(Math.max(s.completed + 1, 1), 3) as 1 | 2 | 3;
 
 /** Pre-selected on screen 3 from the primary category. The owner can pick any of the three. */
-export const suggestedGoal = (primary: BusinessCategory | null): OnboardingGoal => (primary === "beauty_wellness" || primary === "professional_services" ? "bookings" : "order_follow_up");
+export const suggestedGoal = (primary: BusinessCategory | null): OnboardingGoal => (primary === "beauty_wellness" || primary === "professional_services" || primary === "resorts_hotels" ? "bookings" : "order_follow_up");
 
 /** Choose the R3 starter matching the payment route. Pay-later drafts never request an upfront deposit. */
 export function templateFor(goal: OnboardingGoal, payment: OnboardingPayment | null): { slug: string; stopgap: boolean } {

@@ -32,6 +32,7 @@ describe("onboarding input", () => {
 
   it("takes one primary category and at most three related ones that differ from it", () => {
     expect(typeInput.parse({ primary: "food_orders", related: ["online_retail", "other"] })).toEqual({ primary: "food_orders", related: ["online_retail", "other"] });
+    expect(typeInput.parse({ primary: "resorts_hotels", related: ["food_orders"] })).toEqual({ primary: "resorts_hotels", related: ["food_orders"] });
     expect(typeInput.parse({ primary: "other", related: [] }).related).toEqual([]);
     expect(typeInput.safeParse({ primary: "food_orders", related: ["food_orders"] }).success).toBe(false);
     expect(typeInput.safeParse({ primary: "food_orders", related: ["online_retail", "online_retail"] }).success).toBe(false);
@@ -71,6 +72,7 @@ describe("closest existing template", () => {
   it("suggests a goal from the primary category and falls back to order follow-up", () => {
     expect(suggestedGoal("beauty_wellness")).toBe("bookings");
     expect(suggestedGoal("professional_services")).toBe("bookings");
+    expect(suggestedGoal("resorts_hotels")).toBe("bookings");
     expect(suggestedGoal("online_retail")).toBe("order_follow_up");
     expect(suggestedGoal("other")).toBe("order_follow_up");
     expect(suggestedGoal(null)).toBe("order_follow_up");

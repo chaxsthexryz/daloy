@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { api, ApiError } from "./api";
 import { AuthLayout, AuthNote } from "./AuthLayout";
 import { checkNewPassword } from "./lib/password";
@@ -10,10 +10,19 @@ type Problem = { field: "email" | "password"; message: string };
  * The signed-out console (Doop rows E1 and E2): sign in, or create an account with a first workspace.
  * `approval` is set when the person arrived through #/answer/<token>; App.tsx then sends them on to the approval page.
  */
-export function SignIn({ onDone, approval }: { onDone: (u: User) => void; approval?: boolean }) {
-  const [mode, setMode] = useState<"login" | "register">("login");
+export function SignIn({
+  onDone,
+  approval,
+  initialMode = "login",
+}: {
+  onDone: (u: User, context?: { registered: boolean }) => void;
+  approval?: boolean;
+  initialMode?: "login" | "register";
+}) {
+  const [mode, setMode] = useState<"login" | "register">(initialMode);
   const [problem, setProblem] = useState<Problem | null>(null);
   const [busy, setBusy] = useState(false);
+  useEffect(() => { setMode(initialMode); setProblem(null); }, [initialMode]);
   const register = mode === "register";
   const submit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -25,7 +34,7 @@ export function SignIn({ onDone, approval }: { onDone: (u: User) => void; approv
     setProblem(null);
     setBusy(true);
     try {
-      onDone(await api<User>("POST", `/auth/${mode}`, { email, password }));
+      onDone(await api<User>("POST", `/auth/${mode}`, { email, password }), { registered: register });
     } catch (err) {
       const status = err instanceof ApiError ? err.status : 0;
       setBusy(false);

@@ -131,7 +131,8 @@
   }
   .rail-usage ~ .rail-account { margin-top: 0; }
   .console-shell .rail-account .who { display: block; overflow: hidden; text-overflow: ellipsis; padding: 0; color: var(--fg, var(--text)); font-size: 12px; font-weight: 500; }
-  .console-shell .rail-account a, .console-shell .rail-account button {
+  .rail-account-actions { display: flex; align-items: center; gap: 4px; flex-wrap: nowrap; }
+  .console-shell .rail-account-actions > a, .console-shell .rail-account-actions > button {
     display: inline-flex;
     align-items: center;
     min-height: 24px;
@@ -143,7 +144,55 @@
     font-size: 12px;
     box-shadow: none;
   }
-  .console-shell .rail-account a:hover, .console-shell .rail-account button:hover { background: var(--subtle, var(--sunken)); color: var(--fg, var(--text)); }
+  .console-shell .rail-account-actions > a:hover, .console-shell .rail-account-actions > button:hover { background: var(--subtle, var(--sunken)); color: var(--fg, var(--text)); }
+  .console-shell .rail-account-actions > button.rail-help-btn {
+    margin-left: auto;
+    width: 26px;
+    min-height: 26px;
+    padding: 0;
+    justify-content: center;
+    border-radius: 999px;
+    border-color: var(--border-hairline, var(--border-soft));
+    font-weight: 700;
+  }
+  .rail-help-label { display: none; }
+  .rail-help-menu {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: calc(100% + 6px);
+    z-index: 45;
+    display: grid;
+    gap: 2px;
+    padding: 6px;
+    background: var(--daylight-bg, var(--surface));
+    color: var(--fg, var(--text));
+    border: 1px solid var(--border, var(--border-soft));
+    border-radius: 10px;
+    box-shadow: var(--shadow-overlay);
+  }
+  .console-shell .rail-help-menu a {
+    display: block;
+    padding: 7px 10px;
+    border-radius: 7px;
+    color: var(--fg, var(--text));
+    font-size: 13px;
+    font-weight: 500;
+    text-decoration: none;
+    line-height: 1.3;
+  }
+  .console-shell .rail-help-menu a:hover, .console-shell .rail-help-menu a:focus-visible {
+    background: var(--subtle, var(--sunken));
+    color: var(--fg, var(--text));
+  }
+  .rail-help-note {
+    margin: 4px 0 0;
+    padding: 6px 10px 4px;
+    border-top: 1px solid var(--border-hairline, var(--border-soft));
+    font-size: 11px;
+    line-height: 1.4;
+    color: var(--fg-muted, var(--muted));
+  }
   .console-shell .rail-account a[aria-current="page"] {
     background: var(--blue-soft, #eef4ff);
     color: var(--blue, var(--accent));
@@ -174,6 +223,17 @@
     background: transparent; color: var(--text); font-size: 14px; font-weight: 500;
   }
   .console-shell .sidebar .rail-account button { width: 100%; }
+  .rail-account-actions { display: grid; }
+  .rail-help-btn { gap: 8px; }
+  .rail-help-menu {
+    display: grid;
+    margin: 8px 0;
+    padding: 6px 10px;
+    border: 1px solid var(--border-soft);
+    border-radius: 10px;
+    background: var(--sunken);
+  }
+  .rail-help-note { margin: 8px 0 4px; font-size: 12px; line-height: 1.4; color: var(--muted); }
   .console-shell .sidebar nav a:is([href="#/"], [href="#/activity"], [href="#/new"], [href="#/ai"]) {
     border: 1px solid var(--border-soft); border-radius: 7px; margin: 2px 0; padding-inline: 12px;
   }

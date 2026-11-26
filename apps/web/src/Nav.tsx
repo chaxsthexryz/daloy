@@ -67,7 +67,10 @@ export function Shell({ user, hash, onSignOut, children }: { user: User; hash: s
   const [open, setOpen] = useState(false);
   const [closing, setClosing] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
   const menuButton = useRef<HTMLButtonElement>(null);
+  const helpRef = useRef<HTMLDivElement>(null);
+  const helpBtnRef = useRef<HTMLButtonElement>(null);
   const pill = useSlidingPill<HTMLElement>();
   const menu = pill.containerRef;
   const owner = user.role === "owner";
@@ -115,8 +118,27 @@ export function Shell({ user, hash, onSignOut, children }: { user: User; hash: s
   }, [canWatchRuns]);
 
   const pillLeave = pill.onContainerLeave;
-  // The phone menu, Quick jump and hover pill reset on any page change, the browser's Back button included.
-  useEffect(() => { setOpen(false); setClosing(false); setPaletteOpen(false); pillLeave(); }, [hash, pillLeave]);
+  // The phone menu, Quick jump, Help menu and hover pill reset on any page change, the browser's Back button included.
+  useEffect(() => { setOpen(false); setClosing(false); setPaletteOpen(false); setHelpOpen(false); pillLeave(); }, [hash, pillLeave]);
+  useEffect(() => {
+    if (!helpOpen) return;
+    const onPointerDown = (event: PointerEvent) => {
+      if (!helpRef.current?.contains(event.target as Node)) setHelpOpen(false);
+    };
+    const onKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.stopPropagation();
+        setHelpOpen(false);
+        helpBtnRef.current?.focus();
+      }
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [helpOpen]);
   useEffect(() => {
     if (open && !closing) menu.current?.querySelector<HTMLAnchorElement>("a")?.focus();
   }, [open, closing, menu]);
@@ -169,9 +191,11 @@ export function Shell({ user, hash, onSignOut, children }: { user: User; hash: s
       </a>
     );
   }
+  const closeHelp = () => { setHelpOpen(false); setOpen(false); pill.onContainerLeave(); };
   return (
     <div className="shell console-shell" data-phone-open={open || undefined} onKeyDown={event => {
       if (event.key !== "Escape") return;
+      if (helpOpen) { setHelpOpen(false); helpBtnRef.current?.focus(); return; }
       if (paletteOpen) { setPaletteOpen(false); return; }
       if (open) closePhone();
     }}>
@@ -227,22 +251,47 @@ export function Shell({ user, hash, onSignOut, children }: { user: User; hash: s
           </>}
           {link("#/settings", "Settings", "settings")}
           {owner && <AiMeter usage={usage} className="ai-meter rail-usage" />}
-          <div className="rail-account">
+          <div className="rail-account" ref={helpRef}>
             <span className="who rail-label">{user.email}</span>
-            <a
-              className="account-link"
-              href="#/account"
-              data-tip={t("Account")}
-              aria-label={t("Account")}
-              aria-current={here === "Account" ? "page" : undefined}
-              onPointerEnter={(event) => pill.onItemEnter(event.currentTarget)}
-              onFocus={(event) => pill.onItemEnter(event.currentTarget)}
-              onClick={() => { setOpen(false); pill.onContainerLeave(); }}
-            >
-              <span className="rail-avatar" aria-hidden="true">{user.email.slice(0, 1).toUpperCase()}</span>
-              <span className="rail-label">{t("Account")}</span>
-            </a>
-            <button type="button" className="quiet sign-out" onClick={onSignOut}>{t("Sign out")}</button>
+            <div className="rail-account-actions">
+              <a
+                className="account-link"
+                href="#/account"
+                data-tip={t("Account")}
+                aria-label={t("Account")}
+                aria-current={here === "Account" ? "page" : undefined}
+                onPointerEnter={(event) => pill.onItemEnter(event.currentTarget)}
+                onFocus={(event) => pill.onItemEnter(event.currentTarget)}
+                onClick={() => { setOpen(false); pill.onContainerLeave(); }}
+              >
+                <span className="rail-avatar" aria-hidden="true">{user.email.slice(0, 1).toUpperCase()}</span>
+                <span className="rail-label">{t("Account")}</span>
+              </a>
+              <button type="button" className="quiet sign-out" onClick={onSignOut}>{t("Sign out")}</button>
+              <button
+                ref={helpBtnRef}
+                type="button"
+                className="quiet rail-help-btn"
+                aria-label={t("Help and support")}
+                aria-expanded={helpOpen}
+                aria-haspopup="menu"
+                aria-controls="rail-help-menu"
+                title={t("Help and support")}
+                onClick={() => setHelpOpen((was) => !was)}
+              >
+                <span aria-hidden="true">?</span>
+                <span className="rail-help-label">{t("Help and support")}</span>
+              </button>
+            </div>
+            {helpOpen && (
+              <div id="rail-help-menu" className="rail-help-menu" role="menu" aria-label={t("Help and support")}>
+                {owner && <a role="menuitem" href="#/onboarding" onClick={closeHelp}>{t("Business setup guide")}</a>}
+                {user.ask === true && canWatchRuns && <a role="menuitem" href="#/activity/ask" onClick={closeHelp}>{t("Ask about a request")}</a>}
+                <a role="menuitem" href="#/settings" onClick={closeHelp}>{t("Plan and usage")}</a>
+                {owner && <a role="menuitem" href="#/apps" onClick={closeHelp}>{t("Connect apps")}</a>}
+                <p className="rail-help-note">{t("Need help? Message your kymavo operator or open Settings for your plan.")}</p>
+              </div>
+            )}
           </div>
         </nav>
       </aside>

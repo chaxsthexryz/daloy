@@ -1779,3 +1779,15 @@ How it works (`apps/web/src`):
 - Taglish parity (`locale.ts`, `locale-guided.ts`, `locale-workspace.ts`, `locale-management.ts`): translates `Library` (`Aklatan`), `Team` (`Koponan`), `Settings` (`Mga setting`), `Account` (`Account ko`), and `Back to Apps` (`Bumalik sa Mga app`).
 
 Tests: `apps/web/src/lib/run-flow.test.ts` (disabled button and editor track contrast), `apps/web/src/lib/locale.test.ts` (Taglish sidebar and app-back labels), `apps/web/src/Toast.test.tsx` (bottom-right toast layout), and `e2e/visual-dark-mobile.spec.ts` (Light, Dark, Taglish, and `390x844` checks).
+
+## Onboarding branding, hospitality alignment, live customer preview and Help menu (phase F6)
+
+What it does: completes the kymavo onboarding rebrand, aligns onboarding categories with resort/hotel stays, upgrades the onboarding logo picker and marketing signup entry, adds a shared live `CustomerBrandPreview` (Public form + GCash/QR Ph Payment page), and adds a dedicated `?` Help and support popover in the sidebar footer.
+
+How it works:
+- **Database and engine (`packages/db/migrations/0059_onboarding_hospitality.sql`, `packages/db/src/schema.ts`, `packages/engine/src/onboarding.ts`)**: widens `onboarding_progress_category` and `BUSINESS_CATEGORIES` to include `resorts_hotels` (`suggestedGoal("resorts_hotels") === "bookings"`).
+- **Onboarding and `#/signup` (`apps/web/src/Onboarding.tsx`, `onboarding.css`, `SignIn.tsx`, `App.tsx`, `lib/locale-onboarding.ts`)**: replaces all remaining `"Daloy"` strings with `kymavo`, adds `"Resorts and hotels"` (`Mga resort at hotel`) in Step 2, styles the Step 1 logo uploader with `.file-picker` while preserving the native `<input type="file">`, and supports `#/signup` to open registration directly and land new owners on `#/onboarding` right after account creation.
+- **Live customer preview (`apps/web/src/CustomerBrandPreview.tsx`, `brand-preview.css`, `BusinessSetup.tsx`)**: shared live preview used in both Business BrandKit settings and Onboarding Step 1 with `Public form` and `Payment page` (GCash / QR Ph deposit) tabs rendered with business name, uploaded logo or initials, and accent contrast via `inkFor`.
+- **Sidebar `?` Help and support menu (`apps/web/src/Nav.tsx`, `console-shell.css`, `lib/locale.ts`)**: adds a compact `?` button in `.rail-account` (and mobile drawer) opening a role-aware shortcut menu (`Business setup guide`, `Ask about a request` when enabled, `Plan and usage`, `Connect apps`) that closes on `Escape`, outside click, or navigation.
+
+Tests: `packages/engine/src/onboarding.test.ts`, `packages/db/src/migrations.test.ts`, `apps/api/src/onboarding.test.ts`, `apps/web/src/CustomerBrandPreview.test.tsx`, `apps/web/src/Nav.test.tsx`, `apps/web/src/lib/locale-coverage.test.ts`, plus Playwright `e2e/onboarding.spec.ts`, `e2e/brand-kit.spec.ts`, and `e2e/rail.spec.ts`.

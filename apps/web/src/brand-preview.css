@@ -1,0 +1,166 @@
+.brand-preview {
+  margin-top: 18px;
+  padding: 16px;
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  background: var(--sunken);
+  color: var(--text);
+}
+
+.brand-preview.brand-preview-compact {
+  margin-top: 4px;
+  padding: 14px;
+  background: var(--w-bg, var(--sunken));
+  border-color: var(--w-line, var(--border-soft));
+  color: var(--w-ink, var(--text));
+}
+
+.brand-preview-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  margin-bottom: 12px;
+}
+
+.brand-preview-head h3,
+.brand-preview-title {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 650;
+}
+
+.brand-preview-tabs {
+  display: inline-flex;
+  gap: 4px;
+  padding: 3px;
+  border: 1px solid var(--border-soft, var(--w-line));
+  border-radius: 8px;
+  background: var(--surface, var(--w-bg));
+}
+
+.brand-preview-tabs [role="tab"] {
+  min-height: 30px;
+  padding: 4px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted, var(--w-muted));
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.brand-preview-tabs [role="tab"][aria-selected="true"] {
+  background: var(--accent-tint, var(--w-select));
+  color: var(--accent, var(--w-accent));
+}
+
+.brand-preview-tabs [role="tab"]:focus-visible {
+  outline: 2px solid var(--focus, var(--w-focus));
+  outline-offset: 1px;
+}
+
+.brand-preview-card {
+  padding: 14px;
+  border: 1px solid var(--border-soft, var(--w-line));
+  border-radius: 9px;
+  background: var(--surface, var(--w-bg));
+  color: var(--text, var(--w-ink));
+}
+
+.brand-preview-identity {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.brand-preview-identity img {
+  display: block;
+  width: auto;
+  max-width: 110px;
+  max-height: 36px;
+  margin: 0;
+  object-fit: contain;
+}
+
+.brand-preview-mark {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  flex: none;
+  border-radius: 8px;
+  background: var(--accent-tint, var(--w-select));
+  color: var(--accent, var(--w-accent));
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.brand-preview-identity strong {
+  display: block;
+  margin: 0;
+  font-size: 15px;
+  overflow-wrap: anywhere;
+}
+
+.brand-preview-fields {
+  display: grid;
+  gap: 8px;
+}
+
+.brand-preview-field-label {
+  display: block;
+  margin: 0 0 3px;
+  font-size: 12px;
+  color: var(--muted, var(--w-muted));
+}
+
+.brand-preview-card .example-field {
+  background: var(--sunken, var(--w-bg));
+  border: 1px solid var(--border, var(--w-line));
+  padding: 7px 10px;
+  border-radius: 6px;
+  font-size: 13px;
+  color: var(--text, var(--w-ink));
+}
+
+.brand-preview-pay-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-soft, var(--w-line));
+  border-radius: 8px;
+  background: var(--sunken, var(--w-bg));
+  margin-bottom: 10px;
+}
+
+.brand-preview-amount {
+  font-size: 17px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.brand-preview-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--accent-tint, var(--w-select));
+  color: var(--accent, var(--w-accent));
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.brand-preview-card .preview-send {
+  display: inline-block;
+  margin-top: 12px;
+  padding: 7px 14px;
+  border-radius: 7px;
+  font-size: 13px;
+  font-weight: 600;
+}

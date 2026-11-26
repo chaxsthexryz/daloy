@@ -3,6 +3,7 @@ import "./onboarding.css";
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { BUSINESS_CATEGORIES, needsPayment, ONBOARDING_GOALS, ONBOARDING_PAYMENTS, suggestedGoal, type BusinessCategory, type OnboardingGoal, type OnboardingPayment } from "@daloy/engine";
 import { api, type Workflow } from "./api";
+import { CustomerBrandPreview } from "./CustomerBrandPreview";
 import { useLanguage } from "./Language";
 import { answersFrom, canContinue, initials, toggleRelated, withPrimary, type Answers, type OnboardingState } from "./lib/onboarding";
 
@@ -16,6 +17,7 @@ const CATEGORY: Record<BusinessCategory, [string, string]> = {
   food_orders: ["Food orders", "You take orders for food or drinks."],
   beauty_wellness: ["Beauty and wellness", "Salon, spa, clinic or fitness bookings."],
   professional_services: ["Professional services", "Clients book you or ask for quotes."],
+  resorts_hotels: ["Resorts and hotels", "Rooms, cottages, villas, or stay bookings with deposits."],
   other: ["Other", "Something else. You can change this later."],
 };
 const GOAL: Record<OnboardingGoal, [string, string]> = {
@@ -25,7 +27,7 @@ const GOAL: Record<OnboardingGoal, [string, string]> = {
 };
 const PAYMENT: Record<OnboardingPayment, [string, string]> = {
   manual_qrph: ["Manual QR Ph transfer", "Customers pay to your QR Ph code and send the receipt. You review it."],
-  gcash_paymongo: ["GCash checkout through PayMongo", "Customers pay on a checkout page and Daloy gets the result."],
+  gcash_paymongo: ["GCash checkout through PayMongo", "Customers pay on a checkout page and kymavo gets the result."],
   pay_later: ["Pay later", "No payment is asked for in this workflow."],
 };
 const ICON: Record<string, string> = {
@@ -33,6 +35,7 @@ const ICON: Record<string, string> = {
   food_orders: "M4 11h16a8 8 0 0 1-16 0zM8 4c0 1.5 1 1.5 1 3M12 4c0 1.5 1 1.5 1 3",
   beauty_wellness: "M12 3l2 5 5 2-5 2-2 5-2-5-5-2 5-2z",
   professional_services: "M4 8h16v11H4zM9 8V5h6v3M4 13h16",
+  resorts_hotels: "M4 20h16M6 20V7l6-3 6 3v13M9 10h2M13 10h2M9 14h2M13 14h2",
   other: "M5 12h.01M12 12h.01M19 12h.01",
   receipt_review: "M6 3h12v18l-3-2-3 2-3-2-3 2zM9 8h6M9 12h6",
   bookings: "M4 6h16v14H4zM4 10h16M8 3v4M16 3v4",
@@ -75,6 +78,7 @@ export function OnboardingPage() {
   const [error, setError] = useState("");
   const [loadError, setLoadError] = useState(false);
   const [logo, setLogo] = useState<string | null>(null);
+  const [logoFileName, setLogoFileName] = useState("");
   const heading = useRef<HTMLHeadingElement>(null);
   useKeyboardInset();
 
@@ -145,9 +149,10 @@ export function OnboardingPage() {
       });
       await api("PUT", "/settings/brand/logo", { data: url.slice(url.indexOf(",") + 1) });
       setLogo(url);
+      setLogoFileName(file.name);
     });
   };
-  const removeLogo = () => void run(async () => { await api("DELETE", "/settings/brand/logo"); setLogo(null); });
+  const removeLogo = () => void run(async () => { await api("DELETE", "/settings/brand/logo"); setLogo(null); setLogoFileName(""); });
 
   if (view === "done") return <DoneView state={state} headingRef={heading} onEdit={() => { setError(""); setView(1); }} />;
 
@@ -157,7 +162,7 @@ export function OnboardingPage() {
   return (
     <main className="page wk ob motion-page">
       <header className="ob-head">
-        <p className="ob-brand">{t("Set up Daloy")}</p>
+        <p className="ob-brand">{t("Set up kymavo")}</p>
         <button type="button" className="wk-button" disabled={busy} onClick={saveAndClose}>{t("Save and close")}</button>
       </header>
       <div className="ob-progress" role="progressbar" aria-label={t("Setup progress")} aria-valuemin={1} aria-valuemax={3} aria-valuenow={view} aria-valuetext={stepText}>
@@ -183,12 +188,26 @@ export function OnboardingPage() {
                 <span className="ob-mark" aria-hidden="true">{logo ? <img src={logo} alt="" /> : initials(answers.name)}</span>
                 <div>
                   <label htmlFor="ob-logo">{t("Logo")} <span className="wk-muted">{t("(optional)")}</span></label>
-                  <input id="ob-logo" type="file" accept="image/png,image/jpeg,image/webp" disabled={busy} onChange={(e) => { chooseLogo(e.target.files?.[0]); e.target.value = ""; }} />
+                  <div className="file-picker">
+                    <input
+                      id="ob-logo"
+                      className="file-input-native"
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp"
+                      disabled={busy}
+                      onChange={(e) => { chooseLogo(e.target.files?.[0]); e.target.value = ""; }}
+                    />
+                    <span className="file-picker-btn" aria-hidden="true">{t("Choose file")}</span>
+                    <span className="file-picker-name" aria-hidden="true">
+                      {busy ? t("Uploading…") : (logoFileName || (logo ? t("Logo saved.") : t("No file chosen")))}
+                    </span>
+                  </div>
                   <p className="wk-muted">{logo ? t("Your logo is saved.") : t("Your initials show until you add a logo. PNG, JPEG or WebP, up to 100 KB.")}</p>
                   {logo && <button type="button" className="wk-button" disabled={busy} onClick={removeLogo}>{t("Remove logo")}</button>}
                 </div>
               </div>
             </div>
+            <CustomerBrandPreview businessName={answers.name} logoUrl={logo} compact />
           </>
         )}
 
@@ -218,7 +237,7 @@ export function OnboardingPage() {
 
         {view === 3 && (
           <>
-            <h1 ref={heading} tabIndex={-1}>{t("What would you like Daloy to handle first?")}</h1>
+            <h1 ref={heading} tabIndex={-1}>{t("What would you like kymavo to handle first?")}</h1>
             <fieldset className="ob-set">
               <legend>{t("First workflow")}</legend>
               <div className="ob-cards">
@@ -237,7 +256,7 @@ export function OnboardingPage() {
                 </div>
               </fieldset>
             )}
-            <p className="ob-safe">{t("Daloy makes a draft you can edit and test. Nothing is connected, published or sent until you do it.")}</p>
+            <p className="ob-safe">{t("kymavo makes a draft you can edit and test. Nothing is connected, published or sent until you do it.")}</p>
           </>
         )}
 
@@ -272,13 +291,13 @@ function DoneView({ state, headingRef, onEdit }: { state: OnboardingState; headi
   return (
     <main className="page wk ob motion-page">
       <header className="ob-head">
-        <p className="ob-brand">{t("Set up Daloy")}</p>
+        <p className="ob-brand">{t("Set up kymavo")}</p>
         <a className="wk-button" href="#/">{t("Close")}</a>
       </header>
       <p className="ob-step">{t("Step {n} of 3: {name}", { n: 3, name: t("First workflow") })}. {t("Done")}</p>
       <div className="ob-form">
         <h1 ref={headingRef} tabIndex={-1}>{t("Your draft is ready")}</h1>
-        <p className="wk-muted">{t("Daloy made one draft from the closest template. Open it to change any step and run a test with the sample order.")}</p>
+        <p className="wk-muted">{t("kymavo made one draft from the closest template. Open it to change any step and run a test with the sample order.")}</p>
         <section className="wk-card" aria-label={t("Draft")}>
           <div className="wk-card-head"><b>{name || t("Your first workflow")}</b><span>{t("Draft, not turned on")}</span></div>
           <div className="wk-body">
@@ -306,7 +325,7 @@ export function OnboardingPrompt() {
   if (!state || (state.status !== "not_started" && state.status !== "in_progress")) return null;
   const resuming = state.status === "in_progress";
   const dismiss = () => api("POST", "/onboarding/dismiss").then(() => setState({ ...state, status: "dismissed" }), () => undefined);
-  const text: ReactNode = resuming ? t("Step {n} of 3: {name}", { n: state.step, name: t(STEP_NAMES[state.step - 1]!) }) : t("Three short questions, and Daloy makes a first draft you can test.");
+  const text: ReactNode = resuming ? t("Step {n} of 3: {name}", { n: state.step, name: t(STEP_NAMES[state.step - 1]!) }) : t("Three short questions, and kymavo makes a first draft you can test.");
   return (
     <aside className="ob-prompt" aria-label={t("Setup")}>
       <div>

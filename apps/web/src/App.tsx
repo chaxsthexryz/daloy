@@ -81,7 +81,18 @@ function Console({ hash }: { hash: string }) {
   if (invite) return <AcceptInvitePage key={invite[1]} token={invite[1]!} onDone={setUser} />;
   const reset = RESET.exec(hash);
   if (reset) return <ResetPasswordPage key={reset[1]} token={reset[1]!} />;
-  if (!user) return hash === "#/forgot-password" ? <ForgotPasswordPage /> : <SignIn onDone={setUser} approval={!!answer} />;
+  if (!user) return hash === "#/forgot-password" ? (
+    <ForgotPasswordPage />
+  ) : (
+    <SignIn
+      initialMode={hash === "#/signup" ? "register" : "login"}
+      approval={!!answer}
+      onDone={(u, ctx) => {
+        if (ctx?.registered && hash === "#/signup" && u.role === "owner") location.hash = "#/onboarding";
+        setUser(u);
+      }}
+    />
+  );
   // Approvers and requesters have no console beyond their own requests; the API refuses the rest anyway.
   return (
     <LanguageContext.Provider value={{ language, setLanguage }}>
@@ -134,7 +145,7 @@ function Route({ hash, user }: { hash: string; user: User }) {
   if (hash === "#/receipts" && (user.role === "owner" || user.role === "operator")) return <ReceiptsPage user={user} />;
   const verify = /^#\/verify-sender\/([A-Za-z0-9_-]{43})$/.exec(hash);
   if (verify) return <VerifySenderPage key={verify[1]} token={verify[1]!} />;
-  if (hash === "" || hash === "#" || hash === "#/" || /^#\/(advanced|new|ai|secrets|tokens|onboarding|team|resources|bookings|conversations|knowledge|receipts|activity|activity\/ask)$/.test(hash)) {
+  if (hash === "" || hash === "#" || hash === "#/" || /^#\/(signup|advanced|new|ai|secrets|tokens|onboarding|team|resources|bookings|conversations|knowledge|receipts|activity|activity\/ask)$/.test(hash)) {
     return <Automations user={user} />;
   }
   return <NotFoundPage />;

@@ -106,6 +106,11 @@ const tagalog: Record<string, string> = {
   "AI model settings are managed by the kymavo operator for this workspace.": "Ang mga setting ng AI model ay pinamamahalaan ng kymavo operator para sa workspace na ito.",
   "This page does not exist, or your account cannot open it.": "Hindi umiiral ang page na ito, o walang access dito ang account mo.",
   "Back to Automations": "Bumalik sa Mga automation",
+  "Help and support": "Tulong at suporta",
+  "Business setup guide": "Gabay sa pag-set up ng negosyo",
+  "Ask about a request": "Magtanong tungkol sa request",
+  "Connect apps": "Ikonekta ang mga app",
+  "Need help? Message your kymavo operator or open Settings for your plan.": "Kailangan ng tulong? Mag-message sa kymavo operator mo o buksan ang Mga setting para sa plan mo.",
 };
 
 /** True when the Tagalog dictionary has an entry for `source`, even one that keeps the English word. */

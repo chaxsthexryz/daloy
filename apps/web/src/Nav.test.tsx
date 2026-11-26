@@ -82,6 +82,16 @@ describe("staff navigation", () => {
     expect(html).not.toContain("Ctrl K");
     expect(html).toContain(">kymavo</span>");
   });
+
+  it("renders the Help and support button in the sidebar footer for owners and operators", () => {
+    const ownerHtml = render("#/", "owner");
+    expect(ownerHtml).toContain("rail-help-btn");
+    expect(ownerHtml).toContain('aria-label="Help and support"');
+    const opHtml = render("#/activity", "operator");
+    expect(opHtml).toContain("rail-help-btn");
+    expect(opHtml).not.toContain('href="#/apps"');
+    expect(opHtml).not.toContain('href="#/onboarding"');
+  });
 });
 
 const usage = (limit: number | null): Usage => ({

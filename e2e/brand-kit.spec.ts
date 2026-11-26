@@ -31,6 +31,13 @@ test("the owner saves a logo and colour in Business settings, and a script-carry
   await page.reload();
   await expect(page.getByLabel("Accent colour")).toHaveValue("#0b3d91");
 
+  const preview = page.locator(".brand-preview");
+  await preview.getByRole("tab", { name: "Payment page" }).click();
+  await expect(preview.getByText("PHP 1,500.00")).toBeVisible();
+  await expect(preview.getByText("GCash / QR Ph")).toBeVisible();
+  await expect(preview.getByText("Upload receipt")).toBeVisible();
+  await preview.getByRole("tab", { name: "Public form" }).click();
+
   await page.getByRole("button", { name: "Remove logo" }).click();
   await expect(page.getByText("No logo yet.")).toBeVisible();
 });

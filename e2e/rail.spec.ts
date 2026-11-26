@@ -86,3 +86,17 @@ test("textareas use Geist with tabular figures", async ({ page }) => {
   expect(await textarea.evaluate((el) => getComputedStyle(el).fontFamily)).toMatch(/Geist|Inter/);
   expect(await textarea.evaluate((el) => getComputedStyle(el).fontVariantNumeric)).toContain("tabular-nums");
 });
+
+test("the ? Help and support menu in the sidebar footer opens setup and usage shortcuts and closes on Escape", async ({ page }) => {
+  await signUp(page);
+  const rail = page.locator("aside.sidebar");
+  const helpBtn = rail.getByRole("button", { name: "Help and support" });
+  await helpBtn.click();
+  const menu = page.getByRole("menu", { name: "Help and support" });
+  await expect(menu).toBeVisible();
+  await expect(menu.getByRole("menuitem", { name: "Business setup guide" })).toHaveAttribute("href", "#/onboarding");
+  await expect(menu.getByRole("menuitem", { name: "Plan and usage" })).toHaveAttribute("href", "#/settings");
+  await page.keyboard.press("Escape");
+  await expect(menu).toBeHidden();
+  await expect(helpBtn).toBeFocused();
+});

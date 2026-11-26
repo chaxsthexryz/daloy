@@ -21,16 +21,25 @@ test("a new owner reaches a draft with a sample order in three screens, and runn
   await page.getByRole("link", { name: "Start setup" }).click();
 
   // Screen 1: the step is in words and in the progress bar, and Next waits for a name.
+  await expect(page.getByText("Set up kymavo")).toBeVisible();
+  await expect(page.locator("main")).not.toContainText("Daloy");
   await expect(page.getByText("Step 1 of 3: Your business")).toBeVisible();
   await expect(page.getByRole("progressbar")).toHaveAttribute("aria-valuetext", "Step 1 of 3: Your business");
   await expect(page.getByRole("heading", { name: "What name should customers see?" })).toBeFocused();
   await expect(next(page)).toBeDisabled();
   await page.getByLabel("Business name").fill("Ana's Sweets");
   await expect(page.locator(".ob-mark")).toHaveText("AS");
+  const preview = page.locator(".brand-preview");
+  await expect(preview.getByText("Ana's Sweets")).toBeVisible();
+  await preview.getByRole("tab", { name: "Payment page" }).click();
+  await expect(preview.getByText("PHP 1,500.00")).toBeVisible();
+  await expect(preview.getByText("Upload receipt")).toBeVisible();
+  await preview.getByRole("tab", { name: "Public form" }).click();
   await captureReview(page, "01", "Business name", "The public business name appears in the preview.");
   await page.getByLabel("Website").fill("https://anassweets.example");
   await page.getByLabel(/^Logo/).setInputFiles({ name: "logo.png", mimeType: "image/png", buffer: PNG });
   await expect(page.locator(".ob-mark img")).toBeVisible();
+  await expect(page.locator(".ob .file-picker-name")).toHaveText("logo.png");
   await expect(page.getByText("Your logo is saved.")).toBeVisible();
   await next(page).click();
 
@@ -147,4 +156,25 @@ test("on a phone the action bar stays on screen with the keyboard open, and the 
   await expect(page.getByRole("link", { name: "Buksan ang draft ko" })).toBeInViewport();
   // No horizontal scroll on a phone.
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+});
+
+test("direct #/signup lands in Step 1 of onboarding and Resorts and hotels suggests Bookings", async ({ page }) => {
+  await page.goto("/#/signup");
+  await expect(page.getByRole("heading", { name: "Create an account" })).toBeVisible();
+  await page.getByLabel("Email").fill(`signup-${Date.now()}@test.local`);
+  await page.getByLabel("Password").fill("e2e test password 1");
+  await page.getByRole("button", { name: "Create account" }).click();
+
+  await expect(page).toHaveURL(/#\/onboarding$/);
+  await expect(page.getByText("Step 1 of 3: Your business")).toBeVisible();
+  await page.getByLabel("Business name").fill("Casa del Mar Resort");
+  await next(page).click();
+
+  await expect(page.getByText("Step 2 of 3: Business type")).toBeVisible();
+  await page.getByRole("radio", { name: /Resorts and hotels/ }).check();
+  await next(page).click();
+
+  await expect(page.getByText("Step 3 of 3: First workflow")).toBeVisible();
+  await expect(page.getByRole("radio", { name: /Bookings/ })).toBeChecked();
+  await expect(page.locator("main")).not.toContainText("Daloy");
 });

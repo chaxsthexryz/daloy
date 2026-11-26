@@ -657,7 +657,7 @@ export const onboardingProgress = pgTable("onboarding_progress", {
 }, (t) => [
   check("onboarding_progress_status", sql`${t.status} in ('in_progress', 'completed', 'dismissed')`),
   check("onboarding_progress_completed", sql`${t.completed} between 0 and 3`),
-  check("onboarding_progress_category", sql`${t.primaryCategory} in ('online_retail', 'food_orders', 'beauty_wellness', 'professional_services', 'other')`),
+  check("onboarding_progress_category", sql`${t.primaryCategory} in ('online_retail', 'food_orders', 'beauty_wellness', 'professional_services', 'resorts_hotels', 'other')`),
   check("onboarding_progress_related", sql`cardinality(${t.relatedCategories}) <= 3`),
   check("onboarding_progress_goal", sql`${t.goal} in ('receipt_review', 'bookings', 'order_follow_up')`),
   check("onboarding_progress_payment", sql`${t.payment} in ('manual_qrph', 'gcash_paymongo', 'pay_later')`),
