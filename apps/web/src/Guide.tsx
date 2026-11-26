@@ -1,4 +1,4 @@
-import { configProblems, explainFlow, paymentMode, stepLines, withoutRecipient, type ConfigProblem } from "@daloy/engine";
+import { configProblems, explainFlow, paymentMode, stepLines, withoutRecipient, type ReadinessBlocker, type ReadinessReport } from "@daloy/engine";
 import { useState, type FormEvent } from "react";
 import { useLanguage } from "./Language";
 import { Sheet } from "./Sheet";
@@ -71,11 +71,22 @@ const TEST_TEXT: Record<TestState, string> = {
   failed: "The last sample test failed. Open the run to see why.",
 };
 
+function blockerLinkLabel(b: ReadinessBlocker): string | null {
+  if (!b.fix) return null;
+  if (b.kind === "knowledge") return "Open Knowledge";
+  if (b.kind === "resource") return "Manage rooms and resources";
+  if (b.kind === "operator") return "See plan and usage";
+  if (b.kind === "connect") return "Open Apps";
+  if (b.kind === "secret") return "Open Secrets";
+  if (b.kind === "approver") return "Open Team";
+  return null;
+}
+
 /** Sample test results in three separate groups: configuration checks, simulated steps and live connections. */
 export function SampleTest({
   draft,
   apps,
-  problems,
+  readiness,
   test,
   run,
   busy,
@@ -84,7 +95,7 @@ export function SampleTest({
 }: {
   draft: Draft;
   apps: AppNeed[];
-  problems: ConfigProblem[];
+  readiness: ReadinessReport | null;
   test: TestState;
   run: Run | null;
   busy: boolean;
@@ -97,7 +108,8 @@ export function SampleTest({
   const [addingResource, setAddingResource] = useState(false);
   const [resourceError, setResourceError] = useState("");
   const failing = example ? configProblems(withoutRecipient(draft), language) : [];
-  const needsResource = problems.some((p) => p.kind === "missing_resource");
+  const items = readiness ? [...readiness.blockers, ...readiness.warnings] : [];
+  const needsResource = items.some((b) => b.kind === "resource");
   const createResource = async (e: FormEvent) => {
     e.preventDefault();
     const clean = resourceName.trim();
@@ -118,33 +130,26 @@ export function SampleTest({
       <h2 id="r2b-sample-title">{t("Try a sample")}</h2>
       <p>{t(TEST_TEXT[test])}</p>
       <h3>{t("Configuration checks")}</h3>
-      {problems.length === 0 ? (
+      {!readiness ? (
+        <p>{t("Checking readiness…")}</p>
+      ) : items.length === 0 ? (
         <p>{t("Every step has what it needs.")}</p>
       ) : (
         <ul className="r2b-problems">
-          {problems.map((p) => (
-            <li key={`${p.kind ?? "cfg"}:${p.message}`}>
-              <span>{p.message}</span>
-              {p.kind === "knowledge" && (
-                <>
-                  {" "}
-                  <a href="#/knowledge">{t("Open Knowledge")}</a>
-                </>
-              )}
-              {(p.kind === "sms_plan" || p.kind === "sms_quota") && (
-                <>
-                  {" "}
-                  <a href="#/settings">{t("See plan and usage")}</a>
-                </>
-              )}
-              {p.kind === "missing_resource" && (
-                <>
-                  {" "}
-                  <a href="#/resources">{t("Manage rooms and resources")}</a>
-                </>
-              )}
-            </li>
-          ))}
+          {items.map((b) => {
+            const linkLabel = blockerLinkLabel(b);
+            return (
+              <li key={b.id}>
+                <span>{b.text}</span>
+                {b.fix && linkLabel && (
+                  <>
+                    {" "}
+                    <a href={b.fix}>{t(linkLabel)}</a>
+                  </>
+                )}
+              </li>
+            );
+          })}
         </ul>
       )}
       {needsResource && onAddResource && (
@@ -203,7 +208,7 @@ export function TurnOnSheet({
   apps,
   chosen,
   test,
-  problems,
+  readiness,
   onConfirm,
   onClose,
 }: {
@@ -211,13 +216,14 @@ export function TurnOnSheet({
   apps: AppNeed[];
   chosen: ReadonlyMap<string, string>;
   test: TestState;
-  problems: ConfigProblem[];
+  readiness: ReadinessReport | null;
   onConfirm: () => void;
   onClose: () => void;
 }) {
   const { t, language } = useLanguage();
   const mode = paymentMode(draft);
-  const blocked = problems.some((p) => p.blocksPublish);
+  const items = readiness ? [...readiness.blockers, ...readiness.warnings] : [];
+  const blocked = !readiness || !readiness.ready;
   return (
     <Sheet title={t("Turn on this automation")} onClose={onClose}>
       <div className="r2b-lines">
@@ -229,13 +235,24 @@ export function TurnOnSheet({
         <p>{mode ? t(PAYMENT[mode]) : t("This automation does not ask for payment.")}</p>
         <h3>{t("Sample test")}</h3>
         <p>{t(TEST_TEXT[test])}</p>
-        {problems.length > 0 && (
+        {items.length > 0 && (
           <div className="message error" role="alert">
-            <p>{t("{count} configuration checks still fail.", { count: problems.length })}</p>
+            <p>{t("{count} configuration checks still fail.", { count: items.length })}</p>
             <ul>
-              {problems.map((p) => (
-                <li key={`${p.kind ?? "cfg"}:${p.message}`}>{p.message}</li>
-              ))}
+              {items.map((b) => {
+                const linkLabel = blockerLinkLabel(b);
+                return (
+                  <li key={b.id}>
+                    {b.text}
+                    {b.fix && linkLabel && (
+                      <>
+                        {" "}
+                        <a href={b.fix}>{t(linkLabel)}</a>
+                      </>
+                    )}
+                  </li>
+                );
+              })}
             </ul>
           </div>
         )}

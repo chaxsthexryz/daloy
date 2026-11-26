@@ -1,6 +1,6 @@
 import "./editor.css";
 import { useLanguage } from "./Language";
-import { canSendAlone, definitionSchema, destination, lintDefinition, markText, preflightProblems, stepBranches, stepEntry, stepLabel, STEP_NOTE_MAX, triggerEntry, triggerLabel, type FormField, type Step, type StepErrorPolicy, type Trigger } from "@daloy/engine";
+import { canSendAlone, definitionSchema, destination, lintDefinition, markText, stepBranches, stepEntry, stepLabel, STEP_NOTE_MAX, triggerEntry, triggerLabel, type FormField, type ReadinessReport, type Step, type StepErrorPolicy, type Trigger } from "@daloy/engine";
 import { OUTSIDE_STEPS } from "@daloy/engine";
 import { AppMark } from "./AppMark";
 import { Breadcrumb } from "./Breadcrumb";
@@ -10,7 +10,7 @@ import { AskAi } from "./AiDraft";
 import { ChatTest } from "./ChatTest";
 import { FormEmbed } from "./FormEmbed";
 import { shareable, ShareSheet } from "./SharePanel";
-import { api, FINISHED, getUsage, type Run, type RunSummary, type Version, type Workflow } from "./api";
+import { api, checkWorkflowReadiness, FINISHED, type Run, type RunSummary, type Version, type Workflow } from "./api";
 import { DropLine, editorEdgeTypes, editorNodeTypes, flowAriaLabels, ZoomBar } from "./FlowCanvas";
 import { RunResult, StatePill, StepAttempt, useRun } from "./Runs";
 import { ADDABLE, addStep, blankDraft, canMove, connectSteps, duplicateStep, moveStep, readCopiedStep, removeStep, setDisabled, toFlow, type AddableType, type ConnectError, type Draft } from "./lib/graph";
@@ -179,9 +179,8 @@ export function Editor({ id, from }: { id: string; from?: string }) {
   const wide = useMedia("(min-width: 1000px)");
   const [selected, setSelected] = useState<string | null>(null);
   const [firstResource, setFirstResource] = useState<string | undefined>();
-  const [activeResourceCount, setActiveResourceCount] = useState<number | undefined>();
-  const [smsMeter, setSmsMeter] = useState<{ limit: number | null; used: number } | undefined>();
-  const [knowledgePublished, setKnowledgePublished] = useState<boolean | undefined>();
+  const [readiness, setReadiness] = useState<ReadinessReport | null>(null);
+  const [readinessTick, setReadinessTick] = useState(0);
   const [measured, setMeasured] = useState<Record<string, { width: number; height: number }>>({});
   const [message, setMessage] = useState<{ kind: "error" | "ok"; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -235,7 +234,6 @@ export function Editor({ id, from }: { id: string; from?: string }) {
         setDraft(d);
         const active = r ? r.filter((x) => x.active) : [];
         setFirstResource(active[0]?.id);
-        setActiveResourceCount(r ? active.length : undefined);
         setPayload(samplePayload(d.trigger, active[0]?.id));
         if (from) {
           void api<Run>("GET", `/runs/${from}`).then(
@@ -253,14 +251,6 @@ export function Editor({ id, from }: { id: string; from?: string }) {
         if (w.setup && !w.live && d.steps.length > 0 && !wasExplained(id)) setShowExplain(true);
       })
       .catch((e: Error) => setMessage({ kind: "error", text: e.message }));
-    getUsage().then(
-      (u) => setSmsMeter(u.sms ? { limit: u.sms.limit, used: u.sms.used } : undefined),
-      () => undefined,
-    );
-    api<{ published: { entryCount: number } | null }>("GET", "/knowledge").then(
-      (k) => setKnowledgePublished(Boolean(k.published && k.published.entryCount > 0)),
-      () => undefined,
-    );
     api<{ connections: ConnInfo[] }>("GET", "/settings/connections").then(
       (r) => {
         setConns(r.connections);
@@ -272,7 +262,26 @@ export function Editor({ id, from }: { id: string; from?: string }) {
       (m) => setMailReady(m.sender?.status === "active" || m.installationAllowed),
       () => setMailReady(true),
     );
+    const onFocus = () => setReadinessTick((n) => n + 1);
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
   }, [id]);
+  useEffect(() => {
+    if (!wf) return;
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      void checkWorkflowReadiness(draft, id).then(
+        (report) => {
+          if (!cancelled) setReadiness(report);
+        },
+        () => undefined,
+      );
+    }, 120);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [id, wf, draft, readinessTick, language]);
   const hasPublishedVersion = !!wf?.live;
   const isWorkflowPaused = !!wf?.pausedAt;
   useEffect(() => {
@@ -452,21 +461,11 @@ export function Editor({ id, from }: { id: string; from?: string }) {
   if (!wf || !catalog) return <main className="page a7-loading">{message ? <p role="alert">{message.text}</p> : <p>{t("Loading…")}</p>}</main>;
 
   const step = draft.steps.find((s) => s.id === selected);
-  const problems = preflightProblems(
-    draft,
-    {
-      smsConfigured: catalog.sms,
-      smsLimit: smsMeter?.limit,
-      smsUsed: smsMeter?.used,
-      resourceCount: activeResourceCount,
-      knowledgePublished,
-    },
-    language,
-  );
+  const problemCount = readiness ? readiness.blockers.length + readiness.warnings.length : 0;
   const addInlineResource = async (name: string) => {
     const created = await api<{ id: string; active: boolean }>("POST", "/resources", { name });
-    setActiveResourceCount((c) => (c ?? 0) + 1);
     setFirstResource((prev) => prev ?? created.id);
+    setReadinessTick((n) => n + 1);
     if (draft.trigger.type === "form" || draft.trigger.type === "sub_workflow") {
       const resourceFields = (draft.trigger.config.fields ?? []).filter((f) => f.type === "resource").map((f) => f.name);
       if (resourceFields.length > 0) {
@@ -1060,7 +1059,7 @@ export function Editor({ id, from }: { id: string; from?: string }) {
                   <SetupGuide
                     facts={{
                       missingApps: missing.length,
-                      problems: problems.length,
+                      problems: problemCount,
                       hasMessageStep: firstMessageStep(draft) !== null,
                       messagesChecked,
                       explained,
@@ -1087,7 +1086,7 @@ export function Editor({ id, from }: { id: string; from?: string }) {
                       </ul>
                     </section>
                   )}
-                  <SampleTest draft={draft} apps={apps} problems={problems} test={test} run={sampleRun} busy={busy} onTry={() => void testRun("mock")} onAddResource={addInlineResource} />
+                  <SampleTest draft={draft} apps={apps} readiness={readiness} test={test} run={sampleRun} busy={busy} onTry={() => void testRun("mock")} onAddResource={addInlineResource} />
                   <ChatTest workflowId={id} draft={draft} onRun={(r) => { setRunId(r); setDirty(false); void reload(); }} />
                   <div className="a7-ai">
                     <AskAi
@@ -1231,7 +1230,7 @@ export function Editor({ id, from }: { id: string; from?: string }) {
           apps={apps}
           chosen={chosen}
           test={test}
-          problems={problems}
+          readiness={readiness}
           onConfirm={() => {
             setShowTurnOn(false);
             void save(true);

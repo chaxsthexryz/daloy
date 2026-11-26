@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { createKeyedRun, googleTriggerStatus, isGoogleTrigger, isMailboxTrigger, mailboxTriggerStatus, isRecordTrigger, recordTriggerStatus, deliveries, emailSources, findApprover, listDeliveries, PLANS, PROVIDER_NAMES, type Provider, publishedVersion, readConnections, requests, runs, SCHEDULE_QUEUE, secrets, setPaused, SMS_NOT_SET_UP, supersededSql, syncEmailSourceOnPublish, triggers, unismsConfig, users, workflows, workflowVersions, type Db } from "@daloy/db";
+import { createKeyedRun, deliveries, listDeliveries, publishedVersion, requests, runs, SCHEDULE_QUEUE, setPaused, supersededSql, syncEmailSourceOnPublish, triggers, unismsConfig, users, workflows, workflowVersions, type Db } from "@daloy/db";
 import { BRANCHES, choiceProblems, definitionSchema, testChoicesSchema, testModeSchema, guidedSetupInput, OFFICE_REQUEST, saveProblems, stepJsonSchemas, templatesForLanguage, triggerFields, type Trigger, type WorkflowDefinition } from "@daloy/engine";
 import {
   BadRequestException,
@@ -19,12 +19,12 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { and, desc, eq, getTableColumns, inArray, max, sql } from "drizzle-orm";
-import { CronExpressionParser } from "cron-parser";
 import type { PgBoss } from "pg-boss";
 import * as z from "zod";
 import { SessionGuard } from "./auth";
 import { Allow, BOSS, CONFIG, CurrentUser, DB, enqueueRun, eventKey, isUniqueViolation, replayedRun, validPayload, ZodPipe, type ApiConfig, type SessionUser, MANAGE, OPERATE } from "./http";
 import { historyHider } from "./mask";
+import { APP_PROVIDERS, evaluateReadiness, evaluateReadinessWithEnv, loadWorkspaceReadinessEnv } from "./readiness";
 import { resourcesFor } from "./resources";
 
 const workflowInput = z.object({
@@ -33,15 +33,12 @@ const workflowInput = z.object({
 });
 const renameInput = workflowInput.pick({ name: true });
 const versionInput = z.object({ definition: z.unknown(), publish: z.boolean().default(false) });
+const readinessInput = z.object({ definition: z.unknown(), workflowId: z.uuid().optional() });
 const runInput = z.object({ payload: z.record(z.string(), z.unknown()).default({}) });
 // mode replaces live (kept for older clients): mock fakes every outside call, ai calls only the model, live calls everything.
 const testRunInput = runInput.extend({ definition: z.unknown(), live: z.boolean().default(false), mode: testModeSchema.optional(), choices: testChoicesSchema.default({}) });
 const workflowId = new ZodPipe(z.uuid());
 const versionNumber = new ZodPipe(z.coerce.number().int().min(1).max(1_000_000));
-/** Step types whose connection must be working before the workflow is turned on. */
-const CHECKED_PROVIDERS: Partial<Record<string, Provider>> = { sheets: "google_sheets", slack: "slack", outlook: "outlook", teams: "teams", discord: "discord", telegram: "telegram", calendar: "google_calendar", airtable: "airtable", notion: "notion", trello: "trello", meta_reply: "meta_messenger", whatsapp_reply: "whatsapp", shopify_create_product: "shopify", shopify_update_product: "shopify" };
-/** Every step type that uses an app, for the overview's apps list. Drive and PayMongo steps are not checked at publish, so they are not in CHECKED_PROVIDERS. */
-const APP_PROVIDERS: Partial<Record<string, Provider>> = { ...CHECKED_PROVIDERS, drive: "google_drive", google_docs: "google_drive", read_spreadsheet: "google_drive", paymongo_link: "paymongo" };
 /** The viewer's time zone, so "today" and the day bars follow their calendar. ICU checks the name; the database receives it as a bound parameter. */
 const timeZone = new ZodPipe(
   z
@@ -171,6 +168,70 @@ export class WorkflowsController {
     }
   }
 
+  @Post("readiness")
+  @UseGuards(Allow(MANAGE))
+  @HttpCode(200)
+  async checkReadiness(@CurrentUser() user: SessionUser, @Body(new ZodPipe(readinessInput)) body: z.output<typeof readinessInput>) {
+    if (body.workflowId) await this.owned(user.workspaceId, body.workflowId);
+    const parsed = definitionSchema.safeParse(body.definition);
+    if (!parsed.success) {
+      return {
+        ready: false,
+        blockers: parsed.error.issues.map((issue, idx) => ({
+          id: `config:schema:${idx}`,
+          kind: "config" as const,
+          severity: "blocker" as const,
+          text: `${issue.path.join(".") || "definition"}: ${issue.message}`,
+          ...(body.workflowId ? { fix: `#/w/${body.workflowId}` } : {}),
+        })),
+        warnings: [],
+      };
+    }
+    return evaluateReadiness(
+      { db: this.db },
+      { workspaceId: user.workspaceId, definition: parsed.data, workflowId: body.workflowId, language: user.language },
+    );
+  }
+
+  @Get(":id/readiness")
+  async readiness(@CurrentUser() user: SessionUser, @Param("id", workflowId) id: string) {
+    await this.owned(user.workspaceId, id);
+    const live = await publishedVersion(this.db, id);
+    const [latest] = live
+      ? [live]
+      : await this.db.select().from(workflowVersions).where(eq(workflowVersions.workflowId, id)).orderBy(desc(workflowVersions.version)).limit(1);
+    if (!latest) {
+      return {
+        ready: false,
+        blockers: [
+          {
+            id: "config:no_version",
+            kind: "config" as const,
+            severity: "blocker" as const,
+            text: user.language === "tl" ? "Magdagdag muna ng kahit isang hakbang bago i-on." : "Add at least one step before turning this on.",
+            fix: `#/w/${id}`,
+          },
+        ],
+        warnings: [],
+      };
+    }
+    const parsed = definitionSchema.safeParse(latest.definition);
+    if (!parsed.success) {
+      return {
+        ready: false,
+        blockers: parsed.error.issues.map((issue, idx) => ({
+          id: `config:schema:${idx}`,
+          kind: "config" as const,
+          severity: "blocker" as const,
+          text: `${issue.path.join(".") || "definition"}: ${issue.message}`,
+          fix: `#/w/${id}`,
+        })),
+        warnings: [],
+      };
+    }
+    return evaluateReadiness({ db: this.db }, { workspaceId: user.workspaceId, definition: parsed.data, workflowId: id, language: user.language });
+  }
+
   @Get(":id")
   async get(@CurrentUser() user: SessionUser, @Param("id", workflowId) id: string) {
     const wf = await this.owned(user.workspaceId, id);
@@ -296,41 +357,23 @@ export class WorkflowsController {
   async addVersion(@CurrentUser() user: SessionUser, @Param("id", workflowId) id: string, @Body(new ZodPipe(versionInput)) body: z.output<typeof versionInput>) {
     await this.owned(user.workspaceId, id);
     const definition = parseDefinition(body.definition);
-
-    if (body.publish) await this.checkConnections(user.workspaceId, definition);
-    if (body.publish) await this.checkApprovers(user.workspaceId, definition);
-    if (body.publish) await this.checkSigningSecret(user.workspaceId, definition);
     if (!body.publish) return this.saveVersion(id, definition, false);
-    // The owner's row is locked from the plan check to the save, so two publishes cannot both take the last live slot.
+    // The owner's row is locked from the readiness/plan check to the save, so two publishes cannot both take the last live slot.
     return this.db.transaction(async (tx) => {
-      await this.checkPlan(tx, user.workspaceId, id, definition.trigger);
-      if (definition.trigger.type === "email") {
-        const [source] = await tx.select({ status: emailSources.status }).from(emailSources).where(eq(emailSources.workflowId, id)).for("update");
-        if (source?.status !== "active") throw new BadRequestException("Connect the mailbox and wait for its status to be active before publishing an email trigger.");
+      await tx.select({ id: users.id }).from(users).where(eq(users.id, user.workspaceId)).for("update");
+      const report = await evaluateReadiness(
+        { db: tx as unknown as Db },
+        { workspaceId: user.workspaceId, definition, workflowId: id, language: user.language },
+      );
+      if (!report.ready) {
+        const first = report.blockers[0]!;
+        if (first.what === "automation_limit") throw new ForbiddenException(first.text);
+        throw new BadRequestException(first.text);
       }
       // Scheduled before saving: pg-boss rejects a bad cron here, before anything is saved.
       await this.syncSchedule(id, definition.trigger);
       return this.saveVersion(id, definition, true, tx);
     });
-  }
-
-  /** A plan caps live automations and how often a schedule fires. A workspace without a plan has no limits; drafts never reach this. */
-  private async checkPlan(tx: Tx, workspaceId: string, id: string, trigger: Trigger) {
-    const [owner] = await tx.select({ plan: users.plan }).from(users).where(eq(users.id, workspaceId)).for("update");
-    const plan = owner?.plan ? PLANS[owner.plan as keyof typeof PLANS] : undefined;
-    if (!plan) return;
-    if (trigger.type === "schedule" && fastestGapMinutes(trigger.config.cron) < plan.minScheduleMinutes) {
-      throw new BadRequestException(`Your ${plan.label} plan runs a schedule at most once every ${plan.minScheduleMinutes} minutes. Pick a less frequent schedule, or ask kymavo to move you to a larger plan.`);
-    }
-    const liveNow = await tx
-      .selectDistinct({ id: workflows.id })
-      .from(workflows)
-      .innerJoin(workflowVersions, and(eq(workflowVersions.workflowId, workflows.id), eq(workflowVersions.published, true)))
-      .where(eq(workflows.userId, workspaceId));
-    // An already live workflow can always be published again, even if a plan change left the workspace over its limit.
-    if (liveNow.length >= plan.automations && !liveNow.some((w) => w.id === id)) {
-      throw new ForbiddenException(`Your ${plan.label} plan allows ${plan.automations} live automation${plan.automations === 1 ? "" : "s"}. Delete one, or ask kymavo to move you to a larger plan.`);
-    }
   }
 
   /**
@@ -360,74 +403,6 @@ export class WorkflowsController {
     // The event already ran: answer with what that run was, not with this request's draft and mode.
     const [ran] = await this.db.select({ versionId: runs.workflowVersionId, live: runs.live, aiLive: runs.aiLive }).from(runs).where(eq(runs.id, runId));
     return { id: runId, versionId: ran!.versionId, mode: ran!.live ? "live" : ran!.aiLive ? "ai" : "mock", duplicate };
-  }
-
-  /** Turning on a workflow with Sheets, Slack, Outlook, Teams or SMS steps needs that connection working with a destination. Drafts do not. */
-  private async checkConnections(userId: string, definition: WorkflowDefinition) {
-    const needed = new Set(definition.steps.flatMap((s) => CHECKED_PROVIDERS[s.type] ?? []));
-    if (definition.trigger.type === "meta_dm") needed.add("meta_messenger");
-    if (definition.trigger.type === "whatsapp_message") needed.add("whatsapp");
-    if (definition.trigger.type === "shopify_order") needed.add("shopify");
-    if (definition.trigger.type === "telegram_message") needed.add("telegram");
-    // G2 (decision 0127): a Google trigger needs its app connected with the scope it reads with and a destination.
-    if (isGoogleTrigger(definition.trigger.type)) {
-      const { problem } = await googleTriggerStatus(this.db, userId, definition.trigger.type);
-      if (problem) throw new BadRequestException(problem);
-    }
-    // G3 (decision 0132): a mailbox trigger needs Gmail or Outlook connected via OAuth with read access.
-    if (isMailboxTrigger(definition.trigger.type)) {
-      const { problem } = await mailboxTriggerStatus(this.db, userId, definition.trigger.type);
-      if (problem) throw new BadRequestException(problem);
-    }
-    // G5 (decision 0134): a record trigger needs its app connected with read access and a destination.
-    if (isRecordTrigger(definition.trigger.type)) {
-      const { problem } = await recordTriggerStatus(this.db, userId, definition.trigger.type);
-      if (problem) throw new BadRequestException(problem);
-    }
-    if (definition.steps.some((s) => s.type === "sms") && !unismsConfig()) throw new BadRequestException(SMS_NOT_SET_UP);
-    const makesDocs = definition.steps.some((s) => s.type === "google_docs" && !s.disabled);
-    if (needed.size === 0 && !makesDocs) return;
-    const conns = await readConnections(this.db, userId);
-    if (makesDocs) {
-      // Make a document copies into the Drive folder with a Google sign-in (decision 0104), so a service account key cannot do it.
-      const drive = conns.find((x) => x.provider === "google_drive");
-      if (!drive || drive.authMethod !== "oauth" || !drive.destination?.folderId) throw new BadRequestException("Connect Google Drive with Google and pick a folder in Apps before turning on a Make a document step.");
-      if (drive.status !== "active") throw new BadRequestException("Google Drive needs to be connected again in Apps before turning this on.");
-    }
-    for (const provider of needed) {
-      const c = conns.find((x) => x.provider === provider);
-      const name = PROVIDER_NAMES[provider];
-      const where = provider === "slack" ? " and pick a channel" : provider === "telegram" ? " and choose a chat" : provider === "google_sheets" ? " and pick a sheet" : provider === "google_calendar" ? " and choose a calendar" : provider === "airtable" || provider === "notion" || provider === "trello" ? " and choose where it goes" : provider === "discord" ? " with a webhook link" : provider === "whatsapp" ? " with your Phone Number ID" : "";
-      if (!c || !c.destination) throw new BadRequestException(`Connect ${name}${where} in Apps before turning this on.`);
-      if (c.status !== "active") throw new BadRequestException(`${name} needs to be connected again in Apps before turning this on.`);
-    }
-    if (definition.trigger.type === "telegram_message" && !conns.find((x) => x.provider === "telegram")?.destination?.webhookPath) {
-      throw new BadRequestException("Turn on Receive messages for Telegram in Apps before turning this on.");
-    }
-  }
-
-  /** A named approver must be a member who may approve when the workflow is turned on; the worker and the approval page check again later. */
-  /** A signed webhook or team chat trigger needs its secret to exist, or every call would be refused (decision 0057, 0133). */
-  private async checkSigningSecret(workspaceId: string, definition: WorkflowDefinition) {
-    const t = definition.trigger;
-    const name =
-      t.type === "webhook"
-        ? t.config.hmacSecret
-        : t.type === "slack_message" || t.type === "teams_message" || t.type === "discord_message"
-          ? t.config.signingSecret
-          : undefined;
-    if (name === undefined) return;
-    const [found] = await this.db.select({ id: secrets.id }).from(secrets).where(and(eq(secrets.userId, workspaceId), eq(secrets.name, name)));
-    if (!found) throw new BadRequestException(`Add a secret named ${name} on the Secrets page first, so calls to this webhook can be checked against it.`);
-  }
-
-  private async checkApprovers(workspaceId: string, definition: WorkflowDefinition) {
-    for (const step of definition.steps) {
-      if (step.type !== "approval" || !step.config.approver) continue;
-      if (!(await findApprover(this.db, workspaceId, step.config.approver))) {
-        throw new BadRequestException(`${step.config.approver} can't approve in this workspace. Invite them as an approver on the Team page first.`);
-      }
-    }
   }
 
   private async saveVersion(id: string, definition: WorkflowDefinition, publish: boolean, outer: Pick<Db, "transaction"> = this.db) {
@@ -485,23 +460,6 @@ export class WorkflowsController {
   }
 }
 
-/** Smallest gap in minutes between the next 10 fire times (UTC, as pg-boss schedules). A cron that does not parse is left for pg-boss to reject. */
-function fastestGapMinutes(cron: string) {
-  try {
-    const next = CronExpressionParser.parse(cron, { tz: "UTC" });
-    let last = next.next().getTime();
-    let gap = Infinity;
-    for (let i = 0; i < 9; i++) {
-      const at = next.next().getTime();
-      gap = Math.min(gap, at - last);
-      last = at;
-    }
-    return gap / 60_000;
-  } catch {
-    return Infinity;
-  }
-}
-
 function parseDefinition(input: unknown): WorkflowDefinition {
   const parsed = definitionSchema.safeParse(input);
   if (!parsed.success) throw new BadRequestException(parsed.error.issues.map((i) => `${i.path.join(".") || "definition"}: ${i.message}`));
@@ -522,6 +480,8 @@ export function canonical(value: unknown): string {
 @Controller()
 @UseGuards(SessionGuard, Allow(OPERATE))
 export class CatalogController {
+  constructor(@Inject(DB) private readonly db: Db) {}
+
   @Get("step-schemas")
   stepSchemas() {
     // sms: whether this server has UniSMS settings (decision 0100), so the web app can hide the SMS step when it has not.
@@ -531,6 +491,22 @@ export class CatalogController {
   @Get("templates")
   templates(@CurrentUser() user: SessionUser) {
     return templatesForLanguage(user.language);
+  }
+
+  @Get("templates/readiness")
+  async templateReadiness(@CurrentUser() user: SessionUser) {
+    const env = await loadWorkspaceReadinessEnv(this.db, user.workspaceId);
+    const list = templatesForLanguage(user.language);
+    return Promise.all(
+      list.map(async (item) => {
+        const report = await evaluateReadinessWithEnv(this.db, env, {
+          workspaceId: user.workspaceId,
+          definition: item.definition as WorkflowDefinition,
+          language: user.language,
+        });
+        return { slug: item.slug, ...report };
+      }),
+    );
   }
 }
 

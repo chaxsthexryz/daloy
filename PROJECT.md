@@ -441,7 +441,7 @@ From the browser pilot audit in [docs/pilot-ux-audit-2026-11-25.md](docs/pilot-u
 
 ## UX architecture rebuild (docs/ux-second-opinion-2026-11-26.md, 26 November 2026)
 
-- [ ] G1. Server-side readiness service: one `evaluateReadiness` function and endpoints (`/workflows/:id/readiness`, `/workflows/readiness`, `/templates/readiness`) used by Publish, Editor, Turn on, Wizard, and Library cards. (claimed: gemini, branch ux-g1-g5)
+- [x] G1. Server-side readiness service: one `evaluateReadiness` function and endpoints (`/workflows/:id/readiness`, `/workflows/readiness`, `/templates/readiness`) used by Publish, Editor, Turn on, Wizard, and Library cards. (claimed: gemini, branch ux-g1-g5) Done: added `ReadinessReport` types (`packages/engine/src/readiness.ts`), `evaluateReadiness` (`apps/api/src/readiness.ts`), API endpoints + Publish gate (`apps/api/src/workflows.ts`), frontend wiring (`Editor.tsx`, `Guide.tsx`, `NewAutomation.tsx`, `locale-ux.ts`), decision `0145-readiness-service.md`, and `readiness.test.ts`.
 - [ ] G2. Template `asks` metadata and generated guided wizard (`#/a/:id`), routing Library, Build with AI, Automations, and Onboarding (`Onboarding.tsx:313`) to `#/a/:id`, with List view first in the editor. (claimed: gemini, branch ux-g1-g5)
 - [ ] G3. Six-destination navigation (Home, Inbox, Bookings, Automations, Business, Settings), collapsing hidden pages into tabs, adding Lalamove to Apps, merging Library and Build with AI into New, and folding Ask into Activity search. (claimed: gemini, branch ux-g1-g5)
 - [ ] G4. Unified Inbox (`#/inbox`) merging Conversations, Receipts to review, in-console approvals, and Needs check runs with a live nav badge. (claimed: gemini, branch ux-g1-g5)

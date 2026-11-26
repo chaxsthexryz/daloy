@@ -66,6 +66,16 @@
 .lib-line { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0; font-size: 13px; line-height: 18px; color: var(--o-ink); }
 .lib-line > span { min-width: 76px; font-size: 12px; font-weight: 600; color: var(--o-muted); }
 .lib-line em { font-style: normal; color: var(--o-muted); }
+.lib-ready-ok { color: var(--o-ok, #166534); font-weight: 550; }
+.lib-ready-needs { font-size: 12px; color: var(--o-warn, #9a3412); line-height: 17px; }
+.lib-readiness-box {
+  padding: 10px 12px;
+  border: 1px solid var(--o-line);
+  border-radius: 8px;
+  background: var(--o-canvas);
+  font-size: 13px;
+}
+.lib-readiness-box ul { margin: 6px 0 0 18px; padding: 0; }
 .lib-apps { min-height: 28px; }
 .lib-app-chip {
   display: inline-flex;

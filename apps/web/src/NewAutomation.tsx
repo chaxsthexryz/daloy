@@ -14,12 +14,13 @@ import {
   triggerEntry,
   websiteInquiryDefinition,
   type TemplateCategory,
+  type TemplateReadiness,
   type TemplateStyle,
   type WorkflowDefinition,
 } from "@daloy/engine";
 import { Text, useLanguage } from "./Language";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
-import { api, ApiError, type Workflow } from "./api";
+import { api, ApiError, getTemplatesReadiness, type Workflow } from "./api";
 import { AppMark } from "./AppMark";
 import { RunFlow } from "./FlowCanvas";
 import { startOfficeSetup, startPurchaseSetup } from "./OfficeRequests";
@@ -58,8 +59,27 @@ export function NewAutomationPage({ email }: { email: string }) {
   const [error, setError] = useState("");
   // One start or create at a time: a repeated click must not make a second draft.
   const [busy, setBusy] = useState(false);
+  const [readinessBySlug, setReadinessBySlug] = useState<Record<string, TemplateReadiness>>({});
   const dialog = useRef<HTMLDivElement>(null);
   const lastTriggerKey = useRef<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    const loadReadiness = () => {
+      void getTemplatesReadiness().then(
+        (list) => {
+          if (active) setReadinessBySlug(Object.fromEntries(list.map((r) => [r.slug, r])));
+        },
+        () => undefined,
+      );
+    };
+    loadReadiness();
+    window.addEventListener("focus", loadReadiness);
+    return () => {
+      active = false;
+      window.removeEventListener("focus", loadReadiness);
+    };
+  }, [language]);
 
   const start = (go: (email: string, language: Language) => Promise<void>) => {
     if (busy) return;
@@ -208,6 +228,16 @@ export function NewAutomationPage({ email }: { email: string }) {
         {!phone && <button type="button" className="ops-button" onClick={close}><Text>Close</Text></button>}
       </header>
       <p className="gp-lead">{card.description}</p>
+      {card.template && readinessBySlug[card.template] && !readinessBySlug[card.template]!.ready && (
+        <div className="lib-readiness-box" role="status">
+          <strong>{t("Needed before turning on")}</strong>
+          <ul>
+            {readinessBySlug[card.template]!.blockers.map((b) => (
+              <li key={b.id}>{b.text}</li>
+            ))}
+          </ul>
+        </div>
+      )}
       {previewSample && (
         <div className="lib-sample">
           <h3><Text>Sample message</Text></h3>
@@ -255,8 +285,9 @@ export function NewAutomationPage({ email }: { email: string }) {
       </button>
     );
 
-  const meta = (def: WorkflowDefinition) => {
+  const meta = (def: WorkflowDefinition, slug?: string) => {
     const apps = appsOf(def, language);
+    const readiness = slug ? readinessBySlug[slug] : undefined;
     return (
       <>
         <p className="lib-line"><span><Text>Starts with</Text></span> {triggerEntry(def.trigger.type).action[language]}</p>
@@ -271,6 +302,19 @@ export function NewAutomationPage({ email }: { email: string }) {
               ))
             : <em><Text>No apps needed</Text></em>}
         </p>
+        {readiness && (
+          <p className="lib-line lib-readiness-line">
+            <span><Text>Setup</Text></span>
+            {readiness.ready ? (
+              <em className="lib-ready-ok">{t("Ready to turn on")}</em>
+            ) : (
+              <span className="lib-ready-needs">
+                {readiness.blockers[0]!.text}
+                {readiness.blockers.length > 1 ? ` (+${readiness.blockers.length - 1})` : ""}
+              </span>
+            )}
+          </p>
+        )}
       </>
     );
   };
@@ -351,7 +395,7 @@ export function NewAutomationPage({ email }: { email: string }) {
                   </button>
                 </h3>
                 <p className="gp-sub">{c.description}</p>
-                {meta(c.definition)}
+                {meta(c.definition, c.template)}
                 {sample && (
                   <div className="lib-card-sample">
                     <span><Text>Sample message</Text></span>

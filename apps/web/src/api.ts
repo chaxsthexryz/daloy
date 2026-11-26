@@ -1,3 +1,4 @@
+import type { ReadinessReport, TemplateReadiness } from "@daloy/engine";
 import type { LastRun } from "./lib/states";
 /** JSON fetch against the API on the same origin (the Vite proxy in dev, the API itself in compose). */
 export class ApiError extends Error {
@@ -88,3 +89,6 @@ export type Usage = {
   minScheduleMinutes: number | null;
 };
 export const getUsage = () => api<Usage>("GET", "/usage");
+export const checkWorkflowReadiness = (definition: unknown, workflowId?: string) =>
+  api<ReadinessReport>("POST", "/workflows/readiness", { definition, ...(workflowId ? { workflowId } : {}) });
+export const getTemplatesReadiness = () => api<TemplateReadiness[]>("GET", "/templates/readiness");
