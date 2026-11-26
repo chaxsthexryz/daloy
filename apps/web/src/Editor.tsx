@@ -198,8 +198,8 @@ export function Editor({ id, from }: { id: string; from?: string }) {
   const [conns, setConns] = useState<ConnInfo[]>([]);
   // True until GET /settings/email answers, so a node never flashes "Connect Gmail" while the answer is on its way.
   const [mailReady, setMailReady] = useState(true);
-  // A phone shows the list first: the whole diagram fitted to 360px is too small to read.
-  const [view, setView] = useState<"diagram" | "list">(() => (matchMedia("(max-width: 599.98px)").matches ? "list" : "diagram"));
+  // Open in List view by default for everyone; Diagram is one click away.
+  const [view, setView] = useState<"diagram" | "list">("list");
   // R2b: the last test run and the draft it ran on, the dialogs, and whether the owner has read "Explain this flow".
   const [sample, setSample] = useState<SampleResult | null>(null);
   const { run: sampleRun } = useRun(sample?.runId ?? null);

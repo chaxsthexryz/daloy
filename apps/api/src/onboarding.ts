@@ -87,7 +87,15 @@ export class OnboardingController {
       const template = templatesForLanguage(user.language).find((t) => t.slug === templateFor(row.goal as OnboardingGoal, row.payment as OnboardingPayment | null).slug)!;
       // The owner reviews their own draft until they add someone else.
       const definition = definitionSchema.parse(JSON.parse(JSON.stringify(template.definition).replaceAll("owner@example.com", JSON.stringify(user.email).slice(1, -1))));
-      const [wf] = await tx.insert(workflows).values({ userId: user.workspaceId, name: template.name, slug: await freeSlug(tx, user.workspaceId) }).returning({ id: workflows.id });
+      const [wf] = await tx
+        .insert(workflows)
+        .values({
+          userId: user.workspaceId,
+          name: template.name,
+          slug: await freeSlug(tx, user.workspaceId),
+          setup: { kind: "generated", template: template.slug, step: "questions", answers: {} },
+        })
+        .returning({ id: workflows.id });
       await tx.insert(workflowVersions).values({ workflowId: wf!.id, version: 1, definition, published: false });
       await tx.update(onboardingProgress).set({ workflowId: wf!.id, status: "completed", sample: sampleOrder(definition), updatedAt: new Date() }).where(eq(onboardingProgress.userId, user.workspaceId));
       return { workflowId: wf!.id, created: true };

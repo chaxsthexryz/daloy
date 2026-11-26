@@ -310,7 +310,7 @@ function DoneView({ state, headingRef, onEdit }: { state: OnboardingState; headi
         <p className="ob-safe">{t("Nothing is connected, published or sent yet. Connect your apps and turn the workflow on when you are ready.")}</p>
         <div className="ob-bar">
           <button type="button" className="wk-button" onClick={onEdit}>{t("Edit my answers")}</button>
-          <a className="wk-button blue" href={`#/w/${state.workflowId}`}>{t("Open my draft")}</a>
+          <a className="wk-button blue" href={`#/a/${state.workflowId}`}>{t("Open my draft")}</a>
         </div>
       </div>
     </main>

@@ -311,8 +311,8 @@ export function Shell({ user, hash, onSignOut, children }: { user: User; hash: s
   );
 }
 
-/** One automation's tabs: Overview (guided automations that are on), Activity and Steps. The routes stay as they were. */
-export function AutomationTabs({ id, here, overview }: { id: string; here: "overview" | "activity" | "steps"; overview: boolean }) {
+/** One automation's tabs: Overview (#/a/:id), Activity, and Steps (#/w/:id). */
+export function AutomationTabs({ id, here }: { id: string; here: "overview" | "activity" | "steps"; overview?: boolean }) {
   const { t } = useLanguage();
   const tab = (key: typeof here, href: string, text: string) => (
     <a href={href} aria-current={here === key ? "page" : undefined}>
@@ -321,7 +321,7 @@ export function AutomationTabs({ id, here, overview }: { id: string; here: "over
   );
   return (
     <nav className="tabs" aria-label={t("This automation")}>
-      {overview && tab("overview", `#/a/${id}`, "Overview")}
+      {tab("overview", `#/a/${id}`, "Overview")}
       {tab("activity", `#/w/${id}/runs`, "Activity")}
       {tab("steps", `#/w/${id}`, "Steps")}
     </nav>

@@ -2,6 +2,7 @@ import type { Language } from "./language";
 import type { WorkflowDefinition } from "./definition";
 import type { Menu } from "./menu";
 import { TAGLISH } from "./taglish";
+import { asksForTemplate } from "./template-asks";
 import { TEMPLATES } from "./templates";
 
 const LABELS: Record<string, string> = {
@@ -243,6 +244,6 @@ export function templatesForLanguage(language: Language = "en", style: TemplateS
     const definition = localizeGeneratedDefinition(structuredClone(template.definition) as unknown as WorkflowDefinition, language, template.slug);
     const copy = style === "taglish" ? TAGLISH[template.slug] : undefined;
     if (copy) for (const step of definition.steps) if (copy[step.id]) Object.assign(step.config, copy[step.id]);
-    return { ...template, definition };
+    return { ...template, definition, asks: asksForTemplate(template.slug, definition) };
   });
 }

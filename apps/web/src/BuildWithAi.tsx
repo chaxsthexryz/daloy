@@ -278,10 +278,11 @@ export function BuildWithAiPage({ email, admin = false }: { email: string; admin
     dispatch({ type: "turnOn" });
     try {
       const wf = await saveDraft(draft.name, draft.definition, draft.summary, true);
+      await api("PATCH", `/workflows/${wf.id}/setup`, { kind: "generated", template: "custom", step: "turnon", answers: {} }).catch(() => undefined);
       setLogs(upsertAiLog(email, { id: logId, turns, draft, status: "live" }));
       dispatch({ type: "turnedOn" });
       pushToast({ message: t("Automation turned on."), tone: "success" });
-      location.hash = `#/w/${wf.id}`;
+      location.hash = `#/a/${wf.id}`;
     } catch (err) {
       dispatch({ type: "failed", message: (err as Error).message });
     } finally {
@@ -330,9 +331,10 @@ export function BuildWithAiPage({ email, admin = false }: { email: string; admin
     setSaveError("");
     try {
       const wf = await saveDraft(draft.name, draft.definition, draft.summary);
+      await api("PATCH", `/workflows/${wf.id}/setup`, { kind: "generated", template: "custom", step: "questions", answers: {} }).catch(() => undefined);
       setLogs(upsertAiLog(email, { id: logId, turns, draft, status: "saved" }));
       pushToast({ message: t("Saved draft."), tone: "success" });
-      location.hash = `#/w/${wf.id}`;
+      location.hash = `#/a/${wf.id}`;
     } catch (err) {
       setSaveError((err as Error).message);
       setSaving(false);
@@ -406,8 +408,9 @@ export function BuildWithAiPage({ email, admin = false }: { email: string; admin
           }
         : item.definition;
       await api("POST", `/workflows/${wf.id}/versions`, { definition, publish: false });
+      await api("PATCH", `/workflows/${wf.id}/setup`, { kind: "generated", template: slug, step: "questions", answers: {} });
       pushToast({ message: t("Created draft from template."), tone: "success" });
-      location.hash = `#/w/${wf.id}`;
+      location.hash = `#/a/${wf.id}`;
     } catch (e) {
       setSetupError((e as Error).message);
     }

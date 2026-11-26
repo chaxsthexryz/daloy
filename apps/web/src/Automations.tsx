@@ -499,7 +499,7 @@ function Row({ w, index, selected, reviewCount, entry, loading, now, onPick }: {
       className="ops-row motion-stagger-row"
       style={{ "--row-index": Math.min(index, 12) } as CSSProperties}
       data-selected={selected || undefined}
-      onDoubleClick={() => { location.hash = `#/w/${w.id}`; }}
+      onDoubleClick={() => { location.hash = `#/a/${w.id}`; }}
       onClick={(e) => {
         if (!(e.target as HTMLElement).closest("button, a")) onPick(w, e.currentTarget.querySelector(".c-name button"));
       }}
@@ -513,7 +513,7 @@ function Row({ w, index, selected, reviewCount, entry, loading, now, onPick }: {
             onKeyDown={(e) => {
               if (e.key === "Enter" && e.shiftKey) {
                 e.preventDefault();
-                location.hash = `#/w/${w.id}`;
+                location.hash = `#/a/${w.id}`;
               }
             }}
           >{w.name}</button>
@@ -542,7 +542,7 @@ function Row({ w, index, selected, reviewCount, entry, loading, now, onPick }: {
       <td className="c-action">
         <a
           className="ops-button secondary ops-open-btn"
-          href={status === "draft" || !!w.setup ? `#/a/${w.id}` : `#/w/${w.id}`}
+          href={`#/a/${w.id}`}
           onClick={(e) => e.stopPropagation()}
         >
           {t("Open")}
@@ -572,7 +572,6 @@ function Panel({ w, owner, detail, entry, runs, review, now, sheet, closing, clo
   const { t, language } = useLanguage();
   const status = statusOf(w);
   const badge = displayStatus(w, review.length);
-  const guided = !!w.setup;
   const oldest = review[review.length - 1];
   const date = (iso: string) => new Date(iso).toLocaleDateString(language === "tl" ? "fil-PH" : "en", { month: "short", day: "numeric" });
   const primary =
@@ -580,9 +579,7 @@ function Panel({ w, owner, detail, entry, runs, review, now, sheet, closing, clo
       ? { href: `#/a/${w.id}`, label: t("Continue setup") }
       : oldest
         ? { href: `#/runs/${oldest.id}`, label: t(review.length === 1 ? "Review 1 request" : "Review {count} requests", { count: review.length }) }
-        : guided
-          ? { href: `#/a/${w.id}`, label: t("Open") }
-          : { href: `#/w/${w.id}`, label: t("Open steps") };
+        : { href: `#/a/${w.id}`, label: t("Open") };
   const editable = owner && status !== "draft" && primary.href !== `#/w/${w.id}`;
   const definition = detail?.live?.definition ?? detail?.latest?.definition;
   const plan = (() => {

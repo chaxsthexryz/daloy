@@ -20,13 +20,15 @@ import {
   type OfficeRequestAnswers,
   type PurchaseRequestAnswers,
   type PurchaseSetup,
+  type GeneratedSetup,
   type Setup,
   type WorkflowDefinition,
 } from "@daloy/engine";
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
-import { api, ApiError, type Workflow } from "./api";
+import { api, ApiError, type Version, type Workflow } from "./api";
 import { FormEmbed } from "./FormEmbed";
 import { DeliveryList, type Delivery } from "./Connections";
+import { AutomationStatusPage, GeneratedWizard } from "./GuidedWizard";
 import { newestDraft } from "./lib/drafts";
 import { needsAttention, requestCounts, requestKind, stepStates, type RequestKind } from "./lib/guided";
 import { MailNotice } from "./MailNotice";
@@ -34,7 +36,7 @@ import { AutomationTabs } from "./Nav";
 import { TAKING_LONGER } from "./Runs";
 
 type Step = (typeof SETUP_STEPS)[number];
-type Detail = Omit<Workflow, "live"> & { trigger: { id: string } | null; live: unknown };
+type Detail = Omit<Workflow, "live"> & { trigger: { id: string; type: string; webhookPath: string | null } | null; live: Version | null; latest: Version | null };
 type RequestRow = { id: string; reference: string; subject: string; createdAt: string; runId: string; runState: string; runError: string | null; deliveries: Delivery[] };
 
 /** "Set up for my office": a new workflow with guided setup progress, named "Office requests" (or -2, -3 when taken). */
@@ -239,14 +241,34 @@ function Message({ title, mail }: { title: string; mail: { to: string; subject: 
 export function OfficeRequestPage({ id }: { id: string }) {
   const [wf, setWf] = useState<Detail | null>(null);
   const [error, setError] = useState("");
+  const [editingSetup, setEditingSetup] = useState(false);
   const load = () => api<Detail>("GET", `/workflows/${id}`).then(setWf, (e: Error) => setError(e.message));
-  useEffect(() => void load(), [id]);
+  useEffect(() => {
+    setEditingSetup(false);
+    void load();
+  }, [id]);
   if (error) return <main className="page request-page guided-request">{back}<p role="alert" className="message error">{error}</p></main>;
   if (!wf) return <main className="page request-page guided-request" />;
-  const setup = wf.setup as Setup | PurchaseSetup | null;
-  if (!setup) return <main className="page request-page guided-request">{back}<p><Text>This workflow has no guided setup.</Text> <a href={`#/w/${id}`}><Text>Open advanced editor</Text></a></p></main>;
-  if (wf.live && wf.trigger) return <LivePage wf={wf} formId={wf.trigger.id} />;
-  return setup.template === PURCHASE_REQUEST ? <PurchaseWizard wf={wf} setup={setup} onLive={load} /> : <SetupWizard wf={wf} setup={setup as Setup} onLive={load} />;
+  const setup = wf.setup as Setup | PurchaseSetup | GeneratedSetup | null;
+  if (setup && !("kind" in setup)) {
+    if (wf.live && wf.trigger) return <LivePage wf={wf} formId={wf.trigger.id} />;
+    return setup.template === PURCHASE_REQUEST ? <PurchaseWizard wf={wf} setup={setup} onLive={load} /> : <SetupWizard wf={wf} setup={setup} onLive={load} />;
+  }
+  if (wf.live && !editingSetup) {
+    return <AutomationStatusPage wf={wf} onReload={load} onEditSetup={() => setEditingSetup(true)} />;
+  }
+  const genSetup = setup && "kind" in setup && setup.kind === "generated" ? setup : null;
+  return (
+    <GeneratedWizard
+      wf={wf}
+      setup={genSetup}
+      onDone={async () => {
+        setEditingSetup(false);
+        await load();
+      }}
+      onCancelEdit={wf.live ? () => setEditingSetup(false) : undefined}
+    />
+  );
 }
 
 /** What the side panel of a guided setup says about each step, and its footnote. */

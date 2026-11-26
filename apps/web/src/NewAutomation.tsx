@@ -114,12 +114,13 @@ export function NewAutomationPage({ email }: { email: string }) {
             }
           : item.definition;
         await api("POST", `/workflows/${wf.id}/versions`, { definition, publish: false });
+        await api("PATCH", `/workflows/${wf.id}/setup`, { kind: "generated", template: slug, step: "questions", answers: {} });
       }
       pushToast({
         message: t(slug ? "Created draft from template." : "Created blank automation."),
         tone: "success",
       });
-      location.hash = `#/w/${wf.id}`;
+      location.hash = item ? `#/a/${wf.id}` : `#/w/${wf.id}`;
     } catch (err) {
       const taken = err instanceof ApiError && err.status === 409;
       setError(taken ? t("An automation with that name already exists.") : (err as Error).message);

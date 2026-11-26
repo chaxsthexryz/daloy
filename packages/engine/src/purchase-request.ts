@@ -28,8 +28,21 @@ export type PurchaseRequestAnswers = z.input<typeof purchaseRequestAnswers>;
 export const purchaseSetupInput = z.strictObject({ template: z.literal(PURCHASE_REQUEST), step: z.enum(PURCHASE_SETUP_STEPS), answers: purchaseRequestAnswers });
 export type PurchaseSetup = z.infer<typeof purchaseSetupInput>;
 
-/** Body of PATCH /workflows/:id/setup for either guided template. A body without a template is an office request, as before. */
-export const guidedSetupInput = z.union([setupInput.extend({ template: z.literal(OFFICE_REQUEST).optional() }), purchaseSetupInput]);
+export const GENERATED_SETUP_STEPS = ["questions", "connect", "test", "turnon"] as const;
+export const generatedSetupInput = z.strictObject({
+  kind: z.literal("generated"),
+  template: z.string().min(1).max(80),
+  step: z.enum(GENERATED_SETUP_STEPS),
+  answers: z.record(z.string(), z.union([z.string().max(4000), z.number(), z.boolean()])),
+});
+export type GeneratedSetup = z.infer<typeof generatedSetupInput>;
+
+/** Body of PATCH /workflows/:id/setup for legacy or generated guided templates. */
+export const guidedSetupInput = z.union([
+  setupInput.extend({ template: z.literal(OFFICE_REQUEST).optional() }),
+  purchaseSetupInput,
+  generatedSetupInput,
+]);
 
 export const defaultPurchaseAnswers = (email: string, language: Language = "en"): PurchaseRequestAnswers => ({ name: language === "tl" ? "Mga purchase request" : "Purchase requests", approver: email, purchasingEmail: email, outlook: false, teams: false });
 
