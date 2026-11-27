@@ -401,6 +401,8 @@ describe("role permissions", () => {
       ["get", "/conversations", operate],
       ["get", "/home", all],
       ["get", "/inbox", operate],
+      ["get", "/settings/notifications", operate],
+      ["put", "/settings/notifications", operate, { chats: true, handoff: true, runsSucceeded: false, runsFailed: true }],
       ["post", `/inbox/approvals/${randomUUID()}/decide`, operate, { decision: "approved" }],
       ["put", "/conversations/settings", only, {}],
       ["get", `/conversations/${randomUUID()}`, operate],
@@ -424,6 +426,8 @@ describe("role permissions", () => {
     "POST /auth/register", "POST /auth/login", "POST /auth/invites/:token/accept", "POST /auth/logout", "POST /auth/password", "PUT /auth/profile", "POST /auth/password-reset", "POST /auth/password-reset/:token",
     "POST /hooks/:path", "POST /hooks/paymongo/:path", "GET /hooks/meta/:path", "POST /hooks/meta/:path", "GET /hooks/whatsapp/:path", "POST /hooks/whatsapp/:path", "POST /hooks/shopify/:path", "POST /hooks/telegram/:path", "POST /hooks/slack/:path", "POST /hooks/teams/:path", "POST /hooks/discord/:path", "GET /forms/:id", "GET /forms/:id/slots", "GET /public/slots.js", "GET /public/compress.js", "GET /forms/:id/embed", "POST /forms/:id", "POST /forms/:id/embed",
     "GET /approvals/:token", "POST /approvals/:token", "GET /pay/:token", "GET /pay/:token/qr", "POST /pay/:token", "GET /settings/connections/oauth/callback", "GET /settings/connections/outlook/callback", "GET /brand/logo/:id",
+    // The live event stream never ends, so a request cannot wait for it; its roles are checked in events.test.ts.
+    "GET /events",
     // Platform admin routes answer 404 to every workspace role (admin.test.ts).
     "GET /admin/overview", "GET /admin/runs", "PUT /admin/workspaces/:id/plan", "PUT /admin/workspaces/:id/shared-mail",
     "GET /admin/ai", "PUT /admin/ai", "POST /admin/ai/test", "PUT /admin/workspaces/:id/ai-thinking",
