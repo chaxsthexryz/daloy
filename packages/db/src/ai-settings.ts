@@ -43,13 +43,14 @@ const IMAGE_TYPES: Partial<Record<Preset, FileKind[]>> = {
 
 export type AiConnection = { imageTypes?: FileKind[]; provider: string; baseUrl: string; apiKey?: string; model: string; extraBody?: Record<string, unknown>; reasoningTokens?: number; jsonMode?: "schema" | "object" };
 
-/**
- * Thinking models write hidden reasoning that counts against max_tokens, so a short budget can come back empty.
- * - A local llama.cpp or vLLM server (Qwen 3.5 and similar): the chat template switch turns thinking off. Only sent
- *   to this machine, because hosted APIs may reject fields they do not know.
- * - The Gemini API: Gemini 3 and newer cannot turn thinking off, so ask for "low" (every current model accepts it)
- *   and allow 2,048 extra tokens for it on top of each caller's answer budget.
- */
+/** How much a model may think before it answers, set per workspace (decision 0150). */
+export const THINKING_LEVELS = ["off", "low", "medium", "high"] as const;
+export type ThinkingLevel = (typeof THINKING_LEVELS)[number];
+// Thinking counts against max_tokens, so each level adds room for it on top of the caller's answer budget.
+const THINKING_TOKENS: Record<ThinkingLevel, number> = { off: 0, low: 2048, medium: 4096, high: 8192 };
+// DeepSeek's effort names: it has no "medium", and "max" is its highest.
+const DEEPSEEK_EFFORT: Record<Exclude<ThinkingLevel, "off">, string> = { low: "low", medium: "high", high: "max" };
+
 const LOCAL_HOST = /^(localhost|127\.\d+\.\d+\.\d+|\[::1\]|host\.docker\.internal)$/;
 /** A model on this machine or an Ollama server, which gets the short Build with AI prompt (decision 0106). */
 export function isLocalModel(conn: Pick<AiConnection, "provider" | "baseUrl">): boolean {
@@ -61,7 +62,15 @@ export function isLocalModel(conn: Pick<AiConnection, "provider" | "baseUrl">): 
   }
 }
 
-function thinkingControl(provider: string, baseUrl: string): Pick<AiConnection, "extraBody" | "reasoningTokens" | "jsonMode"> {
+/**
+ * The request fields that set a model's thinking for each host. Only known hosts get them, because hosted APIs may
+ * reject fields they do not know, and "off" sends what was sent before the setting existed.
+ * - A local llama.cpp or vLLM server (Qwen 3.5 and similar): the chat template switch.
+ * - The Gemini API: Gemini 3 and newer cannot turn thinking off, so "off" asks for "low", which every model accepts.
+ * - DeepSeek: thinking on or off, plus its own effort names. Its thinking mode keeps json_object output.
+ * - OpenRouter: its reasoning object. OpenAI: reasoning_effort, which a non-reasoning model may refuse with HTTP 400.
+ */
+export function thinkingControl(provider: string, baseUrl: string, level: ThinkingLevel = "off"): Pick<AiConnection, "extraBody" | "reasoningTokens" | "jsonMode"> {
   let host: string;
   try {
     host = new URL(baseUrl).hostname;
@@ -69,9 +78,19 @@ function thinkingControl(provider: string, baseUrl: string): Pick<AiConnection, 
     return {};
   }
   if (provider !== "openai") return {};
-  if (LOCAL_HOST.test(host)) return { extraBody: { chat_template_kwargs: { enable_thinking: false } } };
-  if (host === "generativelanguage.googleapis.com") return { extraBody: { reasoning_effort: "low" }, reasoningTokens: 2048 };
-  if (host === "api.deepseek.com") return { extraBody: { thinking: { type: "disabled" } }, jsonMode: "object" };
+  const room = level === "off" ? {} : { reasoningTokens: THINKING_TOKENS[level] };
+  if (LOCAL_HOST.test(host)) return { extraBody: { chat_template_kwargs: { enable_thinking: level !== "off" } }, ...room };
+  if (host === "generativelanguage.googleapis.com") {
+    const effort = level === "off" ? "low" : level;
+    return { extraBody: { reasoning_effort: effort }, reasoningTokens: THINKING_TOKENS[effort] };
+  }
+  if (host === "api.deepseek.com") {
+    if (level === "off") return { extraBody: { thinking: { type: "disabled" } }, jsonMode: "object" };
+    return { extraBody: { thinking: { type: "enabled" }, reasoning_effort: DEEPSEEK_EFFORT[level] }, ...room, jsonMode: "object" };
+  }
+  if (level === "off") return {};
+  if (host === "openrouter.ai") return { extraBody: { reasoning: { effort: level } }, ...room };
+  if (host === "api.openai.com") return { extraBody: { reasoning_effort: level }, ...room };
   return {};
 }
 
@@ -104,11 +123,14 @@ export async function readAiSettings(db: Db, userId: string) {
   const [row] = await db.select().from(aiSettings).where(eq(aiSettings.userId, userId));
   if (!row) return null;
   const keys = (await db.select({ preset: aiKeys.preset }).from(aiKeys).where(eq(aiKeys.userId, userId))).map((k) => k.preset as Preset);
-  return { preset: row.preset as Preset, model: row.model, hasKey: keys.includes(row.preset as Preset), keys };
+  return { preset: row.preset as Preset, model: row.model, thinking: row.thinking as ThinkingLevel, hasKey: keys.includes(row.preset as Preset), keys };
 }
 
-/** Saves the user's choice. A new apiKey replaces that provider's key; without one, the provider's saved key is used. */
-export async function saveAiSettings(db: Db, secretsKey: Buffer, userId: string, input: { preset: Preset; model: string; apiKey?: string }) {
+/**
+ * Saves the user's choice. A new apiKey replaces that provider's key; without one, the provider's saved key is used.
+ * Without a thinking level the saved one stays ("off" for a first save).
+ */
+export async function saveAiSettings(db: Db, secretsKey: Buffer, userId: string, input: { preset: Preset; model: string; apiKey?: string; thinking?: ThinkingLevel }) {
   const preset = PRESETS[input.preset];
   if (preset.needsKey && !input.apiKey && !(await savedKey(db, userId, input.preset))) throw new Error(`${preset.label} needs an API key`);
   await db.transaction(async (tx) => {
@@ -117,7 +139,7 @@ export async function saveAiSettings(db: Db, secretsKey: Buffer, userId: string,
       const key = { keyCiphertext: e.ciphertext, keyIv: e.iv, keyAuthTag: e.authTag, updatedAt: new Date() };
       await tx.insert(aiKeys).values({ userId, preset: input.preset, ...key }).onConflictDoUpdate({ target: [aiKeys.userId, aiKeys.preset], set: key });
     }
-    const values = { preset: input.preset, model: input.model, updatedAt: new Date() };
+    const values = { preset: input.preset, model: input.model, ...(input.thinking && { thinking: input.thinking }), updatedAt: new Date() };
     await tx.insert(aiSettings).values({ userId, ...values }).onConflictDoUpdate({ target: aiSettings.userId, set: values });
   });
 }
@@ -130,12 +152,17 @@ export async function aiConnection(db: Db, secretsKey: Buffer, userId: string): 
     return env(plan !== null && plan !== "preview"); // a preview workspace is not approved yet: no shared key
   };
   if (!row) return shared();
-  if (row.preset === "local") return { ...(await shared()), model: row.model };
+  const thinking = row.thinking as ThinkingLevel;
+  if (row.preset === "local") {
+    // shared() carries the "off" fields; every higher level sets the same fields or more, so it replaces them all.
+    const conn = await shared();
+    return { ...conn, model: row.model, ...thinkingControl(conn.provider, conn.baseUrl, thinking) };
+  }
   const preset = PRESETS[row.preset as Exclude<Preset, "local">];
   const key = await savedKey(db, userId, row.preset);
   if (!key) throw new Error(`${preset.label} has no saved API key`);
   const apiKey = decryptSecret(secretsKey, userId, keyName(row.preset), { ciphertext: key.keyCiphertext, iv: key.keyIv, authTag: key.keyAuthTag });
-  return { provider: "openai", baseUrl: preset.baseUrl, apiKey, model: row.model, imageTypes: IMAGE_TYPES[row.preset as Preset], ...thinkingControl("openai", preset.baseUrl) };
+  return { provider: "openai", baseUrl: preset.baseUrl, apiKey, model: row.model, imageTypes: IMAGE_TYPES[row.preset as Preset], ...thinkingControl("openai", preset.baseUrl, thinking) };
 }
 
 /**

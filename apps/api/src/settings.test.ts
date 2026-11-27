@@ -73,7 +73,7 @@ it("needs a session", async () => {
 it("lists the choices and starts on the local model", async () => {
   vi.stubEnv("LLM_MODEL", "llama3.2");
   const { body } = await (await signedIn()).get("/settings/ai").expect(200);
-  expect(body.current).toEqual({ preset: "local", model: "llama3.2", hasKey: false, keys: [], saved: false });
+  expect(body.current).toEqual({ preset: "local", model: "llama3.2", thinking: "off", hasKey: false, keys: [], saved: false });
   expect(body.presets.gemini).toMatchObject({ label: "Gemini API", defaultModel: "gemini-3.8-flash", needsKey: true });
   expect(body.presets.gemini.models).toContainEqual(expect.objectContaining({ id: "gemini-3.5-flash-lite", free: true }));
   expect(JSON.stringify(body.presets)).not.toContain("http");
@@ -85,10 +85,17 @@ it("saves a hosted choice with a key and never sends the key back", async () => 
   const agent = await signedIn();
   await agent.put("/settings/ai").send({ preset: "gemini", model: "gemini-3.8-flash", apiKey: "AIza-secret-test" }).expect(204);
   const res = await agent.get("/settings/ai").expect(200);
-  expect(res.body.current).toEqual({ preset: "gemini", model: "gemini-3.8-flash", hasKey: true, keys: ["gemini"], saved: true });
+  expect(res.body.current).toEqual({ preset: "gemini", model: "gemini-3.8-flash", thinking: "off", hasKey: true, keys: ["gemini"], saved: true });
   expect(res.text).not.toContain("AIza-secret-test");
   // Another user still gets the default.
   expect((await (await signedIn()).get("/settings/ai")).body.current.saved).toBe(false);
+});
+
+it("saves a thinking level and refuses one it does not know", async () => {
+  const agent = await signedIn();
+  await agent.put("/settings/ai").send({ preset: "local", model: "llama3.2", thinking: "max" }).expect(400);
+  await agent.put("/settings/ai").send({ preset: "local", model: "llama3.2", thinking: "high" }).expect(204);
+  expect((await agent.get("/settings/ai").expect(200)).body.current.thinking).toBe("high");
 });
 
 it("offers the local model from .env as the local default", async () => {

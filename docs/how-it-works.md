@@ -30,6 +30,8 @@ Thinking models: Qwen 3.5 and similar models first write hidden reasoning, which
 
 The Gemini API is different: Google's thinking docs say Gemini 3 and newer cannot turn thinking off, and that thinking tokens count toward the output limit, which can leave the answer truncated or empty. For the Gemini API's host (from the Gemini preset or from `LLM_BASE_URL`), the connection asks for `reasoning_effort: "low"`, a value every current Gemini model accepts, and sets `reasoningTokens: 2048`. `generate()` adds that to `max_tokens`, so each caller's `maxTokens` stays the budget for the answer itself. If a reply still comes back empty with `finish_reason: "length"`, the error says the model used up its token limit while thinking, instead of "not valid JSON". See decision 0018. Tests: `ai-settings.test.ts` ("turns off thinking only for a local OpenAI-compatible server", "asks Gemini for low thinking") and `llm-ts/src/index.test.ts` ("adds a connection's extra body fields", "thinking headroom", "used up its token limit").
 
+The owner can raise this per workspace with Thinking on the AI model page (`ai_settings.thinking`: Off, Low, Medium, High; decision 0150). Off is the behaviour above. Higher levels turn thinking on for the local server and DeepSeek (DeepSeek's effort names low, high, max), send `reasoning_effort` to Gemini and OpenAI and `reasoning: { effort }` to OpenRouter, and add 2,048, 4,096 or 8,192 tokens of room. Other hosts and Ollama get nothing extra at any level. Tests: `ai-settings.test.ts` ("maps ... at thinking ...", "sends nothing extra to an unknown host", "saves the thinking level").
+
 Tests: `packages/llm-ts/src/index.test.ts` (fetch is mocked, no model needed).
 
 ## Workflow definition (packages/engine/src/definition.ts)

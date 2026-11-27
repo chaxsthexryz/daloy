@@ -6,7 +6,8 @@ import { api } from "./api";
 
 type Suggestion = { id: string; free: boolean; note: string };
 type Preset = { label: string; defaultModel: string; needsKey: boolean; models: Suggestion[] };
-type Current = { preset: string; model: string; hasKey: boolean; keys: string[]; saved: boolean };
+type Current = { preset: string; model: string; thinking: Thinking; hasKey: boolean; keys: string[]; saved: boolean };
+type Thinking = "off" | "low" | "medium" | "high";
 type LocalModels = { ok: boolean; models: string[]; error?: string };
 const OTHER = "__other";
 
@@ -20,6 +21,13 @@ const NOTES: Record<string, string> = {
   openrouter: "Your own OpenRouter key. One key for many hosted models.",
   deepseek: "Your own key from the DeepSeek platform. Billed by DeepSeek per use.",
 };
+// More thinking can give better answers on hard steps, but each answer is slower and uses more tokens.
+const THINKING: { id: Thinking; label: string }[] = [
+  { id: "off", label: "Off (fastest)" },
+  { id: "low", label: "Low" },
+  { id: "medium", label: "Medium" },
+  { id: "high", label: "High (slowest, most tokens)" },
+];
 const KEY_LINKS: Record<string, { href: string; text: string }> = {
   gemini: { href: "https://aistudio.google.com/apikey", text: "Get a free key in Google AI Studio" },
   openai: { href: "https://platform.openai.com/api-keys", text: "Create a key on the OpenAI platform" },
@@ -35,6 +43,7 @@ export function AiModelPage() {
   const [local, setLocal] = useState<LocalModels | null>(null);
   const [preset, setPreset] = useState("local");
   const [model, setModel] = useState("");
+  const [thinking, setThinking] = useState<Thinking>("off");
   const [apiKey, setApiKey] = useState("");
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
@@ -54,6 +63,7 @@ export function AiModelPage() {
     setCurrent(data.current);
     setPreset(data.current.preset);
     setModel(data.current.model);
+    setThinking(data.current.thinking);
     // The provider's own list, so the picker holds ids it will actually accept.
     void loadOffered(data.current.preset);
   };
@@ -101,7 +111,7 @@ export function AiModelPage() {
     setTest(null);
     setBusy(true);
     try {
-      await api("PUT", "/settings/ai", { preset, model, apiKey: apiKey || undefined });
+      await api("PUT", "/settings/ai", { preset, model, thinking, apiKey: apiKey || undefined });
       setApiKey("");
       await load();
       const saved = t("Saved. Your automations now use {provider}, model {model}.", { provider: presets?.[preset]?.label ?? "", model });
@@ -205,6 +215,18 @@ export function AiModelPage() {
                     {suggestion.free ? t("Free tier.") : t("Paid.")} {t(suggestion.note)}
                   </p>
                 )}
+              </div>
+
+              <div>
+                <label htmlFor="ai-thinking">{t("Thinking")}</label>
+                <select id="ai-thinking" value={thinking} onChange={(e) => setThinking(e.target.value as Thinking)}>
+                  {THINKING.map((l) => <option key={l.id} value={l.id}>{t(l.label)}</option>)}
+                </select>
+                <p className="wk-muted wk-hint">
+                  {t("How much the model thinks before it answers. Off suits labels, summaries and short replies. More thinking helps hard steps but is slower and uses more tokens.")}
+                  {preset === "gemini" && thinking === "off" && ` ${t("Gemini cannot turn thinking off, so Off uses Low.")}`}
+                  {preset === "openai" && thinking !== "off" && ` ${t("Only OpenAI reasoning models accept this; others answer with an error.")}`}
+                </p>
               </div>
 
               {needsKey && (

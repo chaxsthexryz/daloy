@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import type { Pool } from "pg";
 import { afterAll, afterEach, beforeAll, expect, it, vi } from "vitest";
 import { freshDatabase } from "../../../test/db";
-import { aiConnection, presetConnection, readAiSettings, saveAiSettings } from "./ai-settings";
+import { aiConnection, presetConnection, readAiSettings, saveAiSettings, thinkingControl, THINKING_LEVELS } from "./ai-settings";
 import { eq } from "drizzle-orm";
 import { aiKeys, aiSettings, users } from "./schema";
 import type { Db } from "./index";
@@ -81,7 +81,7 @@ it("uses the fixed Gemini URL and the saved, encrypted key", async () => {
   });
   const rows = [...(await db.select().from(aiSettings)), ...(await db.select().from(aiKeys))];
   expect(JSON.stringify(rows)).not.toContain("AIza-test");
-  expect(await readAiSettings(db, userId)).toEqual({ preset: "gemini", model: "gemini-3.8-flash", hasKey: true, keys: ["gemini"] });
+  expect(await readAiSettings(db, userId)).toEqual({ preset: "gemini", model: "gemini-3.8-flash", thinking: "off", hasKey: true, keys: ["gemini"] });
 });
 
 it("keeps each provider's key across switches, so going back needs no new key", async () => {
@@ -188,4 +188,55 @@ it("reads images on the local server only when the operator turns LLM_VISION on"
   vi.stubEnv("LLM_VISION", "on");
   expect((await aiConnection(db, key, user)).imageTypes).toEqual(["jpeg", "png", "webp"]);
   expect((await aiConnection(db, key, await newUser())).imageTypes).toEqual(["jpeg", "png", "webp"]);
+});
+
+const GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/openai";
+const DEEPSEEK_URL = "https://api.deepseek.com";
+const OPENROUTER_URL = "https://openrouter.ai/api/v1";
+const OPENAI_URL = "https://api.openai.com/v1";
+const LOCAL_URL = "http://localhost:18434/v1";
+
+// Off is today's behaviour; each higher level asks the provider for more thinking and leaves more tokens for it.
+it.each([
+  [GEMINI_URL, "off", { extraBody: { reasoning_effort: "low" }, reasoningTokens: 2048 }],
+  [GEMINI_URL, "low", { extraBody: { reasoning_effort: "low" }, reasoningTokens: 2048 }],
+  [GEMINI_URL, "medium", { extraBody: { reasoning_effort: "medium" }, reasoningTokens: 4096 }],
+  [GEMINI_URL, "high", { extraBody: { reasoning_effort: "high" }, reasoningTokens: 8192 }],
+  [DEEPSEEK_URL, "off", { extraBody: { thinking: { type: "disabled" } }, jsonMode: "object" }],
+  [DEEPSEEK_URL, "low", { extraBody: { thinking: { type: "enabled" }, reasoning_effort: "low" }, reasoningTokens: 2048, jsonMode: "object" }],
+  [DEEPSEEK_URL, "medium", { extraBody: { thinking: { type: "enabled" }, reasoning_effort: "high" }, reasoningTokens: 4096, jsonMode: "object" }],
+  [DEEPSEEK_URL, "high", { extraBody: { thinking: { type: "enabled" }, reasoning_effort: "max" }, reasoningTokens: 8192, jsonMode: "object" }],
+  [OPENROUTER_URL, "off", {}],
+  [OPENROUTER_URL, "low", { extraBody: { reasoning: { effort: "low" } }, reasoningTokens: 2048 }],
+  [OPENROUTER_URL, "high", { extraBody: { reasoning: { effort: "high" } }, reasoningTokens: 8192 }],
+  [OPENAI_URL, "off", {}],
+  [OPENAI_URL, "medium", { extraBody: { reasoning_effort: "medium" }, reasoningTokens: 4096 }],
+  [LOCAL_URL, "off", { extraBody: { chat_template_kwargs: { enable_thinking: false } } }],
+  [LOCAL_URL, "low", { extraBody: { chat_template_kwargs: { enable_thinking: true } }, reasoningTokens: 2048 }],
+  [LOCAL_URL, "high", { extraBody: { chat_template_kwargs: { enable_thinking: true } }, reasoningTokens: 8192 }],
+] as const)("maps %s at thinking %s", (baseUrl, level, expected) => {
+  expect(thinkingControl("openai", baseUrl, level)).toEqual(expected);
+});
+
+it("sends nothing extra to an unknown host, an Ollama server or a bad URL, whatever the level", () => {
+  for (const level of THINKING_LEVELS) {
+    expect(thinkingControl("openai", "https://api.example.com/v1", level)).toEqual({});
+    expect(thinkingControl("ollama", "http://localhost:11434", level)).toEqual({});
+    expect(thinkingControl("openai", "not a url", level)).toEqual({});
+  }
+});
+
+it("saves the thinking level, keeps it when a save leaves it out, and applies it to the connection", async () => {
+  const user = await newUser();
+  await saveAiSettings(db, key, user, { preset: "openrouter", model: "m", apiKey: "sk-test", thinking: "medium" });
+  expect(await readAiSettings(db, user)).toMatchObject({ thinking: "medium" });
+  expect(await aiConnection(db, key, user)).toMatchObject({ extraBody: { reasoning: { effort: "medium" } }, reasoningTokens: 4096 });
+  await saveAiSettings(db, key, user, { preset: "openrouter", model: "m2" });
+  expect(await readAiSettings(db, user)).toMatchObject({ model: "m2", thinking: "medium" });
+
+  // The Local model preset uses the env server, so the level applies there too.
+  vi.stubEnv("LLM_PROVIDER", "openai");
+  vi.stubEnv("LLM_BASE_URL", LOCAL_URL);
+  await saveAiSettings(db, key, user, { preset: "local", model: "qwen", thinking: "low" });
+  expect(await aiConnection(db, key, user)).toMatchObject({ extraBody: { chat_template_kwargs: { enable_thinking: true } }, reasoningTokens: 2048 });
 });

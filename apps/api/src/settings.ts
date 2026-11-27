@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { aiConnection, claimUsage, localConnection, presetConnection, PRESET_IDS, PRESETS, QuotaError, readAiSettings, refundUsage, saveAiSettings, type AiConnection, type Db } from "@daloy/db";
+import { aiConnection, claimUsage, localConnection, presetConnection, PRESET_IDS, PRESETS, QuotaError, readAiSettings, refundUsage, saveAiSettings, THINKING_LEVELS, type AiConnection, type Db } from "@daloy/db";
 import { aiConfigSchema, aiOutputSchema, buildPrompt, TEMPLATES } from "@daloy/engine";
 import { generate, listModels, LlmError } from "@daloy/llm-ts";
 import { BadRequestException, Body, Controller, Get, HttpCode, HttpException, HttpStatus, Inject, Post, Put, UseGuards } from "@nestjs/common";
@@ -11,6 +11,8 @@ const settingsInput = z.object({
   preset: z.enum(PRESET_IDS),
   model: z.string().trim().min(1).max(200),
   apiKey: z.string().trim().min(1).max(500).optional(),
+  // Left out, the saved level stays.
+  thinking: z.enum(THINKING_LEVELS).optional(),
 });
 
 const modelsInput = z.object({
@@ -94,7 +96,7 @@ export class SettingsController {
   async get(@CurrentUser() user: SessionUser) {
     const saved = await readAiSettings(this.db, user.workspaceId);
     const localModel = localConnection().model;
-    const current = saved ? { ...saved, saved: true } : { preset: "local", model: localModel, hasKey: false, keys: [], saved: false };
+    const current = saved ? { ...saved, saved: true } : { preset: "local", model: localModel, thinking: "off", hasKey: false, keys: [], saved: false };
     const presets = Object.fromEntries(
       Object.entries(PRESETS).map(([id, p]) => [id, { label: p.label, defaultModel: id === "local" ? localModel : p.defaultModel, needsKey: p.needsKey, models: p.models }]),
     );

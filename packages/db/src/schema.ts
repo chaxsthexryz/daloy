@@ -450,8 +450,10 @@ export const aiSettings = pgTable("ai_settings", {
   userId: uuid("user_id").primaryKey().references(() => users.id, { onDelete: "cascade" }),
   preset: text("preset").notNull(),
   model: text("model").notNull(),
+  // How much the model may think before it answers (decision 0150). "off" is the behaviour before the setting existed.
+  thinking: text("thinking").notNull().default("off"),
   updatedAt: ts("updated_at").notNull().defaultNow(),
-});
+}, (t) => [check("ai_settings_thinking", sql`${t.thinking} in ('off', 'low', 'medium', 'high')`)]);
 
 /** One API key per user and hosted provider, encrypted like secrets, so switching providers never loses a key. */
 export const aiKeys = pgTable(
