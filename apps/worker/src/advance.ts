@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { approvals, claimTimeout, PAST_WINDOW, runSuperseded, runs, stepRuns, workflows, workflowVersions, type Db } from "@daloy/db";
+import { approvals, claimTimeout, PAST_WINDOW, publishRunFinished, runSuperseded, runs, stepRuns, workflows, workflowVersions, type Db } from "@daloy/db";
 import {
   assertTransition,
   decideRetry,
@@ -191,7 +191,11 @@ async function runNext(deps: AdvanceDeps, run: Run): Promise<void> {
     step = entryStep(def);
   } else if (last.state === "succeeded" || last.state === "skipped" || (last.state === "failed" && last.branch === "failed")) {
     const next = nextStep(def, last.stepId, last.branch ?? undefined);
-    if (!next) return moveRun(db, run.id, "running", "succeeded", { finishedAt: new Date() });
+    if (!next) {
+      await moveRun(db, run.id, "running", "succeeded", { finishedAt: new Date() });
+      // After the commit, and it never throws: a bell that cannot be rung does not fail the run (decision 0155).
+      return publishRunFinished(db, run.id, "succeeded");
+    }
     step = next;
   } else {
     step = def.steps.find((s) => s.id === last.stepId)!;
@@ -342,6 +346,7 @@ async function runNext(deps: AdvanceDeps, run: Run): Promise<void> {
     const e = err instanceof StepError ? err : undefined;
     const errorOutput = { error: message, ...(e?.outcome ? { outcome: e.outcome } : {}) };
     let enqueued = Boolean(retryAt);
+    let runFailed = false;
     await db.transaction(async (tx) => {
       if (canRecover && policy === "skip") {
         await moveStep(tx, stepRunId, "running", "skipped", { input: e?.input ?? null, output: { skipped: true, ...errorOutput }, inputTokens: e?.usage?.inputTokens ?? null, outputTokens: e?.usage?.outputTokens ?? null, error: message, outcome: e?.outcome ?? null, deadLetter: decision.kind === "dead_letter", finishedAt: new Date() }, claimId);
@@ -357,8 +362,12 @@ async function runNext(deps: AdvanceDeps, run: Run): Promise<void> {
       if (retryAt) await tx.update(runs).set({ nextAttemptAt: retryAt }).where(eq(runs.id, run.id));
       // It may have gone through and is not safe to repeat: nothing more is sent until a person decides.
       else if (decision.kind === "review") await moveRun(tx, run.id, "running", "needs_review", { error: `step ${step.id}: ${message}` });
-      else await moveRun(tx, run.id, "running", "failed", { error: `step ${step.id}: ${message}`, finishedAt: new Date() });
+      else {
+        await moveRun(tx, run.id, "running", "failed", { error: `step ${step.id}: ${message}`, finishedAt: new Date() });
+        runFailed = true;
+      }
     });
+    if (runFailed) await publishRunFinished(db, run.id, "failed");
     if (enqueued) await deps.enqueue(run.id, retryAt);
     return;
   }

@@ -3,6 +3,7 @@ import { and, asc, desc, eq, gt, inArray, isNull, sql } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import { bookingSuperseded } from "./bookings";
 import { connectionCredential } from "./connections";
+import { publishConversationEvent } from "./events";
 import { buildThreadHeaders, sanitizeMessageId, sanitizeReferences, type MailDeps } from "./mail";
 import { metaSend, parseMetaCredential } from "./meta";
 import { providerUrls, telegramSend, type ProviderUrls } from "./providers";
@@ -65,6 +66,8 @@ export async function recordInbound(
     })
     .where(eq(conversations.id, c!.id))
     .returning();
+  // Delivered when the caller's transaction commits; a replayed message (above) announces nothing.
+  await publishConversationEvent(tx, next!, "conversation_new");
   return { ...next!, replayed: false };
 }
 

@@ -588,3 +588,14 @@ Entry points: `GET /privacy/customer` and `POST /privacy/customer/delete` (owner
 - Entry points: `GET /inbox` and `POST /inbox/approvals/:id/decide` behind `SessionGuard`, `Allow(OPERATE)` (owner and operator only), and `RateLimit(20)` on decisions.
 - Named approver and replay guards: `decideApprovalById` locks the run row first, verifies the approval belongs to the caller's workspace, rejects used or expired approvals with 409, and repeats the atomic `allowed(actor)` SQL check (requiring `approverId === actor.id` and active `workspace_members` role in `owner`/`approver` for named approvals) in the single `UPDATE` statement alongside sibling-link settlement.
 - Secret redaction: `GET /inbox` passes every pending approval's step input through `historyHider` before returning `message` so encrypted or retired secrets never leave the API.
+
+## Live notifications (A6, decision 0155)
+
+- Assets: which customer chats, handoffs and runs exist in a workspace, and their titles (workflow name, channel).
+- Entry points: `GET /events` (SSE) and `GET` and `PUT /settings/notifications`, behind `SessionGuard` and `Allow(OPERATE)`. The Postgres channel `kymavo_events` is written only by the worker and the API, which connect as `daloy_app`.
+- Another workspace's events: each stream carries its own workspace id from the session, and an event reaches a stream only when the ids are equal. The workspace id is not sent to the browser. Tests open two workspaces and check that neither sees the other's events.
+- Content in the payload: events hold the kind, an id, a short title and a time. Message text, customer names, run errors and secrets are never included, so a leaked or logged event reveals no customer data. A test sends a message with a card number and checks the channel.
+- Poisoned notifications: anything written to the channel by another database user is parsed with zod and dropped if it does not match, so it cannot crash the hub or reach a stream in a wrong shape. A forged event for a real workspace id would show a bell entry, which the database role split already prevents.
+- Resource use: at most 5 open streams per user (429 beyond that), one shared LISTEN connection per API process, a 25 second heartbeat, and cleanup on disconnect. The global rate limit still applies to opening a stream.
+- Stale access: each heartbeat re-reads the session, so a stream ends after sign-out, session expiry or a role change that removes owner or operator.
+- Logging: a failed publish logs the kind and id only, never the payload.

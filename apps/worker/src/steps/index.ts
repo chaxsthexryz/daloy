@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { workspaceLanguage, readKnowledge, aiConnection, bookFromStep, bookingEventPayload, bookingOfStep, bookingReference, centavosToPesos, createDue, dispatchInternalTrigger, dueConversationId, dueForStep, DueTakenError, expireDue, findReviewer, mockAssistantSnapshot, parseAssistantScope, paymentEventPayload, pendingCheckout, pesosToCentavos, readAssistantSnapshot, checkReceiptReference, checkRecipients, claimTimeout, claimUsage, createApproval, findPaymentForStep, findApprover, queueCalendarEvent, queueDelivery, readSecrets, redactSecrets, refundUsage, secretForms, sendAs, startSubWorkflow, type BookingTriggerEvent, type Db, type MailDeps, type Provider, type StepBookingResult } from "@daloy/db";
-import { conversationMessages, deliveries, emailThreadFor, isPaused, normalizeWhatsAppPhone, PAST_WINDOW, prepareReply, providerUrls, recordOutboundEmail, recordOutboundReply, runConversation, runs, saveConversationFields, sendStaffAlert, takeOverConversation, windowOpen, type ProviderUrls } from "@daloy/db";
+import { conversationMessages, deliveries, emailThreadFor, isPaused, normalizeWhatsAppPhone, PAST_WINDOW, prepareReply, providerUrls, publishConversationEvent, recordOutboundEmail, recordOutboundReply, runConversation, runs, saveConversationFields, sendStaffAlert, takeOverConversation, windowOpen, type ProviderUrls } from "@daloy/db";
 import { and, eq, gt, ne } from "drizzle-orm";
 import { approvalEmailBody, checkDiscordContent, DEFAULT_STAY_TIMEZONE, ExpressionError, numberedMenu, type Menu, wouldDo, type FileRef, bookingStartField, conditionBranch, normalizePhMobile, parseZoned, runTransform, SHEETS_MAX_COLS, SHEETS_MAX_ROWS, SMS_MAX_CHARS, stayRange, stayTimesFromKnowledge, switchBranch, TransformError, type TestChoice, type Trigger, declaresJson, parseInstant, isRetryable, mockAiOutput, parseJsonTemplate, resolveJsonTemplate, resolveTemplate, StepError, usesSecrets, type ExpressionContext, type HistoryItem, type Language, quoteStay, QuoteError, type Step } from "@daloy/engine";
 import type { StepExecutor, StepResult } from "../advance";
@@ -546,7 +546,9 @@ async function runStep(deps: FullDeps, step: Step, input: unknown, ctx: Expressi
           if (!mock && !test && !booking?.test && (ans.output as { needsHuman?: boolean })?.needsHuman && UUID.test(runId)) {
             const [linked] = await deps.db.select({ conversationId: runs.conversationId }).from(runs).where(eq(runs.id, runId));
             if (linked?.conversationId) {
-              await takeOverConversation(deps.db, userId, linked.conversationId);
+              const taken = await takeOverConversation(deps.db, userId, linked.conversationId);
+              // The bell first (it never throws and is quick); the alerts below stay as they were.
+              if (taken) await publishConversationEvent(deps.db, taken, "handoff_requested");
               await sendStaffAlert(
                 { db: deps.db, secretsKey: deps.secretsKey, mail: deps.mail, urls: deps.urls, publicUrl: deps.publicUrl },
                 { workspaceId: userId, conversationId: linked.conversationId, reason: "Needs staff reply" },

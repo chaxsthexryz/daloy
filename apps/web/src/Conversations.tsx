@@ -61,7 +61,11 @@ export function ConversationsPage({ user }: { user: User }) {
         staffAlertPsid: data.settings.staffAlertPsid ?? "",
       });
     }
-    const nextId = keepSelection && selectedId && data.conversations.some((c) => c.id === selectedId) ? selectedId : (data.conversations[0]?.id ?? null);
+    // A bell link (#/conversations?c=<id>) opens that conversation the first time the list loads (decision 0155).
+    const wanted = keepSelection ? null : new URLSearchParams(location.hash.split("?")[1] ?? "").get("c");
+    const linked = wanted && data.conversations.some((c) => c.id === wanted) ? wanted : null;
+    const nextId = linked ?? (keepSelection && selectedId && data.conversations.some((c) => c.id === selectedId) ? selectedId : (data.conversations[0]?.id ?? null));
+    if (linked) setMobileView("detail");
     setSelectedId(nextId);
     if (!nextId) setDetail(null);
   };

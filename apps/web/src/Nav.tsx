@@ -4,6 +4,7 @@ import "./motion.css";
 import { api, getUsage, type RunSummary, type Usage } from "./api";
 import { CommandPalette, isQuickJumpShortcut } from "./CommandPalette";
 import { useLanguage } from "./Language";
+import { NotificationBell, useLiveEvents } from "./LiveEvents";
 import { diffLiveRuns, LIVE_RUN_EVENT, liveRunToast, type LiveRunSnapshot } from "./lib/live-runs";
 import { useSlidingPill } from "./lib/motion";
 import { aiMeter } from "./lib/usage";
@@ -91,6 +92,8 @@ export function Shell({ user, hash, onSignOut, children }: { user: User; hash: s
   const owner = user.role === "owner";
   const canWatchRuns = owner || user.role === "operator";
   const usage = useUsage(owner);
+  // One live stream for the bell, in the sidebar on a desktop and in the bottom bar on a phone (decision 0155).
+  const live = useLiveEvents(canWatchRuns);
   const [inboxCount, setInboxCount] = useState(0);
   const here = section(hash);
   const tRef = useRef(t);
@@ -244,6 +247,7 @@ export function Shell({ user, hash, onSignOut, children }: { user: User; hash: s
         <div className="sidebar-top">
           <svg className="rail-brand" aria-label="kymavo" role="img"><use href="/navigation.svg#mark" /></svg>
           <span className="sidebar-name rail-label">kymavo</span>
+          {canWatchRuns && <NotificationBell live={live} />}
           {open && <button type="button" className="quiet phone-close" onClick={closePhone}>{t("Close")}</button>}
         </div>
         <nav
@@ -319,6 +323,7 @@ export function Shell({ user, hash, onSignOut, children }: { user: User; hash: s
         {link("#/", "Home")}
         {canWatchRuns && link("#/inbox", "Inbox")}
         {owner ? link("#/automations", "Automations") : canWatchRuns && link("#/bookings", "Bookings")}
+        {canWatchRuns && <NotificationBell live={live} />}
         <button ref={menuButton} type="button" className="quiet menu-button" aria-expanded={open && !closing} aria-controls="main-menu"
           onClick={() => { if (open && !closing) closePhone(); else { setClosing(false); setOpen(true); } }}>
           {t("Menu")}

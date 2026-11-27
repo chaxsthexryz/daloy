@@ -44,6 +44,19 @@ export const users = pgTable("users", {
   check("users_display_name", sql`${t.displayName} is null or length(${t.displayName}) between 1 and 60`),
 ]);
 
+/**
+ * Which live events a member sees in the console bell (A6, decision 0155). One optional row per user: no row means the
+ * defaults below. Successful runs start off because a busy workspace would flood the bell.
+ */
+export const notificationPrefs = pgTable("notification_prefs", {
+  userId: uuid("user_id").primaryKey().references(() => users.id, { onDelete: "cascade" }),
+  chats: boolean("chats").notNull().default(true),
+  handoff: boolean("handoff").notNull().default(true),
+  runsSucceeded: boolean("runs_succeeded").notNull().default(false),
+  runsFailed: boolean("runs_failed").notNull().default(true),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 /** Metered work per workspace, kind (ai, email, http) and period (a Manila day, or a monthly cycle start). */
 export const usageCounts = pgTable(
   "usage_counts",

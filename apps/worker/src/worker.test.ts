@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import { bookings, createApproval, encryptSecret, recordDecision, resources, retiredSecrets, runs, SCHEDULE_QUEUE, stepRuns, users, workflows, workflowVersions, type Db } from "@daloy/db";
 import { evaluateCondition, StepError } from "@daloy/engine";
 import { asc, eq, sql } from "drizzle-orm";
-import type { Pool } from "pg";
+import pg, { type Pool } from "pg";
 import { PgBoss } from "pg-boss";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { freshDatabase } from "../../../test/db";
@@ -520,6 +520,27 @@ describe("retired secret purge in a running worker (decision 0067)", () => {
       expect(afterRun!.triggerPayload).toEqual({ oldVal: "[secret]", recentVal });
     } finally {
       await maintenance.stop();
+    }
+  });
+});
+
+describe("live events (decision 0155)", () => {
+  it("publishes run_succeeded and run_failed for live runs and nothing for a faked test run", async () => {
+    const heard: { kind: string; id: string; title: string }[] = [];
+    const listener = new pg.Client({ connectionString: dbUrl });
+    await listener.connect();
+    await listener.query("LISTEN kymavo_events");
+    listener.on("notification", (n) => heard.push(JSON.parse(n.payload ?? "{}") as { kind: string; id: string; title: string }));
+    try {
+      const ok = await createRun(flow({ id: "a" }));
+      const bad = await createRun(flow({ id: "fatal" }));
+      const faked = await createRun(flow({ id: "a" }), {}, { test: true });
+      for (const id of [ok, bad, faked]) await worker.enqueue(id);
+      for (const id of [ok, bad, faked]) await waitForEnd(id);
+      await new Promise((r) => setTimeout(r, 300));
+      expect(heard.map((e) => [e.kind, e.id, e.title]).sort()).toEqual([["run_failed", bad, "t"], ["run_succeeded", ok, "t"]].sort());
+    } finally {
+      await listener.end();
     }
   });
 });

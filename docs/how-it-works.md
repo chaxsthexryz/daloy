@@ -1820,3 +1820,23 @@ How it works:
 - **Workspace page (`apps/web/src/Feedback.tsx`, `lib/locale-feedback.ts`)**: `#/feedback`, from the Help menu and from the bar on My requests (approvers and requesters), with every string in Taglish.
 
 Tests: `apps/api/src/feedback.test.ts` (validation, the rate limit, workspace isolation, 404 for non-admins, the reply email through a fake SMTP server, audit rows, the CHECK constraints), `apps/web/src/Nav.test.tsx`, `apps/web/src/lib/locale-coverage.test.ts`.
+
+## Live notifications (phase A6, decision 0155)
+
+What it does: the console shows a bell with an unread count, a dropdown of recent events, and a toast for failures and handoffs. It covers four events: a live run succeeded, a live run failed, a new customer message arrived, and the bot asked for a person. Only owners and operators get it, and only for their own workspace.
+
+How an event travels. The worker and the API publish with Postgres `NOTIFY` on one channel, `kymavo_events`. The payload holds the workspace id, the kind, the run or conversation id, and a short title (the workflow name, or the channel). It never holds message text, customer details, errors or secrets. One API process keeps one `LISTEN` connection and passes each event to the open `GET /events` streams of that workspace whose owner has that kind switched on. The browser reads the stream with `EventSource`, which reconnects by itself.
+
+Why it is built this way. Postgres already carries the events, so there is no Redis or WebSocket service to run. Publishing runs after the run's state change has committed, in its own savepoint, and swallows its own errors, so a failed notification never fails a run or a stored message. A new chat is published inside the transaction that stores it, so an event exists only for a message that was kept.
+
+Edge cases it handles:
+- A different workspace's event never reaches a stream. The workspace id in the event must equal the stream's workspace.
+- Test runs that fake their steps send nothing.
+- A replayed webhook (same message id) sends nothing.
+- A malformed or unknown notification is dropped without closing any stream.
+- A heartbeat comment every 25 seconds keeps Cloudflare's 100 second idle timeout from closing the stream. The same beat re-checks the session, so a stream ends after sign-out.
+- At most 5 streams per user. A 6th gets 429, and a closed stream frees its slot.
+- Successful runs are off by default, because a busy workspace would fill the bell. Chats, handoffs and failed runs are on. Each person changes this under Settings, Notifications, and the change applies to their open streams at once.
+- The LISTEN connection reconnects with a growing delay if it drops. Events sent in the gap are not replayed.
+
+Tests that prove it: `packages/db/src/events.test.ts` (payload shape and size, no message text on the wire, test runs skipped, publish failure does not throw, rollback sends nothing, replayed message sends nothing), `apps/api/src/events.test.ts` (session required, owner and operator allowed, approver and requester refused with 403, headers, retry line, heartbeat, workspace filter, preference filter, live preference change, malformed notification dropped, stream cap and release, stream ends after sign-out, preference defaults and validation), `apps/worker/src/worker.test.ts` (a finished live run publishes, a faked test run does not), `apps/web/src/lib/live-events.test.ts` and `apps/web/src/LiveEvents.test.tsx` (parsing, list cap, links, Taglish text, which events toast, reduced motion).

@@ -21,6 +21,7 @@ import { GoogleCalendarController } from "./google-calendar";
 import { MonitorTriggersController } from "./monitor";
 import { EmailSettingsController } from "./email-settings";
 import { EmailSourceController } from "./email-source";
+import { EventHub, EventsController, NotificationPrefsController } from "./events";
 import { BOSS, CONFIG, DB, RateLimit, type ApiConfig } from "./http";
 import { KnowledgeController } from "./knowledge";
 import { McpController } from "./mcp";
@@ -68,7 +69,7 @@ export async function createApp({ db, boss, ...config }: AppOptions) {
   const webSentry = parseSentryDsn(config.webSentryDsn);
 
   @Module({
-    controllers: [AuthController, AdminController, AdminFeedbackController, SupportFeedbackController, HealthController, ConversationsController, HomeController, InboxController, WorkflowsController, CatalogController, SecretsController, ResourcesController, BookingsController, PaymentsController, PayPageController, PrivacyController, TokensController, RunsController, HooksController, PaymongoHooksController, MetaHooksController, WhatsAppHooksController, ShopifyHooksController, TelegramHooksController, SlackHooksController, TeamsHooksController, DiscordHooksController, FormsController, PublicAssetsController, ApprovalsController, McpController, SettingsController, LanguageController, DigestController, EmailSettingsController, EmailSourceController, ConnectionsController, OAuthStartController, OAuthCallbackController, GoogleController, GoogleTriggersController, MailboxTriggersController, GoogleCalendarController, MonitorTriggersController, AirtableOAuthController, NotionOAuthController, TrelloOAuthController, RecordTriggersController, DeliveriesController, AiDraftController, AiChatController, MembersController, MyRequestsController, UsageController, BrandController, BrandLogoController, OnboardingController, KnowledgeController],
+    controllers: [AuthController, AdminController, AdminFeedbackController, SupportFeedbackController, HealthController, ConversationsController, HomeController, InboxController, WorkflowsController, CatalogController, SecretsController, ResourcesController, BookingsController, PaymentsController, PayPageController, PrivacyController, TokensController, RunsController, HooksController, PaymongoHooksController, MetaHooksController, WhatsAppHooksController, ShopifyHooksController, TelegramHooksController, SlackHooksController, TeamsHooksController, DiscordHooksController, FormsController, PublicAssetsController, ApprovalsController, McpController, SettingsController, LanguageController, DigestController, EmailSettingsController, EmailSourceController, ConnectionsController, OAuthStartController, OAuthCallbackController, GoogleController, GoogleTriggersController, MailboxTriggersController, GoogleCalendarController, MonitorTriggersController, AirtableOAuthController, NotionOAuthController, TrelloOAuthController, RecordTriggersController, DeliveriesController, AiDraftController, AiChatController, MembersController, MyRequestsController, UsageController, BrandController, BrandLogoController, OnboardingController, KnowledgeController, EventsController, NotificationPrefsController],
     providers: [
       { provide: DB, useValue: db },
       { provide: BOSS, useValue: boss },
@@ -78,6 +79,7 @@ export async function createApp({ db, boss, ...config }: AppOptions) {
       { provide: APP_FILTER, useValue: new ErrorReportFilter(reporter) },
       { provide: APP_FILTER, useClass: PausedFilter },
       SessionGuard,
+      EventHub,
     ],
   })
   class AppModule {}

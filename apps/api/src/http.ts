@@ -23,9 +23,10 @@ export const CONFIG = Symbol("config");
  * mail and publicUrl are for the test email and its confirmation link; createApp fills them from the env vars when left out.
  * oauthProviders defaults to OAUTH_PROVIDERS; tests add a definition for the fake OAuth app.
  * trustProxy is the number of proxies in front of the API (Express "trust proxy"), so req.ip is the real client.
+ * eventsHeartbeatMs (default 25000) and eventsMaxStreams (default 5 per user) tune GET /events; tests shorten the heartbeat (decision 0155).
  * platformAdmins is PLATFORM_ADMINS, the comma-separated emails that may open #/admin (decision 0120).
  */
-export type ApiConfig = { secretsKey: Buffer; secureCookies: boolean; trustProxy?: number; mail?: MailDeps; publicUrl?: string; providers?: ProviderUrls; ask?: boolean; oauthProviders?: readonly OAuthProvider[]; uploadBudgetBytes?: number; platformAdmins?: string; sentryDsn?: string; sentryEnvironment?: string; webSentryDsn?: string };
+export type ApiConfig = { secretsKey: Buffer; secureCookies: boolean; trustProxy?: number; mail?: MailDeps; publicUrl?: string; providers?: ProviderUrls; ask?: boolean; oauthProviders?: readonly OAuthProvider[]; uploadBudgetBytes?: number; platformAdmins?: string; sentryDsn?: string; sentryEnvironment?: string; webSentryDsn?: string; eventsHeartbeatMs?: number; eventsMaxStreams?: number };
 
 /**
  * TRUST_PROXY and SECURE_COOKIES from the env (docs/deployment.md). A value that cannot be read stops the boot, so a

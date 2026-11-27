@@ -9,6 +9,7 @@ import { AiMeter, useUsage } from "./Nav";
 import { usePhone } from "./Sheet";
 import { personName } from "./lib/person";
 import type { Role, User } from "./Team";
+import { NotificationsCard } from "./NotificationSettings";
 import { UsageNotice } from "./UsageNotice";
 
 const THEMES: [Theme, string][] = [
@@ -123,6 +124,7 @@ export function SettingsPage({ user }: { user: User }) {
               <p className="wk-muted">{t("Saved on this device only.")}</p>
             </fieldset>
           </Card>
+          {(owner || user.role === "operator") && <NotificationsCard />}
           {!phone && (
             <>
               <Card title={t("Your account")} id="account-card">
