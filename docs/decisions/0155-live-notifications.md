@@ -36,7 +36,7 @@ Stream behaviour:
 - A comment line (`: heartbeat`) every 25 seconds, under Cloudflare's 100 second idle limit. Each beat also re-reads the session, so a stream ends after sign-out or when the role no longer allows it.
 - At most 5 open streams per user. The sixth gets 429. The count is taken before any await, so parallel opens cannot slip past it. A closed stream frees its slot on disconnect.
 
-Preferences. Table `notification_prefs` (migration `0062_notification_prefs.sql`), one optional row per user: `chats`, `handoff`, `runs_succeeded`, `runs_failed`. No row means the defaults. `GET` and `PUT /settings/notifications` (owner and operator) read and save them, and a save applies at once to that person's open streams.
+Preferences. Table `notification_prefs` (migration `0064_notification_prefs.sql`), one optional row per user: `chats`, `handoff`, `runs_succeeded`, `runs_failed`. No row means the defaults. `GET` and `PUT /settings/notifications` (owner and operator) read and save them, and a save applies at once to that person's open streams.
 
 Defaults: chats on, handoff on, failed runs on, successful runs off. This settles open question 3 of the admin console plan. A busy workspace finishes many runs an hour, and a bell that rings for each one gets ignored, which hides the failure and handoff events that matter. Each person can turn successful runs on in Settings. The existing run poller still shows a toast for a successful run regardless of this setting; it is the older behaviour and is left as it was.
 
