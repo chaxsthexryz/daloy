@@ -308,6 +308,7 @@ export function Shell({ user, hash, onSignOut, children }: { user: User; hash: s
             {helpOpen && (
               <div id="rail-help-menu" className="rail-help-menu" role="menu" aria-label={t("Help and support")}>
                 {owner && <a role="menuitem" href="#/onboarding" onClick={closeHelp}>{t("Business setup guide")}</a>}
+                <a role="menuitem" href="#/feedback" onClick={closeHelp}>{t("Send feedback")}</a>
                 <p className="rail-help-note">{t("Need help? Message your kymavo operator or open Settings for your plan.")}</p>
               </div>
             )}

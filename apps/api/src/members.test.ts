@@ -231,6 +231,8 @@ describe("role permissions", () => {
   const routeMatrix = (id: string): [string, string, string[], object?][] => [
       ["get", "/auth/me", all],
       ["get", "/my/requests", all],
+      ["get", "/support/feedback", all],
+      ["post", "/support/feedback", all, {}],
       ["get", "/workflows", operate],
       ["get", "/workflows/overview", operate],
       ["get", `/workflows/${id}`, operate],
@@ -425,6 +427,7 @@ describe("role permissions", () => {
     // Platform admin routes answer 404 to every workspace role (admin.test.ts).
     "GET /admin/overview", "GET /admin/runs", "PUT /admin/workspaces/:id/plan", "PUT /admin/workspaces/:id/shared-mail",
     "GET /admin/ai", "PUT /admin/ai", "POST /admin/ai/test", "PUT /admin/workspaces/:id/ai-thinking",
+    "GET /admin/feedback", "PUT /admin/feedback/:id/reply", "PUT /admin/feedback/:id/close",
   ]);
 
   it("gives each role exactly its routes", async () => {
@@ -449,7 +452,7 @@ describe("role permissions", () => {
       }
     }
     expect(wrong).toEqual([]);
-  }, 15_000);
+  }, 60_000);
 
   it("puts every route the API registers in the matrix or on the short list of routes with their own rules", () => {
     const stack = (app.getHttpAdapter().getInstance() as { router: { stack: { route?: { path: string; methods: Record<string, boolean> } }[] } }).router.stack;

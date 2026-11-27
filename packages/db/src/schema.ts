@@ -65,13 +65,45 @@ export const adminActions = pgTable(
   {
     id: id(),
     adminEmail: text("admin_email").notNull(),
-    action: text("action", { enum: ["plan", "shared_mail", "ai", "ai_thinking"] }).notNull(),
+    action: text("action", { enum: ["plan", "shared_mail", "ai", "ai_thinking", "feedback_reply", "feedback_close"] }).notNull(),
     workspaceId: uuid("workspace_id").references(() => users.id, { onDelete: "set null" }),
     before: jsonb("before").$type<Record<string, unknown>>().notNull(),
     after: jsonb("after").$type<Record<string, unknown>>().notNull(),
     createdAt: createdAt(),
   },
-  (t) => [check("admin_actions_action", sql`${t.action} in ('plan', 'shared_mail', 'ai', 'ai_thinking')`), index("admin_actions_created").on(t.createdAt)],
+  (t) => [check("admin_actions_action", sql`${t.action} in ('plan', 'shared_mail', 'ai', 'ai_thinking', 'feedback_reply', 'feedback_close')`), index("admin_actions_created").on(t.createdAt)],
+);
+
+export const FEEDBACK_TOPICS = ["bug", "idea", "question", "billing", "other"] as const;
+export const FEEDBACK_STATUSES = ["new", "replied", "closed"] as const;
+export const FEEDBACK_MAX = 2000;
+
+/**
+ * A message a member sent to the operator from the console (A4, decision 0153). workspace_id is the owner's user id;
+ * sender_id is the member who wrote it. The operator's reply and status live on the same row.
+ */
+export const feedback = pgTable(
+  "feedback",
+  {
+    id: id(),
+    workspaceId: uuid("workspace_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    senderId: uuid("sender_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    topic: text("topic", { enum: FEEDBACK_TOPICS }).notNull(),
+    message: text("message").notNull(),
+    status: text("status", { enum: FEEDBACK_STATUSES }).notNull().default("new"),
+    reply: text("reply"),
+    repliedAt: ts("replied_at"),
+    createdAt: createdAt(),
+    updatedAt: ts("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    check("feedback_topic", sql`${t.topic} in ('bug', 'idea', 'question', 'billing', 'other')`),
+    check("feedback_status", sql`${t.status} in ('new', 'replied', 'closed')`),
+    check("feedback_message", sql`length(${t.message}) between 1 and 2000`),
+    check("feedback_reply", sql`${t.reply} is null or length(${t.reply}) <= 2000`),
+    index("feedback_status_created").on(t.status, t.createdAt),
+    index("feedback_workspace_created").on(t.workspaceId, t.createdAt),
+  ],
 );
 
 /** Keys of work already counted, so a retried step is not counted twice. */

@@ -367,6 +367,7 @@ export function MyRequestsPage({ user, onSignOut }: { user: User; onSignOut: () 
         <span className="mr-who">
           {personName(user)} ({t(user.role)})
         </span>
+        <a href="#/feedback">{t("Send feedback")}</a>
         <a href="#/account">{t("Account")}</a>
         <button type="button" className="mr-out" onClick={onSignOut}>{t("Sign out")}</button>
       </header>

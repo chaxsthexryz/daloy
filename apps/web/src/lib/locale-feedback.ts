@@ -1,0 +1,15 @@
+export const feedbackTranslations: Record<string, string> = {
+  "Send feedback": "Magpadala ng feedback",
+  "Tell us what you think": "Sabihin sa amin ang saloobin mo",
+  "Topic": "Paksa",
+  "Bug": "Bug",
+  "Idea": "Ideya",
+  "Billing": "Singil",
+  "(up to 2,000 characters)": "(hanggang 2,000 character)",
+  "Thank you. Your message was sent.": "Salamat. Naipadala na ang mensahe mo.",
+  "Your messages": "Mga mensahe mo",
+  "Reply": "Sagot",
+  "Waiting for a reply": "Naghihintay ng sagot",
+  "Replied": "Nasagot na",
+  "Closed": "Sarado na",
+};

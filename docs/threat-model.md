@@ -23,6 +23,7 @@ Kept current with each phase. A mitigation marked "planned" does not exist in co
 
 - Console API (session cookie)
 - Platform admin API (`/admin/*`, session cookie of an account in `PLATFORM_ADMINS`; 404 for everyone else)
+- Feedback: `POST` and `GET /support/feedback` (any signed-in member; 5 posts an hour per user; a member reads only their own workspace's messages) and the operator's `/admin/feedback` routes (same guard as the rest of `/admin`; each write is recorded in `admin_actions`, decision 0153)
 - Shopify order webhook (`POST /hooks/shopify/:path`, public, signed by Shopify)
 - Telegram message webhook (`POST /hooks/telegram/:path`, public, checked by Telegram's secret token header)
 - Webhook URLs and hosted forms, including anonymous embedded forms (public), and file uploads on those forms

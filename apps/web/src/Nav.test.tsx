@@ -23,7 +23,7 @@ describe("staff navigation", () => {
     ["#/knowledge", "#/business"], ["#/team", "#/business"], ["#/apps", "#/business"], ["#/apps/gmail-connected", "#/business"],
     ["#/settings/business", "#/business"], ["#/settings/business/outlook-connected", "#/business"], ["#/verify-sender/token", "#/business"],
     ["#/settings", "#/settings"], ["#/settings/ai", "#/settings"], ["#/secrets", "#/settings"], ["#/tokens", "#/settings"], ["#/advanced", "#/settings"],
-    ["#/account", "#/account"],
+    ["#/account", "#/account"], ["#/feedback", "#/"],
   ])("marks the parent of %s", (hash, target) => {
     const selected = [...render(hash).matchAll(/<a [^>]*?href="([^"]*)"[^>]*aria-current="page"/g)].map((match) => match[1]);
     expect(selected.length).toBeGreaterThan(0);

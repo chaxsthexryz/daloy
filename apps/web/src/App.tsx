@@ -28,6 +28,7 @@ import { Shell } from "./Nav";
 import { useLanguage } from "./Language";
 import { AccountPage, ForgotPasswordPage, ResetPasswordPage } from "./Account";
 import { SignIn } from "./SignIn";
+import { FeedbackPage } from "./Feedback";
 import { AcceptInvitePage, MyRequestsPage, type User } from "./Team";
 
 const ANSWER = /^#\/answer\/([A-Za-z0-9_-]{43})$/;
@@ -96,7 +97,7 @@ function Console({ hash }: { hash: string }) {
   // Approvers and requesters have no console beyond their own requests; the API refuses the rest anyway.
   return (
     <LanguageContext.Provider value={{ language, setLanguage }}>
-      {user.role === "approver" || user.role === "requester" ? (hash === "#/account" ? <AccountPage backToRequests user={user} onName={setName} /> : <MyRequestsPage user={user} onSignOut={signOut} />) : (
+      {user.role === "approver" || user.role === "requester" ? (hash === "#/account" ? <AccountPage backToRequests user={user} onName={setName} /> : hash === "#/feedback" ? <FeedbackPage backToRequests /> : <MyRequestsPage user={user} onSignOut={signOut} />) : (
         <Shell user={user} hash={hash} onSignOut={signOut}>
           <Route hash={hash} user={user} onName={setName} />
         </Shell>
@@ -139,6 +140,7 @@ function Route({ hash, user, onName }: { hash: string; user: User; onName: (disp
   if (path === "#/tokens" && user.admin === true) return <TokensPage />;
   if (path === "#/settings") return <SettingsPage user={user} />;
   if (path === "#/account") return <AccountPage user={user} onName={onName} />;
+  if (path === "#/feedback") return <FeedbackPage />;
   if (path === "#/settings/ai") return user.admin === true ? <AiModelPage /> : <NotFoundPage aiRestricted />;
   if (path === "#/business" && (user.role === "owner" || (user.role === "operator" && businessTab === "knowledge"))) {
     return <BusinessPage user={user} initialTab={businessTab} initialApp={initialApp} />;

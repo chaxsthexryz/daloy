@@ -1805,3 +1805,18 @@ How it works:
 - **Sidebar `?` Help and support menu (`apps/web/src/Nav.tsx`, `console-shell.css`, `lib/locale.ts`)**: adds a compact `?` button in `.rail-account` (and mobile drawer) opening a role-aware shortcut menu (`Business setup guide`, `Ask about a request` when enabled, `Plan and usage`, `Connect apps`) that closes on `Escape`, outside click, or navigation.
 
 Tests: `packages/engine/src/onboarding.test.ts`, `packages/db/src/migrations.test.ts`, `apps/api/src/onboarding.test.ts`, `apps/web/src/CustomerBrandPreview.test.tsx`, `apps/web/src/Nav.test.tsx`, `apps/web/src/lib/locale-coverage.test.ts`, plus Playwright `e2e/onboarding.spec.ts`, `e2e/brand-kit.spec.ts`, and `e2e/rail.spec.ts`.
+
+## Feedback inbox (A4, decision 0153)
+
+What it does: any member can send the operator a message (a bug, an idea, a question, a billing issue or something else) from the console, and later see the operator's reply. The operator lists, answers and closes messages through admin routes that the separate `/admin` app (phase A3) calls.
+
+Why it is built this way: one row per message with one reply is enough for a list, a reply box and a Close button. The checks live in the database as well as in the routes, so a bad topic, status or length cannot get in by another path.
+
+How it works:
+- **Table (`packages/db/migrations/0063_feedback.sql`, `packages/db/src/schema.ts`)**: `feedback` with CHECKs on topic, status, message length (1 to 2,000) and reply length, indexed on `(status, created_at)` and `(workspace_id, created_at)`. `admin_actions` accepts `feedback_reply` and `feedback_close`.
+- **Member routes (`apps/api/src/feedback.ts`, `SupportFeedbackController`)**: `POST /support/feedback` validates with zod and allows 5 a hour per user; `GET /support/feedback` returns only the caller's workspace's messages with replies.
+- **Operator routes (`AdminFeedbackController`)**: behind `AdminGuard` (404 unless the account is in `PLATFORM_ADMINS`). `GET /admin/feedback?status=` adds the sender's email and the business name. `PUT .../reply` saves the reply, then mails the sender through the installation's mail server in the workspace's language; if mail fails the reply stays and the answer says `emailed: false`. `PUT .../close` sets the status. Both write an `admin_actions` row in the same transaction, holding ids and statuses but no text.
+- **Edge cases**: a reply to a closed message is a 409; an unknown id is a 404; a reply that is empty or over 2,000 characters is a 400; a request from another origin is refused.
+- **Workspace page (`apps/web/src/Feedback.tsx`, `lib/locale-feedback.ts`)**: `#/feedback`, from the Help menu and from the bar on My requests (approvers and requesters), with every string in Taglish.
+
+Tests: `apps/api/src/feedback.test.ts` (validation, the rate limit, workspace isolation, 404 for non-admins, the reply email through a fake SMTP server, audit rows, the CHECK constraints), `apps/web/src/Nav.test.tsx`, `apps/web/src/lib/locale-coverage.test.ts`.
