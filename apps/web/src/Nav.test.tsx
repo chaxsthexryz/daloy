@@ -120,3 +120,18 @@ describe("AI meter", () => {
     expect(renderToStaticMarkup(<AiMeter usage={u} />)).toBe("");
   });
 });
+
+describe("sidebar account block", () => {
+  it("shows the name with the role, and keeps the email as the title", () => {
+    const html = renderToStaticMarkup(
+      <Shell user={{ ...user, displayName: "Maria Santos", role: "operator" }} hash="#/" onSignOut={() => undefined}><main>Page</main></Shell>,
+    );
+    expect(html).toContain('<strong title="staff@example.test">Maria Santos</strong><span class="rail-who-role">Operator</span>');
+    expect(html).toContain(">M</span>");
+  });
+  it.each([[undefined], [null], [""]])("falls back to the email when the name is %j", (displayName) => {
+    const html = renderToStaticMarkup(<Shell user={{ ...user, displayName }} hash="#/" onSignOut={() => undefined}><main>Page</main></Shell>);
+    expect(html).toContain('<strong title="staff@example.test">staff@example.test</strong><span class="rail-who-role">Owner</span>');
+    expect(html).toContain(">S</span>");
+  });
+});

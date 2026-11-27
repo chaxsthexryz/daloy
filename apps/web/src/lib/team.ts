@@ -1,5 +1,5 @@
 export type Role = "owner" | "operator" | "approver" | "requester";
-export type Member = { userId: string; email: string; role: Role; createdAt: string };
+export type Member = { userId: string; email: string; displayName: string | null; role: Role; createdAt: string };
 
 /** Roles an owner can give. The owner row is never created or changed from the console. */
 export const memberRoles = ["operator", "approver", "requester"] as const;

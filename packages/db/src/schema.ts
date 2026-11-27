@@ -32,6 +32,8 @@ export const users = pgTable("users", {
   staffQuietHours: integer("staff_quiet_hours").notNull().default(12),
   // C7 (decision 0125): optional Messenger PSID for direct staff alerts (within 24-hour window, else Telegram/email fallback).
   staffAlertPsid: text("staff_alert_psid"),
+  // A5 (decision 0154): the name shown for this person in place of their email. Null: show the email.
+  displayName: text("display_name"),
 }, (t) => [
   check("users_ai_thinking", sql`${t.aiThinking} is null or ${t.aiThinking} in ('off', 'low', 'medium', 'high')`),
   check("users_plan", sql`${t.plan} in ('preview', 'pilot', 'business', 'business_plus', 'concierge')`),
@@ -39,6 +41,7 @@ export const users = pgTable("users", {
   check("users_conversation_retention", sql`${t.conversationRetentionDays} between 1 and 3650`),
   check("users_staff_quiet", sql`${t.staffQuietHours} between 1 and 168`),
   check("users_staff_alert_psid", sql`${t.staffAlertPsid} is null or length(${t.staffAlertPsid}) <= 64`),
+  check("users_display_name", sql`${t.displayName} is null or length(${t.displayName}) between 1 and 60`),
 ]);
 
 /** Metered work per workspace, kind (ai, email, http) and period (a Manila day, or a monthly cycle start). */

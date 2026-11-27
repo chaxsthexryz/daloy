@@ -1,8 +1,8 @@
-import { aiConnection, cancelRun, claimUsage, readUpload, deliveries, listDeliveries, QuotaError, refundUsage, requests, resolveRun, runs, supersededSql, stepRuns, workflows, workflowVersions, type Db, type RunAction } from "@daloy/db";
+import { aiConnection, cancelRun, claimUsage, readUpload, deliveries, listDeliveries, QuotaError, refundUsage, requests, resolveRun, runs, supersededSql, stepRuns, users, workflows, workflowVersions, type Db, type RunAction } from "@daloy/db";
 import { FILE_MIME, safeFileName } from "@daloy/engine";
 import { generate } from "@daloy/llm-ts";
 import { Body, ConflictException, Controller, Get, Header, HttpCode, HttpException, HttpStatus, Inject, NotFoundException, Param, Post, Query, Res, StreamableFile, UseGuards } from "@nestjs/common";
-import { and, asc, desc, eq, ilike, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, ilike, inArray, or, sql } from "drizzle-orm";
 import type { Response } from "express";
 import type { PgBoss } from "pg-boss";
 import * as z from "zod";
@@ -142,11 +142,18 @@ export class RunsController {
     const [run] = await this.owned().where(and(eq(workflows.userId, user.workspaceId), eq(runs.id, id)));
     if (!run) throw new NotFoundException();
     const steps = await this.db.select().from(stepRuns).where(eq(stepRuns.runId, id)).orderBy(asc(stepRuns.createdAt), asc(stepRuns.attempt));
+    // A decided approval stores the decider's email; show their name instead when they have set one (decision 0154).
+    const deciders = [...new Set(steps.flatMap((s) => { const d = (s.output as { decidedBy?: unknown } | null)?.decidedBy; return typeof d === "string" ? [d] : []; }))];
+    const names = new Map(deciders.length ? (await this.db.select({ email: users.email, name: users.displayName }).from(users).where(inArray(users.email, deciders))).map((u) => [u.email, u.name] as const) : []);
+    const named = (output: unknown) => {
+      const o = output as { decidedBy?: unknown } | null;
+      return typeof o?.decidedBy === "string" && names.get(o.decidedBy) ? { ...o, decidedBy: names.get(o.decidedBy) } : output;
+    };
     return {
       ...run,
       triggerPayload: hide(run.triggerPayload),
       error: hide(run.error),
-      steps: steps.map((s) => ({ ...s, input: hide(s.input), output: hide(s.output), error: hide(s.error) })),
+      steps: steps.map((s) => ({ ...s, input: hide(s.input), output: named(hide(s.output)), error: hide(s.error) })),
     };
   }
 

@@ -145,6 +145,9 @@
   }
   .rail-usage ~ .rail-account { margin-top: 0; }
   .console-shell .rail-account .who { display: block; overflow: hidden; text-overflow: ellipsis; padding: 0; color: var(--fg, var(--text)); font-size: 12px; font-weight: 500; }
+  .rail-who-top { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+  .rail-who-top strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+  .rail-who-role { flex: none; font-size: 10.5px; color: var(--muted, var(--text-2)); }
   .rail-account-actions { display: flex; align-items: center; gap: 4px; flex-wrap: nowrap; }
   .console-shell .rail-account-actions > a, .console-shell .rail-account-actions > button {
     display: inline-flex;

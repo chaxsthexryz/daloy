@@ -64,6 +64,7 @@ function Console({ hash }: { hash: string }) {
   useEffect(() => {
     api<User>("GET", "/auth/me").then(setUser, () => setUser(null));
   }, []);
+  const setName = (displayName: string | null) => setUser((u) => (u ? { ...u, displayName } : u));
   useEffect(() => {
     setLanguage(user?.language === "tl" ? "tl" : "en");
   }, [user?.language]);
@@ -95,16 +96,16 @@ function Console({ hash }: { hash: string }) {
   // Approvers and requesters have no console beyond their own requests; the API refuses the rest anyway.
   return (
     <LanguageContext.Provider value={{ language, setLanguage }}>
-      {user.role === "approver" || user.role === "requester" ? (hash === "#/account" ? <AccountPage backToRequests /> : <MyRequestsPage user={user} onSignOut={signOut} />) : (
+      {user.role === "approver" || user.role === "requester" ? (hash === "#/account" ? <AccountPage backToRequests user={user} onName={setName} /> : <MyRequestsPage user={user} onSignOut={signOut} />) : (
         <Shell user={user} hash={hash} onSignOut={signOut}>
-          <Route hash={hash} user={user} />
+          <Route hash={hash} user={user} onName={setName} />
         </Shell>
       )}
     </LanguageContext.Provider>
   );
 }
 
-function Route({ hash, user }: { hash: string; user: User }) {
+function Route({ hash, user, onName }: { hash: string; user: User; onName: (displayName: string | null) => void }) {
   const canAsk = user.ask === true && (user.role === "owner" || user.role === "operator");
   const [rawPath, queryString = ""] = hash.split("?");
   const path = rawPath ?? hash;
@@ -137,7 +138,7 @@ function Route({ hash, user }: { hash: string; user: User }) {
   if (path === "#/secrets" && user.role === "owner") return <SecretsPage admin={user.admin === true} />;
   if (path === "#/tokens" && user.admin === true) return <TokensPage />;
   if (path === "#/settings") return <SettingsPage user={user} />;
-  if (path === "#/account") return <AccountPage />;
+  if (path === "#/account") return <AccountPage user={user} onName={onName} />;
   if (path === "#/settings/ai") return user.admin === true ? <AiModelPage /> : <NotFoundPage aiRestricted />;
   if (path === "#/business" && (user.role === "owner" || (user.role === "operator" && businessTab === "knowledge"))) {
     return <BusinessPage user={user} initialTab={businessTab} initialApp={initialApp} />;

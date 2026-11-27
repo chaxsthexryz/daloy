@@ -16,6 +16,7 @@ import {
   NotFoundException,
   Param,
   Post,
+  Put,
   Req,
   Res,
   UnauthorizedException,
@@ -44,6 +45,8 @@ const loginInput = z.object({ email, password: z.string().min(1).max(200) });
 // A new account needs the same 12 characters as register; an existing one checks its own password.
 const acceptInput = z.object({ password: z.string().min(12).max(200) });
 const changePasswordInput = z.object({ currentPassword: z.string().min(1).max(200), newPassword: z.string().min(12).max(200) });
+// A person's own display name (decision 0154): trimmed, 1 to 60 characters, no control characters. null clears it.
+const profileInput = z.strictObject({ displayName: z.string().trim().min(1).max(60).regex(/^[^\p{Cc}]+$/u).nullable() });
 const resetRequestInput = z.object({ email });
 const RESET_MS = 30 * 60_000;
 // Mails per account per hour, so one address cannot be flooded from many IPs.
@@ -59,7 +62,7 @@ export async function sessionUser(db: Db, req: Request): Promise<SessionUser | n
   if (typeof token !== "string" || token.length > 100) return null;
   const owner = alias(users, "workspace_owner");
   const [user] = await db
-    .select({ id: users.id, email: users.email, workspaceId: workspaceMembers.workspaceId, role: workspaceMembers.role, language: owner.language })
+    .select({ id: users.id, email: users.email, displayName: users.displayName, workspaceId: workspaceMembers.workspaceId, role: workspaceMembers.role, language: owner.language })
     .from(sessions)
     .innerJoin(users, eq(users.id, sessions.userId))
     .innerJoin(workspaceMembers, eq(workspaceMembers.userId, users.id))
@@ -147,7 +150,7 @@ export class AuthController {
         return u!;
       });
       await this.startSession(user.id, res);
-      return this.signedIn({ id: user.id, email: user.email, workspaceId: user.id, role: "owner", language: user.language });
+      return this.signedIn({ id: user.id, email: user.email, displayName: user.displayName, workspaceId: user.id, role: "owner", language: user.language });
     } catch (err) {
       if (isUniqueViolation(err)) throw new ConflictException("email already registered");
       throw err;
@@ -165,7 +168,7 @@ export class AuthController {
     const membership = await membershipOf(this.db, user.id);
     if (!membership) throw new ForbiddenException("this account is no longer a member of a workspace");
     await this.startSession(user.id, res);
-    return this.signedIn({ id: user.id, email: user.email, ...membership, language: await workspaceLanguage(this.db, membership.workspaceId) });
+    return this.signedIn({ id: user.id, email: user.email, displayName: user.displayName, ...membership, language: await workspaceLanguage(this.db, membership.workspaceId) });
   }
 
   /**
@@ -193,7 +196,7 @@ export class AuthController {
         userId = u!.id;
       }
       await joinWorkspace(tx, userId!, invite.workspaceId, invite.role);
-      return { id: userId!, email: invite.email, workspaceId: invite.workspaceId, role: invite.role };
+      return { id: userId!, email: invite.email, displayName: existing?.displayName ?? null, workspaceId: invite.workspaceId, role: invite.role };
     });
     await this.startSession(joined.id, res);
     return this.signedIn({ ...joined, language: await workspaceLanguage(this.db, joined.workspaceId) });
@@ -254,6 +257,14 @@ export class AuthController {
       await tx.delete(sessions).where(eq(sessions.userId, claimed.userId));
       await tx.update(passwordResets).set({ usedAt: sql`now()` }).where(and(eq(passwordResets.userId, claimed.userId), isNull(passwordResets.usedAt)));
     });
+  }
+
+  /** Any signed-in role sets or clears their own name. It lives on the person's user row, so every workspace page shows it. */
+  @Put("profile")
+  @UseGuards(SessionGuard)
+  async setProfile(@CurrentUser() user: SessionUser, @Body(new ZodPipe(profileInput)) body: z.output<typeof profileInput>) {
+    await this.db.update(users).set({ displayName: body.displayName }).where(eq(users.id, user.id));
+    return { displayName: body.displayName };
   }
 
   @Get("me")

@@ -481,7 +481,7 @@ export type ReviewRow = {
  * dues whose reply failed. Oldest first. Test dues stay out.
  */
 export async function reviewList(db: Db, workspaceId: string): Promise<ReviewRow[]> {
-  const base = { dueId: paymentDues.id, reference: paymentDues.reference, bookingReference: bookings.reference, kind: paymentDues.kind, amountDue: paymentDues.amountCentavos, dueStatus: paymentDues.status, confirmedSource: paymentDues.confirmedSource, reviewer: users.email };
+  const base = { dueId: paymentDues.id, reference: paymentDues.reference, bookingReference: bookings.reference, kind: paymentDues.kind, amountDue: paymentDues.amountCentavos, dueStatus: paymentDues.status, confirmedSource: paymentDues.confirmedSource, reviewer: sql<string | null>`coalesce(${users.displayName}, ${users.email})` };
   const claims = await db
     .select({ ...base, claimId: paymentClaims.id, version: paymentClaims.version, submitted: paymentClaims.submittedCentavos, transferRef: paymentClaims.transferRef, channel: paymentClaims.channel, flags: paymentClaims.flags, status: paymentClaims.status, hasImage: sql<boolean>`${paymentClaims.imageType} is not null`, createdAt: paymentClaims.createdAt })
     .from(paymentClaims)
@@ -516,14 +516,14 @@ export async function claimImage(db: Db, workspaceId: string, claimId: string) {
  */
 export async function duesForBooking(db: Db, workspaceId: string, by: { bookingId?: string; reference?: string }) {
   if (!by.bookingId && !by.reference) return [];
-  const confirmer = sql<string | null>`(select ${users.email} from ${users} where ${users.id} = ${paymentDues.confirmedBy})`;
+  const confirmer = sql<string | null>`(select coalesce(${users.displayName}, ${users.email}) from ${users} where ${users.id} = ${paymentDues.confirmedBy})`;
   const rows = await db
     .select({ due: paymentDues, confirmedBy: confirmer })
     .from(paymentDues)
     .where(and(eq(paymentDues.userId, workspaceId), eq(paymentDues.test, false), or(by.bookingId ? eq(paymentDues.bookingId, by.bookingId) : undefined, by.reference ? eq(paymentDues.reference, by.reference) : undefined)))
     .orderBy(asc(paymentDues.createdAt));
   if (rows.length === 0) return [];
-  const actor = sql<string | null>`(select ${users.email} from ${users} where ${users.id} = ${paymentHistory.actorId})`;
+  const actor = sql<string | null>`(select coalesce(${users.displayName}, ${users.email}) from ${users} where ${users.id} = ${paymentHistory.actorId})`;
   const events = await db
     .select({ dueId: paymentHistory.dueId, event: paymentHistory.event, source: paymentHistory.source, actor, detail: paymentHistory.detail, at: paymentHistory.at })
     .from(paymentHistory)

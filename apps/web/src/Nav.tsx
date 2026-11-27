@@ -7,7 +7,8 @@ import { useLanguage } from "./Language";
 import { diffLiveRuns, LIVE_RUN_EVENT, liveRunToast, type LiveRunSnapshot } from "./lib/live-runs";
 import { useSlidingPill } from "./lib/motion";
 import { aiMeter } from "./lib/usage";
-import type { User } from "./Team";
+import { ROLE_LABEL, type User } from "./Team";
+import { personName } from "./lib/person";
 import { pushToast, ToastHost } from "./Toast";
 
 /** GET /usage once on load, and again when something that spends or frees usage fires a `daloy:usage` window event. */
@@ -273,7 +274,7 @@ export function Shell({ user, hash, onSignOut, children }: { user: User; hash: s
           {link("#/settings", "Settings", "settings")}
           {owner && <AiMeter usage={usage} className="ai-meter rail-usage" />}
           <div className="rail-account" ref={helpRef}>
-            <span className="who rail-label">{user.email}</span>
+            <span className="who rail-label rail-who-top"><strong title={user.email}>{personName(user)}</strong><span className="rail-who-role">{t(ROLE_LABEL[user.role])}</span></span>
             <div className="rail-account-actions">
               <a
                 className="account-link"
@@ -285,7 +286,7 @@ export function Shell({ user, hash, onSignOut, children }: { user: User; hash: s
                 onFocus={(event) => pill.onItemEnter(event.currentTarget)}
                 onClick={() => { setOpen(false); pill.onContainerLeave(); }}
               >
-                <span className="rail-avatar" aria-hidden="true">{user.email.slice(0, 1).toUpperCase()}</span>
+                <span className="rail-avatar" aria-hidden="true">{personName(user).slice(0, 1).toUpperCase()}</span>
                 <span className="rail-label">{t("Account")}</span>
               </a>
               <button type="button" className="quiet sign-out" onClick={onSignOut}>{t("Sign out")}</button>

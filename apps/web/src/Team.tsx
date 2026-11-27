@@ -8,12 +8,13 @@ import { AuthLayout, AuthNote, Brand } from "./AuthLayout";
 import { Sheet, usePhone } from "./Sheet";
 import { checkNewPassword } from "./lib/password";
 import { requestStatus, sentOn } from "./lib/my-requests";
+import { personName } from "./lib/person";
 import { canChangeRole, canInvite, canRemove, groupMembers, inviteLinkForOrigin, memberRoles, type Member, type MemberRole, type PendingInvite, type Role } from "./lib/team";
 
 export type { Role };
-export type User = { id: string; email: string; workspaceId: string; role: Role; language?: "en" | "tl"; ask?: boolean; admin?: boolean };
+export type User = { id: string; email: string; displayName?: string | null; workspaceId: string; role: Role; language?: "en" | "tl"; ask?: boolean; admin?: boolean };
 
-const ROLE_LABEL: Record<Role, string> = { owner: "Owner", operator: "Operator", approver: "Approver", requester: "Requester" };
+export const ROLE_LABEL: Record<Role, string> = { owner: "Owner", operator: "Operator", approver: "Approver", requester: "Requester" };
 const GROUP_LABEL: Record<Role, string> = { owner: "Owner", operator: "Operators", approver: "Approvers", requester: "Requesters" };
 const ROLE_HELP: Record<Role, string> = {
   owner: "Runs the workspace. Only the owner invites, changes roles and removes people.",
@@ -243,7 +244,7 @@ export function TeamPage({ user, embedded = false }: { user: User; embedded?: bo
             <ul className="wk-rows">
               {members.map((m) => (
                 <li key={m.userId} className="wk-row">
-                  <span className="wk-email">{m.email}</span>
+                  <span className="wk-email">{m.displayName ? <><strong>{m.displayName}</strong><small className="wk-muted"> {m.email}</small></> : m.email}</span>
                   <small>{t("Joined {date}", { date: joined(m.createdAt) })}</small>
                   {m.role === "owner" ? (
                     <span className="wk-chip">{t("Owner")}</span>
@@ -364,7 +365,7 @@ export function MyRequestsPage({ user, onSignOut }: { user: User; onSignOut: () 
       <header className="mr-bar">
         <Brand dark={false} />
         <span className="mr-who">
-          {user.email} ({t(user.role)})
+          {personName(user)} ({t(user.role)})
         </span>
         <a href="#/account">{t("Account")}</a>
         <button type="button" className="mr-out" onClick={onSignOut}>{t("Sign out")}</button>

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { canChangeRole, canInvite, canRemove, groupMembers, inviteLinkForOrigin, memberRoles, type Member } from "./team";
 
-const m = (userId: string, role: Member["role"], createdAt = "2026-03-01T00:00:00Z"): Member => ({ userId, email: `${userId}@x.ph`, role, createdAt });
+const m = (userId: string, role: Member["role"], createdAt = "2026-03-01T00:00:00Z"): Member => ({ userId, email: `${userId}@x.ph`, displayName: null, role, createdAt });
 
 describe("groupMembers", () => {
   it("orders groups owner, operator, approver, requester and drops empty ones", () => {

@@ -154,6 +154,7 @@ export type PendingApprovalItem = {
   input: unknown;
   approverId: string | null;
   approverEmail: string | null;
+  approverName: string | null;
   expiresAt: Date;
   createdAt: Date;
 };
@@ -174,6 +175,7 @@ export async function listPendingApprovals(db: Pick<AnyDb, "select" | "selectDis
       input: stepRuns.input,
       approverId: approvals.approverId,
       approverEmail: users.email,
+      approverName: users.displayName,
       expiresAt: approvals.expiresAt,
       createdAt: approvals.createdAt,
     })

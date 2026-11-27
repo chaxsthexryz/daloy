@@ -3,6 +3,7 @@ import "./workspace.css";
 import { Breadcrumb } from "./Breadcrumb";
 import { useState, type FormEvent } from "react";
 import { api } from "./api";
+import type { User } from "./Team";
 import { useLanguage } from "./Language";
 import { AuthLayout, AuthNote } from "./AuthLayout";
 import { checkNewPassword, checkPasswordChange, type PasswordIssue } from "./lib/password";
@@ -93,8 +94,43 @@ const ISSUES: Record<PasswordIssue, { field: "currentPassword" | "newPassword"; 
   "too-long": { field: "newPassword", message: "The new password can have at most 200 characters." },
 };
 
+/** Any signed-in role sets the name shown in place of their email (decision 0154). */
+function NameCard({ user, onName }: { user: User; onName: (displayName: string | null) => void }) {
+  const { t } = useLanguage();
+  const [value, setValue] = useState(user.displayName ?? "");
+  const [state, setState] = useState<"idle" | "saved" | string>("idle");
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    setState("idle");
+    const displayName = value.trim() || null;
+    try {
+      await api("PUT", "/auth/profile", { displayName });
+      setValue(displayName ?? "");
+      onName(displayName);
+      setState("saved");
+    } catch (err) {
+      setState((err as Error).message);
+    }
+  };
+  return (
+    <section className="wk-card wk-narrow" aria-labelledby="your-name">
+      <h2 className="wk-card-head" id="your-name"><b>{t("Your name")}</b></h2>
+      <form className="wk-body wk-fields" onSubmit={submit} noValidate>
+        <div>
+          <label htmlFor="display-name">{t("Name")}</label>
+          <input id="display-name" value={value} maxLength={60} autoComplete="name" onChange={(e) => setValue(e.target.value)} aria-describedby="display-name-help" />
+          <p id="display-name-help" className="wk-muted">{t("Shown instead of your email in the sidebar, the team list and approvals. Leave it empty to show your email.")}</p>
+        </div>
+        <p role="status" className="wk-note ok" hidden={state !== "saved"}>{state === "saved" && t("Name saved.")}</p>
+        <p role="alert" className="wk-note bad" hidden={state === "idle" || state === "saved"}>{state !== "idle" && state !== "saved" ? state : ""}</p>
+        <button className="wk-button blue">{t("Save name")}</button>
+      </form>
+    </section>
+  );
+}
+
 /** Change password for any signed-in role. The API signs out every other session. */
-export function AccountPage({ backToRequests }: { backToRequests?: boolean }) {
+export function AccountPage({ backToRequests, user, onName }: { backToRequests?: boolean; user: User; onName: (displayName: string | null) => void }) {
   const { t } = useLanguage();
   const [done, setDone] = useState(false);
   const [error, setError] = useState<{ message: string; field: "currentPassword" | "newPassword" } | null>(null);
@@ -131,6 +167,7 @@ export function AccountPage({ backToRequests }: { backToRequests?: boolean }) {
           <div className="wk-title-row"><h1>{t("Account")}</h1></div>
         </div>
       </header>
+      <NameCard user={user} onName={onName} />
       <section className="wk-card wk-narrow" aria-labelledby="change-password">
         <h2 className="wk-card-head" id="change-password"><b>{t("Change password")}</b></h2>
         <form className="wk-body wk-fields" onSubmit={submit} noValidate>

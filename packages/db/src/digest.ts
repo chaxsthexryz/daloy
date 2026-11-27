@@ -50,7 +50,7 @@ const manilaStart = (day: string) => new Date(`${day}T00:00:00+08:00`);
  */
 export async function paymentsExport(db: Db, workspaceId: string, range: { from: string; to: string }) {
   const end = new Date(manilaStart(range.to).getTime() + 86_400_000);
-  const by = sql<string | null>`(select ${users.email} from ${users} where ${users.id} = ${paymentDues.confirmedBy})`;
+  const by = sql<string | null>`(select coalesce(${users.displayName}, ${users.email}) from ${users} where ${users.id} = ${paymentDues.confirmedBy})`;
   const transferRef = sql<string | null>`(select ${paymentClaims.transferRef} from ${paymentClaims} where ${paymentClaims.id} = ${paymentDues.confirmedClaimId})`;
   return db
     .select({ confirmedAt: paymentDues.confirmedAt, reference: paymentDues.reference, booking: bookings.reference, kind: paymentDues.kind, amount: paymentDues.amountCentavos, total: paymentDues.totalCentavos, status: paymentDues.status, source: paymentDues.confirmedSource, transferRef, confirmedBy: by })

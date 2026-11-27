@@ -318,6 +318,9 @@ describe("named approvals (decision 0022)", () => {
     const item = matches[0]!;
     expect(item.approverId).toBe(approver.id);
     expect(item.approverEmail).toBe(approver.email);
+    expect(item.approverName).toBeNull();
+    await db.update(users).set({ displayName: "Ana Reyes" }).where(eq(users.id, approver.id));
+    expect((await listPendingApprovals(db, ownerId)).find((i) => i.runId === runId)).toMatchObject({ approverName: "Ana Reyes", approverEmail: approver.email });
 
     // Other workspace cannot see or decide it.
     expect(await listPendingApprovals(db, otherOwner.id)).toHaveLength(0);

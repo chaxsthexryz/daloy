@@ -69,6 +69,7 @@ export type InboxItem =
         message: string;
         approverId: string | null;
         approverEmail: string | null;
+        approverName: string | null;
         canDecide: boolean;
         expiresAt: string;
         createdAt: string;
@@ -184,6 +185,7 @@ export async function loadInboxData(
           message,
           approverId: a.approverId,
           approverEmail: a.approverEmail,
+          approverName: a.approverName,
           canDecide,
           expiresAt: a.expiresAt.toISOString(),
           createdAt: a.createdAt.toISOString(),

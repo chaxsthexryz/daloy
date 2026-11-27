@@ -70,7 +70,7 @@ async function member(ownerAgent: Agent, role: "operator" | "approver" | "reques
 describe("registration and sign-in", () => {
   it("makes a new account the owner of its own workspace", async () => {
     const o = await owner();
-    expect((await o.agent.get("/auth/me").expect(200)).body).toEqual({ id: o.id, email: o.email, workspaceId: o.id, role: "owner", ask: false, language: "en", admin: false });
+    expect((await o.agent.get("/auth/me").expect(200)).body).toEqual({ id: o.id, email: o.email, workspaceId: o.id, role: "owner", ask: false, language: "en", admin: false, displayName: null });
   });
 });
 
@@ -419,7 +419,7 @@ describe("role permissions", () => {
   // auth.ts and password.test.ts, public*.test.ts, paymongo.test.ts and meta.test.ts, approvals.test.ts, mcp.test.ts, oauth.test.ts, microsoft.test.ts, brand.test.ts, admin.test.ts, health.test.ts.
   const outsideMatrix = new Set([
     "GET /health",
-    "POST /auth/register", "POST /auth/login", "POST /auth/invites/:token/accept", "POST /auth/logout", "POST /auth/password", "POST /auth/password-reset", "POST /auth/password-reset/:token",
+    "POST /auth/register", "POST /auth/login", "POST /auth/invites/:token/accept", "POST /auth/logout", "POST /auth/password", "PUT /auth/profile", "POST /auth/password-reset", "POST /auth/password-reset/:token",
     "POST /hooks/:path", "POST /hooks/paymongo/:path", "GET /hooks/meta/:path", "POST /hooks/meta/:path", "GET /hooks/whatsapp/:path", "POST /hooks/whatsapp/:path", "POST /hooks/shopify/:path", "POST /hooks/telegram/:path", "POST /hooks/slack/:path", "POST /hooks/teams/:path", "POST /hooks/discord/:path", "GET /forms/:id", "GET /forms/:id/slots", "GET /public/slots.js", "GET /public/compress.js", "GET /forms/:id/embed", "POST /forms/:id", "POST /forms/:id/embed",
     "GET /approvals/:token", "POST /approvals/:token", "GET /pay/:token", "GET /pay/:token/qr", "POST /pay/:token", "GET /settings/connections/oauth/callback", "GET /settings/connections/outlook/callback", "GET /brand/logo/:id",
     // Platform admin routes answer 404 to every workspace role (admin.test.ts).

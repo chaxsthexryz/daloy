@@ -7,6 +7,7 @@ import { saveTheme, savedTheme, type Theme } from "./lib/theme";
 import { useLanguage } from "./Language";
 import { AiMeter, useUsage } from "./Nav";
 import { usePhone } from "./Sheet";
+import { personName } from "./lib/person";
 import type { Role, User } from "./Team";
 import { UsageNotice } from "./UsageNotice";
 
@@ -94,7 +95,7 @@ export function SettingsPage({ user }: { user: User }) {
         <div>
           <div className="wk-title-row">
             <h1>{t("Settings")}</h1>
-            <span className="wk-sub">{phone ? `${user.email}, ${t(ROLES[user.role])}` : t("Signed in as {role}", { role: t(user.role) })}</span>
+            <span className="wk-sub">{phone ? `${personName(user)}, ${t(ROLES[user.role])}` : t("Signed in as {role}", { role: t(user.role) })}</span>
           </div>
         </div>
       </header>

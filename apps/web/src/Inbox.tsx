@@ -45,6 +45,7 @@ type ApprovalData = {
   message: string;
   approverId: string | null;
   approverEmail: string | null;
+  approverName: string | null;
   canDecide: boolean;
   expiresAt: string;
   createdAt: string;
@@ -346,7 +347,7 @@ export function InboxPage({ user }: { user: User }) {
           <h2>{item.title}</h2>
           <div className="ib-msg-box">{a.message || t("Approval requested")}</div>
           {!a.canDecide && a.approverEmail && (
-            <p className="act-muted">{t("Assigned to {email}. Only the named approver can decide.", { email: a.approverEmail })}</p>
+            <p className="act-muted">{t("Assigned to {email}. Only the named approver can decide.", { email: a.approverName ?? a.approverEmail })}</p>
           )}
           <div className="ib-actions">
             {a.canDecide && (

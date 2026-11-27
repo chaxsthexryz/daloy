@@ -25,7 +25,7 @@ export async function joinWorkspace(db: Writer, userId: string, workspaceId: str
 
 export async function listMembers(db: AnyDb, workspaceId: string) {
   return db
-    .select({ userId: workspaceMembers.userId, email: users.email, role: workspaceMembers.role, createdAt: workspaceMembers.createdAt })
+    .select({ userId: workspaceMembers.userId, email: users.email, displayName: users.displayName, role: workspaceMembers.role, createdAt: workspaceMembers.createdAt })
     .from(workspaceMembers)
     .innerJoin(users, eq(users.id, workspaceMembers.userId))
     .where(eq(workspaceMembers.workspaceId, workspaceId))

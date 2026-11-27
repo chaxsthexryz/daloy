@@ -53,7 +53,7 @@ export class ZodPipe<T extends z.ZodType> implements PipeTransform {
  * The signed-in user and their place in a workspace (decision 0022). workspaceId is the owner's user id, which is what
  * every older `user_id` column holds, so owner-scoped queries filter on workspaceId.
  */
-export type SessionUser = { id: string; email: string; workspaceId: string; role: Role; language: Language };
+export type SessionUser = { id: string; email: string; displayName: string | null; workspaceId: string; role: Role; language: Language };
 export const CurrentUser = createParamDecorator((_: unknown, ctx: ExecutionContext) => ctx.switchToHttp().getRequest<{ user: SessionUser }>().user);
 
 /**

@@ -170,6 +170,8 @@ export const managementTranslations: Record<string, string> = {
   "Expires": "Mag-e-expire", "Never": "Hindi kailanman", "7 days": "7 araw", "30 days": "30 araw", "90 days": "90 araw", "365 days": "365 araw",
   "Never expires": "Hindi nag-e-expire", "Expired": "Nag-expire na", "Expires {date}": "Mag-e-expire sa {date}", "Access: {scopes}. {expiry}.": "Access: {scopes}. {expiry}.",
   "Pick at least one kind of access.": "Pumili ng kahit isang access.",
+  "Your name": "Pangalan mo", "Name": "Pangalan", "Save name": "I-save ang pangalan", "Name saved.": "Na-save na ang pangalan.",
+  "Shown instead of your email in the sidebar, the team list and approvals. Leave it empty to show your email.": "Ito ang ipapakita sa halip na email mo sa sidebar, sa listahan ng team at sa mga approval. Iwanang walang laman para email mo ang ipakita.",
   "Change password": "Palitan ang password", "Current password": "Kasalukuyang password", "New password": "Bagong password",
   "Password changed. Your other sessions are signed out.": "Napalitan na ang password. Naka-sign out na ang iba mo pang session.",
   "Revoke \"{name}\"? Clients using it stop working.": "Bawiin ang \"{name}\"? Hihinto ang mga client na gumagamit nito.",

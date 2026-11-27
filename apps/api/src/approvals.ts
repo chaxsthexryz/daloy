@@ -73,7 +73,7 @@ export class ApprovalsController {
     const brand = await pageBrand(this.db, pending.workspaceId);
     const input = hide(pending.input) as { message?: unknown } | null;
     const message = String(input?.message ?? "");
-    const who = access.user ? `<p class="muted">${copy.signedIn} ${escapeHtml(access.user.email)}</p>` : "";
+    const who = access.user ? `<p class="muted">${copy.signedIn} ${escapeHtml(access.user.displayName ?? access.user.email)}</p>` : "";
     return card(
       language,
       brand,
