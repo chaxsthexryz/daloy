@@ -2,9 +2,10 @@ import { randomBytes } from "node:crypto";
 import type { Pool } from "pg";
 import { afterAll, afterEach, beforeAll, expect, it, vi } from "vitest";
 import { freshDatabase } from "../../../test/db";
-import { aiConnection, presetConnection, readAiSettings, saveAiSettings, thinkingControl, THINKING_LEVELS } from "./ai-settings";
+import { aiConnection, presetConnection, readAiSettings, readPlatformAi, saveAiSettings, savePlatformAi, sharedConnection, thinkingControl, THINKING_LEVELS } from "./ai-settings";
+import { decryptSecret } from "./crypto";
 import { eq } from "drizzle-orm";
-import { aiKeys, aiSettings, users } from "./schema";
+import { adminActions, aiKeys, aiSettings, platformAi, users } from "./schema";
 import type { Db } from "./index";
 
 let db: Db;
@@ -239,4 +240,88 @@ it("saves the thinking level, keeps it when a save leaves it out, and applies it
   vi.stubEnv("LLM_BASE_URL", LOCAL_URL);
   await saveAiSettings(db, key, user, { preset: "local", model: "qwen", thinking: "low" });
   expect(await aiConnection(db, key, user)).toMatchObject({ extraBody: { chat_template_kwargs: { enable_thinking: true } }, reasoningTokens: 2048 });
+});
+
+// Platform AI (A2, decision 0151): the shared model the admin set, used where the env vars were.
+const ADMIN = "boss@test.local";
+
+it("uses the env vars until the admin saves a shared model, then that model for every workspace on the shared path", async () => {
+  vi.stubEnv("LLM_PROVIDER", "ollama");
+  vi.stubEnv("LLM_BASE_URL", "http://localhost:11434");
+  vi.stubEnv("LLM_MODEL", "llama3.2");
+  vi.stubEnv("SHARED_LLM_KEY", "open");
+  await pool.query("delete from platform_ai");
+  const userId = await newUser();
+  expect(await aiConnection(db, key, userId)).toMatchObject({ provider: "ollama", model: "llama3.2" });
+  await savePlatformAi(db, key, ADMIN, { preset: "gemini", model: "gemini-3.8-flash", apiKey: "AIza-platform-1234", thinking: "medium" });
+  const conn = await aiConnection(db, key, userId);
+  expect(conn).toMatchObject({ provider: "openai", baseUrl: GEMINI_URL, apiKey: "AIza-platform-1234", model: "gemini-3.8-flash", imageTypes: ["jpeg", "png", "webp", "heic"] });
+  expect(conn).toMatchObject(thinkingControl("openai", GEMINI_URL, "medium"));
+  // The "Local model" choice means the shared model, so it follows the platform model too.
+  await saveAiSettings(db, key, userId, { preset: "local", model: "llama3.2", thinking: "high" });
+  expect(await aiConnection(db, key, userId)).toEqual(conn);
+});
+
+it("lets the per-workspace override win over the platform level, and null follows the platform again", async () => {
+  vi.stubEnv("SHARED_LLM_KEY", "open");
+  await savePlatformAi(db, key, ADMIN, { preset: "gemini", model: "gemini-3.8-flash", apiKey: "AIza-platform-1234", thinking: "low" });
+  const userId = await newUser();
+  await db.update(users).set({ aiThinking: "high" }).where(eq(users.id, userId));
+  expect(await aiConnection(db, key, userId)).toMatchObject(thinkingControl("openai", GEMINI_URL, "high"));
+  await db.update(users).set({ aiThinking: null }).where(eq(users.id, userId));
+  expect(await aiConnection(db, key, userId)).toMatchObject(thinkingControl("openai", GEMINI_URL, "low"));
+});
+
+it("keeps the shared key from a preview or no-plan workspace and without SHARED_LLM_KEY=open, but still sends the model", async () => {
+  await savePlatformAi(db, key, ADMIN, { preset: "gemini", model: "gemini-3.8-flash", apiKey: "AIza-platform-1234" });
+  vi.stubEnv("SHARED_LLM_KEY", "open");
+  for (const plan of ["preview", null] as const) {
+    expect(await aiConnection(db, key, await newUser(plan)), String(plan)).toMatchObject({ apiKey: undefined, model: "gemini-3.8-flash", baseUrl: GEMINI_URL });
+  }
+  expect((await aiConnection(db, key, await newUser("pilot"))).apiKey).toBe("AIza-platform-1234");
+  vi.stubEnv("SHARED_LLM_KEY", "");
+  expect((await aiConnection(db, key, await newUser("pilot"))).apiKey).toBeUndefined();
+});
+
+it("leaves a workspace with its own hosted key on its own provider, model and thinking level", async () => {
+  vi.stubEnv("SHARED_LLM_KEY", "open");
+  await savePlatformAi(db, key, ADMIN, { preset: "gemini", model: "gemini-3.8-flash", apiKey: "AIza-platform-1234", thinking: "high" });
+  const userId = await newUser();
+  await db.update(users).set({ aiThinking: "high" }).where(eq(users.id, userId));
+  await saveAiSettings(db, key, userId, { preset: "deepseek", model: "deepseek-flash", apiKey: "sk-own", thinking: "off" });
+  expect(await aiConnection(db, key, userId)).toMatchObject({ baseUrl: "https://api.deepseek.com", apiKey: "sk-own", model: "deepseek-flash", ...thinkingControl("openai", "https://api.deepseek.com", "off") });
+});
+
+it("encrypts the shared key with its own name, shows only its last four characters, and keeps it when none is sent", async () => {
+  await pool.query("delete from platform_ai");
+  await savePlatformAi(db, key, ADMIN, { preset: "gemini", model: "gemini-3.8-flash", apiKey: "AIza-platform-1234" });
+  const [row] = await db.select().from(platformAi);
+  expect(JSON.stringify(row)).not.toContain("AIza-platform");
+  expect(decryptSecret(key, "platform", "platform_ai_key", { ciphertext: row!.keyCiphertext!, iv: row!.keyIv!, authTag: row!.keyAuthTag! })).toBe("AIza-platform-1234");
+  // It never decrypts as a workspace's key for the same provider.
+  expect(() => decryptSecret(key, "platform", "ai_api_key:gemini", { ciphertext: row!.keyCiphertext!, iv: row!.keyIv!, authTag: row!.keyAuthTag! })).toThrow();
+  expect(await readPlatformAi(db)).toEqual({ preset: "gemini", model: "gemini-3.8-flash", thinking: "off", hasKey: true, keyLast4: "1234" });
+  await savePlatformAi(db, key, ADMIN, { preset: "gemini", model: "gemini-3.6-flash", thinking: "low" });
+  expect(await readPlatformAi(db)).toMatchObject({ model: "gemini-3.6-flash", thinking: "low", keyLast4: "1234" });
+  vi.stubEnv("SHARED_LLM_KEY", "open");
+  expect((await sharedConnection(db, key, "pilot", null)).apiKey).toBe("AIza-platform-1234");
+  // A key belongs to one provider: switching provider without a new key is refused, and a hosted one needs a key.
+  await expect(savePlatformAi(db, key, ADMIN, { preset: "openai", model: "gpt-x" })).rejects.toThrow(/needs an API key/);
+  await pool.query("delete from platform_ai");
+  await expect(savePlatformAi(db, key, ADMIN, { preset: "gemini", model: "gemini-3.8-flash" })).rejects.toThrow(/needs an API key/);
+});
+
+it("records each save in admin_actions without the key", async () => {
+  await pool.query("delete from platform_ai");
+  await pool.query("delete from admin_actions where action = 'ai'");
+  await savePlatformAi(db, key, ADMIN, { preset: "gemini", model: "gemini-3.8-flash", apiKey: "AIza-platform-1234" });
+  await savePlatformAi(db, key, ADMIN, { preset: "gemini", model: "gemini-3.6-flash", thinking: "low" });
+  const log = await db.select().from(adminActions).where(eq(adminActions.action, "ai"));
+  expect(log).toHaveLength(2);
+  expect(log.map((l) => l.adminEmail)).toEqual([ADMIN, ADMIN]);
+  expect(JSON.stringify(log)).not.toContain("AIza-platform");
+  expect(log.find((l) => (l.after as { model: string }).model === "gemini-3.6-flash")).toMatchObject({
+    before: { preset: "gemini", model: "gemini-3.8-flash", thinking: "off", hasKey: true },
+    after: { preset: "gemini", model: "gemini-3.6-flash", thinking: "low", hasKey: true, keyChanged: false },
+  });
 });

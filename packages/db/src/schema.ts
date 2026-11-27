@@ -11,6 +11,8 @@ export const stepState = pgEnum("step_state", STEP_STATES);
 
 export const users = pgTable("users", {
   id: id(),
+  // The platform admin's thinking level for this workspace on the shared model; null follows platform_ai (decision 0151).
+  aiThinking: text("ai_thinking"),
   email: text("email").notNull().unique(),
   passwordHash: text("password_hash").notNull(),
   createdAt: createdAt(),
@@ -31,6 +33,7 @@ export const users = pgTable("users", {
   // C7 (decision 0125): optional Messenger PSID for direct staff alerts (within 24-hour window, else Telegram/email fallback).
   staffAlertPsid: text("staff_alert_psid"),
 }, (t) => [
+  check("users_ai_thinking", sql`${t.aiThinking} is null or ${t.aiThinking} in ('off', 'low', 'medium', 'high')`),
   check("users_plan", sql`${t.plan} in ('preview', 'pilot', 'business', 'business_plus', 'concierge')`),
   check("users_language", sql`${t.language} in ('en', 'tl')`),
   check("users_conversation_retention", sql`${t.conversationRetentionDays} between 1 and 3650`),
@@ -59,13 +62,13 @@ export const adminActions = pgTable(
   {
     id: id(),
     adminEmail: text("admin_email").notNull(),
-    action: text("action", { enum: ["plan", "shared_mail"] }).notNull(),
+    action: text("action", { enum: ["plan", "shared_mail", "ai", "ai_thinking"] }).notNull(),
     workspaceId: uuid("workspace_id").references(() => users.id, { onDelete: "set null" }),
     before: jsonb("before").$type<Record<string, unknown>>().notNull(),
     after: jsonb("after").$type<Record<string, unknown>>().notNull(),
     createdAt: createdAt(),
   },
-  (t) => [check("admin_actions_action", sql`${t.action} in ('plan', 'shared_mail')`), index("admin_actions_created").on(t.createdAt)],
+  (t) => [check("admin_actions_action", sql`${t.action} in ('plan', 'shared_mail', 'ai', 'ai_thinking')`), index("admin_actions_created").on(t.createdAt)],
 );
 
 /** Keys of work already counted, so a retried step is not counted twice. */
@@ -454,6 +457,23 @@ export const aiSettings = pgTable("ai_settings", {
   thinking: text("thinking").notNull().default("off"),
   updatedAt: ts("updated_at").notNull().defaultNow(),
 }, (t) => [check("ai_settings_thinking", sql`${t.thinking} in ('off', 'low', 'medium', 'high')`)]);
+
+/**
+ * The shared AI model the platform admin set (decision 0151). At most one row: the primary key is pinned to 1. Without
+ * it the LLM_* env vars decide. The key is encrypted like ai_keys and belongs to this row's preset only.
+ */
+export const platformAi = pgTable("platform_ai", {
+  id: integer("id").primaryKey().default(1),
+  preset: text("preset").notNull(),
+  model: text("model").notNull(),
+  thinking: text("thinking").notNull().default("off"),
+  keyCiphertext: text("key_ciphertext"),
+  keyIv: text("key_iv"),
+  keyAuthTag: text("key_auth_tag"),
+  // The last four characters, so the admin page can say which key is saved without decrypting it.
+  keyLast4: text("key_last4"),
+  updatedAt: ts("updated_at").notNull().defaultNow(),
+}, (t) => [check("platform_ai_single", sql`${t.id} = 1`), check("platform_ai_thinking", sql`${t.thinking} in ('off', 'low', 'medium', 'high')`)]);
 
 /** One API key per user and hosted provider, encrypted like secrets, so switching providers never loses a key. */
 export const aiKeys = pgTable(

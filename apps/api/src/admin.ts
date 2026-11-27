@@ -1,10 +1,11 @@
-import { adminOverview, adminRuns, PLANS, setWorkspacePlan, setWorkspaceSharedMail, type Db, type Plan } from "@daloy/db";
+import { adminOverview, adminRuns, localConnection, PLANS, PRESET_IDS, PRESETS, readPlatformAi, savePlatformAi, setWorkspaceAiThinking, setWorkspacePlan, setWorkspaceSharedMail, sharedConnection, THINKING_LEVELS, type Db, type Plan } from "@daloy/db";
 import { RUN_STATES, type RunState } from "@daloy/engine";
-import { Body, type CanActivate, Controller, type ExecutionContext, ForbiddenException, Get, Inject, Injectable, NotFoundException, Param, Put, Query, UseGuards } from "@nestjs/common";
+import { BadRequestException, Body, type CanActivate, Controller, type ExecutionContext, ForbiddenException, Get, HttpCode, Inject, Injectable, NotFoundException, Param, Post, Put, Query, UseGuards } from "@nestjs/common";
 import type { Request } from "express";
 import * as z from "zod";
 import { fromOwnOrigin, sessionUser } from "./auth";
 import { CONFIG, CurrentUser, DB, RateLimit, ZodPipe, type ApiConfig, type SessionUser } from "./http";
+import { sampleTest } from "./ai-sample";
 
 /**
  * Whether this email is in PLATFORM_ADMINS, a comma-separated list matched trimmed and lowercased. An empty or unset
@@ -40,6 +41,13 @@ export class AdminGuard implements CanActivate {
 const workspaceId = new ZodPipe(z.uuid());
 const runsQuery = new ZodPipe(z.object({ state: z.enum(RUN_STATES).optional(), limit: z.coerce.number().int().min(1).max(100).default(50) }));
 const planBody = new ZodPipe(z.object({ plan: z.enum(Object.keys(PLANS) as [Plan, ...Plan[]]).nullable(), startedOn: z.iso.date().optional() }));
+// Like settingsInput in settings.ts: a key left out keeps the saved one, a thinking level left out keeps the saved level.
+const platformAiBody = new ZodPipe(z.object({
+  preset: z.enum(PRESET_IDS),
+  model: z.string().trim().min(1).max(200),
+  apiKey: z.string().trim().min(1).max(500).optional(),
+  thinking: z.enum(THINKING_LEVELS).optional(),
+}));
 const found = <T>(row: T | null) => {
   if (row === null) throw new NotFoundException("no workspace with this id");
   return row;
@@ -49,7 +57,52 @@ const found = <T>(row: T | null) => {
 @Controller("admin")
 @UseGuards(AdminGuard)
 export class AdminController {
-  constructor(@Inject(DB) private readonly db: Db) {}
+  constructor(
+    @Inject(DB) private readonly db: Db,
+    @Inject(CONFIG) private readonly config: ApiConfig,
+  ) {}
+
+  /** The shared model as the page shows it: the saved row or the env default. The key itself never leaves the database. */
+  private async sharedAi() {
+    const saved = await readPlatformAi(this.db);
+    const local = localConnection();
+    const current = saved ? { source: "platform" as const, ...saved } : { source: "env" as const, preset: "local", model: local.model, thinking: "off", hasKey: Boolean(process.env.LLM_API_KEY), keyLast4: null };
+    const presets = Object.fromEntries(Object.entries(PRESETS).map(([id, p]) => [id, { label: p.label, defaultModel: id === "local" ? local.model : p.defaultModel, needsKey: p.needsKey, models: p.models }]));
+    // Without SHARED_LLM_KEY=open the saved key is held back from every workspace (decision 0035), so the page can say so.
+    return { current, presets, keyShared: process.env.SHARED_LLM_KEY === "open" };
+  }
+
+  @Get("ai")
+  @UseGuards(RateLimit(30))
+  getAi() {
+    return this.sharedAi();
+  }
+
+  @Put("ai")
+  @UseGuards(RateLimit(10))
+  async putAi(@CurrentUser() admin: SessionUser, @Body(platformAiBody) body: { preset: (typeof PRESET_IDS)[number]; model: string; apiKey?: string; thinking?: (typeof THINKING_LEVELS)[number] }) {
+    try {
+      await savePlatformAi(this.db, this.config.secretsKey, admin.email, body);
+    } catch (err) {
+      throw new BadRequestException((err as Error).message);
+    }
+    return this.sharedAi();
+  }
+
+  /** One real model call on a sample inquiry, as a workspace on a plan would make it. Costs tokens, so it has its own limit. */
+  @Post("ai/test")
+  @HttpCode(200)
+  @UseGuards(RateLimit(10))
+  async testAi() {
+    const { model, ...connection } = await sharedConnection(this.db, this.config.secretsKey, "pilot", null);
+    return sampleTest(connection, model);
+  }
+
+  @Put("workspaces/:id/ai-thinking")
+  @UseGuards(RateLimit(10))
+  async aiThinking(@CurrentUser() admin: SessionUser, @Param("id", workspaceId) id: string, @Body(new ZodPipe(z.object({ level: z.enum(THINKING_LEVELS).nullable() }))) body: { level: (typeof THINKING_LEVELS)[number] | null }) {
+    return found(await setWorkspaceAiThinking(this.db, admin.email, id, body.level));
+  }
 
   @Get("overview")
   @UseGuards(RateLimit(30))

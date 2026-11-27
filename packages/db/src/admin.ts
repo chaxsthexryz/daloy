@@ -126,7 +126,7 @@ export function adminRuns(db: Db, opts: { state?: (typeof runs.state.enumValues)
  * Locks a workspace owner's row, applies the change and records it in admin_actions, in one transaction. Null when the
  * id is not a workspace owner (an unknown id, or a member's own account).
  */
-async function change<K extends "plan" | "shared_mail", T extends Record<string, unknown>>(db: Db, adminEmail: string, workspaceId: string, action: K, read: (row: typeof users.$inferSelect) => T, next: (before: T) => T) {
+async function change<K extends "plan" | "shared_mail" | "ai_thinking", T extends Record<string, unknown>>(db: Db, adminEmail: string, workspaceId: string, action: K, read: (row: typeof users.$inferSelect) => T, next: (before: T) => T) {
   return db.transaction(async (tx) => {
     const [row] = await tx.select({ user: users }).from(users).innerJoin(workspaceMembers, isOwner).where(eq(users.id, workspaceId)).for("update", { of: users });
     if (!row) return null;
@@ -149,4 +149,9 @@ export function setWorkspacePlan(db: Db, adminEmail: string, workspaceId: string
 /** Approves a workspace for the shared mail server with a daily recipient limit, or withdraws it with null (decision 0024). */
 export function setWorkspaceSharedMail(db: Db, adminEmail: string, workspaceId: string, dailyLimit: number | null) {
   return change(db, adminEmail, workspaceId, "shared_mail", (u) => ({ sharedMailDailyLimit: u.sharedMailDailyLimit }), () => ({ sharedMailDailyLimit: dailyLimit }));
+}
+
+/** Sets or clears the admin's thinking level for a workspace on the shared model (decision 0151). Null follows the platform level. */
+export function setWorkspaceAiThinking(db: Db, adminEmail: string, workspaceId: string, level: string | null) {
+  return change(db, adminEmail, workspaceId, "ai_thinking", (u) => ({ aiThinking: u.aiThinking }), () => ({ aiThinking: level }));
 }

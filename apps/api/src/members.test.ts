@@ -424,6 +424,7 @@ describe("role permissions", () => {
     "GET /approvals/:token", "POST /approvals/:token", "GET /pay/:token", "GET /pay/:token/qr", "POST /pay/:token", "GET /settings/connections/oauth/callback", "GET /settings/connections/outlook/callback", "GET /brand/logo/:id",
     // Platform admin routes answer 404 to every workspace role (admin.test.ts).
     "GET /admin/overview", "GET /admin/runs", "PUT /admin/workspaces/:id/plan", "PUT /admin/workspaces/:id/shared-mail",
+    "GET /admin/ai", "PUT /admin/ai", "POST /admin/ai/test", "PUT /admin/workspaces/:id/ai-thinking",
   ]);
 
   it("gives each role exactly its routes", async () => {

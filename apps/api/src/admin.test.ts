@@ -6,7 +6,7 @@ import { eq } from "drizzle-orm";
 import type { Pool } from "pg";
 import { PgBoss } from "pg-boss";
 import request from "supertest";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { freshDatabase } from "../../../test/db";
 import { isPlatformAdmin } from "./admin";
 import { createApp } from "./app";
@@ -273,5 +273,103 @@ describe("plan override and shared mail approval", () => {
     await admin.put(`/admin/workspaces/${m.id}/shared-mail`).send({ dailyLimit: 5 }).expect(404);
     const [row] = await db.select({ limit: users.sharedMailDailyLimit }).from(users).where(eq(users.id, m.id));
     expect(row!.limit).toBeNull();
+  });
+});
+
+describe("shared AI model", () => {
+  let admin: Agent;
+  let owner: { agent: Agent; id: string; email: string };
+  const KEY = "AIza-platform-secret-9876";
+
+  beforeAll(async () => {
+    const [u] = await db.select({ id: users.id }).from(users).where(eq(users.email, ADMIN));
+    const token = randomBytes(32).toString("base64url");
+    await db.insert(sessions).values({ idHash: sha256(token), userId: u!.id, expiresAt: new Date(Date.now() + 3_600_000) });
+    admin = request.agent(server).set("Cookie", `daloy_session=${token}`);
+    owner = await signUp();
+    await pool.query("delete from platform_ai");
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("shows the env default before anything is saved, without a key", async () => {
+    const { body } = await admin.get("/admin/ai").expect(200);
+    expect(body.current).toMatchObject({ source: "env", thinking: "off" });
+    expect(body.presets.gemini).toMatchObject({ needsKey: true });
+    expect(JSON.stringify(body)).not.toMatch(/apiKey|secret/i);
+  });
+
+  it("saves the shared model, keeps the key when none is sent, and never returns it", async () => {
+    await admin.put("/admin/ai").send({ preset: "gemini", model: "gemini-3.8-flash", apiKey: KEY, thinking: "low" }).expect(200);
+    const saved = (await admin.get("/admin/ai").expect(200)).body;
+    expect(saved.current).toMatchObject({ source: "platform", preset: "gemini", model: "gemini-3.8-flash", thinking: "low", hasKey: true, keyLast4: "9876" });
+    await admin.put("/admin/ai").send({ preset: "gemini", model: "gemini-3.6-flash" }).expect(200);
+    const kept = (await admin.get("/admin/ai").expect(200)).body;
+    expect(kept.current).toMatchObject({ model: "gemini-3.6-flash", thinking: "low", hasKey: true, keyLast4: "9876" });
+    expect(JSON.stringify([saved, kept])).not.toContain(KEY);
+    // Bad input is refused at the boundary, and a hosted provider with no key is a 400.
+    await admin.put("/admin/ai").send({ preset: "nope", model: "x" }).expect(400);
+    await admin.put("/admin/ai").send({ preset: "gemini", model: "" }).expect(400);
+    await admin.put("/admin/ai").send({ preset: "gemini", model: "x", thinking: "max" }).expect(400);
+    await admin.put("/admin/ai").send({ preset: "openai", model: "gpt-x" }).expect(400);
+  });
+
+  it("writes one audit row per save, never with the key", async () => {
+    const log = await db.select().from(adminActions).where(eq(adminActions.action, "ai"));
+    expect(log).toHaveLength(2);
+    expect(log.every((l) => l.adminEmail === ADMIN && l.workspaceId === null)).toBe(true);
+    expect(JSON.stringify(log)).not.toContain("secret");
+    expect(log.map((l) => (l.after as { keyChanged: boolean }).keyChanged).sort()).toEqual([false, true]);
+  });
+
+  it("sets and clears a workspace's thinking override, and audits it", async () => {
+    const res = await admin.put(`/admin/workspaces/${owner.id}/ai-thinking`).send({ level: "high" }).expect(200);
+    expect(res.body).toEqual({ aiThinking: "high" });
+    await admin.put(`/admin/workspaces/${owner.id}/ai-thinking`).send({ level: null }).expect(200);
+    const [row] = await db.select({ t: users.aiThinking }).from(users).where(eq(users.id, owner.id));
+    expect(row!.t).toBeNull();
+    const log = await db.select().from(adminActions).where(eq(adminActions.action, "ai_thinking"));
+    expect(log.map((l) => [l.workspaceId, l.adminEmail, l.before, l.after])).toEqual([
+      [owner.id, ADMIN, { aiThinking: null }, { aiThinking: "high" }],
+      [owner.id, ADMIN, { aiThinking: "high" }, { aiThinking: null }],
+    ]);
+    await admin.put(`/admin/workspaces/${owner.id}/ai-thinking`).send({ level: "max" }).expect(400);
+    await admin.put(`/admin/workspaces/${randomUUID()}/ai-thinking`).send({ level: "low" }).expect(404);
+  });
+
+  it("runs the sample classify call on the shared model with a stubbed provider, and is rate limited", async () => {
+    vi.stubEnv("SHARED_LLM_KEY", "open");
+    const seen: { url: string; auth: string | null }[] = [];
+    vi.stubGlobal("fetch", async (url: string | URL, init?: RequestInit) => {
+      seen.push({ url: String(url), auth: new Headers(init?.headers).get("authorization") });
+      return new Response(JSON.stringify({ choices: [{ message: { content: '{"label":"billing"}' } }], usage: { prompt_tokens: 30, completion_tokens: 4 } }));
+    });
+    const { body } = await admin.post("/admin/ai/test").expect(200);
+    expect(body).toMatchObject({ ok: true, model: "gemini-3.6-flash", label: "billing" });
+    expect(seen[0]!.url).toContain("generativelanguage.googleapis.com");
+    expect(seen[0]!.auth).toBe(`Bearer ${KEY}`);
+    expect(JSON.stringify(body)).not.toContain(KEY);
+    // A provider refusal comes back as a plain reason, not as a server error.
+    vi.stubGlobal("fetch", async () => new Response("{}", { status: 401 }));
+    expect((await admin.post("/admin/ai/test").expect(200)).body).toMatchObject({ ok: false, error: "The provider rejected the API key." });
+    const statuses: number[] = [];
+    for (let i = 0; i < 12; i++) statuses.push((await admin.post("/admin/ai/test")).status);
+    expect(statuses).toContain(429);
+    vi.unstubAllEnvs();
+  });
+
+  it("gives a workspace on a plan the shared model through its own AI test", async () => {
+    // The shared model now applies where the env vars did: a plan-less workspace's test goes to the shared provider without the key.
+    vi.stubEnv("SHARED_LLM_KEY", "open");
+    const seen: (string | null)[] = [];
+    vi.stubGlobal("fetch", async (_url: string | URL, init?: RequestInit) => {
+      seen.push(new Headers(init?.headers).get("authorization"));
+      return new Response(JSON.stringify({ choices: [{ message: { content: '{"label":"billing"}' } }] }));
+    });
+    await owner.agent.post("/settings/ai/test").expect(200);
+    expect(seen[0]).toBeNull();
+    await admin.put(`/admin/workspaces/${owner.id}/plan`).send({ plan: "pilot" }).expect(200);
+    await owner.agent.post("/settings/ai/test").expect(200);
+    expect(seen[1]).toBe(`Bearer ${KEY}`);
+    vi.unstubAllEnvs();
   });
 });

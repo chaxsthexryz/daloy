@@ -2,7 +2,7 @@ import { and, eq } from "drizzle-orm";
 import type { FileKind } from "@daloy/engine";
 import { decryptSecret, encryptSecret } from "./crypto";
 import type { Db } from "./index";
-import { aiKeys, aiSettings, users } from "./schema";
+import { adminActions, aiKeys, aiSettings, platformAi, users } from "./schema";
 
 /**
  * The AI models a user can pick in the console. Hosted ones have a fixed URL, so a user cannot point the server at an
@@ -144,18 +144,79 @@ export async function saveAiSettings(db: Db, secretsKey: Buffer, userId: string,
   });
 }
 
+const PLATFORM_AAD_OWNER = "platform";
+const PLATFORM_KEY_NAME = "platform_ai_key";
+
+/** The shared model the admin set, without its key. Null: the env vars decide. */
+export async function readPlatformAi(db: Db) {
+  const [row] = await db.select().from(platformAi);
+  return row ? { preset: row.preset as Preset, model: row.model, thinking: row.thinking as ThinkingLevel, hasKey: row.keyCiphertext !== null, keyLast4: row.keyLast4 } : null;
+}
+
+/**
+ * Saves the shared model (decision 0151) and records it in admin_actions, in one transaction. A new apiKey replaces the
+ * saved one. Without one the saved key stays, but only for the same provider: a key belongs to one preset. The audit
+ * row says whether the key changed, never the key. Without a thinking level the saved one stays ("off" the first time).
+ */
+export async function savePlatformAi(db: Db, secretsKey: Buffer, adminEmail: string, input: { preset: Preset; model: string; apiKey?: string; thinking?: ThinkingLevel }) {
+  const preset = PRESETS[input.preset];
+  await db.transaction(async (tx) => {
+    const [old] = await tx.select().from(platformAi).for("update");
+    const keptKey = old && old.preset === input.preset && old.keyCiphertext !== null;
+    if (preset.needsKey && !input.apiKey && !keptKey) throw new Error(`${preset.label} needs an API key`);
+    const thinking = input.thinking ?? (old?.thinking as ThinkingLevel | undefined) ?? "off";
+    let key: Pick<typeof platformAi.$inferInsert, "keyCiphertext" | "keyIv" | "keyAuthTag" | "keyLast4"> = { keyCiphertext: null, keyIv: null, keyAuthTag: null, keyLast4: null };
+    if (preset.needsKey && input.apiKey) {
+      const e = encryptSecret(secretsKey, PLATFORM_AAD_OWNER, PLATFORM_KEY_NAME, input.apiKey);
+      key = { keyCiphertext: e.ciphertext, keyIv: e.iv, keyAuthTag: e.authTag, keyLast4: input.apiKey.slice(-4) };
+    } else if (preset.needsKey && old) {
+      key = { keyCiphertext: old.keyCiphertext, keyIv: old.keyIv, keyAuthTag: old.keyAuthTag, keyLast4: old.keyLast4 };
+    }
+    const values = { id: 1, preset: input.preset, model: input.model, thinking, ...key, updatedAt: new Date() };
+    await tx.insert(platformAi).values(values).onConflictDoUpdate({ target: platformAi.id, set: values });
+    await tx.insert(adminActions).values({
+      adminEmail,
+      action: "ai",
+      before: old ? { preset: old.preset, model: old.model, thinking: old.thinking, hasKey: old.keyCiphertext !== null } : {},
+      after: { preset: input.preset, model: input.model, thinking, hasKey: key.keyCiphertext !== null, keyChanged: Boolean(preset.needsKey && input.apiKey) },
+    });
+  });
+}
+
+/**
+ * The shared connection, for a workspace on `plan` (null: none) whose admin override is `override`. With a shared model
+ * saved it is that model; without, the env vars. The shared key goes only to a workspace with a plan other than
+ * "preview", and, as for the env key, only with SHARED_LLM_KEY=open (decisions 0035 and 0151).
+ */
+export async function sharedConnection(db: Db, secretsKey: Buffer, plan: string | null, override: ThinkingLevel | null): Promise<AiConnection> {
+  const hasPlan = plan !== null && plan !== "preview";
+  const [row] = await db.select().from(platformAi);
+  if (!row) return env(hasPlan);
+  const thinking = override ?? (row.thinking as ThinkingLevel);
+  if (row.preset === "local") {
+    const conn = env(hasPlan);
+    return { ...conn, model: row.model, ...thinkingControl(conn.provider, conn.baseUrl, thinking) };
+  }
+  const preset = PRESETS[row.preset as Exclude<Preset, "local">];
+  const shareKey = hasPlan && process.env.SHARED_LLM_KEY === "open" && row.keyCiphertext !== null && row.keyIv !== null && row.keyAuthTag !== null;
+  const apiKey = shareKey ? decryptSecret(secretsKey, PLATFORM_AAD_OWNER, PLATFORM_KEY_NAME, { ciphertext: row.keyCiphertext!, iv: row.keyIv!, authTag: row.keyAuthTag! }) : undefined;
+  return { provider: "openai", baseUrl: preset.baseUrl, apiKey, model: row.model, imageTypes: IMAGE_TYPES[row.preset as Preset], ...thinkingControl("openai", preset.baseUrl, thinking) };
+}
+
 /** Where the AI step of this user's workflows sends its requests. */
 export async function aiConnection(db: Db, secretsKey: Buffer, userId: string): Promise<AiConnection> {
   const [row] = await db.select().from(aiSettings).where(eq(aiSettings.userId, userId));
   const shared = async () => {
-    const plan = (await db.select({ plan: users.plan }).from(users).where(eq(users.id, userId)))[0]?.plan ?? null;
-    return env(plan !== null && plan !== "preview"); // a preview workspace is not approved yet: no shared key
+    const [u] = await db.select({ plan: users.plan, thinking: users.aiThinking }).from(users).where(eq(users.id, userId));
+    return sharedConnection(db, secretsKey, u?.plan ?? null, (u?.thinking ?? null) as ThinkingLevel | null);
   };
   if (!row) return shared();
   const thinking = row.thinking as ThinkingLevel;
   if (row.preset === "local") {
-    // shared() carries the "off" fields; every higher level sets the same fields or more, so it replaces them all.
     const conn = await shared();
+    // With a shared model saved, "Local model" means that model with the admin's thinking level (decision 0151).
+    if ((await readPlatformAi(db)) !== null) return conn;
+    // shared() carries the "off" fields; every higher level sets the same fields or more, so it replaces them all.
     return { ...conn, model: row.model, ...thinkingControl(conn.provider, conn.baseUrl, thinking) };
   }
   const preset = PRESETS[row.preset as Exclude<Preset, "local">];

@@ -428,6 +428,13 @@
       "when": 1795799606351,
       "tag": "0060_ai_thinking",
       "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "7",
+      "when": 1795800174485,
+      "tag": "0061_platform_ai",
+      "breakpoints": true
     }
   ]
 }
