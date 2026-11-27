@@ -24,9 +24,10 @@ export const CONFIG = Symbol("config");
  * oauthProviders defaults to OAUTH_PROVIDERS; tests add a definition for the fake OAuth app.
  * trustProxy is the number of proxies in front of the API (Express "trust proxy"), so req.ip is the real client.
  * eventsHeartbeatMs (default 25000) and eventsMaxStreams (default 5 per user) tune GET /events; tests shorten the heartbeat (decision 0155).
- * platformAdmins is PLATFORM_ADMINS, the comma-separated emails that may open #/admin (decision 0120).
+ * platformAdmins is PLATFORM_ADMINS, the comma-separated emails that may open /admin (decisions 0120, 0152).
+ * webDist is WEB_DIST, the built web console the API serves; unset in tests and in `pnpm dev`, where Vite serves it.
  */
-export type ApiConfig = { secretsKey: Buffer; secureCookies: boolean; trustProxy?: number; mail?: MailDeps; publicUrl?: string; providers?: ProviderUrls; ask?: boolean; oauthProviders?: readonly OAuthProvider[]; uploadBudgetBytes?: number; platformAdmins?: string; sentryDsn?: string; sentryEnvironment?: string; webSentryDsn?: string; eventsHeartbeatMs?: number; eventsMaxStreams?: number };
+export type ApiConfig = { secretsKey: Buffer; secureCookies: boolean; trustProxy?: number; mail?: MailDeps; publicUrl?: string; providers?: ProviderUrls; ask?: boolean; oauthProviders?: readonly OAuthProvider[]; uploadBudgetBytes?: number; platformAdmins?: string; sentryDsn?: string; sentryEnvironment?: string; webSentryDsn?: string; eventsHeartbeatMs?: number; eventsMaxStreams?: number; webDist?: string };
 
 /**
  * TRUST_PROXY and SECURE_COOKIES from the env (docs/deployment.md). A value that cannot be read stops the boot, so a

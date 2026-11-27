@@ -22,7 +22,7 @@ Kept current with each phase. A mitigation marked "planned" does not exist in co
 ## Entry points
 
 - Console API (session cookie)
-- Platform admin API (`/admin/*`, session cookie of an account in `PLATFORM_ADMINS`; 404 for everyone else)
+- Platform admin API (`/admin/*`) and the admin console page (`GET /admin`), session cookie of an account in `PLATFORM_ADMINS`; 404 for everyone else
 - Feedback: `POST` and `GET /support/feedback` (any signed-in member; 5 posts an hour per user; a member reads only their own workspace's messages) and the operator's `/admin/feedback` routes (same guard as the rest of `/admin`; each write is recorded in `admin_actions`, decision 0153)
 - Shopify order webhook (`POST /hooks/shopify/:path`, public, signed by Shopify)
 - Telegram message webhook (`POST /hooks/telegram/:path`, public, checked by Telegram's secret token header)
@@ -359,7 +359,7 @@ The list of apps sharing a Google sign-in joins OAuth grants by Google account I
 ## Platform admin page (A1, decision 0122)
 
 - Assets: every workspace's counts, owner emails, plans and shared mail approvals, and run metadata across tenants.
-- Entry points: `GET /admin/overview`, `GET /admin/runs`, `PUT /admin/workspaces/:id/plan`, `PUT /admin/workspaces/:id/shared-mail`, and the `#/admin` page.
+- Entry points: `GET /admin/overview`, `GET /admin/runs`, `PUT /admin/workspaces/:id/plan`, `PUT /admin/workspaces/:id/shared-mail`, and the admin console page `GET /admin` (decision 0152).
 - A normal user reaching cross-tenant data: `AdminGuard` sits on the whole controller and looks up the session itself. A missing or expired session, or an email not in `PLATFORM_ADMINS`, gets 404, so the routes look absent. Workspace roles play no part: a workspace owner is refused like anyone else. An empty allowlist turns the page off. `admin.test.ts` sends every registered `/admin` route as an owner, an operator and a signed-out client and expects 404 each time.
 - Cross-site changes by an admin's browser: PUT routes need this installation's own Origin, as with `SessionGuard`.
 - Leaking customer data or secrets to the admin: the queries live in `packages/db/src/admin.ts` and select named columns only. They never return trigger payloads, step input or output, error text or delivery payloads, and the module imports no secrets code (`packages/db/src/admin.test.ts` checks its imports and source). Reads run in a `SET TRANSACTION READ ONLY` transaction, so Postgres refuses a write on that path.
@@ -367,7 +367,8 @@ The list of apps sharing a Google sign-in joins OAuth grants by Google account I
 - Untraced changes: each plan or shared mail change and its audit row are written in one transaction with the old and new values and the admin's email. No route edits or deletes `admin_actions`.
 - The shared AI key (A2, decision 0151): `platform_ai` holds it encrypted with the secrets key under its own name, so it cannot be read as a workspace key. `GET /admin/ai` returns only the last four characters. The key goes to a workspace only with a plan other than preview and `SHARED_LLM_KEY=open`. Saves are audited without the key. `admin.test.ts` checks no response or audit row contains it.
 - Abuse of an admin session: reads are limited to 30 a minute and changes to 10 a minute per admin, on top of the global limit.
-- Remaining risks: a stolen admin session can read every workspace's counts and change plans; there is no second factor. Rate limit counters live in process memory. Owner emails are visible to admins by design.
+- Finding the console: `GET /admin` sits behind `AdminGuard` and gives the admin API's own 404 to everyone else. The built `admin.html` is never served as a static file: `hideAdminHtml` sends every spelling of it (case, percent-encoding, `..`) to the guarded route, and `admin-page.test.ts` checks six of them. The page is `Cache-Control: no-store`, so a CDN cannot hand an admin's copy to someone else. The console's JavaScript chunk is public by its hashed name but holds no data.
+- Remaining risks: a stolen admin session can read every workspace's counts and change plans; there is no second factor (TOTP for platform admins is due before launch). Rate limit counters live in process memory. Owner emails are visible to admins by design.
 
 ## Guarded answers and stay quote (C4, decision 0119)
 

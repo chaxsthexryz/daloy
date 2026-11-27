@@ -7,7 +7,6 @@ import { Editor } from "./Editor";
 import { RunPage, RunsPage } from "./Runs";
 import { AskPage, AskRunPage } from "./AskRequest";
 import { AdvancedPage } from "./Advanced";
-import { AdminPage } from "./Admin";
 import { Automations } from "./Automations";
 import { HomePage } from "./Home";
 import { NewAutomationPage } from "./NewAutomation";
@@ -38,7 +37,7 @@ const INVITE = /^#\/invite\/([A-Za-z0-9_-]{43})$/;
 /**
  * Hash routes (#/ is Automations, #/advanced the developer menu, #/w/<id>, #/w/<id>/runs, #/w/<id>/versions, #/runs/<id> (and #/runs/<id>/ask), #/tokens, #/secrets, #/settings, #/settings/ai, #/settings/business, #/onboarding (first-time setup), #/apps (and #/apps/<app>-<outcome>), #/activity (and #/activity/ask), #/new, #/ai (Build with AI), #/resources, #/bookings, #/receipts, #/knowledge,
  * #/verify-sender/<token> for the Gmail confirmation link, #/team, #/invite/<token> for an invite link,
- * #/admin for platform admins (decision 0120),
+ * /admin (its own page) for platform admins (decisions 0120, 0152),
  * #/forgot-password and #/reset-password/<token> before sign-in, #/account to change the password,
  * #/answer/<token> to sign in before a named approval (decision 0022),
  * #/try/office-request for the preview and #/a/<id> for a guided automation),
@@ -130,8 +129,12 @@ function Route({ hash, user, onName }: { hash: string; user: User; onName: (disp
   if (guided) return <OfficeRequestPage key={guided[1]} id={guided[1]!} />;
   if (path === "#/activity" && (user.role === "owner" || user.role === "operator")) return <RunsPage ask={canAsk} />;
   if (path === "#/activity/ask" && canAsk) return <AskPage />;
-  // Platform admin (A1): any signed-in role may open it; the API decides who sees anything (PLATFORM_ADMINS).
-  if (path === "#/admin") return <AdminPage />;
+  // The admin console moved to its own page at /admin (decision 0152). Only admins are sent there; for anyone else the
+  // old route is an unknown page, as /admin is.
+  if (path === "#/admin" && user.admin === true) {
+    location.replace("/admin");
+    return null;
+  }
   if (path === "#/try/office-request") return <TryOfficeRequest email={user.email} />;
   if (path === "#/advanced" && user.role === "owner" && user.admin === true) return <AdvancedPage />;
   if (path === "#/new" && user.role === "owner") return <NewAutomationPage email={user.email} initialMode="templates" admin={user.admin === true} />;

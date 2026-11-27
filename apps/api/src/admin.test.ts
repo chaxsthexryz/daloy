@@ -324,6 +324,9 @@ describe("shared AI model", () => {
   it("sets and clears a workspace's thinking override, and audits it", async () => {
     const res = await admin.put(`/admin/workspaces/${owner.id}/ai-thinking`).send({ level: "high" }).expect(200);
     expect(res.body).toEqual({ aiThinking: "high" });
+    // The admin console's AI tab shows the override from the overview rows (A3).
+    const rows = (await admin.get("/admin/overview").expect(200)).body.workspaces.rows as { id: string; aiThinking: string | null }[];
+    expect(rows.find((r) => r.id === owner.id)?.aiThinking).toBe("high");
     await admin.put(`/admin/workspaces/${owner.id}/ai-thinking`).send({ level: null }).expect(200);
     const [row] = await db.select({ t: users.aiThinking }).from(users).where(eq(users.id, owner.id));
     expect(row!.t).toBeNull();

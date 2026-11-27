@@ -432,6 +432,8 @@ describe("role permissions", () => {
     "GET /admin/overview", "GET /admin/runs", "PUT /admin/workspaces/:id/plan", "PUT /admin/workspaces/:id/shared-mail",
     "GET /admin/ai", "PUT /admin/ai", "POST /admin/ai/test", "PUT /admin/workspaces/:id/ai-thinking",
     "GET /admin/feedback", "PUT /admin/feedback/:id/reply", "PUT /admin/feedback/:id/close",
+    // The admin console page itself (admin-page.test.ts).
+    "GET /admin",
   ]);
 
   it("gives each role exactly its routes", async () => {

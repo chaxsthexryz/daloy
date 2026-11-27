@@ -1,15 +1,18 @@
 import "./workspace.css";
 import "./admin.css";
-import { useEffect, useState } from "react";
-import { Breadcrumb } from "./Breadcrumb";
+import { useEffect, useState, type ReactNode } from "react";
+import { AdminAiTab } from "./AdminAi";
+import { AdminFeedbackTab } from "./AdminFeedback";
 import { api, ApiError } from "./api";
-import { useLanguage } from "./Language";
+import { LanguageContext, useLanguage } from "./Language";
 import { shortDate, shortDateTime } from "./lib/advanced";
+import { ADMIN_TABS, adminRoute, tabHref, type AdminTab } from "./lib/admin-route";
+import type { Language } from "./lib/locale";
 
 type Counts = { total: number; new7: number; new30: number };
-type WorkspaceRow = { id: string; email: string; createdAt: string; plan: string | null; planStartedOn: string | null; sharedMailDailyLimit: number | null; members: number; runs30: number; failed: number; needsReview: number; ai: number; sms: number };
-type Action = { id: string; adminEmail: string; action: "plan" | "shared_mail"; workspaceEmail: string | null; before: Record<string, unknown>; after: Record<string, unknown>; createdAt: string };
-type Overview = {
+export type WorkspaceRow = { id: string; email: string; createdAt: string; plan: string | null; planStartedOn: string | null; sharedMailDailyLimit: number | null; aiThinking?: string | null; members: number; runs30: number; failed: number; needsReview: number; ai: number; sms: number };
+type Action = { id: string; adminEmail: string; action: string; workspaceEmail: string | null; before: Record<string, unknown>; after: Record<string, unknown>; createdAt: string };
+export type Overview = {
   users: Counts;
   workspaces: Counts & { rows: WorkspaceRow[] };
   runs30: Record<string, number>;
@@ -21,155 +24,223 @@ type AdminRun = { id: string; email: string; workflow: string; version: number; 
 
 const PLANS = ["preview", "pilot", "business", "business_plus", "concierge"];
 const STATES = ["pending", "running", "waiting", "needs_review", "succeeded", "failed", "cancelled"];
-const show = (v: Record<string, unknown>) => Object.values(v).map((x) => (x === null ? "none" : String(x))).join(", ");
+const TAB_LABELS: Record<AdminTab, string> = { overview: "Overview", workspaces: "Workspaces", runs: "Runs", ai: "AI models", feedback: "Feedback", audit: "Audit log" };
+const TAB_LEADS: Record<AdminTab, string> = {
+  overview: "Counts across every workspace. This console never shows run data, step data, error text or secrets.",
+  workspaces: "Newest first. A change is saved for that workspace and recorded in the audit log.",
+  runs: "The latest runs across every workspace: state and step counts only.",
+  ai: "The shared model every workspace on a plan uses unless it brings its own key. Changes apply to the next AI step.",
+  feedback: "Messages workspaces send from Support. A reply is emailed to the sender.",
+  audit: "Every change made here, newest first. Entries cannot be edited or deleted.",
+};
+const ACTIONS: Record<string, string> = {
+  plan: "changed the plan of",
+  shared_mail: "changed shared mail for",
+  ai: "changed the shared AI model",
+  ai_thinking: "changed AI thinking for",
+  feedback_reply: "replied to feedback from",
+  feedback_close: "closed feedback from",
+};
+const tone = (state: string) => (state === "succeeded" ? "ok" : state === "failed" || state === "needs_review" ? "red" : "");
+// Ids say nothing to a reader of the log; the workspace is already named.
+const show = (v: Record<string, unknown>) => Object.entries(v).filter(([k]) => !k.endsWith("Id")).map(([, x]) => (x === null ? "none" : String(x))).join(", ");
+
+/** The tabs this build shows. A tab whose API has not shipped stays out of the navigation (decision 0152). */
+export const SHOWN_TABS: readonly AdminTab[] = ADMIN_TABS;
 
 /**
- * The platform Super-Admin page (A1, decision 0122), for accounts in PLATFORM_ADMINS. The API answers 404 to everyone
- * else, and so does this page. It shows counts and run metadata across workspaces, and changes plans and shared mail.
+ * The navigation and page frame of the admin console. It has no workspace sidebar: the admin console is its own app at
+ * /admin, and the workspace console does not link to it.
  */
-export function AdminPage() {
+export function AdminShell({ tab, email, tabs = SHOWN_TABS, badges = {}, onSignOut, children }: { tab: AdminTab; email: string; tabs?: readonly AdminTab[]; badges?: Partial<Record<AdminTab, number>>; onSignOut: () => void; children: ReactNode }) {
   const { t } = useLanguage();
+  return (
+    <div className="wk ad-shell">
+      <nav className="ad-nav" aria-label={t("Platform admin")}>
+        <div className="ad-brand">
+          <img src="/logo.svg" alt="" width={20} height={20} />
+          <span>kymavo</span>
+          <span className="wk-chip">{t("Admin")}</span>
+        </div>
+        <ul className="ad-links">
+          {tabs.map((k) => (
+            <li key={k}>
+              <a className="ad-link" href={tabHref(k)} aria-current={k === tab ? "page" : undefined}>
+                <span>{t(TAB_LABELS[k])}</span>
+                {badges[k] ? <span className="ad-badge" aria-label={t("{count} new", { count: badges[k] })}>{badges[k]}</span> : null}
+              </a>
+            </li>
+          ))}
+        </ul>
+        <div className="ad-foot">
+          <span className="ad-who">{t("Signed in as {email}", { email })}</span>
+          <a href="/">{t("Open the workspace console")}</a>
+          <button type="button" className="wk-button" onClick={onSignOut}>{t("Sign out")}</button>
+        </div>
+      </nav>
+      <main className="ad-main" id="admin-main">
+        <header className="wk-head">
+          <div>
+            <h1>{t(TAB_LABELS[tab])}</h1>
+            <p className="wk-sub">{t(TAB_LEADS[tab])}</p>
+          </div>
+        </header>
+        <div className="ad-body">{children}</div>
+      </main>
+    </div>
+  );
+}
+
+/** The admin console app, mounted by admin-main.tsx at /admin. The API answers 404 to anyone outside PLATFORM_ADMINS. */
+export function AdminApp() {
+  const [language, setLanguage] = useState<Language>("en");
+  const [email, setEmail] = useState("");
+  const [hash, setHash] = useState(location.hash);
   const [data, setData] = useState<Overview | null>(null);
-  const [runs, setRuns] = useState<AdminRun[] | null>(null);
-  const [state, setState] = useState("");
+  const [newFeedback, setNewFeedback] = useState(0);
   const [missing, setMissing] = useState(false);
   const [error, setError] = useState("");
   const fail = (e: unknown) => (e instanceof ApiError && e.status === 404 ? setMissing(true) : setError((e as Error).message));
   const load = () => api<Overview>("GET", "/admin/overview").then(setData, fail);
+  const countFeedback = () => {
+    if (SHOWN_TABS.includes("feedback")) api<{ items: unknown[] }>("GET", "/admin/feedback?status=new").then((r) => setNewFeedback(r.items.length), () => undefined);
+  };
   useEffect(() => {
+    api<{ email: string; language?: string }>("GET", "/auth/me").then((me) => {
+      setEmail(me.email);
+      setLanguage(me.language === "tl" ? "tl" : "en");
+    }, fail);
     void load();
+    countFeedback();
+    const onHash = () => setHash(location.hash);
+    addEventListener("hashchange", onHash);
+    return () => removeEventListener("hashchange", onHash);
   }, []);
+  const { tab, params } = adminRoute(hash, SHOWN_TABS);
   useEffect(() => {
-    api<AdminRun[]>("GET", `/admin/runs${state ? `?state=${state}` : ""}`).then(setRuns, fail);
-  }, [state]);
+    document.title = `${TAB_LABELS[tab]} · kymavo admin`;
+  }, [tab]);
+  const signOut = () => void api("POST", "/auth/logout").finally(() => location.assign("/"));
 
-  if (missing) return <main className="page wk"><p className="wk-lead" role="status">{t("This page does not exist.")}</p></main>;
-  const tile = (label: string, value: number, note?: string) => (
-    <div className="ad-tile">
+  return (
+    <LanguageContext.Provider value={{ language, setLanguage }}>
+      {missing ? (
+        <NotFound />
+      ) : (
+        <AdminShell tab={tab} email={email} badges={{ feedback: newFeedback }} onSignOut={signOut}>
+          <p role="alert" className="wk-note bad" hidden={!error}>{error}</p>
+          {tab === "runs" ? (
+            <RunsTab state={params.get("state") ?? ""} onError={fail} />
+          ) : tab === "feedback" ? (
+            <AdminFeedbackTab status={params.get("status") ?? ""} onChanged={() => { countFeedback(); void load(); }} onError={fail} />
+          ) : data === null ? (
+            <Loading />
+          ) : tab === "workspaces" ? (
+            <WorkspacesTab data={data} onSaved={() => void load()} onError={setError} />
+          ) : tab === "ai" ? (
+            <AdminAiTab rows={data.workspaces.rows} onSaved={() => void load()} onError={fail} />
+          ) : tab === "audit" ? (
+            <AuditTab actions={data.actions} />
+          ) : (
+            <OverviewTab data={data} newFeedback={newFeedback} />
+          )}
+        </AdminShell>
+      )}
+    </LanguageContext.Provider>
+  );
+}
+
+function NotFound() {
+  const { t } = useLanguage();
+  return <main className="page wk"><p className="wk-lead" role="status">{t("This page does not exist.")}</p></main>;
+}
+
+export function Loading() {
+  const { t } = useLanguage();
+  return <p className="wk-sub" role="status">{t("Loading…")}</p>;
+}
+
+/** A count that opens the tab with the detail behind it. */
+function Tile({ label, value, note, href }: { label: string; value: number; note?: string; href?: string }) {
+  const body = (
+    <>
       <span className="wk-sub">{label}</span>
       <b>{value}</b>
       {note && <span className="wk-muted">{note}</span>}
-    </div>
+    </>
   );
-  const runs30 = data ? Object.values(data.runs30).reduce((a, b) => a + b, 0) : 0;
+  return href ? <a className="ad-tile" href={href}>{body}</a> : <div className="ad-tile">{body}</div>;
+}
+
+export function OverviewTab({ data, newFeedback = 0 }: { data: Overview; newFeedback?: number }) {
+  const { t } = useLanguage();
+  const runs30 = Object.values(data.runs30).reduce((a, b) => a + b, 0);
+  const growth = (c: Counts) => t("{week} new this week, {month} in 30 days", { week: c.new7, month: c.new30 });
   return (
-    <main className="page wk ad">
-      <header className="wk-head">
-        <div>
-          <Breadcrumb items={[{ label: t("Settings"), href: "#/settings" }, { label: t("Platform admin") }]} />
-          <div className="wk-title-row"><h1>{t("Platform admin")}</h1></div>
-        </div>
-      </header>
-      <p className="wk-lead wk-narrow-text">{t("This page reads across every workspace. It never shows run data, step data, error text or secrets.")}</p>
-      <p role="alert" className="wk-note bad" hidden={!error}>{error}</p>
-      {data === null ? (
-        <p className="wk-sub" role="status">{t("Loading…")}</p>
-      ) : (
-        <>
-          <section className="ad-tiles" aria-label={t("Totals")}>
-            {tile(t("Users"), data.users.total, t("{week} new this week, {month} in 30 days", { week: data.users.new7, month: data.users.new30 }))}
-            {tile(t("Workspaces"), data.workspaces.total, t("{week} new this week, {month} in 30 days", { week: data.workspaces.new7, month: data.workspaces.new30 }))}
-            {tile(t("Runs in 30 days"), runs30)}
-            {tile(t("Failed runs"), data.attention.runsFailed)}
-            {tile(t("Runs to review"), data.attention.runsNeedsReview)}
-            {tile(t("Failed deliveries"), data.attention.deliveriesFailed)}
-            {tile(t("Deliveries to review"), data.attention.deliveriesNeedsReview)}
-            {tile(t("AI actions this cycle"), data.usage.ai)}
-            {tile(t("SMS this cycle"), data.usage.sms)}
-          </section>
-
-          <section className="wk-card" aria-label={t("Workspaces")}>
-            <h2 className="wk-card-head"><b>{t("Workspaces")}</b><span>{t("Newest first. A change is saved for that workspace and recorded below.")}</span></h2>
-            <div className="ad-scroll">
-              <table className="wk-table">
-                <thead>
-                  <tr>
-                    <th scope="col">{t("Owner")}</th>
-                    <th scope="col">{t("Created")}</th>
-                    <th scope="col">{t("Members")}</th>
-                    <th scope="col">{t("Runs in 30 days")}</th>
-                    <th scope="col">{t("Failed")}</th>
-                    <th scope="col">{t("To review")}</th>
-                    <th scope="col">AI</th>
-                    <th scope="col">SMS</th>
-                    <th scope="col">{t("Plan")}</th>
-                    <th scope="col">{t("Shared mail a day")}</th>
-                    <th scope="col"><span className="sr-only">{t("Save")}</span></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.workspaces.rows.map((w) => <WorkspaceLine key={`${w.id}:${w.plan}:${w.sharedMailDailyLimit}`} row={w} onSaved={() => void load()} onError={setError} />)}
-                </tbody>
-              </table>
-            </div>
-          </section>
-        </>
-      )}
-
-      <section className="wk-card" aria-label={t("Recent runs")}>
-        <h2 className="wk-card-head">
-          <b>{t("Recent runs")}</b>
-          <label className="ad-filter">
-            {t("State")}{" "}
-            <select value={state} onChange={(e) => setState(e.target.value)}>
-              <option value="">{t("All states")}</option>
-              {STATES.map((s) => <option key={s} value={s}>{s}</option>)}
-            </select>
-          </label>
-        </h2>
-        {runs === null ? (
-          <p className="wk-body wk-sub" role="status">{t("Loading…")}</p>
-        ) : runs.length === 0 ? (
-          <p className="wk-body wk-sub">{t("None yet.")}</p>
-        ) : (
-          <div className="ad-scroll">
-            <table className="wk-table">
-              <thead>
-                <tr>
-                  <th scope="col">{t("Owner")}</th>
-                  <th scope="col">{t("Automation")}</th>
-                  <th scope="col">{t("State")}</th>
-                  <th scope="col">{t("Kind")}</th>
-                  <th scope="col">{t("Started")}</th>
-                  <th scope="col">{t("Finished")}</th>
-                  <th scope="col">{t("Steps")}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {runs.map((r) => (
-                  <tr key={r.id}>
-                    <td>{r.email}</td>
-                    <td>{r.workflow} <span className="wk-muted">v{r.version}</span></td>
-                    <td>{r.state}{r.hasError && <span className="wk-muted"> ({t("has an error")})</span>}</td>
-                    <td>{r.test ? (r.live ? t("Live test") : t("Test")) : t("Live")}</td>
-                    <td>{shortDateTime(r.createdAt)}</td>
-                    <td>{r.finishedAt ? shortDateTime(r.finishedAt) : ""}</td>
-                    <td>{Object.entries(r.steps).map(([s, n]) => `${s} ${n}`).join(", ")}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+    <>
+      <section className="ad-tiles" aria-label={t("Totals")}>
+        <Tile label={t("Users")} value={data.users.total} note={growth(data.users)} href={tabHref("workspaces")} />
+        <Tile label={t("Workspaces")} value={data.workspaces.total} note={growth(data.workspaces)} href={tabHref("workspaces")} />
+        <Tile label={t("Runs in 30 days")} value={runs30} href={tabHref("runs")} />
+        <Tile label={t("Failed runs")} value={data.attention.runsFailed} href={tabHref("runs", { state: "failed" })} />
+        <Tile label={t("Runs to review")} value={data.attention.runsNeedsReview} href={tabHref("runs", { state: "needs_review" })} />
+        <Tile label={t("Failed deliveries")} value={data.attention.deliveriesFailed} />
+        <Tile label={t("Deliveries to review")} value={data.attention.deliveriesNeedsReview} />
+        <Tile label={t("AI actions this cycle")} value={data.usage.ai} href={SHOWN_TABS.includes("ai") ? tabHref("ai") : undefined} />
+        <Tile label={t("SMS this cycle")} value={data.usage.sms} href={tabHref("workspaces")} />
+        {SHOWN_TABS.includes("feedback") && <Tile label={t("New feedback")} value={newFeedback} href={tabHref("feedback", { status: "new" })} />}
+        <Tile label={t("Changes by admins")} value={data.actions.length} note={t("The latest 50")} href={tabHref("audit")} />
       </section>
+      <section className="wk-card" aria-label={t("Runs in 30 days by state")}>
+        <h2 className="wk-card-head"><b>{t("Runs in 30 days by state")}</b></h2>
+        <div className="wk-body">
+          <ul className="wk-usage ad-states">
+            {STATES.map((s) => (
+              <li key={s}>
+                <a href={tabHref("runs", { state: s })}>{s}</a>
+                <span className="ad-num">{data.runs30[s] ?? 0}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </section>
+    </>
+  );
+}
 
-      {data && (
-        <section className="wk-card" aria-label={t("Changes by admins")}>
-          <h2 className="wk-card-head"><b>{t("Changes by admins")}</b><span>{t("The latest 50. They cannot be edited or deleted.")}</span></h2>
-          {data.actions.length === 0 ? (
-            <p className="wk-body wk-sub">{t("None yet.")}</p>
-          ) : (
-            <ul className="wk-body ad-log">
-              {data.actions.map((a) => (
-                <li key={a.id}>
-                  {shortDateTime(a.createdAt)}: {a.adminEmail} {a.action === "plan" ? t("changed the plan of") : t("changed shared mail for")} {a.workspaceEmail ?? t("a deleted workspace")}, {show(a.before)} → {show(a.after)}
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-      )}
-    </main>
+function WorkspacesTab({ data, onSaved, onError }: { data: Overview; onSaved: () => void; onError: (m: string) => void }) {
+  const { t } = useLanguage();
+  const [q, setQ] = useState("");
+  const rows = data.workspaces.rows.filter((w) => w.email.toLowerCase().includes(q.trim().toLowerCase()));
+  return (
+    <section className="wk-card" aria-label={t("Workspaces")}>
+      <div className="wk-card-head ad-toolbar">
+        <b>{t("{count} workspaces", { count: rows.length })}</b>
+        <input type="search" className="ad-search" aria-label={t("Filter by owner email")} placeholder={t("Filter by owner email")} value={q} onChange={(e) => setQ(e.target.value)} />
+      </div>
+      <div className="ad-scroll">
+        <table className="wk-table">
+          <thead>
+            <tr>
+              <th scope="col">{t("Owner")}</th>
+              <th scope="col">{t("Created")}</th>
+              <th scope="col">{t("Members")}</th>
+              <th scope="col">{t("Runs in 30 days")}</th>
+              <th scope="col">{t("Failed")}</th>
+              <th scope="col">{t("To review")}</th>
+              <th scope="col">AI</th>
+              <th scope="col">SMS</th>
+              <th scope="col">{t("Plan")}</th>
+              <th scope="col">{t("Shared mail a day")}</th>
+              <th scope="col"><span className="wk-sr">{t("Save")}</span></th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((w) => <WorkspaceLine key={`${w.id}:${w.plan}:${w.sharedMailDailyLimit}`} row={w} onSaved={onSaved} onError={onError} />)}
+          </tbody>
+        </table>
+      </div>
+    </section>
   );
 }
 
@@ -213,5 +284,85 @@ function WorkspaceLine({ row, onSaved, onError }: { row: WorkspaceRow; onSaved: 
       </td>
       <td><button type="button" className="wk-button" disabled={busy || (!planChanged && !limitChanged)} onClick={() => void save()}>{t("Save")}</button></td>
     </tr>
+  );
+}
+
+function RunsTab({ state, onError }: { state: string; onError: (e: unknown) => void }) {
+  const { t } = useLanguage();
+  const [runs, setRuns] = useState<AdminRun[] | null>(null);
+  const valid = STATES.includes(state) ? state : "";
+  useEffect(() => {
+    setRuns(null);
+    api<AdminRun[]>("GET", `/admin/runs${valid ? `?state=${valid}` : ""}`).then(setRuns, onError);
+  }, [valid]);
+  return (
+    <section className="wk-card" aria-label={t("Recent runs")}>
+      <div className="wk-card-head ad-toolbar">
+        <b>{t("Recent runs")}</b>
+        <label className="ad-filter">
+          {t("State")}{" "}
+          <select value={valid} onChange={(e) => location.assign(tabHref("runs", e.target.value ? { state: e.target.value } : undefined))}>
+            <option value="">{t("All states")}</option>
+            {STATES.map((s) => <option key={s} value={s}>{s}</option>)}
+          </select>
+        </label>
+      </div>
+      {runs === null ? (
+        <p className="wk-body wk-sub" role="status">{t("Loading…")}</p>
+      ) : runs.length === 0 ? (
+        <p className="wk-body wk-sub">{t("None yet.")}</p>
+      ) : (
+        <div className="ad-scroll">
+          <table className="wk-table">
+            <thead>
+              <tr>
+                <th scope="col">{t("Owner")}</th>
+                <th scope="col">{t("Automation")}</th>
+                <th scope="col">{t("State")}</th>
+                <th scope="col">{t("Kind")}</th>
+                <th scope="col">{t("Started")}</th>
+                <th scope="col">{t("Finished")}</th>
+                <th scope="col">{t("Steps")}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {runs.map((r) => (
+                <tr key={r.id}>
+                  <td>{r.email}</td>
+                  <td>{r.workflow} <span className="wk-muted">v{r.version}</span></td>
+                  <td><span className={`wk-pill ${tone(r.state)}`}>{r.state}</span>{r.hasError && <span className="wk-muted"> ({t("has an error")})</span>}</td>
+                  <td>{r.test ? (r.live ? t("Live test") : t("Test")) : t("Live")}</td>
+                  <td>{shortDateTime(r.createdAt)}</td>
+                  <td>{r.finishedAt ? shortDateTime(r.finishedAt) : ""}</td>
+                  <td>{Object.entries(r.steps).map(([s, n]) => `${s} ${n}`).join(", ")}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  );
+}
+
+export function AuditTab({ actions }: { actions: Action[] }) {
+  const { t } = useLanguage();
+  return (
+    <section className="wk-card" aria-label={t("Changes by admins")}>
+      <h2 className="wk-card-head"><b>{t("Changes by admins")}</b><span>{t("The latest 50. They cannot be edited or deleted.")}</span></h2>
+      {actions.length === 0 ? (
+        <p className="wk-body wk-sub">{t("None yet.")}</p>
+      ) : (
+        <ul className="wk-body ad-log">
+          {actions.map((a) => (
+            <li key={a.id}>
+              <span className="wk-muted">{shortDateTime(a.createdAt)}</span>{" "}
+              {a.adminEmail} {t(ACTIONS[a.action] ?? a.action)}
+              {a.action !== "ai" && <> {a.workspaceEmail ?? t("a deleted workspace")}</>}, {show(a.before) || t("none")} → {show(a.after)}
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }

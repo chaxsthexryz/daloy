@@ -3,7 +3,8 @@ import { resolve } from "node:path";
 import { defineConfig } from "vite";
 
 // The API has no path prefix, so the dev server forwards each of its routes. Same origin keeps the session cookie simple.
-const API_ROUTES = ["/auth", "/workflows", "/runs", "/secrets", "/tokens", "/settings", "/ai", "/hooks", "/forms", "/approvals", "/mcp", "/step-schemas", "/templates", "/deliveries", "/workspace", "/my", "/bookings", "/payments", "/pay", "/events"];
+// "^/admin/" is a pattern so /admin.html (the admin console in dev) stays with Vite while the admin API goes through.
+const API_ROUTES = ["/auth", "/workflows", "/runs", "/secrets", "/tokens", "/settings", "/ai", "/hooks", "/forms", "/approvals", "/mcp", "/step-schemas", "/templates", "/deliveries", "/workspace", "/my", "/bookings", "/payments", "/pay", "/events", "^/admin/"];
 const target = process.env.API_URL ?? "http://localhost:3000";
 const here = import.meta.dirname;
 
@@ -14,7 +15,8 @@ export default defineConfig(({ mode }) =>
     : {
         plugins: [react()],
         server: { port: 5173, proxy: Object.fromEntries(API_ROUTES.map((r) => [r, target])) },
-        // The demo is a second page so the API serves it at /demo/ for Playwright.
-        build: { rolldownOptions: { input: { main: resolve(here, "index.html"), demo: resolve(here, "demo/index.html") } } },
+        // The demo is a second page so the API serves it at /demo/ for Playwright. admin.html is the admin console, which
+        // the API serves only at /admin, to platform admins (decision 0152).
+        build: { rolldownOptions: { input: { main: resolve(here, "index.html"), demo: resolve(here, "demo/index.html"), admin: resolve(here, "admin.html") } } },
       },
 );

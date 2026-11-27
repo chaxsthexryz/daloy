@@ -41,6 +41,7 @@ export function adminOverview(db: Db, now = new Date()) {
         plan: users.plan,
         planStartedOn: users.planStartedOn,
         sharedMailDailyLimit: users.sharedMailDailyLimit,
+        aiThinking: users.aiThinking,
         members: sql<number>`(select count(*)::int from ${workspaceMembers} m where m.workspace_id = ${users.id})`,
       })
       .from(users)
