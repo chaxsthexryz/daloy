@@ -25,7 +25,7 @@ const boss = new PgBoss({ connectionString: url, migrate: ownsSchema });
 boss.on("error", (err) => console.error("pg-boss", err));
 await boss.start();
 
-const app = await createApp({ db, boss, secretsKey: Buffer.from(key, "base64"), ...deploy, ask: process.env.AI_ASK === "on", platformAdmins: process.env.PLATFORM_ADMINS, sentryDsn: process.env.SENTRY_DSN, sentryEnvironment: process.env.SENTRY_ENVIRONMENT, webSentryDsn: process.env.VITE_SENTRY_DSN, webDist: process.env.WEB_DIST });
+const app = await createApp({ db, boss, secretsKey: Buffer.from(key, "base64"), ...deploy, ask: process.env.AI_ASK === "on", platformAdmins: process.env.PLATFORM_ADMINS, sentryDsn: process.env.SENTRY_DSN, sentryEnvironment: process.env.SENTRY_ENVIRONMENT, webSentryDsn: process.env.VITE_SENTRY_DSN, webDist: process.env.WEB_DIST, adminHost: process.env.ADMIN_HOST?.trim().toLowerCase() || undefined });
 app.enableShutdownHooks();
 const port = Number(process.env.PORT ?? 3000);
 await app.listen(port);

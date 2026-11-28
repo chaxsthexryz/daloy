@@ -129,10 +129,10 @@ function Route({ hash, user, onName }: { hash: string; user: User; onName: (disp
   if (guided) return <OfficeRequestPage key={guided[1]} id={guided[1]!} />;
   if (path === "#/activity" && (user.role === "owner" || user.role === "operator")) return <RunsPage ask={canAsk} />;
   if (path === "#/activity/ask" && canAsk) return <AskPage />;
-  // The admin console moved to its own page at /admin (decision 0152). Only admins are sent there; for anyone else the
-  // old route is an unknown page, as /admin is.
+  // The admin console moved to its own page at /admin, or to ADMIN_HOST when that is set (decisions 0152, 0157). Only
+  // admins are sent there; for anyone else the old route is an unknown page, as /admin is.
   if (path === "#/admin" && user.admin === true) {
-    location.replace("/admin");
+    location.replace(user.adminUrl ?? "/admin");
     return null;
   }
   if (path === "#/try/office-request") return <TryOfficeRequest email={user.email} />;

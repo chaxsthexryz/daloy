@@ -8,7 +8,8 @@ import type { RequestHandler } from "express";
 import helmet from "helmet";
 import type { PgBoss } from "pg-boss";
 import { AdminController } from "./admin";
-import { AdminPageController, hideAdminHtml } from "./admin-page";
+import { adminHostRouting, AdminPageController, hideAdminHtml } from "./admin-page";
+import { AdminTwoFactorController } from "./admin-2fa";
 import { AdminFeedbackController, SupportFeedbackController } from "./feedback";
 import { AiChatController } from "./ai-chat";
 import { AiDraftController } from "./ai-draft";
@@ -70,7 +71,7 @@ export async function createApp({ db, boss, ...config }: AppOptions) {
   const webSentry = parseSentryDsn(config.webSentryDsn);
 
   @Module({
-    controllers: [AuthController, AdminController, AdminPageController, AdminFeedbackController, SupportFeedbackController, HealthController, ConversationsController, HomeController, InboxController, WorkflowsController, CatalogController, SecretsController, ResourcesController, BookingsController, PaymentsController, PayPageController, PrivacyController, TokensController, RunsController, HooksController, PaymongoHooksController, MetaHooksController, WhatsAppHooksController, ShopifyHooksController, TelegramHooksController, SlackHooksController, TeamsHooksController, DiscordHooksController, FormsController, PublicAssetsController, ApprovalsController, McpController, SettingsController, LanguageController, DigestController, EmailSettingsController, EmailSourceController, ConnectionsController, OAuthStartController, OAuthCallbackController, GoogleController, GoogleTriggersController, MailboxTriggersController, GoogleCalendarController, MonitorTriggersController, AirtableOAuthController, NotionOAuthController, TrelloOAuthController, RecordTriggersController, DeliveriesController, AiDraftController, AiChatController, MembersController, MyRequestsController, UsageController, BrandController, BrandLogoController, OnboardingController, KnowledgeController, EventsController, NotificationPrefsController],
+    controllers: [AuthController, AdminController, AdminPageController, AdminTwoFactorController, AdminFeedbackController, SupportFeedbackController, HealthController, ConversationsController, HomeController, InboxController, WorkflowsController, CatalogController, SecretsController, ResourcesController, BookingsController, PaymentsController, PayPageController, PrivacyController, TokensController, RunsController, HooksController, PaymongoHooksController, MetaHooksController, WhatsAppHooksController, ShopifyHooksController, TelegramHooksController, SlackHooksController, TeamsHooksController, DiscordHooksController, FormsController, PublicAssetsController, ApprovalsController, McpController, SettingsController, LanguageController, DigestController, EmailSettingsController, EmailSourceController, ConnectionsController, OAuthStartController, OAuthCallbackController, GoogleController, GoogleTriggersController, MailboxTriggersController, GoogleCalendarController, MonitorTriggersController, AirtableOAuthController, NotionOAuthController, TrelloOAuthController, RecordTriggersController, DeliveriesController, AiDraftController, AiChatController, MembersController, MyRequestsController, UsageController, BrandController, BrandLogoController, OnboardingController, KnowledgeController, EventsController, NotificationPrefsController],
     providers: [
       { provide: DB, useValue: db },
       { provide: BOSS, useValue: boss },
@@ -102,10 +103,12 @@ export async function createApp({ db, boss, ...config }: AppOptions) {
   app.use(headers);
   app.use(cookieParser());
   // The built console (apps/web/dist), from the API's origin so the session cookie needs no CORS. It uses hash routes, so
-  // index.html at / is enough. admin.html is only served by the guarded /admin route (decision 0152).
-  if (config.webDist) {
-    app.use(hideAdminHtml);
-    app.useStaticAssets(config.webDist);
-  }
+  // index.html at / is enough. admin.html is only served by the /admin route (decision 0152).
+  // ADMIN_HOST moves the admin console to its own hostname (decision 0157).
+  const hosts = config.adminHost ? adminHostRouting(config.adminHost) : undefined;
+  if (config.webDist) app.use(hideAdminHtml);
+  if (hosts) app.use(hosts.before);
+  if (config.webDist) app.useStaticAssets(config.webDist);
+  if (hosts) app.use(hosts.after);
   return app;
 }

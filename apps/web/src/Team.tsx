@@ -12,7 +12,7 @@ import { personName } from "./lib/person";
 import { canChangeRole, canInvite, canRemove, groupMembers, inviteLinkForOrigin, memberRoles, type Member, type MemberRole, type PendingInvite, type Role } from "./lib/team";
 
 export type { Role };
-export type User = { id: string; email: string; displayName?: string | null; workspaceId: string; role: Role; language?: "en" | "tl"; ask?: boolean; admin?: boolean };
+export type User = { id: string; email: string; displayName?: string | null; workspaceId: string; role: Role; language?: "en" | "tl"; ask?: boolean; admin?: boolean; adminUrl?: string };
 
 export const ROLE_LABEL: Record<Role, string> = { owner: "Owner", operator: "Operator", approver: "Approver", requester: "Requester" };
 const GROUP_LABEL: Record<Role, string> = { owner: "Owner", operator: "Operators", approver: "Approvers", requester: "Requesters" };

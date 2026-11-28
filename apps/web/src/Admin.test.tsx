@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { AdminShell, AuditTab, OverviewTab, type Overview } from "./Admin";
+import { AdminSignIn, EnrollTwoFactor, groupInFours, RecoveryCodes, TwoFactorStatus, VerifyTwoFactor } from "./AdminTwoFactor";
 import { ADMIN_TABS } from "./lib/admin-route";
 import { Shell } from "./Nav";
 
@@ -56,6 +57,48 @@ describe("admin console shell", () => {
     expect(html).toContain("boss@daloy.test changed the shared AI model, none → gemini, gemini-flash");
     expect(html).toContain("closed feedback from owner@test.local, new → closed");
     expect(html).not.toContain("f1");
+  });
+});
+
+describe("two-factor screens", () => {
+  const noop = () => undefined;
+
+  it("groups the setup key in fours", () => {
+    expect(groupInFours("GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ")).toBe("GEZD GNBV GY3T QOJQ GEZD GNBV GY3T QOJQ");
+  });
+
+  it("labels every field and offers a way out on each screen", () => {
+    for (const html of [renderToStaticMarkup(<EnrollTwoFactor onDone={noop} onSignOut={noop} />), renderToStaticMarkup(<VerifyTwoFactor onDone={noop} onSignOut={noop} />)]) {
+      expect(html).toContain("<h1");
+      expect(html).toContain(">Sign out</button>");
+    }
+    const verify = renderToStaticMarkup(<VerifyTwoFactor onDone={noop} onSignOut={noop} />);
+    expect(verify).toContain('<label for="ad-verify-code">Code from your app</label>');
+    expect(verify).toContain('autoComplete="one-time-code"');
+    expect(verify).toContain("Use a recovery code");
+    const signIn = renderToStaticMarkup(<AdminSignIn onSignedIn={noop} />);
+    expect(signIn).toContain('<label for="ad-email">Email</label>');
+    expect(signIn).toContain('<label for="ad-password">Password</label>');
+  });
+
+  it("shows the recovery codes with a copy button", () => {
+    const html = renderToStaticMarkup(<RecoveryCodes codes={["abcde-fghij", "klmno-pqrst"]} onDone={noop} />);
+    expect(html).toContain("<code>abcde-fghij</code>");
+    expect(html).toContain(">Copy the codes</button>");
+    expect(html).toContain(">I saved them</button>");
+  });
+
+  it("says 2FA is on and offers a reset in the console", () => {
+    const html = renderToStaticMarkup(<AdminShell tab="overview" email="boss@daloy.test" onSignOut={noop} twoFactor={<TwoFactorStatus onReset={noop} />}><p>Body</p></AdminShell>);
+    expect(html).toContain("2FA on");
+    expect(html).toContain(">Reset 2FA</button>");
+  });
+
+  it("writes two-factor audit entries without values", () => {
+    const html = renderToStaticMarkup(<AuditTab actions={[{ id: "1", adminEmail: "boss@daloy.test", action: "2fa_failed", workspaceEmail: null, before: {}, after: { kind: "totp", during: "verify" }, createdAt: "2026-11-28T00:00:00Z" }]} />);
+    expect(html).toContain("boss@daloy.test entered a wrong two-factor code");
+    expect(html).not.toContain("totp");
+    expect(html).not.toContain("a deleted workspace");
   });
 });
 

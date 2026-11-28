@@ -434,6 +434,8 @@ describe("role permissions", () => {
     "GET /admin/feedback", "PUT /admin/feedback/:id/reply", "PUT /admin/feedback/:id/close",
     // The admin console page itself (admin-page.test.ts).
     "GET /admin",
+    // Two-factor sign-in for platform admins (admin-2fa.test.ts).
+    "GET /admin/2fa", "POST /admin/2fa/enroll", "POST /admin/2fa/enroll/confirm", "POST /admin/2fa/verify", "POST /admin/2fa/reset",
   ]);
 
   it("gives each role exactly its routes", async () => {

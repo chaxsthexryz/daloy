@@ -161,8 +161,10 @@ services:
       SMTP_FROM: ${SMTP_FROM:-kymavo <daloy@localhost>}
       # Who may use that server: empty picks open for Mailpit and approved for anything else (decision 0024).
       SHARED_MAIL: ${SHARED_MAIL:-}
-      # Who may open #/admin (decision 0122). Empty turns the admin page off.
+      # Who may open the admin console (decisions 0122, 0152). Empty turns it off.
       PLATFORM_ADMINS: ${PLATFORM_ADMINS:-}
+      # The admin console's own hostname, such as admin.kymavo.cloud (decision 0157). Empty keeps it at /admin.
+      ADMIN_HOST: ${ADMIN_HOST:-}
       # Optional Sentry or GlitchTip DSN (decision 0124). Empty disables reporting.
       SENTRY_DSN: ${SENTRY_DSN:-}
       SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-}
