@@ -244,7 +244,7 @@ export function HomePage({ user, initialData }: { user: User; initialData?: Home
                   <span className="card-ico"><HomeIcon name="inbox" size={14} /></span>
                   <h2 id="home-needs-h">{t("Needs you")}</h2>
                   <span className={`pill ${data.needsYou.total > 0 ? "warn" : "ok"} hm-head-pill tnum`}>{data.needsYou.total}</span>
-                  <a className="card-link" href="#/inbox">{t("Open Inbox")}</a>
+                  {data.needsYou.total > 0 && <a className="card-link" href="#/inbox">{t("Open Inbox")}</a>}
                 </div>
                 <p className="act-muted">
                   {data.needsYou.total === 0

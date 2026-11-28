@@ -46,7 +46,7 @@ const ACTIONS: Record<string, string> = {
   "2fa_recovery": "signed in with a recovery code",
   "2fa_reset": "reset two-factor sign-in",
 };
-const tone = (state: string) => (state === "succeeded" ? "ok" : state === "failed" || state === "needs_review" ? "red" : "");
+const tone = (state: string) => (state === "succeeded" ? "ok" : state === "failed" ? "bad" : state === "needs_review" || state === "waiting" ? "warn" : "neutral");
 // Ids say nothing to a reader of the log; the workspace is already named.
 const show = (v: Record<string, unknown>) => Object.entries(v).filter(([k]) => !k.endsWith("Id")).map(([, x]) => (x === null ? "none" : String(x))).join(", ");
 
@@ -91,7 +91,7 @@ export function AdminShell({ tab, email, consoleUrl = "/", tabs = SHOWN_TABS, ba
             <p className="wk-sub">{t(TAB_LEADS[tab])}</p>
           </div>
         </header>
-        <div className="ad-body">{children}</div>
+        <div className="ad-body motion-page">{children}</div>
       </main>
     </div>
   );
@@ -372,7 +372,7 @@ function RunsTab({ state, onError }: { state: string; onError: (e: unknown) => v
                 <tr key={r.id}>
                   <td>{r.email}</td>
                   <td>{r.workflow} <span className="wk-muted">v{r.version}</span></td>
-                  <td><span className={`wk-pill ${tone(r.state)}`}>{r.state}</span>{r.hasError && <span className="wk-muted"> ({t("has an error")})</span>}</td>
+                  <td><span className={`pill ${tone(r.state)}`}>{r.state}</span>{r.hasError && <span className="wk-muted"> ({t("has an error")})</span>}</td>
                   <td>{r.test ? (r.live ? t("Live test") : t("Test")) : t("Live")}</td>
                   <td>{shortDateTime(r.createdAt)}</td>
                   <td>{r.finishedAt ? shortDateTime(r.finishedAt) : ""}</td>

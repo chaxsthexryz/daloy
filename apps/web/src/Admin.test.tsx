@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { AdminShell, AuditTab, OverviewTab, type Overview } from "./Admin";
@@ -106,5 +107,19 @@ describe("workspace console", () => {
   it("does not link to the admin console, even for a platform admin", () => {
     const html = renderToStaticMarkup(<Shell user={{ id: "u", workspaceId: "w", email: "boss@daloy.test", role: "owner", admin: true }} hash="#/settings" onSignOut={() => undefined}><main>Page</main></Shell>);
     expect(html).not.toMatch(/href="[^"]*admin/);
+  });
+});
+
+describe("admin console blocks styling", () => {
+  it("renders motion-page on the admin shell body and two-factor gate card", () => {
+    expect(shell("overview")).toContain('class="ad-body motion-page"');
+    expect(renderToStaticMarkup(<VerifyTwoFactor onDone={() => undefined} onSignOut={() => undefined} />)).toContain("ad-gate-card motion-page");
+  });
+
+  it("uses Geist tokens, 13 px minimum font sizes, and reduced-motion rules in admin.css", () => {
+    const css = readFileSync(new URL("./admin.css", import.meta.url), "utf8");
+    expect(css).not.toContain('"Inter"');
+    expect(css).not.toContain("--ease-snappy");
+    expect(css).toContain("@media (prefers-reduced-motion: reduce)");
   });
 });

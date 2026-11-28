@@ -98,15 +98,15 @@
 .workspace-admin :is(button, input, select, summary) { min-height: 36px; }
 .workspace-admin :is(input, select, textarea) { max-width: 100%; box-sizing: border-box; font-size: .9375rem; }
 .workspace-admin :is(button, .actions a) { font-size: 13px; }
-.workspace-admin button { white-space: nowrap; border-radius: 8px; padding: 0 14px; font-weight: 550; }
-.workspace-admin button:disabled { color: var(--muted); border-color: var(--border-soft); background: var(--sunken); }
+.workspace-admin button { white-space: nowrap; border-radius: 8px; padding: 0 14px; font-weight: 500; transition: background-color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease); }
+.workspace-admin button:disabled { color: var(--disabled-fg, var(--muted)); border-color: var(--disabled-border, var(--border-soft)); background: var(--disabled-bg, var(--sunken)); opacity: 1; }
 .workspace-admin .actions { gap: 8px; flex-wrap: wrap; }
 .workspace-admin .field { min-width: 0; margin-bottom: 18px; }
 .workspace-admin .field label { font-weight: 500; }
 .workspace-admin :is(.hint, .muted) { font-size: .875rem; }
 .workspace-admin .message, .workspace-admin .notice { border: 1px solid var(--border-soft); border-radius: 12px; }
-.workspace-admin .message.error { border-color: #d4aaa4; }
-.workspace-admin .message.ok { border-color: #a6c7b3; }
+.workspace-admin .message.error { border-color: color-mix(in srgb, var(--danger) 35%, transparent); }
+.workspace-admin .message.ok { border-color: color-mix(in srgb, var(--ok) 35%, transparent); }
 .workspace-admin .notice { border-color: var(--yellow-border, #fde047); }
 @media (max-width: 799px) {
   .workspace-admin :is(button, input, select, summary) { min-height: 44px; }
@@ -177,8 +177,8 @@
 .workspace-admin .app-card button[aria-expanded="true"] { background: var(--accent-tint); }
 .workspace-admin .app-setup { scroll-margin-top: 24px; }
 .workspace-admin #b-accent { width: 88px; height: 38px; padding: 3px; border-radius: 8px; }
-.workspace-admin .file-input { padding: 6px 10px; border: 1px dashed var(--border); border-radius: 8px; background: var(--sunken); color: var(--muted); font-size: 13px; }
-.workspace-admin .file-input::file-selector-button { height: 28px; margin-right: 10px; padding: 0 11px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); font-weight: 550; font-size: 12.5px; cursor: pointer; }
+.workspace-admin .file-input { padding: 6px 10px; border: 1px dashed var(--border); border-radius: 8px; background: var(--sunken); color: var(--muted); font-size: var(--text-xs, 13px); }
+.workspace-admin .file-input::file-selector-button { height: 28px; margin-right: 10px; padding: 0 11px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); font-weight: 500; font-size: var(--text-xs, 13px); cursor: pointer; transition: background-color var(--dur-fast) var(--ease); }
 .workspace-admin .file-input::file-selector-button:hover { background: var(--sunken); }
 @media (max-width: 799px) {
   .page.workspace-admin { padding: 24px 16px; }

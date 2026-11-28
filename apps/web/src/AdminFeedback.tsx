@@ -69,7 +69,7 @@ function FeedbackItem({ item, open, onToggle, onChanged }: { item: Feedback; ope
       <button type="button" className="ad-fb-row" aria-expanded={open} aria-controls={`fb-${item.id}`} onClick={onToggle}>
         <span className="ad-fb-main"><b>{who}</b><span>{item.message}</span></span>
         <span className="wk-chip">{t(TOPICS[item.topic] ?? item.topic)}</span>
-        <span className={`wk-pill ${item.status === "new" ? "red" : item.status === "replied" ? "ok" : ""}`}>{t(STATUS[item.status] ?? item.status)}</span>
+        <span className={`pill ${item.status === "new" ? "warn" : item.status === "replied" ? "ok" : "neutral"}`}>{t(STATUS[item.status] ?? item.status)}</span>
         <span className="wk-muted">{shortDateTime(item.createdAt)}</span>
       </button>
       {open && (
@@ -77,7 +77,7 @@ function FeedbackItem({ item, open, onToggle, onChanged }: { item: Feedback; ope
           <p className="ad-fb-message">{item.message}</p>
           <p className="wk-muted">{t("From {email}", { email: item.senderEmail })}{item.workspaceName ? `, ${item.workspaceName}` : ""}</p>
           {item.reply && (
-            <div className="wk-note">
+            <div className="ad-fb-reply">
               <b>{t("Your reply")}{item.repliedAt ? `, ${shortDateTime(item.repliedAt)}` : ""}</b>
               <p>{item.reply}</p>
             </div>

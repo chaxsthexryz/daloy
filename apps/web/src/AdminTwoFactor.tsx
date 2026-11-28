@@ -10,7 +10,7 @@ function Gate({ title, onSignOut, children }: { title: string; onSignOut?: () =>
   const { t } = useLanguage();
   return (
     <main className="page wk ad-gate" id="admin-main">
-      <section className="wk-card ad-gate-card" aria-labelledby="ad-gate-title">
+      <section className="wk-card ad-gate-card motion-page" aria-labelledby="ad-gate-title">
         <div className="ad-brand">
           <img src="/logo.svg" alt="" width={20} height={20} />
           <span>kymavo</span>
