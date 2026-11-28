@@ -28,9 +28,10 @@ test("a platform admin opens the admin console at /admin and changes a plan and 
   await signIn(admin, "platform-admin@e2e.test");
   // The old route sends an admin on to the console, which has its own navigation and no workspace sidebar.
   await admin.goto("/#/admin");
-  await expect(admin).toHaveURL(/\/admin$/);
+  // A port before the path, so "/#/admin" (no redirect) cannot pass.
+  await expect(admin).toHaveURL(/:\d+\/admin$/);
   const nav = admin.getByRole("navigation", { name: "Platform admin" });
-  await expect(nav.getByRole("link")).toHaveText(["Overview", "Workspaces", "Runs", "AI models", "Feedback", "Audit log"]);
+  await expect(nav.getByRole("link")).toHaveText(["Overview", "Workspaces", "Runs", "AI models", "Feedback", "Audit log", "Open the workspace console"]);
   await expect(admin.getByRole("link", { name: "Automations" })).toHaveCount(0);
   await expect(admin.getByRole("region", { name: "Totals" })).toContainText("Workspaces");
   await admin.getByRole("link", { name: /^Workspaces/ }).first().click();

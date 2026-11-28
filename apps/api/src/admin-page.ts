@@ -1,4 +1,3 @@
-import { join } from "node:path";
 import { Controller, Get, Header, Inject, NotFoundException, Res, UseGuards } from "@nestjs/common";
 import type { RequestHandler, Response } from "express";
 import { AdminGuard } from "./admin";
@@ -19,7 +18,8 @@ export class AdminPageController {
   @Header("cache-control", "no-store")
   page(@Res() res: Response) {
     if (!this.config.webDist) throw new NotFoundException();
-    res.sendFile(join(this.config.webDist, "admin.html"));
+    // root, not a joined path: send refuses any path with a dot folder (such as a .claude worktree) in it.
+    res.sendFile("admin.html", { root: this.config.webDist });
   }
 }
 
