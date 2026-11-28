@@ -1,6 +1,6 @@
 import "./activity.css";
 import "./inbox.css";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import { api } from "./api";
 import { useLanguage } from "./Language";
 import { LIVE_RUN_EVENT } from "./lib/live-runs";
@@ -84,6 +84,13 @@ const KIND_LABELS: Record<InboxItem["kind"], string> = {
   run: "Needs check",
 };
 
+const KIND_PILL: Record<InboxItem["kind"], string> = {
+  conversation: "blue",
+  receipt: "warn",
+  approval: "blue",
+  run: "bad",
+};
+
 const FLAG_LABELS: Record<string, string> = {
   duplicate_reference: "Reference used before",
   amount_mismatch: "Amount differs",
@@ -98,6 +105,14 @@ function relativeAge(iso: string, t: (s: string, v?: Record<string, string | num
   if (mins < 60) return t("{n} min", { n: mins });
   if (mins < 48 * 60) return t("{n} h", { n: Math.round(mins / 60) });
   return t("{n} days", { n: Math.round(mins / 1440) });
+}
+
+function TakeoverIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M10 15H6C4.93913 15 3.92172 15.4214 3.17157 16.1716C2.42143 16.9217 2 17.9391 2 19V21M14.3049 16.5299L15.2279 16.1479M15.2279 13.8522L14.3049 13.4692M16.852 12.2282L16.469 11.3052M16.852 17.772L16.469 18.696M19.1479 12.2282L19.5309 11.3052M19.5299 18.696L19.1479 17.772M20.772 13.8522L21.696 13.4692M20.772 16.1479L21.696 16.5309M21 15C21 16.6569 19.6569 18 18 18C16.3431 18 15 16.6569 15 15C15 13.3431 16.3431 12 18 12C19.6569 12 21 13.3431 21 15ZM13 7C13 9.20914 11.2091 11 9 11C6.79086 11 5 9.20914 5 7C5 4.79086 6.79086 3 9 3C11.2091 3 13 4.79086 13 7Z" />
+    </svg>
+  );
 }
 
 /** #/inbox (G4): single queue for conversations waiting on staff, receipts to review, pending approvals and needs-check runs. */
@@ -174,39 +189,36 @@ export function InboxPage({ user }: { user: User }) {
     if (item.kind === "conversation") {
       const c = item.data;
       return (
-        <div className="ib-detail">
+        <div className="ib-detail motion-page">
           <div className="ib-item-top">
-            <span className="ib-kind" data-kind="conversation">{t("Conversation")}</span>
+            <span className={`pill ${KIND_PILL.conversation}`}>{t("Conversation")}</span>
+            <span className={`pill ${c.paused ? "warn" : "ok"}`}>
+              {c.paused ? t("Staff handling") : t("Bot active.")}
+            </span>
             <span className="ib-age">{channelLabel(c.channel)}</span>
           </div>
           <h2>{item.title}</h2>
-          <p className="act-muted">
-            {c.paused ? t("Paused for staff reply.") : t("Bot active.")}
-            {c.fields.phone ? ` · ${c.fields.phone}` : ""}
-            {c.fields.email ? ` · ${c.fields.email}` : ""}
-          </p>
-          {messages === null ? (
-            <p className="act-muted">{t("Loading…")}</p>
-          ) : messages.length === 0 ? (
-            <p className="act-muted">{t("No messages recorded yet.")}</p>
-          ) : (
-            <ul className="ib-thread">
-              {messages.slice(-8).map((m) => (
-                <li key={m.id} data-dir={m.direction}>
-                  <div className="ib-thread-meta">
-                    <span>{t(m.direction === "in" ? "Guest" : m.direction === "staff" ? "Staff" : "Bot")}</span>
-                    <time>{relativeAge(m.createdAt, t)}</time>
-                  </div>
-                  <div>{m.text}</div>
-                </li>
-              ))}
-            </ul>
+          {(c.fields.phone || c.fields.email) && (
+            <p className="act-muted">
+              {[c.fields.phone, c.fields.email].filter(Boolean).join(" · ")}
+            </p>
           )}
-          <div className="ib-actions">
+          <div className="takeover-bar" data-mode={c.paused ? "staff" : "bot"}>
+            <div className="takeover-info">
+              <span className="takeover-ico"><TakeoverIcon /></span>
+              <div className="takeover-copy">
+                <strong>{c.paused ? t("Paused for staff reply.") : t("Bot active.")}</strong>
+                <span>
+                  {c.paused
+                    ? t("Hand control back to the automation when you are done.")
+                    : t("Pause automated replies when a guest needs a person.")}
+                </span>
+              </div>
+            </div>
             {c.paused ? (
               <button
                 type="button"
-                className="act-button blue"
+                className="act-button"
                 disabled={busy}
                 onClick={() =>
                   void perform(async () => {
@@ -232,6 +244,25 @@ export function InboxPage({ user }: { user: User }) {
                 {t("Take over")}
               </button>
             )}
+          </div>
+          {messages === null ? (
+            <p className="act-muted">{t("Loading…")}</p>
+          ) : messages.length === 0 ? (
+            <p className="act-muted">{t("No messages recorded yet.")}</p>
+          ) : (
+            <ul className="ib-thread">
+              {messages.slice(-8).map((m) => (
+                <li key={m.id} data-dir={m.direction}>
+                  <div className="ib-thread-meta">
+                    <span>{t(m.direction === "in" ? "Guest" : m.direction === "staff" ? "Staff" : "Bot")}</span>
+                    <time className="tnum">{relativeAge(m.createdAt, t)}</time>
+                  </div>
+                  <div>{m.text}</div>
+                </li>
+              ))}
+            </ul>
+          )}
+          <div className="ib-actions">
             <a className="act-button" href="#/conversations">{t("Open full thread")}</a>
           </div>
         </div>
@@ -241,21 +272,21 @@ export function InboxPage({ user }: { user: User }) {
     if (item.kind === "receipt") {
       const r = item.data;
       return (
-        <div className="ib-detail">
+        <div className="ib-detail motion-page">
           <div className="ib-item-top">
-            <span className="ib-kind" data-kind="receipt">{t("Receipt")}</span>
-            <span className="ib-age">{relativeAge(r.createdAt, t)}</span>
+            <span className={`pill ${KIND_PILL.receipt}`}>{t("Receipt")}</span>
+            <span className="ib-age tnum">{relativeAge(r.createdAt, t)}</span>
           </div>
           <h2>{r.reference}</h2>
           <dl className="ib-facts">
-            <div><dt>{t("Amount due")}</dt><dd>{peso(r.amountDue)}</dd></div>
-            <div><dt>{t("Submitted")}</dt><dd>{r.submitted === null ? t("Not given") : peso(r.submitted)}</dd></div>
-            <div><dt>{t("Reference")}</dt><dd>{r.transferRef ?? t("None")}</dd></div>
+            <div><dt>{t("Amount due")}</dt><dd className="tnum">{peso(r.amountDue)}</dd></div>
+            <div><dt>{t("Submitted")}</dt><dd className="tnum">{r.submitted === null ? t("Not given") : peso(r.submitted)}</dd></div>
+            <div><dt>{t("Reference")}</dt><dd className="mono">{r.transferRef ?? t("None")}</dd></div>
             <div><dt>{t("Channel")}</dt><dd>{r.channel}</dd></div>
           </dl>
           {r.flags.length > 0 && (
             <div className="ib-actions">
-              {r.flags.map((f) => <span key={f} className="act-pill problem">{t(FLAG_LABELS[f] ?? f)}</span>)}
+              {r.flags.map((f) => <span key={f} className="pill bad">{t(FLAG_LABELS[f] ?? f)}</span>)}
             </div>
           )}
           {r.type === "reply" ? (
@@ -339,10 +370,10 @@ export function InboxPage({ user }: { user: User }) {
     if (item.kind === "approval") {
       const a = item.data;
       return (
-        <div className="ib-detail">
+        <div className="ib-detail motion-page">
           <div className="ib-item-top">
-            <span className="ib-kind" data-kind="approval">{t("Approval")}</span>
-            <span className="ib-age">{relativeAge(a.createdAt, t)}</span>
+            <span className={`pill ${KIND_PILL.approval}`}>{t("Approval")}</span>
+            <span className="ib-age tnum">{relativeAge(a.createdAt, t)}</span>
           </div>
           <h2>{item.title}</h2>
           <div className="ib-msg-box">{a.message || t("Approval requested")}</div>
@@ -388,10 +419,10 @@ export function InboxPage({ user }: { user: User }) {
 
     const r = item.data;
     return (
-      <div className="ib-detail">
+      <div className="ib-detail motion-page">
         <div className="ib-item-top">
-          <span className="ib-kind" data-kind="run">{t("Needs check")}</span>
-          <span className="ib-age">{relativeAge(r.createdAt, t)}</span>
+          <span className={`pill ${KIND_PILL.run}`}>{t("Needs check")}</span>
+          <span className="ib-age tnum">{relativeAge(r.createdAt, t)}</span>
         </div>
         <h2>{item.title}</h2>
         <div className="ib-msg-box">{r.error || t("A delivery or step stopped and needs you to check it.")}</div>
@@ -425,17 +456,17 @@ export function InboxPage({ user }: { user: User }) {
         }
       />
       <div className="ib-body motion-page">
-        <div className="ib-filters" role="group" aria-label={t("Filter inbox")}>
+        <div className="ib-filters p-seg" role="group" aria-label={t("Filter inbox")}>
           {filters.map((f) => (
             <button
               key={f.key}
               type="button"
-              className="ib-chip"
+              className="ib-chip p-btn"
               aria-pressed={filter === f.key}
               onClick={() => setFilter(f.key)}
             >
               <span>{t(f.label)}</span>
-              {f.count !== undefined && <span className="ib-chip-count">{f.count}</span>}
+              {f.count !== undefined && <span className="ib-chip-count tnum">{f.count}</span>}
             </button>
           ))}
         </div>
@@ -465,28 +496,32 @@ export function InboxPage({ user }: { user: User }) {
           </section>
         ) : (
           <div className="ib-split">
-            <ul className="ib-list" aria-label={t("Inbox items")}>
-              {visible.map((item) => (
-                <li key={item.id}>
-                  <button
-                    type="button"
-                    className="ib-item"
-                    aria-pressed={chosen?.id === item.id}
-                    onClick={() => {
-                      setSelectedId(item.id);
-                      setReason("");
-                      if (phone) setSheetOpen(true);
-                    }}
-                  >
-                    <div className="ib-item-top">
-                      <span className="ib-kind" data-kind={item.kind}>{t(KIND_LABELS[item.kind])}</span>
-                      <span className="ib-age">{relativeAge(item.createdAt, t)}</span>
-                    </div>
-                    <span className="ib-title">{item.title}</span>
-                    <span className="ib-sub">{item.subtitle}</span>
-                  </button>
-                </li>
-              ))}
+            <ul className="ib-list ib-queue-list" aria-label={t("Inbox items")}>
+              {visible.map((item, idx) => {
+                const active = chosen?.id === item.id;
+                return (
+                  <li key={item.id} className="motion-stagger-row" style={{ "--i": Math.min(idx, 12) } as CSSProperties}>
+                    <button
+                      type="button"
+                      className="ib-item queue-btn"
+                      aria-pressed={active}
+                      onClick={() => {
+                        setSelectedId(item.id);
+                        setReason("");
+                        if (phone) setSheetOpen(true);
+                      }}
+                    >
+                      <div className="ib-item-top">
+                        {active && <i className="active-dot" aria-hidden="true" />}
+                        <span className={`pill ${KIND_PILL[item.kind]} ib-kind`} data-kind={item.kind}>{t(KIND_LABELS[item.kind])}</span>
+                        <span className="ib-age tnum">{relativeAge(item.createdAt, t)}</span>
+                      </div>
+                      <span className="ib-title">{item.title}</span>
+                      <span className="ib-sub">{item.subtitle}</span>
+                    </button>
+                  </li>
+                );
+              })}
             </ul>
             {!phone && chosen && (
               <aside className="ib-drawer" aria-label={chosen.title}>

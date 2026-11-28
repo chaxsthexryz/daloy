@@ -237,6 +237,41 @@ export function Automations({ user }: { user: User }) {
 
   const needsYou = review && review.length >= RUN_LIMIT ? `${RUN_LIMIT}+` : String(needsYouNum);
 
+  const quickGrid = owner ? (
+    <div className="quick-grid" aria-label={t("Quick start")}>
+      <a className="quick-card motion-stagger-row" style={{ "--i": 0 } as CSSProperties} href="#/new">
+        <span className="quick-ico" aria-hidden="true">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M13 3l0 7l6 0l-8 11l0 -7l-6 0l8 -11" /></svg>
+        </span>
+        <span className="quick-text">
+          <strong>{t("Templates")}</strong>
+          <small>{t("Start from a guided setup")}</small>
+        </span>
+        <span className="quick-arrow" aria-hidden="true">→</span>
+      </a>
+      <a className="quick-card motion-stagger-row" style={{ "--i": 1 } as CSSProperties} href="#/ai">
+        <span className="quick-ico" aria-hidden="true">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M16 18a2 2 0 0 1 2 2a2 2 0 0 1 2 -2a2 2 0 0 1 -2 -2a2 2 0 0 1 -2 2zm-7 0a6 6 0 0 1 6 -6a6 6 0 0 1 -6 -6a6 6 0 0 1 -6 6a6 6 0 0 1 6 6z" /></svg>
+        </span>
+        <span className="quick-text">
+          <strong>{t("Build with AI")}</strong>
+          <small>{t("Describe the workflow in plain words")}</small>
+        </span>
+        <span className="quick-arrow" aria-hidden="true">→</span>
+      </a>
+      <a className="quick-card motion-stagger-row" style={{ "--i": 2 } as CSSProperties} href="#/apps">
+        <span className="quick-ico" aria-hidden="true">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M9 17H7C5.67392 17 4.40215 16.4732 3.46447 15.5355C2.52678 14.5979 2 13.3261 2 12C2 10.6739 2.52678 9.40215 3.46447 8.46447C4.40215 7.52678 5.67392 7 7 7H9M15 7H17C18.3261 7 19.5979 7.52678 20.5355 8.46447C21.4732 9.40215 22 10.6739 22 12C22 13.3261 21.4732 14.5979 20.5355 15.5355C19.5979 16.4732 18.3261 17 17 17H15M8 12H16" /></svg>
+        </span>
+        <span className="quick-text">
+          <strong>{t("Connected apps")}</strong>
+          <small>{t("Connect Gmail, Sheets, Slack and more")}</small>
+        </span>
+        <span className="quick-arrow" aria-hidden="true">→</span>
+      </a>
+    </div>
+  ) : null;
+
   const head = (
     <header className="ops-head">
       <div className="ops-title">
@@ -265,12 +300,16 @@ export function Automations({ user }: { user: User }) {
       {list === null ? (
         listError ? null : <p className="ops-muted">{t("Loading…")}</p>
       ) : list.length === 0 ? (
-        <p className="ops-muted">{owner ? <>{t("No automations yet.")} <a href="#/new">{t("Add your first one")}</a>.</> : t("No automations yet.")}</p>
+        <div className="ops-body motion-page">
+          {quickGrid}
+          <p className="ops-muted">{owner ? <>{t("No automations yet.")} <a href="#/new">{t("Add your first one")}</a>.</> : t("No automations yet.")}</p>
+        </div>
       ) : (
         <div className="ops-layout" data-panel={selected ? "open" : "closed"}>
           <div className="ops-main" inert={sheet}>
             {head}
-            <div className="ops-body">
+            <div className="ops-body motion-page">
+              {quickGrid}
               <section className="ops-kpi-band" aria-label={t("Overview")}>
                 <div className="ops-kpi-live">
                   <div className="ops-kpi-label"><i className="ops-pulse" aria-hidden="true" /> {t("Live automations")}</div>
