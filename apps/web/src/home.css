@@ -1,8 +1,8 @@
-/* Today Home (#/, G5): Console Blocks layout with stretched-link KPIs, bento cards, and >= 13px floor. */
+/* Today Home (#/, G5): Console Blocks KPIs, 7-day SVG area chart, Health Donut, Connected apps, and Activity table (>= 13px floor). */
 .hm-body {
   display: grid;
-  gap: 14px;
-  padding: 18px 24px 40px;
+  gap: 12px;
+  padding: 14px 22px 28px;
   min-width: 0;
 }
 
@@ -47,7 +47,7 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: 8px;
-  padding: 13px 14px 11px;
+  padding: 12px 14px 10px;
   min-width: 0;
 }
 
@@ -60,7 +60,10 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  margin: 0;
   font-size: var(--text-xs, 13px);
+  line-height: 1.3;
+  letter-spacing: 0;
   color: var(--a-muted);
   font-weight: 500;
 }
@@ -102,7 +105,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 8px 14px;
+  padding: 7px 14px;
   border-top: 1px solid var(--a-line);
   font-size: var(--text-xs, 13px);
   color: var(--a-muted);
@@ -127,18 +130,33 @@
   outline: none;
 }
 
-/* Bento Cards */
-.hm-bento {
+/* Bento Rows matching console-blocks-preview */
+.hm-bento-mid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1.85fr) minmax(0, 1fr);
   gap: 11px;
   align-items: stretch;
   min-width: 0;
 }
 
+.hm-bento-bot {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.85fr);
+  gap: 11px;
+  align-items: stretch;
+  min-width: 0;
+}
+
+.hm-bento-single {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 11px;
+  min-width: 0;
+}
+
 .hm-card {
-  gap: 12px;
-  padding: 16px 18px;
+  gap: 10px;
+  padding: 14px 16px;
   justify-content: flex-start;
   min-width: 0;
 }
@@ -150,7 +168,8 @@
   flex-wrap: wrap;
 }
 
-.hm-card-head h2 {
+.hm-card-head h2,
+.hm-card-head h3 {
   margin: 0;
   font-size: 15px;
   line-height: 1.3;
@@ -167,8 +186,230 @@
   font-size: var(--text-xs, 13px);
 }
 
-.hm-head-pill + .card-link {
-  margin-left: 4px;
+/* 7-day SVG Area Chart */
+.hm-trend-tip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 10px;
+  border: 1px solid var(--a-line);
+  border-radius: 999px;
+  background: var(--a-canvas);
+  font-size: var(--text-xs, 13px);
+}
+
+.hm-chart-box {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 6px;
+  position: relative;
+}
+
+.hm-chart-stage {
+  position: relative;
+  flex: 1;
+  min-height: 104px;
+  max-height: 138px;
+  display: flex;
+}
+
+.hm-area-svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+  overflow: visible;
+}
+
+.hm-gridline {
+  stroke: var(--a-line);
+  stroke-width: 1;
+  stroke-dasharray: 4 4;
+}
+
+.hm-area-line {
+  fill: none;
+  stroke: var(--a-accent);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-dasharray: 900;
+  stroke-dashoffset: 0;
+  animation: hm-line-draw 650ms var(--ease-spring, ease) both;
+}
+
+.hm-focus-stem {
+  stroke: var(--a-field);
+  stroke-width: 1.5;
+  transition: all 180ms var(--ease-spring, ease);
+  pointer-events: none;
+}
+
+.hm-focus-halo {
+  fill: color-mix(in srgb, var(--a-accent) 18%, transparent);
+  transition: all 180ms var(--ease-spring, ease);
+  pointer-events: none;
+}
+
+.hm-focus-dot {
+  fill: var(--a-accent);
+  stroke: var(--a-bg);
+  stroke-width: 2.5;
+  transition: all 180ms var(--ease-spring, ease);
+  pointer-events: none;
+}
+
+.hm-chart-hit {
+  fill: transparent;
+  cursor: pointer;
+}
+
+.hm-chart-tip {
+  position: absolute;
+  top: 6px;
+  transform: translate(-50%, 4px);
+  z-index: 5;
+  pointer-events: none;
+  min-width: 170px;
+  padding: 6px 10px;
+  border: 1px solid var(--a-field);
+  border-radius: 9px;
+  background: var(--a-bg);
+  color: var(--a-ink);
+  box-shadow: var(--shadow-overlay);
+  font-size: var(--text-xs, 13px);
+  opacity: 0;
+  transition: opacity 110ms var(--ease, ease), left 140ms var(--ease-spring, ease), transform 140ms var(--ease-spring, ease);
+}
+
+.hm-chart-tip[data-open="true"] {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+.hm-chart-tip-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 2px;
+}
+
+.hm-chart-tip-sub {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--text-xs, 13px);
+  color: var(--a-muted);
+}
+
+.hm-tip-rate {
+  margin-left: auto;
+  color: var(--a-green);
+  font-weight: 600;
+}
+
+.hm-day-row {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+  flex: none;
+}
+
+.hm-day-btn {
+  min-height: 26px;
+  padding: 0 4px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--a-muted);
+  font: 500 var(--text-xs, 13px)/1 var(--font-sans);
+  cursor: pointer;
+  transition: background-color 140ms var(--ease, ease), color 140ms var(--ease, ease);
+}
+
+.hm-day-btn:hover {
+  background: var(--a-canvas);
+  color: var(--a-ink);
+}
+
+.hm-day-btn[aria-pressed="true"] {
+  background: var(--a-select);
+  color: var(--a-accent);
+  font-weight: 600;
+}
+
+.hm-running-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--a-line);
+  flex: none;
+}
+
+.hm-running-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border: 1px solid var(--a-line);
+  border-radius: 7px;
+  background: var(--a-canvas);
+  font-size: var(--text-xs, 13px);
+  color: var(--a-ink);
+  text-decoration: none;
+  transition: border-color 140ms var(--ease, ease);
+}
+
+.hm-running-chip span {
+  color: var(--a-muted);
+}
+
+.hm-running-chip:hover {
+  border-color: var(--a-accent);
+  text-decoration: none;
+}
+
+.hm-running-empty {
+  padding-top: 8px;
+  border-top: 1px solid var(--a-line);
+  font-size: var(--text-xs, 13px);
+}
+
+/* Health Donut Ring */
+.hm-donut-wrap {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 4px 0;
+}
+
+.hm-donut-legend {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px 12px;
+  font-size: var(--text-xs, 13px);
+  color: var(--a-muted);
+}
+
+.hm-donut-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.hm-donut-legend i {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  display: inline-block;
 }
 
 .hm-healthy {
@@ -176,26 +417,11 @@
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
-  padding: 11px 13px;
+  padding: 9px 12px;
   border: 1px solid var(--a-line);
   border-radius: 9px;
   background: var(--a-canvas);
-}
-
-.hm-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.hm-chip {
-  padding: 4px 10px;
-  border-radius: 7px;
-  background: var(--a-canvas);
-  border: 1px solid var(--a-line);
   font-size: var(--text-xs, 13px);
-  font-weight: 500;
-  color: var(--a-muted);
 }
 
 .hm-list {
@@ -211,8 +437,8 @@
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 8px 14px;
-  padding: 10px 12px;
+  gap: 8px 12px;
+  padding: 9px 12px;
   border-radius: 9px;
   border: 1px solid var(--a-line);
   background: var(--a-canvas);
@@ -227,7 +453,7 @@
 }
 
 .hm-row-main strong {
-  font-size: 14px;
+  font-size: 13.5px;
   font-weight: 600;
 }
 
@@ -237,60 +463,72 @@
 }
 
 .hm-fix-btn {
-  min-height: 32px;
-  padding: 0 12px;
+  min-height: 30px;
+  padding: 0 11px;
   font-size: var(--text-xs, 13px);
 }
 
-.hm-section-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  padding-top: 6px;
-  border-top: 1px solid var(--a-line);
-}
-
-.hm-section-head h3 {
+/* Connected apps list card */
+.hm-apps-list {
+  list-style: none;
   margin: 0;
-  font-size: 15px;
-  font-weight: 600;
-}
-
-.hm-running-grid {
+  padding: 0;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
-  gap: 9px;
+  gap: 7px;
 }
 
-.hm-running-item {
+.hm-app-row {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 11px 13px;
-  border-radius: 10px;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 11px;
   border: 1px solid var(--a-line);
-  background: var(--a-canvas);
+  border-radius: 9px;
+  background: var(--a-bg);
   color: var(--a-ink);
   text-decoration: none;
   transition: border-color 140ms var(--ease, ease), background-color 140ms var(--ease, ease);
 }
 
-.hm-running-item:hover {
-  border-color: var(--a-accent);
-  background: var(--a-bg);
+.hm-app-row:hover {
+  border-color: var(--a-field);
+  background: var(--a-canvas);
   text-decoration: none;
 }
 
-.hm-running-item strong {
-  font-size: 14px;
-  font-weight: 600;
+.hm-app-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 13.5px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.hm-running-item span {
-  font-size: var(--text-xs, 13px);
-  color: var(--a-muted);
+/* Recent activity inline tools & table */
+.hm-activity-tools {
+  margin-left: auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.hm-activity-tools input {
+  width: 244px;
+  min-height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--a-field);
+  border-radius: 8px;
+  background: var(--a-bg);
+  color: var(--a-ink);
+  font: 400 var(--text-xs, 13px)/1.25 inherit;
+}
+
+.hm-ask-btn {
+  min-height: 32px;
+  padding: 0 11px;
 }
 
 .hm-table-wrap {
@@ -301,12 +539,30 @@
 }
 
 .hm-body .act-table thead th {
+  height: 36px;
   font-size: var(--text-xs, 13px);
+}
+
+.hm-body .act-table tbody td {
+  height: 44px;
+  padding-block: 8px;
 }
 
 .hm-body .act-table .ref,
 .hm-body .act-table .sub {
   font-size: var(--text-xs, 13px);
+}
+
+@keyframes hm-line-draw {
+  from { stroke-dashoffset: 900; }
+  to { stroke-dashoffset: 0; }
+}
+
+@media (max-width: 1020px) {
+  .hm-bento-mid,
+  .hm-bento-bot {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 @media (max-width: 960px) {
@@ -333,11 +589,17 @@
   .hm-kpi-foot {
     padding: 7px 12px;
   }
-  .hm-bento {
-    grid-template-columns: minmax(0, 1fr);
-  }
   .hm-card {
     padding: 14px;
+  }
+  .hm-activity-tools {
+    width: 100%;
+    margin-left: 0;
+  }
+  .hm-activity-tools input {
+    flex: 1;
+    min-width: 0;
+    width: auto;
   }
   .hm-table-wrap {
     border: 0;
@@ -349,7 +611,16 @@
 @media (prefers-reduced-motion: reduce) {
   .hm-kpi-card,
   .hm-kpi-foot,
-  .hm-running-item {
+  .hm-running-chip,
+  .hm-app-row,
+  .hm-day-btn,
+  .hm-focus-stem,
+  .hm-focus-halo,
+  .hm-focus-dot,
+  .hm-chart-tip {
     transition: none !important;
+  }
+  .hm-area-line {
+    animation: none !important;
   }
 }

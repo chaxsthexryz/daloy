@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { HomePage, type HomePayload } from "./Home";
+import { buildSevenDayTrend, computeHealthSummary, HomePage, type HomePayload } from "./Home";
 import { LanguageContext } from "./Language";
 import type { Language } from "./lib/locale";
 import type { User } from "./Team";
@@ -61,8 +61,8 @@ const samplePayload: HomePayload = {
       test: false,
       live: true,
       reference: "REQ-2026-0412",
-      createdAt: "2026-11-27T09:10:00.000Z",
-      finishedAt: "2026-11-27T09:10:02.000Z",
+      createdAt: new Date(Date.now() - 15 * 60_000).toISOString(),
+      finishedAt: new Date(Date.now() - 14 * 60_000).toISOString(),
       needsReview: false,
       deliveryFailed: false,
       superseded: false,
@@ -75,13 +75,20 @@ const samplePayload: HomePayload = {
 function renderHome(user: User, initialData: HomePayload, language: Language = "en") {
   return renderToStaticMarkup(
     <LanguageContext.Provider value={{ language, setLanguage: () => undefined }}>
-      <HomePage user={user} initialData={initialData} />
+      <HomePage
+        user={user}
+        initialData={initialData}
+        initialConnections={[
+          { provider: "gmail", status: "active" },
+          { provider: "google_drive", status: "error" },
+        ]}
+      />
     </LanguageContext.Provider>,
   );
 }
 
 describe("HomePage Console Blocks", () => {
-  it("renders 4 KPI cards with whole-card stretched links from real /home data", () => {
+  it("renders 4 KPI cards, 7-day SVG chart, Health Donut, Connected apps, and Recent activity", () => {
     const html = renderHome(ownerUser, samplePayload);
 
     expect(html).toContain("<h1>Today</h1>");
@@ -89,22 +96,28 @@ describe("HomePage Console Blocks", () => {
     expect(html).toContain(">New automation</a>");
     expect(html).toContain('href="#/ai"');
     expect(html).toContain(">Build with AI</a>");
-    expect(html).toContain('href="#/automations"');
 
     // Four stretched-link KPI cards in .hm-kpi-grid
     expect(html).toContain('class="hm-kpi-grid"');
     const footLinks = [...html.matchAll(/<a[^>]*class="hm-kpi-foot"[^>]*href="([^"]+)"/g)].map((m) => m[1]);
-    expect(footLinks).toEqual(["#/inbox", "#/automations", "#/automations", "#/automations"]);
+    expect(footLinks).toEqual(["#/automations", "#/automations", "#/inbox", "#/automations"]);
 
     // Real counts derived strictly from HomePayload
+    expect(html).toContain("Live automations");
+    expect(html).toContain("Runs today");
     expect(html).toContain("Needs you");
-    expect(html).toContain("Open Inbox");
+    expect(html).toContain("4 waiting on staff");
+    expect(html).toContain("Success, 7 days");
     expect(html).toContain("18 ran today");
     expect(html).toContain("REQ-2026-0412");
     expect(html).toContain("Resort inquiry reply");
     expect(html).toContain("Google Drive");
     expect(html).toContain("Token expired for Receipt archive");
-    expect(html).toContain('href="#/apps"');
+    expect(html).toContain('class="hm-area-svg"');
+    expect(html).toContain('class="hm-donut-wrap"');
+    expect(html).toContain("Connected apps");
+    expect(html).toContain("Gmail");
+    expect(html).toContain("Connected");
     expect(html).toContain('href="#/a/wf-1"');
   });
 
@@ -123,8 +136,27 @@ describe("HomePage Console Blocks", () => {
     expect(html).toMatch(/<h2[^>]*>What ran<\/h2>/);
     expect(html).toContain("All caught up");
     expect(html).toContain("No problems right now");
+    expect(html).toContain("100%");
     expect(html).toContain("No automations are turned on yet.");
     expect(html).toContain("Nothing has happened yet.");
+  });
+
+  it("computes 7-day trend buckets and health summary from real runs", () => {
+    const now = new Date(2026, 10, 28, 12, 0, 0).getTime();
+    const runs = [
+      { ...samplePayload.recentRuns[0]!, id: "r1", createdAt: new Date(2026, 10, 28, 9, 0, 0).toISOString(), state: "succeeded" },
+      { ...samplePayload.recentRuns[0]!, id: "r2", createdAt: new Date(2026, 10, 27, 10, 0, 0).toISOString(), state: "failed" },
+      { ...samplePayload.recentRuns[0]!, id: "r3", createdAt: new Date(2026, 10, 26, 11, 0, 0).toISOString(), state: "waiting", needsReview: true },
+    ];
+    const trend = buildSevenDayTrend(runs, now, "en");
+    expect(trend).toHaveLength(7);
+    expect(trend[6]!.total).toBe(1);
+    expect(trend[6]!.ok).toBe(1);
+    expect(trend[5]!.failed).toBe(1);
+    expect(trend[4]!.waiting).toBe(1);
+
+    const summary = computeHealthSummary(runs, 0);
+    expect(summary).toEqual({ total: 3, ok: 1, waiting: 1, failed: 1, pct: 33 });
   });
 
   it("renders non-staff fallback inside Console Block card markup", () => {

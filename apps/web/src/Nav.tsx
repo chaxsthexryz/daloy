@@ -508,7 +508,9 @@ export function Shell({ user, hash, onSignOut, children }: { user: User; hash: s
           {t("Menu")}
         </button>
       </nav>
-      <div className="shell-main" inert={open}>{children}</div>
+      <div className="shell-main" inert={open}>
+        <div className="shell-frame">{children}</div>
+      </div>
       <CommandPalette open={paletteOpen} role={user.role} admin={user.admin === true} currentHash={hash} onClose={() => setPaletteOpen(false)} />
       <ToastHost />
     </div>

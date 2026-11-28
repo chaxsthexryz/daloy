@@ -492,7 +492,7 @@ export function BuildWithAiPage({ email, admin = false, embedded = false }: { em
   );
 
   return (
-    <Wrap className={`page creation-page creation-chat${empty && phase !== "error" && !showReview ? " is-stage" : ""}`}>
+    <Wrap className={`page creation-page creation-chat${embedded ? " is-embedded" : ""}${empty && phase !== "error" && !showReview ? " is-stage" : ""}`}>
       {topbar}
 
       {showReview && draft && plan ? (
@@ -572,7 +572,16 @@ export function BuildWithAiPage({ email, admin = false, embedded = false }: { em
         </section>
       ) : empty && phase !== "error" ? (
         <section className="ai-stage" aria-label={t("Turn your ideas into automations")}>
-          <h2 className="ai-hero-title">{t("Turn your ideas into automations")}</h2>
+          <div className="ai-hero-head">
+            <span className="ai-bot-badge" aria-hidden="true">
+              <svg width="20" height="20" viewBox="0 0 120 120">
+                <path fill="currentColor" d="M22 18H60V56H60C39 56 22 39 22 18Z" />
+                <path fill="currentColor" d="M60 56C81 56 98 73 98 94V102H60V56Z" />
+                <path fill="currentColor" d="M60 18C81 18 98 35 98 56H60V18Z" opacity="0.28" />
+              </svg>
+            </span>
+            <h2 className="ai-hero-title">{t("Turn your ideas into automations")}</h2>
+          </div>
           {composer}
           <div className="ai-suggestions-wrap">
             <div className="ai-cats" ref={catBarRef} role="tablist" aria-label={t("Examples")}>
