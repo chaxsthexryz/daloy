@@ -161,6 +161,8 @@ test("desktop rail stays fixed at 228 px, supports keyboard navigation and Quick
   const business = rail.getByRole("link", { name: "Business", exact: true });
   await rail.getByRole("link", { name: "Automations", exact: true }).focus();
   await page.keyboard.press("Tab");
+  await expect(rail.getByRole("button", { name: "Show Automations pages" })).toBeFocused();
+  await page.keyboard.press("Tab");
   await expect(business).toBeFocused();
   await expect(rail).toHaveCSS("width", "228px");
   await expect(rail.locator(".rail-hover-pill")).toHaveCSS("transition-duration", "0s");

@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { Usage } from "./api";
-import { AiMeter, section, Shell } from "./Nav";
+import { AiMeter, initialTreeState, section, Shell, syncTreeForHash, toggleTreeGroup } from "./Nav";
 import type { User } from "./Team";
 
 const user: User = { id: "staff", workspaceId: "workspace", email: "staff@example.test", role: "owner" };
@@ -133,5 +133,61 @@ describe("sidebar account block", () => {
     const html = renderToStaticMarkup(<Shell user={{ ...user, displayName }} hash="#/" onSignOut={() => undefined}><main>Page</main></Shell>);
     expect(html).toContain('<strong title="staff@example.test">staff@example.test</strong><span class="rail-who-role">Owner</span>');
     expect(html).toContain(">S</span>");
+  });
+});
+
+describe("sidebar tree state and blocks shell", () => {
+  it("opens only the active section group on initial load", () => {
+    expect(initialTreeState("#/")).toEqual({ bookings: false, automations: false, business: false });
+    expect(initialTreeState("#/bookings?tab=rooms")).toEqual({ bookings: true, automations: false, business: false });
+    expect(initialTreeState("#/new")).toEqual({ bookings: false, automations: true, business: false });
+    expect(initialTreeState("#/business?tab=apps")).toEqual({ bookings: false, automations: false, business: true });
+  });
+
+  it("syncs open group on hash change and toggles individual groups", () => {
+    const start = initialTreeState("#/");
+    const onAutomations = syncTreeForHash(start, "#/ai");
+    expect(onAutomations).toEqual({ bookings: false, automations: true, business: false });
+
+    const closedAutomations = toggleTreeGroup(onAutomations, "automations");
+    expect(closedAutomations).toEqual({ bookings: false, automations: false, business: false });
+
+    const openedBusiness = toggleTreeGroup(closedAutomations, "business");
+    expect(openedBusiness).toEqual({ bookings: false, automations: false, business: true });
+
+    expect(syncTreeForHash(openedBusiness, "#/bookings")).toEqual({ bookings: true, automations: false, business: false });
+  });
+
+  it("renders the search trigger, Work/Workspace labels, and expandable owner sub-trees without extra primary links", () => {
+    const html = render("#/business?tab=apps");
+    expect(html).toContain('class="rail-search"');
+    expect(html).toContain("<kbd");
+    expect(html).toContain("⌘K</kbd>");
+    expect(html).toContain('class="rail-group-label">Work</span>');
+    expect(html).toContain('class="rail-group-label">Workspace</span>');
+
+    // Only the 6 primary links are direct children of #main-menu.
+    const navMatch = html.match(/<nav[^>]*id="main-menu"[^>]*>([\s\S]*?)<\/nav>/);
+    expect(navMatch).toBeTruthy();
+    const primaryMatches = [...navMatch![1]!.matchAll(/class="rail-link(?: [^"]*)?"[^>]*href="([^"]*)"/g)].map((m) => m[1]);
+    expect(primaryMatches).toEqual(["#/", "#/inbox", "#/bookings", "#/automations", "#/business", "#/settings"]);
+
+    // Business group is open with Apps sub-link marked data-active="true", never aria-current="page".
+    expect(html).toContain('data-group="business" data-open="true"');
+    expect(html).toContain('data-group="bookings" data-open="false"');
+    expect(html).toContain('data-group="automations" data-open="false"');
+    expect(html).toContain('href="#/business?tab=apps" data-active="true"');
+    expect(html).not.toMatch(/class="rail-sublink"[^>]*aria-current="page"/);
+    expect(html).toContain('aria-label="Show Bookings pages" aria-expanded="false"');
+    expect(html).toContain('aria-label="Hide Business pages" aria-expanded="true"');
+  });
+
+  it("renders the rail usage card header and Manage plan button when inside the sidebar", () => {
+    const html = renderToStaticMarkup(<AiMeter usage={usage(500)} className="ai-meter rail-usage" />);
+    expect(html).toContain("rail-usage-head");
+    expect(html).toContain("Pilot");
+    expect(html).toContain("Plan");
+    expect(html).toContain("Manage plan");
+    expect(html).toContain('role="progressbar"');
   });
 });

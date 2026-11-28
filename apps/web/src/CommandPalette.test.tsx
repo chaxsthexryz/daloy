@@ -114,6 +114,7 @@ describe("CommandPalette markup", () => {
     );
     expect(ownerHtml).toContain('role="dialog"');
     expect(ownerHtml).toContain('aria-modal="true"');
+    expect(ownerHtml).toContain('class="cmd-kbd"');
     expect(ownerHtml).toContain('href="#/business?tab=team"');
     expect(ownerHtml).toContain('href="#/new"');
 

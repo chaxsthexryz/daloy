@@ -31,14 +31,86 @@ export function AiMeter({ usage, className }: { usage: Usage | null; className?:
   const { t } = useLanguage();
   const meter = usage && aiMeter(usage, t);
   if (!meter) return null;
+  const inRail = className?.includes("rail-usage") ?? false;
   return (
     <div className={className ?? "ai-meter"}>
+      {inRail && (
+        <div className="rail-usage-head">
+          <strong>{usage.label || t("Business")}</strong>
+          <span>{t("Plan")}</span>
+        </div>
+      )}
       <div className="ai-meter-bar" role="progressbar" aria-label={meter.text} aria-valuemin={0} aria-valuemax={meter.limit} aria-valuenow={Math.min(meter.used, meter.limit)}>
         <i style={{ width: `${meter.percent}%` }} />
       </div>
       <span className="ai-meter-text" aria-hidden="true">{meter.text}</span>
+      {inRail && (
+        <button type="button" className="rail-usage-btn" onClick={() => { location.hash = "#/settings"; }}>
+          {t("Manage plan")}
+        </button>
+      )}
     </div>
   );
+}
+
+export type NavGroupId = "bookings" | "automations" | "business";
+export type NavTreeState = Record<NavGroupId, boolean>;
+
+export function sectionGroup(sec: string): NavGroupId | null {
+  if (sec === "Bookings") return "bookings";
+  if (sec === "Automations") return "automations";
+  if (sec === "Business") return "business";
+  return null;
+}
+
+export function initialTreeState(hash: string): NavTreeState {
+  const active = sectionGroup(section(hash));
+  return {
+    bookings: active === "bookings",
+    automations: active === "automations",
+    business: active === "business",
+  };
+}
+
+export function syncTreeForHash(prev: NavTreeState, hash: string): NavTreeState {
+  const next = initialTreeState(hash);
+  if (prev.bookings === next.bookings && prev.automations === next.automations && prev.business === next.business) return prev;
+  return next;
+}
+
+export function toggleTreeGroup(prev: NavTreeState, group: NavGroupId): NavTreeState {
+  return { ...prev, [group]: !prev[group] };
+}
+
+function isSubActive(hash: string, targetHref: string): boolean {
+  const [rawPath, rawQuery = ""] = hash.split("?");
+  const path = (rawPath ?? "").replace(/\/+$/, "") || "#/";
+  const tab = new URLSearchParams(rawQuery).get("tab");
+  switch (targetHref) {
+    case "#/bookings":
+      return path === "#/bookings" && tab !== "rooms";
+    case "#/bookings?tab=rooms":
+      return (path === "#/bookings" && tab === "rooms") || path === "#/resources";
+    case "#/ai":
+      return path === "#/ai";
+    case "#/new":
+      return path === "#/new";
+    case "#/business":
+      return (path === "#/business" && tab !== "knowledge" && tab !== "apps" && tab !== "team")
+        || path === "#/settings/business"
+        || path.startsWith("#/verify-sender");
+    case "#/business?tab=knowledge":
+      return (path === "#/business" && tab === "knowledge") || path === "#/knowledge" || path.startsWith("#/knowledge/");
+    case "#/business?tab=apps":
+      return (path === "#/business" && tab === "apps")
+        || path === "#/apps"
+        || path.startsWith("#/apps/")
+        || path.startsWith("#/settings/business/outlook-");
+    case "#/business?tab=team":
+      return (path === "#/business" && tab === "team") || path.startsWith("#/team");
+    default:
+      return false;
+  }
 }
 
 /** Which menu entry a hash route belongs to, so the same menu shows on every page and marks where you are. */
@@ -84,6 +156,7 @@ export function Shell({ user, hash, onSignOut, children }: { user: User; hash: s
   const [closing, setClosing] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [tree, setTree] = useState<NavTreeState>(() => initialTreeState(hash));
   const menuButton = useRef<HTMLButtonElement>(null);
   const helpRef = useRef<HTMLDivElement>(null);
   const helpBtnRef = useRef<HTMLButtonElement>(null);
@@ -158,7 +231,14 @@ export function Shell({ user, hash, onSignOut, children }: { user: User; hash: s
 
   const pillLeave = pill.onContainerLeave;
   // The phone menu, Quick jump, Help menu and hover pill reset on any page change, the browser's Back button included.
-  useEffect(() => { setOpen(false); setClosing(false); setPaletteOpen(false); setHelpOpen(false); pillLeave(); }, [hash, pillLeave]);
+  useEffect(() => {
+    setOpen(false);
+    setClosing(false);
+    setPaletteOpen(false);
+    setHelpOpen(false);
+    setTree((prev) => syncTreeForHash(prev, hash));
+    pillLeave();
+  }, [hash, pillLeave]);
   useEffect(() => {
     if (!helpOpen) return;
     const onPointerDown = (event: PointerEvent) => {
@@ -214,9 +294,10 @@ export function Shell({ user, hash, onSignOut, children }: { user: User; hash: s
     if (matchMedia("(prefers-reduced-motion: reduce)").matches) setOpen(false);
     else setClosing(true);
   }
-  function link(href: string, text: string, icon?: string, name = text, badge?: number) {
+  function link(href: string, text: string, icon?: string, name = text, badge?: number, isParent = false) {
     return (
       <a
+        className={icon ? (isParent ? "rail-link rail-parent" : "rail-link") : undefined}
         href={href}
         data-tip={icon ? t(text) : undefined}
         aria-label={icon ? t(text) : undefined}
@@ -229,6 +310,57 @@ export function Shell({ user, hash, onSignOut, children }: { user: User; hash: s
         <span className={icon ? "rail-label" : undefined}>{t(text)}</span>
         {badge !== undefined && badge > 0 && <span className="rail-badge">{badge}</span>}
       </a>
+    );
+  }
+  function renderGroup(groupId: NavGroupId, groupLabel: string, items: Array<{ href: string; text: string; ariaLabel?: string }>) {
+    const isOpen = tree[groupId];
+    const toggleLabel = isOpen
+      ? t("Hide {name} pages", { name: t(groupLabel) })
+      : t("Show {name} pages", { name: t(groupLabel) });
+    return (
+      <div
+        className="rail-group"
+        data-group={groupId}
+        data-open={isOpen ? "true" : "false"}
+        data-has-active={here === groupLabel || undefined}
+      >
+        <button
+          type="button"
+          className="rail-toggle"
+          aria-label={toggleLabel}
+          aria-expanded={isOpen}
+          aria-controls={`rail-sub-${groupId}`}
+          onClick={() => setTree((prev) => toggleTreeGroup(prev, groupId))}
+        >
+          <svg className="rail-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M9 18L15 12L9 6" />
+          </svg>
+        </button>
+        <div
+          id={`rail-sub-${groupId}`}
+          className="rail-children-wrap"
+          inert={!isOpen || undefined}
+          aria-hidden={!isOpen || undefined}
+        >
+          <div className="rail-children">
+            {items.map((item) => (
+              <a
+                key={item.href}
+                className="rail-sublink"
+                href={item.href}
+                aria-label={item.ariaLabel}
+                data-active={isSubActive(hash, item.href) || undefined}
+                tabIndex={isOpen ? undefined : -1}
+                onPointerEnter={(event) => pill.onItemEnter(event.currentTarget)}
+                onFocus={(event) => pill.onItemEnter(event.currentTarget)}
+                onClick={() => { setOpen(false); pill.onContainerLeave(); }}
+              >
+                <span>{t(item.text)}</span>
+              </a>
+            ))}
+          </div>
+        </div>
+      </div>
     );
   }
   const closeHelp = () => { setHelpOpen(false); setOpen(false); pill.onContainerLeave(); };
@@ -248,8 +380,36 @@ export function Shell({ user, hash, onSignOut, children }: { user: User; hash: s
           <svg className="rail-brand" aria-label="kymavo" role="img"><use href="/navigation.svg#mark" /></svg>
           <span className="sidebar-name rail-label">kymavo</span>
           {canWatchRuns && <NotificationBell live={live} />}
+          {!open && (
+            <button
+              type="button"
+              className="mobile-icon-btn mobile-search-btn"
+              aria-label={t("Quick jump")}
+              onClick={() => setPaletteOpen(true)}
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M20.9999 21.0002L16.6599 16.6602M19 11C19 15.4183 15.4183 19 11 19C6.58172 19 3 15.4183 3 11C3 6.58172 6.58172 3 11 3C15.4183 3 19 6.58172 19 11Z" />
+              </svg>
+            </button>
+          )}
           {open && <button type="button" className="quiet phone-close" onClick={closePhone}>{t("Close")}</button>}
         </div>
+        <button
+          type="button"
+          className="rail-search"
+          aria-label={t("Search")}
+          onClick={() => {
+            setOpen(false);
+            setClosing(false);
+            setPaletteOpen(true);
+          }}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M20.9999 21.0002L16.6599 16.6602M19 11C19 15.4183 15.4183 19 11 19C6.58172 19 3 15.4183 3 11C3 6.58172 6.58172 3 11 3C15.4183 3 19 6.58172 19 11Z" />
+          </svg>
+          <span>{t("Search")}</span>
+          <kbd aria-hidden="true">⌘K</kbd>
+        </button>
         <nav
           ref={menu}
           id="main-menu"
@@ -270,45 +430,64 @@ export function Shell({ user, hash, onSignOut, children }: { user: User; hash: s
               opacity: pill.pillStyle.opacity,
             }}
           />
+          <span className="rail-group-label">{t("Work")}</span>
           {link("#/", "Home", "home")}
           {canWatchRuns && link("#/inbox", "Inbox", "inbox", "Inbox", inboxCount)}
-          {canWatchRuns && link("#/bookings", "Bookings", "bookings")}
-          {owner && link("#/automations", "Automations", "automations")}
-          {owner && link("#/business", "Business", "business")}
+          {canWatchRuns && link("#/bookings", "Bookings", "bookings", "Bookings", undefined, owner)}
+          {owner && renderGroup("bookings", "Bookings", [
+            { href: "#/bookings", text: "Calendar" },
+            { href: "#/bookings?tab=rooms", text: "Rooms and slots" },
+          ])}
+          {owner && link("#/automations", "Automations", "automations", "Automations", undefined, true)}
+          {owner && renderGroup("automations", "Automations", [
+            { href: "#/ai", text: "Build with AI", ariaLabel: t("Create: Build with AI") },
+            { href: "#/new", text: "Templates", ariaLabel: t("Create: Templates") },
+          ])}
+          <span className="rail-group-label">{t("Workspace")}</span>
+          {owner && link("#/business", "Business", "business", "Business", undefined, true)}
+          {owner && renderGroup("business", "Business", [
+            { href: "#/business", text: "Details and branding" },
+            { href: "#/business?tab=knowledge", text: "Knowledge" },
+            { href: "#/business?tab=apps", text: "Apps" },
+            { href: "#/business?tab=team", text: "Team" },
+          ])}
           {link("#/settings", "Settings", "settings")}
           {owner && <AiMeter usage={usage} className="ai-meter rail-usage" />}
           <div className="rail-account" ref={helpRef}>
-            <span className="who rail-label rail-who-top"><strong title={user.email}>{personName(user)}</strong><span className="rail-who-role">{t(ROLE_LABEL[user.role])}</span></span>
-            <div className="rail-account-actions">
-              <a
-                className="account-link"
-                href="#/account"
-                data-tip={t("Account")}
-                aria-label={t("Account")}
-                aria-current={here === "Account" ? "page" : undefined}
-                onPointerEnter={(event) => pill.onItemEnter(event.currentTarget)}
-                onFocus={(event) => pill.onItemEnter(event.currentTarget)}
-                onClick={() => { setOpen(false); pill.onContainerLeave(); }}
-              >
-                <span className="rail-avatar" aria-hidden="true">{personName(user).slice(0, 1).toUpperCase()}</span>
-                <span className="rail-label">{t("Account")}</span>
-              </a>
-              <button type="button" className="quiet sign-out" onClick={onSignOut}>{t("Sign out")}</button>
-              <button
-                ref={helpBtnRef}
-                type="button"
-                className="quiet rail-help-btn"
-                aria-label={t("Help and support")}
-                aria-expanded={helpOpen}
-                aria-haspopup="menu"
-                aria-controls="rail-help-menu"
-                title={t("Help and support")}
-                onClick={() => setHelpOpen((was) => !was)}
-              >
-                <span aria-hidden="true">?</span>
-                <span className="rail-help-label">{t("Help and support")}</span>
-              </button>
+            <span className="rail-avatar" aria-hidden="true">{personName(user).slice(0, 1).toUpperCase()}</span>
+            <div className="rail-who">
+              <div className="who rail-label rail-who-top"><strong title={user.email}>{personName(user)}</strong><span className="rail-who-role">{t(ROLE_LABEL[user.role])}</span></div>
+              <div className="rail-who-links rail-account-actions">
+                <a
+                  className="account-link"
+                  href="#/account"
+                  data-tip={t("Account")}
+                  aria-label={t("Account")}
+                  aria-current={here === "Account" ? "page" : undefined}
+                  onPointerEnter={(event) => pill.onItemEnter(event.currentTarget)}
+                  onFocus={(event) => pill.onItemEnter(event.currentTarget)}
+                  onClick={() => { setOpen(false); pill.onContainerLeave(); }}
+                >
+                  <span className="rail-label">{t("Account")}</span>
+                </a>
+                <span className="rail-who-sep" aria-hidden="true">·</span>
+                <button type="button" className="quiet sign-out" onClick={onSignOut}>{t("Sign out")}</button>
+              </div>
             </div>
+            <button
+              ref={helpBtnRef}
+              type="button"
+              className="quiet rail-help-btn"
+              aria-label={t("Help and support")}
+              aria-expanded={helpOpen}
+              aria-haspopup="menu"
+              aria-controls="rail-help-menu"
+              title={t("Help and support")}
+              onClick={() => setHelpOpen((was) => !was)}
+            >
+              <span aria-hidden="true">?</span>
+              <span className="rail-help-label">{t("Help and support")}</span>
+            </button>
             {helpOpen && (
               <div id="rail-help-menu" className="rail-help-menu" role="menu" aria-label={t("Help and support")}>
                 {owner && <a role="menuitem" href="#/onboarding" onClick={closeHelp}>{t("Business setup guide")}</a>}

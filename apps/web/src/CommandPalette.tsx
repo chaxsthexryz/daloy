@@ -144,6 +144,9 @@ export function CommandPalette({
     >
       <div className="cmd-dialog motion-dialog" role="dialog" aria-modal="true" aria-label={t("Quick jump")}>
         <div className="cmd-search">
+          <svg className="cmd-search-ico" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M20.9999 21.0002L16.6599 16.6602M19 11C19 15.4183 15.4183 19 11 19C6.58172 19 3 15.4183 3 11C3 6.58172 6.58172 3 11 3C15.4183 3 19 6.58172 19 11Z" />
+          </svg>
           <input
             ref={inputRef}
             type="search"
@@ -157,6 +160,7 @@ export function CommandPalette({
             }}
             onKeyDown={onInputKeyDown}
           />
+          <kbd className="cmd-kbd" aria-hidden="true">Esc</kbd>
         </div>
         <div className="cmd-list" role="listbox" aria-label={t("Quick jump")}>
           {filtered.length === 0 ? (

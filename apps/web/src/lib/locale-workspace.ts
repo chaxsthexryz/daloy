@@ -44,4 +44,9 @@ export const workspaceTranslations: Record<string, string> = {
   "Expand sidebar": "Buksan ang sidebar",
   "Collapse sidebar (Ctrl+B)": "Itiklop ang sidebar (Ctrl+B)",
   "Expand sidebar (Ctrl+B)": "Buksan ang sidebar (Ctrl+B)",
+  "Manage plan": "Pamahalaan ang plan",
+  "Show {name} pages": "Ipakita ang mga pahina ng {name}",
+  "Hide {name} pages": "Itago ang mga pahina ng {name}",
+  "Create: Build with AI": "Gumawa: Bumuo gamit ang AI",
+  "Create: Templates": "Gumawa: Mga template",
 };
