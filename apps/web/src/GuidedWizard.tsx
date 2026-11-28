@@ -14,7 +14,6 @@ import {
 } from "@daloy/engine";
 import { useEffect, useState, type FormEvent } from "react";
 import { api, checkWorkflowReadiness, type Run, type RunSummary, type Version, type Workflow } from "./api";
-import { Breadcrumb } from "./Breadcrumb";
 import { ChatTest } from "./ChatTest";
 import { FormEmbed } from "./FormEmbed";
 import { Text, useLanguage } from "./Language";
@@ -268,7 +267,6 @@ export function GeneratedWizard({
     <main className="page ops gp motion-page">
       <header className="ops-head">
         <div className="gp-title">
-          <Breadcrumb items={[{ label: t("Automations"), href: "#/automations" }, { label: name || wf.name }]} />
           <h1>{name || wf.name}</h1>
         </div>
         <div className="ops-actions">
@@ -407,9 +405,9 @@ export function GeneratedWizard({
                     {testRun && (
                       <div className="gp-card">
                         <p><strong>{t("Test result:")}</strong> {testRun.state}</p>
-                        <ul>
+                        <ul className="gp-test-steps">
                           {testRun.steps.map((s) => (
-                            <li key={s.id}><span className={`badge ${s.state}`}>{s.state}</span> {s.stepId}</li>
+                            <li key={s.id}><code>{s.stepId}</code><span className={`badge ${s.state}`}>{s.state}</span></li>
                           ))}
                         </ul>
                       </div>
@@ -529,7 +527,6 @@ export function AutomationStatusPage({
     <main className="page ops gp gp-live motion-page">
       <header className="ops-head">
         <div className="gp-title">
-          <Breadcrumb items={[{ label: t("Automations"), href: "#/automations" }, { label: wf.name }]} />
           <h1>{wf.name}</h1>
         </div>
         <div className="ops-actions">

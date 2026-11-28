@@ -158,13 +158,13 @@ export function PageHead({ crumbs, title, sub, actions, tabs }: { crumbs: { labe
   );
 }
 
-/** One automation's head (A8, A9): Automations / name, the name, and the automation's tabs. */
+/** One automation's head (A8, A9): the name and the automation's tabs; the sidebar shows where it sits (decision 0164). */
 export function WorkflowHead({ workflowId, wf, here, actions }: { workflowId: string; wf: (Workflow & { live: unknown }) | null; here: "activity" | "versions"; actions?: ReactNode }) {
   const { t } = useLanguage();
   const name = wf?.name ?? t("Automation");
   return (
     <PageHead
-      crumbs={[{ label: t("Automations"), href: "#/" }, { label: name }]}
+      crumbs={[]}
       title={name}
       actions={actions}
       tabs={

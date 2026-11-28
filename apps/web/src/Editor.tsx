@@ -3,7 +3,6 @@ import { useLanguage } from "./Language";
 import { canSendAlone, definitionSchema, destination, lintDefinition, markText, stepBranches, stepEntry, stepLabel, STEP_NOTE_MAX, triggerEntry, triggerLabel, type FormField, type ReadinessReport, type Step, type StepErrorPolicy, type Trigger } from "@daloy/engine";
 import { OUTSIDE_STEPS } from "@daloy/engine";
 import { AppMark } from "./AppMark";
-import { Breadcrumb } from "./Breadcrumb";
 import { Background, ReactFlow, type NodeChange } from "@xyflow/react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { AskAi } from "./AiDraft";
@@ -845,7 +844,6 @@ export function Editor({ id, from }: { id: string; from?: string }) {
     <main className="a7-editor">
       <header className="a7-head">
         <div className="a7-head-main">
-          <Breadcrumb items={[{ label: t("Automations"), href: "#/" }, { label: wf.name }]} />
           <div className="a7-title">
             <h1>{wf.name}</h1>
             <span className="a7-chip" data-live={isLive || undefined} data-live-state={isLive && liveState !== "idle" ? liveState : undefined}>

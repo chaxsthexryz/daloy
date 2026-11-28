@@ -338,7 +338,6 @@ function useWizard<S extends string, A extends { name: string }>(wf: Detail, ste
       <main className="page ops gp motion-page">
         <header className="ops-head">
           <div className="gp-title">
-            <Breadcrumb items={[{ label: t("Automations"), href: "#/automations" }, { label: wf.name }]} />
             <h1>{wf.name}</h1>
           </div>
           <span className="gp-tag"><Text>Draft</Text></span>
@@ -670,7 +669,6 @@ function LivePage({ wf, formId }: { wf: Detail; formId: string }) {
     <main className="page ops gp gp-live motion-page">
       <header className="ops-head">
         <div className="gp-title">
-          <Breadcrumb items={[{ label: t("Automations"), href: "#/automations" }, { label: wf.name }]} />
           <h1>{wf.name}</h1>
         </div>
         <p role="status" className="gp-status">

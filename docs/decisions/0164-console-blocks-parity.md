@@ -24,8 +24,9 @@ After R1 to R5 the console used the Console Blocks look, but several pages still
 - **Settings fits one screen**: two columns as in the mock. The left holds Account & Security (name beside the sign-in email, the two password fields side by side) and Appearance & Language (theme and, for owners, workspace language as segmented choices). The right holds Notifications and Plan and usage. Advanced is a short row of links underneath. The head shows the person's name and role.
 - **Diagram first**: the editor opens in Diagram view on a computer, as in the mock, and in List view on a phone. This replaces the List-first default from decision 0146.
 - **Sign in**: Forgot your password? sits under the password box at the right, on every screen size.
+- **No breadcrumb on automation pages**: the editor, guided setup, Activity and Versions drop the Automations / name breadcrumb, since the sidebar already shows where you are. Deeper pages that are not in the sidebar (a single run, Secrets, API tokens, AI model) keep theirs as the way back.
 - **Publish toast**: publishing from the editor also shows a toast at the lower right, "<name> version <n> is live."
-- **Guided setup and small fixes**: the guided setup page (`#/a/<id>`) shows its main card and steps panel side by side, and the day buttons under Home's What ran are small round pills instead of stretched cells.
+- **Guided setup and small fixes**: the guided setup page (`#/a/<id>`) shows its main card (as wide as its content) and steps panel side by side, with Back, Next and Save and finish later in one row and the sample test as one row per step, and the day buttons under Home's What ran are small round pills instead of stretched cells.
 
 ## Consequences
 

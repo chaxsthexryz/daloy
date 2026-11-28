@@ -59,7 +59,8 @@
 
 /* Guided setup wizard (#/a/<id> before it is on): a padded card with the setup steps beside it, as the other Console
    Blocks pages (decision 0164). The live status page keeps its own layout. */
-.gp:not(.gp-live) > .ops-layout { grid-template-columns: minmax(0, 1fr) 300px; align-items: start; gap: 20px; min-height: 0; padding: 24px 28px 40px; }
+/* The card is only as wide as its content (735px plus padding), with the steps panel beside it. */
+.gp:not(.gp-live) > .ops-layout { grid-template-columns: minmax(0, 784px) 300px; align-items: start; gap: 20px; min-height: 0; padding: 24px 28px 40px; }
 .gp:not(.gp-live) > .ops-layout > .ops-main { gap: 16px; padding: 24px; border: 1px solid var(--o-line); border-radius: 12px; background: var(--o-bg); }
 .gp:not(.gp-live) > .ops-layout > .ops-panel { display: flex; border: 1px solid var(--o-line); border-radius: 12px; background: var(--o-bg); animation: none; }
 .gp:not(.gp-live) > .ops-layout > .ops-panel > * { animation: none; }
@@ -178,3 +179,8 @@
   .gp-requests .c-req { grid-column: 1; grid-row: 2; font-size: 14px; }
   .gp-requests .c-when { grid-column: 1; grid-row: 3; font-size: var(--text-xs, 13px); }
 }
+
+/* Sample test result: one row per step, name left and state right. */
+.gp-test-steps { display: grid; margin: 0; padding: 0; list-style: none; }
+.gp-test-steps li { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 7px 0; border-top: 1px solid var(--o-line); font-size: 13px; }
+.gp-test-steps code { font: 12.5px/18px var(--font-mono); color: var(--o-ink); }
