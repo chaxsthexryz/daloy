@@ -30,6 +30,20 @@ export const PRESETS = {
   deepseek: { label: "DeepSeek", defaultModel: "deepseek-flash", needsKey: true, baseUrl: "https://api.deepseek.com", models: [{ id: "deepseek-flash", free: false, note: "DeepSeek V4.1 Flash. Fast and low cost, paid per use." }] as Suggestion[] },
 } as const;
 export type Preset = keyof typeof PRESETS;
+
+/** Only these plans may bring their own AI key (decision 0156). Everyone else uses the shared model. */
+export const canUseOwnAiKey = (plan: string | null | undefined) => plan === "business" || plan === "business_plus" || plan === "concierge";
+/** Thrown when a workspace on a lower plan tries to save a hosted provider. The API maps it to HTTP 403. */
+export class OwnKeyNotAllowedError extends Error {
+  constructor() {
+    super("Your own AI key is available from the Business plan. Until then your workspace uses the shared AI model.");
+  }
+}
+/** The plan of a workspace, for the own-key rule. */
+export async function ownKeyAllowed(db: Db, userId: string): Promise<boolean> {
+  const [u] = await db.select({ plan: users.plan }).from(users).where(eq(users.id, userId));
+  return canUseOwnAiKey(u?.plan);
+}
 export const PRESET_IDS = Object.keys(PRESETS) as [Preset, ...Preset[]];
 
 // The file types a preset's model reads as images. Gemini reads HEIC natively; OpenAI does not. DeepSeek reads none.
@@ -132,6 +146,7 @@ export async function readAiSettings(db: Db, userId: string) {
  */
 export async function saveAiSettings(db: Db, secretsKey: Buffer, userId: string, input: { preset: Preset; model: string; apiKey?: string; thinking?: ThinkingLevel }) {
   const preset = PRESETS[input.preset];
+  if (input.preset !== "local" && !(await ownKeyAllowed(db, userId))) throw new OwnKeyNotAllowedError();
   if (preset.needsKey && !input.apiKey && !(await savedKey(db, userId, input.preset))) throw new Error(`${preset.label} needs an API key`);
   await db.transaction(async (tx) => {
     if (preset.needsKey && input.apiKey) {
@@ -206,11 +221,10 @@ export async function sharedConnection(db: Db, secretsKey: Buffer, plan: string 
 /** Where the AI step of this user's workflows sends its requests. */
 export async function aiConnection(db: Db, secretsKey: Buffer, userId: string): Promise<AiConnection> {
   const [row] = await db.select().from(aiSettings).where(eq(aiSettings.userId, userId));
-  const shared = async () => {
-    const [u] = await db.select({ plan: users.plan, thinking: users.aiThinking }).from(users).where(eq(users.id, userId));
-    return sharedConnection(db, secretsKey, u?.plan ?? null, (u?.thinking ?? null) as ThinkingLevel | null);
-  };
-  if (!row) return shared();
+  const [u] = await db.select({ plan: users.plan, thinking: users.aiThinking }).from(users).where(eq(users.id, userId));
+  const shared = () => sharedConnection(db, secretsKey, u?.plan ?? null, (u?.thinking ?? null) as ThinkingLevel | null);
+  // A lower plan uses the shared model whatever it saved. Its rows and keys stay, so an upgrade restores them (decision 0156).
+  if (!row || !canUseOwnAiKey(u?.plan)) return shared();
   const thinking = row.thinking as ThinkingLevel;
   if (row.preset === "local") {
     const conn = await shared();

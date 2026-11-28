@@ -204,6 +204,8 @@ export default async function setup() {
         );
       }
     }
+    // Own AI keys need a Business plan (decision 0156); the AI model page test saves one.
+    await pool.query("update users set plan = 'business', plan_started_on = current_date where email = 'e2e-admin-ai@test.local'");
   } finally {
     await pool.end();
   }

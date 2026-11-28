@@ -1,6 +1,6 @@
-import { aiConnection, claimUsage, localConnection, presetConnection, PRESET_IDS, PRESETS, QuotaError, readAiSettings, refundUsage, saveAiSettings, THINKING_LEVELS, type AiConnection, type Db } from "@daloy/db";
+import { aiConnection, claimUsage, localConnection, OwnKeyNotAllowedError, ownKeyAllowed, presetConnection, PRESET_IDS, PRESETS, QuotaError, readAiSettings, refundUsage, saveAiSettings, THINKING_LEVELS, type AiConnection, type Db } from "@daloy/db";
 import { listModels, LlmError } from "@daloy/llm-ts";
-import { BadRequestException, Body, Controller, Get, HttpCode, HttpException, HttpStatus, Inject, Post, Put, UseGuards } from "@nestjs/common";
+import { BadRequestException, Body, Controller, ForbiddenException, Get, HttpCode, HttpException, HttpStatus, Inject, Post, Put, UseGuards } from "@nestjs/common";
 import * as z from "zod";
 import { SessionGuard } from "./auth";
 import { explain, few, providerModels, sampleTest } from "./ai-sample";
@@ -46,15 +46,22 @@ export class SettingsController {
     @Inject(CONFIG) private readonly config: ApiConfig,
   ) {}
 
+  private async requireOwnKey(user: SessionUser) {
+    if (!(await ownKeyAllowed(this.db, user.workspaceId))) throw new ForbiddenException(new OwnKeyNotAllowedError().message);
+  }
+
   @Get()
   async get(@CurrentUser() user: SessionUser) {
-    const saved = await readAiSettings(this.db, user.workspaceId);
+    const allowed = await ownKeyAllowed(this.db, user.workspaceId);
+    // A lower plan sees the shared model in use, whatever it saved before (decision 0156). The saved rows stay for an upgrade.
+    const saved = allowed ? await readAiSettings(this.db, user.workspaceId) : null;
     const localModel = localConnection().model;
-    const current = saved ? { ...saved, saved: true } : { preset: "local", model: localModel, thinking: "off", hasKey: false, keys: [], saved: false };
+    const shared = allowed ? localModel : (await aiConnection(this.db, this.config.secretsKey, user.workspaceId)).model;
+    const current = saved ? { ...saved, saved: true } : { preset: "local", model: shared, thinking: "off", hasKey: false, keys: [], saved: false };
     const presets = Object.fromEntries(
       Object.entries(PRESETS).map(([id, p]) => [id, { label: p.label, defaultModel: id === "local" ? localModel : p.defaultModel, needsKey: p.needsKey, models: p.models }]),
     );
-    return { current, presets };
+    return { current, presets, ownKeyAllowed: allowed };
   }
 
   /** The models the local server from .env offers, so the console can list them. Only that URL is ever called. */
@@ -72,6 +79,7 @@ export class SettingsController {
   @HttpCode(200)
   @UseGuards(RateLimit(10))
   async offeredModels(@CurrentUser() user: SessionUser, @Body(new ZodPipe(modelsInput)) body: z.output<typeof modelsInput>) {
+    if (body.preset !== "local") await this.requireOwnKey(user);
     let conn: AiConnection;
     try {
       conn = body.preset === "local" ? localConnection() : await presetConnection(this.db, this.config.secretsKey, user.workspaceId, body.preset, body.apiKey);
@@ -92,6 +100,7 @@ export class SettingsController {
     // against that list before saving it, so a display name such as "DeepSeek-V4.1-Flash" cannot be stored. A
     // provider that cannot be reached is not a reason to refuse, so a failed lookup lets the save through.
     if (body.preset !== "local") {
+      await this.requireOwnKey(user);
       let conn: AiConnection;
       try {
         conn = await presetConnection(this.db, this.config.secretsKey, user.workspaceId, body.preset, body.apiKey);
@@ -106,7 +115,7 @@ export class SettingsController {
     try {
       await saveAiSettings(this.db, this.config.secretsKey, user.workspaceId, body);
     } catch (err) {
-      throw new BadRequestException((err as Error).message);
+      throw err instanceof OwnKeyNotAllowedError ? new ForbiddenException(err.message) : new BadRequestException((err as Error).message);
     }
   }
 
