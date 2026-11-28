@@ -26,8 +26,9 @@ export const CONFIG = Symbol("config");
  * eventsHeartbeatMs (default 25000) and eventsMaxStreams (default 5 per user) tune GET /events; tests shorten the heartbeat (decision 0155).
  * platformAdmins is PLATFORM_ADMINS, the comma-separated emails that may open /admin (decisions 0120, 0152).
  * webDist is WEB_DIST, the built web console the API serves; unset in tests and in `pnpm dev`, where Vite serves it.
+ * adminHost is ADMIN_HOST, the hostname that alone serves the admin console (decision 0157); unset keeps it at /admin.
  */
-export type ApiConfig = { secretsKey: Buffer; secureCookies: boolean; trustProxy?: number; mail?: MailDeps; publicUrl?: string; providers?: ProviderUrls; ask?: boolean; oauthProviders?: readonly OAuthProvider[]; uploadBudgetBytes?: number; platformAdmins?: string; sentryDsn?: string; sentryEnvironment?: string; webSentryDsn?: string; eventsHeartbeatMs?: number; eventsMaxStreams?: number; webDist?: string };
+export type ApiConfig = { secretsKey: Buffer; secureCookies: boolean; trustProxy?: number; mail?: MailDeps; publicUrl?: string; providers?: ProviderUrls; ask?: boolean; oauthProviders?: readonly OAuthProvider[]; uploadBudgetBytes?: number; platformAdmins?: string; sentryDsn?: string; sentryEnvironment?: string; webSentryDsn?: string; eventsHeartbeatMs?: number; eventsMaxStreams?: number; webDist?: string; adminHost?: string };
 
 /**
  * TRUST_PROXY and SECURE_COOKIES from the env (docs/deployment.md). A value that cannot be read stops the boot, so a
@@ -77,6 +78,13 @@ export function Allow(roles: Role[]) {
   }
   return RoleGuard;
 }
+
+/**
+ * The hostname this request was sent to, from the Host header only: lowercased, without the port. Never
+ * X-Forwarded-Host, which a client behind Cloudflare could write itself; cloudflared passes the visitor's Host on (decision 0157).
+ */
+export const requestHost = (req: { headers: { host?: string } }) => (req.headers.host ?? "").replace(/:\d+$/, "").toLowerCase();
+export const onAdminHost = (req: { headers: { host?: string } }, adminHost: string | undefined) => !!adminHost && requestHost(req) === adminHost;
 
 export const sha256 = (value: string) => createHash("sha256").update(value).digest("hex");
 

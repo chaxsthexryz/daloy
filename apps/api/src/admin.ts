@@ -1,10 +1,11 @@
-import { adminOverview, adminRuns, localConnection, PLANS, PRESET_IDS, PRESETS, readPlatformAi, savePlatformAi, setWorkspaceAiThinking, setWorkspacePlan, setWorkspaceSharedMail, sharedConnection, THINKING_LEVELS, type Db, type Plan } from "@daloy/db";
+import { adminOverview, adminRuns, adminTotp, sessions, localConnection, PLANS, PRESET_IDS, PRESETS, readPlatformAi, savePlatformAi, setWorkspaceAiThinking, setWorkspacePlan, setWorkspaceSharedMail, sharedConnection, THINKING_LEVELS, type Db, type Plan } from "@daloy/db";
 import { RUN_STATES, type RunState } from "@daloy/engine";
 import { BadRequestException, Body, type CanActivate, Controller, type ExecutionContext, ForbiddenException, Get, HttpCode, Inject, Injectable, NotFoundException, Param, Post, Put, Query, UseGuards } from "@nestjs/common";
 import type { Request } from "express";
 import * as z from "zod";
-import { fromOwnOrigin, sessionUser } from "./auth";
-import { CONFIG, CurrentUser, DB, RateLimit, ZodPipe, type ApiConfig, type SessionUser } from "./http";
+import { fromOwnOrigin, sessionIdHash, sessionUser } from "./auth";
+import { eq, sql } from "drizzle-orm";
+import { CONFIG, CurrentUser, DB, onAdminHost, RateLimit, ZodPipe, type ApiConfig, type SessionUser } from "./http";
 import { sampleTest } from "./ai-sample";
 
 /**
@@ -16,10 +17,59 @@ export function isPlatformAdmin(allowlist: string | undefined, email: string): b
   return wanted !== "" && (allowlist ?? "").split(",").some((e) => e.trim().toLowerCase() === wanted);
 }
 
+const SAFE_METHODS = ["GET", "HEAD", "OPTIONS"];
+
 /**
- * The only way into /admin. It looks up the session itself and answers 404 for a missing or expired session and for
- * every account not in PLATFORM_ADMINS, so to anyone else the routes do not exist. A workspace role never counts.
- * Changes must also come from this installation's own page, as with SessionGuard.
+ * The platform admin behind this request, or a 404 for a missing or expired session and every account not in
+ * PLATFORM_ADMINS, so to anyone else the routes do not exist. A workspace role never counts. With ADMIN_HOST set the
+ * admin exists only on that host, and a change must come from https://<ADMIN_HOST> itself, with an Origin header
+ * (decision 0157); without it, from this installation's own page as with SessionGuard.
+ */
+export async function platformAdmin(db: Db, config: ApiConfig, req: Request): Promise<SessionUser> {
+  if (config.adminHost && !onAdminHost(req, config.adminHost)) throw new NotFoundException();
+  const user = await sessionUser(db, req);
+  if (!user || !isPlatformAdmin(config.platformAdmins, user.email)) throw new NotFoundException();
+  const own = config.adminHost ? req.get("origin") === `https://${config.adminHost}` : fromOwnOrigin(req, config.publicUrl);
+  if (!SAFE_METHODS.includes(req.method) && !own) throw new ForbiddenException("this change must be made from the kymavo admin page itself");
+  return user;
+}
+
+export const TWO_FACTOR_HOURS = 12;
+
+/**
+ * Where this session stands with two-factor sign-in (decision 0158). verified needs a check on this session within
+ * 12 hours and after the current enrollment was confirmed, so a reset and a new enrollment start over.
+ */
+export async function twoFactorState(db: Db, req: Request): Promise<{ enrolled: boolean; verified: boolean }> {
+  const [row] = await db
+    .select({
+      enrolled: sql<boolean>`${adminTotp.confirmedAt} is not null`,
+      verified: sql<boolean>`coalesce(${sessions.secondFactorAt} > now() - make_interval(hours => ${TWO_FACTOR_HOURS}) and ${sessions.secondFactorAt} >= ${adminTotp.confirmedAt}, false)`,
+    })
+    .from(sessions)
+    .leftJoin(adminTotp, eq(adminTotp.userId, sessions.userId))
+    .where(eq(sessions.idHash, sessionIdHash(req)));
+  return { enrolled: row?.enrolled === true, verified: row?.verified === true };
+}
+
+/** An admin session that has not passed two-factor yet: only the admin page and the /admin/2fa routes use it. */
+@Injectable()
+export class AdminSessionGuard implements CanActivate {
+  constructor(
+    @Inject(DB) private readonly db: Db,
+    @Inject(CONFIG) private readonly config: ApiConfig,
+  ) {}
+
+  async canActivate(ctx: ExecutionContext): Promise<boolean> {
+    const req = ctx.switchToHttp().getRequest<Request & { user?: SessionUser }>();
+    req.user = await platformAdmin(this.db, this.config, req);
+    return true;
+  }
+}
+
+/**
+ * The only way into the admin API: a platform admin (platformAdmin) whose session passed two-factor sign-in within
+ * 12 hours. An admin not yet enrolled is told to set it up first (decision 0158).
  */
 @Injectable()
 export class AdminGuard implements CanActivate {
@@ -30,9 +80,10 @@ export class AdminGuard implements CanActivate {
 
   async canActivate(ctx: ExecutionContext): Promise<boolean> {
     const req = ctx.switchToHttp().getRequest<Request & { user?: SessionUser }>();
-    const user = await sessionUser(this.db, req);
-    if (!user || !isPlatformAdmin(this.config.platformAdmins, user.email)) throw new NotFoundException();
-    if (!["GET", "HEAD", "OPTIONS"].includes(req.method) && !fromOwnOrigin(req, this.config.publicUrl)) throw new ForbiddenException("this change must be made from the kymavo page itself");
+    const user = await platformAdmin(this.db, this.config, req);
+    const state = await twoFactorState(this.db, req);
+    if (!state.enrolled) throw new ForbiddenException({ statusCode: 403, message: "set up two-factor sign-in first", twoFactor: "setup" });
+    if (!state.verified) throw new ForbiddenException({ statusCode: 403, message: "enter your two-factor code", twoFactor: "verify" });
     req.user = user;
     return true;
   }

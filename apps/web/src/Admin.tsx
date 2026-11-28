@@ -3,6 +3,7 @@ import "./admin.css";
 import { useEffect, useState, type ReactNode } from "react";
 import { AdminAiTab } from "./AdminAi";
 import { AdminFeedbackTab } from "./AdminFeedback";
+import { AdminSignIn, EnrollTwoFactor, TwoFactorStatus, VerifyTwoFactor } from "./AdminTwoFactor";
 import { api, ApiError } from "./api";
 import { LanguageContext, useLanguage } from "./Language";
 import { shortDate, shortDateTime } from "./lib/advanced";
@@ -40,6 +41,10 @@ const ACTIONS: Record<string, string> = {
   ai_thinking: "changed AI thinking for",
   feedback_reply: "replied to feedback from",
   feedback_close: "closed feedback from",
+  "2fa_enroll": "turned on two-factor sign-in",
+  "2fa_failed": "entered a wrong two-factor code",
+  "2fa_recovery": "signed in with a recovery code",
+  "2fa_reset": "reset two-factor sign-in",
 };
 const tone = (state: string) => (state === "succeeded" ? "ok" : state === "failed" || state === "needs_review" ? "red" : "");
 // Ids say nothing to a reader of the log; the workspace is already named.
@@ -52,7 +57,7 @@ export const SHOWN_TABS: readonly AdminTab[] = ADMIN_TABS;
  * The navigation and page frame of the admin console. It has no workspace sidebar: the admin console is its own app at
  * /admin, and the workspace console does not link to it.
  */
-export function AdminShell({ tab, email, tabs = SHOWN_TABS, badges = {}, onSignOut, children }: { tab: AdminTab; email: string; tabs?: readonly AdminTab[]; badges?: Partial<Record<AdminTab, number>>; onSignOut: () => void; children: ReactNode }) {
+export function AdminShell({ tab, email, consoleUrl = "/", tabs = SHOWN_TABS, badges = {}, onSignOut, twoFactor, children }: { tab: AdminTab; email: string; consoleUrl?: string; tabs?: readonly AdminTab[]; badges?: Partial<Record<AdminTab, number>>; onSignOut: () => void; twoFactor?: ReactNode; children: ReactNode }) {
   const { t } = useLanguage();
   return (
     <div className="wk ad-shell">
@@ -74,7 +79,8 @@ export function AdminShell({ tab, email, tabs = SHOWN_TABS, badges = {}, onSignO
         </ul>
         <div className="ad-foot">
           <span className="ad-who">{t("Signed in as {email}", { email })}</span>
-          <a href="/">{t("Open the workspace console")}</a>
+          <a href={consoleUrl}>{t("Open the workspace console")}</a>
+          {twoFactor}
           <button type="button" className="wk-button" onClick={onSignOut}>{t("Sign out")}</button>
         </div>
       </nav>
@@ -91,43 +97,79 @@ export function AdminShell({ tab, email, tabs = SHOWN_TABS, badges = {}, onSignO
   );
 }
 
-/** The admin console app, mounted by admin-main.tsx at /admin. The API answers 404 to anyone outside PLATFORM_ADMINS. */
+type Gate = "loading" | "signin" | "setup" | "verify" | "ready" | "missing";
+
+/**
+ * The admin console app, mounted by admin-main.tsx at /admin, or at / on ADMIN_HOST (decision 0157). The API answers
+ * 404 to anyone outside PLATFORM_ADMINS. Before the console the admin signs in (on its own host), then sets up or
+ * enters two-factor sign-in (decision 0158).
+ */
 export function AdminApp() {
   const [language, setLanguage] = useState<Language>("en");
   const [email, setEmail] = useState("");
+  const [consoleUrl, setConsoleUrl] = useState("/");
+  const [gate, setGate] = useState<Gate>("loading");
   const [hash, setHash] = useState(location.hash);
   const [data, setData] = useState<Overview | null>(null);
   const [newFeedback, setNewFeedback] = useState(0);
-  const [missing, setMissing] = useState(false);
   const [error, setError] = useState("");
-  const fail = (e: unknown) => (e instanceof ApiError && e.status === 404 ? setMissing(true) : setError((e as Error).message));
+  /** Where this session stands: signed in, an admin, and through two-factor. A 403 later sends it back here. */
+  const check = async () => {
+    try {
+      const me = await api<{ email: string; language?: string }>("GET", "/auth/me");
+      setEmail(me.email);
+      setLanguage(me.language === "tl" ? "tl" : "en");
+      const tf = await api<{ enrolled: boolean; verified: boolean; consoleUrl: string }>("GET", "/admin/2fa");
+      // Served at / only on the admin host, where / is this console: the workspace console is on the main host.
+      if (location.pathname === "/") setConsoleUrl(`${tf.consoleUrl}/`);
+      setGate(!tf.enrolled ? "setup" : !tf.verified ? "verify" : "ready");
+    } catch (e) {
+      setGate(e instanceof ApiError && e.status === 401 ? "signin" : "missing");
+    }
+  };
+  const fail = (e: unknown) => {
+    if (e instanceof ApiError && e.status === 404) return setGate("missing");
+    setError((e as Error).message);
+    // A 403 is usually an expired two-factor check: check() opens the code prompt then.
+    if (e instanceof ApiError && e.status === 403) void check();
+  };
   const load = () => api<Overview>("GET", "/admin/overview").then(setData, fail);
   const countFeedback = () => {
     if (SHOWN_TABS.includes("feedback")) api<{ items: unknown[] }>("GET", "/admin/feedback?status=new").then((r) => setNewFeedback(r.items.length), () => undefined);
   };
   useEffect(() => {
-    api<{ email: string; language?: string }>("GET", "/auth/me").then((me) => {
-      setEmail(me.email);
-      setLanguage(me.language === "tl" ? "tl" : "en");
-    }, fail);
-    void load();
-    countFeedback();
+    void check();
     const onHash = () => setHash(location.hash);
     addEventListener("hashchange", onHash);
     return () => removeEventListener("hashchange", onHash);
   }, []);
+  useEffect(() => {
+    if (gate !== "ready") return;
+    setError("");
+    void load();
+    countFeedback();
+  }, [gate]);
   const { tab, params } = adminRoute(hash, SHOWN_TABS);
   useEffect(() => {
     document.title = `${TAB_LABELS[tab]} · kymavo admin`;
   }, [tab]);
-  const signOut = () => void api("POST", "/auth/logout").finally(() => location.assign("/"));
+  // On the admin host sign-out stays there, on its sign-in; at /admin it goes back to the workspace console.
+  const signOut = () => void api("POST", "/auth/logout").finally(() => (location.pathname === "/" ? location.reload() : location.assign("/")));
 
   return (
     <LanguageContext.Provider value={{ language, setLanguage }}>
-      {missing ? (
+      {gate === "loading" ? (
+        <main className="page wk ad-gate"><Loading /></main>
+      ) : gate === "missing" ? (
         <NotFound />
+      ) : gate === "signin" ? (
+        <AdminSignIn onSignedIn={() => void check()} />
+      ) : gate === "setup" ? (
+        <EnrollTwoFactor onDone={() => setGate("ready")} onSignOut={signOut} />
+      ) : gate === "verify" ? (
+        <VerifyTwoFactor onDone={() => setGate("ready")} onSignOut={signOut} />
       ) : (
-        <AdminShell tab={tab} email={email} badges={{ feedback: newFeedback }} onSignOut={signOut}>
+        <AdminShell tab={tab} email={email} consoleUrl={consoleUrl} badges={{ feedback: newFeedback }} onSignOut={signOut} twoFactor={<TwoFactorStatus onReset={() => setGate("setup")} />}>
           <p role="alert" className="wk-note bad" hidden={!error}>{error}</p>
           {tab === "runs" ? (
             <RunsTab state={params.get("state") ?? ""} onError={fail} />
@@ -358,7 +400,8 @@ export function AuditTab({ actions }: { actions: Action[] }) {
             <li key={a.id}>
               <span className="wk-muted">{shortDateTime(a.createdAt)}</span>{" "}
               {a.adminEmail} {t(ACTIONS[a.action] ?? a.action)}
-              {a.action !== "ai" && <> {a.workspaceEmail ?? t("a deleted workspace")}</>}, {show(a.before) || t("none")} → {show(a.after)}
+              {/* Two-factor entries are about the admin, not a workspace, and carry no values worth showing. */}
+              {a.action.startsWith("2fa_") ? null : <>{a.action !== "ai" && <> {a.workspaceEmail ?? t("a deleted workspace")}</>}, {show(a.before) || t("none")} → {show(a.after)}</>}
             </li>
           ))}
         </ul>

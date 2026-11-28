@@ -4,11 +4,13 @@ import { join } from "node:path";
 import { randomBytes } from "node:crypto";
 import { joinWorkspace, mailDeps, users, type Db } from "@daloy/db";
 import { hash } from "@node-rs/argon2";
+import { eq } from "drizzle-orm";
 import type { INestApplication } from "@nestjs/common";
 import type { Pool } from "pg";
 import { PgBoss } from "pg-boss";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { passSecondFactor } from "../../../test/admin-2fa";
 import { freshDatabase } from "../../../test/db";
 import { createApp } from "./app";
 
@@ -64,6 +66,10 @@ describe("the admin console page at /admin", () => {
 
   it("serves the admin console to a platform admin, uncached, and leaves the workspace console and admin API alone", async () => {
     const admin = await signIn(ADMIN);
+    // The page itself loads before two-factor, so it can ask for the code; the admin API needs it passed.
+    expect((await admin.get("/admin/overview").expect(403)).body.twoFactor).toBe("setup");
+    const [me] = await db.select({ id: users.id }).from(users).where(eq(users.email, ADMIN));
+    await passSecondFactor(pool, me!.id);
     for (const path of ["/admin", "/admin/", "/admin.html"]) {
       const res = await admin.get(path).expect(200);
       expect(res.text).toBe(ADMIN_HTML);
@@ -72,5 +78,8 @@ describe("the admin console page at /admin", () => {
     }
     expect((await admin.get("/admin/overview").expect(200)).body).toHaveProperty("workspaces");
     expect((await request(server).get("/").expect(200)).text).toContain("workspace console");
+    // Without ADMIN_HOST the Host header changes nothing.
+    expect((await request(server).get("/").set("Host", "admin.kymavo.cloud").expect(200)).text).toContain("workspace console");
+    await admin.get("/admin/overview").set("Host", "admin.kymavo.cloud").expect(200);
   });
 });

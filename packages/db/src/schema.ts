@@ -78,13 +78,13 @@ export const adminActions = pgTable(
   {
     id: id(),
     adminEmail: text("admin_email").notNull(),
-    action: text("action", { enum: ["plan", "shared_mail", "ai", "ai_thinking", "feedback_reply", "feedback_close"] }).notNull(),
+    action: text("action", { enum: ["plan", "shared_mail", "ai", "ai_thinking", "feedback_reply", "feedback_close", "2fa_enroll", "2fa_failed", "2fa_recovery", "2fa_reset"] }).notNull(),
     workspaceId: uuid("workspace_id").references(() => users.id, { onDelete: "set null" }),
     before: jsonb("before").$type<Record<string, unknown>>().notNull(),
     after: jsonb("after").$type<Record<string, unknown>>().notNull(),
     createdAt: createdAt(),
   },
-  (t) => [check("admin_actions_action", sql`${t.action} in ('plan', 'shared_mail', 'ai', 'ai_thinking', 'feedback_reply', 'feedback_close')`), index("admin_actions_created").on(t.createdAt)],
+  (t) => [check("admin_actions_action", sql`${t.action} in ('plan', 'shared_mail', 'ai', 'ai_thinking', 'feedback_reply', 'feedback_close', '2fa_enroll', '2fa_failed', '2fa_recovery', '2fa_reset')`), index("admin_actions_created").on(t.createdAt)],
 );
 
 export const FEEDBACK_TOPICS = ["bug", "idea", "question", "billing", "other"] as const;
@@ -189,7 +189,35 @@ export const sessions = pgTable("sessions", {
   userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   expiresAt: ts("expires_at").notNull(),
   createdAt: createdAt(),
+  // When this session last passed a platform admin's two-factor check; the admin console needs it within 12 hours (decision 0158).
+  secondFactorAt: ts("second_factor_at"),
 });
+
+/**
+ * A platform admin's TOTP secret (A8, decision 0158), encrypted like a workspace secret. confirmed_at stays null until
+ * one valid code confirms the enrollment; last_step is the 30-second step of the last accepted code, so it cannot be reused.
+ */
+export const adminTotp = pgTable("admin_totp", {
+  userId: uuid("user_id").primaryKey().references(() => users.id, { onDelete: "cascade" }),
+  ciphertext: text("ciphertext").notNull(),
+  iv: text("iv").notNull(),
+  authTag: text("auth_tag").notNull(),
+  confirmedAt: ts("confirmed_at"),
+  lastStep: bigint("last_step", { mode: "number" }),
+  createdAt: createdAt(),
+});
+
+/** The ten single-use recovery codes of a confirmed enrollment, argon2-hashed. Deleting the TOTP row removes them. */
+export const adminRecoveryCodes = pgTable(
+  "admin_recovery_codes",
+  {
+    id: id(),
+    userId: uuid("user_id").notNull().references(() => adminTotp.userId, { onDelete: "cascade" }),
+    codeHash: text("code_hash").notNull(),
+    usedAt: ts("used_at"),
+  },
+  (t) => [index("admin_recovery_codes_user").on(t.userId)],
+);
 
 export const workflows = pgTable(
   "workflows",

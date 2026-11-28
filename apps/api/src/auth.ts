@@ -71,6 +71,9 @@ export async function sessionUser(db: Db, req: Request): Promise<SessionUser | n
   return user ?? null;
 }
 
+/** The stored id of this request's session (the SHA-256 of its cookie). */
+export const sessionIdHash = (req: Request) => sha256(String(req.cookies?.[COOKIE]));
+
 @Injectable()
 export class SessionGuard implements CanActivate {
   constructor(
@@ -299,10 +302,13 @@ ${this.config.publicUrl}/#/reset-password/${token}` });
 
   /** The user plus whether Ask about a request is on (AI_ASK, decision 0041), so the console knows without a reload. */
   private signedIn(user: SessionUser) {
+    const admin = isPlatformAdmin(this.config.platformAdmins, user.email);
     return {
       ...user,
       ask: this.config.ask === true,
-      admin: isPlatformAdmin(this.config.platformAdmins, user.email),
+      admin,
+      // Where the admin console lives when ADMIN_HOST moves it off /admin (decision 0157).
+      ...(admin && this.config.adminHost ? { adminUrl: `https://${this.config.adminHost}/` } : {}),
     };
   }
 

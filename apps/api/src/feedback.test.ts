@@ -7,6 +7,7 @@ import type { Pool } from "pg";
 import { PgBoss } from "pg-boss";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { passSecondFactor } from "../../../test/admin-2fa";
 import { freshDatabase } from "../../../test/db";
 import { startFakeSmtp } from "../../../test/fake-smtp";
 import { createApp } from "./app";
@@ -62,6 +63,8 @@ async function admin() {
   if (u) await joinWorkspace(db, u.id, u.id, "owner");
   const agent = request.agent(server);
   await agent.post("/auth/login").send({ email: ADMIN, password: PASSWORD }).expect(200);
+  const [me] = await db.select({ id: users.id }).from(users).where(eq(users.email, ADMIN));
+  await passSecondFactor(pool, me!.id);
   return agent;
 }
 

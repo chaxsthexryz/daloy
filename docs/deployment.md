@@ -66,6 +66,28 @@ Port 3000 stays bound to 127.0.0.1, as in `docker-compose.yml`. Do not publish i
 
 `cloudflared` connects out to Cloudflare, so no port is opened on the VM. Cloudflare puts the visitor's address in `X-Forwarded-For` and `cloudflared` is the one hop `TRUST_PROXY=1` counts.
 
+### The admin console at `admin.kymavo.cloud`
+
+The platform admin console has its own hostname (decision 0157), with Cloudflare Access in front and two-factor sign-in for every admin (decision 0158). Once it is set, `/admin` answers 404 on `kymavo.cloud`.
+
+1. In the same tunnel, add a second public hostname: `admin.kymavo.cloud`, service `http://localhost:3000`. Leave "HTTP Host Header" empty, so `cloudflared` passes `admin.kymavo.cloud` on; the API reads the Host header and never `X-Forwarded-Host`.
+2. In `.env`, add `ADMIN_HOST=admin.kymavo.cloud` and make sure `PLATFORM_ADMINS` holds your email (create that account first, decision 0137). Then `docker compose up -d api`.
+3. In Zero Trust, Access, Applications: add a self-hosted application for `admin.kymavo.cloud`. Add one Allow policy whose rule is Emails, with only your email. Under login methods keep "One-time PIN" on. Visitors then get a PIN by email before any request reaches the VM.
+4. Open `https://admin.kymavo.cloud`, pass Access, and sign in with your kymavo email and password. This sign-in is separate from the one on `kymavo.cloud`, since session cookies are host-only.
+5. The console asks you to set up two-factor sign-in. Choose Start setup, add the key to an authenticator app (Google Authenticator, 1Password, Aegis and others accept the key or the `otpauth://` link), and enter the 6-digit code. Copy the ten recovery codes into your password manager: they are shown once, and each works once.
+6. From then on the console asks for a code at each sign-in and every 12 hours. "Reset 2FA" in the console's navigation turns it off after a fresh code, and the console asks you to set it up again.
+
+After five wrong codes in 15 minutes the console refuses every code for that admin until the 15 minutes pass. Each wrong code is in the audit log.
+
+Lost phone and lost recovery codes: on the VM, reset that admin's two-factor sign-in, then sign in and set it up again.
+
+```bash
+cd /srv/daloy
+docker compose exec -T postgres psql -U daloy daloy -c "delete from admin_totp where user_id = (select id from users where email = 'you@example.com');"
+```
+
+`DELETE 1` means it was reset (the recovery codes go with it); `DELETE 0` means that email had none. It needs shell access to the VM, so nothing on the web can do it.
+
 ## 4. Nightly backup to Google Drive
 
 The dump from `docs/operations.md`, written to a temporary name first so a failed dump never replaces a good one, then copied off the VM with [rclone](https://rclone.org) (MIT, installed on the host, not part of the repository). The remote is Google Drive through an rclone `crypt` remote, since the dump holds customer data and encrypted secrets: Drive then holds only ciphertext.
@@ -126,7 +148,7 @@ The steps only the owner can do, in order:
 3. Clone the repository and fill `.env`: both database passwords, `SECRETS_KEY`, `PUBLIC_URL`, `TRUST_PROXY=1`, `SECURE_COOKIES=true`.
 4. Run `docker compose up -d --build` and check `docker compose ps`.
 5. Create the tunnel and the public hostname (section 3).
-6. Sign in on the console over HTTPS.
+6. Sign in on the console over HTTPS. Then add `admin.kymavo.cloud`, `ADMIN_HOST` and Cloudflare Access, and set up two-factor sign-in (section 3, "The admin console").
 7. Set up rclone and the `crypt` remote (section 4).
 8. Install `backup.sh` and the cron line.
 9. Next morning, check `backups/backup.log` and run `rclone ls daloy-backup:`.

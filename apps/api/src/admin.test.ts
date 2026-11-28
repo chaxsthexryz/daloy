@@ -7,6 +7,7 @@ import type { Pool } from "pg";
 import { PgBoss } from "pg-boss";
 import request from "supertest";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { passSecondFactor } from "../../../test/admin-2fa";
 import { freshDatabase } from "../../../test/db";
 import { isPlatformAdmin } from "./admin";
 import { createApp } from "./app";
@@ -54,6 +55,7 @@ async function seedAdmin(email: string) {
   await joinWorkspace(db, u!.id, u!.id, "owner");
   const agent = request.agent(server);
   await agent.post("/auth/login").send({ email: normalized, password: PASSWORD }).expect(200);
+  await passSecondFactor(pool, u!.id);
   return { agent, id: u!.id, email: normalized };
 }
 
@@ -225,6 +227,7 @@ describe("plan override and shared mail approval", () => {
     const token = randomBytes(32).toString("base64url");
     await db.insert(sessions).values({ idHash: sha256(token), userId: u!.id, expiresAt: new Date(Date.now() + 3_600_000) });
     admin = request.agent(server).set("Cookie", `daloy_session=${token}`);
+    await passSecondFactor(pool, u!.id);
     owner = await signUp();
   });
 
@@ -286,6 +289,7 @@ describe("shared AI model", () => {
     const token = randomBytes(32).toString("base64url");
     await db.insert(sessions).values({ idHash: sha256(token), userId: u!.id, expiresAt: new Date(Date.now() + 3_600_000) });
     admin = request.agent(server).set("Cookie", `daloy_session=${token}`);
+    await passSecondFactor(pool, u!.id);
     owner = await signUp();
     await pool.query("delete from platform_ai");
   });
