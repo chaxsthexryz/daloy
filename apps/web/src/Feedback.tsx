@@ -68,12 +68,15 @@ export function FeedbackPage({ backToRequests }: { backToRequests?: boolean }) {
         <h2 className="wk-card-head" id="feedback-past"><b>{t("Your messages")}</b></h2>
         <div className="wk-body">
           {items === null ? <p className="wk-muted">{t("Loading…")}</p> : items.length === 0 ? <p className="wk-muted">{t("None yet.")}</p> : (
-            <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "grid", gap: 16 }}>
+            <ul className="wk-fb-list">
               {items.map((i) => (
-                <li key={i.id}>
-                  <p><b>{t(TOPICS.find(([id]) => id === i.topic)?.[1] ?? "Other")}</b> <span className="wk-muted">{sentOn(i.createdAt, language)} · {t(STATUS[i.status] ?? i.status)}</span></p>
+                <li key={i.id} className="wk-fb-item">
+                  <div className="wk-fb-head">
+                    <p><b>{t(TOPICS.find(([id]) => id === i.topic)?.[1] ?? "Other")}</b> <span className="wk-muted">{sentOn(i.createdAt, language)}</span></p>
+                    <span className={`pill ${i.status === "new" ? "warn" : i.status === "replied" ? "ok" : "neutral"}`}>{t(STATUS[i.status] ?? i.status)}</span>
+                  </div>
                   <p style={{ whiteSpace: "pre-wrap" }}>{i.message}</p>
-                  {i.reply && <p style={{ whiteSpace: "pre-wrap" }}><b>{t("Reply")}:</b> {i.reply}</p>}
+                  {i.reply && <p className="wk-fb-reply" style={{ whiteSpace: "pre-wrap" }}><b>{t("Reply")}:</b> {i.reply}</p>}
                 </li>
               ))}
             </ul>

@@ -244,7 +244,10 @@ export function TeamPage({ user, embedded = false }: { user: User; embedded?: bo
             <ul className="wk-rows">
               {members.map((m) => (
                 <li key={m.userId} className="wk-row">
-                  <span className="wk-email">{m.displayName ? <><strong>{m.displayName}</strong><small className="wk-muted"> {m.email}</small></> : m.email}</span>
+                  <span className="wk-email">
+                    <span className="wk-avatar" aria-hidden="true">{personName(m).slice(0, 1).toUpperCase()}</span>
+                    {m.displayName ? <><strong>{m.displayName}</strong><small className="wk-muted"> {m.email}</small></> : m.email}
+                  </span>
                   <small>{t("Joined {date}", { date: joined(m.createdAt) })}</small>
                   {m.role === "owner" ? (
                     <span className="wk-chip">{t("Owner")}</span>

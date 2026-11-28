@@ -1,39 +1,34 @@
-/* Creation surfaces inherit the approved light workspace, including in a dark browser. */
+/* Creation surfaces inherit the Console Blocks palette and tokens. */
 .creation-page {
-  color-scheme: light;
-  --bg: #f1f1ef;
-  --surface: #ffffff;
-  --text: #201916;
-  --muted: #635c58;
-  --border: #8b8580;
-  --border-soft: #e2e0dd;
-  --sunken: #f5f4f2;
-  --accent: #244f7a;
-  --accent-hover: #143852;
-  --accent-tint: #e3eef8;
-  --on-accent: #ffffff;
-  --focus: #244f7a;
-  --danger: #a3261c;
-  --ok: #17643a;
-  --warn: #685500;
-  --done: #ecfdf3;
-  --on-done: #15803d;
-  --waiting: #fffbe6;
-  --on-waiting: #685500;
-  --needs-you: #244f7a;
-  --on-needs-you: #ffffff;
-  --problem: #fbe3e0;
-  --on-problem: #a3261c;
-  --working: #e3eef8;
-  --on-working: #244f7a;
-  --run-path: #2f8a57;
-  --run-failed: #c2483e;
-  --run-wait: #b0791f;
-  --run-working: #244f7a;
-  --run-idle: #7c736e;
-  --radius-md: 12px;
+  --bg: var(--bg, #fafafa);
+  --surface: var(--surface, #ffffff);
+  --text: var(--text, #0f131a);
+  --muted: var(--muted, #5b6372);
+  --border: var(--border, #d1d5df);
+  --border-soft: var(--border-soft, #e6e8ee);
+  --sunken: var(--sunken, #f4f5f7);
+  --accent: var(--accent, #0b66ff);
+  --accent-hover: var(--accent-hover, #0052d9);
+  --accent-tint: var(--accent-tint, #eef4ff);
+  --on-accent: var(--on-accent, #ffffff);
+  --focus: var(--focus, #0b66ff);
+  --danger: var(--bad, #c92a2a);
+  --ok: var(--ok, #15803d);
+  --warn: var(--warn, #685500);
+  --done: var(--ok-bg, #ecfdf3);
+  --on-done: var(--ok, #15803d);
+  --waiting: var(--warn-bg, #fffbe6);
+  --on-waiting: var(--warn, #685500);
+  --needs-you: var(--accent, #0b66ff);
+  --on-needs-you: var(--on-accent, #ffffff);
+  --problem: var(--bad-bg, #fff1f1);
+  --on-problem: var(--bad, #c92a2a);
+  --working: var(--accent-tint, #eef4ff);
+  --on-working: var(--text, #0f131a);
+  --radius-md: 10px;
   background: var(--bg);
   color: var(--text);
+  font-family: var(--font-sans);
   min-width: 0;
   overflow-wrap: anywhere;
   scrollbar-color: var(--border) var(--bg);
@@ -42,33 +37,32 @@
   max-width: none;
   min-height: 100%;
   margin: 0;
-  padding: clamp(16px, 2.6vw, 42px);
+  padding: clamp(16px, 2.2vw, 28px);
 }
 .creation-page ::selection { background: var(--accent-tint); color: var(--text); }
 .creation-page :is(input, textarea) { caret-color: var(--accent); }
 .creation-page :is(input, select, textarea, button) { max-width: 100%; }
 .creation-page :is(button, a.primary) { white-space: normal; }
 .creation-page :is(.row, .field, section, article, form) { min-width: 0; }
-.creation-page h1 { font-size: clamp(1.75rem, 3vw, 2.75rem); line-height: 1.15; font-weight: 500; letter-spacing: -.04em; }
-.creation-page h2 { font-size: 1.25rem; line-height: 1.35; font-weight: 500; letter-spacing: -.02em; }
-.creation-page h3 { font-size: 1rem; line-height: 1.5; font-weight: 600; }
+.creation-page h1 { font-size: clamp(21px, 2vw, 24px); line-height: 1.15; font-weight: 600; letter-spacing: -0.025em; }
+.creation-page h2 { font-size: 1.15rem; line-height: 1.3; font-weight: 600; letter-spacing: -0.02em; }
+.creation-page h3 { font-size: 1rem; line-height: 1.45; font-weight: 600; }
 
 /* One readable conversation, with the draft and publication controls in the same flow. */
 .creation-chat .ai-build { max-width: 48rem; margin-inline: auto; }
-.creation-chat .ai-empty { min-height: 0; gap: 24px; }
-.creation-chat .composer { border: 1px solid var(--border-soft); background: var(--surface); border-radius: 20px; padding: 24px; }
-.creation-chat .composer-label { display: block; font-size: 1.25rem; font-weight: 500; margin-bottom: 16px; }
-.creation-chat .composer textarea { font-family: var(--font-sans); }
-.creation-chat .composer textarea { background: var(--surface); border-radius: 12px; resize: vertical; }
+.creation-chat .ai-empty { min-height: 0; gap: 20px; }
+.creation-chat .composer { border: 1px solid var(--border-soft); background: var(--surface); border-radius: 14px; padding: 16px 18px; }
+.creation-chat .composer-label { display: block; font-size: 1rem; font-weight: 600; margin-bottom: 10px; }
+.creation-chat .composer textarea { font-family: var(--font-sans); background: var(--surface); border-radius: 10px; resize: vertical; }
 .creation-chat .ai-empty .composer { max-width: none; }
-.creation-chat .ai-build:not(.ai-empty) .composer { background: var(--surface); bottom: 16px; padding: 20px; z-index: 2; }
+.creation-chat .ai-build:not(.ai-empty) .composer { background: var(--surface); bottom: 16px; padding: 16px; z-index: 2; }
 .creation-chat .ai-starters { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 0; }
-.creation-chat .ai-starters button { border-color: var(--border-soft); background: var(--surface); border-radius: 16px; padding: 20px; height: 100%; }
-.creation-chat .ai-starters button:hover { border-color: var(--accent); background: var(--accent-tint); }
-.creation-chat .chat { gap: 16px; }
-.creation-chat .chat-line { padding: 20px; border-radius: 16px; }
+.creation-chat .ai-starters button { border-color: var(--border-soft); background: var(--surface); border-radius: 12px; padding: 16px; height: 100%; }
+.creation-chat .ai-starters button:hover { border-color: var(--border); background: var(--bg); }
+.creation-chat .chat { gap: 14px; }
+.creation-chat .chat-line { padding: 14px 16px; border-radius: 12px; }
 .creation-chat .chat-draft { width: 100%; }
-.creation-chat .chat-draft :is(h3, .actions) { margin-top: 24px; }
+.creation-chat .chat-draft :is(h3, .actions) { margin-top: 20px; }
 .creation-chat .chat-draft .demo-plan { padding-left: 24px; }
 .creation-chat .chat-line p { white-space: pre-wrap; }
 
@@ -76,6 +70,6 @@
   .creation-chat .ai-build:not(.ai-empty) .composer { position: static; }
 }
 @media (max-width: 600px) {
-  .creation-chat .composer, .creation-chat .ai-build:not(.ai-empty) .composer { padding: 20px; }
+  .creation-chat .composer, .creation-chat .ai-build:not(.ai-empty) .composer { padding: 14px; }
   .creation-chat .ai-starters { grid-template-columns: minmax(0, 1fr); }
 }

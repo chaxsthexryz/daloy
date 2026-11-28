@@ -11,7 +11,7 @@
 .gp-crumb a:hover { color: var(--o-ink); text-decoration: underline; text-underline-offset: 3px; }
 .gp > .ops-head { border-bottom: 1px solid var(--o-line); padding: 18px 28px; }
 
-.gp-tag { display: inline-flex; align-items: center; min-height: 22px; padding: 2px 8px; border-radius: 6px; background: var(--o-canvas); color: var(--o-muted); font-size: 12px; line-height: 16px; font-weight: 700; white-space: nowrap; transition: color var(--dur-fast) var(--ease), background-color var(--dur-fast) var(--ease); }
+.gp-tag { display: inline-flex; align-items: center; min-height: 24px; padding: 2px 9px; border-radius: 999px; background: var(--o-canvas); color: var(--o-muted); font-size: var(--text-xs, 13px); line-height: 16px; font-weight: 600; white-space: nowrap; transition: color var(--dur-fast) var(--ease), background-color var(--dur-fast) var(--ease); }
 .gp-tag.ok { background: color-mix(in srgb, var(--o-green) 12%, var(--o-bg)); color: var(--o-green); }
 .gp-tag.wait { background: var(--o-select); color: var(--o-accent); }
 .gp-tag.bad { background: color-mix(in srgb, var(--o-red) 10%, var(--o-bg)); color: var(--o-red); }
@@ -50,10 +50,10 @@
 .gp-actions .ops-button:disabled { opacity: 0.6; cursor: default; }
 
 .gp .ops-panel h2 { font-size: 22px; line-height: 28px; }
-.gp-eyebrow { margin: 0; font-size: 11px; line-height: 14px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--o-muted); }
+.gp-eyebrow { margin: 0; font-size: var(--text-xs, 13px); line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--o-muted); }
 .gp-steps { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; }
 .gp-steps li { display: grid; grid-template-columns: 24px minmax(0, 1fr); column-gap: 12px; padding: 14px 0; border-bottom: 1px solid var(--o-line); }
-.gp-steps li > b { grid-row: 1 / span 2; display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 50%; background: var(--o-select); color: var(--o-accent); font-size: 12px; line-height: 14px; font-weight: 700; }
+.gp-steps li > b { grid-row: 1 / span 2; display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 50%; background: var(--o-select); color: var(--o-accent); font-size: var(--text-xs, 13px); line-height: 14px; font-weight: 600; }
 .gp-steps li > strong { font-size: 15px; line-height: 20px; font-weight: 700; color: var(--o-ink); }
 .gp-steps li > span { font-size: 13px; line-height: 18px; color: var(--o-muted); }
 
@@ -68,7 +68,7 @@
   .gp-table tbody tr { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: 10px; padding: 12px 0; }
   .gp-table tbody td { height: auto; padding: 0; }
   .gp-table .c-main { grid-column: 1; grid-row: 1; width: auto; }
-  .gp-table .c-start { grid-column: 1; grid-row: 2; width: auto; font-size: 12px; color: var(--o-muted); }
+  .gp-table .c-start { grid-column: 1; grid-row: 2; width: auto; font-size: var(--text-xs, 13px); color: var(--o-muted); }
   .gp-table .c-act { grid-column: 2; grid-row: 1 / span 2; width: auto; }
   .gp .ops-button, .gp-actions .ops-button { min-height: var(--target); }
 }
@@ -76,10 +76,10 @@
 /* Result panel of the preview (A3): the facts, then the messages the template would send. */
 .gp-facts { display: flex; flex-direction: column; margin: 0; }
 .gp-facts > div { display: flex; flex-direction: column; gap: 2px; padding: 10px 0; border-bottom: 1px solid var(--o-line); }
-.gp-facts dt { font-size: 12px; line-height: 16px; color: var(--o-muted); }
-.gp-facts dd { margin: 0; font-size: 15px; line-height: 20px; font-weight: 700; color: var(--o-ink); overflow-wrap: anywhere; }
-.gp .ops-panel p.muted { margin: 0; font-size: 13px; line-height: 18px; color: var(--o-muted); }
-.gp .ops-panel pre { margin: 0; padding: 12px; border: 1px solid var(--o-line); border-radius: 8px; background: var(--o-bg); color: var(--o-ink); font: 400 12px/18px var(--font-mono, ui-monospace, monospace); white-space: pre-wrap; overflow-wrap: anywhere; }
+.gp-facts dt { font-size: var(--text-xs, 13px); line-height: 18px; color: var(--o-muted); }
+.gp-facts dd { margin: 0; font-size: 15px; line-height: 20px; font-weight: 600; color: var(--o-ink); overflow-wrap: anywhere; }
+.gp .ops-panel p.muted { margin: 0; font-size: var(--text-xs, 13px); line-height: 18px; color: var(--o-muted); }
+.gp .ops-panel pre { margin: 0; padding: 12px; border: 1px solid var(--o-line); border-radius: 8px; background: var(--o-bg); color: var(--o-ink); font: 400 var(--text-xs, 13px)/18px var(--font-mono); white-space: pre-wrap; overflow-wrap: anywhere; }
 
 /* Guided setup (A4, A5): step counter, segmented bar, the form body, the review table and the details blocks. */
 .gp .ops-main > h2 { margin-top: 4px; }
@@ -102,9 +102,9 @@
 .gp-details > :not(summary) { margin-inline: 16px; }
 .gp-details > :last-child { margin-bottom: 14px; }
 .gp-details > summary + * { margin-top: 12px; }
-.gp-details h3 { margin: 12px 0 4px; font-size: 11px; line-height: 14px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--o-muted); }
-.gp-details p { margin: 0 0 6px; font-size: 13px; line-height: 18px; color: var(--o-muted); }
-.gp-details pre { margin: 0 0 8px; padding: 12px; border: 1px solid var(--o-line); border-radius: 8px; background: var(--o-canvas); color: var(--o-ink); font: 400 12px/18px var(--font-mono, ui-monospace, monospace); white-space: pre-wrap; overflow-wrap: anywhere; }
+.gp-details h3 { margin: 12px 0 4px; font-size: var(--text-xs, 13px); line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--o-muted); }
+.gp-details p { margin: 0 0 6px; font-size: var(--text-xs, 13px); line-height: 18px; color: var(--o-muted); }
+.gp-details pre { margin: 0 0 8px; padding: 12px; border: 1px solid var(--o-line); border-radius: 8px; background: var(--o-canvas); color: var(--o-ink); font: 400 var(--text-xs, 13px)/18px var(--font-mono); white-space: pre-wrap; overflow-wrap: anywhere; }
 .gp-review { max-width: 735px; }
 .gp-review th, .gp-review td { padding: 0 10px; text-align: left; vertical-align: middle; font-size: 13px; line-height: 18px; font-weight: 400; }
 .gp-review tbody tr { border-bottom: 1px solid var(--o-line); }
@@ -122,7 +122,7 @@
   .gp-review thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
   .gp-review tbody tr { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 10px; padding: 10px 0; }
   .gp-review tbody th, .gp-review tbody td { height: auto; width: auto; padding: 0; }
-  .gp-review tbody th { grid-column: 1; grid-row: 1; font-size: 12px; color: var(--o-muted); }
+  .gp-review tbody th { grid-column: 1; grid-row: 1; font-size: var(--text-xs, 13px); color: var(--o-muted); }
   .gp-review tbody td:not(.c-edit) { grid-column: 1; grid-row: 2; }
   .gp-review .c-edit { grid-column: 2; grid-row: 1 / span 2; width: auto; }
   .gp-actions .ops-button { flex: 1 1 auto; }
@@ -166,5 +166,5 @@
   .gp-requests .c-ref { grid-column: 1; grid-row: 1; }
   .gp-requests .c-state { grid-column: 2; grid-row: 1 / span 3; text-align: right; }
   .gp-requests .c-req { grid-column: 1; grid-row: 2; font-size: 14px; }
-  .gp-requests .c-when { grid-column: 1; grid-row: 3; font-size: 12px; }
+  .gp-requests .c-when { grid-column: 1; grid-row: 3; font-size: var(--text-xs, 13px); }
 }

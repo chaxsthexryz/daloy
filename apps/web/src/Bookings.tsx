@@ -231,7 +231,11 @@ export function BookingsPage({ initialTab = "calendar", canManageRooms = false }
                   {items.map((b) => (
                     <li key={b.id}>
                       <button type="button" aria-pressed={b.id === chosen?.id} onClick={() => { setPicked(b.id); setSheet(true); setMoving(null); }}>
-                        <span className="act-mono">{ampm(b.start.slice(11, 16))}</span>
+                        <span className="act-queue-top">
+                          {b.id === chosen?.id && <i className="act-active-dot" aria-hidden="true" />}
+                          <span className="act-mono">{ampm(b.start.slice(11, 16))}</span>
+                          <span className={`act-agenda-state act-pill ${b.status === "active" ? (b.attention ? "problem" : "ok") : b.status}`}>{t(STATUS[b.status])}{b.attention && ` · ${t("needs attention")}`}</span>
+                        </span>
                         <span className="act-agenda-what">
                           <span className="title">{b.reference}</span>
                           <span className="act-muted">
@@ -241,7 +245,6 @@ export function BookingsPage({ initialTab = "calendar", canManageRooms = false }
                               : ` · ${local(b.start).slice(11)}${t(" to ")}${local(b.end).slice(11)}`}
                           </span>
                         </span>
-                        <span className={`act-agenda-state ${b.status}`}>{t(STATUS[b.status])}{b.attention && ` · ${t("needs attention")}`}</span>
                       </button>
                     </li>
                   ))}

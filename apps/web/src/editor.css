@@ -1,13 +1,13 @@
-/* A7 Steps editor, from the approved Doop frame "Workflow - Improved current". Values come from the canvas tokens (--daloy-*). */
+/* A7 Steps editor aligned with Console Blocks tokens (light and dark). */
 .a7-editor {
-  --text: var(--fg, #0f131a); --muted: var(--fg-muted, #5b6372); --surface: var(--daylight-bg, #ffffff); --sunken: var(--subtle, #fafafa); --bg: var(--daylight-bg, #ffffff);
+  --text: var(--fg, #0f131a); --muted: var(--fg-muted, #5b6372); --surface: var(--daylight-bg, #ffffff); --sunken: #f6f7f9; --bg: #f6f7f9;
   --border: var(--border-strong, #d1d5df); --border-soft: var(--border-hairline, #e6e8ee); --accent: var(--blue, #0b66ff); --accent-hover: var(--blue-deep, #0052d9); --accent-tint: var(--blue-soft, #eef4ff); --on-accent: #ffffff;
-  --a7-line: #b8beca; --a7-dot: #cdd2dc; --a7-label: #3a3f4b; --a7-chip: #0052d9; --a7-progress: #4d7bff;
+  --a7-line: #b8beca; --a7-dot: #d6dbe4; --a7-label: #3a3f4b; --a7-chip: #0052d9; --a7-progress: #4d7bff;
   --a7-warn-line: #eab308; --a7-warn: #685500;
   --a7-ok: var(--green, #15803d); --a7-ok-bg: var(--green-soft, #ecfdf3); --a7-bad: var(--red, #c92a2a); --a7-bad-bg: var(--red-soft, #fff1f1); --a7-grey-bg: #f4f5f7;
   --a7-bar: #0f131a; --a7-bar-text: #ffffff; --a7-bar-muted: #b8beca; --a7-bar-off: #6b7280;
   display: flex; flex-direction: column; min-height: 100dvh;
-  background: var(--surface); color: var(--text); font-family: var(--font-sans, Inter, system-ui, sans-serif); font-size: 14px;
+  background: var(--surface); color: var(--text); font-family: var(--font-sans); font-size: 14px;
 }
 :root[data-theme="dark"] .a7-editor {
   color-scheme: dark;
@@ -21,27 +21,27 @@
 /* The shared Sheet and its buttons read the workspace tokens (workspace.css), which only `.wk` pages define; without these the step sheet, Explain and Turn on drew with no background. */
 .a7-editor { --w-bg: var(--surface); --w-ink: var(--text); --w-muted: var(--muted); --w-line: var(--border-soft); --w-field: var(--border); --w-canvas: var(--sunken); --w-accent: var(--accent); --w-on-accent: var(--on-accent); --w-red: var(--a7-bad); }
 .a7-editor :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.a7-editor button { min-height: 36px; padding: 0 14px; border-color: var(--border); color: var(--text); font-size: 13px; font-weight: 600; }
+.a7-editor button { min-height: 36px; padding: 0 14px; border-radius: 8px; border-color: var(--border); color: var(--text); font-size: 13px; font-weight: 600; transition: border-color var(--dur-fast) var(--ease), background-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease); }
 .a7-editor button:hover:not(:disabled) { background: var(--sunken); color: var(--text); }
 .a7-editor button.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
 .a7-editor button.primary:hover:not(:disabled) { background: var(--accent-hover); border-color: var(--accent-hover); color: var(--on-accent); }
 .a7-editor button:disabled, .a7-editor button.primary:disabled { background: var(--disabled-bg, var(--sunken)); border-color: var(--disabled-border, var(--border-soft)); color: var(--disabled-fg, var(--muted)); opacity: 1; cursor: not-allowed; }
-.a7-editor :is(input, select) { min-height: 38px; border-color: var(--border); font-size: 13px; }
-.a7-editor textarea { border-color: var(--border); font-size: 13px; }
-.a7-editor .field label, .a7-editor legend { color: var(--a7-label); font-size: 12px; font-weight: 600; }
+.a7-editor :is(input, select) { min-height: 38px; border-radius: 8px; border-color: var(--border); font-size: 13px; }
+.a7-editor textarea { border-radius: 8px; border-color: var(--border); font-size: 13px; }
+.a7-editor .field label, .a7-editor legend { color: var(--a7-label); font-size: var(--text-xs, 13px); font-weight: 600; }
 .a7-editor h2 { font-size: 20px; font-weight: 700; letter-spacing: -.01em; line-height: 26px; margin: 0; }
-.a7-editor h3, .a7-kicker, .a7-node-kicker, .a7-list-kicker { font-size: 11px; font-weight: 600; letter-spacing: .06em; line-height: 14px; text-transform: uppercase; color: var(--muted); }
+.a7-editor h3, .a7-kicker, .a7-node-kicker, .a7-list-kicker { font-size: var(--text-xs, 13px); font-weight: 600; letter-spacing: .04em; line-height: 16px; text-transform: uppercase; color: var(--muted); }
 .a7-editor h3 { margin: 0; }
 
 /* Header */
-.a7-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; padding: 20px 28px 0; border-bottom: 1px solid var(--border-soft); }
+.a7-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; padding: 20px 28px 0; background: var(--surface); border-bottom: 1px solid var(--border-soft); }
 .a7-head-main { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .a7-crumb { margin: 0; color: var(--muted); font-size: 13px; }
 .a7-crumb a { color: inherit; text-decoration: none; }
 .a7-crumb a:hover { color: var(--text); text-decoration: underline; text-underline-offset: 3px; }
 .a7-title { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
 .a7-title h1 { margin: 0; font-size: 26px; font-weight: 700; letter-spacing: -.02em; line-height: 32px; }
-.a7-chip { padding: 3px 8px; border: 1px dashed var(--a7-line); border-radius: 6px; background: var(--sunken); color: var(--a7-label); font-size: 12px; font-weight: 600; transition: color var(--dur-fast) var(--ease), background-color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease); }
+.a7-chip { padding: 3px 10px; border: 1px dashed var(--a7-line); border-radius: 999px; background: var(--sunken); color: var(--a7-label); font-size: var(--text-xs, 13px); font-weight: 600; transition: color var(--dur-fast) var(--ease), background-color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease); }
 .a7-chip[data-live] { border-style: solid; border-color: var(--border); background: var(--surface); color: var(--text); }
 .a7-chip[data-live-state="working"], .a7-chip[data-live-state="done"] { border-color: var(--a7-ok); background: var(--a7-ok-bg); color: var(--a7-ok); }
 .a7-chip[data-live-state="problem"] { border-color: var(--a7-bad); background: var(--a7-bad-bg); color: var(--a7-bad); }
@@ -57,31 +57,32 @@
 
 /* Body */
 .a7-body { display: grid; grid-template-columns: minmax(0, 1fr); flex: 1; min-height: 0; }
-.a7-canvas { position: relative; display: flex; flex-direction: column; gap: 12px; min-height: 60vh; padding: 20px 24px; background: radial-gradient(var(--a7-dot) 1px, transparent 1px) 0 0 / 18px 18px, var(--sunken); }
-.a7-setup { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 14px; padding: 10px 14px; border-radius: 10px; background: var(--a7-bar); color: var(--a7-bar-text); font-size: 13px; line-height: 18px; }
+.a7-canvas { position: relative; display: flex; flex-direction: column; gap: 12px; min-height: 60vh; padding: 20px 24px; background: radial-gradient(var(--a7-dot) 1px, transparent 1px) 0 0 / 18px 18px, var(--bg); }
+.a7-setup { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 14px; padding: 10px 14px; border-radius: 12px; background: var(--a7-bar); color: var(--a7-bar-text); font-size: 13px; line-height: 18px; }
 .a7-setup p { margin: 0; }
 .a7-setup-count { font-weight: 600; }
 .a7-setup-bars { display: flex; gap: 4px; }
 .a7-setup-bars span { width: 22px; height: 6px; border-radius: 3px; background: var(--a7-bar-off); }
 .a7-setup-bars [data-done] { background: var(--a7-progress); }
 .a7-setup-left { flex: 1 1 12rem; color: var(--a7-bar-muted); }
-.a7-setup-action { padding: 6px 12px; border-radius: 7px; background: var(--surface); color: var(--text); font-weight: 600; text-decoration: none; }
+.a7-setup-action { padding: 6px 12px; border-radius: 8px; background: var(--surface); color: var(--text); font-weight: 600; text-decoration: none; }
 .a7-setup-action:focus-visible { outline-color: var(--a7-progress); }
-.a7-view { display: flex; align-self: flex-end; padding: 3px; gap: 2px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); }
-.a7-editor .a7-view button { min-height: 30px; padding: 0 12px; border: 0; border-radius: 6px; background: transparent; box-shadow: none; color: var(--muted); }
+.a7-view { display: flex; align-self: flex-end; padding: 3px; gap: 2px; border: 1px solid var(--border-soft); border-radius: 10px; background: var(--surface); box-shadow: var(--shadow-card); }
+.a7-editor .a7-view button { min-height: 30px; padding: 0 12px; border: 0; border-radius: 7px; background: transparent; box-shadow: none; color: var(--muted); }
 .a7-editor .a7-view button[aria-pressed="true"] { background: var(--accent-tint); color: var(--text); }
 .a7-flow { flex: 1; min-height: 360px; margin: 0 -24px -20px; }
 .a7-flow .react-flow { --xy-background-color: transparent; --xy-background-pattern-color: var(--a7-dot); background: transparent; }
 /* "+ Add a step at the end" under the list, as in the Paper list frame. */
-.a7-editor .a7-add { display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%; min-height: 44px; border: 1px dashed var(--a7-line); border-radius: 10px; background: transparent; box-shadow: none; color: var(--a7-label); }
+.a7-editor .a7-add { display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%; min-height: 44px; border: 1px dashed var(--a7-line); border-radius: 12px; background: var(--surface); box-shadow: none; color: var(--a7-label); }
 .a7-editor .a7-add:hover:not(:disabled) { border-color: var(--accent); background: var(--surface); color: var(--text); }
-.a7-zoom { display: flex; align-items: center; gap: 2px; padding: 4px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); }
+.a7-zoom { display: flex; align-items: center; gap: 2px; padding: 4px; border: 1px solid var(--border-soft); border-radius: 10px; background: var(--surface); box-shadow: var(--shadow-card); }
 .a7-editor .a7-zoom button { min-height: 28px; min-width: 30px; padding: 0 6px; border: 0; background: transparent; font-size: 16px; font-weight: 400; }
-.a7-editor .a7-zoom .a7-fit { margin-left: 4px; padding: 0 8px; border-left: 1px solid var(--border-soft); border-radius: 0; font-size: 12px; font-weight: 600; color: var(--a7-label); }
-.a7-zoom-level { min-width: 42px; padding: 0 6px; color: var(--a7-label); font-size: 12px; font-weight: 600; text-align: center; font-variant-numeric: tabular-nums; }
+.a7-editor .a7-zoom .a7-fit { margin-left: 4px; padding: 0 8px; border-left: 1px solid var(--border-soft); border-radius: 0; font-size: var(--text-xs, 13px); font-weight: 600; color: var(--a7-label); }
+.a7-zoom-level { min-width: 44px; padding: 0 6px; color: var(--a7-label); font-size: var(--text-xs, 13px); font-weight: 600; text-align: center; font-variant-numeric: tabular-nums; }
 
 /* Nodes and edges */
-.a7-node { position: relative; gap: 3px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--text); font-size: 12px; line-height: 16px; }
+.a7-node { position: relative; gap: 4px; padding: 11px 13px; border: 1px solid var(--border-soft); border-radius: 12px; background: var(--surface); color: var(--text); font-size: var(--text-xs, 13px); line-height: 18px; box-shadow: var(--shadow-card); transition: border-color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease); }
+.a7-node:hover { border-color: var(--border); }
 .a7-node.run-idle { border-style: dashed; border-color: var(--run-idle); }
 .a7-node.run-skipped { border-style: dashed; border-color: var(--run-idle); background: var(--sunken); }
 .a7-node.run-done { border-color: var(--a7-ok); background: var(--a7-ok-bg); }
@@ -89,11 +90,11 @@
 .a7-node.run-working .node-status { color: var(--a7-ok); }
 .a7-node.run-needs_you, .a7-node.run-waiting { border-color: var(--a7-warn-line); background: var(--waiting, #fffbe6); }
 .a7-node.run-problem { border-color: var(--a7-bad); background: var(--a7-bad-bg); }
-.a7-node .node-title { font-size: 14px; font-weight: 600; line-height: 18px; }
+.a7-node .node-title { font-size: 14px; font-weight: 600; line-height: 19px; }
 .a7-node .node-summary { color: var(--muted); display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; white-space: normal; overflow: hidden; overflow-wrap: anywhere; }
 .a7-node-row { display: flex; align-items: center; justify-content: space-between; gap: 6px; flex-wrap: wrap; }
-.a7-node-row .a7-node-kicker { flex: 1 1 auto; min-width: 0; overflow: visible; white-space: nowrap; }
-.a7-node-note { flex: none; color: var(--muted); font-size: 12px; line-height: 14px; white-space: nowrap; }
+.a7-node-row .a7-node-kicker { flex: 1 1 auto; min-width: 0; overflow: visible; white-space: normal; overflow-wrap: anywhere; }
+.a7-node-note { flex: none; color: var(--muted); font-size: var(--text-xs, 13px); line-height: 16px; white-space: nowrap; }
 .a7-when { color: var(--accent); }
 .a7-warn { color: var(--a7-warn); font-weight: 600; }
 .a7-node.a7-needs-app { border-color: var(--a7-warn-line); }
@@ -101,7 +102,7 @@
 .a7-node.node-off { border-style: dashed; background: var(--sunken); color: var(--muted); }
 .a7-node.node-off .node-title { color: var(--muted); }
 .a7-node.node-off .node-app svg, .a7-node.node-off .node-app img { filter: grayscale(1); opacity: 0.6; }
-.react-flow__node.selected .a7-node { border: 2px solid var(--accent); padding: 9px 11px; box-shadow: 0 0 0 4px var(--accent-tint); }
+.react-flow__node.selected .a7-node { border: 2px solid var(--accent); padding: 10px 12px; box-shadow: 0 0 0 4px var(--accent-tint); }
 .react-flow__node.selected .a7-node .a7-node-kicker { color: var(--accent); }
 /* Connection dots (U2): hidden until the step is selected, then 8px blue dots with a 2px white ring. A wider invisible ring is the grab area. */
 .a7-node .react-flow__handle { visibility: hidden; width: 8px; height: 8px; min-width: 0; min-height: 0; box-sizing: content-box; border: 2px solid var(--surface); border-radius: 50%; background: var(--accent); }
@@ -111,7 +112,7 @@
 .a7-drop path { fill: none; stroke: var(--accent); stroke-width: 2; stroke-dasharray: 6 5; }
 .a7-drop rect { fill: none; stroke: var(--accent); stroke-width: 1.5; stroke-dasharray: 6 5; }
 .react-flow__edge-path.a7-edge { stroke: var(--a7-line); stroke-width: 2; }
-.a7-branch { position: absolute; padding: 2px 8px; border-radius: 10px; background: var(--a7-grey-bg); color: var(--a7-label); font-size: 12px; font-weight: 600; line-height: 16px; white-space: nowrap; pointer-events: none; }
+.a7-branch { position: absolute; padding: 1px 8px; border-radius: 999px; background: var(--a7-grey-bg); color: var(--a7-label); font-size: var(--text-xs, 13px); font-weight: 600; line-height: 16px; white-space: nowrap; pointer-events: none; }
 .a7-branch:is([data-branch="approved"], [data-branch="true"], [data-branch="done"]) { background: var(--a7-ok-bg); color: var(--a7-ok); }
 .a7-branch:is([data-branch="rejected"], [data-branch="false"], [data-branch="invalid"], [data-branch="taken"], [data-branch="not_found"], [data-branch="failed"]) { background: var(--a7-bad-bg); color: var(--a7-bad); }
 .a7-branch-text:is([data-branch="approved"], [data-branch="true"], [data-branch="done"]) { color: var(--a7-ok); }
@@ -119,8 +120,9 @@
 
 /* Accessible list */
 .a7-list { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; list-style: none; }
-.a7-editor .a7-list button { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; width: 100%; min-height: 44px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); box-shadow: none; font-size: 14px; text-align: left; white-space: normal; overflow-wrap: anywhere; overflow: hidden; }
-.a7-editor .a7-list button[aria-pressed="true"] { border: 2px solid var(--accent); padding: 9px 11px; box-shadow: 0 0 0 4px var(--accent-tint); }
+.a7-editor .a7-list button { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; width: 100%; min-height: 44px; padding: 10px 14px; border: 1px solid var(--border-soft); border-radius: 12px; background: var(--surface); box-shadow: var(--shadow-card); font-size: 14px; text-align: left; white-space: normal; overflow-wrap: anywhere; overflow: hidden; }
+.a7-editor .a7-list button:hover:not(:disabled) { border-color: var(--border); background: var(--surface); }
+.a7-editor .a7-list button[aria-pressed="true"] { border: 2px solid var(--accent); padding: 9px 13px; box-shadow: 0 0 0 4px var(--accent-tint); }
 .a7-list .a7-branch { position: static; margin-left: auto; min-width: 0; max-width: 100%; overflow-wrap: anywhere; white-space: normal; }
 .a7-list .a7-list-kicker { order: -1; min-width: 0; max-width: 100%; overflow-wrap: anywhere; white-space: normal; }
 .a7-list .a7-list-id { min-width: 0; max-width: 100%; overflow-wrap: anywhere; white-space: normal; }
@@ -140,23 +142,23 @@
 .a7-editor .a7-delete { min-height: 32px; padding: 0 6px; border: 0; background: transparent; color: var(--muted); font-weight: 400; }
 .a7-editor .a7-delete:hover:not(:disabled) { background: var(--a7-bad-bg); color: var(--a7-bad); }
 .a7-lead { margin: -8px 0 0; color: var(--muted); font-size: 13px; line-height: 18px; overflow-wrap: anywhere; }
-.a7-warn-note { margin: 0; padding: 8px 12px; border: 1px solid var(--a7-warn-line); border-radius: 8px; color: var(--text); font-size: 13px; }
+.a7-warn-note { margin: 0; padding: 8px 12px; border: 1px solid var(--a7-warn-line); border-radius: 10px; color: var(--text); font-size: 13px; }
 .a7-group { display: flex; flex-direction: column; gap: 8px; padding-top: 16px; border-top: 1px solid var(--border-soft); }
-.a7-group .hint { margin: 0; font-size: 12px; overflow-wrap: anywhere; }
+.a7-group .hint { margin: 0; font-size: var(--text-xs, 13px); overflow-wrap: anywhere; }
 .a7-step-test-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .a7-last-test h4 { margin: 0 0 4px; font-size: 13px; }
 .a7-last-test p { margin: 0 0 4px; }
-.a7-last-test pre { max-height: 240px; overflow: auto; font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.a7-last-test pre { max-height: 240px; overflow: auto; font-size: var(--text-xs, 13px); white-space: pre-wrap; overflow-wrap: anywhere; }
 .a7-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; }
-.a7-editor .a7-chips button { min-height: 28px; padding: 4px 8px; border: 0; border-radius: 6px; background: var(--accent-tint); color: var(--a7-chip); font-size: 12px; font-weight: 500; }
+.a7-editor .a7-chips button { min-height: 28px; padding: 4px 8px; border: 0; border-radius: 6px; background: var(--accent-tint); color: var(--a7-chip); font-size: var(--text-xs, 13px); font-weight: 500; }
 .a7-editor .a7-chips button:hover:not(:disabled) { background: var(--accent-tint); color: var(--a7-chip); text-decoration: underline; }
 .a7-vars-group { margin: 10px 0 0; }
-.a7-vars-group h4 { margin: 0 0 4px; font-size: 12px; font-weight: 600; color: var(--muted); }
+.a7-vars-group h4 { margin: 0 0 4px; font-size: var(--text-xs, 13px); font-weight: 600; color: var(--muted); }
 .a7-vars-group .hint { margin: 0 0 4px; }
 .a7-editor .a7-chips button { display: inline-flex; flex-direction: column; align-items: flex-start; gap: 1px; max-width: 100%; text-align: left; }
 .a7-var-path { overflow-wrap: anywhere; }
 .a7-var-preview { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 400; opacity: 0.75; }
-.a7-copied { min-height: 16px; margin: 0; color: var(--muted); font-size: 12px; animation: a7-fade var(--dur-fast) var(--ease); }
+.a7-copied { min-height: 16px; margin: 0; color: var(--muted); font-size: var(--text-xs, 13px); animation: a7-fade var(--dur-fast) var(--ease); }
 .a7-copied:empty { animation: none; }
 .a7-next { display: flex; flex-direction: column; gap: 8px; margin: 0; }
 .a7-next div { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; line-height: 18px; }
@@ -164,9 +166,9 @@
 .a7-next dd { margin: 0; text-align: right; overflow-wrap: anywhere; }
 .a7-checks { display: flex; flex-direction: column; gap: 8px; }
 .a7-checks h2 { font-size: 16px; }
-.a7-checks ul { margin: 0; padding: 12px 12px 12px 30px; border: 1px solid var(--a7-warn-line); border-radius: 10px; font-size: 13px; }
-.a7-ai section { display: flex; flex-direction: column; gap: 8px; padding: 12px; border: 1px solid var(--border-soft); border-radius: 10px; background: var(--sunken); }
-.a7-ai h2 { font-size: 12px; font-weight: 600; line-height: 16px; letter-spacing: 0; }
+.a7-checks ul { margin: 0; padding: 12px 12px 12px 30px; border: 1px solid var(--a7-warn-line); border-radius: 12px; font-size: 13px; }
+.a7-ai section { display: flex; flex-direction: column; gap: 8px; padding: 12px; border: 1px solid var(--border-soft); border-radius: 12px; background: var(--sunken); }
+.a7-ai h2 { font-size: var(--text-xs, 13px); font-weight: 600; line-height: 18px; letter-spacing: 0; }
 .a7-ai textarea { min-height: 4.5rem; font-family: inherit; background: var(--surface); }
 .a7-ai .chat { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; }
 .a7-ai .chat li { padding: 8px 10px; border-radius: 8px; background: var(--surface); font-size: 13px; }
@@ -177,7 +179,7 @@
 .a7-panel .row { flex-wrap: wrap; }
 .a7-panel .row > :is(input, select) { flex: 1 1 140px; min-width: 0; }
 .a7-panel :is(pre, code) { overflow-wrap: anywhere; }
-.a7-panel fieldset { display: flex; flex-direction: column; gap: 10px; min-width: 0; margin: 0; padding: 12px; border: 1px solid var(--border-soft); border-radius: 10px; }
+.a7-panel fieldset { display: flex; flex-direction: column; gap: 10px; min-width: 0; margin: 0; padding: 12px; border: 1px solid var(--border-soft); border-radius: 12px; }
 .a7-loading { padding: 28px; }
 
 @keyframes a7-fade { from { opacity: 0; } }
@@ -216,7 +218,7 @@
 .a7-tools { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
 .a7-undo { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .a7-editor .a7-undo button { min-height: 30px; padding: 0 12px; }
-.a7-note { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+.a7-note { color: var(--muted); font-size: var(--text-xs, 13px); overflow-wrap: anywhere; }
 .a7-list > li { display: flex; align-items: stretch; gap: 6px; }
 .a7-list > li > button:first-child { flex: 1; min-width: 0; }
 .a7-move { display: flex; flex: none; gap: 6px; }
@@ -228,7 +230,7 @@
 .a7-exit-adds::before { content: ""; position: absolute; bottom: 100%; left: 50%; width: 1.5px; height: 6px; background: var(--a7-line); transform: translateX(-50%); pointer-events: none; }
 .a7-editor .a7-leaf-add { display: grid; place-items: center; width: 22px; height: 22px; min-height: 0; padding: 0; border: 1px dashed var(--a7-line); border-radius: 50%; background: var(--surface); color: var(--accent); font-size: 15px; line-height: 1; cursor: pointer; }
 .a7-editor .a7-leaf-add:hover { border-style: solid; border-color: var(--accent); background: var(--accent-tint); }
-.a7-editor .a7-branch-add { display: inline-flex; align-items: center; min-height: 22px; padding: 0 8px; border: 1px dashed var(--a7-line); border-radius: 11px; background: var(--surface); color: var(--a7-label); font-size: 11px; font-weight: 600; line-height: 1; white-space: nowrap; cursor: pointer; }
+.a7-editor .a7-branch-add { display: inline-flex; align-items: center; min-height: 22px; padding: 2px 9px; border: 1px dashed var(--a7-line); border-radius: 999px; background: var(--surface); color: var(--a7-label); font-size: var(--text-xs, 13px); font-weight: 600; line-height: 1; white-space: nowrap; cursor: pointer; }
 .a7-editor .a7-branch-add:hover { border-style: solid; border-color: var(--accent); background: var(--accent-tint); color: var(--accent); }
 .a7-editor .a7-branch-add:is([data-branch="approved"], [data-branch="true"], [data-branch="done"]) { border-color: var(--a7-ok); background: var(--a7-ok-bg); color: var(--a7-ok); }
 .a7-editor .a7-branch-add:is([data-branch="rejected"], [data-branch="false"], [data-branch="taken"], [data-branch="not_found"], [data-branch="failed"]) { border-color: var(--a7-bad); background: var(--a7-bad-bg); color: var(--a7-bad); }
@@ -239,14 +241,14 @@
 @media (pointer: coarse) { .a7-editor .a7-insert { width: 44px; height: 44px; } }
 .a7-menu { display: flex; flex-direction: column; gap: 12px; min-height: 0; }
 .a7-menu-list { display: flex; flex-direction: column; gap: 6px; max-height: 46dvh; margin: 0; padding: 2px; overflow: hidden auto; list-style: none; }
-.a7-menu-list button { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 44px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); box-shadow: none; text-align: left; }
+.a7-menu-list button { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 44px; padding: 8px 12px; border: 1px solid var(--border-soft); border-radius: 10px; background: var(--surface); box-shadow: none; text-align: left; }
 .a7-menu-list button > span:last-child { display: flex; flex-direction: column; min-width: 0; }
 /* Descriptions wrap to two lines; nothing scrolls sideways. */
-.a7-menu-list small { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; color: var(--muted); font-size: 12px; font-weight: 400; line-height: 16px; white-space: normal; }
+.a7-menu-list small { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; color: var(--muted); font-size: var(--text-xs, 13px); font-weight: 400; line-height: 17px; white-space: normal; }
 .a7-menu-list strong { white-space: normal; }
 
 /* Popover (Sheet.tsx): the add menu and the right-click menu on a wide screen, placed by script at the control or the pointer. */
-.popover { position: fixed; inset: auto; margin: 0; padding: 0; max-width: calc(100vw - 16px); max-height: calc(100dvh - 16px); overflow: auto; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--text); box-shadow: 0 8px 28px rgb(10 11 15 / 14%); }
+.popover { position: fixed; inset: auto; margin: 0; padding: 0; max-width: calc(100vw - 16px); max-height: calc(100dvh - 16px); overflow: auto; border: 1px solid var(--border-soft); border-radius: 12px; background: var(--surface); color: var(--text); box-shadow: var(--shadow-card); }
 .popover::backdrop { background: transparent; }
 .popover-body { display: flex; flex-direction: column; gap: 10px; padding: 14px; }
 .a7-editor .popover h2 { font-size: 14px; line-height: 18px; }
@@ -257,27 +259,27 @@
 .a7-context ul { margin: 0; padding: 0; list-style: none; }
 .a7-editor .a7-context button { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; min-height: 32px; padding: 0 10px; border: 0; border-radius: 6px; background: transparent; box-shadow: none; font-size: 13px; font-weight: 400; text-align: left; }
 .a7-editor .a7-context button:is(:hover, :focus-visible) { background: var(--sunken); }
-.a7-context kbd { color: var(--muted); font: inherit; font-size: 12px; }
+.a7-context kbd { color: var(--muted); font: inherit; font-size: var(--text-xs, 13px); }
 @media (pointer: coarse) { .a7-editor .a7-context button { min-height: 44px; } }
 
 @media (prefers-reduced-motion: reduce) {
-  .a7-chip, .a7-copied { transition-duration: 0s; animation: none; }
+  .a7-editor button, .a7-chip, .a7-copied, .a7-node { transition-duration: 0s; animation: none; }
 }
 
 /* Under a step's title: where it acts, in words. */
-.a7-list .a7-list-where { order: 1; flex-basis: 100%; min-width: 0; max-width: 100%; overflow-wrap: anywhere; white-space: normal; color: var(--muted); font-size: 12px; font-weight: 400; }
+.a7-list .a7-list-where { order: 1; flex-basis: 100%; min-width: 0; max-width: 100%; overflow-wrap: anywhere; white-space: normal; color: var(--muted); font-size: var(--text-xs, 13px); font-weight: 400; }
 /* T4: the owner's note, clipped to two lines like .node-note on the card. */
-.a7-list .a7-list-note { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; color: var(--muted); font-size: 12px; font-style: italic; font-weight: 400; }
+.a7-list .a7-list-note { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; color: var(--muted); font-size: var(--text-xs, 13px); font-style: italic; font-weight: 400; }
 .a7-list .a7-list-note { order: 1; flex-basis: 100%; }
 .a7-list button .app-mark { order: -2; align-self: center; }
 .a7-describe { margin: 4px 0 12px; }
-.a7-node-row .node-id { flex: 0 1 76px; max-width: 76px; text-align: right; font-family: var(--font-mono); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.a7-node > .node-id { font-family: var(--font-mono); font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.a7-node-row .node-id { flex: 0 1 84px; max-width: 84px; text-align: right; font-family: var(--font-mono); font-size: var(--text-xs, 13px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.a7-node > .node-id { font-family: var(--font-mono); font-size: var(--text-xs, 13px); color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .a7-more-actions { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
 .a7-more-actions button { min-height: 44px; width: 100%; justify-content: flex-start; }
 
 /* R2b: setup guide, sample test and the two dialogs reuse the editor's tokens and the shared sheet. */
-.r2b-guide, .r2b-sample { display: grid; gap: 6px; padding: 12px 14px; border: 1px solid var(--a7-line); border-radius: 10px; font-size: 13px; line-height: 18px; }
+.r2b-guide, .r2b-sample { display: grid; gap: 6px; padding: 12px 14px; border: 1px solid var(--border-soft); border-radius: 12px; font-size: 13px; line-height: 18px; }
 .r2b-guide h2, .r2b-sample h2 { margin: 0; font-size: 15px; }
 .r2b-sample h3, .r2b-lines h3 { margin: 6px 0 0; font-size: 13px; }
 .r2b-sample p, .r2b-sample ul, .r2b-lines p { margin: 0; }
@@ -289,8 +291,8 @@
 .r2b-guide button { white-space: nowrap; flex-shrink: 0; }
 .r2b-guide li[data-done] .r2b-state { color: var(--a7-ok); }
 .r2b-example { padding: 8px 10px; border: 1px dashed var(--a7-line); border-radius: 8px; }
-.r2b-inline-resource { display: grid; gap: 6px; padding: 8px 10px; border: 1px solid var(--a7-line); border-radius: 8px; }
-.r2b-inline-resource label { font-size: 12px; font-weight: 600; }
+.r2b-inline-resource { display: grid; gap: 6px; padding: 8px 10px; border: 1px solid var(--border-soft); border-radius: 10px; }
+.r2b-inline-resource label { font-size: var(--text-xs, 13px); font-weight: 600; }
 .r2b-inline-resource-row { display: flex; gap: 6px; align-items: center; }
 .r2b-inline-resource-row input { flex: 1; min-width: 0; }
 .r2b-lines { display: grid; gap: 6px; margin-top: 10px; max-height: 50vh; overflow: auto; font-size: 14px; line-height: 20px; }
@@ -310,7 +312,7 @@
 :root[data-theme="dark"] .a7-editor .app-mark[data-kind="letter"][data-mark="whatsapp"] { background: #173323; color: #7fcfa3; border-color: #26543a; }
 
 /* Live execution bar and live run logs in the workflow editor. */
-.a7-live-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); font-size: 13px; }
+.a7-live-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 8px 12px; border: 1px solid var(--border-soft); border-radius: 12px; background: var(--surface); font-size: 13px; }
 .a7-live-bar[data-state="working"], .a7-live-bar[data-state="done"] { border-color: var(--a7-ok); background: var(--a7-ok-bg); color: var(--a7-ok); }
 .a7-live-bar[data-state="problem"] { border-color: var(--a7-bad); background: var(--a7-bad-bg); color: var(--a7-bad); }
 .a7-live-bar[data-state="waiting"] { border-color: var(--a7-warn-line); background: var(--waiting, #fffbe6); color: var(--a7-warn); }
@@ -320,7 +322,7 @@
 .a7-live-bar[data-state="waiting"] .a7-live-dot { background: var(--a7-warn); }
 .a7-live-text { flex: 1 1 auto; font-weight: 600; }
 .a7-live-actions { display: flex; align-items: center; gap: 6px; }
-.a7-editor .a7-live-actions button { min-height: 28px; padding: 0 10px; border: 1px solid currentColor; background: var(--surface); font-size: 12px; }
+.a7-editor .a7-live-actions button { min-height: 28px; padding: 0 10px; border: 1px solid currentColor; background: var(--surface); font-size: var(--text-xs, 13px); }
 @keyframes a7-live-pulse { 0%, 100% { box-shadow: 0 0 0 0 transparent; } 50% { box-shadow: 0 0 0 5px color-mix(in srgb, var(--a7-ok) 32%, transparent); } }
 @media (prefers-reduced-motion: no-preference) {
   .a7-live-bar[data-state="working"] .a7-live-dot { animation: a7-live-pulse var(--dur-pulse, 1600ms) ease-in-out infinite; }
@@ -328,13 +330,13 @@
 .a7-panel > * + .a7-live-logs { padding-top: 20px; border-top: 1px solid var(--border-soft); }
 .a7-live-logs h2 { font-size: 16px; margin-bottom: 10px; }
 .a7-live-list { display: flex; flex-direction: column; gap: 6px; margin: 0; padding: 0; list-style: none; }
-.a7-live-list li { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border: 1px solid var(--border-soft); border-radius: 8px; background: var(--sunken); }
+.a7-live-list li { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border: 1px solid var(--border-soft); border-radius: 10px; background: var(--sunken); }
 .a7-live-list li.is-active { border-color: var(--a7-ok); background: var(--a7-ok-bg); }
 .a7-editor .a7-live-pick { display: flex; align-items: center; gap: 8px; flex: 1 1 auto; min-width: 0; min-height: 30px; padding: 0; border: 0; background: transparent; text-align: left; }
-.a7-live-when { color: var(--muted); font-size: 12px; font-weight: 400; }
-.a7-live-open { flex: none; font-size: 12px; font-weight: 600; }
+.a7-live-when { color: var(--muted); font-size: var(--text-xs, 13px); font-weight: 400; }
+.a7-live-open { flex: none; font-size: var(--text-xs, 13px); font-weight: 600; }
 
 /* T5 Share sheet: a read-only value with its Copy button beside it, wrapping under it on a phone. */
 .share-copy { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; }
 .share-copy label { flex: 1 1 240px; display: grid; gap: 4px; min-width: 0; }
-.share-copy input, .share-copy textarea { width: 100%; font-family: var(--font-mono); font-size: 12px; }
+.share-copy input, .share-copy textarea { width: 100%; font-family: var(--font-mono); font-size: var(--text-xs, 13px); }

@@ -1,17 +1,17 @@
 /*
- * Library (#/new): Activity-style white header strip, #fafafa canvas, and white 12px bordered blocks
- * on the Daylight Minimal color theme.
+ * Library (#/new): Console Blocks surface header strip, --bg canvas, and 12px bordered blocks.
  */
-.lib > .ops-head { padding: 20px 24px 20px; background: var(--o-bg); border-bottom: 1px solid var(--o-line); }
-.lib-main { display: flex; flex-direction: column; gap: 18px; padding: 20px 24px 48px; min-width: 0; }
+.lib > .ops-head { padding: 16px 24px; background: var(--surface, #ffffff); border-bottom: 1px solid var(--border-soft, #e6e8ee); }
+.lib-main { display: flex; flex-direction: column; gap: 16px; padding: 18px 24px 44px; min-width: 0; }
 .lib-controls-box {
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  padding: 20px 22px;
-  border: 1px solid var(--o-line);
+  gap: 12px;
+  padding: 16px 18px;
+  border: 1px solid var(--border-soft, #e6e8ee);
   border-radius: 12px;
-  background: var(--o-bg);
+  background: var(--surface, #ffffff);
+  box-shadow: var(--shadow-card);
 }
 .lib-controls-box .gp-lead { margin: 0; }
 .lib-filters { gap: 12px; }
@@ -25,55 +25,55 @@
 .lib-chips { display: flex; flex-wrap: wrap; gap: 8px; }
 .lib-chip {
   min-height: 32px;
-  padding: 6px 13px;
-  border: 1px solid var(--o-line);
-  border-radius: 99px;
-  background: var(--o-bg);
-  color: var(--o-ink);
-  font: 600 13px/18px inherit;
+  padding: 5px 12px;
+  border: 1px solid var(--border-soft, #e6e8ee);
+  border-radius: 999px;
+  background: var(--surface, #ffffff);
+  color: var(--text, #0f131a);
+  font: 500 var(--text-xs, 13px)/18px inherit;
   cursor: pointer;
   box-shadow: none;
-  transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease, transform 120ms var(--ease-spring, ease);
+  transition: background-color 140ms var(--ease), border-color 140ms var(--ease), color 140ms var(--ease);
 }
-.lib-chip:hover { background: var(--o-canvas); border-color: var(--o-field); }
-.lib-chip:active { transform: scale(0.97); }
-.lib-chip[aria-pressed="true"] { background: var(--o-select); border-color: var(--o-accent); color: var(--o-accent); }
+.lib-chip:hover { background: var(--bg, #fafafa); border-color: var(--border, #d1d5df); }
+.lib-chip[aria-pressed="true"] { background: var(--accent-tint, #eef4ff); border-color: var(--accent, #0b66ff); color: var(--accent, #0b66ff); font-weight: 600; }
 
-.lib-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin: 0; padding: 0; list-style: none; }
+.lib-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 0; padding: 0; list-style: none; }
 .lib-card {
   position: relative;
   display: flex;
   flex-direction: column;
   gap: 8px;
   min-width: 0;
-  padding: 18px;
-  border: 1px solid var(--o-line);
+  padding: 16px 18px;
+  border: 1px solid var(--border-soft, #e6e8ee);
   border-radius: 12px;
-  background: var(--o-bg);
-  animation: libCardIn 260ms var(--ease-spring, cubic-bezier(0.22, 1, 0.36, 1)) both;
+  background: var(--surface, #ffffff);
+  box-shadow: var(--shadow-card);
+  animation: libCardIn 240ms var(--ease-spring, cubic-bezier(0.22, 1, 0.36, 1)) both;
   animation-delay: calc(var(--card-index, 0) * 24ms);
-  transition: border-color 140ms ease, transform 180ms var(--ease-spring, ease);
+  transition: border-color 140ms var(--ease);
 }
-.lib-card:hover { border-color: var(--o-field); transform: translateY(-2px); }
-.lib-card[data-selected] { border-color: var(--o-accent); box-shadow: 0 0 0 1px var(--o-accent); }
-.lib-card h3 { margin: 0; letter-spacing: -0.015em; }
+.lib-card:hover { border-color: var(--border, #d1d5df); }
+.lib-card[data-selected] { border-color: var(--accent, #0b66ff); box-shadow: 0 0 0 1px var(--accent, #0b66ff); }
+.lib-card h3 { margin: 0; letter-spacing: -0.015em; font-size: 15px; font-weight: 600; }
 .lib-card .gp-sub { flex: 1 1 auto; }
 /* The title button stretches over the whole card, so a click anywhere opens the preview; the controls below sit above it. */
 .lib-open, .lib-open:hover:not(:disabled) { min-height: 0; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; white-space: normal; cursor: pointer; box-shadow: none; }
 .lib-open::after { content: ""; position: absolute; inset: 0; border-radius: 12px; }
 .lib-open:focus-visible { outline: none; }
-.lib-open:focus-visible::after { outline: 2px solid var(--o-focus); outline-offset: 2px; }
-.lib-line { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0; font-size: 13px; line-height: 18px; color: var(--o-ink); }
-.lib-line > span { min-width: 76px; font-size: 12px; font-weight: 600; color: var(--o-muted); }
-.lib-line em { font-style: normal; color: var(--o-muted); }
-.lib-ready-ok { color: var(--o-ok, #166534); font-weight: 550; }
-.lib-ready-needs { font-size: 12px; color: var(--o-warn, #9a3412); line-height: 17px; }
+.lib-open:focus-visible::after { outline: 2px solid var(--focus, #0b66ff); outline-offset: 2px; }
+.lib-line { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0; font-size: var(--text-xs, 13px); line-height: 18px; color: var(--text, #0f131a); }
+.lib-line > span { min-width: 76px; font-size: var(--text-xs, 13px); font-weight: 600; color: var(--muted, #5b6372); }
+.lib-line em { font-style: normal; color: var(--muted, #5b6372); }
+.lib-ready-ok { color: var(--ok, #15803d); font-weight: 600; }
+.lib-ready-needs { font-size: var(--text-xs, 13px); color: var(--warn, #685500); line-height: 18px; }
 .lib-readiness-box {
   padding: 10px 12px;
-  border: 1px solid var(--o-line);
-  border-radius: 8px;
-  background: var(--o-canvas);
-  font-size: 13px;
+  border: 1px solid var(--border-soft, #e6e8ee);
+  border-radius: 10px;
+  background: var(--bg, #fafafa);
+  font-size: var(--text-xs, 13px);
 }
 .lib-readiness-box ul { margin: 6px 0 0 18px; padding: 0; }
 .lib-apps { min-height: 28px; }
@@ -82,30 +82,30 @@
   align-items: center;
   gap: 6px;
   min-height: 24px;
-  padding: 2px 8px 2px 4px;
-  border: 1px solid var(--o-line);
-  border-radius: 99px;
-  background: var(--o-canvas);
-  font-size: 12px;
-  line-height: 16px;
-  font-weight: 550;
-  color: var(--o-ink);
+  padding: 2px 9px 2px 4px;
+  border: 1px solid var(--border-soft, #e6e8ee);
+  border-radius: 999px;
+  background: var(--bg, #fafafa);
+  font-size: var(--text-xs, 13px);
+  line-height: 18px;
+  font-weight: 500;
+  color: var(--text, #0f131a);
 }
 .lib-card-sample {
   display: flex;
   flex-direction: column;
   gap: 4px;
   padding: 8px 10px;
-  border: 1px solid var(--o-line);
+  border: 1px solid var(--border-soft, #e6e8ee);
   border-radius: 8px;
-  background: var(--o-canvas);
-  font-size: 12px;
-  line-height: 17px;
+  background: var(--bg, #fafafa);
+  font-size: var(--text-xs, 13px);
+  line-height: 18px;
 }
-.lib-card-sample > span { font-size: 11px; font-weight: 700; color: var(--o-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.lib-card-sample > span { font-size: var(--text-xs, 13px); font-weight: 600; color: var(--muted, #5b6372); text-transform: uppercase; letter-spacing: 0.04em; }
 .lib-card-sample p {
   margin: 0;
-  color: var(--o-ink);
+  color: var(--text, #0f131a);
   display: -webkit-box;
   -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
@@ -120,10 +120,11 @@
   flex-direction: column;
   align-items: flex-start;
   gap: 12px;
-  padding: 20px 22px;
-  border: 1px solid var(--o-line);
+  padding: 18px 20px;
+  border: 1px solid var(--border-soft, #e6e8ee);
   border-radius: 12px;
-  background: var(--o-bg);
+  background: var(--surface, #ffffff);
+  box-shadow: var(--shadow-card);
 }
 
 .lib-modal-backdrop {
@@ -134,15 +135,15 @@
   align-items: center;
   justify-content: center;
   padding: 20px;
-  background: rgb(15 19 26 / 0.45);
+  background: rgb(10 11 14 / 0.4);
 }
 .lib-dialog {
   width: min(960px, calc(100vw - 32px));
   max-height: calc(100vh - 40px);
   overflow-y: auto;
-  border-radius: 14px;
-  background: var(--o-bg);
-  box-shadow: 0 20px 56px rgb(10 11 15 / 0.28);
+  border-radius: 12px;
+  background: var(--surface, #ffffff);
+  box-shadow: var(--shadow-overlay);
 }
 .lib-dialog:focus { outline: none; }
 .lib-preview {
@@ -150,45 +151,44 @@
   flex-direction: column;
   gap: 12px;
   padding: 20px;
-  border: 1px solid var(--o-accent);
+  border: 1px solid var(--accent, #0b66ff);
   border-radius: 12px;
-  background: var(--o-bg);
+  background: var(--surface, #ffffff);
   scroll-margin-block: 12px;
-  animation: libPreviewIn 240ms var(--ease-spring, cubic-bezier(0.22, 1, 0.36, 1)) both;
+  animation: libPreviewIn 220ms var(--ease-spring, cubic-bezier(0.22, 1, 0.36, 1)) both;
 }
-.lib-dialog .lib-preview { border: 1px solid var(--o-line); border-radius: 14px; }
+.lib-dialog .lib-preview { border: 1px solid var(--border-soft, #e6e8ee); border-radius: 12px; }
 .lib-sample {
   padding: 12px 14px;
-  border: 1px solid var(--o-line);
+  border: 1px solid var(--border-soft, #e6e8ee);
   border-radius: 10px;
-  background: var(--o-canvas);
+  background: var(--bg, #fafafa);
 }
-.lib-sample p { margin: 0; font-size: 13px; line-height: 19px; white-space: pre-wrap; overflow-wrap: anywhere; }
-.lib-sample-subject { font-weight: 650; margin-bottom: 4px !important; }
+.lib-sample p { margin: 0; font-size: var(--text-xs, 13px); line-height: 19px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.lib-sample-subject { font-weight: 600; margin-bottom: 4px !important; }
 .lib-preview > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
-.lib-preview h2 { font-size: 20px; line-height: 26px; letter-spacing: -0.02em; }
-.lib-preview h3 { margin: 0 0 6px; font-size: 13px; line-height: 16px; font-weight: 700; color: var(--o-muted); }
+.lib-preview h2 { font-size: 18px; line-height: 24px; letter-spacing: -0.02em; font-weight: 600; }
+.lib-preview h3 { margin: 0 0 6px; font-size: var(--text-xs, 13px); line-height: 18px; font-weight: 600; color: var(--muted, #5b6372); }
 .lib-preview-body { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 16px; align-items: start; }
 .lib-diagram { min-width: 0; }
 .lib-diagram .run-canvas { height: 440px; }
-.lib-steps { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; list-style: none; font-size: 13px; line-height: 18px; color: var(--o-ink); }
+.lib-steps { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; list-style: none; font-size: var(--text-xs, 13px); line-height: 18px; color: var(--text, #0f131a); }
 .lib-steps li { overflow-wrap: anywhere; }
-.lib-steps li:first-child { font-weight: 700; }
+.lib-steps li:first-child { font-weight: 600; }
 .lib-name { max-width: 420px; }
 
 @keyframes libCardIn {
-  from { opacity: 0; transform: translateY(8px); }
+  from { opacity: 0; transform: translateY(5px); }
   to { opacity: 1; transform: translateY(0); }
 }
 @keyframes libPreviewIn {
-  from { opacity: 0; transform: translateY(6px); }
+  from { opacity: 0; transform: translateY(5px); }
   to { opacity: 1; transform: translateY(0); }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .lib-card, .lib-preview { animation: none; }
   .lib-card, .lib-chip { transition: none; }
-  .lib-card:hover { transform: none; }
 }
 
 @media (max-width: 1099.98px) {
@@ -196,12 +196,12 @@
   .lib-preview-body { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 799.98px) {
-  .lib > .ops-head { padding: 16px; }
-  .lib-main { padding: 16px 16px 32px; gap: 16px; }
-  .lib-controls-box { padding: 16px; }
+  .lib > .ops-head { padding: 14px 16px; }
+  .lib-main { padding: 14px 16px 32px; gap: 14px; }
+  .lib-controls-box { padding: 14px; }
   .lib-grid { grid-template-columns: minmax(0, 1fr); gap: 12px; }
   .lib-chip { min-height: var(--target); }
-  .lib-chips { flex-wrap: nowrap; overflow-x: auto; margin-inline: -16px; padding-inline: 16px; scrollbar-width: none; }
+  .lib-chips { flex-wrap: nowrap; overflow-x: auto; margin-inline: -14px; padding-inline: 14px; scrollbar-width: none; }
   .lib-chip { flex: none; }
   /* In the sheet the preview has no box of its own, and the diagram sits above the words. */
   .wk-sheet .lib-preview { padding: 0; border: 0; }
@@ -210,10 +210,10 @@
 }
 
 /* The sheet takes its colours from the workspace pages; this page is not one, so it carries them itself. */
-.lib .wk-sheet { --w-bg: var(--o-bg); --w-ink: var(--o-ink); --w-muted: var(--o-muted); --w-line: var(--o-line); }
+.lib .wk-sheet { --w-bg: var(--surface, #ffffff); --w-ink: var(--text, #0f131a); --w-muted: var(--muted, #5b6372); --w-line: var(--border-soft, #e6e8ee); }
 .lib .act-head .tabs { margin-top: 10px; }
-.lib-blank-footer { margin-top: 8px; padding: 18px 20px; border: 1px solid var(--o-line); border-radius: 12px; background: var(--o-bg); display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 16px; }
-.lib-blank-footer h2 { margin: 0 0 4px; font-size: 1rem; font-weight: 650; }
+.lib-blank-footer { margin-top: 8px; padding: 16px 18px; border: 1px solid var(--border-soft, #e6e8ee); border-radius: 12px; background: var(--surface, #ffffff); box-shadow: var(--shadow-card); display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 16px; }
+.lib-blank-footer h2 { margin: 0 0 4px; font-size: 1rem; font-weight: 600; }
 .lib-blank-footer .gp-sub { margin: 0; }
 .lib-blank-footer .lib-blank { flex-direction: row; flex-wrap: wrap; align-items: flex-end; gap: 10px; }
 .lib-blank-footer .lib-blank .gp-field { min-width: 220px; }

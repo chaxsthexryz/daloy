@@ -34,12 +34,15 @@ export function NotificationsCard() {
   return (
     <section className="wk-card" aria-labelledby="notifications-card">
       <h2 className="wk-card-head" id="notifications-card"><b>{t("Notifications")}</b></h2>
-      <fieldset className="wk-body wk-radios" disabled={!prefs}>
+      <fieldset className="wk-body wk-switch-list" disabled={!prefs}>
         <legend className="wk-sr">{t("Notifications")}</legend>
         {ROWS.map(([key, label, note]) => (
-          <label key={key}>
-            <input type="checkbox" checked={prefs?.[key] ?? false} onChange={(e) => void change(key, e.target.checked)} /> {t(label)}
-            {note && <span className="wk-muted"> {t(note)}</span>}
+          <label key={key} className="wk-switch-row">
+            <span className="wk-switch-copy">
+              <span>{t(label)}</span>
+              {note && <small>{t(note)}</small>}
+            </span>
+            <input type="checkbox" className="wk-switch-input" checked={prefs?.[key] ?? false} onChange={(e) => void change(key, e.target.checked)} />
           </label>
         ))}
         <p className="wk-muted">{t("Choose what appears in the bell and as pop-ups. These choices are only for you.")}</p>
