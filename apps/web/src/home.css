@@ -313,15 +313,21 @@
 .hm-day-row {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
+  justify-items: center;
   gap: 4px;
   flex: none;
 }
 
-.hm-day-btn {
+/* Small day pills centred under each chart point, never stretched to the column (the global button style is wider). */
+.hm-day-row .hm-day-btn {
+  width: 32px;
+  min-width: 0;
+  height: 26px;
   min-height: 26px;
-  padding: 0 4px;
+  padding: 0;
   border: 1px solid transparent;
-  border-radius: 6px;
+  border-radius: 999px;
+  box-shadow: none;
   background: transparent;
   color: var(--a-muted);
   font: 500 var(--text-xs, 13px)/1 var(--font-sans);
@@ -329,12 +335,17 @@
   transition: background-color 140ms var(--ease, ease), color 140ms var(--ease, ease);
 }
 
-.hm-day-btn:hover {
+.hm-day-row .hm-day-btn:hover {
   background: var(--a-canvas);
   color: var(--a-ink);
 }
 
-.hm-day-btn[aria-pressed="true"] {
+.hm-day-row .hm-day-btn:focus-visible {
+  outline: 2px solid var(--a-accent);
+  outline-offset: 1px;
+}
+
+.hm-day-row .hm-day-btn[aria-pressed="true"] {
   background: var(--a-select);
   color: var(--a-accent);
   font-weight: 600;

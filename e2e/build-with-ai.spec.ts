@@ -36,8 +36,7 @@ async function start(page: Page, message: string) {
     if (path === "/workflows") posts.push(path);
   });
   await page.goto("/#/ai");
-  await expect(page.getByRole("heading", { name: "New automation", level: 1 })).toBeVisible();
-  await expect(page.getByRole("navigation", { name: "Create automation" }).getByRole("link", { name: "Build with AI" })).toHaveAttribute("aria-current", "page");
+  await expect(page.getByRole("heading", { name: "Build with AI", level: 1 })).toBeVisible();
   await page.getByLabel("What should happen?").fill(message);
   await page.getByRole("button", { name: "Send", exact: true }).click();
   return { chats, posts };
@@ -159,8 +158,7 @@ test("owners see Build with AI inside the New picker on desktop and mobile", asy
   await expect(page.getByRole("link", { name: "Build with AI", exact: true })).toHaveAttribute("href", "#/ai");
   await page.setViewportSize({ width: 375, height: 812 });
   await page.getByRole("link", { name: "Build with AI", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "New automation", level: 1 })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Build with AI", exact: true })).toHaveAttribute("aria-current", "page");
+  await expect(page.getByRole("heading", { name: "Build with AI", level: 1 })).toBeVisible();
 });
 
 test("Enter sends, Shift+Enter is a newline", async ({ page }) => {

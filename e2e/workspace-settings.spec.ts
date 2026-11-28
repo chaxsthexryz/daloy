@@ -6,8 +6,8 @@ import { joinAs, registerOwner } from "./workspace";
 test("Settings shows the cards for each role and keeps the theme after a reload", async ({ page, browser }) => {
   await registerOwner(page);
   await page.goto("/#/settings");
-  await expect(page.getByText("Signed in as owner", { exact: true })).toBeVisible();
-  for (const card of ["Language", "Appearance", "Your account", "Plan and usage", "Advanced"]) {
+  await expect(page.locator(".wk-head").getByText(/· Owner$/)).toBeVisible();
+  for (const card of ["Account & Security", "Language", "Appearance", "Plan and usage", "Advanced"]) {
     await expect(page.getByRole("region", { name: card })).toBeVisible();
   }
   const advanced = page.getByRole("region", { name: "Advanced" });
@@ -28,7 +28,7 @@ test("Settings shows the cards for each role and keeps the theme after a reload"
   const operator = await joinAs(browser, page, "Operator", { width: 1280, height: 720 });
   await operator.goto("/#/settings");
   await operator.reload();
-  await expect(operator.getByText("Signed in as operator", { exact: true })).toBeVisible();
+  await expect(operator.locator(".wk-head").getByText(/· Operator$/)).toBeVisible();
   await expect(operator.getByRole("region", { name: "Appearance" })).toBeVisible();
   await expect(operator.getByRole("region", { name: "Plan and usage" })).toBeVisible();
   await expect(operator.getByRole("region", { name: "Language" })).toHaveCount(0);

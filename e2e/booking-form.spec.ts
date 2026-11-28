@@ -23,7 +23,7 @@ test("an owner adds a resource and a customer books it on the public form", asyn
     return route.continue();
   });
   await page.getByRole("link", { name: "Bookings" }).click();
-  await page.getByRole("navigation", { name: "Bookings" }).getByRole("link", { name: "Rooms and slots", exact: true }).click();
+  await page.getByRole("main").getByRole("link", { name: "Rooms and slots", exact: true }).click();
   await expect.poll(() => lists).toBe(1);
   await page.getByLabel("Name").fill("Ana");
   await page.getByRole("button", { name: "Add resource" }).click();

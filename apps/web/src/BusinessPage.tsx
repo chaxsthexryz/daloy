@@ -7,12 +7,13 @@ import { TeamPage, type User } from "./Team";
 
 export type BusinessTab = "details" | "knowledge" | "apps" | "team";
 
-const TABS: { key: BusinessTab; label: string; href: string }[] = [
-  { key: "details", label: "Details and branding", href: "#/business" },
-  { key: "knowledge", label: "Knowledge", href: "#/business?tab=knowledge" },
-  { key: "apps", label: "Apps", href: "#/business?tab=apps" },
-  { key: "team", label: "Team", href: "#/business?tab=team" },
-];
+// The sidebar tree links each page (decision 0164), so the page carries its own title and no tab bar.
+const TITLES: Record<BusinessTab, { title: string; sub: string }> = {
+  details: { title: "Details and branding", sub: "Business identity, public form accent, and customer preview." },
+  knowledge: { title: "Knowledge", sub: "Write what guests ask about: rooms, rates, policies, questions and links. The concierge answers only from the published version, so check prices before you publish." },
+  apps: { title: "Apps", sub: "Everything here is optional. Each app is used only by the automations you turn on, and the demo works without any of them." },
+  team: { title: "Team", sub: "Workspace members, roles, and pending invitations." },
+};
 
 /** #/business: workspace details, Knowledge, Apps and Team in one place. */
 export function BusinessPage({
@@ -32,22 +33,7 @@ export function BusinessPage({
 
   return (
     <main className="page act">
-      <PageHead
-        crumbs={[]}
-        title={t("Business")}
-        sub={t("Business details, knowledge sheet, connected apps and team.")}
-        tabs={
-          owner ? (
-            <nav className="tabs" aria-label={t("Business")}>
-              {TABS.map((item) => (
-                <a key={item.key} href={item.href} aria-current={tab === item.key ? "page" : undefined}>
-                  {t(item.label)}
-                </a>
-              ))}
-            </nav>
-          ) : undefined
-        }
-      />
+      <PageHead crumbs={[]} title={t(TITLES[tab].title)} sub={t(TITLES[tab].sub)} />
       {tab === "details" && <BusinessSetupPage embedded />}
       {tab === "knowledge" && <KnowledgePage embedded />}
       {tab === "apps" && <AppsPage embedded outcome={outcome} initialApp={initialApp} />}

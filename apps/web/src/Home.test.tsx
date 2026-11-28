@@ -118,7 +118,7 @@ describe("HomePage Console Blocks", () => {
     expect(html).toContain("Connected apps");
     expect(html).toContain("Gmail");
     expect(html).toContain("Connected");
-    expect(html).toContain('href="#/a/wf-1"');
+    expect(html).toContain('href="#/w/wf-1"');
   });
 
   it("keeps Needs you, Problems, and What ran as h2 headings and renders healthy zero states", () => {

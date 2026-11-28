@@ -66,14 +66,14 @@ test("a beginner previews, sets up, turns on and receives one office request", a
   expect(receipts[0]).toContain(`Your reference is ${reference}`);
   expect(mail().some((m) => m.includes("REQ-SAMPLE"))).toBe(false);
 
-  // One automation, three tabs (N4e): Overview, Activity and Steps.
+  // One automation, two tabs (decision 0164): Steps and Activity; the status page stays at #/a/<id>.
   const tabs = page.getByRole("navigation", { name: "This automation" });
   await tabs.getByRole("link", { name: "Activity" }).click();
   await expect(tabs.getByRole("link", { name: "Activity" })).toHaveAttribute("aria-current", "page");
   await tabs.getByRole("link", { name: "Steps" }).click();
   await page.getByRole("button", { name: "Diagram", exact: true }).click();
   await expect(page.locator(".react-flow__node").first()).toBeVisible();
-  await tabs.getByRole("link", { name: "Overview" }).click();
+  await page.goto(`/#/a/${new URL(page.url()).hash.split("/")[2]}`);
   await expect(page.getByRole("status").filter({ hasText: "Accepting requests" })).toBeVisible();
 
   // On a phone, from Home: recent activity search finds the reference and opens its run.

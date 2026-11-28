@@ -444,6 +444,11 @@ export function GeneratedWizard({
 
           <p role="alert" className="gp-error" hidden={!error}>{error}</p>
           <div className="gp-actions">
+            {index > 0 && (
+              <button type="button" className="ops-button" disabled={busy} onClick={() => setStep(WIZARD_STEPS[index - 1]!)}>
+                {t("Back")}
+              </button>
+            )}
             <button className={`ops-button ${index === WIZARD_STEPS.length - 1 ? "blue" : "dark"}`} disabled={busy || turnOnBlocked}>
               {busy ? t("Saving…") : index === WIZARD_STEPS.length - 1 ? t("Turn on") : t("Next")}
             </button>
@@ -451,13 +456,6 @@ export function GeneratedWizard({
               {t("Save and finish later")}
             </button>
           </div>
-          {index > 0 && (
-            <div className="gp-actions">
-              <button type="button" className="ops-button" disabled={busy} onClick={() => setStep(WIZARD_STEPS[index - 1]!)}>
-                {t("Back")}
-              </button>
-            </div>
-          )}
         </form>
         <aside className="ops-panel" aria-labelledby="wiz-steps">
           <p id="wiz-steps" className="gp-eyebrow"><Text>Setup steps</Text></p>

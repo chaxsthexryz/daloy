@@ -519,7 +519,7 @@ export function HomePage({
                 ) : (
                   <div className="hm-running-strip" aria-label={t("Running automations")}>
                     {data.running.map((w) => (
-                      <a key={w.id} className="hm-running-chip" href={`#/a/${w.id}`}>
+                      <a key={w.id} className="hm-running-chip" href={`#/w/${w.id}`}>
                         <strong>{w.name}</strong>
                         <span className="tnum">{w.runsToday}</span>
                       </a>

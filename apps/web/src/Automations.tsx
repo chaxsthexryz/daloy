@@ -1,14 +1,13 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type RefObject } from "react";
 import type { WorkflowDefinition } from "@daloy/engine";
 import { useLanguage } from "./Language";
-import { api, getUsage, type RunSummary, type Usage, type Workflow } from "./api";
+import { api, type RunSummary, type Workflow } from "./api";
 import { draftPlan } from "./lib/ai-build";
-import { arrange, counts, displayStatus, statusOf, triggerLabel, withTrigger, type Filter } from "./lib/automations";
+import { arrange, displayStatus, statusOf, triggerLabel, withTrigger, type Filter } from "./lib/automations";
 import { LIVE_RUN_EVENT } from "./lib/live-runs";
 import { useSlidingPill } from "./lib/motion";
-import { RUN_LIMIT, totals, type OverviewEntry } from "./lib/ops-stats";
+import { RUN_LIMIT, type OverviewEntry } from "./lib/ops-stats";
 import { ago, plainState } from "./lib/states";
-import { AnimatedCounter } from "./AnimatedCounter";
 import { FormEmbed } from "./FormEmbed";
 import type { User } from "./Team";
 import { pushToast } from "./Toast";
@@ -52,7 +51,6 @@ export function Automations({ user }: { user: User }) {
   // The selected automation's newest runs, for its panel. Undefined while loading, null when the call failed.
   const [recent, setRecent] = useState<RunSummary[] | null | undefined>(undefined);
   const [review, setReview] = useState<RunSummary[] | null>(null);
-  const [usage, setUsage] = useState<Usage | null>(null);
   const [details, setDetails] = useState<Record<string, Detail | null>>({});
   const [copied, setCopied] = useState("");
   const [error, setError] = useState("");
@@ -83,7 +81,6 @@ export function Automations({ user }: { user: User }) {
       () => setOverview(null),
     );
     api<RunSummary[]>("GET", "/runs?review=true").then(setReview, () => setReview(null));
-    getUsage().then(setUsage, () => setUsage(null));
   };
   useEffect(load, []);
   useEffect(() => {
@@ -94,27 +91,13 @@ export function Automations({ user }: { user: User }) {
 
   const all = list ?? [];
   const now = Date.now();
-  const total = counts(all);
   const typeOf = useMemo(() => Object.fromEntries(Object.entries(overview ?? {}).flatMap(([id, o]) => (o.trigger ? [[id, o.trigger]] : []))) as Record<string, string>, [overview]);
   const triggerTypes = [...new Set(Object.values(typeOf))].sort();
   const shown = withTrigger(arrange(all, query, filter).shown, trigger, typeOf);
   // Nothing is selected on load: the panel stays closed until a row is clicked.
   const selected = shown.find((w) => w.id === selectedId) ?? null;
-  const stats = overview ? totals(Object.values(overview).map((o) => o.runs)) : null;
   const reviewOf = (id: string) => (review ?? []).filter((r) => r.workflowId === id);
 
-  const needsYouNum = review ? review.length : total.needs_you;
-  const liveRaw = usage ? usage.automations.live : total.on;
-  const weekRuns = stats ? stats.week : 0;
-  const liveDots = useMemo(() => {
-    const N = 25;
-    const len = all.length;
-    const onN = len === 0 ? 0 : len <= N ? liveRaw : Math.round((liveRaw / len) * N);
-    const probN = len === 0 ? 0 : len <= N ? total.problem : Math.round((total.problem / len) * N);
-    const clampedOn = Math.max(0, Math.min(N, onN));
-    const clampedProb = Math.max(0, Math.min(N - clampedOn, probN));
-    return Array.from({ length: N }, (_, i) => (i < clampedOn ? "on" : i < clampedOn + clampedProb ? "problem" : "off"));
-  }, [all.length, liveRaw, total.problem]);
 
   // The steps and versions of the selected automation, and its newest runs, load when it is selected and again after a change.
   const selectedKey = selected?.id;
@@ -233,9 +216,6 @@ export function Automations({ user }: { user: User }) {
     setFilter("all");
     setTrigger("any");
   };
-  const percent = (n: number) => `${(n * 100).toFixed(1)}%`;
-
-  const needsYou = review && review.length >= RUN_LIMIT ? `${RUN_LIMIT}+` : String(needsYouNum);
 
   const quickGrid = owner ? (
     <div className="quick-grid" aria-label={t("Quick start")}>
@@ -310,53 +290,7 @@ export function Automations({ user }: { user: User }) {
             {head}
             <div className="ops-body motion-page">
               {quickGrid}
-              <section className="ops-kpi-band" aria-label={t("Overview")}>
-                <div className="ops-kpi-live">
-                  <div className="ops-kpi-label"><i className="ops-pulse" aria-hidden="true" /> {t("Live automations")}</div>
-                  <div className="ops-big">
-                    <strong className="tnum"><AnimatedCounter value={liveRaw} /></strong>
-                    <span>{t("of {total} running now", { total: all.length })}</span>
-                  </div>
-                  <div className="ops-live-dots" aria-hidden="true">
-                    {liveDots.map((tone, i) => <i key={i} className={`ops-ldot ${tone}`} />)}
-                  </div>
-                  <div className="ops-legend">
-                    <span><i className="l-on" aria-hidden="true" /> {t("Live")}</span>
-                    <span><i className="l-prob" aria-hidden="true" /> {t("Problem")}</span>
-                    <span><i className="l-off" aria-hidden="true" /> {t("Off or draft")}</span>
-                  </div>
-                </div>
-                <div className="ops-kpi-grid">
-                  <div className="ops-kpi-cell">
-                    <span className="ops-klabel">{t("Runs today")}</span>
-                    <div className="ops-kval lg tnum">
-                      <strong>{stats ? <AnimatedCounter value={stats.today} /> : t("n/a")}</strong>
-                      <small>{stats ? t("{count} runs in 7d", { count: weekRuns.toLocaleString() }) : ""}</small>
-                    </div>
-                  </div>
-                  <div className="ops-kpi-cell">
-                    <span className="ops-klabel">{t("Success, 7 days")}</span>
-                    <div className="ops-kval tnum">
-                      <strong>{stats ? (stats.rate === null ? t("n/a") : <AnimatedCounter value={percent(stats.rate)} />) : t("n/a")}</strong>
-                      <small>{stats ? t("{count} runs", { count: weekRuns.toLocaleString() }) : ""}</small>
-                    </div>
-                  </div>
-                  <button type="button" className="ops-kpi-cell is-btn needs" aria-pressed={filter === "needs_you"} onClick={() => setFilter(filter === "needs_you" ? "all" : "needs_you")}>
-                    <span className="ops-klabel">{t("Needs you")}</span>
-                    <div className="ops-kval tnum">
-                      <strong className={needsYouNum === 0 ? "ok" : "amber"}><AnimatedCounter value={needsYou} /></strong>
-                      <small>{needsYouNum === 0 ? t("all clear") : t("approvals waiting")}</small>
-                    </div>
-                  </button>
-                  <button type="button" className="ops-kpi-cell is-btn problems" aria-pressed={filter === "problem"} onClick={() => setFilter(filter === "problem" ? "all" : "problem")}>
-                    <span className="ops-klabel">{t("Problems")}</span>
-                    <div className="ops-kval tnum">
-                      <strong className={total.problem === 0 ? "ok" : "red"}><AnimatedCounter value={total.problem} /></strong>
-                      <small>{total.problem === 0 ? t("all healthy") : t("needs attention")}</small>
-                    </div>
-                  </button>
-                </div>
-              </section>
+              {/* The live, runs and problem counts live on Home (decision 0164); this page is the list. */}
 
               {review && review.length > 0 && (
                 <p role="status" className="ops-alert attn">
@@ -530,7 +464,7 @@ function Row({ w, index, selected, reviewCount, entry, loading, now, onPick }: {
       className="ops-row motion-stagger-row"
       style={{ "--row-index": Math.min(index, 12) } as CSSProperties}
       data-selected={selected || undefined}
-      onDoubleClick={() => { location.hash = `#/a/${w.id}`; }}
+      onDoubleClick={() => { location.hash = `#/w/${w.id}`; }}
       onClick={(e) => {
         if (!(e.target as HTMLElement).closest("button, a")) onPick(w, e.currentTarget.querySelector(".c-name button"));
       }}
@@ -544,7 +478,7 @@ function Row({ w, index, selected, reviewCount, entry, loading, now, onPick }: {
             onKeyDown={(e) => {
               if (e.key === "Enter" && e.shiftKey) {
                 e.preventDefault();
-                location.hash = `#/a/${w.id}`;
+                location.hash = `#/w/${w.id}`;
               }
             }}
           >{w.name}</button>
@@ -573,7 +507,7 @@ function Row({ w, index, selected, reviewCount, entry, loading, now, onPick }: {
       <td className="c-action">
         <a
           className="ops-button secondary ops-open-btn"
-          href={`#/a/${w.id}`}
+          href={`#/w/${w.id}`}
           onClick={(e) => e.stopPropagation()}
         >
           {t("Open")}
@@ -610,7 +544,7 @@ function Panel({ w, owner, detail, entry, runs, review, now, sheet, closing, clo
       ? { href: `#/a/${w.id}`, label: t("Continue setup") }
       : oldest
         ? { href: `#/runs/${oldest.id}`, label: t(review.length === 1 ? "Review 1 request" : "Review {count} requests", { count: review.length }) }
-        : { href: `#/a/${w.id}`, label: t("Open") };
+        : { href: `#/w/${w.id}`, label: t("Open") };
   const editable = owner && status !== "draft" && primary.href !== `#/w/${w.id}`;
   const definition = detail?.live?.definition ?? detail?.latest?.definition;
   const plan = (() => {

@@ -8,8 +8,8 @@ test("Resources: add, rename, archive and restore with counts", async ({ page })
   const row = (name: string) => page.getByRole("row").filter({ hasText: name });
   await page.goto("/#/resources");
   await page.reload();
-  await expect(page.getByRole("heading", { name: "Bookings", level: 1 })).toBeVisible();
-  await expect(page.getByRole("navigation", { name: "Bookings" }).getByRole("link", { name: "Rooms and slots", exact: true })).toHaveAttribute("aria-current", "page");
+  await expect(page.getByRole("heading", { name: "Rooms and slots", level: 1 })).toBeVisible();
+  await expect(page.getByRole("main").getByRole("link", { name: "Calendar", exact: true })).toHaveAttribute("href", "#/bookings");
   await expect(page.getByRole("link", { name: "Settings", exact: true }).first()).toHaveAttribute("href", "#/settings");
   await expect(page.getByLabel("Room type or label (optional)")).toHaveAttribute("placeholder", "Garden room, Beach villa");
   await expect(page.getByText("No resources yet.")).toBeVisible();

@@ -22,6 +22,7 @@ import { isLiveRunFinished, LIVE_RUN_EVENT, type LiveRunChange } from "./lib/liv
 import { runFlow } from "./lib/run-flow";
 import { ago } from "./lib/states";
 import { AutomationTabs } from "./Nav";
+import { pushToast } from "./Toast";
 import { DocTemplatePicker } from "./DocTemplatePicker";
 import { BrowserActions } from "./BrowserActions";
 import { SwitchCases } from "./SwitchCases";
@@ -190,8 +191,8 @@ export function Editor({ id, from }: { id: string; from?: string }) {
   const [conns, setConns] = useState<ConnInfo[]>([]);
   // True until GET /settings/email answers, so a node never flashes "Connect Gmail" while the answer is on its way.
   const [mailReady, setMailReady] = useState(true);
-  // Open in List view by default for everyone; Diagram is one click away.
-  const [view, setView] = useState<"diagram" | "list">("list");
+  // Diagram first, as in the Console Blocks mock (decision 0164); phones open in List, where the canvas is cramped.
+  const [view, setView] = useState<"diagram" | "list">(() => (phone ? "list" : "diagram"));
   // R2b: the last test run and the draft it ran on, the dialogs, and whether the owner has read "Explain this flow".
   const [sample, setSample] = useState<SampleResult | null>(null);
   const { run: sampleRun } = useRun(sample?.runId ?? null);
@@ -406,6 +407,8 @@ export function Editor({ id, from }: { id: string; from?: string }) {
       const v = await api<{ version: number }>("POST", `/workflows/${id}/versions`, { definition: draft, publish });
       setDirty(false);
       await reload();
+      // Publishing also shows a lower-right toast, as in the Console Blocks mock (decision 0164).
+      if (publish) pushToast({ message: t("Now live: {name}, version {version}.", { name: wf?.name ?? t("Automation"), version: v.version }), tone: "success" });
       return publish ? t("Version {version} is live.", { version: v.version }) : t("Saved as version {version}.", { version: v.version });
     });
   const parsedPayload = () => {
@@ -853,13 +856,16 @@ export function Editor({ id, from }: { id: string; from?: string }) {
               {wf.live && !wf.latest?.published && t(" · version {version} is live", { version: wf.live.version })}
             </span>
           </div>
+        </div>
+        <div className="a7-head-side">
+          {/* Steps, Activity and Versions as one segmented control beside the actions, as in the Console Blocks mock (decision 0164). */}
           <div className="a7-tabs">
             <AutomationTabs id={id} here="steps" overview={!!wf.setup && !!wf.live} />
             <a href={`#/w/${id}/versions`}>{t("Versions")}</a>
           </div>
+          {/* Keep global workflow actions pinned in the desktop header regardless of panel fold state. */}
+          {wide && actions}
         </div>
-        {/* Keep global workflow actions pinned in the desktop header regardless of panel fold state. */}
-        {wide && actions}
       </header>
       <div className="a7-body">
         <section className="a7-canvas" aria-label={t("Automation diagram. Tab to a step and press Enter to select it, Delete to remove it.")}>

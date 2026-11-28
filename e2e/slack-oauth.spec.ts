@@ -13,7 +13,7 @@ async function openSlack(page: Page) {
   await page.getByLabel("Email").fill(`slack-${Date.now()}@test.local`);
   await page.getByLabel("Password").fill("e2e test password 1");
   await page.getByRole("button", { name: "Create account" }).click();
-  await page.getByRole("link", { name: "Business" }).first().click(); await page.getByRole("navigation", { name: "Business" }).getByRole("link", { name: "Apps", exact: true }).click();
+  await page.locator("#main-menu").getByRole("link", { name: "Apps", exact: true }).click();
   await page.getByRole("button", { name: "Connect Slack" }).click();
   return page.getByRole("region", { name: "Slack setup" });
 }

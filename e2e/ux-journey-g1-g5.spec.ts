@@ -11,14 +11,14 @@ async function registerOwner(page: Page, prefix = "ux-g1-g5") {
   return email;
 }
 
-test("desktop full journey across G1-G5: 6-item nav, readiness, wizard, tabs, Settings, Inbox, Home", async ({ page }) => {
+test("desktop full journey across G1-G5: 8-item nav, readiness, wizard, tabs, Settings, Inbox, Home", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await registerOwner(page, "g1g5-desk");
 
-  // 1. Sidebar has exactly 6 primary destinations (G3)
+  // 1. Sidebar has exactly 8 primary destinations (G3, decision 0164)
   const navLinks = page.locator("#main-menu > a");
-  await expect(navLinks).toHaveCount(6);
-  for (const label of ["Home", "Inbox", "Bookings", "Automations", "Business", "Settings"]) {
+  await expect(navLinks).toHaveCount(8);
+  for (const label of ["Home", "Inbox", "Bookings", "Automations", "Apps", "Business", "Settings", "Support"]) {
     await expect(navLinks.getByText(label, { exact: true })).toBeVisible();
   }
 
@@ -31,9 +31,9 @@ test("desktop full journey across G1-G5: 6-item nav, readiness, wizard, tabs, Se
   await page.getByRole("link", { name: "Automations", exact: true }).first().click();
   await expect(page.getByRole("heading", { name: "Automations", exact: true })).toBeVisible();
   await page.getByRole("link", { name: "New", exact: true }).first().click();
-  await expect(page.getByRole("heading", { name: "New automation", exact: true })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Templates", exact: true })).toHaveAttribute("aria-current", "page");
-  await expect(page.getByRole("link", { name: "Build with AI", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Templates", exact: true })).toBeVisible();
+  await expect(page.locator('#main-menu a[href="#/new"]')).toHaveAttribute("data-active", "true");
+  await expect(page.getByRole("main").getByRole("link", { name: "Build with AI", exact: true })).toBeVisible();
 
   // Pick a template with readiness blockers -> opens generated wizard (#/a/:id)
   await page.getByRole("searchbox", { name: "Search the library" }).fill("Lalamove");
@@ -43,25 +43,25 @@ test("desktop full journey across G1-G5: 6-item nav, readiness, wizard, tabs, Se
   await expect(page).toHaveURL(/#\/a\/[0-9a-f-]+$/);
   await expect(page.getByRole("heading", { name: "Answer a few questions", exact: true })).toBeVisible();
 
-  // Edit steps opens List view first in Editor (#/w/:id)
+  // Edit steps opens the editor (#/w/:id) in Diagram view on a computer (decision 0164)
   await page.getByRole("link", { name: "Edit steps", exact: true }).click();
   await expect(page).toHaveURL(/#\/w\/[0-9a-f-]+$/);
-  await expect(page.getByRole("button", { name: "List", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("button", { name: "Diagram", exact: true })).toHaveAttribute("aria-pressed", "true");
   const gotIt = page.getByRole("button", { name: "Got it", exact: true });
   if (await gotIt.isVisible().catch(() => false)) await gotIt.click();
 
-  // 4. Business tabs & Lalamove app card (G3)
+  // 4. Business sub-pages in the sidebar tree & Lalamove app card (G3, decision 0164)
   await page.getByRole("link", { name: "Business", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Business", exact: true })).toBeVisible();
-  for (const tab of ["Details and branding", "Knowledge", "Apps", "Team"]) {
-    await expect(page.getByRole("navigation", { name: "Business" }).getByRole("link", { name: tab, exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Details and branding", exact: true })).toBeVisible();
+  for (const tab of ["Details and branding", "Knowledge", "Team"]) {
+    await expect(page.locator("#main-menu").getByRole("link", { name: tab, exact: true })).toBeVisible();
   }
-  await page.getByRole("navigation", { name: "Business" }).getByRole("link", { name: "Apps", exact: true }).click();
+  await page.locator("#main-menu").getByRole("link", { name: "Apps", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Lalamove", exact: true })).toBeVisible();
 
   // 5. Bookings tabs: Calendar + Rooms and slots (G3)
   await page.getByRole("link", { name: "Bookings", exact: true }).click();
-  await expect(page.getByRole("navigation", { name: "Bookings" }).getByRole("link", { name: "Rooms and slots", exact: true })).toBeVisible();
+  await expect(page.getByRole("main").getByRole("link", { name: "Rooms and slots", exact: true })).toBeVisible();
 
   // 6. Settings > Advanced (G3)
   await page.getByRole("link", { name: "Settings", exact: true }).click();

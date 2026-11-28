@@ -26,7 +26,7 @@ test("an owner connects a Notion database and adds a test page", async ({ page }
   await page.getByLabel("Password").fill("e2e test password 1");
   await page.getByRole("button", { name: "Create account" }).click();
 
-  await page.getByRole("link", { name: "Business" }).first().click(); await page.getByRole("navigation", { name: "Business" }).getByRole("link", { name: "Apps", exact: true }).click();
+  await page.locator("#main-menu").getByRole("link", { name: "Apps", exact: true }).click();
   await page.getByRole("button", { name: "Connect Notion" }).click();
   await page.getByText("Advanced: use a key or token instead", { exact: true }).click();
   await page.getByLabel("Integration secret").fill(process.env.E2E_NOTION_TOKEN!);

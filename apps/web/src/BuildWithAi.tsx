@@ -1,7 +1,7 @@
 import "./creation.css";
 import { templatesForLanguage } from "@daloy/engine";
 import { useLanguage } from "./Language";
-import { useEffect, useLayoutEffect, useReducer, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
+import { useEffect, useReducer, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { api, type Workflow } from "./api";
 import { saveDraft } from "./AiDraft";
 import "./ai-workspace.css";
@@ -75,25 +75,6 @@ const WHY: Record<string, string> = {
 };
 const SETUP_LABEL: Record<string, string> = { purchase: "Set up purchase requests", office: "Set up for my office", link: "Set up inquiry replies" };
 
-type PromptCategory = "suggested" | "inquiries" | "bookings" | "payments" | "orders" | "office";
-
-type PromptEntry = {
-  id: string;
-  category: PromptCategory;
-  icon: "sparkles" | "mail" | "calendar" | "receipt" | "store" | "checklist";
-  role?: string;
-  text: string;
-};
-
-const CATEGORIES: { id: PromptCategory; label: string }[] = [
-  { id: "suggested", label: "Suggested" },
-  { id: "inquiries", label: "Inquiries" },
-  { id: "bookings", label: "Bookings" },
-  { id: "payments", label: "Payments & Receipts" },
-  { id: "orders", label: "Orders" },
-  { id: "office", label: "Office" },
-];
-
 /**
  * #/ai (owners): Build with AI. The page is one chat: say what should happen, the model asks what it still needs, and
  * the draft comes back as the last message, and nothing is turned on until the owner presses Turn it on.
@@ -105,82 +86,8 @@ const STARTERS = [
   { role: "Virtual assistant", text: "Every Monday at 9, email my client a summary of last week's requests." },
 ];
 
-const STARTER_ICONS: PromptEntry["icon"][] = ["sparkles", "store", "calendar", "checklist"];
-
-const CATEGORY_PROMPTS: PromptEntry[] = [
-  ...STARTERS.map((s, i) => ({
-    id: `sug-${i + 1}`,
-    category: "suggested" as const,
-    icon: STARTER_ICONS[i] ?? "sparkles",
-    role: s.role,
-    text: s.text,
-  })),
-  { id: "inq-1", category: "inquiries", icon: "mail", text: "When someone fills my website inquiry form, send a tailored reply from my email and log their contact in Google Sheets." },
-  { id: "inq-2", category: "inquiries", icon: "mail", text: "When a lead messages on Messenger or Instagram asking about pricing, reply with our packages and notify me." },
-  { id: "inq-3", category: "inquiries", icon: "mail", text: "When an inquiry arrives after business hours, send an acknowledgement right away and remind me at 9 AM." },
-  { id: "book-1", category: "bookings", icon: "calendar", text: "When someone books an appointment on my form, ask staff to approve, then block Google Calendar and email confirmation." },
-  { id: "book-2", category: "bookings", icon: "calendar", text: "When a confirmed booking is 24 hours away, send the client a polite SMS and email reminder." },
-  { id: "book-3", category: "bookings", icon: "calendar", text: "When a client reschedules an appointment, update the Google Calendar event and notify the assigned staff member." },
-  { id: "pay-1", category: "payments", icon: "receipt", text: "When a customer uploads a GCash receipt photo, read the amount, ask me to confirm, and add a row to Google Sheets." },
-  { id: "pay-2", category: "payments", icon: "receipt", text: "When a PayMongo payment link is paid, email the customer an official receipt and update my tracking sheet." },
-  { id: "pay-3", category: "payments", icon: "receipt", text: "Every Friday at 5 PM, email me a summary of all unpaid invoices from the past week." },
-  { id: "ord-1", category: "orders", icon: "store", text: "When a customer places an order, create a PayMongo link, wait for confirmation, and log the paid row to Google Sheets." },
-  { id: "ord-2", category: "orders", icon: "store", text: "When a Shopify order comes in over PHP 5,000, send an urgent Slack alert to the fulfillment team." },
-  { id: "ord-3", category: "orders", icon: "store", text: "When an order ships, send the tracking number to the buyer via email and WhatsApp." },
-  { id: "off-1", category: "office", icon: "checklist", text: "When staff submit a purchase request over PHP 2,000, route it to the manager for approval before logging." },
-  { id: "off-2", category: "office", icon: "checklist", text: "When a new team request arrives, give it a reference number, post to Slack, and email confirmation." },
-  { id: "off-3", category: "office", icon: "checklist", text: "Every Monday morning at 8 AM, compile open office approvals and send a digest to operations." },
-];
-
 const FRESH: ChatState = { phase: "idle", turns: [], draft: null, error: "" };
 
-function PromptIcon({ kind }: { kind: PromptEntry["icon"] }) {
-  return (
-    <svg className="ai-row-svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      {kind === "mail" && (
-        <>
-          <path d="M3 7a2 2 0 0 1 2 -2h14a2 2 0 0 1 2 2v10a2 2 0 0 1 -2 2h-14a2 2 0 0 1 -2 -2v-10z" />
-          <path d="M3 7l9 6l9 -6" />
-        </>
-      )}
-      {kind === "calendar" && (
-        <>
-          <path d="M4 5m0 2a2 2 0 0 1 2 -2h12a2 2 0 0 1 2 2v12a2 2 0 0 1 -2 2h-12a2 2 0 0 1 -2 -2z" />
-          <path d="M16 3l0 4" />
-          <path d="M8 3l0 4" />
-          <path d="M4 11l16 0" />
-          <path d="M8 15h2v2h-2z" />
-        </>
-      )}
-      {kind === "receipt" && (
-        <>
-          <path d="M5 21v-16a2 2 0 0 1 2 -2h10a2 2 0 0 1 2 2v16l-3 -2l-2 2l-2 -2l-2 2l-2 -2l-3 2" />
-          <path d="M14 8h-2.5a1.5 1.5 0 0 0 0 3h1a1.5 1.5 0 0 1 0 3h-2.5m2 0v1.5m0 -9v1.5" />
-        </>
-      )}
-      {kind === "store" && (
-        <>
-          <path d="M3 21l18 0" />
-          <path d="M3 7v1a3 3 0 0 0 6 0v-1m0 1a3 3 0 0 0 6 0v-1m0 1a3 3 0 0 0 6 0v-1h-18l2 -4h14l2 4" />
-          <path d="M5 21l0 -10.15" />
-          <path d="M19 21l0 -10.15" />
-          <path d="M9 21v-4a2 2 0 0 1 2 -2h2a2 2 0 0 1 2 2v4" />
-        </>
-      )}
-      {kind === "checklist" && (
-        <>
-          <path d="M9.615 20h-2.615a2 2 0 0 1 -2 -2v-12a2 2 0 0 1 2 -2h8a2 2 0 0 1 2 2v8" />
-          <path d="M14 19l2 2l4 -4" />
-          <path d="M9 8h4" />
-          <path d="M9 12h2" />
-        </>
-      )}
-      {kind === "sparkles" && (
-        <path d="M16 18a2 2 0 0 1 2 2a2 2 0 0 1 2 -2a2 2 0 0 1 -2 -2a2 2 0 0 1 -2 2zm0 -12a2 2 0 0 1 2 2a2 2 0 0 1 2 -2a2 2 0 0 1 -2 -2a2 2 0 0 1 -2 2zm-7 12a6 6 0 0 1 6 -6a6 6 0 0 1 -6 -6a6 6 0 0 1 -6 6a6 6 0 0 1 6 6z" />
-      )}
-    </svg>
-  );
-}
 
 function formatLogTime(iso: string, locale: string): string {
   try {
@@ -201,7 +108,6 @@ export function BuildWithAiPage({ email, admin = false, embedded = false }: { em
   const [chat, dispatch] = useReducer(chatStep, FRESH);
   const { phase, turns, draft, error } = chat;
   const [input, setInput] = useState("");
-  const [category, setCategory] = useState<PromptCategory>("suggested");
   const [connected, setConnected] = useState<ReadonlySet<string>>(new Set());
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
@@ -211,10 +117,8 @@ export function BuildWithAiPage({ email, admin = false, embedded = false }: { em
   const [logs, setLogs] = useState<AiConversationLog[]>(() => loadAiLogs(email));
   const [logsOpen, setLogsOpen] = useState(false);
   const [closingLogs, setClosingLogs] = useState(false);
-  const [pillRect, setPillRect] = useState({ left: 0, width: 0 });
   const bottom = useRef<HTMLDivElement>(null);
   const box = useRef<HTMLTextAreaElement>(null);
-  const catBarRef = useRef<HTMLDivElement>(null);
   const busy = phase === "thinking" || phase === "turning-on";
   const reviewing = draft !== null && (phase === "summary" || phase === "turning-on");
   const empty = turns.length === 0;
@@ -253,19 +157,6 @@ export function BuildWithAiPage({ email, admin = false, embedded = false }: { em
     return () => window.clearTimeout(timer);
   }, [closingLogs]);
 
-  useLayoutEffect(() => {
-    if (!empty || phase === "error" || showReview) return;
-    const measure = () => {
-      const bar = catBarRef.current;
-      if (!bar) return;
-      const active = bar.querySelector<HTMLButtonElement>('[aria-selected="true"]');
-      if (!active) return;
-      setPillRect({ left: active.offsetLeft, width: active.offsetWidth });
-    };
-    measure();
-    window.addEventListener("resize", measure);
-    return () => window.removeEventListener("resize", measure);
-  }, [category, empty, phase, showReview, language]);
 
   function closeLogs() {
     if (!logsOpen || closingLogs) return;
@@ -422,7 +313,6 @@ export function BuildWithAiPage({ email, admin = false, embedded = false }: { em
   const hasConversationPlan = draft !== null || turns.some((turn) => turn.role === "assistant");
 
   const firstRequest = turns.find((turn) => turn.role === "user")?.text;
-  const visiblePrompts = CATEGORY_PROMPTS.filter((p) => p.category === category);
   const lastTurn = turns.at(-1);
   const latestHasChoices = lastTurn?.role === "assistant" && (lastTurn.choices?.length ?? 0) > 0;
 
@@ -585,47 +475,15 @@ export function BuildWithAiPage({ email, admin = false, embedded = false }: { em
             <h2 className="ai-hero-title">{t("Turn your ideas into automations")}</h2>
           </div>
           {composer}
-          <div className="ai-suggestions-wrap">
-            <div className="ai-cats" ref={catBarRef} role="tablist" aria-label={t("Examples")}>
-              <div
-                className="ai-cat-pill"
-                aria-hidden="true"
-                style={{ width: `${pillRect.width}px`, transform: `translateX(${pillRect.left}px)` }}
-              />
-              {CATEGORIES.map((c) => (
-                <button
-                  key={c.id}
-                  type="button"
-                  role="tab"
-                  aria-selected={category === c.id}
-                  className={`ai-cat${category === c.id ? " is-active" : ""}`}
-                  onClick={() => setCategory(c.id)}
-                >
-                  {t(c.label)}
-                </button>
-              ))}
-            </div>
-            <ul className="ai-prompt-list" aria-label={t("Examples")}>
-              {visiblePrompts.map((item) => (
-                <li key={item.id}>
-                  <button type="button" className="ai-prompt-row" onClick={() => starter(t(item.text))}>
-                    <span className="ai-prompt-icon" aria-hidden="true">
-                      <PromptIcon kind={item.icon} />
-                    </span>
-                    <span className="ai-prompt-copy">
-                      {item.role && <strong>{t(item.role)}</strong>}
-                      <span>{t(item.text)}</span>
-                    </span>
-                    <svg className="ai-prompt-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                      <path d="M5 12l14 0" />
-                      <path d="M13 18l6 -6" />
-                      <path d="M13 6l6 6" />
-                    </svg>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </div>
+          {/* A few example chips under the box, as in the Console Blocks mock (decision 0164); Templates has the full list. */}
+          <ul className="ai-chips" aria-label={t("Examples")}>
+            {STARTERS.map((item) => (
+              <li key={item.role}>
+                <button type="button" className="ai-chip" title={t(item.text)} onClick={() => starter(t(item.text))}>{t(item.role)}</button>
+              </li>
+            ))}
+            <li><a className="ai-chip" href="#/new">{t("More")}</a></li>
+          </ul>
         </section>
       ) : (
         <div className="builder-split">

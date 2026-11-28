@@ -57,8 +57,18 @@
 .gp-steps li > strong { font-size: 15px; line-height: 20px; font-weight: 700; color: var(--o-ink); }
 .gp-steps li > span { font-size: 13px; line-height: 18px; color: var(--o-muted); }
 
+/* Guided setup wizard (#/a/<id> before it is on): a padded card with the setup steps beside it, as the other Console
+   Blocks pages (decision 0164). The live status page keeps its own layout. */
+.gp:not(.gp-live) > .ops-layout { grid-template-columns: minmax(0, 1fr) 300px; align-items: start; gap: 20px; min-height: 0; padding: 24px 28px 40px; }
+.gp:not(.gp-live) > .ops-layout > .ops-main { gap: 16px; padding: 24px; border: 1px solid var(--o-line); border-radius: 12px; background: var(--o-bg); }
+.gp:not(.gp-live) > .ops-layout > .ops-panel { display: flex; border: 1px solid var(--o-line); border-radius: 12px; background: var(--o-bg); animation: none; }
+.gp:not(.gp-live) > .ops-layout > .ops-panel > * { animation: none; }
+.gp:not(.gp-live) .gp-body > .gp-actions + .gp-actions, .gp:not(.gp-live) .ops-main > .gp-actions + .gp-actions { margin-top: -6px; }
+
 @media (max-width: 799.98px) {
   .gp > .ops-head { padding: 16px; }
+  .gp:not(.gp-live) > .ops-layout { grid-template-columns: minmax(0, 1fr); padding: 16px 16px 96px; gap: 16px; }
+  .gp:not(.gp-live) > .ops-layout > .ops-main { padding: 18px; }
   .gp-title h1 { font-size: 22px; line-height: 28px; }
   /* The side panel is content on these pages, not a sheet: it stacks under the main column. */
   .gp .ops-panel { display: flex; border-left: 0; border-top: 1px solid var(--o-line); padding: 16px; }

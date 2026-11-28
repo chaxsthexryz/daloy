@@ -91,21 +91,18 @@ function isSubActive(hash: string, targetHref: string): boolean {
       return path === "#/bookings" && tab !== "rooms";
     case "#/bookings?tab=rooms":
       return (path === "#/bookings" && tab === "rooms") || path === "#/resources";
+    case "#/automations":
+      return path === "#/automations";
     case "#/ai":
       return path === "#/ai";
     case "#/new":
       return path === "#/new";
     case "#/business":
-      return (path === "#/business" && tab !== "knowledge" && tab !== "apps" && tab !== "team")
+      return (path === "#/business" && tab !== "knowledge" && tab !== "team")
         || path === "#/settings/business"
         || path.startsWith("#/verify-sender");
     case "#/business?tab=knowledge":
       return (path === "#/business" && tab === "knowledge") || path === "#/knowledge" || path.startsWith("#/knowledge/");
-    case "#/business?tab=apps":
-      return (path === "#/business" && tab === "apps")
-        || path === "#/apps"
-        || path.startsWith("#/apps/")
-        || path.startsWith("#/settings/business/outlook-");
     case "#/business?tab=team":
       return (path === "#/business" && tab === "team") || path.startsWith("#/team");
     default:
@@ -131,18 +128,21 @@ export function section(hash: string) {
     || path.startsWith("#/try/")
   ) return "Automations";
   if (
+    (path === "#/business" && new URLSearchParams(hash.split("?")[1] ?? "").get("tab") === "apps")
+    || path === "#/apps"
+    || path.startsWith("#/apps/")
+    || path.startsWith("#/settings/business/outlook-")
+  ) return "Apps";
+  if (path === "#/feedback") return "Support";
+  if (
     path.startsWith("#/business")
     || path === "#/knowledge"
     || path.startsWith("#/knowledge/")
     || path.startsWith("#/team")
     || path === "#/settings/business"
-    || path.startsWith("#/settings/business/outlook-")
-    || path === "#/apps"
-    || path.startsWith("#/apps/")
     || path.startsWith("#/verify-sender")
   ) return "Business";
-  if (path === "#/account" || path.startsWith("#/account/")) return "Account";
-  if (/^#\/(advanced|tokens|secrets|settings)/.test(path)) return "Settings";
+  if (/^#\/(advanced|tokens|secrets|settings|account)/.test(path)) return "Settings";
   return "Home";
 }
 
@@ -440,18 +440,20 @@ export function Shell({ user, hash, onSignOut, children }: { user: User; hash: s
           ])}
           {owner && link("#/automations", "Automations", "automations", "Automations", undefined, true)}
           {owner && renderGroup("automations", "Automations", [
+            { href: "#/automations", text: "All automations" },
             { href: "#/ai", text: "Build with AI", ariaLabel: t("Create: Build with AI") },
             { href: "#/new", text: "Templates", ariaLabel: t("Create: Templates") },
           ])}
           <span className="rail-group-label">{t("Workspace")}</span>
+          {owner && link("#/apps", "Apps", "apps")}
           {owner && link("#/business", "Business", "business", "Business", undefined, true)}
           {owner && renderGroup("business", "Business", [
             { href: "#/business", text: "Details and branding" },
             { href: "#/business?tab=knowledge", text: "Knowledge" },
-            { href: "#/business?tab=apps", text: "Apps" },
             { href: "#/business?tab=team", text: "Team" },
           ])}
           {link("#/settings", "Settings", "settings")}
+          {link("#/feedback", "Support", "conversations")}
           {owner && <AiMeter usage={usage} className="ai-meter rail-usage" />}
           <div className="rail-account" ref={helpRef}>
             <span className="rail-avatar" aria-hidden="true">{personName(user).slice(0, 1).toUpperCase()}</span>
@@ -460,10 +462,9 @@ export function Shell({ user, hash, onSignOut, children }: { user: User; hash: s
               <div className="rail-who-links rail-account-actions">
                 <a
                   className="account-link"
-                  href="#/account"
+                  href="#/settings"
                   data-tip={t("Account")}
                   aria-label={t("Account")}
-                  aria-current={here === "Account" ? "page" : undefined}
                   onPointerEnter={(event) => pill.onItemEnter(event.currentTarget)}
                   onFocus={(event) => pill.onItemEnter(event.currentTarget)}
                   onClick={() => { setOpen(false); pill.onContainerLeave(); }}
@@ -491,7 +492,6 @@ export function Shell({ user, hash, onSignOut, children }: { user: User; hash: s
             {helpOpen && (
               <div id="rail-help-menu" className="rail-help-menu" role="menu" aria-label={t("Help and support")}>
                 {owner && <a role="menuitem" href="#/onboarding" onClick={closeHelp}>{t("Business setup guide")}</a>}
-                <a role="menuitem" href="#/feedback" onClick={closeHelp}>{t("Send feedback")}</a>
                 <p className="rail-help-note">{t("Need help? Message your kymavo operator or open Settings for your plan.")}</p>
               </div>
             )}
@@ -517,7 +517,7 @@ export function Shell({ user, hash, onSignOut, children }: { user: User; hash: s
   );
 }
 
-/** One automation's tabs: Overview (#/a/:id), Activity, and Steps (#/w/:id). */
+/** One automation's tabs: Steps (#/w/:id) and Activity. Opening an automation lands on Steps (decision 0164). */
 export function AutomationTabs({ id, here }: { id: string; here: "overview" | "activity" | "steps"; overview?: boolean }) {
   const { t } = useLanguage();
   const tab = (key: typeof here, href: string, text: string) => (
@@ -527,9 +527,8 @@ export function AutomationTabs({ id, here }: { id: string; here: "overview" | "a
   );
   return (
     <nav className="tabs" aria-label={t("This automation")}>
-      {tab("overview", `#/a/${id}`, "Overview")}
-      {tab("activity", `#/w/${id}/runs`, "Activity")}
       {tab("steps", `#/w/${id}`, "Steps")}
+      {tab("activity", `#/w/${id}/runs`, "Activity")}
     </nav>
   );
 }

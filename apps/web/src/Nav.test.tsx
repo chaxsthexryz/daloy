@@ -19,11 +19,11 @@ describe("staff navigation", () => {
     ["#/runs/run-id", "#/automations"], ["#/runs/run-id/ask", "#/automations"],
     ["#/w/workflow-id", "#/automations"], ["#/w/workflow-id/versions", "#/automations"], ["#/w/workflow-id/runs", "#/automations"],
     ["#/a/workflow-id", "#/automations"],
-    ["#/business", "#/business"], ["#/business?tab=knowledge", "#/business"], ["#/business?tab=apps", "#/business"], ["#/business?tab=team", "#/business"],
-    ["#/knowledge", "#/business"], ["#/team", "#/business"], ["#/apps", "#/business"], ["#/apps/gmail-connected", "#/business"],
-    ["#/settings/business", "#/business"], ["#/settings/business/outlook-connected", "#/business"], ["#/verify-sender/token", "#/business"],
+    ["#/business", "#/business"], ["#/business?tab=knowledge", "#/business"], ["#/business?tab=apps", "#/apps"], ["#/business?tab=team", "#/business"],
+    ["#/knowledge", "#/business"], ["#/team", "#/business"], ["#/apps", "#/apps"], ["#/apps/gmail-connected", "#/apps"],
+    ["#/settings/business", "#/business"], ["#/settings/business/outlook-connected", "#/apps"], ["#/verify-sender/token", "#/business"],
     ["#/settings", "#/settings"], ["#/settings/ai", "#/settings"], ["#/secrets", "#/settings"], ["#/tokens", "#/settings"], ["#/advanced", "#/settings"],
-    ["#/account", "#/account"], ["#/feedback", "#/"],
+    ["#/account", "#/settings"], ["#/feedback", "#/feedback"],
   ])("marks the parent of %s", (hash, target) => {
     const selected = [...render(hash).matchAll(/<a [^>]*?href="([^"]*)"[^>]*aria-current="page"/g)].map((match) => match[1]);
     expect(selected.length).toBeGreaterThan(0);
@@ -31,22 +31,22 @@ describe("staff navigation", () => {
   });
 
   it("matches sub-routes and query/trailing-slash variants via section()", () => {
-    expect(section("#/apps")).toBe("Business");
-    expect(section("#/apps/")).toBe("Business");
-    expect(section("#/apps/gmail-connected?ok=1")).toBe("Business");
+    expect(section("#/apps")).toBe("Apps");
+    expect(section("#/apps/")).toBe("Apps");
+    expect(section("#/apps/gmail-connected?ok=1")).toBe("Apps");
     expect(section("#/settings/business")).toBe("Business");
     expect(section("#/settings/business/")).toBe("Business");
     expect(section("#/activity/ask")).toBe("Automations");
     expect(section("#/activity/ask?ref=REQ-1")).toBe("Automations");
     expect(section("#/runs/1234-5678")).toBe("Automations");
     expect(section("#/runs/1234-5678/ask")).toBe("Automations");
-    expect(section("#/account")).toBe("Account");
-    expect(section("#/account/")).toBe("Account");
+    expect(section("#/account")).toBe("Settings");
+    expect(section("#/account/")).toBe("Settings");
   });
 
   it("renders six destinations for owners without repeating Work, Build and Workspace labels", () => {
     const html = render("#/secrets");
-    for (const href of ["#/", "#/inbox", "#/bookings", "#/automations", "#/business", "#/settings"]) {
+    for (const href of ["#/", "#/inbox", "#/bookings", "#/automations", "#/apps", "#/business", "#/settings", "#/feedback"]) {
       expect(html).toContain(`href="${href}"`);
     }
     expect(html).not.toContain('class="primary top-new"');
@@ -58,7 +58,7 @@ describe("staff navigation", () => {
     for (const href of ["#/automations", "#/business", "#/new", "#/ai", "#/team", "#/apps", "#/settings/business", "#/advanced"]) {
       expect(html).not.toContain(`href="${href}"`);
     }
-    for (const href of ["#/", "#/inbox", "#/bookings", "#/settings", "#/account"]) {
+    for (const href of ["#/", "#/inbox", "#/bookings", "#/settings", "#/feedback"]) {
       expect(html).toContain(`href="${href}"`);
     }
   });
@@ -141,7 +141,7 @@ describe("sidebar tree state and blocks shell", () => {
     expect(initialTreeState("#/")).toEqual({ bookings: false, automations: false, business: false });
     expect(initialTreeState("#/bookings?tab=rooms")).toEqual({ bookings: true, automations: false, business: false });
     expect(initialTreeState("#/new")).toEqual({ bookings: false, automations: true, business: false });
-    expect(initialTreeState("#/business?tab=apps")).toEqual({ bookings: false, automations: false, business: true });
+    expect(initialTreeState("#/business?tab=team")).toEqual({ bookings: false, automations: false, business: true });
   });
 
   it("syncs open group on hash change and toggles individual groups", () => {
@@ -159,24 +159,24 @@ describe("sidebar tree state and blocks shell", () => {
   });
 
   it("renders the search trigger, Work/Workspace labels, and expandable owner sub-trees without extra primary links", () => {
-    const html = render("#/business?tab=apps");
+    const html = render("#/business?tab=team");
     expect(html).toContain('class="rail-search"');
     expect(html).toContain("<kbd");
     expect(html).toContain("⌘K</kbd>");
     expect(html).toContain('class="rail-group-label">Work</span>');
     expect(html).toContain('class="rail-group-label">Workspace</span>');
 
-    // Only the 6 primary links are direct children of #main-menu.
+    // Only the 8 primary links are direct children of #main-menu.
     const navMatch = html.match(/<nav[^>]*id="main-menu"[^>]*>([\s\S]*?)<\/nav>/);
     expect(navMatch).toBeTruthy();
     const primaryMatches = [...navMatch![1]!.matchAll(/class="rail-link(?: [^"]*)?"[^>]*href="([^"]*)"/g)].map((m) => m[1]);
-    expect(primaryMatches).toEqual(["#/", "#/inbox", "#/bookings", "#/automations", "#/business", "#/settings"]);
+    expect(primaryMatches).toEqual(["#/", "#/inbox", "#/bookings", "#/automations", "#/apps", "#/business", "#/settings", "#/feedback"]);
 
-    // Business group is open with Apps sub-link marked data-active="true", never aria-current="page".
+    // Business group is open with Team sub-link marked data-active="true", never aria-current="page".
     expect(html).toContain('data-group="business" data-open="true"');
     expect(html).toContain('data-group="bookings" data-open="false"');
     expect(html).toContain('data-group="automations" data-open="false"');
-    expect(html).toContain('href="#/business?tab=apps" data-active="true"');
+    expect(html).toContain('href="#/business?tab=team" data-active="true"');
     expect(html).not.toMatch(/class="rail-sublink"[^>]*aria-current="page"/);
     expect(html).toContain('aria-label="Show Bookings pages" aria-expanded="false"');
     expect(html).toContain('aria-label="Hide Business pages" aria-expanded="true"');

@@ -141,8 +141,8 @@ function Route({ hash, user, onName }: { hash: string; user: User; onName: (disp
   if (path === "#/ai" && user.role === "owner") return <NewAutomationPage email={user.email} initialMode="ai" admin={user.admin === true} />;
   if (path === "#/secrets" && user.role === "owner") return <SecretsPage admin={user.admin === true} />;
   if (path === "#/tokens" && user.admin === true) return <TokensPage />;
-  if (path === "#/settings") return <SettingsPage user={user} />;
-  if (path === "#/account") return <AccountPage user={user} onName={onName} />;
+  // Account lives on Settings (decision 0164); #/account still opens it for old links.
+  if (path === "#/settings" || path === "#/account") return <SettingsPage user={user} onName={onName} />;
   if (path === "#/feedback") return <FeedbackPage />;
   if (path === "#/settings/ai") return user.admin === true ? <AiModelPage /> : <NotFoundPage aiRestricted />;
   if (path === "#/business" && (user.role === "owner" || (user.role === "operator" && businessTab === "knowledge"))) {

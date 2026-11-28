@@ -14,7 +14,7 @@ test("an owner connects Shopify, a signed order starts a run that creates and up
   await page.getByLabel("Password").fill("e2e test password 1");
   await page.getByRole("button", { name: "Create account" }).click();
 
-  await page.getByRole("link", { name: "Business" }).first().click(); await page.getByRole("navigation", { name: "Business" }).getByRole("link", { name: "Apps", exact: true }).click();
+  await page.locator("#main-menu").getByRole("link", { name: "Apps", exact: true }).click();
   await expect(page.locator("li.directory-row", { hasText: "Facebook Messenger & Instagram" }).locator(".app-mark")).toHaveCount(2);
   await page.getByRole("button", { name: "Connect Shopify" }).click();
   await page.getByLabel("Shop domain").fill(process.env.E2E_SHOPIFY_SHOP!);

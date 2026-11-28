@@ -92,7 +92,7 @@ test("Settings in the menu sets light or dark on this device, and System follows
 
   await page.getByRole("link", { name: "Settings", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Settings", level: 1 })).toBeVisible();
-  await expect(page.getByText(/Signed in as nav-\d+@test\.local, Owner\./)).toBeVisible();
+  await expect(page.getByText(/nav-\d+@test\.local · Owner/)).toBeVisible();
   await expect(page.getByRole("link", { name: "Secrets" })).toHaveAttribute("href", "#/secrets");
   await expect(page.getByRole("link", { name: "AI model" })).toHaveCount(0);
   await expect(page.getByRole("link", { name: "API tokens" })).toHaveCount(0);
@@ -119,7 +119,7 @@ test("Settings in the menu sets light or dark on this device, and System follows
   await expect.poll(background).not.toBe(light);
 
   // System follows the device again, including a later switch.
-  await page.getByLabel("System (follows this device)").check();
+  await page.getByLabel("System", { exact: true }).check();
   expect(await theme()).toBe("light");
   await expect.poll(background).toBe(light);
   await page.emulateMedia({ colorScheme: "dark" });
@@ -130,7 +130,7 @@ test("Settings in the menu sets light or dark on this device, and System follows
 test("Apps lists each app as a card, and Connect opens that app's own setup", async ({ page }) => {
   await signUp(page);
   await page.getByRole("link", { name: "Business" }).first().click();
-  await page.getByRole("navigation", { name: "Business" }).getByRole("link", { name: "Apps", exact: true }).click();
+  await page.locator("#main-menu").getByRole("link", { name: "Apps", exact: true }).click();
   await expect(page.getByRole("button", { name: "All 17" })).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByRole("button", { name: "Connected 0" })).toBeVisible();
   const more = page.getByRole("region", { name: "More" });
@@ -158,16 +158,16 @@ test("desktop rail stays fixed at 228 px, supports keyboard navigation and Quick
   await page.screenshot({ path: test.info().outputPath("desktop-fixed-sidebar.png") });
 
   await page.emulateMedia({ reducedMotion: "reduce" });
-  const business = rail.getByRole("link", { name: "Business", exact: true });
+  const apps = rail.getByRole("link", { name: "Apps", exact: true });
   await rail.getByRole("link", { name: "Automations", exact: true }).focus();
   await page.keyboard.press("Tab");
   await expect(rail.getByRole("button", { name: "Show Automations pages" })).toBeFocused();
   await page.keyboard.press("Tab");
-  await expect(business).toBeFocused();
+  await expect(apps).toBeFocused();
   await expect(rail).toHaveCSS("width", "228px");
   await expect(rail.locator(".rail-hover-pill")).toHaveCSS("transition-duration", "0s");
   await page.keyboard.press("Enter");
-  await expect(business).toHaveAttribute("aria-current", "page");
+  await expect(apps).toHaveAttribute("aria-current", "page");
 
   await page.keyboard.press("Control+k");
   const dialog = page.getByRole("dialog", { name: "Quick jump" });
@@ -216,7 +216,7 @@ test("operator navigation and restricted landings stay scoped to their roles", a
         await rail.getByRole("link", { name: "Bookings", exact: true }).click();
         await expect(rail.getByRole("link", { name: "Bookings" })).toHaveAttribute("aria-current", "page");
         await rail.getByRole("link", { name: "Account", exact: true }).click();
-        await expect(member).toHaveURL(/#\/account$/);
+        await expect(member).toHaveURL(/#\/settings$/);
         await rail.getByRole("button", { name: "Sign out" }).click();
         await expect(member.getByRole("button", { name: "Sign in", exact: true })).toBeVisible();
       } else {

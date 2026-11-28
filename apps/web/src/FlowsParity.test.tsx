@@ -47,10 +47,10 @@ describe("Console Blocks flow parity", () => {
       addEventListener: () => undefined,
       removeEventListener: () => undefined,
     }));
-    const html = render(<SettingsPage user={owner} />);
-    expect(html).toContain('href="#/account"');
-    expect(html).toContain("Edit name &amp; password");
-    expect(html).toContain('href="#/feedback"');
-    expect(html).toContain("Support &amp; feedback");
+    // Name and password sit on Settings itself (decision 0164); Support is in the sidebar.
+    const html = render(<SettingsPage user={owner} onName={() => undefined} />);
+    expect(html).toContain("Account &amp; Security");
+    expect(html).toContain('id="display-name"');
+    expect(html).toContain('id="current-password"');
   });
 });

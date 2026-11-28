@@ -57,14 +57,13 @@ export function SignIn({
         <div className="au-field">
           <div className="au-label-row">
             <label htmlFor="password">Password {register && <span>(at least 12 characters)</span>}</label>
-            {!register && <span className="au-forgot-inline">{forgot}</span>}
           </div>
           <input id="password" name="password" type="password" autoComplete={register ? "new-password" : "current-password"} placeholder="Password" required aria-invalid={problem?.field === "password"} aria-describedby={problem ? "sign-in-error" : undefined} />
+          {!register && <p className="au-forgot">{forgot}</p>}
           {problem && <AuthNote kind="error" id="sign-in-error">{problem.message}</AuthNote>}
         </div>
         <button className="au-button" disabled={busy}>{register ? "Create account" : "Sign in"}</button>
       </form>
-      {!register && <p className="au-forgot-below">{forgot}</p>}
       <p className="au-aside">
         {register ? "Already use kymavo?" : "New to kymavo?"}
         <button type="button" className="au-link" onClick={flip}>{register ? "I have an account" : "Create an account"}</button>

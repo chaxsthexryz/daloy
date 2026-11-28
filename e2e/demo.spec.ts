@@ -19,7 +19,7 @@ test("sign in to the seeded demo and browse its workflows and runs", async ({ pa
   await shot(page, "workflows");
 
   await page.getByRole("button", { name: "Inquiry triage" }).click();
-  await page.getByRole("link", { name: "Edit", exact: true }).click();
+  await page.getByRole("complementary", { name: "Inquiry triage" }).getByRole("link", { name: "Open", exact: true }).click();
   await page.getByRole("button", { name: "Diagram", exact: true }).click();
   // The trigger and five steps.
   await expect(page.locator(".react-flow__node")).toHaveCount(6);

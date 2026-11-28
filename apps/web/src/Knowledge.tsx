@@ -76,7 +76,8 @@ export function KnowledgePage({ embedded = false }: { embedded?: boolean } = {})
       ) : (
         state && <p className="wk-sub">{t(entryCountKey(state.entries.length), { count: state.entries.length })}</p>
       )}
-      <p className="wk-lead">{t("Write what guests ask about: rooms, rates, policies, questions and links. The concierge answers only from the published version, so check prices before you publish.")}</p>
+      {/* Embedded under Business, the page head carries this lead (decision 0164). */}
+      {!embedded && <p className="wk-lead">{t("Write what guests ask about: rooms, rates, policies, questions and links. The concierge answers only from the published version, so check prices before you publish.")}</p>}
       {state && (
         <section className="wk-card wk-body kn-publish" aria-labelledby="kn-status">
           <div>

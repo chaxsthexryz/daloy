@@ -18,7 +18,7 @@ export async function signUp(page: Page, app: RecordApp) {
   await page.getByRole("button", { name: "Create account" }).click();
   await expect(page.getByRole("heading", { name: "Today", exact: true })).toBeVisible();
   await page.getByRole("link", { name: "Business" }).first().click();
-  await page.getByRole("navigation", { name: "Business" }).getByRole("link", { name: "Apps", exact: true }).click();
+  await page.locator("#main-menu").getByRole("link", { name: "Apps", exact: true }).click();
 }
 
 export function recordPanel(page: Page, name: string) {

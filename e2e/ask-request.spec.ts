@@ -12,7 +12,7 @@ test("an owner asks why a request stopped and only reads, nothing in the card ch
   await page.getByRole("button", { name: "Create account" }).click();
 
   await page.getByRole("link", { name: "Business" }).first().click();
-  await page.getByRole("navigation", { name: "Business" }).getByRole("link", { name: "Apps", exact: true }).click();
+  await page.locator("#main-menu").getByRole("link", { name: "Apps", exact: true }).click();
   await page.getByRole("button", { name: "Connect Slack" }).click();
   // This installation has a Slack app (decision 0061), so the pasted token is under Advanced.
   await page.getByText("Advanced: use your own Slack app token").click();
@@ -72,9 +72,9 @@ test("an owner asks why a request stopped and only reads, nothing in the card ch
 
     // From Workspace activity's inline Ask helper: pick a recent request or type the reference, and check sidebar highlights.
     await page.goto("/#/apps");
-    await expect(page.locator('#main-menu a[aria-current="page"]')).toHaveAttribute("href", "#/business");
+    await expect(page.locator('#main-menu a[aria-current="page"]')).toHaveAttribute("href", "#/apps");
     await page.goto("/#/account");
-    await expect(page.locator('#main-menu a[aria-current="page"]')).toHaveAttribute("href", "#/account");
+    await expect(page.locator('#main-menu a[aria-current="page"]')).toHaveAttribute("href", "#/settings");
     await page.goto(`/#/runs/${runAskUrl.split("/runs/")[1]!.replace("/ask", "")}`);
     await expect(page.locator('#main-menu a[aria-current="page"]')).toHaveAttribute("href", "#/automations");
 

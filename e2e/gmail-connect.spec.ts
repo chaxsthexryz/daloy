@@ -12,7 +12,7 @@ test("an owner connects Gmail with Google, sends a test email through the Gmail 
   await page.getByRole("button", { name: "Create account" }).click();
   await expect(page.getByRole("heading", { name: "Today", exact: true })).toBeVisible();
 
-  await page.getByRole("link", { name: "Business" }).first().click(); await page.getByRole("navigation", { name: "Business" }).getByRole("link", { name: "Apps", exact: true }).click();
+  await page.locator("#main-menu").getByRole("link", { name: "Apps", exact: true }).click();
   await page.getByRole("button", { name: "Connect Gmail", exact: true }).click();
   await expect(page.getByText("Advanced: use a key or token instead")).toBeVisible();
   await expect(page.getByText("kymavo cannot read your mail.")).toBeVisible();

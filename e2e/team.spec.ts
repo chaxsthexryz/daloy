@@ -17,7 +17,7 @@ test("an invited approver answers a named approval; the owner and a signed-out v
   await page.getByRole("button", { name: "Create account" }).click();
 
   // Invite the approver from the Team page and join with the link in another browser.
-  await page.getByRole("link", { name: "Business" }).first().click(); await page.getByRole("navigation", { name: "Business" }).getByRole("link", { name: "Team", exact: true }).click();
+  await page.getByRole("link", { name: "Business" }).first().click(); await page.locator("#main-menu").getByRole("link", { name: "Team", exact: true }).click();
   await page.getByLabel("Email").fill(approver);
   await page.getByRole("button", { name: "Create invite link" }).click();
   const invite = (await page.getByLabel("Invite link").textContent())!.trim();

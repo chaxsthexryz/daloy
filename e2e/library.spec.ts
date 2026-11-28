@@ -10,7 +10,7 @@ async function signUp(page: Page, width: number, height: number) {
   await page.getByRole("button", { name: "Create account" }).click();
   await expect(page.getByRole("heading", { name: "Today", exact: true })).toBeVisible();
   await page.goto("/#/new");
-  await expect(page.getByRole("heading", { name: "New automation", level: 1 })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Templates", level: 1 })).toBeVisible();
 }
 
 const noSideScroll = (page: Page) => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth);
@@ -19,8 +19,7 @@ test("search and category chips narrow the cards, and a card previews before it 
   await signUp(page, 1280, 800);
   const card = (name: string) => page.getByRole("button", { name: `Preview: ${name}` });
 
-  // Templates tab lists templates with Blank automation in the quiet footer and Build with AI as a sibling tab.
-  await expect(page.getByRole("link", { name: "Templates", exact: true })).toHaveAttribute("aria-current", "page");
+  // Templates lists templates with Blank automation in the quiet footer and Build with AI in the head.
   await expect(page.getByRole("link", { name: "Build with AI", exact: true })).toHaveAttribute("href", "#/ai");
   await expect(page.getByRole("heading", { name: "Blank automation" })).toBeVisible();
   await expect(page.getByRole("button", { name: /^Preview: / })).toHaveCount(42);

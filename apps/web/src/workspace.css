@@ -122,6 +122,7 @@
 .wk-office a:hover { text-decoration: underline; }
 .wk-office span { display: block; margin-top: 3px; color: var(--w-muted); font-size: var(--text-xs, 13px); line-height: 18px; }
 .wk-card-title-group { display: inline-flex; align-items: center; gap: 9px; color: inherit; font-size: inherit; font-weight: inherit; }
+.wk-card-head .wk-card-title-group { color: var(--w-ink); font-size: inherit; font-weight: 600; }
 .wk-account-links { display: flex; flex-wrap: wrap; gap: 8px; }
 .wk-account-links a.wk-button { text-decoration: none; color: var(--w-ink); }
 .wk-narrow { max-width: 520px; }
@@ -217,6 +218,9 @@
  */
 .wk a.wk-back-quiet { color: var(--w-muted); font-weight: 500; text-decoration: none; }
 .wk-subhead { margin-top: 6px; }
+/* Account & Security card (decision 0164): name and password forms share one card, split by a hairline. */
+.wk-form-title { margin: 0; font-size: 14px; line-height: 20px; font-weight: 600; }
+.wk-card > form + form { border-top: 1px solid var(--border-soft); }
 .wk-subhead h2 { font-size: 16px; line-height: 22px; font-weight: 700; }
 .wk a.wk-ink { color: var(--w-ink); font-weight: 600; text-decoration: none; }
 .wk-dir { margin: 0; padding: 0; list-style: none; }
@@ -437,4 +441,37 @@ details.faq-item summary::before { content: none; display: none; }
 @media (prefers-reduced-motion: reduce) {
   .wk-office li,
   .wk-button { transition: none; }
+}
+
+/* Settings, compact as in the Console Blocks mock (decision 0164): two columns, paired fields, segmented choices. */
+.wk-settings { gap: 14px; }
+.wk-settings .wk-grid { max-width: 1080px; }
+.wk-settings .wk-card-head { padding: 11px 16px; font-size: 14px; }
+.wk-settings .wk-body { padding: 12px 16px; }
+.wk-settings .wk-body > * + * { margin-top: 10px; }
+.wk-settings .wk-fields { gap: 10px; }
+.wk-settings .wk-fields label { font-size: 12px; }
+.wk-settings .wk-fields input { min-height: 34px; padding-block: 6px; }
+.wk-settings .wk-card > form + form, .wk-settings .wk-card > form + p { border-top: 1px solid var(--w-line); }
+.wk-settings .wk-card > p.wk-body { padding-block: 10px; font-size: 12px; line-height: 17px; }
+.wk-settings .wk-office { grid-template-columns: minmax(0, 1fr); gap: 0; padding: 2px 16px; }
+.wk-settings .wk-office li { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 6px 0; border: 0; border-bottom: 1px solid var(--w-line); border-radius: 0; background: none; }
+.wk-settings .wk-office li:last-child { border-bottom: 0; }
+.wk-settings .wk-office span { margin: 0; text-align: right; }
+.wk-settings .card-ico { width: 24px; height: 24px; }
+.wk-settings .wk-usage li { padding: 5px 0; }
+.wk-pair { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; }
+.wk-pair-action { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; align-items: end; }
+.wk-pair input:disabled { color: var(--w-muted); background: var(--w-sunken); }
+.wk-role { margin-left: auto; padding: 1px 8px; border-radius: 999px; background: var(--w-select); color: var(--w-accent) !important; font-size: 12px !important; font-weight: 600 !important; }
+.wk-seg-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; margin: 0; padding: 0; border: 0; min-width: 0; }
+.wk-seg-row legend { float: left; padding: 0; font-size: 12.5px; font-weight: 600; }
+.wk-seg { display: inline-flex; gap: 2px; padding: 2px; border: 1px solid var(--w-line); border-radius: 9px; background: var(--w-canvas); }
+.wk-seg label { position: relative; display: inline-flex; align-items: center; min-height: 28px; padding: 0 12px; border-radius: 7px; color: var(--w-muted); font-size: 13px; cursor: pointer; transition: background-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease); }
+.wk-seg input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
+.wk-seg label:has(input:checked) { background: var(--w-bg); color: var(--w-ink); font-weight: 600; box-shadow: 0 1px 2px rgb(0 0 0 / 0.08); }
+.wk-seg label:has(input:focus-visible) { outline: 2px solid var(--w-focus); outline-offset: 1px; }
+.wk-seg-row:disabled .wk-seg { opacity: 0.6; }
+@media (max-width: 799.98px) {
+  .wk-pair { grid-template-columns: minmax(0, 1fr); }
 }

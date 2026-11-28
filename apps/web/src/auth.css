@@ -54,7 +54,7 @@ button.au-link, button.au-link:hover:not(:disabled) { min-height: 0; padding: 0;
 .au-button:disabled { border: 0; background: #646d7d; color: #ffffff; opacity: 0.7; cursor: not-allowed; }
 .au-aside { margin-top: 16px; color: var(--a-muted); font-size: 13px; line-height: 18px; }
 .au-aside button.au-link { margin-left: 4px; }
-.au-forgot-below { display: none; }
+.au-forgot { margin: 6px 0 0; text-align: right; }
 
 .au-note { display: flex; gap: 10px; align-items: flex-start; font-size: 13px; line-height: 18px; }
 .au-note.info, .au-note.ok { padding: 10px 14px; border-radius: 8px; }
@@ -71,9 +71,6 @@ button.au-link, button.au-link:hover:not(:disabled) { min-height: 0; padding: 0;
   .au-headline { font-size: 24px; line-height: 28px; }
   .au-main { place-items: start center; padding: 24px 20px; }
   .au-title { font-size: 24px; line-height: 30px; }
-  .au-forgot-inline { display: none; }
-  .au-forgot-below { display: block; margin-top: 16px; }
-  .au-forgot-below + .au-aside { padding-top: 16px; border-top: 1px solid var(--a-line); }
 }
 
 /* My requests (E6): Console Blocks top bar over bordered block card. */

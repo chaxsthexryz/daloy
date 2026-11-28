@@ -327,21 +327,15 @@ export function NewAutomationPage({
     );
   };
 
-  const headerTabs = (
-    <nav className="tabs" aria-label={t("Create automation")}>
-      <a href="#/new" aria-current={mode === "templates" ? "page" : undefined}>{t("Templates")}</a>
-      <a href="#/ai" aria-current={mode === "ai" ? "page" : undefined}>{t("Build with AI")}</a>
-    </nav>
-  );
-
+  // The sidebar tree links Templates and Build with AI (decision 0164), so each is its own titled page.
   if (mode === "ai") {
     return (
       <main className="page ops gp lib motion-page">
-        <header className="act-head tabbed">
+        <header className="act-head">
           <div>
-            <h1>{t("New automation")}</h1>
+            <h1>{t("Build with AI")}</h1>
+            <p className="act-sub">{t("Describe an automation in plain words and turn it into editable steps.")}</p>
           </div>
-          {headerTabs}
         </header>
         <BuildWithAiPage email={email} admin={admin} embedded />
       </main>
@@ -350,15 +344,18 @@ export function NewAutomationPage({
 
   return (
     <main className="page ops gp lib motion-page">
-      <header className="act-head tabbed">
+      <header className="act-head">
         <div>
-          <h1>{t("New automation")}</h1>
+          <h1>{t("Templates")}</h1>
+          <p className="act-sub">{t("Choose the workflow closest to the way your team works.")}</p>
         </div>
-        {headerTabs}
+        <div className="act-actions">
+          <a className="act-button" href="#/ai">{t("Build with AI")}</a>
+          <a className="act-button" href="#/automations">{t("All automations")}</a>
+        </div>
       </header>
       <div className="lib-main">
         <div className="lib-controls-box">
-          <p className="gp-lead"><Text>Choose the workflow closest to the way your team works.</Text></p>
           <div className="ops-filters lib-filters">
             <label className="ops-search">
               <span className="ops-sr"><Text>Search the library</Text></span>

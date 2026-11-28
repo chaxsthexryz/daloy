@@ -264,17 +264,11 @@ export function AppsPage({ outcome, embedded = false, initialApp }: { outcome?: 
     <Wrap className="page workspace-admin admin-apps" data-panel={!!open}>
       <header className="apps-head">
         <div>
-          {embedded ? (
-            <div className="apps-embedded-bar">
-              <h2>{t("Apps")}</h2>
-              <span className="muted">{t("{count} of {total} connected", { count: activeTotal, total: APPS.length })}</span>
-            </div>
-          ) : (
-            <Header title={t("Apps")} action={<span className="muted">{t("{count} of {total} connected", { count: activeTotal, total: APPS.length })}</span>} />
-          )}
+          {/* Embedded under Business, the page head carries the title and lead (decision 0164). */}
+          {!embedded && <Header title={t("Apps")} action={<span className="muted">{t("{count} of {total} connected", { count: activeTotal, total: APPS.length })}</span>} />}
           {!open && (
             <>
-              <p className="muted apps-lede">{t("Everything here is optional. Each app is used only by the automations you turn on, and the demo works without any of them.")}</p>
+              {!embedded && <p className="muted apps-lede">{t("Everything here is optional. Each app is used only by the automations you turn on, and the demo works without any of them.")}</p>}
               <p className="muted apps-lede">
                 {t("SMS (UniSMS) is managed by the kymavo operator, so there is no key to connect here.")}
               </p>
@@ -322,7 +316,7 @@ export function AppsPage({ outcome, embedded = false, initialApp }: { outcome?: 
             {conns.latestPayment ? <p>{t(conns.latestPayment.live ? "Live mode" : "Test mode")} · {t(conns.latestPayment.status)} · {date(conns.latestPayment.updatedAt)}</p> : <p>{t("No payments recorded yet.")}</p>}
           </section>}
           {state(open) && <section className="panel-detail"><h3>{t("Used by")}</h3>
-            {usage?.length ? <ul>{usage.map(w => <li key={w.id}><a href={`#/a/${w.id}`}>{w.name}</a></li>)}</ul> : <p>{t("No published automations use this app.")}</p>}
+            {usage?.length ? <ul>{usage.map(w => <li key={w.id}><a href={`#/w/${w.id}`}>{w.name}</a></li>)}</ul> : <p>{t("No published automations use this app.")}</p>}
             <small>{t("Last checked")} · {checked(open) ? date(checked(open)!) : t("Not checked yet")}</small>
           </section>}
         </section>}

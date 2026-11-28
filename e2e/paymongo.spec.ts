@@ -9,7 +9,7 @@ test("an owner connects PayMongo, a run makes a payment link, and the paid webho
   await page.getByLabel("Password").fill("e2e test password 1");
   await page.getByRole("button", { name: "Create account" }).click();
 
-  await page.getByRole("link", { name: "Business" }).first().click(); await page.getByRole("navigation", { name: "Business" }).getByRole("link", { name: "Apps", exact: true }).click();
+  await page.locator("#main-menu").getByRole("link", { name: "Apps", exact: true }).click();
   await page.getByRole("button", { name: "Connect PayMongo" }).click();
   await page.getByLabel("Secret key").fill(process.env.E2E_PAYMONGO_KEY!);
   await page.getByLabel("Webhook secret").fill(process.env.E2E_PAYMONGO_WEBHOOK_SECRET!);

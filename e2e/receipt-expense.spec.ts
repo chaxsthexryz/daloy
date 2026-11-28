@@ -21,7 +21,7 @@ const formId = async (page: Page, id: string) => ((await (await page.request.get
 test("the receipt template sends the photo to the model, which fills the approval", async ({ page }) => {
   page.on("dialog", (d) => void d.accept());
   await signUp(page, "receipt");
-  await page.getByRole("link", { name: "Business" }).first().click(); await page.getByRole("navigation", { name: "Business" }).getByRole("link", { name: "Apps", exact: true }).click();
+  await page.locator("#main-menu").getByRole("link", { name: "Apps", exact: true }).click();
   await page.getByRole("button", { name: "Connect Google Drive" }).click();
   // Google sign-in is the main option in e2e (decision 0060); the service account form is under Advanced.
   await page.getByText("Advanced: use a key or token instead").click();

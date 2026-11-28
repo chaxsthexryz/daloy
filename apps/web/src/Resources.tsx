@@ -65,7 +65,8 @@ export function ResourcesPage({ embedded = false }: { embedded?: boolean } = {})
         </header>
       )}
       {embedded && counts && <p className="wk-sub">{t("{active} active, {archived} archived", counts)}</p>}
-      <p className="wk-lead">{t("Rooms, people or tables that customers can book. Booking forms and stay confirmations list the active items below.")}</p>
+      {/* Embedded under Bookings, the page head carries this lead (decision 0164). */}
+      {!embedded && <p className="wk-lead">{t("Rooms, people or tables that customers can book. Booking forms and stay confirmations list the active items below.")}</p>}
       <form onSubmit={add} className="wk-card wk-body wk-add" aria-labelledby="add-resource">
         <h2 id="add-resource" className="wk-card-title">{t("Add a resource")}</h2>
         <div className="wk-add-row">

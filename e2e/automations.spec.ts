@@ -50,8 +50,7 @@ test("Home shows each automation's state and last event, and a Needs you strip",
   await expect(row).toContainText(/ago|just now/);
   await expect(panel.getByRole("button", { name: "Copy form link" })).toBeVisible();
   await expect(panel.getByRole("link", { name: "View all" })).toHaveAttribute("href", `#/w/${form.id}/runs`);
-  await expect(panel.getByRole("link", { name: "Open", exact: true })).toHaveAttribute("href", `#/a/${form.id}`);
-  await expect(panel.getByRole("link", { name: "Edit", exact: true })).toHaveAttribute("href", `#/w/${form.id}`);
+  await expect(panel.getByRole("link", { name: "Open", exact: true })).toHaveAttribute("href", `#/w/${form.id}`);
   const orderRow = page.getByRole("row", { name: /Orders/ });
   await expect(orderRow).toContainText("Never");
   await orderRow.getByRole("button", { name: "Orders" }).click();
@@ -94,7 +93,7 @@ test("on a phone the menu collapses, nothing scrolls sideways, and the activity 
   expect(await row.evaluate((e) => getComputedStyle(e).display)).toBe("table-row");
 });
 
-test("the panel is closed on load, a click opens it, Close and Escape close it, a double click opens the overview", async ({ page }) => {
+test("the panel is closed on load, a click opens it, Close and Escape close it, a double click opens the editor", async ({ page }) => {
   await signUp(page, "panel");
   const wf = await (await page.request.post("/workflows", { data: { name: "Panel check", slug: `panel-${Date.now()}` } })).json();
   await page.goto("/#/automations");
@@ -104,7 +103,7 @@ test("the panel is closed on load, a click opens it, Close and Escape close it, 
   await expect(row).toBeVisible();
   await expect(page.locator(".ops-panel")).toHaveCount(0);
   const wide = (await page.locator(".ops-table").boundingBox())!.width;
-  expect(wide).toBeGreaterThan(1000);
+  expect(wide).toBeGreaterThan(950);
 
   await row.getByRole("button", { name: "Panel check" }).click();
   await expect(panel).toBeVisible();
@@ -120,8 +119,9 @@ test("the panel is closed on load, a click opens it, Close and Escape close it, 
   await expect(panel).toHaveCount(0);
   await expect(row.getByRole("link", { name: /Steps of Panel check/ })).toHaveAttribute("href", `#/w/${wf.id}`);
 
-  await row.dblclick();
-  await expect.poll(() => new URL(page.url()).hash).toBe(`#/a/${wf.id}`);
+  // The first click opens the panel and narrows the table, so send the double click to the row itself.
+  await row.dispatchEvent("dblclick");
+  await expect.poll(() => new URL(page.url()).hash).toBe(`#/w/${wf.id}`);
 });
 
 test("on a phone a row opens the panel as a sheet that Close dismisses", async ({ page }) => {
@@ -173,8 +173,8 @@ test("inline pause switch shows an undo toast, inspector matches Problem status,
   expect(nameBox.y + nameBox.height).toBeLessThanOrEqual(longRowBox.y + longRowBox.height + 1);
   expect(longRowBox.y).toBeGreaterThanOrEqual(failingBox.y + failingBox.height - 1);
 
-  // Open action link opens the overview, and Pause in the inspector shows a white Undo toast.
-  await expect(longRow.getByRole("link", { name: "Open", exact: true })).toHaveAttribute("href", `#/a/${healthy.id}`);
+  // Open action link opens the editor (decision 0164), and Pause in the inspector shows a white Undo toast.
+  await expect(longRow.getByRole("link", { name: "Open", exact: true })).toHaveAttribute("href", `#/w/${healthy.id}`);
   await longRow.getByRole("button", { name: longName }).click();
   const longPanel = page.getByRole("complementary", { name: longName });
   await longPanel.getByRole("button", { name: "Pause", exact: true }).click();

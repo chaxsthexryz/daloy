@@ -114,24 +114,18 @@ export function BookingsPage({ initialTab = "calendar", canManageRooms = false }
 
   return (
     <main className="page act">
+      {/* The sidebar tree links Calendar and Rooms and slots (decision 0164); the head links the other one. */}
       <PageHead
         crumbs={[]}
-        title={t("Bookings")}
-        sub={longDate(Date.now(), language)}
+        title={t(tab === "rooms" ? "Rooms and slots" : "Calendar")}
+        sub={tab === "rooms" ? t("Rooms, people or tables that customers can book. Booking forms and stay confirmations list the active items below.") : longDate(Date.now(), language)}
         actions={
-          tab === "calendar" ? (
-            <div className="act-actions">
-              <a className="act-button" href="/bookings/export.csv" download>{t("Download CSV")}</a>
-            </div>
-          ) : undefined
-        }
-        tabs={
-          canManageRooms ? (
-            <nav className="tabs" aria-label={t("Bookings")}>
-              <a href="#/bookings" aria-current={tab === "calendar" ? "page" : undefined}>{t("Calendar")}</a>
-              <a href="#/bookings?tab=rooms" aria-current={tab === "rooms" ? "page" : undefined}>{t("Rooms and slots")}</a>
-            </nav>
-          ) : undefined
+          <div className="act-actions">
+            {tab === "calendar" && <a className="act-button" href="/bookings/export.csv" download>{t("Download CSV")}</a>}
+            {canManageRooms && (tab === "calendar"
+              ? <a className="act-button" href="#/bookings?tab=rooms">{t("Rooms and slots")}</a>
+              : <a className="act-button" href="#/bookings">{t("Calendar")}</a>)}
+          </div>
         }
       />
       {tab === "rooms" ? (

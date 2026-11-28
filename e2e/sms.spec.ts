@@ -9,7 +9,7 @@ test("SMS comes from the server: no UniSMS card in Apps, the catalog says it is 
   await page.getByLabel("Password").fill("e2e test password 1");
   await page.getByRole("button", { name: "Create account" }).click();
 
-  await page.getByRole("link", { name: "Business" }).first().click(); await page.getByRole("navigation", { name: "Business" }).getByRole("link", { name: "Apps", exact: true }).click();
+  await page.locator("#main-menu").getByRole("link", { name: "Apps", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Apps", exact: true })).toBeVisible();
   await expect(page.getByText("Telegram").first()).toBeVisible();
   await expect(page.getByRole("heading", { name: "UniSMS" })).toHaveCount(0);

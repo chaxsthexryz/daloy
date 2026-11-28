@@ -49,4 +49,13 @@ export const workspaceTranslations: Record<string, string> = {
   "Hide {name} pages": "Itago ang mga pahina ng {name}",
   "Create: Build with AI": "Gumawa: Bumuo gamit ang AI",
   "Create: Templates": "Gumawa: Mga template",
+  // Console Blocks parity (decision 0164).
+  "Appearance & Language": "Itsura at wika",
+  "Theme": "Tema",
+  "Sign-in email": "Email sa pag-sign in",
+  "Account & Security": "Account at seguridad",
+  "Describe an automation in plain words and turn it into editable steps.": "Ilarawan ang automation sa simpleng salita at gawin itong mga hakbang na puwedeng i-edit.",
+  "Business identity, public form accent, and customer preview.": "Pagkakakilanlan ng negosyo, kulay ng public form, at preview para sa customer.",
+  "Now live: {name}, version {version}.": "Live na: {name}, bersyon {version}.",
+  "Workspace members, roles, and pending invitations.": "Mga miyembro ng workspace, kanilang role, at mga naghihintay na imbitasyon.",
 };

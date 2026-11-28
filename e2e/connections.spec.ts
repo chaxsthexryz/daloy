@@ -15,7 +15,7 @@ test("an owner connects Sheets and Slack, and retries only the Slack note that f
   await page.getByRole("button", { name: "Create account" }).click();
 
   // Connections on the Apps page: each card opens its own setup.
-  await page.getByRole("link", { name: "Business" }).first().click(); await page.getByRole("navigation", { name: "Business" }).getByRole("link", { name: "Apps", exact: true }).click();
+  await page.locator("#main-menu").getByRole("link", { name: "Apps", exact: true }).click();
   await page.getByRole("button", { name: "Connect Google Sheets" }).click();
   // Google sign-in is the main option in e2e (decision 0060); the service account form is under Advanced.
   await page.getByText("Advanced: use a key or token instead").click();
