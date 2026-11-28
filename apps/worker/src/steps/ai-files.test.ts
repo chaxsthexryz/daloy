@@ -90,7 +90,7 @@ describe("an AI step with files", () => {
   const PNG = Buffer.from("89504e470d0a1a0a0000000d49484452", "hex");
   const marker = Buffer.from("OTHER-FIELD-MARKER-77");
   async function setup(stored: { field: string; type: FileKind; data: Buffer }[]) {
-    const [u] = await db.insert(users).values({ email: `ai-${randomUUID()}@test.local`, passwordHash: "x" }).returning();
+    const [u] = await db.insert(users).values({ email: `ai-${randomUUID()}@test.local`, passwordHash: "x", plan: "business" }).returning();
     const [wf] = await db.insert(workflows).values({ userId: u!.id, name: "Intake", slug: `w${randomUUID().slice(0, 8)}` }).returning();
     const [v] = await db.insert(workflowVersions).values({ workflowId: wf!.id, version: 1, definition: {}, published: true }).returning();
     const [r] = await db.insert(runs).values({ workflowVersionId: v!.id }).returning();

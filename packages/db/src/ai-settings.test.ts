@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import type { Pool } from "pg";
 import { afterAll, afterEach, beforeAll, expect, it, vi } from "vitest";
 import { freshDatabase } from "../../../test/db";
-import { aiConnection, presetConnection, readAiSettings, readPlatformAi, saveAiSettings, savePlatformAi, sharedConnection, thinkingControl, THINKING_LEVELS } from "./ai-settings";
+import { aiConnection, canUseOwnAiKey, OwnKeyNotAllowedError, presetConnection, readAiSettings, readPlatformAi, saveAiSettings, savePlatformAi, sharedConnection, thinkingControl, THINKING_LEVELS } from "./ai-settings";
 import { decryptSecret } from "./crypto";
 import { eq } from "drizzle-orm";
 import { adminActions, aiKeys, aiSettings, platformAi, users } from "./schema";
@@ -12,7 +12,7 @@ let db: Db;
 let pool: Pool;
 const key = randomBytes(32);
 let seq = 0;
-const newUser = async (plan: "pilot" | "preview" | null = "pilot") => (await db.insert(users).values({ email: `ai${++seq}@test.local`, passwordHash: "x", plan }).returning())[0]!.id;
+const newUser = async (plan: "pilot" | "preview" | "business" | "business_plus" | "concierge" | null = "business") => (await db.insert(users).values({ email: `ai${++seq}@test.local`, passwordHash: "x", plan }).returning())[0]!.id;
 
 beforeAll(async () => {
   ({ db, pool } = await freshDatabase());
@@ -54,11 +54,65 @@ it("keeps the operator's key from a workspace without a plan, and leaves its own
   expect((await aiConnection(db, key, userId)).apiKey).toBeUndefined();
   await saveAiSettings(db, key, userId, { preset: "local", model: "llama3.2" });
   expect((await aiConnection(db, key, userId)).apiKey).toBeUndefined();
+  await db.update(users).set({ plan: "business" }).where(eq(users.id, userId));
   await saveAiSettings(db, key, userId, { preset: "openai", model: "gpt-x", apiKey: "sk-own" });
   expect((await aiConnection(db, key, userId)).apiKey).toBe("sk-own");
-  await db.update(users).set({ plan: "pilot" }).where(eq(users.id, userId));
   await saveAiSettings(db, key, userId, { preset: "local", model: "llama3.2" });
   expect((await aiConnection(db, key, userId)).apiKey).toBe("env-key");
+});
+
+it("allows an own key only on Business, Business Plus and Concierge", () => {
+  for (const plan of ["business", "business_plus", "concierge"]) expect(canUseOwnAiKey(plan), plan).toBe(true);
+  for (const plan of ["preview", "pilot", null, undefined, "unknown"]) expect(canUseOwnAiKey(plan), String(plan)).toBe(false);
+});
+
+it("refuses a hosted choice on a lower plan but still saves the local one", async () => {
+  for (const plan of ["preview", "pilot", null] as const) {
+    const userId = await newUser(plan);
+    await expect(saveAiSettings(db, key, userId, { preset: "gemini", model: "gemini-3.8-flash", apiKey: "AIza-test" }), String(plan)).rejects.toBeInstanceOf(OwnKeyNotAllowedError);
+    await expect(saveAiSettings(db, key, userId, { preset: "gemini", model: "gemini-3.8-flash", apiKey: "AIza-test" })).rejects.toThrow(/Business plan/);
+    expect(await readAiSettings(db, userId)).toBeNull();
+    expect(await db.select().from(aiKeys).where(eq(aiKeys.userId, userId))).toHaveLength(0);
+    await saveAiSettings(db, key, userId, { preset: "local", model: "llama3.2" });
+    expect(await readAiSettings(db, userId)).toMatchObject({ preset: "local" });
+  }
+  for (const plan of ["business", "business_plus", "concierge"] as const) {
+    await saveAiSettings(db, key, await newUser(plan), { preset: "gemini", model: "gemini-3.8-flash", apiKey: "AIza-test" });
+  }
+});
+
+it("sends a lower plan with a saved hosted choice to the shared model, and gives the keys back on upgrade", async () => {
+  vi.stubEnv("LLM_PROVIDER", "openai");
+  vi.stubEnv("LLM_BASE_URL", "http://lmstudio.local:1234/v1");
+  vi.stubEnv("LLM_MODEL", "shared-qwen");
+  vi.stubEnv("SHARED_LLM_KEY", "");
+  await pool.query("delete from platform_ai");
+  for (const plan of ["pilot", "preview", null] as const) {
+    const userId = await newUser("business");
+    await saveAiSettings(db, key, userId, { preset: "deepseek", model: "deepseek-flash", apiKey: "sk-own", thinking: "high" });
+    await db.update(users).set({ plan }).where(eq(users.id, userId));
+    expect(await aiConnection(db, key, userId), String(plan)).toMatchObject({ baseUrl: "http://lmstudio.local:1234/v1", apiKey: undefined, model: "shared-qwen" });
+    // Nothing was deleted or changed, so the page can still show what was saved.
+    expect(await readAiSettings(db, userId)).toMatchObject({ preset: "deepseek", model: "deepseek-flash", thinking: "high", keys: ["deepseek"] });
+    await db.update(users).set({ plan: "business" }).where(eq(users.id, userId));
+    expect(await aiConnection(db, key, userId)).toMatchObject({ baseUrl: "https://api.deepseek.com", apiKey: "sk-own", model: "deepseek-flash" });
+  }
+  // With a shared model saved by the admin, that model is used, with the admin's thinking override.
+  await savePlatformAi(db, key, ADMIN, { preset: "gemini", model: "gemini-3.8-flash", apiKey: "AIza-platform-1234" });
+  const lower = await newUser("business");
+  await saveAiSettings(db, key, lower, { preset: "deepseek", model: "deepseek-flash", apiKey: "sk-own" });
+  await db.update(users).set({ plan: "pilot", aiThinking: "medium" }).where(eq(users.id, lower));
+  expect(await aiConnection(db, key, lower)).toMatchObject({ baseUrl: GEMINI_URL, model: "gemini-3.8-flash", ...thinkingControl("openai", GEMINI_URL, "medium") });
+  await pool.query("delete from platform_ai");
+});
+
+it("sends a lower plan with a saved local choice to the shared model too, and keeps the row", async () => {
+  vi.stubEnv("LLM_MODEL", "shared-model");
+  await pool.query("delete from platform_ai");
+  const userId = await newUser("pilot");
+  await saveAiSettings(db, key, userId, { preset: "local", model: "hermes3", thinking: "high" });
+  expect(await aiConnection(db, key, userId)).toMatchObject({ model: "shared-model" });
+  expect(await readAiSettings(db, userId)).toMatchObject({ preset: "local", model: "hermes3" });
 });
 
 it("keeps the operator's key from a preview workspace", async () => {

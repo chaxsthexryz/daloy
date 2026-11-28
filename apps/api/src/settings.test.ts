@@ -60,9 +60,12 @@ function stubOffers(models: string[]) {
 }
 
 let seq = 0;
-async function signedIn() {
+// Own AI keys need a Business plan or above (decision 0156), so a user starts on one unless a test asks otherwise.
+async function signedIn(plan: string | null = "business") {
   const agent = request.agent(server);
-  await agent.post("/auth/register").send({ email: `ai${++seq}@test.local`, password: "correct horse battery" }).expect(201);
+  const email = `ai${++seq}@test.local`;
+  await agent.post("/auth/register").send({ email, password: "correct horse battery" }).expect(201);
+  await pool.query("update users set plan = $2 where email = $1", [email, plan]);
   return agent;
 }
 
@@ -89,6 +92,33 @@ it("saves a hosted choice with a key and never sends the key back", async () => 
   expect(res.text).not.toContain("AIza-secret-test");
   // Another user still gets the default.
   expect((await (await signedIn()).get("/settings/ai")).body.current.saved).toBe(false);
+});
+
+it("lets Business, Business Plus and Concierge save their own key", async () => {
+  stubOffers(["gpt-x"]);
+  for (const plan of ["business", "business_plus", "concierge"]) {
+    const agent = await signedIn(plan);
+    expect((await agent.get("/settings/ai").expect(200)).body.ownKeyAllowed, plan).toBe(true);
+    await agent.post("/settings/ai/models").send({ preset: "openai", apiKey: "sk-own" }).expect(200);
+    await agent.put("/settings/ai").send({ preset: "openai", model: "gpt-x", apiKey: "sk-own" }).expect(204);
+  }
+});
+
+it("refuses an own key from Preview, Pilot and no-plan workspaces with a 403, and shows the shared model", async () => {
+  vi.stubEnv("LLM_MODEL", "shared-model");
+  stubOffers(["gpt-x"]);
+  for (const plan of ["preview", "pilot", null]) {
+    const agent = await signedIn(plan);
+    const { body } = await agent.get("/settings/ai").expect(200);
+    expect(body.ownKeyAllowed, String(plan)).toBe(false);
+    expect(body.current).toMatchObject({ preset: "local", model: "shared-model", hasKey: false, keys: [], saved: false });
+    const put = await agent.put("/settings/ai").send({ preset: "openai", model: "gpt-x", apiKey: "sk-own" }).expect(403);
+    expect(put.body.message).toMatch(/Business plan/);
+    await agent.post("/settings/ai/models").send({ preset: "openai", apiKey: "sk-own" }).expect(403);
+    // The local choice is the shared connection, so it stays allowed.
+    await agent.put("/settings/ai").send({ preset: "local", model: "llama3.2" }).expect(204);
+    await agent.post("/settings/ai/models").send({ preset: "local" }).expect(200);
+  }
 });
 
 it("saves a thinking level and refuses one it does not know", async () => {

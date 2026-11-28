@@ -40,6 +40,8 @@ export function AiModelPage() {
   const { t } = useLanguage();
   const [presets, setPresets] = useState<Record<string, Preset> | null>(null);
   const [current, setCurrent] = useState<Current | null>(null);
+  // Only Business plans and up bring their own key (decision 0156); everyone else sees the shared model, read-only.
+  const [ownKey, setOwnKey] = useState(true);
   const [local, setLocal] = useState<LocalModels | null>(null);
   const [preset, setPreset] = useState("local");
   const [model, setModel] = useState("");
@@ -58,14 +60,15 @@ export function AiModelPage() {
     setOffered(res?.ok && res.models.length ? { preset: id, ids: res.models } : null);
   };
   const load = async () => {
-    const data = await api<{ current: Current; presets: Record<string, Preset> }>("GET", "/settings/ai");
+    const data = await api<{ current: Current; presets: Record<string, Preset>; ownKeyAllowed: boolean }>("GET", "/settings/ai");
+    setOwnKey(data.ownKeyAllowed);
     setPresets(data.presets);
     setCurrent(data.current);
     setPreset(data.current.preset);
     setModel(data.current.model);
     setThinking(data.current.thinking);
     // The provider's own list, so the picker holds ids it will actually accept.
-    void loadOffered(data.current.preset);
+    if (data.ownKeyAllowed) void loadOffered(data.current.preset);
   };
   const checkLocal = async () => {
     setLocal(null);
@@ -149,9 +152,14 @@ export function AiModelPage() {
           </div>
         </div>
       </header>
-      <p className="wk-lead">{t("Every AI step in your automations, and Build with AI, uses the model you pick here. You can switch at any time; saved keys are kept for each provider.")}</p>
+      {ownKey && <p className="wk-lead">{t("Every AI step in your automations, and Build with AI, uses the model you pick here. You can switch at any time; saved keys are kept for each provider.")}</p>}
       {!presets || !current ? (
         <p className="wk-sub" role="status">{t("Loading…")}</p>
+      ) : !ownKey ? (
+        <div className="wk-col">
+          <p className="wk-card wk-body in-use">{t("Shared AI model in use: ")}<code>{current.model}</code></p>
+          <p className="wk-muted">{t("Your own AI key is available from the Business plan. Until then your workspace uses the shared AI model.")}</p>
+        </div>
       ) : (
         <form onSubmit={save} className="wk-ai-grid">
           <div className="wk-col">
