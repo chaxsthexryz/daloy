@@ -451,7 +451,7 @@ From the browser pilot audit in [docs/pilot-ux-audit-2026-11-25.md](docs/pilot-u
 
 Orchestrator: Neon. Web only, no API or database changes. Target look: `docs/design/console-blocks-preview.html`. After R5, Claude runs the security review of the admin console, admin host and 2FA, then the owner deploys.
 
-- [ ] R1. Geist font, mock tokens and easing, base components; keep the `:root` block shape for the contrast test. Decision 0159.
+- [ ] R1. Geist font, mock tokens and easing, base components; keep the `:root` block shape for the contrast test. Decision 0159. (claimed: neon, branch neon/r1-blocks-tokens)
 - [ ] R2. Shell: sidebar tree, account block with display name and role, bell and toasts, phone drawer, palette. Decision 0160.
 - [ ] R3. Home, Inbox and Automations as block cards; KPI blocks are whole-card links. Decision 0161.
 - [ ] R4. Secondary pages (New, Build with AI, Editor, Apps, Business, Bookings, Settings with AI model and Notifications, Account, Team, Feedback) and the requests view. Decision 0162.
