@@ -15,12 +15,10 @@ test("try a sample, see it go out of date, then turn on from the summary", async
 
   await page.getByRole("button", { name: "List", exact: true }).click();
   await addStep(page, "approval");
-  // The guide and the sample test show in the panel's overview, with no step selected (U2).
+  // Sample test lives directly in the panel's overview, with no step selected (U2).
   const close = page.locator(".a7-panel").getByRole("button", { name: "Close", exact: true });
   await close.click();
 
-  const guide = page.getByRole("region", { name: "Setup guide" });
-  await expect(guide).toContainText("Try a sample");
   const sample = page.getByRole("region", { name: "Try a sample" });
   await expect(sample).toContainText("No sample test yet.");
   await expect(sample).toContainText("Every step has what it needs.");
@@ -71,23 +69,16 @@ test("Booking with a GCash or QR Ph deposit omits PayMongo, adds a resource inli
   await expect(page).toHaveURL(/#\/w\/[^/]+$/);
   await page.getByRole("dialog", { name: "Explain this flow" }).getByRole("button", { name: "Got it" }).click();
 
-  const checkMessagesRow = page.getByRole("region", { name: "Setup guide" }).locator("li", { hasText: "Check the messages" });
-  await expect(checkMessagesRow).toContainText("To do");
-  await checkMessagesRow.getByRole("button").click();
-  await expect(page.getByRole("heading", { name: "Approval", exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Close", exact: true }).click();
-
   await expect(page.getByText(/Left: connect PayMongo/)).toHaveCount(0);
   const sample = page.getByRole("region", { name: "Try a sample" });
   await expect(sample).toContainText("Add at least one room or resource");
   await expect(sample).not.toContainText("Every step has what it needs.");
   await expect(sample.getByRole("button", { name: "Try a sample" })).toBeDisabled();
 
-  // Create a room inline and verify Try a sample and Check the messages both clear.
+  // Create a room inline and verify Try a sample clears.
   await sample.getByLabel("Add a room or resource").fill("Deluxe Room");
   await sample.getByRole("button", { name: "Add", exact: true }).click();
   await expect(sample).toContainText("Every step has what it needs.", { timeout: 15_000 });
-  await expect(checkMessagesRow).toContainText("Done");
   await sample.getByRole("button", { name: "Try a sample" }).click();
   await expect(sample).toContainText("The last sample test passed.", { timeout: 30_000 });
 

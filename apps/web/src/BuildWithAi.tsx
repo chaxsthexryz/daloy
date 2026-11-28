@@ -423,6 +423,8 @@ export function BuildWithAiPage({ email, admin = false, embedded = false }: { em
 
   const firstRequest = turns.find((turn) => turn.role === "user")?.text;
   const visiblePrompts = CATEGORY_PROMPTS.filter((p) => p.category === category);
+  const lastTurn = turns.at(-1);
+  const latestHasChoices = lastTurn?.role === "assistant" && (lastTurn.choices?.length ?? 0) > 0;
 
   const composer = (
     <form className="composer" onSubmit={send}>
@@ -441,7 +443,7 @@ export function BuildWithAiPage({ email, admin = false, embedded = false }: { em
       />
       <div className="ai-composer-foot">
         <div className="ai-composer-left">
-          {phase === "asking" && !draft && (
+          {phase === "asking" && !draft && !latestHasChoices && (
             <button type="button" className="ai-chip-btn" disabled={busy} onClick={() => void talk(t("Build it now with what you have."))}>
               {t("Build it now")}
             </button>
@@ -634,20 +636,47 @@ export function BuildWithAiPage({ email, admin = false, embedded = false }: { em
                 <section className="chat" aria-label={t("Conversation")} role="log" aria-live="polite">
                   {turns.map((turn, i) => (
                     <div key={i} className={`chat-line ${turn.role}`}>
-                      {turn.role === "assistant" && (
-                        <div className="assistant-id">{t("AI assistant")}</div>
-                      )}
-                      <p>{turn.text}</p>
-                      {turn.choices && turn.choices.length > 0 && (
-                        <ul className="chat-chips" aria-label={t("Answers")}>
-                          {turn.choices.map((choice) => (
-                            <li key={choice}>
-                              <button type="button" disabled={busy} onClick={() => void talk(choice)}>
-                                {choice}
-                              </button>
-                            </li>
-                          ))}
-                        </ul>
+                      {turn.role === "assistant" ? (
+                        <div className="ai-turn-row">
+                          <span className="ai-bot-badge sm" aria-hidden="true">
+                            <svg width="15" height="15" viewBox="0 0 120 120">
+                              <path fill="currentColor" d="M22 18H60V56H60C39 56 22 39 22 18Z" />
+                              <path fill="currentColor" d="M60 56C81 56 98 73 98 94V102H60V56Z" />
+                              <path fill="currentColor" d="M60 18C81 18 98 35 98 56H60V18Z" opacity="0.28" />
+                            </svg>
+                          </span>
+                          <div className="ai-bot-body">
+                            <div className="assistant-id">{t("AI assistant")}</div>
+                            <p>{turn.text}</p>
+                            {turn.choices && turn.choices.length > 0 && (
+                              <div className="ai-question-card">
+                                <div className="ai-question-head">
+                                  <strong>{t("Pick an option or reply below")}</strong>
+                                  <span className="pill blue">{t("Quick clarify")}</span>
+                                </div>
+                                <ul className="chat-chips" aria-label={t("Answers")}>
+                                  {turn.choices.map((choice) => (
+                                    <li key={choice}>
+                                      <button type="button" disabled={busy} onClick={() => void talk(choice)}>
+                                        {choice}
+                                      </button>
+                                    </li>
+                                  ))}
+                                </ul>
+                                {phase === "asking" && !draft && i === turns.length - 1 && (
+                                  <div className="ai-question-foot">
+                                    <span>{t("Uses connected apps & Knowledge automatically.")}</span>
+                                    <button type="button" className="ai-chip-btn" disabled={busy} onClick={() => void talk(t("Build it now with what you have."))}>
+                                      {t("Build it now")}
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      ) : (
+                        <p>{turn.text}</p>
                       )}
                     </div>
                   ))}

@@ -30,9 +30,9 @@ import { EmailSource } from "./EmailSource";
 import { GoogleTriggerSettings } from "./GoogleTriggerSettings";
 import { MailboxTriggerSettings } from "./MailboxTriggerSettings";
 import { RecordTriggerSettings } from "./RecordTriggerSettings";
-import { ExplainSheet, SampleTest, SetupGuide, TurnOnSheet } from "./Guide";
+import { ExplainSheet, SampleTest, TurnOnSheet } from "./Guide";
 import { MonitorTriggerSettings } from "./MonitorTriggerSettings";
-import { firstMessageStep, MESSAGE_STEP_TYPES, testState, type SampleResult } from "./lib/guide";
+import { testState, type SampleResult } from "./lib/guide";
 import { parseSample, variableGroups } from "./lib/variables";
 import { VariablePicker } from "./VariablePicker";
 
@@ -42,14 +42,6 @@ const wasExplained = (id: string) => {
     return localStorage.getItem(explainedKey(id)) === "1";
   } catch {
     return false; // storage can be blocked; the dialog then shows again, which is harmless
-  }
-};
-const checkedMessagesKey = (id: string) => `daloy.checkedMessages.${id}`;
-const wereMessagesChecked = (id: string) => {
-  try {
-    return localStorage.getItem(checkedMessagesKey(id)) === "1";
-  } catch {
-    return false;
   }
 };
 
@@ -207,16 +199,6 @@ export function Editor({ id, from }: { id: string; from?: string }) {
   const [showShare, setShowShare] = useState(false);
   const [showTurnOn, setShowTurnOn] = useState(false);
   const [showMoreActions, setShowMoreActions] = useState(false);
-  const [explained, setExplained] = useState(() => wasExplained(id));
-  const [messagesChecked, setMessagesChecked] = useState(() => wereMessagesChecked(id));
-  const markMessagesChecked = () => {
-    setMessagesChecked(true);
-    try {
-      localStorage.setItem(checkedMessagesKey(id), "1");
-    } catch {
-      // ignore storage failure
-    }
-  };
 
   const reload = async () => {
     const w = await api<Loaded>("GET", `/workflows/${id}`);
@@ -246,7 +228,6 @@ export function Editor({ id, from }: { id: string; from?: string }) {
           );
         }
         setCatalog(c);
-        if (w.live) markMessagesChecked();
         // After guided setup, show the explanation once for a draft that is not live yet.
         if (w.setup && !w.live && d.steps.length > 0 && !wasExplained(id)) setShowExplain(true);
       })
@@ -461,7 +442,6 @@ export function Editor({ id, from }: { id: string; from?: string }) {
   if (!wf || !catalog) return <main className="page a7-loading">{message ? <p role="alert">{message.text}</p> : <p>{t("Loading…")}</p>}</main>;
 
   const step = draft.steps.find((s) => s.id === selected);
-  const problemCount = readiness ? readiness.blockers.length + readiness.warnings.length : 0;
   const addInlineResource = async (name: string) => {
     const created = await api<{ id: string; active: boolean }>("POST", "/resources", { name });
     setFirstResource((prev) => prev ?? created.id);
@@ -485,7 +465,6 @@ export function Editor({ id, from }: { id: string; from?: string }) {
   const test = testState(JSON.stringify(draft), sample, sample ? (sampleRun?.id === sample.runId ? sampleRun.state : null) : null);
   const closeExplain = () => {
     setShowExplain(false);
-    setExplained(true);
     try {
       localStorage.setItem(explainedKey(id), "1");
     } catch {
@@ -524,7 +503,6 @@ export function Editor({ id, from }: { id: string; from?: string }) {
       if (op !== "pick" && c.value === undefined) c.value = "{{trigger.text}}";
       nextConfig = c;
     }
-    if (step && MESSAGE_STEP_TYPES.has(step.type)) markMessagesChecked();
     update({ ...draft, steps: draft.steps.map((s) => (s.id === step!.id ? ({ ...s, config: nextConfig } as Step) : s)) }, `config:${step!.id}`);
   };
   const editOnError = (policy: StepErrorPolicy) => {
@@ -681,6 +659,7 @@ export function Editor({ id, from }: { id: string; from?: string }) {
     if (key === "escape") {
       if (connecting) cancelConnect();
       else if (selected && !phone) select(null);
+      else if (wide) fold(!folded);
       else return false;
       return true;
     }
@@ -945,13 +924,27 @@ export function Editor({ id, from }: { id: string; from?: string }) {
               {note}
             </span>
           </div>
-          <div className="a7-view" role="group" aria-label={t("Show steps as")}>
-            <button type="button" aria-pressed={view === "diagram"} onClick={() => setView("diagram")}>
-              {t("Diagram")}
-            </button>
-            <button type="button" aria-pressed={view === "list"} onClick={() => setView("list")}>
-              {t("List")}
-            </button>
+          <div className="a7-tools-right">
+            {wide && (
+              <button
+                type="button"
+                className="a7-panel-toggle"
+                aria-expanded={!folded}
+                title={t(folded ? "Show panel (Esc)" : "Hide panel (Esc)")}
+                onClick={() => fold(!folded)}
+              >
+                <span>{t(folded ? "Show panel" : "Hide panel")}</span>
+                <kbd className="a7-kbd" aria-hidden="true">Esc</kbd>
+              </button>
+            )}
+            <div className="a7-view" role="group" aria-label={t("Show steps as")}>
+              <button type="button" aria-pressed={view === "diagram"} onClick={() => setView("diagram")}>
+                {t("Diagram")}
+              </button>
+              <button type="button" aria-pressed={view === "list"} onClick={() => setView("list")}>
+                {t("List")}
+              </button>
+            </div>
           </div>
           </div>
           {view === "diagram" ? (
@@ -1056,26 +1049,6 @@ export function Editor({ id, from }: { id: string; from?: string }) {
                 inspector
               ) : (
                 <>
-                  <SetupGuide
-                    facts={{
-                      missingApps: missing.length,
-                      problems: problemCount,
-                      hasMessageStep: firstMessageStep(draft) !== null,
-                      messagesChecked,
-                      explained,
-                      test,
-                      live: isLive,
-                    }}
-                    onCheckMessages={() => {
-                      markMessagesChecked();
-                      const first = firstMessageStep(draft);
-                      if (first) select(first);
-                      else document.getElementById("sample-checks")?.scrollIntoView({ block: "start" });
-                    }}
-                    onExplain={() => setShowExplain(true)}
-                    onTry={() => void testRun("mock")}
-                    onTurnOn={() => setShowTurnOn(true)}
-                  />
                   {warnings.length > 0 && (
                     <section className="a7-checks" aria-labelledby="checks-heading">
                       <h2 id="checks-heading">{t("Check before publishing")}</h2>

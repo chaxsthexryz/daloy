@@ -68,6 +68,9 @@
 .a7-setup-action { padding: 6px 12px; border-radius: 8px; background: var(--surface); color: var(--text); font-weight: 600; text-decoration: none; }
 .a7-setup-action:focus-visible { outline-color: var(--a7-progress); }
 .a7-view { display: flex; align-self: flex-end; padding: 3px; gap: 2px; border: 1px solid var(--border-soft); border-radius: 10px; background: var(--surface); box-shadow: var(--shadow-card); }
+.a7-tools-right { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-left: auto; }
+.a7-editor .a7-panel-toggle { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 0 10px; border: 1px solid var(--border-soft); border-radius: 9px; background: var(--surface); box-shadow: var(--shadow-card); color: var(--text); font-size: var(--text-xs, 13px); font-weight: 500; }
+.a7-kbd { padding: 1px 6px; border: 1px solid var(--border-soft); border-radius: 5px; background: var(--sunken); color: var(--muted); font-family: var(--font-sans); font-size: var(--text-xs, 13px); font-weight: 500; line-height: 1.2; }
 .a7-editor .a7-view button { min-height: 30px; padding: 0 12px; border: 0; border-radius: 7px; background: transparent; box-shadow: none; color: var(--muted); }
 .a7-editor .a7-view button[aria-pressed="true"] { background: var(--accent-tint); color: var(--text); }
 .a7-flow { flex: 1; min-height: 360px; margin: 0 -24px -20px; }
@@ -168,11 +171,19 @@
 .a7-checks h2 { font-size: 16px; }
 .a7-checks ul { margin: 0; padding: 12px 12px 12px 30px; border: 1px solid var(--a7-warn-line); border-radius: 12px; font-size: 13px; }
 .a7-ai section { display: flex; flex-direction: column; gap: 8px; padding: 12px; border: 1px solid var(--border-soft); border-radius: 12px; background: var(--sunken); }
-.a7-ai h2 { font-size: var(--text-xs, 13px); font-weight: 600; line-height: 18px; letter-spacing: 0; }
+.ed-ai-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.ed-ai-saved { font-size: var(--text-xs, 13px); color: var(--muted); font-weight: 500; }
+.a7-ai h2 { font-size: 14px; font-weight: 600; line-height: 18px; letter-spacing: 0; text-transform: none; color: var(--text); }
 .a7-ai textarea { min-height: 4.5rem; font-family: inherit; background: var(--surface); }
-.a7-ai .chat { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; }
-.a7-ai .chat li { padding: 8px 10px; border-radius: 8px; background: var(--surface); font-size: 13px; }
-.a7-editor .a7-ai button:not(:disabled) { align-self: flex-start; border-color: var(--a7-bar); background: var(--a7-bar); color: var(--a7-bar-text); }
+.ed-ai-log { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; max-height: 220px; overflow-y: auto; }
+.ed-ai-msg { padding: 8px 10px; border: 1px solid var(--border-soft); border-radius: 9px; background: var(--surface); font-size: var(--text-xs, 13px); line-height: 1.4; color: var(--text); }
+.ed-ai-msg.you { background: var(--accent-tint); border-color: color-mix(in srgb, var(--accent) 22%, transparent); }
+.ed-ai-msg.error { background: var(--a7-bad-bg); border-color: var(--a7-bad); color: var(--a7-bad); }
+.ed-ai-msg-meta { margin-bottom: 2px; font-size: var(--text-xs, 13px); color: var(--muted); }
+.ed-ai-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.a7-editor .a7-ai button:not(:disabled):not(.ed-ai-clear) { align-self: flex-start; border-color: var(--a7-bar); background: var(--a7-bar); color: var(--a7-bar-text); }
+.a7-editor .a7-ai button.ed-ai-clear { background: var(--surface); border-color: var(--border-soft); color: var(--muted); font-weight: 500; }
+.a7-editor .a7-ai button.ed-ai-clear:hover:not(:disabled) { border-color: var(--border); color: var(--text); }
 .a7-test .actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .a7-test h2 { font-size: 16px; margin-bottom: 12px; }
 .a7-panel .field { margin-bottom: 0; gap: 6px; }

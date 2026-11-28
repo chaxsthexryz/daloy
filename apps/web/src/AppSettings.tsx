@@ -21,14 +21,27 @@ const ROLES: Record<Role, string> = { owner: "Owner", operator: "Operator", appr
 
 const ofLimit = (m: Meter, t: (s: string, values?: Record<string, string | number>) => string) => m.limit === null ? t("{used}, no limit", { used: m.used }) : t("{used} of {limit}", { used: m.used, limit: m.limit });
 
-function Card({ title, id, children }: { title: string; id: string; children: ReactNode }) {
+function Card({ title, id, icon, children }: { title: string; id: string; icon?: ReactNode; children: ReactNode }) {
   return (
     <section className="wk-card" aria-labelledby={id}>
-      <h2 className="wk-card-head" id={id}><b>{title}</b></h2>
+      <h2 className="wk-card-head" id={id}>
+        <span className="wk-card-title-group">
+          {icon && <span className="card-ico" aria-hidden="true">{icon}</span>}
+          <b>{title}</b>
+        </span>
+      </h2>
       {children}
     </section>
   );
 }
+
+const SETTINGS_ICONS = {
+  globe: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><path d="M3.6 9h16.8M3.6 15h16.8M11.5 3a17 17 0 0 0 0 18M12.5 3a17 17 0 0 1 0 18" /></svg>,
+  sliders: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" /></svg>,
+  lock: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><rect x="5" y="11" width="14" height="10" rx="2" /><path d="M8 11V7a4 4 0 1 1 8 0v4" /></svg>,
+  activity: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12h4l3 8l4-16l3 8h4" /></svg>,
+  server: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="8" rx="2" /><rect x="3" y="12" width="18" height="8" rx="2" /><path d="M7 8h.01M7 16h.01" /></svg>,
+};
 
 /** Plan, what this workspace has used and when each count resets. Hidden when /usage cannot be read. */
 function PlanAndUsage({ phone }: { phone: boolean }) {
@@ -38,7 +51,7 @@ function PlanAndUsage({ phone }: { phone: boolean }) {
   const { automations: a } = u;
   const back = (m: Meter) => <span className="wk-muted">{phone ? t("back {day}", { day: shortDay(m.resetsOn, false) }) : t("back on {day}", { day: shortDay(m.resetsOn) })}</span>;
   return (
-    <Card title={t("Plan and usage")} id="plan-usage">
+    <Card title={t("Plan and usage")} id="plan-usage" icon={SETTINGS_ICONS.activity}>
       <div className="wk-body">
         <p>{u.plan ? <>{t("Plan:")} <b>{u.label ?? u.plan}</b></> : t("No plan limits are set. The operator sets the plan.")}</p>
         <AiMeter usage={u} />
@@ -103,7 +116,7 @@ export function SettingsPage({ user }: { user: User }) {
       <div className="wk-grid">
         <div className="wk-col">
           {owner && (
-            <Card title={t("Language")} id="language-card">
+            <Card title={t("Language")} id="language-card" icon={SETTINGS_ICONS.globe}>
               <fieldset className="wk-body wk-radios" disabled={savingLanguage}>
                 <legend className="wk-sr">{t("Language")}</legend>
                 <label><input type="radio" name="language" value="en" checked={language === "en"} onChange={() => void changeLanguage("en")} /> English</label>
@@ -113,7 +126,7 @@ export function SettingsPage({ user }: { user: User }) {
               </fieldset>
             </Card>
           )}
-          <Card title={t("Appearance")} id="appearance-card">
+          <Card title={t("Appearance")} id="appearance-card" icon={SETTINGS_ICONS.sliders}>
             <fieldset className="wk-body wk-radios">
               <legend className="wk-sr">{t("Appearance")}</legend>
               {THEMES.map(([value, label]) => (
@@ -127,10 +140,17 @@ export function SettingsPage({ user }: { user: User }) {
           {(owner || user.role === "operator") && <NotificationsCard />}
           {!phone && (
             <>
-              <Card title={t("Your account")} id="account-card">
-                <div className="wk-body wk-line">
-                  <p>{before}<b>{user.email}</b>{after}</p>
-                  <span className="wk-chip">{t(ROLES[user.role])}</span>
+              <Card title={t("Your account")} id="account-card" icon={SETTINGS_ICONS.lock}>
+                <div className="wk-body">
+                  <div className="wk-line">
+                    <p>{before}<b>{user.email}</b>{after}</p>
+                    <span className="wk-chip">{t(ROLES[user.role])}</span>
+                  </div>
+                  <div className="wk-account-links">
+                    <a className="wk-button" href="#/account">{t("Edit name & password")}</a>
+                    <a className="wk-button" href="#/feedback">{t("Support & feedback")}</a>
+                  </div>
+                  <p className="wk-muted">{t("Changing your password signs out every other device. Forgot it? Sign out and use Forgot password on the sign-in page.")}</p>
                 </div>
               </Card>
               {!owner && <p className="wk-muted wk-managed">{t("Language and office settings are managed by the owner.")}</p>}
@@ -140,7 +160,7 @@ export function SettingsPage({ user }: { user: User }) {
         {(owner || user.role === "operator") && <PlanAndUsage phone={phone} />}
       </div>
       {owner && (
-        <Card title={t("Advanced")} id="advanced-card">
+        <Card title={t("Advanced")} id="advanced-card" icon={SETTINGS_ICONS.server}>
           <ul className="wk-office">
             {(user.admin ? [...ADVANCED_OWNER, ...ADVANCED_ADMIN] : ADVANCED_OWNER).map(([href, name, note]) => (
               <li key={href}>

@@ -1,15 +1,7 @@
-/* Console Blocks Build with AI styling (tokens inherited from styles.css). */
+/* Console Blocks Build with AI styling (inherits :root / [data-theme="dark"] tokens from styles.css). */
 .page.creation-chat {
-  --accent: var(--accent, #0b66ff);
-  --accent-tint: var(--accent-tint, #eef4ff);
-  --text: var(--text, #0f131a);
-  --muted: var(--muted, #5b6372);
-  --surface: var(--surface, #ffffff);
   --canvas: var(--bg, #fafafa);
-  --sunken: var(--sunken, #f4f5f7);
-  --border-soft: var(--border-soft, #e6e8ee);
   --border-field: var(--border, #d1d5df);
-  --bg: var(--bg, #fafafa);
   background: var(--canvas);
   color: var(--text);
   font-family: var(--font-sans);
@@ -389,12 +381,37 @@
 .describe-body h2, .builder-details h2, .plan-body h2 { font-size: 18px; font-weight: 600; letter-spacing: -0.02em; }
 .describe-body .ai-build { width: 100%; flex: 1; display: flex; flex-direction: column; gap: 16px; justify-content: space-between; margin: 14px 0 0; }
 .describe-body .chat { flex: 1; }
+.ai-bot-badge.sm { width: 26px; height: 26px; border-radius: 7px; margin-top: 2px; }
 .describe-body .chat-line { animation: aiTurnIn 220ms var(--ease-spring) both; }
-.describe-body .chat-line.assistant { background: transparent; color: var(--text); border: 0; padding: 6px 0; }
-.assistant-id { font-weight: 600; font-size: var(--text-xs, 13px); color: var(--muted); margin-bottom: 4px; }
+.describe-body .chat-line.assistant { background: transparent; color: var(--text); border: 0; padding: 6px 0; max-width: 100%; }
+.ai-turn-row { display: flex; align-items: flex-start; gap: 10px; }
+.ai-bot-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.assistant-id { font-weight: 600; font-size: var(--text-xs, 13px); color: var(--muted); }
 .describe-body .chat-line.user { background: var(--canvas); color: var(--text); border: 1px solid var(--border-soft); border-radius: 12px; margin-left: auto; padding: 10px 14px; }
-.describe-body .chat-chips { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 10px; padding: 12px 14px; border: 1px solid var(--border-field); border-radius: 12px; background: var(--canvas); list-style: none; }
-.describe-body .chat-chips button { min-height: 32px; padding: 5px 12px; border: 1px solid var(--border-field); border-radius: 9px; background: var(--surface); color: var(--text); font-size: var(--text-xs, 13px); font-weight: 500; }
+.ai-question-card {
+  margin-top: 4px;
+  padding: 12px 14px;
+  border: 1px solid var(--border-soft);
+  border-radius: 12px;
+  background: var(--canvas);
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+.ai-question-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.ai-question-head strong { font-size: var(--text-xs, 13px); font-weight: 600; color: var(--text); }
+.ai-question-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding-top: 4px;
+  font-size: var(--text-xs, 13px);
+  color: var(--muted);
+}
+.describe-body .chat-chips { display: flex; flex-wrap: wrap; gap: 7px; margin: 0; padding: 0; border: 0; background: transparent; list-style: none; }
+.describe-body .chat-chips button { min-height: 32px; padding: 5px 12px; border: 1px solid var(--border-field); border-radius: 9px; background: var(--surface); color: var(--text); font-size: var(--text-xs, 13px); font-weight: 500; white-space: normal; height: auto; }
 .describe-body .chat-chips button:hover:not(:disabled) { border-color: var(--accent); background: var(--accent-tint); color: var(--accent); }
 .describe-body .composer {
   padding: 14px 15px;
