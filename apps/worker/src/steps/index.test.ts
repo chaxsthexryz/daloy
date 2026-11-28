@@ -547,12 +547,15 @@ it("runs an AI step with the model its owner picked in the console", async () =>
   });
   await new Promise<void>((r) => llm.listen(0, "127.0.0.1", r));
   vi.stubEnv("LLM_BASE_URL", `http://127.0.0.1:${(llm.address() as AddressInfo).port}`);
+  // Only Business plans and up keep their own pick; others run the shared model (decision 0156).
+  await db.update(users).set({ plan: "business" }).where(eq(users.id, userId));
   try {
     await saveAiSettings(db, key, userId, { preset: "local", model: "owner-model" });
     const result = await run({ id: "c", type: "ai", config: { task: "classify", input: "{{trigger.m}}", labels: { billing: "Invoices", other: "Else" } } } as Step, { m: "refund please" });
     expect(models).toEqual(["owner-model"]);
     expect(result.output).toEqual({ label: "billing" });
   } finally {
+    await db.update(users).set({ plan: null }).where(eq(users.id, userId));
     vi.unstubAllEnvs();
     llm.close();
   }

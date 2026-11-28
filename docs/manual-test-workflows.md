@@ -43,7 +43,7 @@ SHARED_LLM_KEY=open
 AI_ASK=on
 ```
 
-- `SHARED_LLM_KEY=open` lets your local accounts use this key. Keep it `off` on any public server.
+- `SHARED_LLM_KEY=open` lets your local accounts use this key. On a public server it goes only to workspaces with a plan (not preview), and Pilot has no own-key option (decision 0156), so keep it `open` there too and watch the AI quota.
 - `AI_ASK=on` turns on "Ask about a request" in Build with AI. Keep it `off` on a public server until `docs/ai-ask-measurement.md` is done.
 
 Then restart the stack (your data is kept):
@@ -211,5 +211,5 @@ Check: the numbers in the email match the Activity page. The warning only appear
 
 ## 6. When you are done
 
-- Set `AI_ASK=off` and `SHARED_LLM_KEY=off` in `.env` before you put this installation anywhere public, then run `docker compose up -d`.
+- Set `AI_ASK=off` in `.env` before you put this installation anywhere public, then run `docker compose up -d`. Keep `SHARED_LLM_KEY=open`, or Pilot workspaces have no AI (decision 0156).
 - Delete the test automations you do not want to keep, and revoke the Hermes API token under Advanced, then API tokens.

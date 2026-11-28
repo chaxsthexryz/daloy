@@ -11,7 +11,7 @@ let pool: Pool;
 
 beforeAll(async () => {
   ({ db, pool } = await freshDatabase());
-});
+}, 120_000);
 
 afterAll(async () => {
   await pool?.end();

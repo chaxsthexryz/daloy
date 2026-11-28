@@ -44,8 +44,9 @@ TRUST_PROXY=1
 SECURE_COOKIES=true
 # Only the owner's approved workspaces may send through the installation's SMTP server.
 SHARED_MAIL=approved
-# Accounts bring their own AI key. With open, only workspaces with a plan can use LLM_API_KEY.
-SHARED_LLM_KEY=off
+# Only Business plans and up may bring their own AI key (decision 0156), so Pilot needs the shared key: open.
+# The shared key then goes to workspaces with a plan (not preview). Set the model and key in the admin console, AI models.
+SHARED_LLM_KEY=open
 # Plan a new sign-up starts on. Empty means preview (limited, no shared AI key). none means no limits.
 SIGNUP_PLAN=
 # For the public demo: the only hosts HTTP steps may call.
