@@ -1,16 +1,22 @@
 import { expect, test, type Page } from "@playwright/test";
+import { signIn } from "./workspace";
 
 // T8: "Chat as your customer". Each message is a real-AI test run against the fake model (e2e/llm-fake.ts); the reply
 // step stays mocked, so nothing is sent to Messenger.
 const dm = { type: "meta_dm", config: { channel: "both", requireImage: false } };
 
-async function signUp(page: Page, tag: string, definition: object) {
-  await page.goto("/");
-  await page.getByRole("button", { name: "Create an account", exact: true }).click();
-  await page.getByLabel("Email").fill(`${tag}-${Date.now()}-${Math.floor(Math.random() * 1e6)}@test.local`);
-  await page.getByLabel("Password").fill("e2e test password 1");
-  await page.getByRole("button", { name: "Create account" }).click();
-  await expect(page.getByRole("heading", { name: "Today", exact: true })).toBeVisible();
+// asEmail signs in to a seeded account instead of signing up a new one.
+async function signUp(page: Page, tag: string, definition: object, asEmail?: string) {
+  if (asEmail) {
+    await signIn(page, asEmail);
+  } else {
+    await page.goto("/");
+    await page.getByRole("button", { name: "Create an account", exact: true }).click();
+    await page.getByLabel("Email").fill(`${tag}-${Date.now()}-${Math.floor(Math.random() * 1e6)}@test.local`);
+    await page.getByLabel("Password").fill("e2e test password 1");
+    await page.getByRole("button", { name: "Create account" }).click();
+    await expect(page.getByRole("heading", { name: "Today", exact: true })).toBeVisible();
+  }
   const wf = await (await page.request.post("/workflows", { data: { name: "Resort chat", slug: `chat-${tag}-${Date.now()}` } })).json();
   expect((await page.request.post(`/workflows/${wf.id}/versions`, { data: { definition, publish: false } })).status()).toBe(201);
   return wf.id as string;
@@ -81,7 +87,8 @@ test("pre-checks unpublished knowledge with a direct link, avoids 409 cancel, an
     ],
     edges: [{ from: "answer", to: "reply" }],
   };
-  const id = await signUp(page, "noknowledge", definition);
+  // Picking its own (broken) model needs a Business plan (decision 0156), so this uses the seeded Business account.
+  const id = await signUp(page, "noknowledge", definition, "e2e-ai-business@test.local");
   await page.goto(`/#/w/${id}`);
   const chat = page.getByRole("region", { name: "Chat as your customer" });
   await expect(chat.getByRole("alert")).toContainText("Publish your knowledge sheet first");

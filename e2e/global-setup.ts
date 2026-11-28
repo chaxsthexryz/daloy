@@ -191,7 +191,8 @@ export default async function setup() {
   ).trim().split(/\r?\n/).pop()!;
   const pool = new Pool({ connectionString: url, max: 1 });
   try {
-    for (const email of adminEmails) {
+    // e2e-ai-business is not an admin: the chat test signs in as it to pick its own (broken) model.
+    for (const email of [...adminEmails, "e2e-ai-business@test.local"]) {
       const inserted = await pool.query<{ id: string }>(
         "insert into users (email, password_hash) values ($1, $2) on conflict (email) do nothing returning id",
         [email, passwordHash],
@@ -204,8 +205,11 @@ export default async function setup() {
         );
       }
     }
-    // Own AI keys need a Business plan (decision 0156); the AI model page test saves one.
-    await pool.query("update users set plan = 'business', plan_started_on = current_date where email = 'e2e-admin-ai@test.local'");
+    // Own AI keys and models need a Business plan (decision 0156); these accounts pick one.
+    await pool.query(
+      "update users set plan = 'business', plan_started_on = current_date where email = any($1)",
+      [["e2e-admin-ai@test.local", "e2e-admin-settings@test.local", "e2e-ai-business@test.local"]],
+    );
   } finally {
     await pool.end();
   }
